@@ -14,7 +14,7 @@ import type {
 } from "@bms/shared";
 
 import { STALE_TICK_MS, isStale, readingTimestampMs } from "./schematic-telemetry";
-import type { DatasetRow, WidgetSeries, WidgetSeriesPoint } from "./widget-catalog";
+import { chartDrawsWindowValues, type ChartConfig, type DatasetRow, type WidgetSeries, type WidgetSeriesPoint } from "./widget-catalog";
 import type { WidgetData } from "../components/widgets/dashboard-widget";
 
 /** Module-level, so an unanswered dataset does not hand a fresh array to React each render. */
@@ -121,6 +121,16 @@ export function aggregateRequestsFor(dashboard: DashboardDto): AggregateRequest[
   return [...byKey.values()];
 }
 
+/**
+ * `F4.323` (ADR 0047 Amendment 7 item 4) — the bucket function a chart's read asks for. A kind
+ * that draws one number per point (`compare`, `donut`) reads `stats` only, as a tile does, so
+ * asking for buckets it will not plot would cost up to 2,880 rows per point. Used by the request
+ * list and the lookup alike, so the two keys cannot disagree.
+ */
+function chartBucketFunction(config: ChartConfig): PointAggregateFunction | undefined {
+  return chartDrawsWindowValues(config.series) ? undefined : config.aggregate;
+}
+
 function aggregateRequestsForWidget(widget: DashboardWidgetDto): AggregateRequest[] {
   if (widget.widgetType === "value_tile") {
     if (!widget.config.aggregate) {
@@ -148,6 +158,7 @@ function aggregateRequestsForWidget(widget: DashboardWidgetDto): AggregateReques
       return [];
     }
     const windowMinutes = widget.config.windowMinutes ?? DEFAULT_AGGREGATE_WINDOW_MINUTES;
+    const bucketFunction = chartBucketFunction(widget.config);
     return [...widget.points]
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((point) =>
@@ -155,7 +166,7 @@ function aggregateRequestsForWidget(widget: DashboardWidgetDto): AggregateReques
           ref: encodePointRef(point.assetId, point.pointKey),
           windowMinutes,
           compare: false, // Nothing overlays yesterday behind today in Stage A.
-          bucketFunction: widget.config.aggregate,
+          bucketFunction,
         }),
       );
   }
@@ -372,6 +383,15 @@ function statFor(stats: PointAggregateStats, fn: PointAggregateFunction): number
 }
 
 /**
+ * `F4.323` — a window-value chart's number for one point. `undefined` while the read has not
+ * answered (pending or failed), so the donut never calls an unmeasured point "no positive value";
+ * `null` is an answer with no samples.
+ */
+function statOf(answer: PointAggregateResponse | null, fn: PointAggregateFunction): number | null | undefined {
+  return answer ? statFor(answer.stats, fn) : undefined;
+}
+
+/**
  * The newest **real sample** across a widget's bound points.
  *
  * **This, not the newest series point, is what ages a bucketed chart.** A
@@ -514,9 +534,10 @@ export function widgetDataFor(
           ref: encodePointRef(point.assetId, point.pointKey),
           windowMinutes,
           compare: false,
-          bucketFunction: config.aggregate,
+          bucketFunction: chartBucketFunction(config),
         }),
       ) ?? null;
+    const windowValues = chartDrawsWindowValues(config.series) && config.aggregate ? config.aggregate : null;
 
     const series: WidgetSeries[] = ordered.map((point) => ({
       // `F3.43` (ADR 0069): the asset-qualified name rides the `bms.assets` join the API already
@@ -526,9 +547,14 @@ export function widgetDataFor(
       // five breakers' `kw` as ONE legend entry.
       name: seriesNameFor(point),
       sortOrder: point.sortOrder,
-      points: config.aggregate
-        ? (aggregateFor(point)?.buckets ?? [])
-        : (historyByRef.get(encodePointRef(point.assetId, point.pointKey)) ?? []),
+      points: windowValues
+        ? []
+        : config.aggregate
+          ? (aggregateFor(point)?.buckets ?? [])
+          : (historyByRef.get(encodePointRef(point.assetId, point.pointKey)) ?? []),
+      // `F4.323` — every point's own window number, not only the first's: the read is one
+      // request per point and each answer carries its own `stats`.
+      ...(windowValues ? { value: statOf(aggregateFor(point), windowValues) } : {}),
     }));
 
     // The footer describes the FIRST series, and says so in the renderer. A

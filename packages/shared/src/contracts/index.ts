@@ -41,6 +41,7 @@ export * from "./auth";
 export * from "./copilot";
 export * from "./dashboard";
 export * from "./dashboard-builder";
+export * from "./chart-kinds";
 export * from "./dashboard-dto";
 export * from "./dashboard-tabs";
 export * from "./dashboard-templates";

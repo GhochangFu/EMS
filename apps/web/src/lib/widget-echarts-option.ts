@@ -2,7 +2,13 @@ import type { EChartsOption } from "echarts";
 
 import { seriesPalette } from "./chart-theme";
 import type { Roles } from "./theme";
-import { CHART_SERIES, widgetToneColor, type ChartConfig, type RadialGaugeConfig, type WidgetSeries } from "./widget-catalog";
+import {
+  CHART_SERIES,
+  widgetToneColor,
+  type ChartConfig,
+  type RadialGaugeConfig,
+  type WidgetSeries,
+} from "./widget-catalog";
 import { formatWidgetValue } from "./widget-value";
 
 function clamp(value: number, lo: number, hi: number): number {
@@ -126,13 +132,21 @@ export function buildChartOption(
   roles: Roles,
 ): EChartsOption {
   const seriesShape = CHART_SERIES[config.series];
-  const windowMinutes = config.windowMinutes ?? DEFAULT_WINDOW_MINUTES;
-  const xAxisMin = new Date(now - windowMinutes * 60_000).toISOString();
-
   // The contract permits a negative sortOrder; ignoring order makes legend
   // colours change between reads, since ECharts assigns a series' colour by
   // its position in this array.
   const ordered = [...series].sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // `F4.323` (ADR 0047 Amendment 7) — the two kinds that draw one number per point.
+  if (seriesShape.axis === "category") {
+    return compareOption(config, seriesShape, ordered, roles);
+  }
+  if (seriesShape.axis === "none") {
+    return donutOption(config, seriesShape, ordered, roles);
+  }
+
+  const windowMinutes = config.windowMinutes ?? DEFAULT_WINDOW_MINUTES;
+  const xAxisMin = new Date(now - windowMinutes * 60_000).toISOString();
 
   return {
     color: seriesPalette(roles),
@@ -174,7 +188,101 @@ export function buildChartOption(
       type: seriesShape.type,
       data: s.points.map((p) => [p.t, p.v] as [string, number | null]),
       ...(seriesShape.area ? { areaStyle: {} } : {}),
+      ...(seriesShape.step ? { step: seriesShape.step } : {}),
       ...(config.stacked ? { stack: "f3.1c-widget-stack" } : {}),
     })),
+  };
+}
+
+/** A value tooltip in the config's own unit and decimals. */
+function valueFormatter(config: ChartConfig): (value: unknown) => string {
+  return (value) =>
+    formatWidgetValue(typeof value === "number" ? value : null, { unit: config.unit, decimals: config.decimals });
+}
+
+/**
+ * `F4.323` — `compare`: one horizontal bar per point, the point's window aggregate, in
+ * `sortOrder` from the top. One series, so `stacked` means nothing and is not applied; each bar
+ * takes its own palette colour (`colorBy: "data"`), and the category axis names them, so no
+ * legend is drawn. `yAxisLabel` names the value axis, which is the horizontal one here.
+ */
+function compareOption(
+  config: ChartConfig,
+  shape: (typeof CHART_SERIES)["compare"],
+  ordered: readonly WidgetSeries[],
+  roles: Roles,
+): EChartsOption {
+  return {
+    color: seriesPalette(roles),
+    tooltip: { trigger: "item", valueFormatter: valueFormatter(config) },
+    grid: { top: 16, left: 8, right: 24, bottom: 8, containLabel: true },
+    xAxis: { type: "value", ...(config.yAxisLabel ? { name: config.yAxisLabel } : {}) },
+    yAxis: {
+      type: "category",
+      inverse: true,
+      data: ordered.map((s) => s.name),
+      axisLabel: { fontSize: 10 },
+    },
+    series: [
+      {
+        type: shape.type,
+        colorBy: "data",
+        data: ordered.map((s) => s.value ?? null),
+      },
+    ],
+  };
+}
+
+/** A point's share needs a positive number: `null`, zero or negative is left out of the ring. */
+function hasShare(s: WidgetSeries): boolean {
+  return typeof s.value === "number" && s.value > 0;
+}
+
+/**
+ * `F4.323` — how many ANSWERED points a donut leaves out (no share); the renderer says so under
+ * it. A point whose read has not answered (`value` absent) is not counted: nothing measured it.
+ */
+export function donutLeftOut(series: readonly WidgetSeries[]): number {
+  return series.filter((s) => s.value !== undefined && !hasShare(s)).length;
+}
+
+/**
+ * `F4.323` — `donut`: one slice per point with a positive window aggregate, each labelled with
+ * its share of the total. No axes, so `yAxisLabel` and `stacked` are not read.
+ */
+function donutOption(
+  config: ChartConfig,
+  shape: (typeof CHART_SERIES)["donut"],
+  ordered: readonly WidgetSeries[],
+  roles: Roles,
+): EChartsOption {
+  const palette = seriesPalette(roles);
+  return {
+    color: palette,
+    tooltip: { trigger: "item", valueFormatter: valueFormatter(config) },
+    legend: {
+      type: "scroll",
+      bottom: 0,
+      itemWidth: 12,
+      itemHeight: 8,
+      textStyle: { fontSize: 10 },
+    },
+    series: [
+      {
+        type: shape.type,
+        radius: ["50%", "75%"],
+        center: ["50%", "45%"],
+        avoidLabelOverlap: true,
+        label: { formatter: "{d}%", fontSize: 10 },
+        // Each slice's colour is its point's place in `ordered`, set before the filter, so a point
+        // that gains or loses its share never shifts the others' colours, and a point keeps the
+        // colour a compare chart gives it.
+        data: ordered.flatMap((s, i) =>
+          hasShare(s) && typeof s.value === "number"
+            ? [{ name: s.name, value: s.value, itemStyle: { color: palette[i % palette.length] } }]
+            : [],
+        ),
+      },
+    ],
   };
 }

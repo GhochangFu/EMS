@@ -8,6 +8,7 @@ import {
   runTileCompareValueTests,
   runTileReadsItsOwnStatisticTests,
   runUnresolvedAggregateStaysReadableTests,
+  runWindowValueChartTests,
 } from "./dashboard-widget-data-aggregate.spec";
 
 /** `F3.35` Stage A — Vitest wrapper for the second data path (ADR 0014). */
@@ -43,4 +44,8 @@ describe("F3.35 Stage A — the aggregate request list", () => {
   it("deduplicates by request, not by widget, and asks for nothing when nothing aggregates", () => {
     runAggregateRequestListTests();
   });
+});
+
+describe("F4.323 — a compare or donut chart reads one number per point", () => {
+  it("asks stats only and gives every series its own window value", () => runWindowValueChartTests());
 });

@@ -4,7 +4,7 @@ import type { ChartConfig, RadialGaugeConfig, WidgetSeries } from "./widget-cata
 import { ROLE_TOKENS, fromTokenMap } from "../test-role-tokens";
 import { seriesPalette } from "./chart-theme";
 import { resolveRoles } from "./theme";
-import { buildChartOption, buildRadialGaugeOption } from "./widget-echarts-option";
+import { buildChartOption, buildRadialGaugeOption, donutLeftOut } from "./widget-echarts-option";
 
 /** `F3.65c` — the light roles from the real `index.css`; a band stop is a resolved role (OQ1). */
 const roles = resolveRoles(fromTokenMap(ROLE_TOKENS.light));
@@ -371,4 +371,88 @@ export function chartSingleSeriesGetsNoLegend(): void {
 export function chartSeriesColoursAreTheRolePalette(): void {
   const option = buildChartOption({ series: "line" }, threeChartSeries(), CHART_NOW, roles) as { color?: unknown };
   expect(option.color).toEqual(seriesPalette(roles));
+}
+
+/**
+ * `F4.323` (ADR 0047 Amendment 7) — the three new kinds. Read back through a loose shape: the
+ * category and pie options do not fit `ChartOptionShape`'s time axis.
+ */
+type LooseOption = {
+  readonly xAxis?: { readonly type: string; readonly name?: string };
+  readonly yAxis?: { readonly type: string; readonly data?: readonly string[]; readonly inverse?: boolean };
+  readonly legend?: unknown;
+  readonly series: readonly {
+    readonly type: string;
+    readonly step?: string;
+    readonly stack?: string;
+    readonly radius?: readonly string[];
+    readonly colorBy?: string;
+    readonly data: readonly unknown[];
+  }[];
+};
+
+const loose = (option: unknown): LooseOption => option as LooseOption;
+
+function valuedSeries(): readonly WidgetSeries[] {
+  return [
+    { name: "Pump B · kw", sortOrder: 1, points: [], value: 30 },
+    { name: "Pump A · kw", sortOrder: 0, points: [], value: 10 },
+    { name: "Pump C · kw", sortOrder: 2, points: [], value: null },
+    { name: "Pump D · kw", sortOrder: 3, points: [], value: -4 },
+  ];
+}
+
+export function chartStepHoldsTheValueUntilTheNextSample(): void {
+  const option = loose(buildChartOption({ series: "step", stacked: true }, oneChartSeries(), CHART_NOW, roles));
+  expect(option.series[0]?.type).toBe("line");
+  expect(option.series[0]?.step, "a run state holds until the next sample, so the step is at the end").toBe("end");
+  expect(option.series[0]?.stack, "step keeps the time kinds' stacked flag").toBeDefined();
+  expect(option.xAxis?.type).toBe("time");
+  expect(loose(buildChartOption({ series: "line" }, oneChartSeries(), CHART_NOW, roles)).series[0]?.step).toBeUndefined();
+}
+
+export function chartCompareDrawsOneHorizontalBarPerPointInOrder(): void {
+  const option = loose(
+    buildChartOption({ series: "compare", aggregate: "sum", yAxisLabel: "kWh", stacked: true }, valuedSeries(), CHART_NOW, roles),
+  );
+  expect(option.yAxis?.type, "the points are the categories").toBe("category");
+  expect(option.yAxis?.data).toEqual(["Pump A · kw", "Pump B · kw", "Pump C · kw", "Pump D · kw"]);
+  expect(option.yAxis?.inverse, "the first point reads at the top").toBe(true);
+  expect(option.xAxis?.type).toBe("value");
+  expect(option.xAxis?.name, "yAxisLabel names the value axis").toBe("kWh");
+  expect(option.series).toHaveLength(1);
+  expect(option.series[0]?.type).toBe("bar");
+  expect(option.series[0]?.data).toEqual([10, 30, null, -4]);
+  expect(option.series[0]?.stack, "stacked means nothing on one bar per point").toBeUndefined();
+  expect(option.series[0]?.colorBy, "each bar takes its own palette colour").toBe("data");
+  expect(option.legend, "the axis names every bar, so no legend").toBeUndefined();
+}
+
+export function chartDonutDrawsOnePositiveSlicePerPoint(): void {
+  const option = loose(buildChartOption({ series: "donut", aggregate: "sum" }, valuedSeries(), CHART_NOW, roles));
+  expect(option.xAxis, "a donut has no axes").toBeUndefined();
+  expect(option.yAxis).toBeUndefined();
+  expect(option.series[0]?.type).toBe("pie");
+  expect(option.series[0]?.radius, "an inner radius makes it a ring").toEqual(["50%", "75%"]);
+  const palette = seriesPalette(roles);
+  expect(option.series[0]?.data, "null and non-positive numbers have no share; colour is the point's place").toEqual([
+    { name: "Pump A · kw", value: 10, itemStyle: { color: palette[0] } },
+    { name: "Pump B · kw", value: 30, itemStyle: { color: palette[1] } },
+  ]);
+  // A point before the others with no share keeps their colours where they were.
+  const shifted = loose(
+    buildChartOption(
+      { series: "donut", aggregate: "sum" },
+      [{ name: "Pump 0 · kw", sortOrder: -1, points: [], value: null }, ...valuedSeries()],
+      CHART_NOW,
+      roles,
+    ),
+  );
+  expect((shifted.series[0]?.data[0] as { itemStyle: { color: string } }).itemStyle.color).toBe(palette[1]);
+}
+
+export function donutLeftOutCountsThePointsWithNoShare(): void {
+  expect(donutLeftOut(valuedSeries())).toBe(2);
+  expect(donutLeftOut([{ name: "pending", sortOrder: 0, points: [] }]), "an unanswered read is not 'no value'").toBe(0);
+  expect(donutLeftOut([{ name: "a", sortOrder: 0, points: [], value: 1 }])).toBe(0);
 }

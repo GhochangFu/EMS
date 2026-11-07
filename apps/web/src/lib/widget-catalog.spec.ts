@@ -6,6 +6,7 @@ import { ROLE_TOKENS, fromTokenMap } from "../test-role-tokens";
 import { resolveRoles } from "./theme";
 import {
   CHART_SERIES,
+  chartDrawsWindowValues,
   WIDGET_CATALOG,
   WIDGET_TONE_FILL_CLASS,
   WIDGET_TONE_ROLE,
@@ -67,6 +68,10 @@ export function chartSeriesLabelsArePinned(): void {
   expect(CHART_SERIES.area.label).toBe("Trend (filled)");
   expect(CHART_SERIES.bar.label).toBe("Comparison bars");
   expect(CHART_SERIES.scatter.label).toBe("Scatter");
+  // `F4.323` — ADR 0047 Amendment 7 item 2.
+  expect(CHART_SERIES.step.label).toBe("Steps (on/off)");
+  expect(CHART_SERIES.compare.label).toBe("Compare points");
+  expect(CHART_SERIES.donut.label).toBe("Share (donut)");
 }
 
 /**
@@ -79,6 +84,15 @@ export function areaSeriesIsLineWithAreaStyle(): void {
   expect(CHART_SERIES.line.area).toBe(false);
   expect(CHART_SERIES.bar.type).toBe("bar");
   expect(CHART_SERIES.scatter.type).toBe("scatter");
+  expect(CHART_SERIES.step.type).toBe("line");
+  expect(CHART_SERIES.compare.type).toBe("bar");
+  expect(CHART_SERIES.donut.type).toBe("pie");
+  // Which kinds draw a window number per point rather than a time series.
+  expect(chartDrawsWindowValues("compare")).toBe(true);
+  expect(chartDrawsWindowValues("donut")).toBe(true);
+  for (const kind of ["line", "area", "bar", "scatter", "step"] as const) {
+    expect(chartDrawsWindowValues(kind)).toBe(false);
+  }
 }
 
 /**

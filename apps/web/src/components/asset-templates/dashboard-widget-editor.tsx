@@ -6,9 +6,11 @@ import {
   type TemplateDashboardWidgetRow,
   type WidgetConfigRow,
 } from "../../lib/template-dashboard-form";
+import { chartDrawsWindowValues, chartHasValueAxis } from "../../lib/widget-catalog";
 import {
   AGGREGATE_FUNCTION_LABELS,
   AGGREGATE_FUNCTIONS,
+  chartPlotOptions,
   WIDGET_ICON_LABELS,
   WIDGET_ICONS,
 } from "../../lib/widget-config-form";
@@ -419,17 +421,20 @@ function WidgetEditor({
                 className="w-full surface-field px-2 py-1.5 text-xs"
               />
             </Field>
-            <Field label="Y-axis label" error={problemFor("yAxisLabel")}>
-              <input
-                type="text"
-                value={widget.config.yAxisLabel}
-                disabled={!editable}
-                onChange={(event) => updateConfig({ yAxisLabel: event.target.value })}
-                className="w-full surface-field px-2 py-1.5 text-xs"
-              />
-            </Field>
+            {/* `F4.323` — a donut has no value axis to name. */}
+            {chartHasValueAxis(widget.config.series) ? (
+              <Field label="Y-axis label" error={problemFor("yAxisLabel")}>
+                <input
+                  type="text"
+                  value={widget.config.yAxisLabel}
+                  disabled={!editable}
+                  onChange={(event) => updateConfig({ yAxisLabel: event.target.value })}
+                  className="w-full surface-field px-2 py-1.5 text-xs"
+                />
+              </Field>
+            ) : null}
           </div>
-          <Field label="Plot">
+          <Field label={chartPlotOptions(widget.config.series).label} error={problemFor("chartAggregate")}>
             <select
               value={widget.config.chartAggregate}
               disabled={!editable}
@@ -440,23 +445,25 @@ function WidgetEditor({
               }
               className="w-full surface-field px-2 py-1.5 text-xs"
             >
-              <option value="">Every reading</option>
-              {AGGREGATE_FUNCTIONS.map((fn) => (
-                <option key={fn} value={fn}>
-                  {AGGREGATE_FUNCTION_LABELS[fn]} per bucket
+              {chartPlotOptions(widget.config.series).options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
           </Field>
-          <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={widget.config.stacked}
-              disabled={!editable}
-              onChange={(event) => updateConfig({ stacked: event.target.checked })}
-            />
-            Stack series
-          </label>
+          {/* `F4.323` — a kind that draws one number per point has no stack. */}
+          {chartDrawsWindowValues(widget.config.series) ? null : (
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={widget.config.stacked}
+                disabled={!editable}
+                onChange={(event) => updateConfig({ stacked: event.target.checked })}
+              />
+              Stack series
+            </label>
+          )}
           <label className="flex items-center gap-2 text-xs">
             <input
               type="checkbox"

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { chartKindIssues } from "./chart-kinds";
 import {
   bindingShapeMessage,
   columnNotDeclaredMessage,
@@ -277,6 +278,18 @@ export const sectionTemplateWidgetSchema = z
       }
     });
 
+    // `F4.323` / ADR 0047 Amendment 7 — the shared chart kind rule, counting asset-role
+    // `bindings` as the live path counts `points`.
+    if (widget.widgetType === "chart") {
+      for (const issue of chartKindIssues(widget.config, widget.bindings.length)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [...issue.path],
+          message: `Widget "${widget.key}": ${issue.message}`,
+        });
+      }
+    }
+
     if (widget.widgetType !== "table") {
       return;
     }
@@ -330,7 +343,8 @@ export const sectionTemplateWidgetSchema = z
       "(WIDGET_SOURCE_SHAPES), the source count must be at most the type's own cap " +
       "(WIDGET_SOURCE_CARDINALITY), one catalog entry may not be bound twice on a widget, and a table's config.columns must name only columns its " +
       "bound dataset declares (METRIC_CATALOG), each once. No minimum: an unbound template " +
-      'widget instantiates as "No data bound." (ADR 0049 decision 6).',
+      'widget instantiates as "No data bound." (ADR 0049 decision 6). A compare or donut ' +
+      "chart needs config.aggregate (ADR 0047 Amendment 7).",
   );
 
 // ---------------------------------------------------------------------------

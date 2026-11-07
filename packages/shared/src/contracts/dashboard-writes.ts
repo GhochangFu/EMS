@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { chartKindIssues } from "./chart-kinds";
 import {
   activeAlarmsRailConfigSchema,
   assetClassStripConfigSchema,
@@ -723,6 +724,22 @@ const eachTableColumnIsDeclared = (
 };
 
 /**
+ * `F4.323` / ADR 0047 Amendment 7 — each `chart` widget's per-kind rules (`chart-kinds.ts`), on
+ * the array for `exactlyOneBindingKind`'s reason: an arm must stay a plain `ZodObject`. The
+ * rule is the shared one, so the two template paths refuse exactly what this one refuses.
+ */
+const eachChartKindHolds = (widgets: z.infer<typeof widgetWriteSchema>[], ctx: z.RefinementCtx): void => {
+  widgets.forEach((widget, index) => {
+    if (widget.widgetType !== "chart") {
+      return;
+    }
+    for (const issue of chartKindIssues(widget.config, widget.points.length)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, ...issue.path], message: issue.message });
+    }
+  });
+};
+
+/**
  * `F3.73` (plan D2) — the array bound is the whole-body ceiling, `MAX_DASHBOARD_TABS` full tabs.
  * The real cap, `MAX_DASHBOARD_WIDGETS` per tab (and on the legacy canvas), needs each widget's
  * `tabKey` beside the tab list, so `tabRulesHold` on the body checks it; this bound only refuses
@@ -741,6 +758,7 @@ const widgetsWriteFieldSchema = z
     eachWidgetFitsTheGrid(widgets, ctx);
     exactlyOneBindingKind(widgets, ctx);
     eachTableColumnIsDeclared(widgets, ctx);
+    eachChartKindHolds(widgets, ctx);
   })
   .describe(
     `At most ${MAX_DASHBOARD_WIDGETS} widgets on each tab, or on the canvas of a dashboard ` +
@@ -753,7 +771,8 @@ const widgetsWriteFieldSchema = z
       "has two answers for one number. A table widget's config.columns must name only columns " +
       "the dataset it binds declares (ADR 0048 decision 2): the resolve returns every declared " +
       "column and the renderer projects, so an undeclared name would draw a column of empty " +
-      "cells rather than fail.",
+      "cells rather than fail. A chart's kind may need more (ADR 0047 Amendment 7): a compare " +
+      "or donut chart needs config.aggregate, since it draws one number per point.",
   );
 
 /**

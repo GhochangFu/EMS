@@ -11,6 +11,7 @@ import { CALC_DIALECTS, formatCalcError, MAX_FORMULA_POINT_REFS, validateFormula
 // derived from how deep an authored template `content` actually nests, and the
 // draft's bound is derived from a different shape and is a different number.
 import { exceedsDepth } from "../stack-safe-json";
+import { chartKindIssues } from "./chart-kinds";
 // F3.1a: the four widget config schemas, reused rather than restated (§4.8 — "a vocabulary
 // is declared once and everything else is derived from it").
 import {
@@ -543,16 +544,31 @@ export const templateDashboardWidgetVariants = z.discriminatedUnion("widgetType"
     .strict(),
 ]);
 
-const templateDashboardWidgetSchema = templateDashboardWidgetVariants
-  .refine((widget) => widget.gridX + widget.gridW <= DASHBOARD_GRID.columns, {
-    message: `a widget must fit inside the ${DASHBOARD_GRID.columns}-column canvas`,
-    path: ["gridW"],
+/** Exported for `chart-kinds.spec.ts` (`F4.323`); the content schema is its only production reader. */
+export const templateDashboardWidgetSchema = templateDashboardWidgetVariants
+  // ONE `.superRefine` for both rules, so the one `.describe()` below covers both (ADR 0029
+  // decision 10). `F4.323` / ADR 0047 Amendment 7 — the chart kind rule is the shared one the
+  // live `PUT :id/widgets` path runs, counting `pointKeys` as that path counts `points`.
+  .superRefine((widget, ctx) => {
+    if (widget.gridX + widget.gridW > DASHBOARD_GRID.columns) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `a widget must fit inside the ${DASHBOARD_GRID.columns}-column canvas`,
+        path: ["gridW"],
+      });
+    }
+    if (widget.widgetType === "chart") {
+      for (const issue of chartKindIssues(widget.config, widget.pointKeys.length)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...issue.path], message: issue.message });
+      }
+    }
   })
   .describe(
     "A widget on a template's default dashboard. `gridX` plus its width must not exceed " +
       `${DASHBOARD_GRID.columns}: that is the width of the canvas, and ` +
       "`dashboard_widgets_grid_bounds_check` enforces the same bound in SQL, so an author who " +
-      "overflows it gets a 400 naming the field rather than a 500 carrying a constraint name.",
+      "overflows it gets a 400 naming the field rather than a 500 carrying a constraint name. " +
+      "A compare or donut chart needs config.aggregate (ADR 0047 Amendment 7).",
   );
 
 /**

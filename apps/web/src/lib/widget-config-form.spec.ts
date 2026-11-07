@@ -28,6 +28,8 @@ import {
   WIDGET_TYPES,
   blankConfigRow,
   buildChartConfig,
+  CHART_VALUE_NEEDED_MESSAGE,
+  chartPlotOptions,
   buildGaugeConfig,
   buildActiveAlarmsRailConfig,
   buildMimicConfig,
@@ -448,4 +450,45 @@ export function runTrendStripConfigValuesTests(): void {
     threw = true;
   }
   assert(threw, "buildTrendStripConfig throws on an unchosen range");
+}
+
+/**
+ * `F4.323` (ADR 0047 Amendment 7 items 4 and 6) — the form refuses a compare or donut chart
+ * without a window aggregate before Save, by the same rule the API refuses it with, and leaves
+ * out the fields the kind does not read.
+ */
+export function runWindowValueChartFormTests(): void {
+  const blank = blankConfigRow();
+  for (const series of ["compare", "donut"] as const) {
+    const missing = widgetConfigErrors(0, 0, { widgetType: "chart", config: { ...blank, series } });
+    assert(
+      missing.some((p) => p.field === "chartAggregate" && p.message === CHART_VALUE_NEEDED_MESSAGE),
+      `${series} without an aggregate is refused at chartAggregate — got ${JSON.stringify(missing)}`,
+    );
+    const ok = widgetConfigErrors(0, 0, { widgetType: "chart", config: { ...blank, series, chartAggregate: "sum" } });
+    assert(ok.length === 0, `${series} with an aggregate has no problems — got ${JSON.stringify(ok)}`);
+  }
+  const step = widgetConfigErrors(0, 0, { widgetType: "chart", config: { ...blank, series: "step" } });
+  assert(step.length === 0, "step needs no aggregate");
+
+  const full = { ...blank, stacked: true, yAxisLabel: "kWh", chartAggregate: "sum" as const };
+  const compare = buildChartConfig({ ...full, series: "compare" });
+  assert(compare.stacked === undefined, "compare drops stacked");
+  assert(compare.yAxisLabel === "kWh", "compare keeps the value-axis label");
+  const donut = buildChartConfig({ ...full, series: "donut" });
+  assert(donut.stacked === undefined && donut.yAxisLabel === undefined, "donut drops stacked and the axis label");
+  const longLabel = widgetConfigErrors(0, 0, {
+    widgetType: "chart",
+    config: { ...blank, series: "donut", chartAggregate: "sum", yAxisLabel: "y".repeat(65) },
+  });
+  assert(longLabel.length === 0, "a donut's hidden axis label never blocks Save");
+  const stepConfig = buildChartConfig({ ...full, series: "step" });
+  assert(stepConfig.stacked === true && stepConfig.yAxisLabel === "kWh", "step keeps both");
+
+  const plot = chartPlotOptions("compare");
+  assert(plot.label === "Value of each point", `the plot field names a window value — got ${plot.label}`);
+  assert(!plot.options.some((o) => o.label === "Every reading"), "a window-value chart offers no 'Every reading'");
+  assert(plot.options.some((o) => o.value === "sum" && o.label === "Total over the window"), "sum reads as a window total");
+  const linePlot = chartPlotOptions("line");
+  assert(linePlot.label === "Plot" && linePlot.options[0]?.value === "", "a time chart keeps 'Every reading' first");
 }
