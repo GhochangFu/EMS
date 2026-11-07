@@ -48,7 +48,10 @@ export function carriedTabGroups(
 
 /**
  * Decision 5 (S3) — what Replace does with the copy a site holds. Another template code is never
- * replaced; the same version is a skip in bulk and an explicit rebuild per site.
+ * replaced; the same version is a skip in bulk and an explicit rebuild per site. Owner ruling
+ * 2026-11-07 ("Older only"): the bulk Replace replaces only an OLDER copy, so a copy at a newer
+ * version than the template is a `newer_version` skip. Per site the target is explicit and any
+ * version of the same code is rebuilt.
  */
 export function replaceOutcome(
   held: SiteLayoutHeldCopy | null,
@@ -58,5 +61,6 @@ export function replaceOutcome(
   if (held === null) return "no_copy";
   if (held.templateCode !== template.code) return "other_template";
   if (mode === "bulk" && held.version === template.version) return "same_version";
+  if (mode === "bulk" && held.version > template.version) return "newer_version";
   return "replace";
 }

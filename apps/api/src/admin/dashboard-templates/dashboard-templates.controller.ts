@@ -222,7 +222,7 @@ export class DashboardTemplatesController {
 
   /**
    * `F4.320` PR 2 (ADR 0087 Amendment 4 decisions 3, 5, 10) — "Replace existing copies": rebuild
-   * every active site's copy of this template's code that holds another version, one transaction
+   * every active site's copy of this template's code that holds an older version, one transaction
    * per site; every other site is skipped with a reason. An organization admin or `admin`. No body.
    */
   @Post(":id/replace-site-layouts")

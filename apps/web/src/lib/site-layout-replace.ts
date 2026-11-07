@@ -49,6 +49,7 @@ export const REPLACE_OUTCOME_LABELS: Record<SiteLayoutReplaceOutcome, string> = 
   no_copy: "Skipped — the site holds no site-template copy",
   other_template: "Skipped — the copy was made from another site template",
   same_version: "Skipped — the copy already holds this version",
+  newer_version: "Skipped — the copy holds a newer version",
 };
 
 /** Decision 5 — why the bulk Replace left a site as it was. A closed record, so a new reason fails to compile. */
@@ -56,6 +57,8 @@ export const REPLACE_SKIP_REASON_LABELS: Record<SiteLayoutReplaceSkipReason, str
   no_copy: "The site holds no site-template copy to replace",
   other_template: "The site's copy was made from another site template; delete it and use Make site layout",
   same_version: "The site's copy already holds this version",
+  // Owner ruling 2026-11-07 ("Older only"): bulk never downgrades a copy.
+  newer_version: "The site's copy holds a newer version than this one; replace it on its site page to go back",
   ambiguous: "A tab matches two or more asset groups — replace this site's layout on its site page to choose",
   no_assets: "The site has no assets to bind",
   slug_taken: "Another site already holds this dashboard slug",

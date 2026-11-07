@@ -169,6 +169,9 @@ type ReplacedCopy = { previousDashboardId: string; previousTemplateId: string; p
  */
 const SAME_VERSION_SKIP_MESSAGE = "This site's copy already holds this version";
 
+/** The bulk-only `newer_version` skip (owner ruling 2026-11-07): never a 409 body either. */
+const NEWER_VERSION_SKIP_MESSAGE = "This site's copy holds a newer version than this template";
+
 /** Either skip vocabulary: the make doors raise the first, the Replace doors the second. */
 type SiteLayoutConflictReason = SiteLayoutSkipReason | SiteLayoutReplaceSkipReason;
 
@@ -296,7 +299,7 @@ export class SiteLayoutService {
 
   /**
    * `F4.320` PR 2 (decisions 5, 10) — "Replace existing copies": every active site whose copy is
-   * of this template's code at another version, one transaction each. The bulk Make rule
+   * of this template's code at an older version (owner ruling 2026-11-07), one transaction each. The bulk Make rule
    * (organization admin or `admin`). A skip is reported, never raised; a site replaced stays
    * replaced when a later one is skipped.
    */
@@ -412,7 +415,8 @@ export class SiteLayoutService {
   /**
    * `F4.320` PR 2 (decisions 2–4, 6) — Replace on the caller's transaction, after its lock. The
    * copy must be a template copy (else `no_copy`) of the same code (else `other_template`); in
-   * bulk at another version (else `same_version`). The old tabs' groups are read, the copy's
+   * bulk at an older version (else `same_version` or `newer_version`, owner ruling 2026-11-07).
+   * The old tabs' groups are read, the copy's
    * dashboard is deleted (its tabs, widgets, points and sources cascade; a drawn mimic's
    * `mimic_layouts` row is owned by no widget and stays), and the view row, now the removed-copy
    * state by `ON DELETE SET NULL`, is re-pointed in place by the make path. Not
@@ -438,6 +442,9 @@ export class SiteLayoutService {
     }
     if (outcome === "same_version") {
       throw new SiteLayoutConflict("same_version", SAME_VERSION_SKIP_MESSAGE);
+    }
+    if (outcome === "newer_version") {
+      throw new SiteLayoutConflict("newer_version", NEWER_VERSION_SKIP_MESSAGE);
     }
 
     const oldTabs = await tx

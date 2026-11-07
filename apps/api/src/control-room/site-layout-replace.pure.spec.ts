@@ -83,7 +83,7 @@ export function aGroupIsCarriedOnce(): void {
 
 const HELD = { dashboardId: ELEC_A, templateId: ELEC_B, templateCode: "pump-station-standard", version: 2 };
 
-/** Decision 5: no copy, another code, the same version (bulk only), else replace. */
+/** Decision 5: no copy, another code, the same or a newer version (bulk only), else replace. */
 export function theOutcomeFollowsTheCopyAndTheMode(): void {
   const v3 = { code: "pump-station-standard", version: 3 };
   const v2 = { code: "pump-station-standard", version: 2 };
@@ -95,6 +95,8 @@ export function theOutcomeFollowsTheCopyAndTheMode(): void {
   expect(replaceOutcome(HELD, v2, "site"), "per site, the same version is an explicit rebuild").toBe("replace");
   expect(replaceOutcome(HELD, v3, "bulk")).toBe("replace");
   expect(replaceOutcome(HELD, v3, "site")).toBe("replace");
-  // An older version is another version too: bulk replaces a copy newer than the template.
-  expect(replaceOutcome({ ...HELD, version: 4 }, v3, "bulk")).toBe("replace");
+  // Owner ruling 2026-11-07 ("Older only"): bulk never downgrades a copy newer than the template;
+  // per site the target is explicit, so the same copy is rebuilt.
+  expect(replaceOutcome({ ...HELD, version: 4 }, v3, "bulk")).toBe("newer_version");
+  expect(replaceOutcome({ ...HELD, version: 4 }, v3, "site")).toBe("replace");
 }

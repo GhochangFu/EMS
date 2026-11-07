@@ -26,7 +26,7 @@ import { primeSeededSubjects } from "./seeded-subjects";
  * `F3.73` plan Task 4.2 — the shared harness for the two `SiteLayoutService` integration wrappers,
  * `site-layout.service.integration.test.ts` (S1–S6, S2b–S2d, S3b, S8b) and
  * `site-layout.service.more.integration.test.ts` (S7–S14), and since `F4.320` PR 2
- * `site-layout-replace.integration.test.ts` (R1–R12, Replace and its preview). One `.test` wrapper per `.spec`
+ * `site-layout-replace.integration.test.ts` (R1–R13, Replace and its preview). One `.test` wrapper per `.spec`
  * (`tests/repo-invariants.test.ts`), so each wrapper calls `useSiteLayoutHarness` inside its own
  * `describe` and gets its own pools, its own run-unique `F373SL-<run>-…` fixture codes and its own
  * cleanup — the two files may run in parallel workers without sharing a row.

@@ -17,6 +17,7 @@ import {
   assertBulkPreviewListsEverySite,
   assertBulkReplaceRefusesALocationAdmin,
   assertBulkReplacesOlderCopiesAndReportsSkips,
+  assertBulkSkipsANewerCopy,
   assertOldGroupPicksAreKeptByTabKey,
   assertPerSiteReplaceRefusesAnotherSitesAdmin,
   assertPreviewCountsEditsAndRedactsTheActor,
@@ -26,7 +27,7 @@ import {
 } from "./site-layout-replace.integration.spec";
 
 /**
- * `F4.320` PR 2 — Vitest entry point for the R1–R12 cases of Replace and its preview under real
+ * `F4.320` PR 2 — Vitest entry point for the R1–R13 cases of Replace and its preview under real
  * RLS. Assertions live in the sibling `.spec` (ADR 0014); the pools, the stale sweep and the
  * cleanup are `../testing/site-layout-harness.ts`, with its own run tag.
  */
@@ -104,5 +105,9 @@ describe.skipIf(!connectionString)("F4.320 — SiteLayoutService Replace under r
 
   it("R12b a copy whose code has no published version answers its own 409 sentence", async () => {
     await assertACopyWithNoPublishedVersionHasItsOwnSentence(harness.ctx());
+  });
+
+  it("R13 the bulk skips a copy newer than the template as newer_version and writes nothing", async () => {
+    await assertBulkSkipsANewerCopy(harness.ctx());
   });
 });

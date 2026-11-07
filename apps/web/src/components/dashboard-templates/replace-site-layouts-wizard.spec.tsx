@@ -149,6 +149,36 @@ export async function submitIsAbsentUntilThePreviewIsRead(): Promise<void> {
   expect(failed.bulk).not.toHaveBeenCalled();
 }
 
+/**
+ * D5 (owner ruling 2026-11-07, "Older only") — a copy newer than the template reads as a
+ * `newer_version` skip in the preview and in the answer.
+ */
+export async function aNewerCopyReadsAsSkippedInPreviewAndResult(): Promise<void> {
+  const newer: SiteLayoutReplacePreviewDto = {
+    ...PREVIEW,
+    sites: [{ ...PREVIEW.sites[0]!, held: held(3), outcome: "newer_version" }],
+  };
+  renderDialog(
+    () => Promise.resolve({ replaced: [], skipped: [{ locationId: LOC_1, reason: "newer_version" }] }),
+    () => Promise.resolve(newer),
+  );
+  const region = await openReplace();
+  const cells = within(region)
+    .getAllByRole("row")
+    .slice(1)
+    .map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent));
+  expect(cells.map((row) => [row[1], row[3]])).toEqual([["pump-station-standard v3", "Skipped — the copy holds a newer version"]]);
+
+  fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+  expect(await screen.findByText("0 sites replaced, 1 skipped.")).toBeInTheDocument();
+  expect(
+    screen
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent)),
+  ).toEqual([["Bilsi", "Skipped — The site's copy holds a newer version than this one; replace it on its site page to go back"]]);
+}
+
 /** D3 — while the bulk Replace pends, Submit is disabled, renamed and `aria-busy`. */
 export async function aPendingBulkSubmitIsDisabledAndBusy(): Promise<void> {
   renderDialog(() => new Promise(() => undefined));

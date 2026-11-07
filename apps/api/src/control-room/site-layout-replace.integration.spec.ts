@@ -30,7 +30,7 @@ import { rememberSubject } from "../testing/seeded-subjects";
 
 /**
  * `F4.320` PR 2 (ADR 0087 Amendment 4 decisions 2–7, 9, 10) — Replace and its preview against
- * real, non-owner roles: R1–R12. The pools, the run-unique `F373SL-<run>-…` fixtures and the
+ * real, non-owner roles: R1–R13. The pools, the run-unique `F373SL-<run>-…` fixtures and the
  * cleanup are `../testing/site-layout-harness.ts`; `site-layout-replace.integration.test.ts` runs
  * these cases; the assertions live here (ADR 0014, AGENTS.md §4.6).
  *
@@ -292,7 +292,7 @@ export async function assertReplaceIsAuditedWithThePreviousIds(ctx: SiteLayoutCt
 }
 
 /**
- * R8 (decisions 5, 10) — the bulk: replaces a copy at another version, skips `same_version`,
+ * R8 (decisions 5, 10) — the bulk: replaces a copy at an older version, skips `same_version`,
  * `other_template`, `no_copy` and `ambiguous`; a location admin is refused before any site.
  */
 export async function assertBulkReplacesOlderCopiesAndReportsSkips(ctx: SiteLayoutCtx): Promise<void> {
@@ -540,6 +540,39 @@ export async function assertACopyWithNoPublishedVersionHasItsOwnSentence(ctx: Si
     expect((err as Error).message).toBe(COPY_TEMPLATE_NOT_PUBLISHED_MESSAGE);
   }
   expect(await viewRows(ctx, site)).toEqual([{ kind: "dashboard", dashboard_id: copy.dashboardId }]);
+}
+
+/**
+ * R13 (decision 5, owner ruling 2026-11-07 "Older only") — a site holding a v2 copy and a bulk
+ * Replace run on v1: the site is skipped `newer_version` (and the preview says so), the copy and
+ * its view row are untouched, and no replace audit row is written.
+ * Mutation: drop the `newer_version` arm of `replaceOutcome` → the v2 copy is downgraded → red.
+ */
+export async function assertBulkSkipsANewerCopy(ctx: SiteLayoutCtx): Promise<void> {
+  const { org, v1, v2 } = await twoVersions(ctx, "r13");
+  const site = await zeroGroupSite(ctx, "r13", org);
+  const copy = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: v2 });
+
+  await ctx.fleetPool.query(`UPDATE bms.locations SET active = true WHERE id = $1`, [site]);
+  let result;
+  let preview;
+  try {
+    preview = await ctx.svc.previewReplaceForOrganization(admin(), v1);
+    result = await ctx.svc.replaceForOrganization(admin(), v1);
+  } finally {
+    await ctx.fleetPool.query(`UPDATE bms.locations SET active = false WHERE id = $1`, [site]);
+  }
+
+  expect(preview.sites.map((row) => [row.locationId, row.outcome])).toEqual([[site, "newer_version"]]);
+  expect(result).toEqual({ replaced: [], skipped: [{ locationId: site, reason: "newer_version" }] });
+  expect(await viewRows(ctx, site)).toEqual([{ kind: "dashboard", dashboard_id: copy.dashboardId }]);
+  expect(await dashboardRow(ctx, copy.dashboardId)).toEqual({ slug: copy.dashboardSlug, template_id: v2 });
+  expect(
+    await count(ctx, `SELECT count(*)::int AS n FROM bms.audit_log WHERE entity_id = $1 AND action = 'master.location.site_layout.replace'`, [
+      site,
+    ]),
+    "no replace audit row",
+  ).toBe(0);
 }
 
 /** R9b (decisions 8, 9) — the bulk preview lists every active site with its outcome. */

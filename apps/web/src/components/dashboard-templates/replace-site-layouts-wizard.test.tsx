@@ -2,6 +2,7 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aNewerCopyReadsAsSkippedInPreviewAndResult,
   aPendingBulkSubmitIsDisabledAndBusy,
   cleanupBulkReplace,
   submitCallsTheBulkRouteAndListsTheSkips,
@@ -32,5 +33,9 @@ describe("F4.320 PR 2 Replace existing copies (the apply-to-sites dialog)", () =
 
   it("D4 offers no Submit while the preview loads or after it fails, Cancel only", async () => {
     await submitIsAbsentUntilThePreviewIsRead();
+  });
+
+  it("D5 shows a copy newer than the template as a newer_version skip, before and after", async () => {
+    await aNewerCopyReadsAsSkippedInPreviewAndResult();
   });
 });

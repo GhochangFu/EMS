@@ -14,5 +14,6 @@ describe("F4.320 PR 2 — the pure rules of Replace (ADR 0087 Amendment 4 decisi
   it("lets a tabGroups entry override the carried pick", () => aBodyChoiceOverridesTheCarriedPick());
   it("never carries a pick the planner would refuse", () => anOldPickThePlannerWouldRefuseIsNotCarried());
   it("carries one group once", () => aGroupIsCarriedOnce());
-  it("answers no_copy, other_template, same_version (bulk) or replace", () => theOutcomeFollowsTheCopyAndTheMode());
+  it("answers no_copy, other_template, same_version or newer_version (bulk), or replace", () =>
+    theOutcomeFollowsTheCopyAndTheMode());
 });
