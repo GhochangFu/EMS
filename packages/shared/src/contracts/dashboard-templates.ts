@@ -19,6 +19,7 @@ import { dashboardTabKeySchema, MAX_DASHBOARD_TABS } from "./dashboard-tabs";
 import { mimicPresetSchema } from "./mimic-config";
 import { assetRoleCodeSchema, dashboardSectionCodeSchema } from "./operations";
 import { templateLifecycleStatusSchema } from "./template-lifecycle";
+import { organizationStripHolds } from "./organization-control-room-view";
 
 /**
  * Section dashboard templates — `F3.36`, migration `0056`,
@@ -480,9 +481,10 @@ export const ASSET_GROUP_TEMPLATE_TABS_MESSAGE =
 export const ORGANIZATION_TEMPLATE_TABS_MESSAGE =
   "an organization template is one strip of tiles and holds no tabs";
 
-/** `F4.317` / ADR 0112 decision 2 — the organization strip draws value tiles only, in this phase. */
+/** `F4.317` / ADR 0112 decision 2 and (`F4.332`) Amendment 3 — value tiles and the daily cost chart only. */
 export const ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE =
-  "an organization template holds value tiles only in this phase, ADR 0112 decision 2";
+  "an organization template holds value tiles and the daily energy cost chart only, ADR 0112 " +
+  "decision 2 and Amendment 3";
 
 /**
  * `F4.317` / ADR 0112 decision 2 — an organization has no asset group to resolve a role against,
@@ -511,7 +513,8 @@ export function templateTargetContentMessage(
   if (target === "asset_group" && content.tabs.length > 0) return ASSET_GROUP_TEMPLATE_TABS_MESSAGE;
   if (target === "organization") {
     if (content.tabs.length > 0) return ORGANIZATION_TEMPLATE_TABS_MESSAGE;
-    if (content.widgets.some((widget) => widget.widgetType !== "value_tile")) {
+    // `F4.332` (ADR 0112 Amendment 3 item 3) — the one chart the target holds is the daily cost one.
+    if (content.widgets.some((widget) => !organizationStripHolds(widget))) {
       return ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE;
     }
     if (content.widgets.some((widget) => widget.bindings.length > 0)) {

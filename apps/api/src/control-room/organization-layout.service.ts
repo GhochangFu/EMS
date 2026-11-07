@@ -8,7 +8,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, isNotNull, isNull, not, notExists, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, not, notExists, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 
 import {
@@ -26,6 +26,8 @@ import {
   planTemplateWidget,
   sectionTemplateContentSchema,
   TEMPLATE_TARGET_BODY_MESSAGE,
+  chartConfigSchema,
+  organizationStripHolds,
   valueTileConfigSchema,
 } from "@bms/shared";
 import type {
@@ -166,9 +168,10 @@ export class OrganizationLayoutService {
       canManage: await this.viewAccess.canManageOrganizationView(jwt, organizationId),
       tiles: tiles.tiles.map((tile) => ({
         ...tile.tile,
-        sources: tile.sourceIds.map(({ id, catalogKey, sortOrder }) => ({
+        sources: tile.sourceIds.map(({ id, catalogKey, sortOrder, pointKey }) => ({
           catalogKey,
           sortOrder,
+          pointKey,
           resolved: byId.get(id) ?? null,
         })),
       })),
@@ -384,7 +387,10 @@ export class OrganizationLayoutService {
     return row ?? null;
   }
 
-  /** The copy's untabbed value tiles and their stored sources, read with the organization explicit. */
+  /**
+   * The copy's untabbed strip widgets — value tiles and (`F4.332`, ADR 0112 Amendment 3) the
+   * daily energy cost chart — and their stored sources, read with the organization explicit.
+   */
   private async copyTiles(organizationId: string, dashboardId: string): Promise<StripPlan> {
     const rows = await this.fleetDb
       .select({
@@ -395,22 +401,27 @@ export class OrganizationLayoutService {
         gridW: dashboardWidgets.gridW,
         gridH: dashboardWidgets.gridH,
         config: dashboardWidgets.config,
+        widgetType: dashboardWidgets.widgetType,
       })
       .from(dashboardWidgets)
       .where(
         and(
           eq(dashboardWidgets.dashboardId, dashboardId),
           eq(dashboardWidgets.organizationId, organizationId),
-          eq(dashboardWidgets.widgetType, "value_tile"),
+          inArray(dashboardWidgets.widgetType, ["value_tile", "chart"]),
           // The flat list the organization template produces: the target refuses tabs (ADR 0112
           // decision 2), so a tile on a tab of the copy is not merged into the one strip.
           isNull(dashboardWidgets.tabId),
         ),
       )
       .orderBy(asc(dashboardWidgets.gridY), asc(dashboardWidgets.gridX));
-    const sources = await resolveWidgetSources(this.fleetDb, organizationId, rows.map((row) => row.id));
+    // A chart of any other kind is not a strip widget (the target refuses one; this read skips one
+    // a later edit left behind rather than drawing it as a tile).
+    const strip = rows.filter((row) => organizationStripHolds(row));
+    const sources = await resolveWidgetSources(this.fleetDb, organizationId, strip.map((row) => row.id));
     return stripPlan(
-      rows.map((row) => ({
+      strip.map((row) => ({
+        widgetType: row.widgetType as TileInput["widgetType"],
         key: row.id,
         title: row.title,
         gridX: row.gridX,
@@ -519,12 +530,20 @@ function qualifyingCopy(organizationId: string): SQL<boolean> {
 /** One tile before its values: the DTO's fields, and its sources with their binding ids. */
 type PlannedTile = {
   readonly tile: Omit<OrganizationStripTileDto, "sources">;
-  readonly sourceIds: readonly { id: string; catalogKey: MetricCatalogKey; sortOrder: number }[];
+  readonly sourceIds: readonly { id: string; catalogKey: MetricCatalogKey; sortOrder: number; pointKey: string | null }[];
 };
 
 type StripPlan = { readonly tiles: readonly PlannedTile[]; readonly bindings: CatalogBindings };
 
+/** `F4.332` — `params.pointKey` of a `sustainability.*` binding, else `null`. */
+function storedPointKey(catalogKey: string, params: unknown): string | null {
+  if (!catalogKey.startsWith("sustainability.") || typeof params !== "object" || params === null) return null;
+  const pointKey = (params as { pointKey?: unknown }).pointKey;
+  return typeof pointKey === "string" ? pointKey : null;
+}
+
 type TileInput = {
+  widgetType: "value_tile" | "chart";
   key: string;
   title: string | null;
   gridX: number;
@@ -541,7 +560,8 @@ type TileInput = {
  */
 function stripPlan(inputs: readonly TileInput[]): StripPlan {
   const tiles = inputs.map((input) => {
-    const config = valueTileConfigSchema.safeParse(input.config);
+    const config = valueTileConfigSchema.safeParse(input.widgetType === "value_tile" ? input.config : {});
+    const chart = input.widgetType === "chart" ? chartConfigSchema.safeParse(input.config) : null;
     return {
       tile: {
         key: input.key,
@@ -551,16 +571,24 @@ function stripPlan(inputs: readonly TileInput[]): StripPlan {
         gridW: input.gridW,
         gridH: input.gridH,
         config: config.success ? config.data : {},
+        widgetType: input.widgetType,
+        chartConfig: chart?.success ? chart.data : null,
       },
       sourceIds: [...input.sources]
         .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map(({ id, catalogKey, sortOrder }) => ({ id, catalogKey: catalogKey as MetricCatalogKey, sortOrder })),
+        .map(({ id, catalogKey, params, sortOrder }) => ({
+          id,
+          catalogKey: catalogKey as MetricCatalogKey,
+          sortOrder,
+          // `F4.332` — the point key a `sustainability.*` source rolls up, for the stored-cost note.
+          pointKey: storedPointKey(catalogKey, params),
+        })),
     };
   });
   return {
     tiles,
     bindings: {
-      widgets: inputs.map((input) => ({ id: input.key, tabGroupId: null, widgetType: "value_tile", config: input.config })),
+      widgets: inputs.map((input) => ({ id: input.key, tabGroupId: null, widgetType: input.widgetType, config: input.config })),
       sources: inputs.flatMap((input) =>
         input.sources.map((source) => ({ id: source.id, widgetId: input.key, catalogKey: source.catalogKey, params: source.params })),
       ),
@@ -574,6 +602,7 @@ function stripPlan(inputs: readonly TileInput[]): StripPlan {
 function stockTiles(): StripPlan {
   return stripPlan(
     ORGANIZATION_STANDARD_TEMPLATE.content.widgets.map((widget) => ({
+      widgetType: widget.widgetType as TileInput["widgetType"],
       key: widget.key,
       title: widget.title,
       gridX: widget.gridX,

@@ -251,11 +251,15 @@ Source: owner ruling 2 of 2026-11-07. The cost read itself is
    `ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE` (text updated to name the chart).
    Tabs stay refused.
 4. **The organization view carries the chart.** `organizationStripTileDtoSchema`
-   gains `widgetType: "value_tile" | "chart"`, defaulted to `"value_tile"` so a
-   reader of the old shape parses, and `config` becomes the value-tile config or
-   the chart config by `widgetType`. The fail-safe stock content and a copied
-   organization dashboard both resolve the chart's source the same way they
-   resolve a tile's.
+   gains `widgetType: "value_tile" | "chart"` (default `"value_tile"`) and a
+   separate `chartConfig` (the chart config, default `null`); `config` stays the
+   value-tile config and is `{}` for the chart. Built at PR 3 this way rather
+   than as one `config` switched by `widgetType`, because the non-strict tile
+   schema would also accept a chart config. Each source also carries its
+   `sustainability.*` `pointKey` (default `null`), for the "at the rate effective
+   now" note. All three are defaulted, so a reader of the old shape parses. The
+   fail-safe stock content and a copied organization dashboard both resolve the
+   chart's source the same way they resolve a tile's.
 5. **The default strip** (`organization-standard`, `stockVersion` 1 → 2, ADR
    0052 decision 7) gains two widgets after tile 14:
 
@@ -266,7 +270,10 @@ Source: owner ruling 2 of 2026-11-07. The cost read itself is
 
    Tiles 10 and 12 (the stored `energy_cost_today` / `energy_cost_this_month`
    points) stay unchanged in the content; the web adds "at the rate effective
-   now" to them by point key (ADR 0070 Amendment 7 decision 8). The seed copies of ruling Q3 follow the stock version. The six
+   now" to them by point key (ADR 0070 Amendment 7 decision 8). The seed (ruling Q3) publishes the stock content only for an
+   organization with no published version, so a new database gets v2 and an
+   existing one keeps the version it has (ADR 0052 decision 7: a bump touches no
+   organization's row). The six
    live PHE dashboards on AWS are **not** replaced: the owner's session adds the
    widgets in place after the deploy (owner ruling 4).
 

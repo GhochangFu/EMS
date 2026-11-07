@@ -23,6 +23,7 @@ import {
   MIMIC_TAB_MESSAGE,
   MIMIC_SCOPE_MESSAGE,
   ORGANIZATION_STRIP_CONTENT_MESSAGE,
+  organizationStripHolds,
   SCOPE_REFUSAL_MESSAGE,
   TAB_GROUP_SCOPE_MESSAGE,
 } from "@bms/shared";
@@ -555,7 +556,8 @@ export class DashboardsService {
       if (!(await this.organizationViewAccess.mayEditPointedDashboard(jwt, existing, scope))) {
         throw new NotFoundException("Dashboard not found");
       }
-      if ((body.tabs ?? []).length > 0 || body.widgets.some((widget) => widget.widgetType !== "value_tile")) {
+      // `F4.332` (ADR 0112 Amendment 3) — value tiles and the daily energy cost chart, one predicate.
+      if ((body.tabs ?? []).length > 0 || body.widgets.some((widget) => !organizationStripHolds(widget))) {
         throw new BadRequestException(ORGANIZATION_STRIP_CONTENT_MESSAGE);
       }
     }

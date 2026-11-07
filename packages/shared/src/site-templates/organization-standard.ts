@@ -40,8 +40,10 @@ type TileConfig = Extract<Widget, { widgetType: "value_tile" }>["config"];
 const PER_ROW = 4;
 const TILE_W = DASHBOARD_GRID.columns / PER_ROW;
 const TILE_H = 2;
+/** `F4.332` — the daily cost chart's height in builder rows, under the tiles. */
+const COST_CHART_H = 5;
 
-/** The tile in grid slot `slot` (0 to 13), packed four to a row from the top-left. */
+/** The tile in grid slot `slot` (0 to 14), packed four to a row from the top-left. */
 function tile(key: string, title: string, slot: number, sources: Widget["sources"], config: TileConfig): Widget {
   return {
     key,
@@ -95,6 +97,22 @@ const WIDGETS: Widget[] = [
   tile("availability-tile", "Availability (24 h)", 13,
     [{ catalogKey: "sustainability.total", params: { pointKey: "availability_pct_24h", aggregate: "avg" }, sortOrder: 0 }],
     { icon: "gauge", unit: "%", decimals: 1 }),
+  // `F4.332` / ADR 0112 Amendment 3 item 5 (stockVersion 2) — the read-time cost: each hour priced
+  // at the rate in force that hour, so a past day keeps its price when the rate changes.
+  tile("cost-this-month-tile", "Cost this month", 14,
+    [{ catalogKey: "energy.cost.total", params: { period: "this_month" }, sortOrder: 0 }], { icon: "bolt" }),
+  {
+    key: "daily-energy-cost-chart",
+    title: "Daily energy cost (30 days)",
+    gridX: 0,
+    gridY: Math.ceil(15 / PER_ROW) * TILE_H,
+    gridW: DASHBOARD_GRID.columns,
+    gridH: COST_CHART_H,
+    bindings: [],
+    sources: [{ catalogKey: "energy.cost_by_day", params: { days: 30 }, sortOrder: 0 }],
+    widgetType: "chart",
+    config: { series: "cost_by_day" },
+  },
 ];
 
 export const ORGANIZATION_STANDARD_TEMPLATE = {
@@ -104,7 +122,11 @@ export const ORGANIZATION_STANDARD_TEMPLATE = {
   target: "organization",
   description:
     "The organization Control Room KPI strip: the estate's four tiles scoped to the " +
-    "organization, then its energy, water, asset, work-order, cost and availability tiles.",
-  stockVersion: 1,
+    "organization, then its energy, water, asset, work-order, cost and availability tiles, and " +
+    "the daily energy cost of the last 30 days.",
+  // `F4.332` (ADR 0112 Amendment 3, ADR 0052 decision 7) — v2 adds "Cost this month" and the
+  // daily energy cost chart. Bumping touches no organization's row: an organization takes the
+  // release by importing it; the live PHE strip gets the widgets in place (owner ruling 4).
+  stockVersion: 2,
   content: { widgets: WIDGETS, tabs: [] },
 } as const satisfies StockDashboardTemplateDto;

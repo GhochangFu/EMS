@@ -8,9 +8,10 @@ import {
   resetOrganizationLayout,
 } from "../../api/control-room";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { STRIP_REFETCH_MS, stripTileProps } from "../../lib/organization-strip";
+import { STRIP_REFETCH_MS, STRIP_STALE_MS, stripTileProps } from "../../lib/organization-strip";
 import { KpiTile } from "../kpi-tile";
 import { WidgetIconGlyph } from "../widget-icon";
+import { CostByDayChartWidget } from "../widgets/cost-by-day-chart-widget";
 
 type OrganizationKpiStripProps = {
   organizationId: string;
@@ -128,6 +129,21 @@ export function OrganizationKpiStrip({ organizationId }: OrganizationKpiStripPro
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {tiles.map((tile) => {
+          // `F4.332` (ADR 0112 Amendment 3) — the daily energy cost chart, full width.
+          if (tile.widgetType === "chart") {
+            const resolved = tile.sources[0]?.resolved;
+            return (
+              <div key={tile.key} data-testid={`org-strip-tile-${tile.key}`} className="min-w-0 sm:col-span-2 lg:col-span-4">
+                <CostByDayChartWidget
+                  title={tile.title ?? "Daily energy cost"}
+                  status={resolved === null || resolved === undefined ? "empty" : "ready"}
+                  // The tiles' staleness rule (`stripTileProps`), so the chart ages with them.
+                  stale={Math.max(now, viewQ.dataUpdatedAt) - viewQ.dataUpdatedAt > STRIP_STALE_MS}
+                  rows={resolved?.shape === "dataset" ? resolved.rows : []}
+                />
+              </div>
+            );
+          }
           const { icon, stale, ...props } = stripTileProps(tile, receivedAt, Math.max(now, viewQ.dataUpdatedAt));
           return (
             <div key={tile.key} data-testid={`org-strip-tile-${tile.key}`} className="min-w-0">

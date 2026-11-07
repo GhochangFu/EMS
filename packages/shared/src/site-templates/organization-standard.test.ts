@@ -3,7 +3,7 @@ import { describe, it } from "vitest";
 import {
   everySourceIsAValidCatalogWrite,
   exactlyTheLoadAndAlarmTilesCompare,
-  itHoldsFourteenValueTilesAndNoTabs,
+  itHoldsFifteenTilesAndTheCostChartAndNoTabs,
   theContentFitsTheOrganizationTarget,
   theCostTilesTypeNoUnit,
   theEntryIsTheOrganizationTargetStockRow,
@@ -16,7 +16,7 @@ import {
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F4.317 — the stock organization strip (ADR 0112 decisions 3 and 6)", () => {
-  it("is the organization-standard organization-target stock row, version 1", () => {
+  it("is the organization-standard organization-target stock row, version 2", () => {
     theEntryIsTheOrganizationTargetStockRow();
   });
   it("parses under the stock contract and the content schema", () => {
@@ -25,8 +25,8 @@ describe("F4.317 — the stock organization strip (ADR 0112 decisions 3 and 6)",
   it("fits the organization target rule", () => {
     theContentFitsTheOrganizationTarget();
   });
-  it("holds fourteen value tiles, no tabs and no role binding", () => {
-    itHoldsFourteenValueTilesAndNoTabs();
+  it("holds fifteen value tiles and the daily cost chart, no tabs and no role binding", () => {
+    itHoldsFifteenTilesAndTheCostChartAndNoTabs();
   });
   it("binds only sources the dashboard write path accepts", () => {
     everySourceIsAValidCatalogWrite();

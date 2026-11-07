@@ -18,8 +18,13 @@ function metric(key: string, value: number | null, extra: Record<string, unknown
   return { shape: "metric", key, value, unit: null, ...extra } as Resolved;
 }
 
-function source(catalogKey: string, sortOrder: number, resolved: Resolved | null): OrganizationStripSourceDto {
-  return { catalogKey, sortOrder, resolved } as OrganizationStripSourceDto;
+function source(
+  catalogKey: string,
+  sortOrder: number,
+  resolved: Resolved | null,
+  pointKey: string | null = null,
+): OrganizationStripSourceDto {
+  return { catalogKey, sortOrder, resolved, pointKey } as OrganizationStripSourceDto;
 }
 
 function tile(
@@ -27,7 +32,7 @@ function tile(
   config: OrganizationStripTileDto["config"] = {},
   title = "Tile",
 ): OrganizationStripTileDto {
-  return { key: "k", title, gridX: 0, gridY: 0, gridW: 3, gridH: 2, config, sources };
+  return { key: "k", title, gridX: 0, gridY: 0, gridW: 3, gridH: 2, config, sources, widgetType: "value_tile", chartConfig: null };
 }
 
 /** S1 — the primary is the lowest sortOrder, whatever the array order. */
@@ -154,4 +159,18 @@ export function aRollUpShowsItsCoverageOnlyWhenPartial(): void {
   expect(full.note).toBeUndefined();
   const bare = stripTileProps(tile([source("sites.live.count", 0, metric("sites.live.count", 4))]), RECEIVED_AT, AT);
   expect(bare.value).toBe("4");
+}
+
+/** `F4.332` — a stored `energy_cost_*` tile says it is "at the rate effective now" (ADR 0070 A7 d8). */
+export function aStoredCostTileSaysTheRateIsToday(): void {
+  const stored = source("sustainability.total", 0, metric("sustainability.total", 900), "energy_cost_today");
+  expect(stripTileProps(tile([stored]), RECEIVED_AT, AT).note).toBe("at the rate effective now");
+  const plain = source("sustainability.total", 0, metric("sustainability.total", 900), "kwh_today");
+  expect(stripTileProps(tile([plain]), RECEIVED_AT, AT).note).toBeUndefined();
+}
+
+/** `F4.332` — a null read-time cost tile says why, not "No data". */
+export function aNullCostTotalTileSaysWhy(): void {
+  const nullCost = source("energy.cost.total", 0, metric("energy.cost.total", null, { reason: "rate_missing" }));
+  expect(stripTileProps(tile([nullCost]), RECEIVED_AT, AT).hint).toBe("No energy rate for this period");
 }

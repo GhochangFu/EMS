@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  theStripHoldsTilesAndTheDailyCostChartOnly,
   anUnknownCatalogKeyIsRefused,
   anUnknownKindIsRefused,
   theDashboardViewParses,
@@ -33,5 +34,9 @@ describe("F4.317 — organization Control Room view contracts (ADR 0112 decision
 
   it("the layout result names the organization, the dashboard and the template", () => {
     theLayoutResultParses();
+  });
+
+  it("holds value tiles and the daily cost chart only (F4.332)", () => {
+    theStripHoldsTilesAndTheDailyCostChartOnly();
   });
 });

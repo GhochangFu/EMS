@@ -18,6 +18,10 @@ const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typ
 const { readEskomChecks, readPhewbChecks } = require_(
   "../packages/db/dist/verify-hierarchy-seed.js",
 ) as typeof VerifyHierarchySeed;
+// `F4.332` — the stock content the seed publishes, to count rather than pin (v2 since this row).
+const { ORGANIZATION_STANDARD_TEMPLATE } = require_("../packages/shared/dist/site-templates.js") as {
+  ORGANIZATION_STANDARD_TEMPLATE: { content: { widgets: readonly { sources: readonly unknown[] }[] } };
+};
 const { ORGANIZATION_LAYOUT_SEED_SLUG, seedOrganizationLayout } = require_(
   "../packages/db/dist/organization-layout-seed.js",
 ) as typeof OrganizationLayoutSeed;
@@ -48,6 +52,28 @@ const ownerUrl = requireIntegrationDb({
 
 type IntegrationPool = Awaited<ReturnType<typeof openIntegrationPool>>;
 type SeedPool = ReturnType<typeof createSeedPool>;
+
+/** `F4.332` — the widget and source counts of a content, as the seed reports them. */
+function countsOf(widgets: readonly { readonly sources: readonly unknown[] }[]): { widgets: number; sources: number } {
+  return { widgets: widgets.length, sources: widgets.reduce((n, w) => n + w.sources.length, 0) };
+}
+
+function stockCounts(): { widgets: number; sources: number } {
+  return countsOf(ORGANIZATION_STANDARD_TEMPLATE.content.widgets);
+}
+
+type Queryable = { query: (text: string, values: unknown[]) => Promise<{ rows: unknown[] }> };
+
+async function publishedCounts(pool: Queryable, organizationId: string): Promise<{ widgets: number; sources: number }> {
+  const { rows } = await pool.query(
+    `SELECT content FROM bms.dashboard_templates
+      WHERE organization_id = $1 AND code = 'organization-standard' AND status = 'published'
+      ORDER BY version DESC LIMIT 1`,
+    [organizationId],
+  );
+  const row = rows[0] as { content: { widgets: { sources: unknown[] }[] } } | undefined;
+  return countsOf(row?.content.widgets ?? []);
+}
 
 describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { timeout: 60_000 }, () => {
   let probePool: IntegrationPool | undefined;
@@ -126,7 +152,7 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
       );
       // The gate accepts a pointer row OR the seed copy; an administrator may have edited tiles of
       // the copy or deleted it after a Reset, so no tile counts are asserted on the live database
-      // (the rolled-back re-make case below checks 14 / 15 on a copy it made itself).
+      // (the rolled-back re-make case below checks the published counts on a copy it made itself).
       const counts = (await probePool!.query(COUNTS_SQL, [id, ORGANIZATION_LAYOUT_SEED_SLUG])).rows[0];
       // Presence is the gate's own rule (ORGANIZATION_LAYOUT_PRESENT_SQL): a pointer row or any
       // dashboard with the seed slug. The stricter `copy` query checks the copy's shape only.
@@ -218,7 +244,8 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
         )
       ).rows[0]!.v;
       const outcome = await seedOrganizationLayout(pool, id, () => undefined);
-      expect(outcome).toMatchObject({ made: true, widgets: 14, sources: 15 });
+      // The seed publishes the stock content as it is now (`F4.332`: v2, 16 widgets, 17 sources).
+      expect(outcome).toMatchObject({ made: true, ...stockCounts() });
       const published = await pool.query<{ n: number }>(
         `SELECT count(*)::int AS n FROM bms.dashboard_templates
           WHERE organization_id = $1 AND code = 'organization-standard' AND status = 'published'`,
@@ -269,12 +296,14 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
         ORGANIZATION_LAYOUT_SEED_SLUG,
       ]);
       const outcome = await seedOrganizationLayout(pool, id, () => undefined);
-      expect(outcome).toMatchObject({ made: true, widgets: 14, sources: 15 });
+      // The copy is the newest PUBLISHED version, which a database seeded before `F4.332` holds at
+      // v1 (14 / 15) and a fresh one at v2 (16 / 17): read it rather than pin one history.
+      const expected = await publishedCounts(pool, id);
+      expect(outcome).toMatchObject({ made: true, ...expected });
       expect((await pool.query(COUNTS_SQL, [id, ORGANIZATION_LAYOUT_SEED_SLUG])).rows[0]).toMatchObject({
         views: 1,
         copies: 1,
-        widgets: 14,
-        sources: 15,
+        ...expected,
       });
       expect(await seedOrganizationLayout(pool, id, () => undefined)).toEqual({ made: false, reason: "has_view" });
     });

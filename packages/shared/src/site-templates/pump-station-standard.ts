@@ -17,6 +17,8 @@ import type { SectionTemplateWidget, StockDashboardTemplateDto } from "../index"
  *   no `pump-station` group keeps the Overview and loses the mimic, reported in `droppedCards`.
  * - **Electrical**: the site load and the meter frequency, the trend strip,
  *   `pump_station_electrical`, the breaker table, the alarm rail and the asset table.
+ * - `F4.332` (stockVersion 2): the Electrical tab ends with the read-time energy cost row —
+ *   "Cost today", "Cost last 7 days", "Cost this month" and a 90-day "Daily energy cost" chart.
  * - **Environment**: the trend strip, `pump_station_environment`, the alarm rail and the asset
  *   table. No tiles: ruling Q7 names RTU health only, and the mimic shows each point on its node.
  *
@@ -146,6 +148,24 @@ const OVERVIEW_WIDGETS: Widget[] = [
 ];
 
 const ELECTRICAL_LOWER_Y = BODY_Y + MIMIC_H + LOWER_H;
+/** `F4.332` — the cost row sits under the alarm rail and the asset table. */
+const COST_TILES_Y = ELECTRICAL_LOWER_Y + LOWER_H;
+
+/** `F4.332` — a read-time energy cost tile for one period, in slot `slot` of the cost row. */
+function costTile(key: string, title: string, slot: number, period: "today" | "last_7_days" | "this_month"): Widget {
+  return {
+    key,
+    title,
+    gridX: slot * TILE_W,
+    gridY: COST_TILES_Y,
+    gridW: TILE_W,
+    gridH: TILE_H,
+    bindings: [],
+    sources: [{ catalogKey: "energy.cost.total", params: { period }, sortOrder: 0 }],
+    widgetType: "value_tile",
+    config: { icon: "bolt" },
+  };
+}
 
 const ELECTRICAL_WIDGETS: Widget[] = [
   sourceTile("electrical-load-tile", "Total load", 0,
@@ -180,6 +200,24 @@ const ELECTRICAL_WIDGETS: Widget[] = [
   },
   alarmsRail("electrical", ELECTRICAL_LOWER_Y, HALF_W),
   assetsTable("electrical", ELECTRICAL_LOWER_Y),
+  // `F4.332` (ADR 0112 Amendment 3 item 6, stockVersion 2) — the read-time energy cost: three
+  // tiles and the daily chart, under the tab's other widgets. 90 days read, so the viewer switch
+  // offers 7 / 30 / 90 (default 30).
+  costTile("electrical-cost-today-tile", "Cost today", 0, "today"),
+  costTile("electrical-cost-week-tile", "Cost last 7 days", 1, "last_7_days"),
+  costTile("electrical-cost-month-tile", "Cost this month", 2, "this_month"),
+  {
+    key: "electrical-daily-cost-chart",
+    title: "Daily energy cost",
+    gridX: 0,
+    gridY: COST_TILES_Y + TILE_H,
+    gridW: FULL_W,
+    gridH: LOWER_H,
+    bindings: [],
+    sources: [{ catalogKey: "energy.cost_by_day", params: { days: 90 }, sortOrder: 0 }],
+    widgetType: "chart",
+    config: { series: "cost_by_day" },
+  },
 ];
 
 const ENV_LOWER_Y = BODY_Y + MIMIC_H;
@@ -199,7 +237,10 @@ export const PUMP_STATION_STANDARD_SITE_TEMPLATE = {
   description:
     "A pump station: an Overview of the water path, the meters and RTU health, then an " +
     "electrical and an RTU-health tab, each with its own plant mimic.",
-  stockVersion: 1,
+  // `F4.332` (ADR 0112 Amendment 3 item 6, ADR 0052 decision 7) — v2 adds the energy cost row to
+  // the Electrical tab. Bumping touches no organization's row; the PHE layouts on AWS get the
+  // widgets in place (owner ruling 4).
+  stockVersion: 2,
   content: {
     widgets: [],
     tabs: [

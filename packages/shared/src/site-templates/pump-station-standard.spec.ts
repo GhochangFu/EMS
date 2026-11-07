@@ -19,7 +19,8 @@ export function theEntryIsTheSiteTargetStockRow(): void {
   const parsed = stockDashboardTemplateDtoSchema.safeParse(entry);
   assert(parsed.success, `does not parse: ${parsed.success ? "" : parsed.error.message}`);
   const shape = `${entry.code}|${entry.section}|${entry.target}|${entry.stockVersion}`;
-  assert(shape === "pump-station-standard|site|site|1", `code|section|target|stockVersion: got ${shape}`);
+  // `F4.332` (ADR 0112 Amendment 3 item 6) — v2 adds the energy cost row to the Electrical tab.
+  assert(shape === "pump-station-standard|site|site|2", `code|section|target|stockVersion: got ${shape}`);
   assert(templateTargetContentMessage(entry.target, entry.content) === null, "the site target refuses the content");
 }
 
@@ -81,4 +82,25 @@ export function aPheStationKeepsEveryTab(): void {
   const bound = plan.tabs.map((row) => `${row.tab.key}=${row.group?.code ?? "-"}`).join(",");
   assert(bound === "overview=pump-station,electrical=electrical,env=environment", `bound ${bound}`);
   assert(plan.droppedCards.length === 0, `dropped ${JSON.stringify(plan.droppedCards)}`);
+}
+
+/**
+ * `F4.332` (ADR 0112 Amendment 3 item 6) — the Electrical tab ends with the three read-time cost
+ * tiles and the daily cost chart reading 90 days (so the viewer switch offers 7 / 30 / 90).
+ */
+export function theElectricalTabCarriesTheCostRow(): void {
+  const tab = PUMP_STATION_STANDARD_SITE_TEMPLATE.content.tabs.find((t) => t.key === "electrical");
+  const cost = (tab?.widgets ?? []).filter((w) => w.sources.some((s) => s.catalogKey.startsWith("energy.cost")));
+  const got = cost.map((w) => `${w.title} → ${w.sources.map((s) => `${s.catalogKey} ${JSON.stringify(s.params)}`).join("")}`);
+  const want = [
+    'Cost today → energy.cost.total {"period":"today"}',
+    'Cost last 7 days → energy.cost.total {"period":"last_7_days"}',
+    'Cost this month → energy.cost.total {"period":"this_month"}',
+    'Daily energy cost → energy.cost_by_day {"days":90}',
+  ];
+  assert(JSON.stringify(got) === JSON.stringify(want), `the Electrical cost row: got ${JSON.stringify(got)}`);
+  const chart = cost[3];
+  assert(chart?.widgetType === "chart" && chart.config.series === "cost_by_day" && chart.gridW === 12, "a full-width cost_by_day chart");
+  const lowest = Math.max(...(tab?.widgets ?? []).filter((w) => !cost.includes(w)).map((w) => w.gridY + w.gridH));
+  assert(cost.every((w) => w.gridY >= lowest), "the cost row sits under every other widget of the tab");
 }

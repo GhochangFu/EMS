@@ -26,7 +26,8 @@ const entry: StockDashboardTemplateDto = ORGANIZATION_STANDARD_TEMPLATE;
 export function theEntryIsTheOrganizationTargetStockRow(): void {
   const shape = `${entry.code}|${entry.section}|${entry.target}|${entry.stockVersion}`;
   assert(
-    shape === "organization-standard|organization|organization|1",
+    // `F4.332` (ADR 0112 Amendment 3 item 5) — v2 adds the cost tile and the daily cost chart.
+    shape === "organization-standard|organization|organization|2",
     `code|section|target|stockVersion: got ${shape}`,
   );
 }
@@ -43,14 +44,17 @@ export function theContentFitsTheOrganizationTarget(): void {
   assert(message === null, `the organization target rule refused it: ${message}`);
 }
 
-export function itHoldsFourteenValueTilesAndNoTabs(): void {
+export function itHoldsFifteenTilesAndTheCostChartAndNoTabs(): void {
   assert(entry.content.tabs.length === 0, `an organization template holds no tabs, got ${entry.content.tabs.length}`);
   const types = entry.content.widgets.map((widget) => widget.widgetType);
-  assert(types.length === 14, `expected 14 tiles, got ${types.length}`);
+  // `F4.332` — fifteen tiles and, last, the one daily energy cost chart (ADR 0112 Amendment 3).
+  assert(types.length === 16, `expected 15 tiles and a chart, got ${types.length}`);
   assert(
-    types.every((type) => type === "value_tile"),
-    `every widget must be a value_tile, got ${[...new Set(types)].join(",")}`,
+    types.slice(0, 15).every((type) => type === "value_tile") && types[15] === "chart",
+    `fifteen value tiles then the chart, got ${types.join(",")}`,
   );
+  const chart = entry.content.widgets[15];
+  assert(chart?.widgetType === "chart" && chart.config.series === "cost_by_day", "the chart is the daily cost kind");
   assert(
     entry.content.widgets.every((widget) => widget.bindings.length === 0),
     "an organization tile binds catalog sources, never a role",
@@ -87,6 +91,9 @@ const DECISION_6 = [
   "Energy cost this month → sustainability.total {energy_cost_this_month,sum}",
   "Water cost this month → sustainability.total {water_cost_this_month,sum}",
   "Availability (24 h) → sustainability.total {availability_pct_24h,avg}",
+  // `F4.332` — ADR 0112 Amendment 3 item 5.
+  "Cost this month → energy.cost.total {this_month}",
+  "Daily energy cost (30 days) → energy.cost_by_day {30}",
 ];
 
 function describeSource(source: { catalogKey: string; params: Record<string, unknown> }): string {
@@ -151,20 +158,28 @@ export function exactlyTheLoadAndAlarmTilesCompare(): void {
  * decision 6, ADR 0070 decision 8), and a typed unit would be one currency for every tenant.
  */
 export function theCostTilesTypeNoUnit(): void {
-  const costs = entry.content.widgets.filter((widget) => /cost/i.test(widget.title ?? ""));
-  assert(costs.length === 4, `expected four cost tiles, got ${costs.length}`);
+  const costs = entry.content.widgets.filter((widget) => widget.widgetType === "value_tile" && /cost/i.test(widget.title ?? ""));
+  // `F4.332` — the four stored-point tiles and "Cost this month" (the chart has no unit field).
+  assert(costs.length === 5, `expected five cost tiles, got ${costs.length}`);
   for (const widget of costs) {
     const unit = widget.widgetType === "value_tile" ? widget.config.unit : undefined;
     assert(unit === undefined, `${widget.key} types the unit "${String(unit)}"`);
   }
 }
 
-/** Four tiles a row, each the SMOC tile size, rows packed from the top-left with no overlap. */
+/**
+ * Four tiles a row, each the SMOC tile size, rows packed from the top-left with no overlap; the
+ * daily cost chart (`F4.332`) spans the full width under the last row of tiles.
+ */
 export function theTilesSitFourToARow(): void {
   const width = DASHBOARD_GRID.columns / 4;
-  entry.content.widgets.forEach((widget, index) => {
+  const tiles = entry.content.widgets.filter((widget) => widget.widgetType === "value_tile");
+  tiles.forEach((widget, index) => {
     const want = `${(index % 4) * width},${Math.floor(index / 4) * 2},${width},2`;
     const got = `${widget.gridX},${widget.gridY},${widget.gridW},${widget.gridH}`;
     assert(got === want, `${widget.key} at ${got}, wanted ${want}`);
   });
+  const chart = entry.content.widgets.find((widget) => widget.widgetType === "chart");
+  const at = `${chart?.gridX},${chart?.gridY},${chart?.gridW}`;
+  assert(at === `0,8,${DASHBOARD_GRID.columns}`, `the chart sits full width under the tiles, got ${at}`);
 }

@@ -1,5 +1,6 @@
 import type { MetricCatalogValueDto, OrganizationStripSourceDto, OrganizationStripTileDto } from "@bms/shared";
 
+import { costReasonText, isStoredEnergyCostPoint } from "./energy-cost-labels";
 import { toKpiTileProps, type KpiTileWidgetProps } from "./widget-value";
 
 /**
@@ -29,6 +30,7 @@ export const STRIP_STALE_MS = STRIP_REFETCH_MS * 3 + 1000;
 const SITES_LIVE_KEY = "sites.live.count";
 const CRITICAL_KEY = "alarms.critical.count";
 const OPEN_ALARMS_KEY = "alarms.active.count";
+const ENERGY_COST_TOTAL_KEY = "energy.cost.total";
 
 export type StripTileProps = KpiTileWidgetProps & { readonly stale: boolean };
 
@@ -51,9 +53,13 @@ export function stripTileProps(tile: OrganizationStripTileDto, receivedAt: strin
   const primary = metricOf(primarySource);
   const title = tile.title ?? "";
 
+  // `F4.332` — a stored `energy_cost_*` point is priced at the latest tick's rate (ADR 0070
+  // Amendment 7 decision 8); the read-time cost tile says why it is null.
+  const storedCost = isStoredEnergyCostPoint(primarySource?.pointKey);
   if (primary === null || primary.value === null) {
     const base = toKpiTileProps({ title, status: "empty", primary: null, config: tile.config });
-    return { ...base, hint: primary === null ? "Not available" : "No data", stale: false };
+    const why = primary?.key === ENERGY_COST_TOTAL_KEY ? costReasonText(primary.reason) : undefined;
+    return { ...base, hint: primary === null ? "Not available" : (why ?? "No data"), stale: false };
   }
 
   const critical = metricOf(sources.find((s) => s.catalogKey === CRITICAL_KEY));
@@ -77,6 +83,8 @@ export function stripTileProps(tile: OrganizationStripTileDto, receivedAt: strin
     coverage: primary.coverage ?? null,
     currency: primary.currency ?? null,
     catalogKey: primary.key,
+    reason: primary.reason ?? null,
+    storedCost,
   });
 
   const stale = nowMs - Date.parse(receivedAt) > STRIP_STALE_MS;

@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 
 import {
+  organizationStripHolds,
   organizationControlRoomViewDtoSchema,
   organizationLayoutResultDtoSchema,
   putOrganizationControlRoomViewBodySchema,
@@ -86,4 +87,22 @@ export function theLayoutResultParses(): void {
   const result = { organizationId: ORG, dashboardId: DASHBOARD, dashboardSlug: "organization-layout-1a2b3c4d", templateId: DASHBOARD };
   expect(organizationLayoutResultDtoSchema.safeParse(result).success).toBe(true);
   expect(organizationLayoutResultDtoSchema.safeParse({ ...result, dashboardId: null }).success).toBe(false);
+}
+
+/**
+ * `F4.332` (ADR 0112 Amendment 3 item 3) — the strip holds a value tile, or a `cost_by_day` chart
+ * binding exactly `energy.cost_by_day` and no point or role; nothing else.
+ */
+export function theStripHoldsTilesAndTheDailyCostChartOnly(): void {
+  const cost = { widgetType: "chart", config: { series: "cost_by_day" }, sources: [{ catalogKey: "energy.cost_by_day" }] };
+  expect(organizationStripHolds({ widgetType: "value_tile", config: {} })).toBe(true);
+  expect(organizationStripHolds(cost)).toBe(true);
+  expect(organizationStripHolds({ widgetType: "chart", config: { series: "cost_by_day" } })).toBe(true);
+  expect(organizationStripHolds({ ...cost, config: { series: "line" } })).toBe(false);
+  expect(organizationStripHolds({ ...cost, sources: [{ catalogKey: "alarms.active" }] })).toBe(false);
+  expect(organizationStripHolds({ ...cost, sources: [] })).toBe(false);
+  expect(organizationStripHolds({ ...cost, points: [{}] })).toBe(false);
+  expect(organizationStripHolds({ ...cost, bindings: [{}] })).toBe(false);
+  expect(organizationStripHolds({ widgetType: "table", config: {} })).toBe(false);
+  expect(organizationStripHolds({ widgetType: "chart", config: null })).toBe(false);
 }

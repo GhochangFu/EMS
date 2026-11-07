@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  aNullCostTotalTileSaysWhy,
+  aStoredCostTileSaysTheRateIsToday,
   aCostTileUsesTheResolvesCurrency,
   aCriticalCountIsTheNoteAndTheTone,
   aMissingValueIsADashWithAReason,
@@ -29,4 +31,7 @@ describe("F4.317 organization strip tile rules", () => {
   it("S10 draws a tile with no source as a dash", aTileWithNoSourceIsADash);
   it("S12 notes partial coverage on a roll-up", aRollUpShowsItsCoverageOnlyWhenPartial);
   it("S11 draws a cost in the resolve's currency", aCostTileUsesTheResolvesCurrency);
+  // `F4.332` — the energy cost notes (ADR 0070 Amendment 7 decision 8, ADR 0112 Amendment 3).
+  it("marks a stored cost tile at the rate effective now", () => aStoredCostTileSaysTheRateIsToday());
+  it("says why a null read-time cost tile is null", () => aNullCostTotalTileSaysWhy());
 });
