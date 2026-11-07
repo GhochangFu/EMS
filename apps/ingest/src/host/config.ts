@@ -16,6 +16,7 @@ import {
   resolveCredentialKeys,
   type Base64Decoder,
 } from "@bms/shared/credential-keys";
+import { parseMqttPlaintextHosts } from "@bms/shared/ingest";
 
 export type HostConfig = {
   readonly databaseUrl: string;
@@ -89,6 +90,13 @@ export type HostConfig = {
    * escape and the host refuses to start.
    */
   readonly credentialKeyConfigured: boolean;
+  /**
+   * The broker hosts an MQTT RTU with `tls: false` may reach without TLS
+   * (`MQTT_PLAINTEXT_HOSTS`, ADR 0114 decision 1). Empty — the default — means
+   * no host may, which is the behaviour before ADR 0114. A bad entry never
+   * reaches this field: the shared parser throws and the host refuses to start.
+   */
+  readonly mqttPlaintextHosts: ReadonlySet<string>;
 };
 
 /**
@@ -270,5 +278,8 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
       MAX_BUFFER_BYTES,
     ),
     credentialKeyConfigured: credentialKeys.current !== null,
+    // ADR 0114 decision 1: not wrapped, so a bad entry escapes to `main().catch`
+    // and the host refuses to start, like the credential-key refusal above.
+    mqttPlaintextHosts: parseMqttPlaintextHosts(env.MQTT_PLAINTEXT_HOSTS),
   };
 }

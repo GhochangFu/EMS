@@ -1,5 +1,6 @@
 import {
   INGEST_PROTOCOLS,
+  mqttPlaintextDecision,
   QUALITY_POLICIES,
   type IngestProtocol,
   type QualityPolicy,
@@ -258,6 +259,11 @@ export type PlanOptions = {
    * environment. MQTT only; new adapters get no environment fallback at all.
    */
   readonly mqttConnectionDefaults?: Readonly<Record<string, unknown>>;
+  /**
+   * `MQTT_PLAINTEXT_HOSTS`, parsed (ADR 0114 decision 1). Absent is the empty
+   * set — fail closed: no `tls: false` RTU is served.
+   */
+  readonly mqttPlaintextHosts?: ReadonlySet<string>;
 };
 
 /**
@@ -512,6 +518,23 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       // warning rather than a skip, and it is the one signal that distinguishes
       // "the operator entered a credential" from "the operator entered one and
       // the host is not using it".
+      // ADR 0114 decision 3: plain MQTT only for a literal `tls: false` whose
+      // host is on `MQTT_PLAINTEXT_HOSTS`. The host checked is `resolved.host` —
+      // the one the connection will dial, which `MQTT_HOST` may have supplied —
+      // never the stored `connection.host`. A refusal skips the RTU by name and
+      // never falls back to TLS (ruling Q3): a silent TLS connect to a
+      // plain-only broker is the failure ADR 0114 exists to remove.
+      if (
+        mqttPlaintextDecision(
+          connection.tls,
+          resolved.host,
+          options.mqttPlaintextHosts ?? new Set<string>(),
+        ) === "refused"
+      ) {
+        skipped.push({ rtuId, rtuCode: deviceKey, reason: "plaintext-host-not-allowed" });
+        continue;
+      }
+
       if (configRow !== null && resolved.credentialSource === "env") {
         warnings.push({ rtuId, rtuCode: deviceKey, reason: "credential-env-fallback" });
       }

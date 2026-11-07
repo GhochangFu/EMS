@@ -101,6 +101,8 @@ async function main(): Promise<void> {
     resolveMqttConnection,
     credentialKeyConfigured: hostConfig.credentialKeyConfigured,
     mqttConnectionDefaults: hostConfig.mqttConnectionDefaults,
+    // ADR 0114 decision 3: the host, not the adapter, applies the plain-MQTT rule.
+    mqttPlaintextHosts: hostConfig.mqttPlaintextHosts,
   };
 
   /**

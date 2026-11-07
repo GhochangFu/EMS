@@ -21,8 +21,8 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-/** Records what the adapter asked of the broker and lets a test drive it. */
-type FakeBroker = {
+/** Records what the adapter asked of the broker and lets a test drive it. Exported for `mqtt-plaintext.spec.ts` (§4.5 file cap). */
+export type FakeBroker = {
   transport: MqttTransport;
   connectCalls: { url: string; options: MqttConnectOptions }[];
   subscriptions: string[];
@@ -33,7 +33,7 @@ type FakeBroker = {
   failNextConnect(): void;
 };
 
-function makeFakeBroker(): FakeBroker {
+export function makeFakeBroker(): FakeBroker {
   const connectCalls: { url: string; options: MqttConnectOptions }[] = [];
   const subscriptions: string[] = [];
   const handlers: {
@@ -261,7 +261,7 @@ export async function runMqttAdapterTests(): Promise<void> {
     const connecting = adapter.connect({
       protocol: "mqtt",
       endpointKey: "e",
-      config: { host: "h", port: 8883, rejectUnauthorized: true },
+      config: { host: "h", port: 8883, rejectUnauthorized: true, tls: true },
       credentials: {},
       bindings: [
         { rtuId: "1", rtuCode: "R", deviceKey: "R", device: { topic: "t" }, sourceKeys: ["flow"] },
@@ -314,7 +314,7 @@ export async function runMqttAdapterTests(): Promise<void> {
     const connecting = adapter.connect({
       protocol: "mqtt",
       endpointKey: "phe.thinkiot.co.in:8883",
-      config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true },
+      config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true, tls: true },
       credentials: { username: "u", password: "p" },
       bindings: [
         {
@@ -378,7 +378,7 @@ export async function runMqttAdapterTests(): Promise<void> {
     const connecting = adapter.connect({
       protocol: "mqtt",
       endpointKey: "e",
-      config: { host: "h", port: 8883, rejectUnauthorized: true },
+      config: { host: "h", port: 8883, rejectUnauthorized: true, tls: true },
       credentials: {},
       bindings: [
         { rtuId: "1", rtuCode: "R", deviceKey: "R", device: { topic: "t" }, sourceKeys: ["flow"] },
@@ -408,7 +408,7 @@ export async function runMqttAdapterTests(): Promise<void> {
     const connecting = adapter.connect({
       protocol: "mqtt",
       endpointKey: "e",
-      config: { host: "h", port: 8883, rejectUnauthorized: true },
+      config: { host: "h", port: 8883, rejectUnauthorized: true, tls: true },
       credentials: {},
       bindings: [
         { rtuId: "1", rtuCode: "R", deviceKey: "R", device: { topic: "t" }, sourceKeys: ["flow"] },
@@ -465,7 +465,7 @@ export async function runTopicAttributionTests(): Promise<void> {
     const connecting = adapter.connect({
       protocol: "mqtt",
       endpointKey: "phe.thinkiot.co.in:8883",
-      config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true },
+      config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true, tls: true },
       credentials: {},
       bindings: [
         {
@@ -524,7 +524,7 @@ export async function runTopicAttributionTests(): Promise<void> {
     const connecting = adapter.connect({
       protocol: "mqtt",
       endpointKey: "phe.thinkiot.co.in:8883",
-      config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true },
+      config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true, tls: true },
       credentials: {},
       bindings: [
         {
@@ -572,7 +572,7 @@ export async function runTopicAttributionTests(): Promise<void> {
     const connecting = adapter.connect({
       protocol: "mqtt",
       endpointKey: "phe.thinkiot.co.in:8883",
-      config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true },
+      config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true, tls: true },
       credentials: {},
       bindings: [
         {
@@ -670,7 +670,7 @@ async function connectWithWarnings(
   const connecting = adapter.connect({
     protocol: "mqtt",
     endpointKey: "phe.thinkiot.co.in:8883",
-    config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true },
+    config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true, tls: true },
     credentials: {},
     bindings,
     logger: {
