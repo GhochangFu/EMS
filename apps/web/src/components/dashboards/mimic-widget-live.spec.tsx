@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, vi, type Mock } from "vitest";
 
 import {
@@ -274,6 +274,26 @@ export async function socketReadingReplacesTheValue(): Promise<void> {
   expect(wtpValue()).toBe("10 m3/h");
   emit([{ assetId: WTP_ID, pointKey: "flow", value: 42.5, unit: "m3/h", time: new Date().toISOString() }]);
   expect(wtpValue()).toBe("42.5 m3/h");
+}
+
+/**
+ * `F4.321` LVE1 — the live widget turns Expand on, and the open dialog draws from the tile's own
+ * socket overlay: one reading moves the value in the tile and in the dialog alike. Mutation: drop
+ * `expandable` from `MimicWidgetLive` => no Expand button => red.
+ */
+export async function theExpandDialogFollowsTheSocket(): Promise<void> {
+  renderWidget(() => Promise.resolve(response([WIDGET_A])));
+  await screen.findByText("WTR-WTP-01");
+  fireEvent.click(screen.getByRole("button", { name: "Expand Train A" }));
+  const dialog = screen.getByRole("dialog", { name: "Train A — full view" });
+  emit([{ assetId: WTP_ID, pointKey: "flow", value: 42.5, unit: "m3/h", time: new Date().toISOString() }]);
+  const values = screen
+    .getAllByTestId("mimic-node")
+    .filter((n) => n.getAttribute("data-node-key") === "wtp")
+    .map((n) => within(n).getByTestId("mimic-point-value").textContent);
+  expect(values).toEqual(["42.5 m3/h", "42.5 m3/h"]);
+  expect(within(dialog).getAllByTestId("mimic-node").length).toBeGreaterThan(0);
+  expect(mocks.fetchDashboardMimicNodes).toHaveBeenCalledTimes(1);
 }
 
 /** LV3 — a reading for an asset the mimic does not hold changes nothing. */
