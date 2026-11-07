@@ -518,10 +518,11 @@ function trendStrip(config: Record<string, unknown>): unknown {
 }
 
 /** One field of the `F4.306` selection, with a value the widget contract accepts. */
-const TREND_STRIP_SELECTION_FIELDS: Record<"segments" | "points" | "colors", unknown> = {
+const TREND_STRIP_SELECTION_FIELDS: Record<"segments" | "points" | "colors" | "styles", unknown> = {
   segments: ["hvac"],
   points: ["hvac:kw"],
   colors: { "hvac:kw": "series-2" },
+  styles: { "hvac:kw": "area" }, // `F4.323` PR 3 (ADR 0108 Amendment 8)
 };
 
 /**

@@ -438,6 +438,7 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
               segments={row.config.stripSegments}
               points={row.config.stripPoints}
               colors={row.config.stripColors}
+              styles={row.config.stripStyles}
               onChange={updateConfig}
             />
           ) : null}

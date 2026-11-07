@@ -40,9 +40,9 @@ type TrendStripWidgetLiveProps = {
 export function TrendStripWidgetLive({ widget, locationId, tabs }: TrendStripWidgetLiveProps) {
   // `F4.303` U7: a wall screen (`?wall=1`) has no actions, so the widget offers no Export there.
   const wall = parseWallParams(useLocation().search).on;
-  // `F4.306` U9: the three selection fields, named one by one so `tabKey` and `defaultRange`
+  // `F4.306` U9: the selection fields (`styles` since `F4.323`), named one by one so `tabKey` and `defaultRange`
   // never reach the body.
-  const { segments, points, colors } = widget.config;
+  const { segments, points, colors, styles } = widget.config;
   return (
     <TrendStripWidget
       title={widgetTitle(widget.title, widget.widgetType)}
@@ -50,7 +50,7 @@ export function TrendStripWidgetLive({ widget, locationId, tabs }: TrendStripWid
       assetGroupId={trendStripGroupFor(widget.config, tabs)}
       defaultRange={widget.config.defaultRange}
       exportable={!wall}
-      selection={{ segments, points, colors }}
+      selection={{ segments, points, colors, styles }}
     />
   );
 }

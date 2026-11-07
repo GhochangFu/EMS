@@ -330,6 +330,8 @@ export type WidgetConfigRow = {
   stripSegments?: TrendStripConfig["segments"];
   stripPoints?: TrendStripConfig["points"];
   stripColors?: TrendStripConfig["colors"];
+  // trend_strip — `F4.323` PR 3 (ADR 0108 Amendment 8). `config.styles`, carried like `stripColors`.
+  stripStyles?: TrendStripConfig["styles"];
 };
 
 export function blankConfigRow(): WidgetConfigRow {
@@ -714,6 +716,7 @@ export function buildTrendStripConfig(config: WidgetConfigRow): TrendStripConfig
     ...(config.stripSegments !== undefined ? { segments: config.stripSegments } : {}),
     ...(config.stripPoints !== undefined ? { points: config.stripPoints } : {}),
     ...(config.stripColors !== undefined ? { colors: config.stripColors } : {}),
+    ...(config.stripStyles !== undefined ? { styles: config.stripStyles } : {}),
   };
 }
 
@@ -723,10 +726,11 @@ export function buildTrendStripConfig(config: WidgetConfigRow): TrendStripConfig
  */
 export function readTrendStripSelection(
   config: TrendStripConfig,
-): Pick<WidgetConfigRow, "stripSegments" | "stripPoints" | "stripColors"> {
+): Pick<WidgetConfigRow, "stripSegments" | "stripPoints" | "stripColors" | "stripStyles"> {
   return {
     ...(config.segments !== undefined ? { stripSegments: config.segments } : {}),
     ...(config.points !== undefined ? { stripPoints: config.points } : {}),
     ...(config.colors !== undefined ? { stripColors: config.colors } : {}),
+    ...(config.styles !== undefined ? { stripStyles: config.styles } : {}),
   };
 }

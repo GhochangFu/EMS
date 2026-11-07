@@ -2,8 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { MAX_DASHBOARD_WIDGETS, TREND_STRIP_WIDGET_MAX_POINTS } from "@bms/shared";
-import { SERIES_ROLE_NAMES, trendStripRangeSchema } from "@bms/shared/contracts";
-import type { SeriesRole, SiteTrendPointsDto, TrendStripRange } from "@bms/shared";
+import { SERIES_ROLE_NAMES, TREND_STRIP_POINT_STYLES, trendStripRangeSchema } from "@bms/shared/contracts";
+import type { SeriesRole, SiteTrendPointsDto, TrendStripPointStyle, TrendStripRange } from "@bms/shared";
 
 import { appendTrendStripWidgets } from "../../api/dashboards";
 import { fetchSiteTrendPoints } from "../../api/site-trend-points";
@@ -15,7 +15,9 @@ import {
   canAddPoint,
   placeInDraft,
   selectionKey,
+  POINT_STYLE_LABELS,
   setPointColor,
+  setPointStyle,
   stripConfigFor,
   togglePoint,
   toggleSegment,
@@ -261,6 +263,21 @@ export function TrendStripWizard({ dashboard, mode, onClose }: TrendStripWizardP
                                 </option>
                               ))}
                             </select>
+                            {/* `F4.323` PR 3 (ADR 0108 Amendment 8) — the point's draw style. */}
+                            <select
+                              aria-label={`Style of ${point.name}`}
+                              className="surface-field px-2 py-1 text-xs"
+                              value={selection.styles?.[key] ?? "line"}
+                              onChange={(event) =>
+                                setSelection((was) => setPointStyle(was, key, event.target.value as TrendStripPointStyle))
+                              }
+                            >
+                              {TREND_STRIP_POINT_STYLES.map((style) => (
+                                <option key={style} value={style}>
+                                  {POINT_STYLE_LABELS[style]}
+                                </option>
+                              ))}
+                            </select>
                           </span>
                         ) : null}
                       </div>
@@ -307,7 +324,12 @@ export function TrendStripWizard({ dashboard, mode, onClose }: TrendStripWizardP
             assetGroupId={shownTab.assetGroupId}
             defaultRange={range}
             exportable={false}
-            selection={{ segments: previewConfig.segments, points: previewConfig.points, colors: previewConfig.colors }}
+            selection={{
+              segments: previewConfig.segments,
+              points: previewConfig.points,
+              colors: previewConfig.colors,
+              styles: previewConfig.styles,
+            }}
           />
         </div>
       ) : null}

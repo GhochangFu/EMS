@@ -8,6 +8,7 @@ import {
   aLocationReadsOnce,
   aRangeClickReadsOnceMore,
   aStoredSelectionReachesTheRead,
+  aStoredStyleIsDrawn,
   aTabKeySendsThatTabsGroup,
   cleanupTrendStripWidgetLive,
   noLocationReadsNothing,
@@ -62,5 +63,9 @@ describe("F4.305 U4 TrendStripWidgetLive", () => {
 
   it("F4.306 U9: sends no selection key for a config without one", async () => {
     await aConfigWithoutSelectionSendsNone();
+  });
+
+  it("F4.323 PR 3: draws a stored style", async () => {
+    await aStoredStyleIsDrawn();
   });
 });

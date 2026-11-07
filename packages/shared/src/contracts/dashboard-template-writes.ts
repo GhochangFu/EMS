@@ -65,10 +65,10 @@ export const TEMPLATE_MIMIC_TAB_MESSAGE =
  * draws each copy's own defaults. The issue path names the widget's index and the field.
  */
 export const TEMPLATE_TREND_STRIP_SELECTION_MESSAGE =
-  "a dashboard template's trend strip holds no segments, points or colors; a selection is site-specific";
+  "a dashboard template's trend strip holds no segments, points, colors or styles; a selection is site-specific";
 
-/** The three `F4.306` selection fields a template's trend strip may not carry. */
-const TREND_STRIP_SELECTION_KEYS = ["segments", "points", "colors"] as const;
+/** The `F4.306` selection fields (and `F4.323`'s `styles`) a template's trend strip may not carry. */
+const TREND_STRIP_SELECTION_KEYS = ["segments", "points", "colors", "styles"] as const;
 
 /**
  * The template's content, with the layout-arm refusal. The shared
