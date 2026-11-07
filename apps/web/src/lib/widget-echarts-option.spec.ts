@@ -537,3 +537,84 @@ export function chartHeatmapDrawsDaysAcrossAndHoursDown(): void {
   expect(option.visualMap.max).toBe(8);
   expect(option.visualMap.inRange.color.at(-1), "one hue, the accent").toBe(roles.accent);
 }
+
+/**
+ * `F4.325` (ADR 0047 Amendment 8 item 1) — a colour per point, by position in `sortOrder`. A
+ * chosen role is `roles[<series-n>]`; a position the array does not reach keeps the palette's.
+ */
+export function chartColoursFollowThePointPosition(): void {
+  const palette = seriesPalette(roles);
+  // `threeChartSeries()` is out of order on purpose; position is by sortOrder.
+  const option = buildChartOption(
+    { series: "line", colors: ["series-3", "series-6"] },
+    threeChartSeries(),
+    CHART_NOW,
+    roles,
+  ) as { color?: unknown };
+  expect(option.color, "two chosen, the third falls back to its palette place").toEqual([
+    roles["series-3"],
+    roles["series-6"],
+    palette[2],
+  ]);
+  const gap = buildChartOption({ series: "line", colors: [null, "series-4"] }, threeChartSeries(), CHART_NOW, roles) as {
+    color?: unknown[];
+  };
+  expect(gap.color?.slice(0, 2), "a null entry keeps its palette place").toEqual([palette[0], roles["series-4"]]);
+  for (const series of ["area", "bar", "scatter", "step"] as const) {
+    const each = buildChartOption({ series, colors: ["series-8"] }, threeChartSeries(), CHART_NOW, roles) as { color?: unknown[] };
+    expect(each.color?.[0], `${series} takes the first point's colour`).toBe(roles["series-8"]);
+  }
+}
+
+export function compareAndDonutColourEachPointsBarAndSlice(): void {
+  const colors = ["series-2", "series-5"] as const;
+  const compare = buildChartOption({ series: "compare", aggregate: "sum", colors: [...colors] }, valuedSeries(), CHART_NOW, roles) as {
+    color?: unknown[];
+  };
+  // valuedSeries sorts to A, B, C, D; colorBy: data reads `color` by bar index.
+  expect(compare.color?.slice(0, 2)).toEqual([roles["series-2"], roles["series-5"]]);
+  expect(compare.color?.[2], "a point past the colours keeps its palette place").toBe(seriesPalette(roles)[2]);
+
+  const donut = loose(buildChartOption({ series: "donut", aggregate: "sum", colors: [...colors] }, valuedSeries(), CHART_NOW, roles));
+  expect(donut.series[0]?.data).toEqual([
+    { name: "Pump A · kw", value: 10, itemStyle: { color: roles["series-2"] } },
+    { name: "Pump B · kw", value: 30, itemStyle: { color: roles["series-5"] } },
+  ]);
+  // A leading point with no share keeps the chosen colours on their own points.
+  const leading = loose(
+    buildChartOption(
+      { series: "donut", aggregate: "sum", colors: ["series-1", "series-2", "series-5"] },
+      [{ name: "Pump 0 · kw", sortOrder: -1, points: [], value: null }, ...valuedSeries()],
+      CHART_NOW,
+      roles,
+    ),
+  );
+  expect(leading.series[0]?.data).toEqual([
+    { name: "Pump A · kw", value: 10, itemStyle: { color: roles["series-2"] } },
+    { name: "Pump B · kw", value: 30, itemStyle: { color: roles["series-5"] } },
+  ]);
+}
+
+export function heatmapScaleTakesTheFirstColour(): void {
+  const series: readonly WidgetSeries[] = [{ name: "P-01 · kw", sortOrder: 0, points: [{ t: "2026-11-01T05:00:00.000Z", v: 2 }] }];
+  const option = buildChartOption(
+    { series: "heatmap", aggregate: "avg", windowMinutes: 10_080, colors: ["series-7"] },
+    series,
+    CHART_NOW,
+    roles,
+    "Etc/UTC",
+  ) as unknown as HeatmapShape;
+  expect(option.visualMap.inRange.color.at(-1)).toBe(roles["series-7"]);
+}
+
+/** A colour past the last point (a cascaded retired sensor) is never drawn and never throws. */
+export function coloursPastTheLastPointAreIgnored(): void {
+  const option = buildChartOption(
+    { series: "line", colors: ["series-1", "series-2", "series-3", "series-4"] },
+    oneChartSeries(),
+    CHART_NOW,
+    roles,
+  ) as { color?: unknown[]; series: unknown[] };
+  expect(option.series).toHaveLength(1);
+  expect(option.color?.[0]).toBe(roles["series-1"]);
+}

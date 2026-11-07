@@ -614,3 +614,48 @@ export function aValueTileWithNoMetricHasNoSecondMetricNote(): void {
   expect(screen.queryByText("Named metric"), "positive control: the metric block renders").not.toBeNull();
   expect(screen.queryByText(SECOND_METRIC_NOTE)).toBeNull();
 }
+
+/** `F4.325` (ADR 0047 Amendment 8 item 1) — a chart with two bound points and the second coloured. */
+function twoPointChart(): DashboardWidgetRow {
+  const row = blankDashboardWidgetRow("chart");
+  return {
+    ...row,
+    points: [
+      { pointId: "p-1", role: "series", sortOrder: 0, label: "kw (kW)" },
+      { pointId: "p-2", role: "series", sortOrder: 1, label: "kva (kVA)" },
+    ],
+    config: { ...row.config, chartColors: ["", "series-6"] },
+  };
+}
+
+export function aChartShowsAColourSelectBesideEachPoint(): void {
+  renderInspector(twoPointChart());
+  expect((screen.getByRole("combobox", { name: "Colour of kw (kW)" }) as HTMLSelectElement).value).toBe("");
+  expect((screen.getByRole("combobox", { name: "Colour of kva (kVA)" }) as HTMLSelectElement).value).toBe("series-6");
+}
+
+export function aValueTileShowsNoColourSelect(): void {
+  const row = blankDashboardWidgetRow("value_tile");
+  renderInspector({ ...row, points: [{ pointId: "p-1", role: "primary", sortOrder: 0, label: "kw" }] });
+  expect(screen.queryByRole("combobox", { name: "Colour of kw" })).toBeNull();
+  expect(screen.getByText("kw")).not.toBeNull();
+}
+
+export async function choosingAColourWritesItAtThePointsPosition(): Promise<void> {
+  const onChange = vi.fn();
+  const row = twoPointChart();
+  renderInspector({ ...row, config: { ...row.config, chartColors: [] } }, { onChange });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Colour of kva (kVA)" }), "series-3");
+  expect(onChange).toHaveBeenCalledWith({ config: { ...row.config, chartColors: ["", "series-3"] } });
+}
+
+export async function removingAPointTakesItsColour(): Promise<void> {
+  const onChange = vi.fn();
+  const row = twoPointChart();
+  renderInspector(row, { onChange });
+  await userEvent.click(screen.getByRole("button", { name: "Remove kw (kW)" }));
+  expect(onChange).toHaveBeenCalledWith({
+    points: [{ pointId: "p-2", role: "series", sortOrder: 0, label: "kva (kVA)" }],
+    config: { ...row.config, chartColors: ["series-6"] },
+  });
+}

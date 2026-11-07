@@ -15,12 +15,14 @@ import {
   widgetToneSchema,
   widgetTypeSchema,
 } from "@bms/shared";
+import { SERIES_ROLE_NAMES } from "@bms/shared/contracts";
 import { CHART_SERIES, WIDGET_CATALOG, chartDrawsWindowValues, chartHasValueAxis, chartStacks } from "./widget-catalog";
 import type {
   ChartSeriesKind,
   DashboardWidgetSpec,
   MimicPreset,
   PointAggregateFunction,
+  SeriesRole,
   TemplateAuthorableWidgetType,
   TrendStripRange,
   WidgetIcon,
@@ -282,6 +284,9 @@ export type WidgetConfigRow = {
   // chart decides whether to plot buckets at all.
   chartAggregate: PointAggregateFunction | "";
   footerStats: boolean;
+  // chart — `F4.325` (ADR 0047 Amendment 8 item 1). One entry per bound point, by position;
+  // `""` is *Default* (that position's palette colour). Shorter than the points is fine.
+  chartColors: (SeriesRole | "")[];
   // table — `F3.35` Stage B. The author's chosen projection, in the order they
   // picked it. Empty means "every column the bound dataset declares", which is
   // also what an absent `columns` means in the stored config — see
@@ -355,6 +360,7 @@ export function blankConfigRow(): WidgetConfigRow {
     yAxisLabel: "",
     chartAggregate: "",
     footerStats: false,
+    chartColors: [],
     tableColumns: [],
   };
 }
@@ -590,7 +596,49 @@ function parseWindowMinutes(raw: string): number | undefined {
   return Number.isFinite(value) ? value : undefined;
 }
 
-export function buildChartConfig(config: WidgetConfigRow): ChartConfig {
+/** `F4.325` — the Colour select beside each chart point: *Default* and the eight roles, named as
+ * the trend strip wizard names them. */
+export const CHART_COLOR_OPTIONS: readonly { value: SeriesRole | ""; label: string }[] = [
+  { value: "", label: "Default" },
+  ...SERIES_ROLE_NAMES.map((name) => ({ value: name, label: name })),
+];
+
+/** `F4.325` — a stored `colors` as the form's row: `null` (or a role this build does not know)
+ * reads as *Default*, absent as no colours. */
+export function chartColorsFromConfig(config: { colors?: unknown }): (SeriesRole | "")[] {
+  if (!Array.isArray(config.colors)) {
+    return [];
+  }
+  return config.colors.map((color) =>
+    (SERIES_ROLE_NAMES as readonly unknown[]).includes(color) ? (color as SeriesRole) : "",
+  );
+}
+
+/** `F4.325` — removing the point at `index` takes its colour with it; the later points' colours
+ * move up with them. */
+export function chartColorsWithoutPoint(colors: readonly (SeriesRole | "")[], index: number): (SeriesRole | "")[] {
+  return colors.filter((_, position) => position !== index);
+}
+
+/** `F4.325` — an asset template's colours follow its point keys when the selection changes: each
+ * kept key keeps its colour, a new key starts at *Default*. */
+export function chartColorsForKeys(
+  oldKeys: readonly string[],
+  oldColors: readonly (SeriesRole | "")[],
+  newKeys: readonly string[],
+): (SeriesRole | "")[] {
+  return newKeys.map((key) => {
+    const was = oldKeys.indexOf(key);
+    return was === -1 ? "" : (oldColors[was] ?? "");
+  });
+}
+
+/**
+ * The stored chart config. `pointCount` (`F4.325`) cuts `colors` at the last point — a chart that
+ * lost a point to a cascaded sensor still saves (`chartColorIssues` refuses more colours than
+ * points) — and trailing *Default*s are dropped, so a chart left at every default stores none.
+ */
+export function buildChartConfig(config: WidgetConfigRow, pointCount: number): ChartConfig {
   const out: ChartConfig = {
     ...buildCommonConfig(config),
     series: config.series,
@@ -615,6 +663,13 @@ export function buildChartConfig(config: WidgetConfigRow): ChartConfig {
   }
   if (config.footerStats) {
     out.footerStats = true;
+  }
+  const colors = config.chartColors.slice(0, pointCount);
+  while (colors.length > 0 && colors[colors.length - 1] === "") {
+    colors.pop();
+  }
+  if (colors.length > 0) {
+    out.colors = colors.map((color) => (color === "" ? null : color));
   }
   return out;
 }

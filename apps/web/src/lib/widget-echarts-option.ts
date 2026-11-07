@@ -108,6 +108,25 @@ export function buildRadialGaugeOption(config: RadialGaugeConfig, value: number,
   };
 }
 
+/**
+ * `F4.325` (ADR 0047 Amendment 8 item 1) — the colour of each point, by its position in
+ * `sortOrder`: `config.colors[i]`'s role when set, else the default palette's colour for that
+ * place (`seriesPalette`, wrapping), so a chart with no `colors` is exactly today's. Without
+ * `colors` this IS the palette, unchanged; with them it is one entry per point (at least one), so
+ * ECharts' by-index `color` reads the right one for a series, a compare bar or a donut slice.
+ */
+export function chartPointColors(config: Pick<ChartConfig, "colors">, count: number, roles: Roles): string[] {
+  const palette = seriesPalette(roles);
+  const colors = config.colors;
+  if (!colors || colors.length === 0) {
+    return palette;
+  }
+  return Array.from({ length: Math.max(count, 1) }, (_, i) => {
+    const role = colors[i];
+    return role ? roles[role] : (palette[i % palette.length] as string);
+  });
+}
+
 /** `chartConfigSchema.windowMinutes`'s documented default — a day, expressed in the unit the config carries. */
 const DEFAULT_WINDOW_MINUTES = 1_440;
 
@@ -156,7 +175,7 @@ export function buildChartOption(
   const xAxisMin = new Date(now - windowMinutes * 60_000).toISOString();
 
   return {
-    color: seriesPalette(roles),
+    color: chartPointColors(config, ordered.length, roles),
     xAxis: { type: "time", min: xAxisMin },
     yAxis: {
       type: "value",
@@ -220,7 +239,7 @@ function compareOption(
   roles: Roles,
 ): EChartsOption {
   return {
-    color: seriesPalette(roles),
+    color: chartPointColors(config, ordered.length, roles),
     tooltip: { trigger: "item", valueFormatter: valueFormatter(config) },
     grid: { top: 16, left: 8, right: 24, bottom: 8, containLabel: true },
     xAxis: { type: "value", ...(config.yAxisLabel ? { name: config.yAxisLabel } : {}) },
@@ -263,7 +282,7 @@ function donutOption(
   ordered: readonly WidgetSeries[],
   roles: Roles,
 ): EChartsOption {
-  const palette = seriesPalette(roles);
+  const palette = chartPointColors(config, ordered.length, roles);
   return {
     color: palette,
     tooltip: { trigger: "item", valueFormatter: valueFormatter(config) },
@@ -381,6 +400,7 @@ function heatmapOption(
   const min = values.length > 0 ? Math.min(...values) : 0;
   const max = values.length > 0 ? Math.max(...values) : 0;
   const format = valueFormatter(config);
+  const hue = config.colors?.[0] ? roles[config.colors[0]] : roles.accent;
   return {
     grid: { left: 44, right: 12, top: 8, bottom: 56 },
     tooltip: {
@@ -402,7 +422,8 @@ function heatmapOption(
       bottom: 0,
       itemHeight: 80,
       textStyle: { fontSize: 10 },
-      inRange: { color: [withAlpha(roles.accent, 0.08), roles.accent] },
+      // `F4.325` — the scale's hue is the first point's chosen colour, else the accent.
+      inRange: { color: [withAlpha(hue, 0.08), hue] },
     },
     series: [
       {

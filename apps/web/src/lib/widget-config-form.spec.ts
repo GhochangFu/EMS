@@ -29,6 +29,10 @@ import {
   WIDGET_TYPES,
   blankConfigRow,
   buildChartConfig,
+  CHART_COLOR_OPTIONS,
+  chartColorsForKeys,
+  chartColorsWithoutPoint,
+  chartColorsFromConfig,
   CHART_VALUE_NEEDED_MESSAGE,
   HEATMAP_VALUE_NEEDED_MESSAGE,
   HEATMAP_WINDOW_FORM_MESSAGE,
@@ -251,13 +255,13 @@ export function runConfigBuilderTests(): void {
   const tankWithTone = buildTankConfig({ ...blank, fullScale: "5", fillTone: "critical" });
   assert(tankWithTone.fillTone === "critical", "a set fillTone is sent");
 
-  const chart = buildChartConfig({ ...blank, series: "bar" });
+  const chart = buildChartConfig({ ...blank, series: "bar" }, 1);
   assert(chart.series === "bar", "series is always sent — it is required");
   assert(!("windowMinutes" in chart), "an unset windowMinutes is omitted");
   assert(!("stacked" in chart), "stacked is omitted when false");
   assert(!("yAxisLabel" in chart), "an empty yAxisLabel is omitted");
 
-  const chartFull = buildChartConfig({ ...blank, series: "area", windowMinutes: "60", stacked: true, yAxisLabel: "kW" });
+  const chartFull = buildChartConfig({ ...blank, series: "area", windowMinutes: "60", stacked: true, yAxisLabel: "kW" }, 1);
   assert(chartFull.windowMinutes === 60, "a set windowMinutes is sent as a number");
   assert(chartFull.stacked === true, "stacked is sent when true");
   assert(chartFull.yAxisLabel === "kW", "a set yAxisLabel is sent");
@@ -476,17 +480,17 @@ export function runWindowValueChartFormTests(): void {
   assert(step.length === 0, "step needs no aggregate");
 
   const full = { ...blank, stacked: true, yAxisLabel: "kWh", chartAggregate: "sum" as const };
-  const compare = buildChartConfig({ ...full, series: "compare" });
+  const compare = buildChartConfig({ ...full, series: "compare" }, 1);
   assert(compare.stacked === undefined, "compare drops stacked");
   assert(compare.yAxisLabel === "kWh", "compare keeps the value-axis label");
-  const donut = buildChartConfig({ ...full, series: "donut" });
+  const donut = buildChartConfig({ ...full, series: "donut" }, 1);
   assert(donut.stacked === undefined && donut.yAxisLabel === undefined, "donut drops stacked and the axis label");
   const longLabel = widgetConfigErrors(0, 0, {
     widgetType: "chart",
     config: { ...blank, series: "donut", chartAggregate: "sum", yAxisLabel: "y".repeat(65) },
   });
   assert(longLabel.length === 0, "a donut's hidden axis label never blocks Save");
-  const stepConfig = buildChartConfig({ ...full, series: "step" });
+  const stepConfig = buildChartConfig({ ...full, series: "step" }, 1);
   assert(stepConfig.stacked === true && stepConfig.yAxisLabel === "kWh", "step keeps both");
 
   const plot = chartPlotOptions("compare");
@@ -520,8 +524,59 @@ export function runHeatmapFormTests(): void {
   assert(JSON.stringify(chartPointIssues("heatmap", 2)) === JSON.stringify([HEATMAP_ONE_POINT_MESSAGE]), "two points is one issue");
   assert(chartPointIssues("heatmap", 1).length === 0 && chartPointIssues("line", 5).length === 0, "one point, or another kind, passes");
 
-  const built = buildChartConfig({ ...ok, stacked: true, yAxisLabel: "kW" });
+  const built = buildChartConfig({ ...ok, stacked: true, yAxisLabel: "kW" }, 1);
   assert(built.stacked === undefined && built.yAxisLabel === undefined, "a heatmap drops stacked and the axis label");
   assert(built.windowMinutes === 10_080 && built.aggregate === "avg", "a heatmap keeps its window and function");
   assert(chartPlotOptions("heatmap").label === "Value of each hour", "the plot field names an hour's value");
+}
+
+/**
+ * `F4.325` (ADR 0047 Amendment 8 item 1) — the per-point colour fields: `""` is *Default*, stored
+ * as `null` inside the array and dropped at its end; the array is cut at the point count, so a
+ * chart that lost a point (a cascaded sensor) still saves.
+ */
+export function runChartColorFormTests(): void {
+  const blank = blankConfigRow();
+  assert(Array.isArray(blank.chartColors) && blank.chartColors.length === 0, "a blank row chooses no colour");
+  assert(buildChartConfig(blank, 2).colors === undefined, "no colour chosen stores no colors");
+  assert(
+    buildChartConfig({ ...blank, chartColors: ["", "", ""] }, 3).colors === undefined,
+    "every point at Default stores no colors",
+  );
+  assert(
+    JSON.stringify(buildChartConfig({ ...blank, chartColors: ["", "series-2", ""] }, 3).colors) ===
+      JSON.stringify([null, "series-2"]),
+    "an interior Default is null, a trailing one is dropped",
+  );
+  assert(
+    JSON.stringify(buildChartConfig({ ...blank, chartColors: ["series-1", "series-2", "series-3"] }, 2).colors) ===
+      JSON.stringify(["series-1", "series-2"]),
+    "colours past the last point are dropped at save",
+  );
+  assert(
+    JSON.stringify(chartColorsWithoutPoint(["series-1", "series-2", "series-3"], 0)) === JSON.stringify(["series-2", "series-3"]),
+    "removing a point takes its colour with it",
+  );
+  assert(
+    JSON.stringify(chartColorsWithoutPoint(["series-1"], 2)) === JSON.stringify(["series-1"]),
+    "removing an uncoloured point past the array changes nothing",
+  );
+  assert(
+    JSON.stringify(chartColorsForKeys(["kw", "kva", "pf"], ["series-1", "", "series-3"], ["kw", "pf"])) ===
+      JSON.stringify(["series-1", "series-3"]),
+    "a template point key keeps its colour when another key is unselected",
+  );
+  assert(
+    JSON.stringify(chartColorsFromConfig({ colors: [null, "series-4"] })) === JSON.stringify(["", "series-4"]),
+    "a stored null reads back as Default",
+  );
+  assert(
+    JSON.stringify(chartColorsFromConfig({ colors: ["series-9", "series-2"] })) === JSON.stringify(["", "series-2"]),
+    "an unknown stored role reads back as Default rather than throwing",
+  );
+  assert(chartColorsFromConfig({}).length === 0, "absent reads back as no colours");
+  assert(
+    CHART_COLOR_OPTIONS[0]?.value === "" && CHART_COLOR_OPTIONS[0]?.label === "Default" && CHART_COLOR_OPTIONS.length === 9,
+    "Default and the eight roles",
+  );
 }

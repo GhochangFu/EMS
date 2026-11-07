@@ -29,6 +29,7 @@ import {
   blankConfigRow,
   buildActiveAlarmsRailConfig,
   buildChartConfig,
+  chartColorsFromConfig,
   chartPointIssues,
   buildMimicConfig,
   buildModuleSummaryCardConfig,
@@ -297,6 +298,7 @@ export function configRowFromDto(widget: DashboardWidgetSpec): WidgetConfigRow {
       row.yAxisLabel = widget.config.yAxisLabel ?? "";
       row.chartAggregate = widget.config.aggregate ?? "";
       row.footerStats = widget.config.footerStats ?? false;
+      row.chartColors = chartColorsFromConfig(widget.config);
       break;
     case "table":
       // `F3.35` Stage B, and it is here for the reason the `value_tile` arm above states: a
@@ -817,7 +819,7 @@ export function buildPutWidgetsPayload(
         case "value_tile":
           return { ...identity, widgetType: "value_tile", config: buildTileConfig(row.config) };
         case "chart":
-          return { ...identity, widgetType: "chart", config: buildChartConfig(row.config) };
+          return { ...identity, widgetType: "chart", config: buildChartConfig(row.config, row.points.length) };
         case "table":
           return { ...identity, widgetType: "table", config: buildTableConfig(row.config) };
         case "mimic":

@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aChartShowsAColourSelectBesideEachPoint,
+  aValueTileShowsNoColourSelect,
+  choosingAColourWritesItAtThePointsPosition,
+  removingAPointTakesItsColour,
   aTrendStripScopeOffersTheWholeSiteAndEachGroupBoundTab,
   choosingAScopeWritesItsTabKeyToTheConfig,
   choosingTheWholeSiteClearsTheTabKey,
@@ -314,5 +318,32 @@ describe("F3.73 widget inspector — the site widgets", () => {
 
   it("F4.317: a value tile with no metric shows no second-metric note", () => {
     aValueTileWithNoMetricHasNoSecondMetricNote();
+  });
+});
+
+describe("F4.325 widget inspector — a colour per chart point", () => {
+  beforeEach(() => {
+    stubFetch();
+    stubMimicLayouts();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("shows a Colour select beside each chart point, reading the stored role", () => {
+    aChartShowsAColourSelectBesideEachPoint();
+  });
+
+  it("shows none on a value tile's point", () => {
+    aValueTileShowsNoColourSelect();
+  });
+
+  it("writes a chosen colour at the point's position", async () => {
+    await choosingAColourWritesItAtThePointsPosition();
+  });
+
+  it("removing a point takes its colour with it", async () => {
+    await removingAPointTakesItsColour();
   });
 });
