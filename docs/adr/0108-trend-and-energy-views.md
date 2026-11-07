@@ -875,6 +875,31 @@ Plan: `docs/plans/f4.299-organization-views.md`. Code citations are to `main` at
 
 **Consequences.** No migration, table, grant, policy, route or dependency. `trendStripWidgetConfigSchema` gains three optional fields (`segments`, `points`, `colors`) and `TREND_STRIP_WIDGET_MAX_POINTS`; the web gains eight role tokens under ADR 0078 Amendment 4 (41 roles + 8; the existing roles keep their values); `siteTrendStripQuerySchema` gains two optional parameters (`QUERY_SCHEMAS` stays 32: the schema is the same object); the append body and response become two-arm unions with their ledger nodes. One new API check file, one wizard component and its pure module, one builder picker item and one site-view button. The PR carries the `e2e` label (the dashboard builder and the site view are covered paths, ADR 0100). A stored selection can name a code that later leaves its `F4.300` list: the strip skips it at read and the next Save asks the administrator to remove it (item 3).
 
+### Amendment 8 — `F4.323` a draw style per trend-strip point
+
+**Status: Proposed — accepted when the PR that adds it merges.** Raised by the owner on 2026-11-07 with [ADR 0047](0047-configurable-dashboards.md) Amendment 7 (four more `chart` kinds): the PHE site dashboard's Trends panel is a `trend_strip`, so it draws only lines. The owner approved the plan and ruled the questions the same day, in chat (*(owner)* below). Code citations are to `main` at `34229d0a`.
+
+1. **A style per selected point** *(owner, Q3)*. `trendStripWidgetConfigSchema` (`packages/shared/src/contracts/trend-strip-widget.ts`) gains one optional field beside `colors`, stored the same way:
+   - `styles?: Record<string, TrendStripPointStyle>` — a key is a `points` entry (`<segment>:<point code>`, `pointSelectionPattern`), a value one of **`line` | `area` | `bar`** (`trendStripPointStyleSchema`).
+   - **Absent means `line`**, today's look, for one point or for the whole strip: a config without `styles` is exactly a `F4.306` config, so no stored widget, fixed strip, stock layout or seed comparison changes, and no stock version moves.
+   - Still a plain `z.object`; no refinement (the arm must stay a `ZodObject`, Amendment 7 item 2).
+
+2. **The write rules follow `colors` exactly.** A `styles` key that is not in `points` is a 400 in `assertTrendStripSelections` (`apps/api/src/dashboard-builder/trend-strip-selection.check.ts`), naming the widget index and the key index, never the code; the check runs on `PUT /dashboards/:id/widgets` and on the append route's trend arm, as it does for `colors`. `styles` joins `hasTrendStripSelection`, so a widget that carries only `styles` is checked too. A dashboard **template**'s strip refuses `styles` as it refuses the other selection fields (`TREND_STRIP_SELECTION_KEYS`, `dashboard-template-writes.ts`): a selection is site-specific.
+
+3. **Drawn by the strip's own sparkline.** `Sparkline` (`apps/web/src/components/control-room/sparkline.tsx`) stays an inline SVG — still no ECharts instance per cell — and takes the point's style:
+   - `line` — today's polyline;
+   - `area` — the same polylines with the area under each run filled in the point's colour role at low alpha (`withAlpha`, `apps/web/src/lib/theme.ts`); a `null` bucket still breaks the line and the fill;
+   - `bar` — one bar per non-`null` bucket, from the bottom of the cell, in the point's colour role.
+   Every asset sparkline of a point draws in the point's style, as it draws in the point's colour (Amendment 7 item 9). The geometry is pure, in `apps/web/src/lib/trend-strip.ts` beside `sparklinePolylines`. No new colour token (ADR 0078 unchanged).
+
+4. **Edited where `colors` is edited.** The setup wizard's point step (`trend-strip-wizard.tsx`) shows a style choice beside each selected point's colour (*Line*, *Area*, *Bars*), with *Line* as the default; removing a point or a segment drops its style, as it drops its colour (`trend-strip-wizard.ts`); the preview draws the chosen style. The builder's config form carries the field through (`widget-config-form.ts`, as `stripColors`), so a save from the inspector keeps it.
+
+5. **Not changed.** The strip route, its query and DTO (the style is drawn by the web from the stored config; the route never reads `styles`), the export routes, the fixed strips, the `F4.300` lists, the stock layout and its version, the seed chain, every migration *(owner, Q4: no seeded template changes)*. No new module, so `tests/adr-0108-no-org-or-segment-literals.test.ts` `MODULES` is unchanged; the edited modules stay in it.
+
+**Verification owed by this amendment.** Contract: the config admits `styles` alone and with `colors`, refuses an unknown style and a bad key. Write check: a `styles` key outside `points` is a 400 beside a positive case, on `PUT :id/widgets` and on the trend arm; a template strip with `styles` is refused. Web: the sparkline geometry for `area` and `bar` with a `null` gap; the strip draws each point in its style and `line` when absent; the wizard keeps, drops and saves a style. Browser (owed locally): pick *Area* and *Bars* for two points in the wizard, save, hard-reload, see both drawn on the dashboard and the wall.
+
+**Consequences.** No migration, table, grant, policy, route or dependency. `trendStripWidgetConfigSchema` gains `styles` and the shared `trendStripPointStyleSchema`; `assertTrendStripSelections` gains one rule; the template refusal list gains one key.
+
 ## Dependencies
 
 No new package. One migration (`0117`), journal `idx` 118.
