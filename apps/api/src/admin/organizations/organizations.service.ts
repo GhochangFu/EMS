@@ -229,6 +229,53 @@ export class OrganizationsAdminService {
     });
   }
 
+  /**
+   * `F4.330` (ADR 0115 decision 3) — switches an organization's ingestion on or off (global admin
+   * only, `assertAdminRole`: an `organization_admin` is a 403, so a tenant cannot stop or resume its
+   * own data). The ingest host applies the value at its next reload; each RTU's own
+   * `ingest_enabled` is kept as it is (decision 4), and `active` is not coupled (decision 10).
+   *
+   * The `deactivate` shape: read and write on `tenantDb` (`organizations` carries no policy), one
+   * platform audit row (`organizationId: null`, on `fleetDb`) with no payload — the action names
+   * the direction. A value equal to the stored one returns the row and writes nothing: no
+   * `UPDATE`, no audit row (plan R2).
+   */
+  async setIngestEnabled(jwt: JwtPayload, id: string, ingestEnabled: boolean): Promise<AdminOrganizationDto> {
+    const user = await this.accessControl.requireMasterDataUser(jwt);
+    this.accessControl.assertAdminRole(user.role);
+
+    const [existing] = await this.tenantDb
+      .select()
+      .from(organizations)
+      .where(eq(organizations.id, id))
+      .limit(1);
+    if (!existing) {
+      throw new NotFoundException("Organization not found");
+    }
+    if (existing.ingestEnabled === ingestEnabled) {
+      return this.mapRow(existing);
+    }
+
+    const [updated] = await this.tenantDb
+      .update(organizations)
+      .set({ ingestEnabled })
+      .where(eq(organizations.id, id))
+      .returning();
+
+    await this.audit.write(
+      {
+        actor: jwt,
+        action: ingestEnabled ? "master.organization.ingest.enable" : "master.organization.ingest.disable",
+        entityType: "organization",
+        entityId: id,
+        organizationId: null,
+      },
+      this.fleetDb,
+    );
+
+    return this.mapRow(updated);
+  }
+
   /** Deactivates an organization when no active locations remain. */
   async deactivate(jwt: JwtPayload, id: string): Promise<AdminOrganizationDto> {
     const user = await this.accessControl.requireMasterDataUser(jwt);
