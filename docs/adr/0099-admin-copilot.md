@@ -2214,3 +2214,55 @@ amendment approves it.
   and changes `resolveAdoptTarget` to return a reason; the propose tool's
   wording table gains one sentence per reason.
 - No route, contract or migration changes.
+
+## Amendment 15 — `location.siteLayout.replace`, `dashboardTemplate.replaceSiteLayouts` (ADR 0087 Amendment 4, `F4.320`)
+
+**Status: proposed.** Drafted on 2026-11-07 against `main` at `b92a7368`, in the
+same PR as ADR 0087 Amendment 4. The owner ruled on 2026-11-07 (ADR 0087
+Amendment 4, sub-question S5, as recommended) that both new Replace routes are
+catalog entries, not excluded routes. The merge of this amendment approves it.
+
+### Facts the amendment rests on
+
+- ADR 0087 Amendment 4 adds two write routes: `POST
+  /api/v1/admin/locations/:id/site-layout/replace` (per site, body
+  `siteLayoutBodySchema`: optional `templateId` and `tabGroups`) and `POST
+  /api/v1/admin/dashboard-templates/:id/replace-site-layouts` (bulk, no body).
+  Both delete a template copy and make it again from a published version.
+- Their make twins are catalog entries already: `location.siteLayout.make`
+  (target `siteLayout`, step "Groups") and `dashboardTemplate.applyToSites`
+  (target `TEMPLATE`, no steps), in
+  `packages/shared/src/copilot/catalog/site-views.ts` and `dashboard-templates.ts`.
+- `tests/f3.85-catalog-coverage.test.ts` refuses a write route on
+  `locations.controller.ts` or `dashboard-templates.controller.ts` that is
+  neither a catalog entry nor an excluded route.
+
+### Decisions
+
+1. **Two catalog entries**, beside their make twins:
+   - `location.siteLayout.replace` — `POST /admin/locations/:id/site-layout/replace`,
+     body `siteLayoutBodySchema`, risk `edit`, **`red: true`**, target
+     `{ kind: "siteLayout", param: "id" }`, ref `templateId` →
+     `dashboardTemplate`, step "Groups" (`tabGroups`, `templateId`).
+   - `dashboardTemplate.replaceSiteLayouts` — `POST
+     /admin/dashboard-templates/:id/replace-site-layouts`, empty body, risk
+     `edit`, **`red: true`**, target `TEMPLATE`, no steps.
+2. **The summaries say what is lost.** Each summary names the template and the
+   site (or "every site that holds an older copy of it" in bulk) and says that
+   every builder edit on the replaced copy is lost and that a drawn mimic is
+   detached. The card does not show the edit flag of ADR 0087 Amendment 4
+   decision 9; the web confirm step does.
+3. **The preview read is not in the catalog.** It writes nothing. No read tool
+   is added for it in `F4.320`.
+4. **The route stays the guard.** At Confirm the route runs its own permission,
+   copy and version checks (ADR 0087 Amendment 4 decisions 2, 5 and 10), as for
+   every entry.
+
+### Consequences
+
+- `F4.320` PR 2 adds the two entries, their fixtures in `catalog.fixtures.ts`
+  and spec cases in `site-views.spec.ts` and the dashboard-template catalog
+  spec. The propose budget (`copilot-propose-budget.spec.ts`) is measured at
+  the build; if it is over its bound, the bound rises by release 4's rule and
+  the owner is asked, as in Amendment 13.
+- No migration.
