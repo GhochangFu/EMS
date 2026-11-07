@@ -45,6 +45,7 @@ import {
   theLocationAdminAppendsAReadablePoint,
   theOtherWidgetsAreUntouched,
   theWidgetLandsAtTheFootOfItsTab,
+  aPinnedKindIsStored,
   twoConcurrentAppendsAt39GiveOneSuccessAndOne409,
 } from "./dashboard-widget-append.integration.spec";
 
@@ -204,6 +205,10 @@ describe.skipIf(!connectionString)("F4.303 — DashboardWidgetAppendService.appe
 
   it("W9: the widget lands at gridX 0 under the lowest widget of its tab, with the body's window and function", async () => {
     await theWidgetLandsAtTheFootOfItsTab(ctx);
+  }, 60_000);
+
+  it("F4.324: a pinned donut is stored as a donut", async () => {
+    await aPinnedKindIsStored(ctx);
   }, 60_000);
 
   it("an empty canvas takes the widget at gridY 0 with the default 6 by 4 size", async () => {

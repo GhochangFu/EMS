@@ -13,7 +13,12 @@ import {
   aForbiddenIsTheRefusedSentence,
   aNotFoundIsTheRefusedSentence,
   aPartMinuteSpanRoundsUp,
+  aChosenKindIsSent,
+  aKindThatStopsFittingDisablesPinWithItsReason,
+  aHeatmapIsDisabledWithItsReasonOnAShortView,
+  aHeatmapIsEnabledOnSevenDaysOfOnePoint,
   aPresetPinsItsOwnLength,
+  theDefaultKindSendsNoSeries,
   aPresetShowsNoWindowSentence,
   aSegmentSendsAvg,
   aSegmentSendsOnlyTheDrawnEntries,
@@ -65,6 +70,21 @@ describe("F4.303 U15 Pin", () => {
   });
   it("D4: a preset pins its own length", async () => {
     await aPresetPinsItsOwnLength();
+  });
+  it("F4.324: the default kind sends no series", async () => {
+    await theDefaultKindSendsNoSeries();
+  });
+  it("F4.324: a chosen kind is sent as config.series", async () => {
+    await aChosenKindIsSent();
+  });
+  it("F4.324: a heatmap is disabled with its reason on a 24 h view", async () => {
+    await aHeatmapIsDisabledWithItsReasonOnAShortView();
+  });
+  it("F4.324: a heatmap is enabled on 7 days of one point", async () => {
+    await aHeatmapIsEnabledOnSevenDaysOfOnePoint();
+  });
+  it("F4.324: a kind that stops fitting stays chosen, shows its reason and disables Pin", async () => {
+    await aKindThatStopsFittingDisablesPinWithItsReason();
   });
   it("D4: a preset shows no window sentence", async () => {
     await aPresetShowsNoWindowSentence();
