@@ -242,6 +242,37 @@ export async function deleteDraftLandsOnTheList(): Promise<void> {
 }
 
 /**
+ * A new draft has its own id: `POST /:id/draft` answers a new row (version + 1)
+ * and leaves the published row as it was. Before the fix `draftM.onSuccess`
+ * wrote that row into the cache under the published id and stayed on the
+ * published id's URL, so the page showed the draft while every later call
+ * (Save canvas, Publish, Delete draft) went to the published id and answered
+ * 409 "A published template cannot be edited". The page must move to the
+ * draft's own URL; `Delete draft` is the plain-button call that proves which
+ * id the page now acts on.
+ */
+export const DRAFT_ID = "44444444-4444-4444-8444-444444444444";
+
+export async function aNewDraftMovesToTheDraftsId(): Promise<void> {
+  const draftRow = { ...draftTemplate(), id: DRAFT_ID, version: 2 };
+  const deleteDraft = vi.fn(() => Promise.resolve());
+  stubApi({
+    fetchAdminDashboardTemplate: (id: string) =>
+      Promise.resolve(id === DRAFT_ID ? draftRow : publishedTemplate()),
+    createDraftFromAdminDashboardTemplate: () => Promise.resolve(draftRow),
+    deleteAdminDashboardTemplateDraft: deleteDraft,
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Edit this version" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Submit" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Delete draft" }));
+
+  expect(deleteDraft).toHaveBeenCalledWith(DRAFT_ID);
+  expect(deleteDraft, "a draft call went to the published id").not.toHaveBeenCalledWith(TEMPLATE_ID);
+}
+
+/**
  * The other direction: a refused delete stays on the page and shows the
  * error, so the navigate cannot be firing unconditionally. Without this case a
  * `navigate` placed outside `onSuccess` would pass the case above.
