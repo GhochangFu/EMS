@@ -112,3 +112,45 @@ export async function assertNoFixtureRowsRemain(
   );
   expect(rows[0]).toEqual({ audit: 0, rtus: 0 });
 }
+
+/**
+ * `F4.326` / ADR 0114 R4 — the list read's LEFT JOIN on `rtu_connection_configs`:
+ * a plain MQTT row lists `tls: false`, an MQTT row with no `tls` key `true`, and
+ * an RTU with no connection row `null`. Through the service's own scoped read,
+ * so the organization filter still applies.
+ */
+export async function assertTheListCarriesEachRtusTls(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { svc, ownerPool, organizationId, locationId } = ctx;
+  const stamp = Date.now();
+  const make = async (suffix: string) => {
+    const created = await svc.create(jwt, {
+      locationId,
+      code: `f4.326-rtu-${suffix}-${stamp}`,
+      displayName: `F4.326 ${suffix}`,
+      sourceType: "mqtt",
+    });
+    ctx.createdIds.push(created.id);
+    return created.id;
+  };
+  const plain = await make("plain");
+  const tls = await make("tls");
+  const none = await make("none");
+  for (const [rtuId, config] of [
+    [plain, { host: "plain.example", port: 1883, tls: false }],
+    [tls, { host: "tls.example", port: 8883 }],
+  ] as const) {
+    await ownerPool.query(
+      `INSERT INTO bms.rtu_connection_configs (rtu_id, organization_id, protocol, config)
+       VALUES ($1, $2, 'mqtt', $3::jsonb)`,
+      [rtuId, organizationId, JSON.stringify(config)],
+    );
+  }
+  const { items } = await svc.list(jwt, locationId);
+  const byId = new Map(items.map((item) => [item.id, item.tls]));
+  expect([byId.get(plain), byId.get(tls), byId.get(none)]).toEqual([false, true, null]);
+  const one = await svc.update(jwt, plain, { displayName: "F4.326 plain renamed" });
+  expect(one.tls).toBe(false);
+}

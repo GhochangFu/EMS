@@ -251,3 +251,84 @@ export function assertOneFinishRowPerJob(o: WindowOutcome): void {
   const finish = [...o.devices.audits(), ...o.wide.audits()].filter((a) => a.action === "onboarding.discovery.finish");
   assert(finish.length === 2, `expected one finish row per job; got ${finish.length}`);
 }
+
+export type PlainOutcome = { readonly run: Run; readonly connects: readonly DiscoveryConnectOptions[]; readonly prefix: string };
+
+/**
+ * `F4.326` / ADR 0114 decision 4 — a discovery over plain MQTT with the
+ * **production** protocol (`mqtts`) left in the transport options: the draft
+ * RTU's literal `tls: false` and its host on the allowlist are what select
+ * `mqtt`, so the CI broker (plain, 1883) is reachable only through the rule.
+ * The resolver stays injected — the CI broker is a loopback address the
+ * production host guard refuses.
+ */
+export async function runPlainWindow(suite: MqttSuite): Promise<PlainOutcome> {
+  const connects: DiscoveryConnectOptions[] = [];
+  const recording: MqttDiscoveryTransport = {
+    connect(options) {
+      connects.push(options);
+      return mqttDiscoveryTransport.connect(options);
+    },
+  };
+  const service = new DiscoveryJobService(
+    {} as CredentialCryptoService,
+    memoryStore(drafts, auditsBySession),
+    recording,
+    { protocol: "mqtts", resolve: async () => ({ ok: true, address: suite.url.hostname }) },
+    new Set(["broker.test"]),
+  );
+  const sessionId = randomUUID();
+  const discoveryId = randomUUID();
+  const topicPrefix = `${suite.prefix}/plain`;
+  drafts.set(sessionId, {
+    rtus: [
+      {
+        code: "R1",
+        protocol: "mqtt",
+        config: { host: "Broker.Test", port: Number(suite.url.port || 1883), tls: false, topic: topicPrefix },
+      },
+    ],
+    _discovery: {
+      discoveryId,
+      rtuCode: "R1",
+      topicFilter: `${topicPrefix}/#`,
+      windowSeconds: 5,
+      status: "queued",
+      queuedAt: new Date().toISOString(),
+      startedAt: null,
+      finishedAt: null,
+      truncated: false,
+      devices: [],
+      messages: 0,
+      skipped: 0,
+    },
+  });
+  const payload: DiscoveryJobPayload = { organizationId: randomUUID(), sessionId, rtuCode: "R1", discoveryId, topicPrefix, windowSeconds: 5, tls: false };
+  const continuation = await service.run(payload, {} as BmsTx);
+  assert(typeof continuation === "object" && continuation !== null, "phase A must hand back the broker window");
+  let finished = false;
+  const done = (continuation as { afterCommit: () => Promise<void> }).afterCommit().then(() => {
+    finished = true;
+  });
+  const publisher = await client(suite, `bms-it-plain-publisher-${randomUUID()}`);
+  while (!finished) {
+    await publisher.publishAsync(`${topicPrefix}/m`, JSON.stringify({ dev_id: "LALRLY1", values: { flow: 4.2 } }), { qos: 1 });
+    await new Promise<void>((resolve) => setTimeout(resolve, 200));
+  }
+  await done;
+  const run: Run = {
+    payload,
+    stored: () => drafts.get(sessionId)?._discovery as StoredDiscovery | undefined,
+    audits: () => auditsBySession.get(sessionId) ?? [],
+  };
+  return { run, connects, prefix: topicPrefix };
+}
+
+export function assertThePlainDiscoveryReturnsTheDevice(o: PlainOutcome): void {
+  const s = o.run.stored();
+  assert(o.connects[0]?.protocol === "mqtt", `the allowlisted tls:false RTU connects mqtt; got ${String(o.connects[0]?.protocol)}`);
+  assert(
+    s?.status === "done" && s.devices.some((d) => d.devId === "LALRLY1" && d.topic === `${o.prefix}/m`),
+    `the plain discovery returns the device; got status=${String(s?.status)} devices=${JSON.stringify(s?.devices)}`,
+  );
+}

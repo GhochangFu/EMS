@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   aDiscoveryCardIsDeadWithoutADraftSkill,
   aDiscoveryCardIsLiveWithADraftSkill,
+  aPlainRtuCardSaysTlsOff,
   aProposingTurnStoresOneDiscoveryCard,
   aStaleDiscoveryCardIsReplaced,
   aTurnThatWroteNothingMakesNoDiscoveryCard,
@@ -21,8 +22,11 @@ describe("copilot onboarding discovery card (F3.24b, ADR 0103 decision 2)", () =
   it("X2 the turn answers the card in pendingChanges", async () => {
     await theTurnAnswersTheDiscoveryCard();
   });
-  it("X3 the summary shows host, port, TLS always on, filter, window and the warning", async () => {
+  it("X3 the summary shows host, port, TLS on, filter, window and the warning", async () => {
     await theCardSummaryShowsTheConnection();
+  });
+  it("X3b a plain RTU's card says TLS off and binds expected.tls false (ADR 0114)", async () => {
+    await aPlainRtuCardSaysTlsOff();
   });
   it("X4 a turn without the proposed line reads nothing and makes no card", async () => {
     await aTurnWithoutTheProposedLineReadsNothing();

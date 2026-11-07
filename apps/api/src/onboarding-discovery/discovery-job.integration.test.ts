@@ -6,12 +6,15 @@ import {
   assertEachJobUsedItsOwnClientId,
   assertOneFinishRowPerJob,
   assertTheConcurrentSubscriberKeptReceiving,
+  assertThePlainDiscoveryReturnsTheDevice,
   assertTheJobNeverPublished,
   assertTheWideDeviceIsTruncated,
   closeMqttSuite,
   openMqttSuite,
+  runPlainWindow,
   runWindow,
   type MqttSuite,
+  type PlainOutcome,
   type WindowOutcome,
 } from "./discovery-job.integration.spec";
 
@@ -27,11 +30,13 @@ const mqttUrl = requireIntegrationMqtt({
 describe.skipIf(!mqttUrl)("F3.24b — the discovery job against a real broker", () => {
   let suite: MqttSuite;
   let outcome: WindowOutcome;
+  let plain: PlainOutcome;
 
   beforeAll(async () => {
     suite = openMqttSuite(mqttUrl as string);
     outcome = await runWindow(suite);
-  }, 30_000);
+    plain = await runPlainWindow(suite);
+  }, 45_000);
 
   afterAll(async () => {
     await closeMqttSuite(suite);
@@ -43,4 +48,6 @@ describe.skipIf(!mqttUrl)("F3.24b — the discovery job against a real broker", 
   it("never publishes", () => assertTheJobNeverPublished(outcome));
   it("leaves a concurrent subscriber receiving", () => assertTheConcurrentSubscriberKeptReceiving(outcome));
   it("writes one finish row per job", () => assertOneFinishRowPerJob(outcome));
+  it("reaches a plain broker only through the allowlist rule (F4.326, ADR 0114)", () =>
+    assertThePlainDiscoveryReturnsTheDevice(plain));
 });

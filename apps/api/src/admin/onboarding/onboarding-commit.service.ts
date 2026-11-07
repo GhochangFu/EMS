@@ -45,6 +45,7 @@ import { AssetTemplatesAdminService } from "../asset-templates/asset-templates.s
 import { translateAssetCodeCollision } from "../asset-templates/asset-templates-instantiate-guards";
 import { AssetTemplateInstantiationService } from "../asset-templates/asset-templates-instantiate.service";
 import { AssetTemplatesStockService } from "../asset-templates/asset-templates-stock.service";
+import { plaintextRtusOf } from "./onboarding-commit-plaintext";
 import { translateCommitUniqueConflict } from "./onboarding-commit-conflict";
 import {
   assertDraftTemplateAccess,
@@ -726,7 +727,8 @@ export class OnboardingCommitService {
           entityType: "onboarding_session",
           entityId: sessionId,
           organizationId: session.organizationId,
-          payload: { ...result, newPointKeys },
+          // F4.326 / ADR 0114 decision 6: each plain-MQTT RTU, by code (ruling 7).
+          payload: { ...result, newPointKeys, plaintextRtus: plaintextRtusOf(draft) },
         },
         tx,
       );

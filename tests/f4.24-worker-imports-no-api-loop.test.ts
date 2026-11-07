@@ -198,6 +198,8 @@ const WORKER_LEAVES = [
   "onboarding-discovery/discovery-credentials.ts",
   "security/credential-crypto.service.ts",
   "security/credential-detect.ts",
+  // F4.326 (ADR 0114 decision 4): the job's MQTT_PLAINTEXT_HOSTS provider.
+  "security/mqtt-plaintext-hosts.ts",
   "admin/onboarding/onboarding-redaction.ts",
   "admin/onboarding/onboarding-locked-writes.ts",
   // F4.311 PR 5 (ADR 0109 decision 7): the calc backfill — the queue
@@ -395,7 +397,7 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
     it("WORKER_LEAVES names every leaf file: the count is pinned here so the docblock carries no number that can drift", () => {
       // F3.5b post-merge sweep (ADR 0071 Amendment 2 item 7 F): the docblock
       // once said "the nine files" against a list of twenty-six.
-      expect(WORKER_LEAVES.length).toBe(60);
+      expect(WORKER_LEAVES.length).toBe(61);
     });
 
     it("reaches the modules WorkerModule is built from (the walker follows something)", () => {

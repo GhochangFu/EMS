@@ -9,7 +9,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { assets, locations, organizations, rtus } from "@bms/db";
+import { assets, locations, organizations, rtuConnectionConfigs, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AdminRtuDto, AdminRtuSummaryDto, JwtPayload } from "@bms/shared";
 
@@ -20,6 +20,7 @@ import { assertLocationActive } from "../locations/assert-location-active";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { emptyTopicAsNull } from "../rtu-topic";
 import { resolveTelemetrySource } from "../telemetry-source";
+import { connectionTlsOf } from "./rtu-connection-tls";
 import { translateRtuUniqueConflict } from "./rtus-conflict";
 import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
 
@@ -85,10 +86,15 @@ export class RtusAdminService {
         rtu: rtus,
         locationName: locations.name,
         organizationCode: organizations.code,
+        connectionProtocol: rtuConnectionConfigs.protocol,
+        connectionConfig: rtuConnectionConfigs.config,
       })
       .from(rtus)
       .innerJoin(locations, eq(rtus.locationId, locations.id))
       .innerJoin(organizations, eq(locations.organizationId, organizations.id))
+      // F4.326 / ADR 0114 R4: the TLS choice for the "Plain MQTT" pill. LEFT, so
+      // an RTU with no connection row still lists (its `tls` is null).
+      .leftJoin(rtuConnectionConfigs, eq(rtuConnectionConfigs.rtuId, rtus.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(asc(rtus.displayName));
 
@@ -555,10 +561,13 @@ export class RtusAdminService {
         rtu: rtus,
         locationName: locations.name,
         organizationCode: organizations.code,
+        connectionProtocol: rtuConnectionConfigs.protocol,
+        connectionConfig: rtuConnectionConfigs.config,
       })
       .from(rtus)
       .innerJoin(locations, eq(rtus.locationId, locations.id))
       .innerJoin(organizations, eq(locations.organizationId, organizations.id))
+      .leftJoin(rtuConnectionConfigs, eq(rtuConnectionConfigs.rtuId, rtus.id))
       .where(eq(rtus.id, id))
       .limit(1);
     if (!row) {
@@ -571,6 +580,8 @@ export class RtusAdminService {
     rtu: typeof rtus.$inferSelect;
     locationName: string;
     organizationCode: string;
+    connectionProtocol: string | null;
+    connectionConfig: unknown;
   }): AdminRtuDto {
     const rtu = row.rtu;
     return {
@@ -591,6 +602,7 @@ export class RtusAdminService {
       active: rtu.active,
       meta: (rtu.meta as Record<string, unknown> | null) ?? null,
       createdAt: rtu.createdAt.toISOString(),
+      tls: connectionTlsOf(row.connectionProtocol, row.connectionConfig),
     };
   }
 }

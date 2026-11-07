@@ -109,8 +109,25 @@ export function theBodyRefusesAnExpectedPortOutOfRange(): void {
 }
 export function theBodyRefusesAnUnknownExpectedKey(): void {
   expect(
-    startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, expected: { ...BODY.expected, tls: false } }).success,
+    startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, expected: { ...BODY.expected, user: "u" } }).success,
   ).toBe(false);
+}
+/** `F4.326` / ADR 0114 R6: `expected.tls` is an optional boolean inside the hashed body. */
+export function theBodyCarriesAnOptionalExpectedTls(): void {
+  for (const tls of [true, false]) {
+    const r = startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, expected: { ...BODY.expected, tls } });
+    expect(r.success && r.data.expected.tls, String(tls)).toBe(tls);
+  }
+  expect(startOnboardingDiscoveryBodySchema.safeParse(BODY).success).toBe(true);
+  expect(
+    startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, expected: { ...BODY.expected, tls: "false" } }).success,
+  ).toBe(false);
+}
+/** `F4.326` / ADR 0114 decision 4: the refusal class a stored discovery carries. */
+export function theResultAcceptsPlaintextNotAllowed(): void {
+  expect(
+    onboardingDiscoveryResultDtoSchema.safeParse({ ...DTO, status: "failed", error: "plaintext not allowed" }).success,
+  ).toBe(true);
 }
 export function theBodyIssueNeverEchoesTheValue(): void {
   const r = startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, topicPrefix: "secret/+" });

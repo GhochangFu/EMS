@@ -58,6 +58,8 @@ export type DiscoveryProposal = {
   readonly windowSeconds: number;
   readonly host: string;
   readonly port: number;
+  /** `F4.326` / ADR 0114: `false` only for the literal `tls: false` in the draft RTU's config. */
+  readonly tls: boolean;
 };
 
 /** `F3.24b`: one RTU-per-device credential copy, applied by code after the turn (never by the model). */

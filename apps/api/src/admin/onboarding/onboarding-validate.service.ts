@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 
 import {
   MAX_RTU_TOPIC_CHARS,
@@ -6,9 +6,12 @@ import {
   type OnboardingDraftAssetPoint,
   type OnboardingFieldError,
   type OnboardingPhase,
+  MQTT_PLAINTEXT_NOT_ALLOWED_MESSAGE,
+  mqttPlaintextDecision,
   protocolCatalogEntry,
 } from "@bms/shared";
 
+import { MQTT_PLAINTEXT_ALLOWLIST } from "../../security/mqtt-plaintext-hosts";
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { needsMqttSetup, rtuTopic, topicHasWildcard } from "./onboarding-chat-summaries";
 import {
@@ -72,6 +75,18 @@ export function draftNeedsPointKeys(draft: OnboardingDraft): boolean {
 /** Validates onboarding draft business rules. */
 @Injectable()
 export class OnboardingValidateService {
+  /**
+   * `F4.326` / ADR 0114 decision 5, plan ruling 13: the API's
+   * `MQTT_PLAINTEXT_HOSTS`. `@Optional()`, so a bare `new
+   * OnboardingValidateService()` has the empty set and fails closed — no
+   * `tls: false` RTU validates. `AdminModule` registers the provider.
+   */
+  constructor(
+    @Optional()
+    @Inject(MQTT_PLAINTEXT_ALLOWLIST)
+    private readonly plaintextHosts: ReadonlySet<string> = new Set<string>(),
+  ) {}
+
   /**
    * Runs schema and cross-field validation on a draft.
    *
@@ -219,6 +234,18 @@ export class OnboardingValidateService {
             path: `rtus.${i}.config.device.topic`,
             message: "MQTT topic must name one device; # and + are wildcards",
           });
+        }
+        // F4.326 / ADR 0114 decision 5: a literal `tls: false` commits only for a
+        // host on `MQTT_PLAINTEXT_HOSTS` — ingest would skip it otherwise. No host
+        // at all is refused too (ruling 6). Fixed text, no host (§9.6). Before the
+        // schema pass, so `config.tls` carries this sentence; the string "false"
+        // is not plain (`mqttPlaintextDecision`) and gets the schema issue alone.
+        if (rtu.protocol === "mqtt") {
+          const cfg = rtu.config ?? {};
+          const host = typeof cfg.host === "string" ? cfg.host : undefined;
+          if (mqttPlaintextDecision(cfg.tls, host, this.plaintextHosts) === "refused") {
+            errors.push({ path: `rtus.${i}.config.tls`, message: MQTT_PLAINTEXT_NOT_ALLOWED_MESSAGE });
+          }
         }
         // F3.24a (ADR 0093 decisions 5, 6): the protocol's draft schema from the
         // code catalog checks every present config field; a protocol with no

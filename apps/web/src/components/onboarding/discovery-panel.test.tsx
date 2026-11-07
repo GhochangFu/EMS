@@ -8,6 +8,7 @@ import {
   aDoneDiscoveryShowsTheCountsAndTheTruncatedNote,
   aDoneDiscoveryWithNoDeviceShowsTheEmptySentence,
   aFailedDiscoveryShowsItsErrorClass,
+  aPlaintextRefusalSaysPlainMqttIsNotAllowed,
   aNonMqttDraftRendersNoSection,
   aPlainRowShowsNoBadge,
   aRunningDiscoveryDisablesTheButtonAndShowsTheStatus,
@@ -36,6 +37,7 @@ describe("F3.24b discovery panel", () => {
   it("a done discovery with no device shows the empty sentence", aDoneDiscoveryWithNoDeviceShowsTheEmptySentence);
   it("a done discovery shows the counts and the truncated note", aDoneDiscoveryShowsTheCountsAndTheTruncatedNote);
   it("a failed discovery shows its error class", aFailedDiscoveryShowsItsErrorClass);
+  it("a plaintext refusal says plain MQTT is not allowed (ADR 0114)", aPlaintextRefusalSaysPlainMqttIsNotAllowed);
   it("a discovered row shows the Discovered badge and the sample value", aDiscoveredRowShowsTheBadgeAndTheSampleValue);
   it("a plain row shows no badge", aPlainRowShowsNoBadge);
   it("a 503 from the route disables the button with the worker reason", aWorkerRefusalDisablesTheButtonWithTheWorkerReason);

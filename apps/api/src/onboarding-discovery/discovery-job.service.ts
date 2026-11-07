@@ -1,5 +1,5 @@
-import { onboardingDiscoveryStoredSchema, type OnboardingDiscoveryErrorClass } from "@bms/shared";
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { mqttPlaintextDecision, onboardingDiscoveryStoredSchema, type OnboardingDiscoveryErrorClass } from "@bms/shared";
+import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 
 import { readEncryptedCredentials, rtuSecretKey } from "../admin/onboarding/onboarding-redaction";
 import type { BmsTx } from "../database/tenant-context";
@@ -7,6 +7,7 @@ import type { ProcessorContinuation } from "../queue/queue-processor";
 import type { PayloadOf } from "../queue/queue-registry";
 import type { onboardingDiscoveryQueue } from "../queue/onboarding-discovery";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
+import { MQTT_PLAINTEXT_ALLOWLIST } from "../security/mqtt-plaintext-hosts";
 import { looksLikeCredential } from "../security/credential-detect";
 import { createDiscoveryCollector, type CollectorResult } from "./discovery-collector";
 import { readDiscoveryCredentials, type DiscoveryCredentials } from "./discovery-credentials";
@@ -24,7 +25,7 @@ import {
 export type DiscoveryJobPayload = PayloadOf<typeof onboardingDiscoveryQueue>;
 
 /** Refusal classes the job writes (ADR 0103 decision 9; `bad credential` is Amendment 1's, C1). */
-type JobRefusal = "blocked host" | "bad port" | "bad credential";
+type JobRefusal = "blocked host" | "bad port" | "bad credential" | "plaintext not allowed";
 
 /** An error's `name` only — never its message, which may hold broker or SQL text (L1, §9.6). */
 function errorName(err: unknown): string {
@@ -37,6 +38,8 @@ type Prepared = {
   readonly typedHost: string;
   readonly port: number;
   readonly credentials: DiscoveryCredentials;
+  /** ADR 0114 decision 4: connect `mqtt` rather than `mqtts`. */
+  readonly plaintext: boolean;
 };
 
 /**
@@ -77,6 +80,12 @@ export class DiscoveryJobService {
     private readonly store: DiscoveryJobStore,
     @Inject(DISCOVERY_TRANSPORT) private readonly transport: MqttDiscoveryTransport,
     @Inject(DISCOVERY_TRANSPORT_OPTIONS) private readonly transportOptions: DiscoveryTransportOptions,
+    // F4.326 / ADR 0114 decision 4: `MQTT_PLAINTEXT_HOSTS`, parsed. Optional so a
+    // bare construction fails closed (no host may connect plain); the module
+    // registers the throwing provider, so a bad entry refuses the worker's boot.
+    @Optional()
+    @Inject(MQTT_PLAINTEXT_ALLOWLIST)
+    private readonly plaintextHosts: ReadonlySet<string> = new Set<string>(),
   ) {}
 
   async run(payload: DiscoveryJobPayload, tx: BmsTx): Promise<void | ProcessorContinuation> {
@@ -149,6 +158,15 @@ export class DiscoveryJobService {
       await this.fail(tx, payload, stored, undefined);
       return null;
     }
+    // F4.326 security review L1: the TLS choice the user confirmed at the route
+    // travels in the payload. A draft changed since (e.g. switched to
+    // `tls: false` after a "TLS: on" card) fails before any connection; the
+    // user starts the discovery again from a card that shows the change.
+    if ((config.tls !== false) !== (payload.tls ?? true)) {
+      this.logger.log(`discovery failed: the TLS choice changed since it was confirmed ${this.ids(payload)}`);
+      await this.fail(tx, payload, stored, undefined);
+      return null;
+    }
     if (!checkPort(config.port)) {
       await this.refuse(tx, payload, stored, host, config.port, "bad port", undefined);
       return null;
@@ -184,9 +202,25 @@ export class DiscoveryJobService {
       return null;
     }
 
+    // ADR 0114 decision 4: after the host guard, the plain-MQTT rule. Only the
+    // literal `tls: false` on a listed host connects `mqtt`; an unlisted one is
+    // refused before any connection and never tried with TLS instead.
+    const transport = mqttPlaintextDecision(config.tls, host, this.plaintextHosts);
+    if (transport === "refused") {
+      await this.refuse(tx, payload, stored, host, port, "plaintext not allowed", "plaintext not allowed");
+      return null;
+    }
+
     const running: StoredDiscovery = { ...stored, status: "running", startedAt: new Date().toISOString() };
     await this.store.writeDiscovery(tx, payload.sessionId, running);
-    return { stored: running, address: resolution.address, typedHost: host, port, credentials };
+    return {
+      stored: running,
+      address: resolution.address,
+      typedHost: host,
+      port,
+      credentials,
+      plaintext: transport === "plain",
+    };
   }
 
   private async listenAndFinish(payload: DiscoveryJobPayload, prepared: Prepared): Promise<void> {
@@ -205,6 +239,7 @@ export class DiscoveryJobService {
             port: prepared.port,
             discoveryId: payload.discoveryId,
             credentials: prepared.credentials,
+            plaintext: prepared.plaintext,
           },
           this.transportOptions,
         ),
