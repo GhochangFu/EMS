@@ -47,7 +47,7 @@ describe("F3.35 Stage A — the aggregate request list", () => {
   });
 });
 
-describe("F4.322 — a compare or donut chart reads one number per point", () => {
+describe("F4.323 — a compare or donut chart reads one number per point", () => {
   it("asks stats only and gives every series its own window value", () => runWindowValueChartTests());
 });
 

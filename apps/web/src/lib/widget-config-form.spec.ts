@@ -457,7 +457,7 @@ export function runTrendStripConfigValuesTests(): void {
 }
 
 /**
- * `F4.322` (ADR 0047 Amendment 7 items 4 and 6) — the form refuses a compare or donut chart
+ * `F4.323` (ADR 0047 Amendment 7 items 4 and 6) — the form refuses a compare or donut chart
  * without a window aggregate before Save, by the same rule the API refuses it with, and leaves
  * out the fields the kind does not read.
  */

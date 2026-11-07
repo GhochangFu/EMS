@@ -141,7 +141,7 @@ export function buildChartOption(
   // its position in this array.
   const ordered = [...series].sort((a, b) => a.sortOrder - b.sortOrder);
 
-  // `F4.322` (ADR 0047 Amendment 7) — the two kinds that draw one number per point.
+  // `F4.323` (ADR 0047 Amendment 7) — the two kinds that draw one number per point.
   if (seriesShape.axis === "category") {
     return compareOption(config, seriesShape, ordered, roles);
   }
@@ -208,7 +208,7 @@ function valueFormatter(config: ChartConfig): (value: unknown) => string {
 }
 
 /**
- * `F4.322` — `compare`: one horizontal bar per point, the point's window aggregate, in
+ * `F4.323` — `compare`: one horizontal bar per point, the point's window aggregate, in
  * `sortOrder` from the top. One series, so `stacked` means nothing and is not applied; each bar
  * takes its own palette colour (`colorBy: "data"`), and the category axis names them, so no
  * legend is drawn. `yAxisLabel` names the value axis, which is the horizontal one here.
@@ -246,7 +246,7 @@ function hasShare(s: WidgetSeries): boolean {
 }
 
 /**
- * `F4.322` — how many ANSWERED points a donut leaves out (no share); the renderer says so under
+ * `F4.323` — how many ANSWERED points a donut leaves out (no share); the renderer says so under
  * it. A point whose read has not answered (`value` absent) is not counted: nothing measured it.
  */
 export function donutLeftOut(series: readonly WidgetSeries[]): number {
@@ -254,7 +254,7 @@ export function donutLeftOut(series: readonly WidgetSeries[]): number {
 }
 
 /**
- * `F4.322` — `donut`: one slice per point with a positive window aggregate, each labelled with
+ * `F4.323` — `donut`: one slice per point with a positive window aggregate, each labelled with
  * its share of the total. No axes, so `yAxisLabel` and `stacked` are not read.
  */
 function donutOption(

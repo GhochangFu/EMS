@@ -79,7 +79,7 @@ export function ChartWidget({
           lazyUpdate
         />
       </div>
-      {/* `F4.322` (ADR 0047 Amendment 7 item 4) — a point with no positive number has no share,
+      {/* `F4.323` (ADR 0047 Amendment 7 item 4) — a point with no positive number has no share,
           so the ring leaves it out; this line keeps that from reading as a silent gap. */}
       {status === "ready" && leftOut > 0 ? (
         <p className="mt-1 text-[11px] text-ink-muted">

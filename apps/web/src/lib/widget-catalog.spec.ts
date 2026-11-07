@@ -70,7 +70,7 @@ export function chartSeriesLabelsArePinned(): void {
   expect(CHART_SERIES.area.label).toBe("Trend (filled)");
   expect(CHART_SERIES.bar.label).toBe("Comparison bars");
   expect(CHART_SERIES.scatter.label).toBe("Scatter");
-  // `F4.322` — ADR 0047 Amendment 7 item 2.
+  // `F4.323` — ADR 0047 Amendment 7 item 2.
   expect(CHART_SERIES.step.label).toBe("Steps (on/off)");
   expect(CHART_SERIES.compare.label).toBe("Compare points");
   expect(CHART_SERIES.donut.label).toBe("Share (donut)");

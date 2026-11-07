@@ -118,7 +118,7 @@ describe("widget config form", () => {
   });
 });
 
-describe("widget config form — F4.322 window-value charts", () => {
+describe("widget config form — F4.323 window-value charts", () => {
   it("refuses compare/donut without an aggregate and drops the fields they do not read", () =>
     runWindowValueChartFormTests());
 });

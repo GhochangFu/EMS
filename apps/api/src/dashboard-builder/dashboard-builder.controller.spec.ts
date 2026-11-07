@@ -215,7 +215,7 @@ export async function runDashboardBuilderControllerTests(): Promise<void> {
     );
   }
 
-  // `F4.322` (ADR 0047 Amendment 7) — a compare or donut chart without a window aggregate is a
+  // `F4.323` (ADR 0047 Amendment 7) — a compare or donut chart without a window aggregate is a
   // 400 at the controller's parse, and the same chart with one reaches the service.
   {
     const { controller, service } = controllerWith({});

@@ -77,7 +77,7 @@ export type WidgetSeries = {
   readonly sortOrder: number;
   readonly points: readonly WidgetSeriesPoint[];
   /**
-   * `F4.322` — the point's window aggregate, for a kind that draws one number per point
+   * `F4.323` — the point's window aggregate, for a kind that draws one number per point
    * (`chartDrawsWindowValues`). `null` is "answered, no samples"; absent while the read has not
    * answered, and on every time kind.
    */
@@ -282,7 +282,7 @@ export const WIDGET_ICON_PATH: Readonly<Record<WidgetIcon, string>> = {
  * `chart`'s series kinds, mapped to plain labels and to the ECharts shape
  * that draws them (ADR 0047 decision 4, Amendment 2 §4). **These labels
  * are ruled by the owner — do not invent others** (the first four at
- * Amendment 2, the `F4.322` three at Amendment 7 item 2).
+ * Amendment 2, the `F4.323` three at Amendment 7 item 2).
  *
  * `area` is **not** an ECharts series type: it is `type: "line"` plus
  * `areaStyle`. This is the one mapping a reader will "simplify" to
@@ -319,7 +319,7 @@ export const CHART_SERIES = {
 } as const satisfies Readonly<Record<ChartSeriesKind, ChartSeriesShape>>;
 
 /**
- * `F4.322` — whether a kind draws one number per point (its `aggregate` over the window) rather
+ * `F4.323` — whether a kind draws one number per point (its `aggregate` over the window) rather
  * than a series over time. Such a kind needs `aggregate` (`chartKindIssues`), reads `stats`
  * only, ignores `stacked`, and has no use for "every reading".
  */

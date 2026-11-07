@@ -3,7 +3,7 @@ import type { z } from "zod";
 import type { chartConfigSchema, chartSeriesKindSchema } from "./dashboard-builder";
 
 /**
- * `F4.322` / ADR 0047 Amendment 7 item 7 — the per-kind rules of the generic `chart` widget,
+ * `F4.323` / ADR 0047 Amendment 7 item 7 — the per-kind rules of the generic `chart` widget,
  * stated once and called by every surface that writes a chart config: the live dashboard
  * `PUT :id/widgets` body (`dashboard-writes.ts`), the asset-template default dashboard
  * (`asset-template-content-writes.ts`) and the section / site template widget

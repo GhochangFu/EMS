@@ -544,10 +544,10 @@ export const templateDashboardWidgetVariants = z.discriminatedUnion("widgetType"
     .strict(),
 ]);
 
-/** Exported for `chart-kinds.spec.ts` (`F4.322`); the content schema is its only production reader. */
+/** Exported for `chart-kinds.spec.ts` (`F4.323`); the content schema is its only production reader. */
 export const templateDashboardWidgetSchema = templateDashboardWidgetVariants
   // ONE `.superRefine` for both rules, so the one `.describe()` below covers both (ADR 0029
-  // decision 10). `F4.322` / ADR 0047 Amendment 7 — the chart kind rule is the shared one the
+  // decision 10). `F4.323` / ADR 0047 Amendment 7 — the chart kind rule is the shared one the
   // live `PUT :id/widgets` path runs, counting `pointKeys` as that path counts `points`.
   .superRefine((widget, ctx) => {
     if (widget.gridX + widget.gridW > DASHBOARD_GRID.columns) {

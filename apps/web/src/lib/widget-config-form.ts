@@ -105,7 +105,7 @@ export const AGGREGATE_FUNCTION_LABELS: Readonly<Record<PointAggregateFunction, 
   max: "Highest",
 };
 
-/** `F4.322` — the form's plain-word twin of `chartKindAggregateMessage`. */
+/** `F4.323` — the form's plain-word twin of `chartKindAggregateMessage`. */
 export const CHART_VALUE_NEEDED_MESSAGE = "Choose how each point's value is worked out over the window.";
 
 /** `F4.322` PR 2 — the heatmap's twin of `CHART_VALUE_NEEDED_MESSAGE`, matching its field label. */
@@ -126,7 +126,7 @@ export function chartPointIssues(kind: ChartSeriesKind, pointCount: number): str
 }
 
 /**
- * `F4.322` — the chart's aggregate select, by kind: a time kind plots every reading or a function
+ * `F4.323` — the chart's aggregate select, by kind: a time kind plots every reading or a function
  * per bucket; a kind that draws one number per point (`compare`, `donut`) needs a function over
  * the window (`chartKindIssues`), so it offers no "Every reading". One helper for the dashboard
  * inspector and the template widget editor, so the two cannot word it differently.
@@ -432,7 +432,7 @@ export function widgetConfigErrors(
       push("series", "Choose what kind of chart this is.");
     }
     pushWindowProblem(config.windowMinutes, push);
-    // `F4.322` (ADR 0047 Amendment 7) — the shared kind rule, read at the form so the author sees
+    // `F4.323` (ADR 0047 Amendment 7) — the shared kind rule, read at the form so the author sees
     // it before Save; `chartAggregate` is the field the rule's `config.aggregate` is edited in.
     // The point count is the builder's own rule (`chartPointIssues`), which sees the points.
     for (const issue of chartKindIssues(
