@@ -7,6 +7,7 @@ import {
   assertAppModuleImportsControlRoomModule,
   assertControlRoomModuleDeclaresItsMembers,
   assertControlRoomModuleProvidesAndExportsSiteLayout,
+  assertControlRoomModuleWiresSiteLayoutReplace,
   assertControlRoomModuleWiresTheOrganizationStrip,
   assertDashboardTemplatesControllerDepsResolveThroughAdmin,
   assertGeneratedSiteViewControllerDepsResolveWithinControlRoom,
@@ -69,6 +70,10 @@ describe("F3.67 — ControlRoomModule wiring", () => {
 
   it("F3.73 SiteLayoutService's own dependencies resolve inside ControlRoomModule's scope", () => {
     assertSiteLayoutServiceDepsResolveWithinControlRoom();
+  });
+
+  it("F4.331 provides and exports SiteLayoutReplaceService, whose dependencies resolve", () => {
+    assertControlRoomModuleWiresSiteLayoutReplace();
   });
 
   it("F3.73 DashboardTemplatesController's dependencies resolve inside AdminModule's scope", () => {

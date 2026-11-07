@@ -9,6 +9,7 @@ import { GeneratedSiteViewService } from "./generated-site-view.service";
 import { OrganizationLayoutService } from "./organization-layout.service";
 import { OrganizationViewController } from "./organization-view.controller";
 import { SiteControlRoomViewService } from "./site-control-room-view.service";
+import { SiteLayoutReplaceService } from "./site-layout-replace.service";
 import { SiteLayoutService } from "./site-layout.service";
 import { SiteViewController } from "./site-view.controller";
 
@@ -47,13 +48,16 @@ import { SiteViewController } from "./site-view.controller";
   // three `AdminModule` doors: the location route, the `instantiate` site arm and the bulk route.
   // `F4.317` — `OrganizationLayoutService` is exported for `AdminModule`'s `instantiate`
   // organization arm (`ORGANIZATION_TEMPLATE_ARM`).
+  // `F4.331` — `SiteLayoutReplaceService` (the Replace half, moved out for the 1000-line cap) is
+  // exported for the four Replace doors on the same two `AdminModule` controllers.
   providers: [
     SiteControlRoomViewService,
     SiteLayoutService,
+    SiteLayoutReplaceService,
     MasterDataAuditService,
     GeneratedSiteViewService,
     OrganizationLayoutService,
   ],
-  exports: [SiteControlRoomViewService, SiteLayoutService, OrganizationLayoutService],
+  exports: [SiteControlRoomViewService, SiteLayoutService, SiteLayoutReplaceService, OrganizationLayoutService],
 })
 export class ControlRoomModule {}

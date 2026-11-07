@@ -14,6 +14,7 @@ import {
   SITE_LAYOUT_AMBIGUOUS_MESSAGE,
   SITE_LAYOUT_CHOICE_MESSAGES,
 } from "./site-layout.schema";
+import type { SiteLayoutReplaceService } from "./site-layout-replace.service";
 import { type SiteViewRowForCopy, SiteLayoutService } from "./site-layout.service";
 import { jwtFor, jwtForUnprovisioned, rememberSubject } from "../testing/seeded-subjects";
 
@@ -37,6 +38,8 @@ import { jwtFor, jwtForUnprovisioned, rememberSubject } from "../testing/seeded-
  */
 export type SiteLayoutCtx = {
   svc: SiteLayoutService;
+  /** `F4.331` — the Replace doors, over `svc`. */
+  replace: SiteLayoutReplaceService;
   /** The same constructor arguments, for S2c's subclass. */
   make: (readViewRow?: (locationId: string) => SiteViewRowForCopy | null) => SiteLayoutService;
   /** S10's read of the copy (`getBySlug`). */
