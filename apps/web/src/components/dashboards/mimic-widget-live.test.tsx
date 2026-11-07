@@ -16,6 +16,7 @@ import {
   foreignReadingChangesNothing,
   refetchesEveryThirtySeconds,
   socketReadingReplacesTheValue,
+  theExpandDialogFollowsTheSocket,
   socketReadingTurnsAStaleNodeLive,
   twoMimicsOnACanvasShareOneRead,
 } from "./mimic-widget-live.spec";
@@ -39,6 +40,9 @@ describe("F3.32 U4 — MimicWidgetLive", () => {
   });
   it("LV2 a socket reading replaces the seeded value", async () => {
     await socketReadingReplacesTheValue();
+  });
+  it("LVE1 F4.321 — the Expand dialog draws from the tile's socket overlay", async () => {
+    await theExpandDialogFollowsTheSocket();
   });
   it("LV3 a reading for a foreign asset changes nothing", async () => {
     await foreignReadingChangesNothing();

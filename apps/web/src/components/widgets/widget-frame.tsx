@@ -10,6 +10,9 @@ type WidgetFrameProps = {
    * same call `KpiTile`'s own `stale` prop already makes), but says so, rather than presenting a
    * dead sensor's last value as current. */
   stale?: boolean;
+  /** `F4.321` — controls at the right of the title row (the mimic's Expand). The caller decides
+   * when to pass them; the frame draws them in every status. */
+  actions?: ReactNode;
   children: ReactNode;
 };
 
@@ -24,7 +27,7 @@ type WidgetFrameProps = {
  * file's docblock), and the `F3.77` compact `StateLegendWidget` is one row with
  * its title inline, so that its band is one line of pills tall.
  */
-export function WidgetFrame({ title, status, stale = false, children }: WidgetFrameProps) {
+export function WidgetFrame({ title, status, stale = false, actions, children }: WidgetFrameProps) {
   return (
     <div className="surface-raised flex h-full flex-col p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -34,6 +37,7 @@ export function WidgetFrame({ title, status, stale = false, children }: WidgetFr
             Offline
           </span>
         ) : null}
+        {actions}
       </div>
       {renderBody(status, children)}
     </div>
