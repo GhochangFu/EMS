@@ -1382,3 +1382,188 @@ style (ADR 0108 Amendment 8).
   draw, save, hard-reload and see it again; the donut's left-out line with a
   negative point; the heatmap's day × hour grid on a 7-day window and its
   refusal of a 3-day window in the form.
+
+## Amendment 8 — a colour per point on `chart` widgets, and a multi-point hour matrix (`F4.325`, 2026-11-07)
+
+**Status: Proposed — accepted when the PR that adds it merges.** Raised by the
+owner on 2026-11-07 after adding eleven charts (the `F4.323` kinds) to the PHE
+Bilsi site dashboard on `bms.demosites.co.in`: the Compare and Donut charts
+there show only green, because a chart's colours follow point order and the
+first point's colour is the only one with a value while Bilsi II is offline.
+The owner wants a colour choice per point, and one chart that shows every
+pump's run pattern over the last day. The owner approved the plan and the
+build the same day and ruled the three items below *(owner)*; the rest are
+drafter choices, recorded so they can be changed at this PR's review. Code
+citations are to `main` at `82ee7d85`.
+
+### The question
+
+A `chart` widget takes its colours from `seriesPalette(roles)`
+(`apps/web/src/lib/chart-theme.ts`) by position: six roles — `accent`,
+`info`, `warning`, `critical`, `ink-faint`, `simulated-ink` — the first point
+by `sortOrder` in `accent`, the second in `info`, wrapping after six
+(`buildChartOption`, `compareOption`, `donutOption` in
+`apps/web/src/lib/widget-echarts-option.ts`). Nothing lets the author choose.
+The trend strip already lets them: `trendStripWidgetConfigSchema.colors` maps
+a selected point to one of the eight roles of `seriesRoleSchema`
+(`packages/shared/src/contracts/trend-strip-widget.ts`, ADR 0078 Amendment 4),
+edited beside each point in the setup wizard.
+
+And the one chart that shows a pattern over hours, `heatmap` (Amendment 7
+item 5), shows **one** point over 7 to 30 days. A pump station wants every
+pump in one picture: which ran, in which hour, today.
+
+### The ruling
+
+1. **A colour per point** *(owner, item 1)*. `chartConfigSchema` gains
+   `colors`: an array of `seriesRoleSchema` values (`series-1` … `series-8`)
+   or `null`, at most `MAX_WIDGET_POINTS` (8) long, optional. A `null` entry is
+   that position's default colour, so the second point can be coloured while
+   the first keeps its default.
+   - **Index = the point's position by `sortOrder`.** `colors[0]` is the first
+     point's, `colors[2]` the third's. An array rather than a map keyed by
+     point id, because a chart's point ids are `dashboard_widget_points` rows
+     that `PUT :id/widgets` replaces on every save; a position survives that,
+     an id would not. The trend strip keys by `<segment>:<point code>`
+     because its points are catalog codes, not rows.
+   - **Absent, or an index the array does not reach, = today's palette
+     colour for that position** (`seriesPalette(roles)[i % 6]`, above). So no
+     stored chart changes, and an author may colour only the first two points
+     of five. The chosen roles are the trend strip's eight `series-*` roles
+     (ADR 0078 Amendment 4), not the six of the default palette: the same
+     names the wizard offers, each a distinct hue in both themes.
+   - **Every kind.** `line`, `area`, `bar`, `scatter`, `step`: the series'
+     line, fill or bars. `compare`: each point's bar. `donut`: each point's
+     slice — still set before the no-share filter, as `F4.323` did, so a
+     point that drops out never shifts the others. `heatmap` (one point):
+     `colors[0]` is the scale's hue, from 8 % alpha to full, instead of
+     `accent`; absent = `accent`, as today. The new `matrix` (item 2) the same.
+   - The builder shows a **Colour** select beside each bound point in the
+     dashboard inspector (`widget-inspector.tsx`) and in the asset-template
+     widget editor (`dashboard-widget-editor.tsx`), offering *Default* and the
+     eight roles by the same names the trend strip wizard uses. *Default* is
+     stored as `null` when a later point has a colour, and trailing defaults are
+     dropped, so a chart where every point is *Default* saves no `colors` at all. A point removed in the form takes
+     its colour with it (the colours move with their points).
+   - **Write rules.** The roles are the schema's enum (an unknown role is a
+     400 at `config.colors.<i>`). The length rule is one shared function
+     beside `chartKindIssues` (`chart-kinds.ts`), on each path with the count
+     that path can see:
+     - the live `PUT :id/widgets` body: `colors.length ≤ points.length`;
+     - the asset-template default dashboard: `colors.length ≤ pointKeys.length`;
+     - the section and site template widget: **only the schema's bound
+       (8)**, because a role binding can resolve to several points (below),
+       so `bindings.length` is not the number of points the copy will have.
+
+     Each refusal is a 400 at `config.colors` naming the rule. A colour past
+     the last point is never drawn and never refused on read: the response
+     contract keeps the schema's bound only (§4.8), because
+     `dashboard_widget_points.point_id` is `ON DELETE CASCADE` and a retired
+     sensor can leave a stored chart with fewer points than colours. The
+     builder therefore **drops the colours past the last point when it saves**,
+     so such a dashboard can still be saved.
+   - **Template widgets: positions follow the resolved order, not the
+     bindings** *(owner asked for this to be decided and recorded)*. An
+     asset-template chart's points are its `pointKeys` in order, each resolved
+     on the one asset (`asset-dashboards-plan.ts`), a repeated key once; a key
+     the asset does not carry is skipped and the points after it move up. A
+     section or site template's role binding resolves to **every** matching
+     member of the group, and `planTemplateWidget`
+     (`packages/shared/src/template-instantiation.ts`) sorts all candidates by
+     `assets.code` and keeps the first `MAX_WIDGET_POINTS`; the copy's
+     `sortOrder` is that position. So **`colors[i]` is the colour of the
+     copy's i-th point, whichever binding it came from**, and a binding that
+     resolves to three members takes three positions. This is the only order
+     the copy carries; a colour keyed to a binding would need the copy to
+     remember which binding each point came from, which nothing stores. The
+     `colors` array is copied into the instantiated widget unchanged, as the
+     rest of `config` is; colours past the resolved count are not drawn, and
+     the builder drops them at the next save (as above).
+
+2. **A multi-point hour matrix** *(owner, item 2)*. `chartSeriesKindSchema`
+   gains a ninth kind, **`matrix`**, label **"Hour by point (24 h)"**,
+   ECharts `heatmap` + `visualMap`:
+   - **Rows = the bound points**, 1 to `MAX_WIDGET_POINTS`, in `sortOrder`
+     from the top, each named as every chart names a series
+     (`seriesNameFor`: asset code · RTU · point).
+   - **Columns = the 24 clock hours that end with the current one**, in the
+     response's `timeZone` (the asset's site, else its organization — ADR 0108
+     decision 1.9; `Etc/UTC` when absent, said under the plot as the heatmap
+     does). The last column is the hour in progress. Labels `HH:00`.
+   - **Cell = the point's aggregate over that hour**, by `config.aggregate`:
+     `avg` is the recommended choice for an on/off point — the share of the
+     hour it ran, 0 to 1. An hour with no samples has no cell (blank, never
+     0).
+   - **Window: exactly 1,440 minutes** *(drafter: refuse others)*.
+     `windowMinutes` absent (the chart default, a day) or `1440` is accepted;
+     any other value is refused. The builder hides the window field for this
+     kind and saves `1440`. A matrix over 7 days is the heatmap's job, and two
+     ways to ask for a week would be two meanings for one picture.
+   - **`aggregate` required**, as for `compare`, `donut` and `heatmap`
+     (`CHART_KINDS_NEEDING_AGGREGATE`).
+   - **The read: no API change, and NOT the hourly rollup.** The brief
+     assumed the heatmap's hourly read would serve; it does not. The aggregate
+     read picks its bucket size from the window
+     (`apps/api/src/telemetry/point-aggregate-window.ts`, `LADDER`): a window
+     up to 2,880 minutes is read in **1-minute** buckets, and only 2,881 to
+     43,200 minutes in hourly ones. A 24-hour matrix therefore asks for its
+     points' 1-minute buckets (`bucketFunction` = `config.aggregate`, one
+     request per point, as every bucketed chart does — at most 1,440 rows per
+     point, 11,520 for eight; `TelemetryService.recentForPoint` already
+     returns up to 5,000 raw rows into the same component) and **folds them
+     into hours in the web**: `sum` adds the minutes, `min`/`max` take the
+     least/greatest, `avg` is the mean of the minutes that have a value. That
+     `avg` weights each sampled minute equally, which is exact when every
+     minute carries the same number of samples (a polled meter, the PHE pump
+     points) and close otherwise — the same caveat the heatmap's
+     daylight-saving merge records. *Rejected:* a `granularity` query
+     parameter on the aggregate read, which would give exact hourly `avg` at
+     the cost of a contract and API change, ADR 0048 decision 3 being amended,
+     and a new rung check; the owner can ask for it at this PR's review.
+   - **Colour**: one hue for the whole matrix, `colors[0]` (item 1) or
+     `accent`, from 8 % alpha at the lowest cell to full at the highest, one
+     scale shared by every row (so bind points of one unit: run shares, or kW).
+     No new colour token (ADR 0078).
+   - **What it ignores**, as Amendment 7 item 6: `stacked` and `yAxisLabel`
+     (hidden in the builder, not refused). `footerStats` keeps its meaning (the
+     first point's).
+   - **Refused on every write path** when its rules fail, by the same shared
+     `chartKindIssues` (Amendment 7 item 7): no `aggregate`; a `windowMinutes`
+     other than 1,440. Zero points stays each path's own rule; more than eight
+     is the cardinality's.
+
+3. **Not changed** *(owner, item 3)*. No change to the Bilsi dashboard, the PHE
+   `pump-station-standard`, `smoc-standard` or any stock or seeded template.
+   No migration: `config` is JSONB and migration `0050` checks only
+   `widget_type` and the point `role`. No table, grant, policy, route, query
+   schema or dependency. `widget-frame.tsx` and `mimic-widget.tsx` are not
+   touched. The append route and the pin dialog are `F4.324`'s (PRs open
+   against Amendment 9 of ADR 0108); they read the kinds through
+   `chartKindIssues` and `CHART_SERIES`, so `matrix` reaches their kind list
+   by the shared rule with no edit here.
+
+### Build
+
+Two PRs after this one, in order, each test-first: **PR 1** item 1 (the
+`colors` contract and its length rule on three paths, the option builder for
+every kind, the inspector and the asset-template editor selects, the trim on
+save); **PR 2** item 2 (the `matrix` kind: contract and rule, catalog row, the
+minute-to-hour fold, the option, the builder's form).
+
+### Consequences
+
+- `chartConfigSchema` gains `colors`; `chartSeriesKindSchema` 8 → 9 values;
+  `CHART_SERIES` gains a `matrix` row; `dashboard-builder.spec.ts`'s pinned
+  list of kinds moves to nine.
+- The copilot does not import `chartSeriesKindSchema` (checked by grep at
+  `82ee7d85`), so ADR 0099 is unchanged. If ADR 0099 Amendment 16's
+  `dashboard.widgets.appendChart` merges first, it lists the kinds through
+  the shared schema and gains `matrix` with it.
+- **§4.6 for this row:** the contract layer is each refusal beside its
+  positive case on all three write paths; the API layer is one `PUT` refusal
+  (400) and one accepted save per item; the browser layer runs on AWS on a
+  temporary dashboard (the `F4.323` precedent): a compare and a donut over
+  Bilsi I/II with two colours chosen, saved, hard-reloaded, each bar and slice
+  in its chosen colour; a line chart's colour; a matrix over the Bilsi pumps'
+  run points with Average, 24 columns and one row per pump after a hard
+  reload; its window refusal through `PUT`; the temporary dashboard deleted.
