@@ -1,3 +1,4 @@
+import type { InvalidateQueryFilters, Query } from "@tanstack/react-query";
 import type {
   SiteLayoutCopyEdits,
   SiteLayoutHeldCopy,
@@ -63,3 +64,27 @@ export const REPLACE_SKIP_REASON_LABELS: Record<SiteLayoutReplaceSkipReason, str
   no_assets: "The site has no assets to bind",
   slug_taken: "Another site already holds this dashboard slug",
 };
+
+/**
+ * `F4.320` follow-up — the `["dashboards", kind, <dashboardId>, …]` reads, keyed by a dashboard id
+ * rather than a slug or a list filter: `use-site-widgets.ts`, `use-dashboard-telemetry.ts`
+ * (`catalog-values`) and `use-mimic-nodes.ts`.
+ */
+export const DASHBOARD_ID_KEYED_READS: readonly string[] = ["site-widgets", "catalog-values", "mimic-nodes"];
+
+/** True for a `["dashboards", …]` read a Replace makes stale: every one not keyed by a dashboard id. */
+export function isStaleAfterReplace(query: Pick<Query, "queryKey">): boolean {
+  const [root, kind] = query.queryKey;
+  return root === "dashboards" && !(typeof kind === "string" && DASHBOARD_ID_KEYED_READS.includes(kind));
+}
+
+/**
+ * The filters that refresh the dashboards after a Replace. A Replace deletes each older copy and
+ * makes it again, so the copy has a NEW dashboard id under the same slug. A plain `["dashboards"]`
+ * invalidation also refetches the id-keyed reads of a canvas still mounted with the OLD id, and the
+ * API answers 404 for each before the slug read returns the new id. The new id's reads are new
+ * cache entries and never need an invalidation; only the slug and list reads do.
+ */
+export function dashboardsAfterReplaceFilters(): InvalidateQueryFilters {
+  return { queryKey: ["dashboards"], predicate: isStaleAfterReplace };
+}
