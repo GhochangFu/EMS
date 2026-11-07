@@ -57,8 +57,12 @@ import { proposeHarness } from "./copilot-propose-tools.spec";
  *   to 94,000; the owner confirms it with the PR (no amendment names a budget).
  * - `F4.324` (ADR 0099 Amendment 16): `propose_dashboard_widgets_appendChart` (1,566) brings the
  *   definitions to 93,842, under the bound, so it is unchanged — 158 characters of headroom are left.
+ * - `F4.320` PR 2 (ADR 0099 Amendment 15): `propose_location_siteLayout_replace` and
+ *   `propose_dashboardTemplate_replaceSiteLayouts` bring the definitions to 95,058. Over 94,000, so the
+ *   bound follows the release-4 rule — rounded up to the next thousand, plus 1,000 — to 97,000; owner
+ *   confirmed 2026-11-07 with the PR.
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();
-  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(94_000);
+  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(97_000);
 }

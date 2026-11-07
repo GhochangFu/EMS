@@ -59,6 +59,7 @@ export const FIXTURES: Readonly<
   },
   "dashboardTemplate.importStock": { body: { organizationId: ORG }, params: { code: "smoc-standard" }, names: ORG_NAME },
   "dashboardTemplate.applyToSites": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "dashboardTemplate.replaceSiteLayouts": { body: {}, params: { id: ROW }, names: TARGET_NAME },
   "calcParameter.create": {
     body: { organizationId: ORG, key: "tariff_rate", value: 1.5, effectiveFrom: "2026-10-01T00:00:00+00:00" },
     params: {},
@@ -139,6 +140,7 @@ export const FIXTURES: Readonly<
   "userGrant.remove": { body: {}, params: { id: ROW, kind: "location", grantId: ROW }, names: TARGET_NAME },
   "location.controlRoomView.set": { body: { kind: "dashboard", dashboardId: ROW }, params: { id: ROW }, names: TARGET_NAME },
   "location.siteLayout.make": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "location.siteLayout.replace": { body: {}, params: { id: ROW }, names: TARGET_NAME },
   // `F3.86` PR 3c — asset groups and their members, and the point-key catalog (ruling Q1).
   "assetGroup.create": {
     body: { locationId: ROW, code: "WATER", name: "Water Plant", description: null, domain: "water" },

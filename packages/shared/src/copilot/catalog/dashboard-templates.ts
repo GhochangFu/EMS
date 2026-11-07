@@ -169,4 +169,26 @@ export const DASHBOARD_TEMPLATE_ENTRIES: readonly CatalogEntry[] = [
     summary: ({ targetName, organizationName }) =>
       `Make the site layout of the template ${quoted(targetName)} for every active site in ${organizationName}.`,
   },
+  {
+    // `F4.320` PR 2 (ADR 0099 Amendment 15 decisions 1, 2) — the apply-to-sites twin, but a red
+    // `edit`: each older copy is deleted and made again, so every builder edit on it is lost.
+    id: "dashboardTemplate.replaceSiteLayouts",
+    title: "Replace the older site layouts of a site template",
+    method: "POST",
+    path: "/admin/dashboard-templates/:id/replace-site-layouts",
+    params: { id: uuidParam },
+    body: emptyBody,
+    bodyName: null,
+    clientOnly: [],
+    risk: "edit",
+    red: true,
+    target: TEMPLATE,
+    refs: [],
+    formulas: [],
+    steps: [],
+    summary: ({ targetName, organizationName }) =>
+      `Replace the site layout of every site in ${organizationName} that holds an older copy of the template ` +
+      `${quoted(targetName)} with this version. Each copy is deleted and made again: every builder edit on it ` +
+      "is lost, and a drawn mimic is detached (it comes back as the version's preset).",
+  },
 ];

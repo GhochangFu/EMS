@@ -55,6 +55,14 @@ vi.mock("../../api/trend-strip", () => ({
   fetchSiteTrendStrip: () => new Promise(() => undefined),
 }));
 
+/**
+ * `F4.320` PR 2 — the site page's Replace with this version reads its own preview on a `dashboard`
+ * view; it has its own suites (`site-page-replace.spec.tsx`, `replace-site-layout-wizard.spec.tsx`).
+ */
+vi.mock("../../components/control-room/replace-site-layout-wizard", () => ({
+  ReplaceSiteLayoutWizard: () => null,
+}));
+
 const LOCATION_ID = "p1";
 const SITE_PATH = `/control-room/site/${LOCATION_ID}`;
 const SLUG = "site-layout-lotapata";

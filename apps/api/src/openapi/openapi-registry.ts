@@ -329,6 +329,10 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.73` plan D6 — the "Make site layout" body. `DashboardTemplatesController_applyToSites`
   // is absent: one path parameter, no body, no query.
   LocationsAdminController_makeSiteLayout: siteLayoutBodySchema,
+  // `F4.320` PR 2 (ADR 0087 Amendment 4) — "Replace with this version" takes the Make body.
+  // `DashboardTemplatesController_replaceSiteLayouts` and both previews are absent: one path
+  // parameter, no body, no query.
+  LocationsAdminController_replaceSiteLayout: siteLayoutBodySchema,
   MaintenanceController_convert: convertMaintenanceBodySchema,
   // `F4.317` task 4.2 (ADR 0112 decision 4) — "Make organization layout". `_view` and `_reset` are
   // absent: one path parameter, no body, no query.

@@ -51,6 +51,14 @@ vi.mock("../../api/trend-strip", () => ({
   fetchSiteTrendStrip: () => new Promise(() => undefined),
 }));
 
+/**
+ * `F4.320` PR 2 — the site page's Replace with this version reads its own preview on a `dashboard`
+ * view; it has its own suites (`site-page-replace.spec.tsx`, `replace-site-layout-wizard.spec.tsx`).
+ */
+vi.mock("../../components/control-room/replace-site-layout-wizard", () => ({
+  ReplaceSiteLayoutWizard: () => null,
+}));
+
 const SLUG = "phe-lotapata";
 const LOCATION_ID = "p1";
 

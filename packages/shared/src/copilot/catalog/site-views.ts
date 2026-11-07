@@ -78,7 +78,34 @@ export const SITE_VIEW_ENTRIES: readonly CatalogEntry[] = [
       return `Make the site layout for ${quoted(targetName)}${inOrganization(organizationName)} from ${layoutSource(body)}${tabs}.`;
     },
   },
+  {
+    // `F4.320` PR 2 (ADR 0099 Amendment 15 decisions 1, 2) — the Make twin's route shape, but a
+    // red `edit`: the copy is deleted and made again, so every builder edit on it is lost.
+    id: "location.siteLayout.replace",
+    title: "Replace a site layout with a published version",
+    method: "POST",
+    path: "/admin/locations/:id/site-layout/replace",
+    params: { id: uuidParam },
+    body: siteLayoutBodySchema,
+    bodyName: "siteLayoutBodySchema",
+    clientOnly: [],
+    risk: "edit",
+    red: true,
+    target: { kind: "siteLayout", param: "id" },
+    refs: [{ field: "templateId", kind: "dashboardTemplate" }],
+    formulas: [],
+    steps: [{ id: "groups", title: "Groups", fields: ["tabGroups", "templateId"] }],
+    summary: ({ body, targetName, organizationName }) => {
+      const templateId = text(body, "templateId");
+      const source = templateId === "" ? "the newest published version of its template" : `template ${templateId}`;
+      return (
+        `Replace the site layout of ${quoted(targetName)}${inOrganization(organizationName)} with ${source}. ` +
+        "The copy is deleted and made again: every builder edit on it is lost, and a drawn mimic is detached " +
+        "(it comes back as the version's preset)."
+      );
+    },
+  },
 ];
 
-/** The area's write routes that are not entries. Both are entries since PR 3d. */
+/** The area's write routes that are not entries. All three are entries (PR 3d; `F4.320` PR 2). */
 export const SITE_VIEW_PENDING: readonly ExcludedRoute[] = [];

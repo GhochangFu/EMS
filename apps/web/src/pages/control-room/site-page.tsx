@@ -7,6 +7,7 @@ import { fetchDashboard } from "../../api/dashboards";
 import { fetchLocationKpis } from "../../api/locations";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
 import { GeneratedSiteView } from "../../components/control-room/generated-site-view";
+import { ReplaceSiteLayoutWizard } from "../../components/control-room/replace-site-layout-wizard";
 import { SiteLayoutWizard } from "../../components/control-room/site-layout-wizard";
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
 import { SiteAssetsView } from "../../components/control-room/site-assets-view";
@@ -89,6 +90,9 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * handed the raw segment. A `dashboard` row with no slug renders the generated view and still
  * redirects. The `no_site_layout` and `dashboard_removed` notices carry **Make site layout**
  * for `isMasterDataAdmin` roles (`SiteLayoutWizard`, `F3.86` PR 3d), beside the notice text, never in it.
+ * `F4.320` PR 2 (ADR 0087 Amendment 4 decision 8): the same roles see **Replace with this version**
+ * above a `dashboard` view that renders (`ReplaceSiteLayoutWizard`); it shows only when its preview
+ * read says the view is a template copy that Replace would rebuild.
  *
  * `F3.77` (ADR 0087 Amendment 3 ruling 7, plan D8) — **wall mode.** `?wall=1&every=<s>` on a
  * `dashboard` view that renders (the tab stays the route's `:tab` segment, owner ruling OQ2)
@@ -316,6 +320,7 @@ function SiteViewBody({ view, site, scope, tab, tabParam, role }: SiteViewBodyPr
   const notice = siteViewNoticeText(view.notice);
   const offersSiteLayout =
     view.notice !== null && MAKE_SITE_LAYOUT_NOTICES.includes(view.notice) && isMasterDataAdmin(role);
+  const offersReplace = view.kind === "dashboard" && view.dashboardSlug !== null && isMasterDataAdmin(role);
 
   return (
     <>
@@ -335,6 +340,7 @@ function SiteViewBody({ view, site, scope, tab, tabParam, role }: SiteViewBodyPr
           {offersSiteLayout ? <SiteLayoutWizard locationId={site.id} siteName={site.name} /> : null}
         </div>
       ) : null}
+      {offersReplace ? <ReplaceSiteLayoutWizard locationId={site.id} siteName={site.name} /> : null}
       {view.kind === "builtin" && isSmocSite(site) ? (
         // Any other site with a `builtin` view falls through to the generated view (L1).
         <SmocSiteView locationId={site.id} tab={tab} scope={scope} />

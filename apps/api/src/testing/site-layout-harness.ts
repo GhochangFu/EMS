@@ -25,7 +25,8 @@ import { primeSeededSubjects } from "./seeded-subjects";
 /**
  * `F3.73` plan Task 4.2 — the shared harness for the two `SiteLayoutService` integration wrappers,
  * `site-layout.service.integration.test.ts` (S1–S6, S2b–S2d, S3b, S8b) and
- * `site-layout.service.more.integration.test.ts` (S7–S14). One `.test` wrapper per `.spec`
+ * `site-layout.service.more.integration.test.ts` (S7–S14), and since `F4.320` PR 2
+ * `site-layout-replace.integration.test.ts` (R1–R13, Replace and its preview). One `.test` wrapper per `.spec`
  * (`tests/repo-invariants.test.ts`), so each wrapper calls `useSiteLayoutHarness` inside its own
  * `describe` and gets its own pools, its own run-unique `F373SL-<run>-…` fixture codes and its own
  * cleanup — the two files may run in parallel workers without sharing a row.
@@ -82,6 +83,8 @@ async function removeFixtures(
   await pool.query(`DELETE FROM bms.dashboard_templates WHERE id IN (${sel.templates})`, params);
   // `bms_fleet` holds no privilege on `bms.users`; the fixture user is the superuser's to remove.
   await superuserPool.query(`DELETE FROM bms.user_location_access WHERE user_id IN (${sel.users})`);
+  // `F4.320` PR 2: the organization-admin fixtures of the Replace spec hold organization grants.
+  await superuserPool.query(`DELETE FROM bms.user_organization_access WHERE user_id IN (${sel.users})`);
   await superuserPool.query(`DELETE FROM bms.users WHERE id IN (${sel.users})`);
   await pool.query(`DELETE FROM bms.locations WHERE id IN (${sel.locations})`, params);
   await pool.query(`DELETE FROM bms.organizations WHERE id IN (${sel.orgs})`, params);

@@ -106,6 +106,13 @@ const CATALOG_IDS = COPILOT_CATALOG.map((entry) => entry.id);
  * `F4.312` PR 2 (ADR 0099 Amendment 12) lands `assetTemplate.adopt` ahead of its wizard, which
  * is PR 3 (`template-adopt-wizard.tsx`: the points page and the asset list's bulk action).
  * PR 3 wired it, so the list is empty again.
+ *
+ * `F4.320` PR 2 (ADR 0099 Amendment 15) lands the two Replace entries with the API half; their
+ * wizards (the site page's "Replace with this version", the apply-to-sites dialog's "Replace
+ * existing copies") are the web half of the same PR, which wires both and empties the list.
+ * The web half wired both (`components/control-room/replace-site-layout-wizard.tsx`:
+ * `location.siteLayout.replace`; `components/dashboard-templates/replace-site-layouts-wizard.tsx`:
+ * `dashboardTemplate.replaceSiteLayouts`), so the list is empty again.
  */
 const NOT_YET: readonly { id: string; reason: string }[] = [];
 

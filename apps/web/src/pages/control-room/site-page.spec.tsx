@@ -131,6 +131,14 @@ vi.mock("../../api/trend-strip", () => ({
 }));
 
 /**
+ * `F4.320` PR 2 — the site page's Replace with this version reads its own preview on a `dashboard`
+ * view; it has its own suites (`site-page-replace.spec.tsx`, `replace-site-layout-wizard.spec.tsx`).
+ */
+vi.mock("../../components/control-room/replace-site-layout-wizard", () => ({
+  ReplaceSiteLayoutWizard: () => null,
+}));
+
+/**
  * `F3.66` U4 — `/control-room/site/:locationId`, the site view host (ADR 0076
  * decisions 2 and 5), rows V1a–V16 of the plan's U4 table; `F3.70` U4
  * rewrote V5/V6 for the `:tab?` param and added V17–V20 (OQ5, D5).

@@ -603,6 +603,7 @@ unchanged.
    site is skipped. Another template's copy (for example a `smoc-standard`
    copy at a pump station) is never changed by Replace; it stays a manual
    delete and Make.
+   Owner ruling 2026-11-07 (F4.320 PR 2 review): the bulk Replace replaces only an older copy; a newer copy is skipped as `newer_version`, as ADR 0099 Amendment 15 decision 2 says.
 6. **A drawn mimic (S4).** The copy's widgets go with the dashboard, so a mimic
    that an admin switched to a drawn layout comes back as the version's preset
    (ruling Q2). The `bms.mimic_layouts` row is not deleted (no widget owns it),
