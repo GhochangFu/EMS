@@ -885,7 +885,7 @@ export type SiteLayoutOmittedTile = z.infer<typeof SL.siteLayoutOmittedTileSchem
 export type SiteLayoutAmbiguousDto = z.infer<typeof SL.siteLayoutAmbiguousDtoSchema>;
 export type SiteLayoutBulkResultDto = z.infer<typeof SL.siteLayoutBulkResultDtoSchema>;
 export type SiteLayoutSkipReason = z.infer<typeof SL.siteLayoutSkipReasonSchema>;
-
+export type * from "./types/site-layout-replace";
 // `F3.68` / ADR 0076 decision 7 — the generated site view
 // (`GET /api/v1/control-room/sites/:locationId/generated`).
 export type GeneratedSitePointDto = z.infer<typeof GSV.generatedSitePointSchema>;
