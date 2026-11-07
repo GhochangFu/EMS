@@ -108,15 +108,15 @@ export const AGGREGATE_FUNCTION_LABELS: Readonly<Record<PointAggregateFunction, 
 /** `F4.323` — the form's plain-word twin of `chartKindAggregateMessage`. */
 export const CHART_VALUE_NEEDED_MESSAGE = "Choose how each point's value is worked out over the window.";
 
-/** `F4.322` PR 2 — the heatmap's twin of `CHART_VALUE_NEEDED_MESSAGE`, matching its field label. */
+/** `F4.323` PR 2 — the heatmap's twin of `CHART_VALUE_NEEDED_MESSAGE`, matching its field label. */
 export const HEATMAP_VALUE_NEEDED_MESSAGE = "Choose how each hour's value is worked out.";
 
-/** `F4.322` PR 2 — the form's plain-word twin of `HEATMAP_WINDOW_MESSAGE`. */
+/** `F4.323` PR 2 — the form's plain-word twin of `HEATMAP_WINDOW_MESSAGE`. */
 export const HEATMAP_WINDOW_FORM_MESSAGE =
   `A daily pattern needs a window of ${HEATMAP_MIN_WINDOW_MINUTES} to ${HEATMAP_MAX_WINDOW_MINUTES} minutes (7 to 30 days).`;
 
 /**
- * `F4.322` PR 2 — the per-kind point rule (a heatmap binds one point), for the two forms that
+ * `F4.323` PR 2 — the per-kind point rule (a heatmap binds one point), for the two forms that
  * see a widget's points. The message is the API's.
  */
 export function chartPointIssues(kind: ChartSeriesKind, pointCount: number): string[] {
@@ -597,7 +597,7 @@ export function buildChartConfig(config: WidgetConfigRow): ChartConfig {
   if (windowMinutes !== undefined) {
     out.windowMinutes = windowMinutes;
   }
-  // `F4.322` (ADR 0047 Amendment 7 item 6) — only a series over time stacks, and a donut or a
+  // `F4.323` (ADR 0047 Amendment 7 item 6) — only a series over time stacks, and a donut or a
   // heatmap has no value axis to name, so neither is written for those kinds.
   if (config.stacked && chartStacks(config.series)) {
     out.stacked = true;

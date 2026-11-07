@@ -432,7 +432,7 @@ export function dashboardFormErrors(
               : `A ${WIDGET_TYPE_LABELS[widget.widgetType]} widget binds ${cardinality.min}-${cardinality.max} points.`,
         });
       }
-      // `F4.322` PR 2 — a heatmap binds exactly one point (ADR 0047 Amendment 7 item 5).
+      // `F4.323` PR 2 — a heatmap binds exactly one point (ADR 0047 Amendment 7 item 5).
       if (widget.widgetType === "chart") {
         for (const message of chartPointIssues(widget.config.series, widget.pointKeys.length)) {
           problems.push({ view: viewIndex, widget: widgetIndex, field: "pointKeys", message });

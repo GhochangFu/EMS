@@ -470,7 +470,7 @@ export function runWindowValueChartTests(): void {
   assert(isScalarData(line) && line.series[0]?.value === undefined, "a time kind carries no value");
 }
 
-/** `F4.322` PR 2 — a heatmap reads hourly buckets with its function, and carries the zone. */
+/** `F4.323` PR 2 — a heatmap reads hourly buckets with its function, and carries the zone. */
 export function runHeatmapDataTests(): void {
   const widget = {
     ...IDENTITY,

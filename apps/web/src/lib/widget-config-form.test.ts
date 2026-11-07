@@ -123,6 +123,6 @@ describe("widget config form — F4.323 window-value charts", () => {
     runWindowValueChartFormTests());
 });
 
-describe("widget config form — F4.322 heatmap", () => {
+describe("widget config form — F4.323 heatmap", () => {
   it("refuses a heatmap outside 7-30 days or without a function, and caps it at one point", () => runHeatmapFormTests());
 });

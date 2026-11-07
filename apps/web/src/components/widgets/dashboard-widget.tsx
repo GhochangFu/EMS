@@ -60,7 +60,7 @@ export type WidgetData =
       stats?: PointAggregateStats | null;
       /** `F3.35` — the chosen level's bucket width, which the granularity cell reads. */
       bucketSeconds?: number | null;
-      /** `F4.322` PR 2 — the response's IANA zone, which a heatmap draws its hours in; `undefined`
+      /** `F4.323` PR 2 — the response's IANA zone, which a heatmap draws its hours in; `undefined`
        * until the read answers, `null` for an answer without one. */
       timeZone?: string | null;
       /**

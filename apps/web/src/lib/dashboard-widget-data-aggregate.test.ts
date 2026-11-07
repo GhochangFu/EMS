@@ -51,6 +51,6 @@ describe("F4.323 — a compare or donut chart reads one number per point", () =>
   it("asks stats only and gives every series its own window value", () => runWindowValueChartTests());
 });
 
-describe("F4.322 PR 2 — a heatmap's data", () => {
+describe("F4.323 PR 2 — a heatmap's data", () => {
   it("reads buckets with its function and carries the response's zone", () => runHeatmapDataTests());
 });

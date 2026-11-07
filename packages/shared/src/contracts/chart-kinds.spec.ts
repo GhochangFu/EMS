@@ -137,7 +137,7 @@ export function theSectionTemplatePathRefusesWithTheWidgetKey(): void {
 }
 
 /**
- * `F4.322` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap: exactly one point, an aggregate,
+ * `F4.323` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap: exactly one point, an aggregate,
  * and a window of 7 to 30 days, which is the read ladder's hourly rung exactly.
  */
 export function theHeatmapRules(): void {

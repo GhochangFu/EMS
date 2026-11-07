@@ -497,7 +497,7 @@ export function runWindowValueChartFormTests(): void {
   assert(linePlot.label === "Plot" && linePlot.options[0]?.value === "", "a time chart keeps 'Every reading' first");
 }
 
-/** `F4.322` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap's form rules, by the API's messages. */
+/** `F4.323` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap's form rules, by the API's messages. */
 export function runHeatmapFormTests(): void {
   const blank = blankConfigRow();
   const ok = { ...blank, series: "heatmap" as const, chartAggregate: "avg" as const, windowMinutes: "10080" };

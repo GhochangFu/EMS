@@ -328,13 +328,13 @@ export function chartDrawsWindowValues(kind: ChartSeriesKind): boolean {
   return axis === "category" || axis === "none";
 }
 
-/** `F4.322` — whether the kind has a value axis that `yAxisLabel` can name (a donut and a heatmap have none). */
+/** `F4.323` — whether the kind has a value axis that `yAxisLabel` can name (a donut and a heatmap have none). */
 export function chartHasValueAxis(kind: ChartSeriesKind): boolean {
   const { axis } = CHART_SERIES[kind];
   return axis === "time" || axis === "category";
 }
 
-/** `F4.322` — whether `stacked` means anything: only for the series over time. */
+/** `F4.323` — whether `stacked` means anything: only for the series over time. */
 export function chartStacks(kind: ChartSeriesKind): boolean {
   return CHART_SERIES[kind].axis === "time";
 }

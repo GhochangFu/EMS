@@ -24,7 +24,7 @@ type ChartConfig = z.infer<typeof chartConfigSchema>;
 export const CHART_KINDS_NEEDING_AGGREGATE = ["compare", "donut", "heatmap"] as const satisfies readonly ChartSeriesKind[];
 
 /**
- * `F4.322` PR 2 (Amendment 7 item 5) — the heatmap's window, 7 to 30 days. This is exactly the
+ * `F4.323` PR 2 (Amendment 7 item 5) — the heatmap's window, 7 to 30 days. This is exactly the
  * `1h` rung of the aggregate read's ladder (`apps/api/src/telemetry/point-aggregate-window.ts`:
  * above 2,880 minutes and up to 43,200), so every accepted window is read in hourly buckets;
  * `heatmap-window.spec.ts` in `apps/api` holds the two together.
