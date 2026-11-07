@@ -457,7 +457,7 @@ export function runTrendStripConfigValuesTests(): void {
 }
 
 /**
- * `F4.322` (ADR 0047 Amendment 7 items 4 and 6) — the form refuses a compare or donut chart
+ * `F4.323` (ADR 0047 Amendment 7 items 4 and 6) — the form refuses a compare or donut chart
  * without a window aggregate before Save, by the same rule the API refuses it with, and leaves
  * out the fields the kind does not read.
  */
@@ -497,7 +497,7 @@ export function runWindowValueChartFormTests(): void {
   assert(linePlot.label === "Plot" && linePlot.options[0]?.value === "", "a time chart keeps 'Every reading' first");
 }
 
-/** `F4.322` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap's form rules, by the API's messages. */
+/** `F4.323` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap's form rules, by the API's messages. */
 export function runHeatmapFormTests(): void {
   const blank = blankConfigRow();
   const ok = { ...blank, series: "heatmap" as const, chartAggregate: "avg" as const, windowMinutes: "10080" };

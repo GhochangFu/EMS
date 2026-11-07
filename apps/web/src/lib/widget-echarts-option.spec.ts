@@ -374,7 +374,7 @@ export function chartSeriesColoursAreTheRolePalette(): void {
 }
 
 /**
- * `F4.322` (ADR 0047 Amendment 7) — the three new kinds. Read back through a loose shape: the
+ * `F4.323` (ADR 0047 Amendment 7) — the three new kinds. Read back through a loose shape: the
  * category and pie options do not fit `ChartOptionShape`'s time axis.
  */
 type LooseOption = {
@@ -458,7 +458,7 @@ export function donutLeftOutCountsThePointsWithNoShare(): void {
 }
 
 /**
- * `F4.322` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap: local days across, local hours
+ * `F4.323` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap: local days across, local hours
  * down, in the response's zone, never the browser's.
  */
 export function heatmapCellsAreLocalDayAndHour(): void {

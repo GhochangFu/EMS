@@ -66,7 +66,7 @@ export type { WidgetConfigRow };
  * ## The chart series picker writes a contract value, not a label
  *
  * `CHART_SERIES_OPTIONS` is the exact mapping the plan pins: *Trend* → `line`,
- * *Trend (filled)* → `area`, *Comparison bars* → `bar`, *Scatter* → `scatter`; since `F4.322`
+ * *Trend (filled)* → `area`, *Comparison bars* → `bar`, *Scatter* → `scatter`; since `F4.323`
  * also *Steps (on/off)* → `step`, *Compare points* → `compare`, *Share (donut)* → `donut`.
  * `area` **is** a legal `chartSeriesKindSchema` value — the `area` → ECharts
  * `line` + `areaStyle` translation belongs to `F3.1c`'s renderer, downstream
@@ -432,7 +432,7 @@ export function dashboardFormErrors(
               : `A ${WIDGET_TYPE_LABELS[widget.widgetType]} widget binds ${cardinality.min}-${cardinality.max} points.`,
         });
       }
-      // `F4.322` PR 2 — a heatmap binds exactly one point (ADR 0047 Amendment 7 item 5).
+      // `F4.323` PR 2 — a heatmap binds exactly one point (ADR 0047 Amendment 7 item 5).
       if (widget.widgetType === "chart") {
         for (const message of chartPointIssues(widget.config.series, widget.pointKeys.length)) {
           problems.push({ view: viewIndex, widget: widgetIndex, field: "pointKeys", message });

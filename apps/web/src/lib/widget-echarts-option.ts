@@ -132,7 +132,7 @@ export function buildChartOption(
   series: readonly WidgetSeries[],
   now: number,
   roles: Roles,
-  /** `F4.322` — the zone a heatmap's hours and days are in: the response's, else `Etc/UTC`. */
+  /** `F4.323` — the zone a heatmap's hours and days are in: the response's, else `Etc/UTC`. */
   timeZone: string = "Etc/UTC",
 ): EChartsOption {
   const seriesShape = CHART_SERIES[config.series];
@@ -141,7 +141,7 @@ export function buildChartOption(
   // its position in this array.
   const ordered = [...series].sort((a, b) => a.sortOrder - b.sortOrder);
 
-  // `F4.322` (ADR 0047 Amendment 7) — the two kinds that draw one number per point.
+  // `F4.323` (ADR 0047 Amendment 7) — the two kinds that draw one number per point.
   if (seriesShape.axis === "category") {
     return compareOption(config, seriesShape, ordered, roles);
   }
@@ -208,7 +208,7 @@ function valueFormatter(config: ChartConfig): (value: unknown) => string {
 }
 
 /**
- * `F4.322` — `compare`: one horizontal bar per point, the point's window aggregate, in
+ * `F4.323` — `compare`: one horizontal bar per point, the point's window aggregate, in
  * `sortOrder` from the top. One series, so `stacked` means nothing and is not applied; each bar
  * takes its own palette colour (`colorBy: "data"`), and the category axis names them, so no
  * legend is drawn. `yAxisLabel` names the value axis, which is the horizontal one here.
@@ -246,7 +246,7 @@ function hasShare(s: WidgetSeries): boolean {
 }
 
 /**
- * `F4.322` — how many ANSWERED points a donut leaves out (no share); the renderer says so under
+ * `F4.323` — how many ANSWERED points a donut leaves out (no share); the renderer says so under
  * it. A point whose read has not answered (`value` absent) is not counted: nothing measured it.
  */
 export function donutLeftOut(series: readonly WidgetSeries[]): number {
@@ -254,7 +254,7 @@ export function donutLeftOut(series: readonly WidgetSeries[]): number {
 }
 
 /**
- * `F4.322` — `donut`: one slice per point with a positive window aggregate, each labelled with
+ * `F4.323` — `donut`: one slice per point with a positive window aggregate, each labelled with
  * its share of the total. No axes, so `yAxisLabel` and `stacked` are not read.
  */
 function donutOption(
@@ -327,7 +327,7 @@ function mergeOf(fn: PointAggregateFunction | undefined): (a: number, b: number)
 }
 
 /**
- * `F4.322` PR 2 — the hourly buckets as cells in `timeZone` (ADR 0047 Amendment 7 item 5): the
+ * `F4.323` PR 2 — the hourly buckets as cells in `timeZone` (ADR 0047 Amendment 7 item 5): the
  * asset's site zone from the response, never the browser's. A `null` bucket has no samples and
  * no cell. On a daylight-saving fall-back two buckets share one local hour; they become one cell
  * by the widget's own function (`sum` adds them, the energy heatmap's rule; see `mergeOf`).
@@ -351,7 +351,7 @@ export function heatmapCells(
 }
 
 /**
- * `F4.322` PR 2 — every local day the window covers, from EVERY bucket, `null` ones included (the
+ * `F4.323` PR 2 — every local day the window covers, from EVERY bucket, `null` ones included (the
  * read fills each hour of the window), so a day with no samples is an empty column rather than
  * missing from the axis.
  */
@@ -363,7 +363,7 @@ export function heatmapDays(points: readonly { t: string }[], timeZone: string):
 const hourLabel = (hour: number): string => `${String(hour).padStart(2, "0")}:00`;
 
 /**
- * `F4.322` PR 2 — `heatmap`: local days across, local hours down, for the one bound point. One
+ * `F4.323` PR 2 — `heatmap`: local days across, local hours down, for the one bound point. One
  * hue (`accent`) from 8 % alpha at the lowest cell to full at the highest, the
  * `energy-heatmap.tsx` precedent (no new colour token). `stacked` and `yAxisLabel` are not read.
  */

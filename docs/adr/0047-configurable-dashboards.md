@@ -1237,7 +1237,7 @@ Amendment 5 recorded and this amendment does not change.
   `canChooseAssetGroupDashboardScope`'s, because each states that `F3.63` is
   pending. `asset-groups.service.ts:38-42` stays as written — it remains true.
 
-## Amendment 7 — four more `chart` kinds: step line, compare bars, donut and heatmap (`F4.322`, 2026-11-07)
+## Amendment 7 — four more `chart` kinds: step line, compare bars, donut and heatmap (`F4.323`, 2026-11-07)
 
 **Status: Proposed — accepted when the PR that adds it merges.** Raised by the
 owner on 2026-11-07: the PHE site dashboard on `bms.demosites.co.in` shows only

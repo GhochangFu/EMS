@@ -215,7 +215,7 @@ export async function runDashboardBuilderControllerTests(): Promise<void> {
     );
   }
 
-  // `F4.322` (ADR 0047 Amendment 7) — a compare or donut chart without a window aggregate is a
+  // `F4.323` (ADR 0047 Amendment 7) — a compare or donut chart without a window aggregate is a
   // 400 at the controller's parse, and the same chart with one reaches the service.
   {
     const { controller, service } = controllerWith({});
@@ -246,7 +246,7 @@ export async function runDashboardBuilderControllerTests(): Promise<void> {
     await controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series: "step" }));
     assert(service.putWidgets.calls === 3, "a donut and a compare chart with aggregate, and a step chart, reach the service");
 
-    // `F4.322` PR 2 — a heatmap over 3 days is a 400; over 7 days with one point it saves.
+    // `F4.323` PR 2 — a heatmap over 3 days is a 400; over 7 days with one point it saves.
     await rejects(
       () => controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series: "heatmap", aggregate: "avg", windowMinutes: 4_320 })),
       (e) => e instanceof BadRequestException,

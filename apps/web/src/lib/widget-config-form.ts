@@ -105,18 +105,18 @@ export const AGGREGATE_FUNCTION_LABELS: Readonly<Record<PointAggregateFunction, 
   max: "Highest",
 };
 
-/** `F4.322` — the form's plain-word twin of `chartKindAggregateMessage`. */
+/** `F4.323` — the form's plain-word twin of `chartKindAggregateMessage`. */
 export const CHART_VALUE_NEEDED_MESSAGE = "Choose how each point's value is worked out over the window.";
 
-/** `F4.322` PR 2 — the heatmap's twin of `CHART_VALUE_NEEDED_MESSAGE`, matching its field label. */
+/** `F4.323` PR 2 — the heatmap's twin of `CHART_VALUE_NEEDED_MESSAGE`, matching its field label. */
 export const HEATMAP_VALUE_NEEDED_MESSAGE = "Choose how each hour's value is worked out.";
 
-/** `F4.322` PR 2 — the form's plain-word twin of `HEATMAP_WINDOW_MESSAGE`. */
+/** `F4.323` PR 2 — the form's plain-word twin of `HEATMAP_WINDOW_MESSAGE`. */
 export const HEATMAP_WINDOW_FORM_MESSAGE =
   `A daily pattern needs a window of ${HEATMAP_MIN_WINDOW_MINUTES} to ${HEATMAP_MAX_WINDOW_MINUTES} minutes (7 to 30 days).`;
 
 /**
- * `F4.322` PR 2 — the per-kind point rule (a heatmap binds one point), for the two forms that
+ * `F4.323` PR 2 — the per-kind point rule (a heatmap binds one point), for the two forms that
  * see a widget's points. The message is the API's.
  */
 export function chartPointIssues(kind: ChartSeriesKind, pointCount: number): string[] {
@@ -126,7 +126,7 @@ export function chartPointIssues(kind: ChartSeriesKind, pointCount: number): str
 }
 
 /**
- * `F4.322` — the chart's aggregate select, by kind: a time kind plots every reading or a function
+ * `F4.323` — the chart's aggregate select, by kind: a time kind plots every reading or a function
  * per bucket; a kind that draws one number per point (`compare`, `donut`) needs a function over
  * the window (`chartKindIssues`), so it offers no "Every reading". One helper for the dashboard
  * inspector and the template widget editor, so the two cannot word it differently.
@@ -434,7 +434,7 @@ export function widgetConfigErrors(
       push("series", "Choose what kind of chart this is.");
     }
     pushWindowProblem(config.windowMinutes, push);
-    // `F4.322` (ADR 0047 Amendment 7) — the shared kind rule, read at the form so the author sees
+    // `F4.323` (ADR 0047 Amendment 7) — the shared kind rule, read at the form so the author sees
     // it before Save; `chartAggregate` is the field the rule's `config.aggregate` is edited in.
     // The point count is the builder's own rule (`chartPointIssues`), which sees the points.
     for (const issue of chartKindIssues(
@@ -599,7 +599,7 @@ export function buildChartConfig(config: WidgetConfigRow): ChartConfig {
   if (windowMinutes !== undefined) {
     out.windowMinutes = windowMinutes;
   }
-  // `F4.322` (ADR 0047 Amendment 7 item 6) — only a series over time stacks, and a donut or a
+  // `F4.323` (ADR 0047 Amendment 7 item 6) — only a series over time stacks, and a donut or a
   // heatmap has no value axis to name, so neither is written for those kinds.
   if (config.stacked && chartStacks(config.series)) {
     out.stacked = true;

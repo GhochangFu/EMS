@@ -58,7 +58,7 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
 }
 
-// A quoted ECharts series-name literal: "line", "bar", "scatter", "area", or (`F4.322`) "pie" and "heatmap"
+// A quoted ECharts series-name literal: "line", "bar", "scatter", "area", or (`F4.323`) "pie" and "heatmap"
 // (the one that does not exist as a series type — decision 4's whole point).
 // The backreference requires matching quote characters, so `lineStyle` or a
 // prose mention like "a bar chart" inside an unrelated word never matches;

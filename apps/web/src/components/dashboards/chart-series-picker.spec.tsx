@@ -27,7 +27,7 @@ export function rendersEveryOptionFromTheCatalog(): void {
   const select = screen.getByRole("combobox", { name: "Chart kind" });
   const optionTexts = [...select.querySelectorAll("option")].map((option) => option.textContent);
 
-  // `F4.322` — every kind the contract holds, the original four and Amendment 7's three.
+  // `F4.323` — every kind the contract holds, the original four and Amendment 7's three.
   expect(optionTexts).toHaveLength(chartSeriesKindSchema.options.length);
   for (const kind of chartSeriesKindSchema.options) {
     expect(optionTexts, `no option read "${kind}"'s catalog label`).toContain(CHART_SERIES[kind].label);

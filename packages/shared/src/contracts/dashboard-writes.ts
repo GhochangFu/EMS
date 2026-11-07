@@ -724,7 +724,7 @@ const eachTableColumnIsDeclared = (
 };
 
 /**
- * `F4.322` / ADR 0047 Amendment 7 — each `chart` widget's per-kind rules (`chart-kinds.ts`), on
+ * `F4.323` / ADR 0047 Amendment 7 — each `chart` widget's per-kind rules (`chart-kinds.ts`), on
  * the array for `exactlyOneBindingKind`'s reason: an arm must stay a plain `ZodObject`. The
  * rule is the shared one, so the two template paths refuse exactly what this one refuses.
  */

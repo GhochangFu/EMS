@@ -122,7 +122,7 @@ export function aggregateRequestsFor(dashboard: DashboardDto): AggregateRequest[
 }
 
 /**
- * `F4.322` (ADR 0047 Amendment 7 item 4) — the bucket function a chart's read asks for. A kind
+ * `F4.323` (ADR 0047 Amendment 7 item 4) — the bucket function a chart's read asks for. A kind
  * that draws one number per point (`compare`, `donut`) reads `stats` only, as a tile does, so
  * asking for buckets it will not plot would cost up to 2,880 rows per point. Used by the request
  * list and the lookup alike, so the two keys cannot disagree.
@@ -383,7 +383,7 @@ function statFor(stats: PointAggregateStats, fn: PointAggregateFunction): number
 }
 
 /**
- * `F4.322` — a window-value chart's number for one point. `undefined` while the read has not
+ * `F4.323` — a window-value chart's number for one point. `undefined` while the read has not
  * answered (pending or failed), so the donut never calls an unmeasured point "no positive value";
  * `null` is an answer with no samples.
  */
@@ -552,7 +552,7 @@ export function widgetDataFor(
         : config.aggregate
           ? (aggregateFor(point)?.buckets ?? [])
           : (historyByRef.get(encodePointRef(point.assetId, point.pointKey)) ?? []),
-      // `F4.322` — every point's own window number, not only the first's: the read is one
+      // `F4.323` — every point's own window number, not only the first's: the read is one
       // request per point and each answer carries its own `stats`.
       ...(windowValues ? { value: statOf(aggregateFor(point), windowValues) } : {}),
     }));
@@ -578,7 +578,7 @@ export function widgetDataFor(
         : isStale(freshestSeriesMs(series, nowMs), nowMs),
       stats: lead?.stats ?? null,
       bucketSeconds: lead?.bucketSeconds ?? null,
-      // `F4.322` PR 2 — the zone a heatmap draws its hours in (the asset's site, else its
+      // `F4.323` PR 2 — the zone a heatmap draws its hours in (the asset's site, else its
       // organization). `undefined` while the read has not answered (nothing is claimed about a
       // response that has not arrived); `null` only for an answer that carries no zone.
       timeZone: lead ? (lead.timeZone ?? null) : undefined,

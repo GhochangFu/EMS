@@ -12,7 +12,7 @@ import { sectionTemplateWidgetSchema } from "./dashboard-templates";
 import { putDashboardWidgetsBodySchema } from "./dashboard-writes";
 
 /**
- * `F4.322` / ADR 0047 Amendment 7 — the per-kind rules of the `chart` widget. Assertions live
+ * `F4.323` / ADR 0047 Amendment 7 — the per-kind rules of the `chart` widget. Assertions live
  * here; `chart-kinds.test.ts` is the Vitest entry point (ADR 0014).
  */
 
@@ -137,7 +137,7 @@ export function theSectionTemplatePathRefusesWithTheWidgetKey(): void {
 }
 
 /**
- * `F4.322` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap: exactly one point, an aggregate,
+ * `F4.323` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap: exactly one point, an aggregate,
  * and a window of 7 to 30 days, which is the read ladder's hourly rung exactly.
  */
 export function theHeatmapRules(): void {
