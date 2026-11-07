@@ -374,7 +374,7 @@ export function chartSeriesColoursAreTheRolePalette(): void {
 }
 
 /**
- * `F4.322` (ADR 0047 Amendment 7) — the three new kinds. Read back through a loose shape: the
+ * `F4.323` (ADR 0047 Amendment 7) — the three new kinds. Read back through a loose shape: the
  * category and pie options do not fit `ChartOptionShape`'s time axis.
  */
 type LooseOption = {

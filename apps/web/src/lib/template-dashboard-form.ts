@@ -65,7 +65,7 @@ export type { WidgetConfigRow };
  * ## The chart series picker writes a contract value, not a label
  *
  * `CHART_SERIES_OPTIONS` is the exact mapping the plan pins: *Trend* → `line`,
- * *Trend (filled)* → `area`, *Comparison bars* → `bar`, *Scatter* → `scatter`; since `F4.322`
+ * *Trend (filled)* → `area`, *Comparison bars* → `bar`, *Scatter* → `scatter`; since `F4.323`
  * also *Steps (on/off)* → `step`, *Compare points* → `compare`, *Share (donut)* → `donut`.
  * `area` **is** a legal `chartSeriesKindSchema` value — the `area` → ECharts
  * `line` + `areaStyle` translation belongs to `F3.1c`'s renderer, downstream

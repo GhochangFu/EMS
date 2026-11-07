@@ -3,7 +3,7 @@ import type { z } from "zod";
 import type { chartConfigSchema, chartSeriesKindSchema } from "./dashboard-builder";
 
 /**
- * `F4.322` / ADR 0047 Amendment 7 item 7 — the per-kind rules of the generic `chart` widget,
+ * `F4.323` / ADR 0047 Amendment 7 item 7 — the per-kind rules of the generic `chart` widget,
  * stated once and called by every surface that writes a chart config: the live dashboard
  * `PUT :id/widgets` body (`dashboard-writes.ts`), the asset-template default dashboard
  * (`asset-template-content-writes.ts`) and the section / site template widget
@@ -35,7 +35,7 @@ export interface ChartKindIssue {
 /** Every per-kind rule the config breaks, given how many points the widget binds. */
 export function chartKindIssues(
   config: Pick<ChartConfig, "series" | "aggregate" | "windowMinutes">,
-  // Unused until the heatmap's point rule (`F4.322` PR 2). The three write paths pass the real
+  // Unused until the heatmap's point rule (`F4.323` PR 2). The three write paths pass the real
   // count; the builder form passes 0 here and checks the count where it sees the points.
   _pointCount: number,
 ): ChartKindIssue[] {

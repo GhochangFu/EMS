@@ -5,7 +5,7 @@ import type { WidgetSeries } from "../../lib/widget-catalog";
 import { ChartWidget } from "./chart-widget";
 
 /**
- * `F4.322` (ADR 0047 Amendment 7 item 4) — a donut leaves out a point with no share and says so
+ * `F4.323` (ADR 0047 Amendment 7 item 4) — a donut leaves out a point with no share and says so
  * under the ring, never a silent gap. Assertions live here; `chart-widget.test.tsx` is the Vitest
  * entry point (ADR 0014), and stubs `echarts-for-react` (jsdom has no canvas).
  */

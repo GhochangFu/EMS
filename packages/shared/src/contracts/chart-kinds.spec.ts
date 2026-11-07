@@ -8,7 +8,7 @@ import { sectionTemplateWidgetSchema } from "./dashboard-templates";
 import { putDashboardWidgetsBodySchema } from "./dashboard-writes";
 
 /**
- * `F4.322` / ADR 0047 Amendment 7 — the per-kind rules of the `chart` widget. Assertions live
+ * `F4.323` / ADR 0047 Amendment 7 — the per-kind rules of the `chart` widget. Assertions live
  * here; `chart-kinds.test.ts` is the Vitest entry point (ADR 0014).
  */
 

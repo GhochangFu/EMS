@@ -90,7 +90,7 @@ export function runDashboardBuilderTests(): void {
   assert(
     JSON.stringify(chartSeriesKindSchema.options) ===
       JSON.stringify(["line", "area", "bar", "scatter", "step", "compare", "donut"]),
-    `chart series kinds must be the four time series plus F4.322's step, compare and donut, got ${JSON.stringify(chartSeriesKindSchema.options)}`,
+    `chart series kinds must be the four time series plus F4.323's step, compare and donut, got ${JSON.stringify(chartSeriesKindSchema.options)}`,
   );
 
   assert(

@@ -25,7 +25,7 @@ type ChartWidgetProps = {
 
 /**
  * `chart` — the generic type (ADR 0047 decision 4): one component, several
- * ECharts shapes chosen by `config.series` (seven since `F4.322`). `load-trend-chart.tsx`'s
+ * ECharts shapes chosen by `config.series` (seven since `F4.323`). `load-trend-chart.tsx`'s
  * shape. No option construction happens here: every key comes from
  * `buildChartOption`, which reads the series type from `CHART_SERIES` rather
  * than from a literal in this file.
@@ -75,7 +75,7 @@ export function ChartWidget({
           lazyUpdate
         />
       </div>
-      {/* `F4.322` (ADR 0047 Amendment 7 item 4) — a point with no positive number has no share,
+      {/* `F4.323` (ADR 0047 Amendment 7 item 4) — a point with no positive number has no share,
           so the ring leaves it out; this line keeps that from reading as a silent gap. */}
       {status === "ready" && leftOut > 0 ? (
         <p className="mt-1 text-[11px] text-ink-muted">

@@ -421,7 +421,7 @@ function WidgetEditor({
                 className="w-full surface-field px-2 py-1.5 text-xs"
               />
             </Field>
-            {/* `F4.322` — a donut has no value axis to name. */}
+            {/* `F4.323` — a donut has no value axis to name. */}
             {chartHasValueAxis(widget.config.series) ? (
               <Field label="Y-axis label" error={problemFor("yAxisLabel")}>
                 <input
@@ -452,7 +452,7 @@ function WidgetEditor({
               ))}
             </select>
           </Field>
-          {/* `F4.322` — a kind that draws one number per point has no stack. */}
+          {/* `F4.323` — a kind that draws one number per point has no stack. */}
           {chartDrawsWindowValues(widget.config.series) ? null : (
             <label className="flex items-center gap-2 text-xs">
               <input

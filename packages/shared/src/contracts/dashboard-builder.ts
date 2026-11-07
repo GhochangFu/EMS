@@ -118,9 +118,9 @@ export const widgetTypeSchema = z.enum([
 ]);
 
 /**
- * The generic `chart` type's series (ADR 0047 decision 4; `F4.322`, Amendment 7).
+ * The generic `chart` type's series (ADR 0047 decision 4; `F4.323`, Amendment 7).
  *
- * One component, several shapes. The first four plot a time axis. `F4.322` adds `step` (a time
+ * One component, several shapes. The first four plot a time axis. `F4.323` adds `step` (a time
  * line that holds its value until the next sample), `compare` (one horizontal bar per point) and
  * `donut` (one slice per point); the last two draw each point's window aggregate, so they need
  * `config.aggregate` — `chart-kinds.ts` holds that rule for every write path.

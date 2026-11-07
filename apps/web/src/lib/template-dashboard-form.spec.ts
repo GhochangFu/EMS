@@ -413,7 +413,7 @@ export function runChartSeriesMappingTests(): void {
     "Trend (filled)": "area",
     "Comparison bars": "bar",
     Scatter: "scatter",
-    // `F4.322` — ADR 0047 Amendment 7 item 2.
+    // `F4.323` — ADR 0047 Amendment 7 item 2.
     "Steps (on/off)": "step",
     "Compare points": "compare",
     "Share (donut)": "donut",

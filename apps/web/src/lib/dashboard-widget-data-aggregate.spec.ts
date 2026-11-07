@@ -411,7 +411,7 @@ export function runAggregateRequestListTests(): void {
 }
 
 /**
- * `F4.322` (ADR 0047 Amendment 7 item 4) — a `compare` or `donut` chart draws each point's window
+ * `F4.323` (ADR 0047 Amendment 7 item 4) — a `compare` or `donut` chart draws each point's window
  * number, so it reads `stats` only (no buckets, as a tile does) and every series carries its own
  * `value`, not only the first.
  */

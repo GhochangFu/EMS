@@ -9,7 +9,7 @@ import {
 } from "./chart-kinds.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
-describe("F4.322 — the chart kind rules (ADR 0047 Amendment 7)", () => {
+describe("F4.323 — the chart kind rules (ADR 0047 Amendment 7)", () => {
   it("compare and donut need a window aggregate", () => compareAndDonutNeedAnAggregate());
   it("the time kinds need none", () => timeKindsNeedNoAggregate());
   it("the asset-template dashboard refuses the same rule", () => theAssetTemplatePathRefusesTheSameRule());
