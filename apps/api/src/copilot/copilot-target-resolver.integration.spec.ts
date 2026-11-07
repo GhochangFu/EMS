@@ -797,6 +797,15 @@ export async function aDashboardTargetCarriesItsUpdatedAt(ctx: ResolverCtx): Pro
   expect(target?.updatedAt).toBe(RESOLVER_STAMPS.dashboardA.iso);
 }
 
+/** `F4.324` (Amendment 16): dashboard A has no tabs — no `tabKey` resolves, one is refused. Mutation: drop the check. */
+export async function anAppendChartTabIsCheckedAtPropose(ctx: ResolverCtx): Promise<void> {
+  const body = { config: { windowMinutes: 1440, aggregate: "avg" }, points: [{ assetId: ctx.assetA, pointKey: "kw" }] };
+  const run = (b: Record<string, unknown>) =>
+    resolverWith(ctx, recorder().access).resolve(catalogEntry("dashboard.widgets.appendChart")!, { id: ctx.dashboardA }, b, [ctx.orgA], JWT);
+  expect((await run(body))?.targetName).toBeTruthy();
+  await expect(refusalOf(run({ ...body, tabKey: "pumps" }))).resolves.toEqual([true, "This dashboard has no tabs; leave tabKey out."]);
+}
+
 /** Mutation: leave `updatedAt` out of the asset-template case — the target carries none. */
 export async function anAssetTemplateTargetCarriesItsUpdatedAt(ctx: ResolverCtx): Promise<void> {
   const target = await resolverWith(ctx, recorder().access).resolve(

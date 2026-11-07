@@ -34,6 +34,15 @@ export const FIXTURES: Readonly<
   "dashboard.create": { body: { organizationId: ORG, slug: "main-tx", name: "Main TX" }, params: {}, names: "Main TX" },
   "dashboard.update": { body: { name: "Renamed" }, params: { id: ROW }, names: TARGET_NAME },
   "dashboard.widgets.replace": { body: { widgets: [] }, params: { id: ROW }, names: TARGET_NAME },
+  "dashboard.widgets.appendChart": {
+    body: {
+      tabKey: "ops",
+      config: { windowMinutes: 1440, aggregate: "sum", series: "donut" },
+      points: [{ assetId: ORG, pointKey: "kw" }],
+    },
+    params: { id: ROW },
+    names: TARGET_NAME,
+  },
   "dashboardTemplate.create": {
     body: { organizationId: ORG, code: "tpl-1", name: "Feeder Template", section: "operations" },
     params: {},
