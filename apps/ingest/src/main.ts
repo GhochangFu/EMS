@@ -258,7 +258,26 @@ async function main(): Promise<void> {
     bufferDir: hostConfig.bufferDir,
   });
 
+  /**
+   * One tick at a time, from the query to the sweep. The registry already
+   * refuses an overlapping *apply*, but not an overlapping *query*: a slow
+   * binding query in tick N could finish after tick N+1's and apply an older
+   * plan over a newer one. A tick that finds the previous one still running is
+   * skipped; the first skip of a run is logged, and the next tick that runs
+   * re-arms the log.
+   */
+  let tickInFlight = false;
+  let tickSkipLogged = false;
   const reloadTimer = setInterval(() => {
+    if (tickInFlight) {
+      if (!tickSkipLogged) {
+        tickSkipLogged = true;
+        logger.warn("reload tick skipped; previous tick still running");
+      }
+      return;
+    }
+    tickInFlight = true;
+    tickSkipLogged = false;
     void (async () => {
       try {
         const next = planEndpoints(await loadBindingRows(pool), planOptions);
@@ -266,9 +285,9 @@ async function main(): Promise<void> {
         // An RTU onboarded into a running host reaches the fallback here, not
         // at boot. Deduplicated per process by the set above.
         reportCredentialFallbacks(next.warnings);
-        // Stops and replaces before starts, never two reloads at once; a tick
-        // that lands mid-apply is skipped and logged ("busy"), and the next one
-        // re-plans from the database anyway (plan R6).
+        // Stops and replaces before starts, never two reloads at once (plan
+        // R6). The tick flag above already serialises ticks; the registry's own
+        // "busy" refusal is the second guard, for any other caller.
         await registry.reload(next.endpoints);
         // Plan R8: the disk buffer's 1 h / 256 MiB bounds are swept by each
         // supervisor's replay loop, so with every endpoint stopped nothing else
@@ -280,6 +299,8 @@ async function main(): Promise<void> {
         logger.error("binding reload failed", {
           reason: error instanceof Error ? error.message : "unknown",
         });
+      } finally {
+        tickInFlight = false;
       }
     })();
   }, hostConfig.reloadMs);
