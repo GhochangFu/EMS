@@ -86,3 +86,18 @@ export async function setOrganizationColourProfile(
     body: JSON.stringify({ colourProfile }),
   });
 }
+
+/**
+ * `F4.330` (ADR 0115) — `PUT /admin/organizations/:id/ingest`. Global administrator only: the
+ * organization-wide ingest switch the ingest host reads at its next reload.
+ */
+export async function setOrganizationIngest(
+  id: string,
+  ingestEnabled: boolean,
+): Promise<AdminOrganizationDto> {
+  return adminFetch(`/admin/organizations/${id}/ingest`, adminOrganizationDtoSchema, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ingestEnabled }),
+  });
+}
