@@ -606,6 +606,23 @@ export function mimicCalloutText(message: string, max = MIMIC_CALLOUT_CHARS): st
 }
 
 /**
+ * `F4.322` (owner ruling 2026-11-07) — an asset code cut to `max` characters in the MIDDLE, the
+ * ellipsis included: the head and the tail stay, so `PHE-PUMP-M-000000004` reads `PHE-PUMP…00000004`
+ * and the train number — the part that differs between two members — still shows. The head gets
+ * the odd character. Counts code points, as `mimicCalloutText` does; the full code stays in the
+ * row's `<title>`.
+ */
+export function mimicMiddleCut(code: string, max: number): string {
+  const chars = Array.from(code);
+  if (chars.length <= max) {
+    return code;
+  }
+  const kept = Math.max(0, max - 1);
+  const tail = Math.floor(kept / 2);
+  return `${chars.slice(0, kept - tail).join("")}…${tail === 0 ? "" : chars.slice(-tail).join("")}`;
+}
+
+/**
  * The synthetic view `useSiteLiveReadings` reads: the widget's assigned assets, each once, in
  * node order. An unassigned node holds no asset and so is never tracked; no widget entry is no
  * view (the hook then tracks nothing and clamps nothing).

@@ -7,6 +7,9 @@ import {
   shutPillIsShut,
   shutWithACriticalAlarmLooksOpen,
   theBreakerPillsAreUnchanged,
+  aLongCodeIsCutInTheMiddle,
+  upToFourMembersDrawRoomyRowsInTheSameBand,
+  theSwitchClearsTheCodeAndThePill,
 } from "./mimic-breaker.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -33,5 +36,19 @@ describe("F3.80 — the flow tones' pills and looks (ADR 0101 d10, d11)", () => 
 
   it("breakerLook(flowing, null) is closed", () => {
     flowingWithNoAlarmLooksClosed();
+  });
+});
+
+describe("F4.322 — larger fan-out member rows, the code cut in the middle", () => {
+  it("M1 a long code is cut in the middle, keeping its tail", () => {
+    aLongCodeIsCutInTheMiddle();
+  });
+
+  it("M2 up to four members draw roomy rows inside the same band", () => {
+    upToFourMembersDrawRoomyRowsInTheSameBand();
+  });
+
+  it("M3 the switch clears the code and the pill", () => {
+    theSwitchClearsTheCodeAndThePill();
   });
 });

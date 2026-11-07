@@ -1,7 +1,9 @@
+import { useId } from "react";
+
 import type { MimicSymbol } from "@bms/shared";
 
-import { mimicCalloutText } from "../../lib/mimic";
-import { FANOUT_BAND, type FanOutMemberRow, type FanOutRow } from "../../lib/mimic-breaker";
+import { mimicMiddleCut } from "../../lib/mimic";
+import { FANOUT_BAND, fanOutCodeClipW, fanOutSwitchX, type FanOutMemberRow, type FanOutRow } from "../../lib/mimic-breaker";
 import { BreakerSwitch } from "./mimic-breaker-switch";
 
 type FanOutMembersProps = {
@@ -17,9 +19,14 @@ type FanOutMembersProps = {
  * in the response's (asset-code) order: code · switch · pill for a member that carries a state,
  * else code · status; one column up to eight, two up to sixteen, then "+N more". The rows are
  * decided in `unitBreakerDrawing` (`lib/mimic-breaker.ts`); this component only draws them.
+ *
+ * `F4.322` — each row carries its sizes (`place.size`: `roomy` up to four members, else `dense`),
+ * the code is cut in the middle so its tail shows, and the switch sits from the right
+ * (`fanOutSwitchX`). The code is clipped short of the switch or the pill (`fanOutCodeClipW`), so a
+ * wider fallback font never draws it under them; clip ids come from `useId`.
  */
 export function FanOutMembers({ members, places, more, symbol, plainClass }: FanOutMembersProps) {
-  const { rowH } = FANOUT_BAND;
+  const uid = useId().replace(/:/g, "");
   return (
     <g data-testid="mimic-fanout">
       {places.map((place, i) => {
@@ -28,6 +35,9 @@ export function FanOutMembers({ members, places, more, symbol, plainClass }: Fan
           return null;
         }
         const wide = place.w >= 150;
+        const { size } = place;
+        const hasSwitch = member.state !== null && member.look !== null;
+        const clipId = `mimic-member-code-${uid}-${i}`;
         return (
           <g
             key={member.id}
@@ -42,32 +52,44 @@ export function FanOutMembers({ members, places, more, symbol, plainClass }: Fan
               x={1}
               y={0}
               width={place.w - 2}
-              height={rowH - 1}
+              height={size.rowH - 1}
               rx={3}
               strokeWidth={1}
               strokeDasharray={member.dashed ? "3 2" : undefined}
               className={`fill-surface ${member.frameClass}`}
             />
-            <text x={4} y={8.5} fontSize={wide ? 9 : 8} fontWeight={700} className="fill-ink">
-              {mimicCalloutText(member.code, wide ? 18 : 9)}
-            </text>
+            <clipPath id={clipId}>
+              <rect x={0} y={0} width={fanOutCodeClipW(place.w, size, hasSwitch)} height={size.rowH} />
+            </clipPath>
+            <g clipPath={`url(#${clipId})`}>
+              <text
+                data-testid="mimic-member-code"
+                x={4}
+                y={size.baseline}
+                fontSize={wide ? size.codeWide : size.codeNarrow}
+                fontWeight={700}
+                className="fill-ink"
+              >
+                {mimicMiddleCut(member.code, wide ? size.charsWide : size.charsNarrow)}
+              </text>
+            </g>
             {member.state === null || member.look === null ? null : (
               <BreakerSwitch
                 state={member.state}
                 look={member.look}
                 symbol={symbol}
-                x={place.w * 0.58 - 5}
-                y={0.5}
-                size={10}
+                x={fanOutSwitchX(place.w, size)}
+                y={(size.rowH - 1 - size.switchSize) / 2}
+                size={size.switchSize}
                 plainClass={plainClass}
               />
             )}
             <text
               data-testid={member.state === null ? "mimic-member-status" : "mimic-breaker-pill"}
               x={place.w - 4}
-              y={8.5}
+              y={size.baseline}
               textAnchor="end"
-              fontSize={7.5}
+              fontSize={size.text}
               fontWeight={700}
               className={member.textClass}
             >
@@ -80,7 +102,7 @@ export function FanOutMembers({ members, places, more, symbol, plainClass }: Fan
         <text
           data-testid="mimic-fanout-more"
           x={4}
-          y={FANOUT_BAND.top + FANOUT_BAND.perColumn * rowH + 10}
+          y={FANOUT_BAND.top + FANOUT_BAND.perColumn * FANOUT_BAND.rowH + 10}
           fontSize={10}
           fontWeight={700}
           className="fill-ink-muted"
