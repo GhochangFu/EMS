@@ -27,6 +27,15 @@ export const mqttConfigSchema = z.object({
    * the adapter must not (§4).
    */
   rejectUnauthorized: z.boolean().default(true),
+  /**
+   * TLS on the broker connection (ADR 0114 decision 2, `F4.326`). Absent means
+   * on, so every RTU committed before ADR 0114 keeps its behaviour. Only the
+   * literal `false` asks for plain `mqtt://`, and the ingest host serves that
+   * only when the broker host is on the operator's `MQTT_PLAINTEXT_HOSTS`
+   * (`mqttPlaintextDecision` below); an unlisted host is skipped, never
+   * connected with TLS instead.
+   */
+  tls: z.boolean().default(true),
 });
 
 export type MqttConfig = z.infer<typeof mqttConfigSchema>;
@@ -63,6 +72,93 @@ export type MqttDevice = z.infer<typeof mqttDeviceSchema>;
 export const MQTT_REJECT_UNAUTHORIZED_DRAFT_MESSAGE =
   "rejectUnauthorized is set by the ingest host's environment, not by the draft; remove it";
 
+/** The environment variable that names the plain-MQTT broker hosts (ADR 0114 decision 1). */
+export const MQTT_PLAINTEXT_HOSTS_ENV = "MQTT_PLAINTEXT_HOSTS";
+
+/**
+ * A bad `MQTT_PLAINTEXT_HOSTS` entry. A boot refusal in every process that reads
+ * the variable (ADR 0114 decision 1; plan ruling 10). The message names the
+ * entry's **position**, never its text (plan R2), so a mistyped secret pasted
+ * into the variable never reaches a log line.
+ */
+export class MqttPlaintextHostsConfigError extends Error {
+  constructor(position: number) {
+    super(`${MQTT_PLAINTEXT_HOSTS_ENV} entry ${position} is not a host name`);
+    this.name = "MqttPlaintextHostsConfigError";
+  }
+}
+
+/**
+ * One DNS label: letters, digits and inner hyphens, 1–63 characters. A dotted
+ * IPv4 literal is a run of such labels and passes; `:` (a port or IPv6), `/`,
+ * `@`, `*`, `[`, `]` and whitespace can never appear (plan ruling 9).
+ */
+const HOST_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+function isHostName(entry: string): boolean {
+  return entry.length <= 253 && entry.split(".").every((label) => HOST_LABEL.test(label));
+}
+
+/**
+ * Parses `MQTT_PLAINTEXT_HOSTS` (ADR 0114 decision 1, plan R2).
+ *
+ * Comma-separated; each entry trimmed and lower-cased; empty entries ignored.
+ * Unset or blank is the empty set, which is today's behaviour: no host may
+ * connect plain. An entry that is not a host name throws
+ * `MqttPlaintextHostsConfigError` — one parser for `apps/ingest`, `apps/api`
+ * and the worker, so the three processes cannot disagree.
+ */
+export function parseMqttPlaintextHosts(raw: string | undefined): ReadonlySet<string> {
+  const hosts = new Set<string>();
+  if (raw === undefined) {
+    return hosts;
+  }
+  const entries = raw.split(",");
+  entries.forEach((rawEntry, index) => {
+    const entry = rawEntry.trim().toLowerCase();
+    if (entry === "") {
+      return;
+    }
+    if (!isHostName(entry)) {
+      throw new MqttPlaintextHostsConfigError(index + 1);
+    }
+    hosts.add(entry);
+  });
+  return hosts;
+}
+
+/**
+ * How one MQTT RTU connects (ADR 0114 rulings Q1–Q3).
+ *
+ * - `"tls"` — `tls` is anything but the literal `false` (absent, `true`, the
+ *   string `"false"`, …). The list alone never selects plain.
+ * - `"plain"` — `tls === false` and the lower-cased host is on the list.
+ * - `"refused"` — `tls === false` and the host is absent or unlisted. The
+ *   caller refuses; it never falls back to TLS.
+ *
+ * The match is exact on the lower-cased host: no wildcard, no port, no range.
+ */
+export function mqttPlaintextDecision(
+  tls: unknown,
+  host: string | undefined,
+  allowed: ReadonlySet<string>,
+): "tls" | "plain" | "refused" {
+  if (tls !== false) {
+    return "tls";
+  }
+  if (host === undefined || host === "") {
+    return "refused";
+  }
+  return allowed.has(host.toLowerCase()) ? "plain" : "refused";
+}
+
+/**
+ * The fixed refusal for a plain-MQTT RTU whose host is not on the list (ADR 0114
+ * decision 5). Names no host (§9.6, the validator's fixed-text rule).
+ */
+export const MQTT_PLAINTEXT_NOT_ALLOWED_MESSAGE =
+  "Plain MQTT is not allowed for this broker host; ask the operator to add it to MQTT_PLAINTEXT_HOSTS";
+
 /**
  * An onboarding draft topic: one device's topic, or `""` — the guided MQTT add
  * writes an empty topic and asks for it on the next turn.
@@ -75,8 +171,12 @@ const draftTopic = z.union([z.literal(""), mqttDeviceSchema.shape.topic]);
  *
  * Looser than ingest in one place: `host` and `port` may be absent, because the
  * ingest host's env fallback (`resolveMqttConnection`) supplies them. Every
- * present field is checked with the shared schema's own field. `.passthrough()`:
- * `tls` and other draft-only keys are kept, not stripped.
+ * present field is checked with the shared schema's own field. `tls` is a real
+ * config field since ADR 0114 (decision 2): checked as a boolean, so the string
+ * `"false"` is a schema issue rather than a silent TLS connect. Whether a
+ * `tls: false` draft may commit is the validator's check against
+ * `MQTT_PLAINTEXT_HOSTS`, not this schema's. `.passthrough()`: other draft-only
+ * keys are kept, not stripped.
  *
  * Every issue message is fixed text — none echoes the offending value (§9.6),
  * because the validator and the tools forward these messages.
@@ -85,6 +185,7 @@ export const mqttDraftConfigSchema = z
   .object({
     host: mqttConfigSchema.shape.host.optional(),
     port: mqttConfigSchema.shape.port.optional(),
+    tls: z.boolean().optional(),
     topic: draftTopic.optional(),
     mqttTopic: draftTopic.optional(),
     device: z
