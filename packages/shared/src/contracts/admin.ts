@@ -25,6 +25,8 @@ export const adminOrganizationDtoSchema = z.object({
   timezone: z.string(),
   /** F4.310 (ADR 0110 decision 6): the organization's colour profile; `nexus` unless an admin chose one. */
   colourProfile: colourProfileSchema,
+  /** F4.330 (ADR 0115 decision 1): the organization's ingest switch; `false` = the host skips all its RTUs. */
+  ingestEnabled: z.boolean(),
   meta: z.record(z.unknown()).nullable(),
   createdAt: z.string(),
 });
@@ -88,6 +90,8 @@ export const adminRtuDtoSchema = z.object({
   stationCode: z.string().nullable(),
   stationName: z.string().nullable(),
   ingestEnabled: z.boolean(),
+  /** F4.330 (ADR 0115 decision 4): the owning organization's switch; `false` overrides `ingestEnabled`. */
+  organizationIngestEnabled: z.boolean(),
   active: z.boolean(),
   meta: z.record(z.unknown()).nullable(),
   createdAt: z.string(),
@@ -161,6 +165,8 @@ export const adminOrganizationSummaryDtoSchema = z.object({
   id: z.string(),
   code: z.string(),
   name: z.string(),
+  /** F4.330 (ADR 0115 decision 1): the organization's ingest switch. */
+  ingestEnabled: z.boolean(),
 });
 
 export const adminLocationSummaryDtoSchema = z.object({

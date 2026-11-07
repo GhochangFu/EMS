@@ -100,6 +100,7 @@ const RTU_ROW = {
   stationCode: "S1",
   stationName: "Station 1",
   ingestEnabled: true,
+  organizationIngestEnabled: true,
   active: true,
   meta: null,
   createdAt: "2026-10-01T00:00:00.000Z",

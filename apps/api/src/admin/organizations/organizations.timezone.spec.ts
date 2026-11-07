@@ -65,6 +65,7 @@ export function theDtoContractRequiresTimezone(): void {
     currency: "INR",
     timezone: "Asia/Kolkata",
     colourProfile: "nexus",
+    ingestEnabled: true,
     meta: null,
     createdAt: new Date(0).toISOString(),
   };
@@ -72,4 +73,14 @@ export function theDtoContractRequiresTimezone(): void {
   expect(ok.success && ok.data.timezone).toBe("Asia/Kolkata");
   const { timezone: _omitted, ...without } = dto;
   expect(adminOrganizationDtoSchema.safeParse(without).success).toBe(false);
+}
+
+/**
+ * Z6 — `F4.330` (ADR 0115 decision 3): `PATCH` refuses `ingestEnabled` (`.strict()`). The switch
+ * has its own global-admin route, `PUT :id/ingest`, so an organization admin's `PATCH` cannot
+ * reach it.
+ */
+export function patchRefusesTheIngestSwitch(): void {
+  expect(updateOrganizationBodySchema.safeParse({ ingestEnabled: false }).success).toBe(false);
+  expect(updateOrganizationBodySchema.safeParse({ name: "Renamed org", ingestEnabled: true }).success).toBe(false);
 }

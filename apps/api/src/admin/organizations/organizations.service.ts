@@ -93,7 +93,7 @@ export class OrganizationsAdminService {
     if (!row) {
       throw new NotFoundException("Organization not found");
     }
-    return { id: row.id, code: row.code, name: row.name };
+    return { id: row.id, code: row.code, name: row.name, ingestEnabled: row.ingestEnabled };
   }
 
   /** Creates an organization (global admin only). */
@@ -309,6 +309,7 @@ export class OrganizationsAdminService {
       currency: row.currency,
       timezone: row.timezone,
       colourProfile: colourProfileOrDefault(row.colourProfile),
+      ingestEnabled: row.ingestEnabled,
       meta: (row.meta as Record<string, unknown> | null) ?? null,
       createdAt: row.createdAt.toISOString(),
     };

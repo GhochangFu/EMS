@@ -55,6 +55,7 @@ function rtu(overrides: Partial<AdminRtuDto>): AdminRtuDto {
     stationCode: null,
     stationName: null,
     ingestEnabled: true,
+    organizationIngestEnabled: true,
     active: true,
     meta: null,
     createdAt: new Date(0).toISOString(),
