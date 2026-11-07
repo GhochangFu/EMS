@@ -369,7 +369,11 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                 aria-busy={ingestMutation.isPending}
                 onClick={() => ingestMutation.mutate(ingestFor)}
               >
-                {ingestFor.ingestEnabled ? "Stop ingest" : "Resume ingest"}
+                {ingestMutation.isPending
+                  ? "Saving…"
+                  : ingestFor.ingestEnabled
+                    ? "Stop ingest"
+                    : "Resume ingest"}
               </button>
             </div>
           </div>
