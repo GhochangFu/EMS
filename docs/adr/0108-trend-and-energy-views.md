@@ -875,7 +875,7 @@ Plan: `docs/plans/f4.299-organization-views.md`. Code citations are to `main` at
 
 **Consequences.** No migration, table, grant, policy, route or dependency. `trendStripWidgetConfigSchema` gains three optional fields (`segments`, `points`, `colors`) and `TREND_STRIP_WIDGET_MAX_POINTS`; the web gains eight role tokens under ADR 0078 Amendment 4 (41 roles + 8; the existing roles keep their values); `siteTrendStripQuerySchema` gains two optional parameters (`QUERY_SCHEMAS` stays 32: the schema is the same object); the append body and response become two-arm unions with their ledger nodes. One new API check file, one wizard component and its pure module, one builder picker item and one site-view button. The PR carries the `e2e` label (the dashboard builder and the site view are covered paths, ADR 0100). A stored selection can name a code that later leaves its `F4.300` list: the strip skips it at read and the next Save asks the administrator to remove it (item 3).
 
-### Amendment 8 — `F4.322` a draw style per trend-strip point
+### Amendment 8 — `F4.323` a draw style per trend-strip point
 
 **Status: Proposed — accepted when the PR that adds it merges.** Raised by the owner on 2026-11-07 with [ADR 0047](0047-configurable-dashboards.md) Amendment 7 (four more `chart` kinds): the PHE site dashboard's Trends panel is a `trend_strip`, so it draws only lines. The owner approved the plan and ruled the questions the same day, in chat (*(owner)* below). Code citations are to `main` at `34229d0a`.
 
