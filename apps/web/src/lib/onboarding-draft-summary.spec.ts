@@ -1,7 +1,7 @@
 import type { OnboardingDraft } from "@bms/shared";
 import { expect } from "vitest";
 
-import { formatOnboardingDraftSummary } from "./onboarding-draft-summary";
+import { formatOnboardingDraftSummary, PLAIN_MQTT_DISCLOSURE } from "./onboarding-draft-summary";
 
 /**
  * `F3.22` P6 (ADR 0091 decision 11) — the preview lists templates and
@@ -163,4 +163,21 @@ export function aLocationLineNamesItsParent(): void {
 /** W2: a top-level location (`null`) prints the line as before. */
 export function aTopLevelLocationLineIsUnchanged(): void {
   expect(formatOnboardingDraftSummary(located(null)).split("\n")[0]).toBe("Location: Thane (THANE)");
+}
+
+/**
+ * W-TLS (`F4.326`, ADR 0114 decision 6): a plain MQTT RTU's line carries the
+ * disclosure; only the literal `false` counts, and only on MQTT. The drawer and
+ * the commit wizard both render this summary.
+ */
+export function aPlainMqttRtuLineDisclosesTlsOff(): void {
+  expect(PLAIN_MQTT_DISCLOSURE).toBe(" \u00b7 TLS off \u2014 credentials and data cross the network unencrypted");
+  expect(topicLine({ topic: "a/b", tls: false })).toBe(`${LINE}a/b${PLAIN_MQTT_DISCLOSURE}`);
+  for (const tls of [true, "false", undefined]) {
+    expect(topicLine({ topic: "a/b", tls }), String(tls)).toBe(`${LINE}a/b`);
+  }
+  const modbus = formatOnboardingDraftSummary({
+    rtus: [{ displayName: "MB-1", protocol: "modbus_tcp", config: { tls: false } }],
+  } as unknown as OnboardingDraft);
+  expect(modbus).not.toContain(PLAIN_MQTT_DISCLOSURE);
 }

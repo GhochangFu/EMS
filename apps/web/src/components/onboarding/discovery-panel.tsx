@@ -20,13 +20,14 @@ type DiscoveryPanelProps = {
   busy: boolean;
 };
 
-type Broker = { host: string; port: number; topic: string };
+type Broker = { host: string; port: number; tls: boolean; topic: string };
 
 function brokerOf(config: Record<string, unknown>): Broker | null {
-  const { host, port, topic, mqttTopic } = config;
+  const { host, port, topic, mqttTopic, tls } = config;
   if (typeof host !== "string" || host === "" || typeof port !== "number") return null;
   const saved = [topic, mqttTopic].find((v) => typeof v === "string");
-  return { host, port, topic: typeof saved === "string" ? saved : "" };
+  // F4.326 (ADR 0114): only the literal `false` is plain, as ingest and the API read it.
+  return { host, port, tls: tls !== false, topic: typeof saved === "string" ? saved : "" };
 }
 
 /**
@@ -144,7 +145,7 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
       {wizardRtu && wizardBroker && (
         <OnboardingDiscoveryWizard
           session={session}
-          rtu={{ code: wizardRtu.code ?? "", host: wizardBroker.host, port: wizardBroker.port, topic: wizardBroker.topic }}
+          rtu={{ code: wizardRtu.code ?? "", host: wizardBroker.host, port: wizardBroker.port, tls: wizardBroker.tls, topic: wizardBroker.topic }}
           onStarted={() => {
             setWizardFor(null);
             // The session carries the queued status; the dock's poll takes it from there.

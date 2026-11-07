@@ -37,7 +37,7 @@ function organization(overrides: Partial<AdminOrganizationDto>): AdminOrganizati
     name: "Spec organization",
     active: true,
     currency: "ZAR",
-    timezone: "UTC", colourProfile: "nexus" as const,
+    timezone: "UTC", colourProfile: "nexus" as const, ingestEnabled: true,
     meta: null,
     createdAt: new Date(0).toISOString(),
     ...overrides,

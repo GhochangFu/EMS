@@ -26,7 +26,9 @@ const SESSION = {
   draft: { location: { name: "Plant 4" } },
 } as unknown as OnboardingSessionDto;
 
-const RTU = { code: "AIR-1051", host: "phe.thinkiot.co.in", port: 8883, topic: "Airsprint-1051/Data/1051" };
+const RTU = { code: "AIR-1051", host: "phe.thinkiot.co.in", port: 8883, tls: true, topic: "Airsprint-1051/Data/1051" };
+/** `F4.326`: a plain MQTT RTU on an allowlisted broker (ADR 0114). */
+const PLAIN_RTU = { code: "LALRLY1", host: "broker.example", port: 1883, tls: false, topic: "BCPL/LAL/01" };
 
 function stubFetch(status: number, body: unknown) {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
@@ -34,11 +36,11 @@ function stubFetch(status: number, body: unknown) {
   return fetchMock;
 }
 
-function renderWizard(onStarted = vi.fn()) {
+function renderWizard(onStarted = vi.fn(), rtu: typeof RTU = RTU) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <OnboardingDiscoveryWizard session={SESSION} rtu={RTU} onStarted={onStarted} onClose={() => undefined} />
+      <OnboardingDiscoveryWizard session={SESSION} rtu={rtu} onStarted={onStarted} onClose={() => undefined} />
     </QueryClientProvider>,
   );
   return onStarted;
@@ -64,7 +66,7 @@ export function theStepShowsTheBrokerTheFilterAndTheWarning(): void {
   stubFetch(202, { discoveryId: DISCOVERY_ID });
   renderWizard();
   const wizard = screen.getByRole("dialog");
-  expect(within(wizard).getByText("Broker: phe.thinkiot.co.in:8883. TLS: always on.")).toBeTruthy();
+  expect(within(wizard).getByText("Broker: phe.thinkiot.co.in:8883. TLS: on.")).toBeTruthy();
   expect(within(wizard).getByText("Airsprint-1051/Data/#")).toBeTruthy();
   expect(within(wizard).getAllByText(MQTT_DISCOVERY_SHARED_USER_WARNING, { exact: false }).length).toBeGreaterThan(0);
 }
@@ -78,8 +80,22 @@ export async function submitPostsTheBodyToTheDiscoveryRoute(): Promise<void> {
   expect([url.endsWith(`/api/v1/admin/onboarding/sessions/${SESSION_ID}/discovery`), init.method, JSON.parse(String(init.body))]).toEqual([
     true,
     "POST",
-    { rtuCode: "AIR-1051", expected: { host: "phe.thinkiot.co.in", port: 8883 }, topicPrefix: "Airsprint-1051/Data", windowSeconds: 60 },
+    { rtuCode: "AIR-1051", expected: { host: "phe.thinkiot.co.in", port: 8883, tls: true }, topicPrefix: "Airsprint-1051/Data", windowSeconds: 60 },
   ]);
+}
+
+/** `F4.326` (ADR 0114 decision 6, R6): a plain RTU's step says TLS is off, and the body binds `expected.tls: false`. */
+export async function aPlainRtuSaysTlsOffAndPostsExpectedTlsFalse(): Promise<void> {
+  const fetchMock = stubFetch(202, { discoveryId: DISCOVERY_ID });
+  renderWizard(vi.fn(), PLAIN_RTU);
+  const wizard = screen.getByRole("dialog");
+  expect(
+    within(wizard).getByText("Broker: broker.example:1883. TLS: off \u2014 credentials and data cross the network unencrypted."),
+  ).toBeTruthy();
+  await submit();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+  expect((JSON.parse(String(init.body)) as { expected: unknown }).expected).toEqual({ host: "broker.example", port: 1883, tls: false });
 }
 
 export async function a202HandsTheDiscoveryIdUp(): Promise<void> {
