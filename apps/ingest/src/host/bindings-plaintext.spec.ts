@@ -1,5 +1,8 @@
 import { parseMqttPlaintextHosts } from "@bms/shared/ingest";
 
+import type { IngestAdapterFactory } from "../adapter/types.js";
+import { mqttAdapterFactory } from "../adapters/mqtt.js";
+
 import { planEndpoints, type PlanResult } from "./bindings.js";
 import { ENV_CONNECTION, makeOptions, row } from "./bindings.spec.js";
 
@@ -115,6 +118,145 @@ export function runStringFalseIsInvalidTests(): void {
   assert(result.endpoints.length === 0, "a string tls is not served");
   assert(
     reasons(result).includes("invalid-connection-config"),
+    `named: ${JSON.stringify(result.skipped)}`,
+  );
+}
+
+const BLOB = { credentials_ciphertext: Buffer.from("c"), credentials_iv: Buffer.from("i"), key_version: 1 };
+const ENV_CREDS = { username: "env-user", password: "env-secret" };
+
+function plainResolver(host: string) {
+  return () => ({ host, port: PLAIN_PORT, ...ENV_CREDS, credentialSource: "env" as const });
+}
+
+/**
+ * B6 (security review M2) — a plain RTU with its own stored host sends only the
+ * credentials from its own blob, never the environment's `MQTT_USERNAME` /
+ * `MQTT_PASSWORD`, which belong to the pilot broker and would otherwise cross
+ * the network in clear text to another one. The env fallback host keeps them.
+ */
+export function runPlainNeverSendsEnvCredentialsTests(): void {
+  const hosts = parseMqttPlaintextHosts("plain.example");
+  const noBlob = planEndpoints(
+    [row({ connection_config: { host: "plain.example", port: PLAIN_PORT, tls: false } })],
+    makeOptions({ mqttPlaintextHosts: hosts, resolveMqttConnection: plainResolver("plain.example") }),
+  );
+  assert(noBlob.endpoints.length === 1, `served: ${JSON.stringify(noBlob.skipped)}`);
+  assert(
+    JSON.stringify(noBlob.endpoints[0].credentials) === "{}",
+    `no env credential on plain: ${Object.keys(noBlob.endpoints[0].credentials).join(",")}`,
+  );
+
+  const partial = planEndpoints(
+    [row({ ...BLOB, connection_config: { host: "plain.example", port: PLAIN_PORT, tls: false } })],
+    makeOptions({
+      mqttPlaintextHosts: hosts,
+      resolveMqttConnection: plainResolver("plain.example"),
+      decryptCredentials: () => ({ username: "db-user" }),
+    }),
+  );
+  assert(
+    JSON.stringify(partial.endpoints[0].credentials) === JSON.stringify({ username: "db-user" }),
+    "a blob with a username only never borrows the env password",
+  );
+
+  const full = planEndpoints(
+    [row({ ...BLOB, connection_config: { host: "plain.example", port: PLAIN_PORT, tls: false } })],
+    makeOptions({ mqttPlaintextHosts: hosts, resolveMqttConnection: plainResolver("plain.example") }),
+  );
+  assert(
+    JSON.stringify(full.endpoints[0].credentials) === JSON.stringify({ username: "db-user", password: "db-secret" }),
+    "the blob's own credentials are used",
+  );
+
+  const fallback = planEndpoints(
+    [row({ connection_config: { tls: false } })],
+    makeOptions({ mqttPlaintextHosts: parseMqttPlaintextHosts(ENV_CONNECTION.host) }),
+  );
+  assert(
+    fallback.endpoints[0]?.credentials.password === "env-secret",
+    "the MQTT_HOST fallback broker keeps its own env credentials",
+  );
+}
+
+/**
+ * B7 (security review M1) — a TLS RTU whose stored host is shaped like
+ * `mqtt://<host>` cannot join a plain endpoint by colliding with its
+ * `mqtt://host:port` key, in either row order.
+ */
+export function runTlsRtuCannotJoinAPlainEndpointTests(): void {
+  const hosts = parseMqttPlaintextHosts("plain.example");
+  const plain = row({
+    rtu_id: "rtu-a",
+    rtu_code: "RTU-A",
+    connection_config: { host: "plain.example", port: PLAIN_PORT, tls: false },
+  });
+  const crafted = row({
+    rtu_id: "rtu-b",
+    rtu_code: "RTU-B",
+    mqtt_topic: "t/b",
+    ...BLOB,
+    connection_config: { host: "mqtt://plain.example", port: PLAIN_PORT },
+  });
+  const resolve: PlanOptionsResolver = (configRow) => {
+    const cfg = (configRow?.config ?? {}) as { host?: string };
+    return { host: cfg.host ?? ENV_CONNECTION.host, port: PLAIN_PORT, credentialSource: "env" };
+  };
+  for (const rows of [
+    [plain, crafted],
+    [crafted, plain],
+  ]) {
+    const result = planEndpoints(rows, makeOptions({ mqttPlaintextHosts: hosts, resolveMqttConnection: resolve }));
+    const served = result.endpoints.flatMap((e) => e.bindings.map((b) => b.rtuCode));
+    assert(
+      JSON.stringify(served) === JSON.stringify(["RTU-A"]),
+      `only the plain RTU is served, got ${JSON.stringify(served)} ${JSON.stringify(result.skipped)}`,
+    );
+    assert((result.endpoints[0].config as { tls: boolean }).tls === false, "the plain endpoint stays plain");
+    assert(JSON.stringify(result.endpoints[0].credentials) === "{}", "the crafted RTU's credentials never join");
+    assert(
+      result.skipped.some((s) => s.rtuCode === "RTU-B" && s.reason === "invalid-connection-config"),
+      `the crafted RTU is named: ${JSON.stringify(result.skipped)}`,
+    );
+  }
+}
+
+type PlanOptionsResolver = NonNullable<Parameters<typeof makeOptions>[0]>["resolveMqttConnection"] & {};
+
+/**
+ * B8 (security review L1) — the decision reads the config the adapter will
+ * use (after the environment defaults are merged under the row), not the raw
+ * row: a `tls: false` arriving through the defaults is still checked.
+ */
+export function runTheCheckReadsTheMergedConfigTests(): void {
+  const result = planEndpoints(
+    [row()],
+    makeOptions({ mqttConnectionDefaults: { rejectUnauthorized: true, tls: false } }),
+  );
+  assert(result.endpoints.length === 0, "a merged tls:false on an unlisted host is not served");
+  assert(reasons(result).includes("plaintext-host-not-allowed"), `named: ${JSON.stringify(result.skipped)}`);
+}
+
+/** B9 — defence in depth for M1: rows on one endpoint key must agree on host, port and TLS. */
+export function runOneKeyMeansOneConnectionTests(): void {
+  const collidingFactory = {
+    ...(mqttAdapterFactory as unknown as IngestAdapterFactory),
+    endpointKey: () => "same-key",
+  } as IngestAdapterFactory;
+  const result = planEndpoints(
+    [
+      row({ rtu_id: "rtu-a", rtu_code: "RTU-A", connection_config: { tls: false } }),
+      row({ rtu_id: "rtu-b", rtu_code: "RTU-B", mqtt_topic: "t/b", connection_config: { tls: true } }),
+    ],
+    makeOptions({
+      lookup: () => collidingFactory,
+      mqttPlaintextHosts: parseMqttPlaintextHosts(ENV_CONNECTION.host),
+    }),
+  );
+  const served = result.endpoints.flatMap((e) => e.bindings.map((b) => b.rtuCode));
+  assert(JSON.stringify(served) === JSON.stringify(["RTU-A"]), `one connection: ${JSON.stringify(served)}`);
+  assert(
+    result.skipped.some((s) => s.rtuCode === "RTU-B" && s.reason === "endpoint-config-conflict"),
     `named: ${JSON.stringify(result.skipped)}`,
   );
 }

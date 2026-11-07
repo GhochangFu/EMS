@@ -2,6 +2,10 @@ import { describe, it } from "vitest";
 
 import {
   runListedPlainIsServedTests,
+  runOneKeyMeansOneConnectionTests,
+  runPlainNeverSendsEnvCredentialsTests,
+  runTheCheckReadsTheMergedConfigTests,
+  runTlsRtuCannotJoinAPlainEndpointTests,
   runStringFalseIsInvalidTests,
   runTheCheckReadsTheResolvedHostTests,
   runTlsRtuIsUnaffectedTests,
@@ -24,5 +28,17 @@ describe("host binding plan — plain MQTT (ADR 0114 decision 3)", () => {
   });
   it("B5 refuses the string \"false\" as an invalid config", () => {
     runStringFalseIsInvalidTests();
+  });
+  it("B6 never sends the env credentials to a plain stored host (review M2)", () => {
+    runPlainNeverSendsEnvCredentialsTests();
+  });
+  it("B7 keeps a TLS RTU out of a plain endpoint's key (review M1)", () => {
+    runTlsRtuCannotJoinAPlainEndpointTests();
+  });
+  it("B8 checks the merged config, not the raw row (review L1)", () => {
+    runTheCheckReadsTheMergedConfigTests();
+  });
+  it("B9 refuses a row whose connection differs from its endpoint's", () => {
+    runOneKeyMeansOneConnectionTests();
   });
 });

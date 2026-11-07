@@ -199,7 +199,8 @@ dark rtu=861736076128245 endpoint=phe.thinkiot.co.in:8883 key=s12_r01 lastSample
   `ok`/`degraded` verdict, so the restart matters more than it did.
 - `skipped` lines name every RTU left out and why (`no-adapter`,
   `unsupported-protocol`, `missing-rtu-code`, `invalid-connection-config`,
-  `tls-downgrade-refused`, `plaintext-host-not-allowed`, …),
+  `tls-downgrade-refused`, `plaintext-host-not-allowed`,
+  `endpoint-config-conflict`, …),
   so a gateway that never appears is visible without reading the log.
 - `dropped` is the memory tier's loss — the in-memory queue dropping oldest
   because it filled before anything could be written or spilled.
@@ -642,6 +643,10 @@ says.
 A plain endpoint:
 
 - connects `mqtt://host:port` and passes no `rejectUnauthorized`;
+- sends **only the credentials from the RTU's own encrypted blob** when the row
+  names its own host. `MQTT_USERNAME`/`MQTT_PASSWORD` belong to the
+  `MQTT_HOST` broker and are used only when that fallback host is the one
+  dialled — never sent in clear text to another broker;
 - logs one `warn` per adapter instance (so once per host start or endpoint
   restart): `mqtt endpoint is plaintext host=<host> port=<port>` — never the
   username, the password or a payload (AGENTS.md §9.6);
@@ -649,7 +654,11 @@ A plain endpoint:
   (`key=mqtt://shapoorji.thinkiot.co.in:1883`, percent-encoded as the buffer
   directory name). A TLS endpoint keeps `host:port`, so the existing fleet's
   keys and spilled segments do not move, and a TLS and a plain RTU on one
-  host never share a connection.
+  host never share a connection. A stored host carrying `/` (such as
+  `mqtt://…`) is skipped as `invalid-connection-config`, and a row whose host,
+  port or TLS choice differs from the endpoint it would join is skipped as
+  `endpoint-config-conflict`, so no key collision can move an RTU onto a
+  connection its row did not ask for.
 
 **What it costs.** On a plain endpoint the decrypted broker username and
 password, and every reading, cross the network in clear text. The list limits
