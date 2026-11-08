@@ -3,6 +3,9 @@ import { describe, it } from "vitest";
 import {
   aDiscoveryCardIsDeadWithoutADraftSkill,
   aDiscoveryCardIsLiveWithADraftSkill,
+  anApplyingChangeBlocksTheCardAndTheReplySaysSo,
+  anOpenCommitCardIsWithdrawnForTheDiscoveryCard,
+  thePlainReplyIsUnchangedWhenTheCardShows,
   aPlainRtuCardSaysTlsOff,
   aProposingTurnStoresOneDiscoveryCard,
   aStaleDiscoveryCardIsReplaced,
@@ -48,5 +51,14 @@ describe("copilot onboarding discovery card (F3.24b, ADR 0103 decision 2)", () =
   });
   it("X10 a discovery card is live while the draft skill runs", () => {
     aDiscoveryCardIsLiveWithADraftSkill();
+  });
+  it("X11 an open commit card is withdrawn for the discovery card (F4.339)", async () => {
+    await anOpenCommitCardIsWithdrawnForTheDiscoveryCard();
+  });
+  it("X12 an applying change blocks the card and the reply says so (F4.339)", async () => {
+    await anApplyingChangeBlocksTheCardAndTheReplySaysSo();
+  });
+  it("X13 the reply is unchanged when the card shows (F4.339)", async () => {
+    await thePlainReplyIsUnchangedWhenTheCardShows();
   });
 });

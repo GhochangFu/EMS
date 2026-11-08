@@ -14,6 +14,7 @@ import type { StoredDiscoveryProposal } from "../admin/onboarding/onboarding-dis
 import { OPEN_OTHER_CARD } from "../testing/copilot-onboarding-fakes";
 import { bodyHash } from "./body-hash";
 import { deadOnboardingCommitCards } from "./copilot-onboarding-commit";
+import { COMMIT_CARD_WITHDRAWN_SENTENCE, DISCOVERY_CARD_BLOCKED_SENTENCE } from "./copilot-onboarding-discovery";
 import type { CopilotOnboardingSkill } from "./copilot-onboarding-skill";
 import { CHANGE_ID, CONVERSATION, harness, identity, JWT, ORG_X } from "./copilot-turn.service.spec";
 
@@ -69,6 +70,8 @@ function session(messages: OnboardingChatMessage[]): OnboardingSessionDto {
 }
 
 type Setup = {
+  /** `F4.339`: `propose` answers `null` (another change is applying). */
+  proposeBlocked?: boolean;
   /** The stored discovery proposal the reader finds (`null`: none). */
   stored?: StoredDiscoveryProposal | null;
   /** `false`: the turn wrote nothing. */
@@ -111,6 +114,7 @@ function setup(options: Setup = {}) {
     onboarding: skill,
     commitReader: reader,
     ...(options.open ? { open: options.open } : {}),
+    ...(options.proposeBlocked ? { proposeBlocked: true } : {}),
   });
   const turn = () => h.service.turn({ identity: ORG_ADMIN, user: JWT }, CONVERSATION, "discover the devices", "user", [], []);
   return { ...h, reads, turn };
@@ -237,4 +241,33 @@ export function aDiscoveryCardIsDeadWithoutADraftSkill(): void {
 /** X10 — the adjacent positive: with the skill still running on a draft, the card is live. */
 export function aDiscoveryCardIsLiveWithADraftSkill(): void {
   expect(deadOnboardingCommitCards([openCard("a3333333-3333-4333-8333-333333333333", BODY)], true)).toEqual([]);
+}
+
+/** X11 (F4.339, plan R4, ruling Q3) — an open pending commit card is withdrawn, the discovery card shows, and the reply says so. */
+export async function anOpenCommitCardIsWithdrawnForTheDiscoveryCard(): Promise<void> {
+  const commit = { ...openCard("a1111111-1111-4111-8111-111111111111", { draftHash: HASH }), catalogId: "onboarding.commit" };
+  const h = setup({ open: [commit] });
+  const response = await h.turn();
+  expect(h.discarded).toEqual([[commit.id]]);
+  expect(response.pendingChanges.map((c) => [c.id, c.catalogId])).toEqual([[CHANGE_ID, "onboarding.discovery"]]);
+  expect(response.reply).toBe(`Confirm the card to listen. ${COMMIT_CARD_WITHDRAWN_SENTENCE}`);
+  expect(COMMIT_CARD_WITHDRAWN_SENTENCE).toBe("The earlier commit card was withdrawn; ask for the commit again after the discovery.");
+}
+
+/** X12 (F4.339) — an applying change blocks the card: nothing is discarded, no card, and the reply names it. */
+export async function anApplyingChangeBlocksTheCardAndTheReplySaysSo(): Promise<void> {
+  const h = setup({ proposeBlocked: true });
+  const response = await h.turn();
+  expect(h.discarded).toEqual([[]]);
+  expect(response.pendingChanges).toEqual([]);
+  expect(response.reply).toBe(`Confirm the card to listen. ${DISCOVERY_CARD_BLOCKED_SENTENCE}`);
+  expect(DISCOVERY_CARD_BLOCKED_SENTENCE).toBe(
+    "The discovery card could not be shown while another change is being applied; ask for the discovery again in a moment.",
+  );
+}
+
+/** X13 (F4.339) — with no open change the reply is the onboarding reply, unchanged. */
+export async function thePlainReplyIsUnchangedWhenTheCardShows(): Promise<void> {
+  const response = await setup().turn();
+  expect(response.reply).toBe("Confirm the card to listen.");
 }

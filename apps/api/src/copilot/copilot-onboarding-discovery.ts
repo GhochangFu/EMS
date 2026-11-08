@@ -3,7 +3,12 @@ import { catalogEntry, type CatalogEntry, catalogPath, type OnboardingCommitDraf
 
 import { DISCOVERY_PROPOSED_LEAD } from "../admin/onboarding/onboarding-discovery-tools";
 import { bodyHash } from "./body-hash";
-import { type CopilotOnboardingCommitReader, ONBOARDING_DISCOVERY_ID } from "./copilot-onboarding-commit";
+import {
+  type CopilotOnboardingCommitReader,
+  ONBOARDING_COMMIT_ID,
+  ONBOARDING_DISCOVERY_ID,
+  onboardingCommitCards,
+} from "./copilot-onboarding-commit";
 import type { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 
 /** The reader as the discovery card sees it (a spec fakes it). */
@@ -44,8 +49,11 @@ export function turnProposedDiscovery(actionLines: readonly string[]): boolean {
  * shared-user warning.
  *
  * A conversation holds one open change: an open discovery card with the same
- * body hash is returned; one for another body is stale and discarded first.
- * Any other open change blocks the card (`propose` answers `null`).
+ * body hash is returned. `F4.339` (ADR 0117 decision 5, plan R4, ruling Q3):
+ * every other **pending** `onboarding.*` change — a stale discovery card, or a
+ * commit card (`withdrewCommit`) — is discarded first, so the discovery card
+ * always renders. An **applying** change is never discarded: `propose` then
+ * answers `null` and the result says `blocked`.
  */
 export async function onboardingDiscoveryCards(
   deps: { reader: OnboardingDiscoveryReader; pending: PendingStore },
@@ -58,11 +66,12 @@ export async function onboardingDiscoveryCards(
     wrote: boolean;
     proposed: boolean;
   },
-): Promise<CopilotPendingChangeDto[]> {
+): Promise<DiscoveryCardsResult> {
+  const none: DiscoveryCardsResult = { cards: [], blocked: false, withdrewCommit: false };
   const { userId, conversationId, organizationId, sessionId, answer } = args;
-  if (!args.wrote || !args.proposed || answer.session.status !== "draft") return [];
+  if (!args.wrote || !args.proposed || answer.session.status !== "draft") return none;
   const proposal = await deps.reader.storedDiscoveryProposal(organizationId, sessionId);
-  if (proposal === null) return [];
+  if (proposal === null) return none;
 
   const entry = onboardingDiscoveryEntry();
   const parsed = entry.body.safeParse({
@@ -71,17 +80,20 @@ export async function onboardingDiscoveryCards(
     windowSeconds: proposal.windowSeconds,
     expected: { host: proposal.host, port: proposal.port, tls: proposal.tls },
   });
-  if (!parsed.success) return [];
+  if (!parsed.success) return none;
   const body = parsed.data as Record<string, unknown>;
   const hash = bodyHash(body);
 
-  const open = (await deps.pending.listOpen(userId, conversationId)).filter((c) => c.catalogId === ONBOARDING_DISCOVERY_ID);
-  const same = open.find((c) => bodyHash(c.body) === hash);
-  if (same) return [same];
+  // `listOpen` reads pending, unexpired rows only, so an applying change is never in this list.
+  const open = await deps.pending.listOpen(userId, conversationId);
+  const same = open.find((c) => c.catalogId === ONBOARDING_DISCOVERY_ID && bodyHash(c.body) === hash);
+  if (same) return { ...none, cards: [same] };
+  const stale = open.filter((c) => c.catalogId.startsWith("onboarding."));
   await deps.pending.discard(
     userId,
-    open.map((c) => c.id),
+    stale.map((c) => c.id),
   );
+  const withdrewCommit = stale.some((c) => c.catalogId === ONBOARDING_COMMIT_ID);
 
   const card = await deps.pending.propose(userId, {
     conversationId,
@@ -100,5 +112,52 @@ export async function onboardingDiscoveryCards(
     risk: entry.risk,
     precondition: null,
   });
-  return card ? [card] : [];
+  return card ? { cards: [card], blocked: false, withdrewCommit } : { cards: [], blocked: true, withdrewCommit };
+}
+
+/** `F4.339` (plan R4): what a discovery proposal made of the conversation's open changes. */
+export type DiscoveryCardsResult = {
+  readonly cards: CopilotPendingChangeDto[];
+  /** An applying change kept the card from being stored. */
+  readonly blocked: boolean;
+  /** A pending commit card was discarded so the discovery card could render. */
+  readonly withdrewCommit: boolean;
+};
+
+/** `F4.339` (plan R4): appended to the reply when an applying change blocked the discovery card. */
+export const DISCOVERY_CARD_BLOCKED_SENTENCE =
+  "The discovery card could not be shown while another change is being applied; ask for the discovery again in a moment.";
+
+/** `F4.339` (plan R4): appended to the reply when the discovery card replaced an open commit card. */
+export const COMMIT_CARD_WITHDRAWN_SENTENCE = "The earlier commit card was withdrawn; ask for the commit again after the discovery.";
+
+/**
+ * `F3.86` PR 6 / `F3.24b` — the server-made cards of one skill turn, moved out
+ * of `skillTurn` by `F4.339`. The commit card first: at most one of the two is
+ * made, since a write drops both proposals. `note` is the fixed text the reply
+ * gains (`F4.339`, plan R4), or `""`.
+ */
+export async function onboardingSkillCards(
+  deps: { reader: CopilotOnboardingCommitReader; pending: PendingStore },
+  args: {
+    userId: string;
+    conversationId: string;
+    organizationId: string;
+    sessionId: string;
+    answer: OnboardingChatResponseDto;
+    wrote: boolean;
+    actions: readonly string[];
+  },
+): Promise<{ pendingChanges: CopilotPendingChangeDto[]; note: string; cardBlocked: boolean; commitWithdrawn: boolean }> {
+  const { actions, ...turn } = args;
+  const commitCards = await onboardingCommitCards(deps, turn);
+  if (commitCards.length > 0) return { pendingChanges: commitCards, note: "", cardBlocked: false, commitWithdrawn: false };
+  const discovery = await onboardingDiscoveryCards(deps, { ...turn, proposed: turnProposedDiscovery(actions) });
+  const note = [
+    discovery.withdrewCommit ? COMMIT_CARD_WITHDRAWN_SENTENCE : "",
+    discovery.blocked ? DISCOVERY_CARD_BLOCKED_SENTENCE : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return { pendingChanges: discovery.cards, note, cardBlocked: discovery.blocked, commitWithdrawn: discovery.withdrewCommit };
 }
