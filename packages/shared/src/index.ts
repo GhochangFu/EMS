@@ -938,8 +938,8 @@ export type MimicNodeMemberDto = z.infer<typeof Mi.mimicNodeMemberSchema>;
 export type MimicNodeAlarmDto = z.infer<typeof Mi.mimicNodeAlarmSchema>;
 export type MimicWidgetNodesDto = z.infer<typeof Mi.mimicWidgetNodesSchema>;
 export type DashboardMimicNodesResponseDto = z.infer<typeof Mi.dashboardMimicNodesResponseSchema>;
-// `F3.74` / `F4.309` (ADR 0088) — the point-key state map, its admin rows and the switching states.
-export type * from "./types/point-key-states";
+export type * from "./types/point-key-states"; // `F3.74` / `F4.309` (ADR 0088): point-key states
+export type * from "./types/mqtt-payload-formats"; // `F4.334` (ADR 0116): MQTT payload formats
 
 // ---------------------------------------------------------------------------
 // Re-exported sibling modules
