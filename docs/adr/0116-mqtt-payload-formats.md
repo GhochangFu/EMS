@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed — 2026-11-08.** Raised by the agent on 2026-11-08 while onboarding
+**Accepted — 2026-11-08** (owner, in chat: "Accept"; proposed the same day). Raised by the agent on 2026-11-08 while onboarding
 the 21 BCPL water flow meters on `bms.demosites.co.in` (row `F4.334`). The
 owner widened the scope the same day: the fix must not be a BCPL or ThinkIoT
 special case, but a platform-wide way to accept any organization whose devices
