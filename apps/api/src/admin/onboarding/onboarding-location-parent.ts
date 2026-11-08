@@ -43,6 +43,17 @@ const NO_PARENT_WORDS: ReadonlySet<string> = new Set(["no parent", "none", "root
 type DraftLocation = NonNullable<OnboardingDraft["location"]>;
 
 /**
+ * `F4.339` (ADR 0117 decision 10, plan R11) — whether the user's message asks
+ * for a top-level location: the whole reply is one of B6's "no parent" words,
+ * or the message says "top level", "top-level" or "no parent" anywhere
+ * ("Make SIVSAGAR a top level campus"). "none" and "root" count only as the
+ * whole reply, since inside a sentence they mean other things.
+ */
+export function isTopLevelPhrase(message: string): boolean {
+  return NO_PARENT_WORDS.has(normalisedReply(message)) || /\b(?:top[- ]level|no parent)\b/i.test(message);
+}
+
+/**
  * B5 — whether the draft still has to choose a parent: it has a location, the
  * key is absent, and the organization has at least one active location to
  * choose from. `null` is a choice; an organization with no active location is

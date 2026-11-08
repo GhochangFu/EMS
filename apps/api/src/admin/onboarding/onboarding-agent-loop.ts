@@ -22,9 +22,10 @@ import {
   type AgentTurnRecord,
 } from "../../llm/agent-loop";
 import { ONBOARDING_ACTION_RECORD_PREFIX } from "../../llm/action-record";
-import type { LlmMessage, LlmProvider } from "../../llm/llm-port";
+import type { LlmMessage, LlmProvider, LlmToolCall } from "../../llm/llm-port";
 import { PROMPT_MARKER_SENTENCE, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import { readStoredDiscovery } from "./onboarding-discovery-state";
+import { isTopLevelPhrase } from "./onboarding-location-parent";
 import type { DiscoveryProposal, DiscoverySecretCopy } from "./onboarding-tool-outcome";
 import type { OnboardingDraftInput, OnboardingPhase } from "./onboarding.schema";
 import { claimsAWrite, withoutWriteClaims, writeClaimRetryFor } from "./onboarding-write-claim";
@@ -244,6 +245,25 @@ export function stopReply(
   return state.discoveryRead !== undefined ? base + ONE_DEVICE_PER_TURN_HINT : base;
 }
 
+/**
+ * `F4.339` (ADR 0117 decision 10, plan R11, ruling Q12) — when the user's
+ * message asks for a top-level location and a `set_location` call names no
+ * `parentCode`, code writes `parentCode: null`, as `source: "discovery"` is
+ * code-stamped. The BCPL onboarding saw the prompt alone miss two of three.
+ * Any other call, or a call that names a parent, is returned unchanged.
+ */
+export function stampTopLevel(call: LlmToolCall, topLevel: boolean): LlmToolCall {
+  if (!topLevel || call.name !== "set_location") return call;
+  let args: unknown;
+  try {
+    args = JSON.parse(call.arguments);
+  } catch {
+    return call;
+  }
+  if (typeof args !== "object" || args === null || Array.isArray(args) || "parentCode" in args) return call;
+  return { ...call, arguments: JSON.stringify({ ...args, parentCode: null }) };
+}
+
 /** Runs one user turn of the agent loop. Never throws; every failure is a stop reason. */
 export async function runAgentTurn(
   input: {
@@ -258,6 +278,7 @@ export async function runAgentTurn(
   options: { readonly maxToolCalls?: number; readonly deadlineMs?: number } = {},
 ): Promise<AgentTurnResult> {
   const state: ToolState = { working: cloneJson(input.draft) };
+  const topLevel = isTopLevelPhrase(input.message);
   const messages: LlmMessage[] = [
     {
       role: "system",
@@ -276,7 +297,8 @@ export async function runAgentTurn(
       messages,
       tools: { definitions: TOOL_DEFINITIONS, isToolName },
       // F4.135 (ADR 0090 Amendment 4): a refused draft write gets a code-written line, so the reply cannot claim it.
-      runTool: async (call) => {
+      runTool: async (asked) => {
+        const call = stampTopLevel(asked, topLevel);
         const outcome = await runTool(call, state, input.tools);
         const refused = refusedWriteLine(call.name, outcome);
         return refused === undefined ? outcome : { ...outcome, actionLine: refused };

@@ -52,6 +52,8 @@ import {
   assertAStopAfterElevenWritesCutsToTen,
   assertTheNoWriteConstantsAndTheDiscoveryHintStand,
   assertThePromptCarriesTheOneAssetPerTurnRule,
+  assertATopLevelMessageStampsParentCodeNull,
+  assertTheTopLevelStampLeavesOtherCallsAlone,
 } from "./onboarding-agent-loop.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -276,5 +278,15 @@ describe("stop replies name what was stored (F4.339, ADR 0117 decision 3)", () =
 
   it("tells the model to write one asset per turn", () => {
     assertThePromptCarriesTheOneAssetPerTurnRule();
+  });
+});
+
+describe("the top-level stamp (F4.339, ADR 0117 decision 10, plan R11)", () => {
+  it("writes parentCode null when the message says top level and the call omits it", async () => {
+    await assertATopLevelMessageStampsParentCodeNull();
+  });
+
+  it("leaves a named parent, another tool and a plain message alone", () => {
+    assertTheTopLevelStampLeavesOtherCallsAlone();
   });
 });

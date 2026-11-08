@@ -14,6 +14,7 @@ import {
   ONE_ASSET_PER_TURN_RULE,
   stopReply,
   stoppedEarlyStoredReply,
+  stampTopLevel,
   ACTION_RECORD_PROMPT_SENTENCE,
   buildHistory,
   buildSystemPrompt,
@@ -33,7 +34,7 @@ import {
 import { ONBOARDING_ACTION_RECORD_PREFIX } from "../../llm/action-record";
 import { NOTHING_WRITTEN_LINE, writeClaimRetryFor } from "./onboarding-write-claim";
 import type { LlmMessage, LlmReply, LlmToolCall, LlmProvider } from "../../llm/llm-port";
-import { stepLabelFor } from "./onboarding-chat-rule-based";
+import { isTopLevelPhrase, stepLabelFor } from "./onboarding-chat-rule-based";
 import { filterSuggestedReplies } from "./onboarding-suggested-replies";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -746,4 +747,29 @@ export function assertThePromptCarriesTheOneAssetPerTurnRule(): void {
   );
   assert(prompt.includes(ONE_ASSET_PER_TURN_RULE), "through the constant");
   assert(DISCOVERY_PROMPT_PARAGRAPH.includes(ONE_DEVICE_PER_TURN_RULE), "the Discovery paragraph's rule stays");
+}
+
+/** F4.339 (plan R11, ruling Q12): "top level" in the message + a set_location with no parentCode → code writes null. */
+export async function assertATopLevelMessageStampsParentCodeNull(): Promise<void> {
+  const located = { name: "SIVSAGAR", type: "smoc_campus", latitude: 26.98, longitude: 94.63 };
+  const llm = new FakeLlmProvider([calls(toolCall("set_location", located)), { kind: "final", text: "SIVSAGAR is a top-level campus now." }]);
+  const result = await runAgentTurn(turn(llm, { message: "Make SIVSAGAR a top level campus" }));
+  assert(result.draftPatch.location?.parentCode === null, `the stored patch has parentCode null, got ${JSON.stringify(result.draftPatch.location)}`);
+  assert(result.actionLines[0]?.endsWith("as a top-level location") === true, `the line says top-level, got ${JSON.stringify(result.actionLines)}`);
+  const plain = new FakeLlmProvider([calls(toolCall("set_location", located)), { kind: "final", text: "ok" }]);
+  const unstamped = await runAgentTurn(turn(plain, { message: "Make SIVSAGAR a campus" }));
+  assert(unstamped.draftPatch.location?.parentCode === undefined, "without the phrase nothing is stamped");
+}
+
+/** F4.339: a call that names a parent, another tool, or no phrase is returned unchanged. */
+export function assertTheTopLevelStampLeavesOtherCallsAlone(): void {
+  const named = toolCall("set_location", { name: "SIVSAGAR", parentCode: "X" });
+  assert(stampTopLevel(named, true) === named, "a named parentCode is untouched");
+  const other = toolCall("add_rtu", PLAIN_RTU);
+  assert(stampTopLevel(other, true) === other, "another tool is untouched");
+  const bare = toolCall("set_location", { name: "SIVSAGAR" });
+  assert(stampTopLevel(bare, false) === bare, "no phrase, no stamp");
+  assert(JSON.parse(stampTopLevel(bare, true).arguments).parentCode === null, "the phrase stamps null");
+  assert(isTopLevelPhrase("Make SIVSAGAR a top level campus") && isTopLevelPhrase("top-level please") && isTopLevelPhrase("none"), "the phrase set");
+  assert(!isTopLevelPhrase("none of the RTUs are online") && !isTopLevelPhrase("put it under BCPL"), "none and root only as the whole reply");
 }
