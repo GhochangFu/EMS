@@ -23,7 +23,10 @@ export type ListenOutcome =
   | { readonly kind: "done" }
   | { readonly kind: "failed"; readonly error?: OnboardingDiscoveryErrorClass };
 
-/** The hard deadline's margin past the connect timeout and the window. */
+/**
+ * The hard deadline's margin past the connect timeout and the window. `F4.339`
+ * (plan R5): at the 300 s maximum window the deadline is 10 + 300 + 5 = 315 s.
+ */
 export const DISCOVERY_DEADLINE_MARGIN_MS = 5_000;
 
 const AUTH_CODES: ReadonlySet<number> = new Set([4, 5, 134, 135]);

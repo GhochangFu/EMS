@@ -11,8 +11,8 @@ describe("F3.24b — the discovery contracts (ADR 0103)", () => {
   it("refuses an empty prefix", () => S.theBodyRefusesAnEmptyPrefix());
   it("refuses a 256-character prefix", () => S.theBodyRefusesA256CharPrefix());
   it("refuses a 4 s window", () => S.theBodyRefusesWindow4());
-  it("refuses a 121 s window", () => S.theBodyRefusesWindow121());
-  it("accepts a 120 s window", () => S.theBodyAcceptsWindow120());
+  it("refuses a 301 s window (F4.339)", () => S.theBodyRefusesWindow301());
+  it("accepts a 300 s window (F4.339)", () => S.theBodyAcceptsWindow300());
   it("refuses an unknown body key", () => S.theBodyRefusesAnUnknownKey());
   it("requires the expected host and port", () => S.theBodyRequiresTheExpectedTarget());
   it("refuses an expected port out of range", () => S.theBodyRefusesAnExpectedPortOutOfRange());
@@ -42,6 +42,7 @@ describe("F3.24b — the discovery contracts (ADR 0103)", () => {
 });
 
 describe("F3.24b — discoveryIsActive (the shared busy rule)", () => {
+  it("keeps a 300 s discovery active past its 315 s deadline (F4.339)", () => S.aRunning300sDiscoveryStaysActivePastItsDeadline());
   it("a recent queued discovery is active", () => S.aRecentQueuedDiscoveryIsActive());
   it("a queued discovery past 30 minutes is not active", () => S.aQueuedDiscoveryPast30MinutesIsNotActive());
   it("a queued discovery with no queuedAt is active", () => S.aQueuedDiscoveryWithNoQueuedAtIsActive());

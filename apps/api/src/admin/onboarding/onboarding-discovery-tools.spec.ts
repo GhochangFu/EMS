@@ -159,6 +159,14 @@ export async function assertD2TheActionLineNamesTheFilterAndWindow(): Promise<vo
   );
 }
 
+/** F4.339 (ADR 0117 decision 5): the tool takes a 300 s window and refuses 301 s. */
+export async function assertTheToolWindowIsBoundedAt300Seconds(): Promise<void> {
+  const { outcome } = await proposeOn(draft(), { ...PROPOSE, windowSeconds: 300 });
+  assert(outcome.ok && outcome.actionLine?.endsWith("for 300 s") === true, `300 s is proposed, got ${outcome.actionLine}`);
+  const { outcome: over } = await proposeOn(draft(), { ...PROPOSE, windowSeconds: 301 });
+  assert(!over.ok, "301 s is refused");
+}
+
 async function refused(working: OnboardingDraft, args: unknown, fragment: string): Promise<void> {
   const { state, outcome } = await proposeOn(working, args);
   assert(!outcome.ok, "the proposal is refused");

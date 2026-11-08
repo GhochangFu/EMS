@@ -57,8 +57,10 @@ export function assertCredentialExtraKeyIsRefused(): void {
 }
 
 export function assertWindowAboveMaximumIsRefused(): void {
-  const err = refusalOf({ ...VALID_PAYLOAD, windowSeconds: 121 });
-  assert(reasonOf(err) === "invalid_payload", "a window of 121 s must be refused");
+  // F4.339 (ADR 0117 decision 5): the maximum is 300 s.
+  const err = refusalOf({ ...VALID_PAYLOAD, windowSeconds: 301 });
+  assert(reasonOf(err) === "invalid_payload", "a window of 301 s must be refused");
+  assert(refusalOf({ ...VALID_PAYLOAD, windowSeconds: 300 }) === undefined, "a window of 300 s is accepted");
 }
 
 export function assertSingleAttempt(): void {

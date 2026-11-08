@@ -93,11 +93,12 @@ export function theBodyRefusesA256CharPrefix(): void {
 export function theBodyRefusesWindow4(): void {
   expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, windowSeconds: 4 }).success).toBe(false);
 }
-export function theBodyRefusesWindow121(): void {
-  expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, windowSeconds: 121 }).success).toBe(false);
+/** F4.339 (ADR 0117 decision 5): the maximum is 300 s. */
+export function theBodyRefusesWindow301(): void {
+  expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, windowSeconds: 301 }).success).toBe(false);
 }
-export function theBodyAcceptsWindow120(): void {
-  expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, windowSeconds: 120 }).success).toBe(true);
+export function theBodyAcceptsWindow300(): void {
+  expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, windowSeconds: 300 }).success).toBe(true);
 }
 export function theBodyRefusesAnUnknownKey(): void {
   expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, host: "x" }).success).toBe(false);
@@ -271,6 +272,12 @@ export function aRunningDiscoveryInsideWindowPlusGraceIsActive(): void {
 }
 export function aRunningDiscoveryPastWindowPlusGraceIsNotActive(): void {
   expect(discoveryIsActive({ status: "running", windowSeconds: 60, startedAt: "2026-10-18T11:57:59.000Z" }, ACTIVE_NOW)).toBe(false);
+}
+/** F4.339 (plan R5): a 300 s discovery is active at started + 359 s and not at + 361 s. */
+export function aRunning300sDiscoveryStaysActivePastItsDeadline(): void {
+  const started = "2026-10-18T11:54:01.000Z"; // ACTIVE_NOW − 359 s
+  expect(discoveryIsActive({ status: "running", windowSeconds: 300, startedAt: started }, ACTIVE_NOW)).toBe(true);
+  expect(discoveryIsActive({ status: "running", windowSeconds: 300, startedAt: "2026-10-18T11:53:59.000Z" }, ACTIVE_NOW)).toBe(false);
 }
 export function aRunningDiscoveryWithNoStartIsActive(): void {
   expect(discoveryIsActive({ status: "running", windowSeconds: 60, startedAt: null }, ACTIVE_NOW)).toBe(true);
