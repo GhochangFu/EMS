@@ -13,9 +13,7 @@ import {
   assetGroupMembers,
   assetGroups,
   assets,
-  auditLog,
   dashboards,
-  dashboardTabs,
   dashboardTemplates,
   locations,
   siteControlRoomViews,
@@ -29,7 +27,6 @@ import {
   planTemplateWidget,
   sectionTemplateContentSchema,
   siteLayoutDashboardSlug,
-  siteLayoutReplaceSkipReasonSchema,
   siteLayoutSkipReasonSchema,
   TEMPLATE_TARGET_BODY_MESSAGE,
 } from "@bms/shared";
@@ -38,16 +35,10 @@ import type {
   SectionTemplateContent,
   SiteLayoutAmbiguousDto,
   SiteLayoutAmbiguousTab,
-  SiteLayoutBulkReplaceResultDto,
   SiteLayoutBulkResultDto,
   SiteLayoutChoice,
-  SiteLayoutCopyEdits,
   SiteLayoutGroup,
-  SiteLayoutHeldCopy,
   SiteLayoutOmittedTile,
-  SiteLayoutReplacePreviewDto,
-  SiteLayoutReplacePreviewSite,
-  SiteLayoutReplaceResultDto,
   SiteLayoutReplaceSkipReason,
   SiteLayoutResultDto,
   SiteLayoutSkipReason,
@@ -62,13 +53,10 @@ import { writeDashboardTabs } from "../dashboard-builder/dashboard-tabs-write";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
 import { writeLayoutWidgets } from "./layout-copy-writes";
-import { carriedTabGroups, replaceOutcome } from "./site-layout-replace.pure";
 import {
   COPY_TEMPLATE_NOT_PUBLISHED_MESSAGE,
   NO_SITE_TEMPLATE_MESSAGE,
-  SITE_COPY_OTHER_TEMPLATE_MESSAGE,
   SITE_HAS_NO_ASSETS_MESSAGE,
-  SITE_HAS_NO_COPY_MESSAGE,
   SITE_HAS_VIEW_MESSAGE,
   SITE_LAYOUT_AMBIGUOUS_MESSAGE,
   SITE_LAYOUT_CHOICE_MESSAGES,
@@ -113,7 +101,9 @@ import {
  * (`POST /admin/dashboard-templates/:id/replace-site-layouts`), the copy's dashboard is deleted and
  * the make path re-points the same view row, all in the one locked transaction. The two preview
  * reads (`GET …/site-layout/replace-preview`, `GET …/replace-site-layouts/preview`) answer the
- * edit flag of decision 9 under the same rule as the Replace they preview.
+ * edit flag of decision 9 under the same rule as the Replace they preview. Since `F4.336` those
+ * four doors live in `SiteLayoutReplaceService` (`site-layout-replace.service.ts`), which reuses
+ * this service's lock, make path and permission rules.
  */
 
 /**
@@ -142,9 +132,9 @@ export function siteTemplateArmOf(siteLayout: SiteLayoutService): SiteTemplateAr
 /** A placeholder id for a group the plan needs and the transaction has not made yet. */
 const PLANNED_GROUP_PREFIX = "planned:";
 
-type SiteRow = { id: string; organizationId: string; slug: string; name: string };
+export type SiteRow = { id: string; organizationId: string; slug: string; name: string };
 
-type SiteTemplate = {
+export type SiteTemplate = {
   id: string;
   organizationId: string;
   code: string;
@@ -161,16 +151,7 @@ type TemplateRow = typeof dashboardTemplates.$inferSelect;
 export type SiteViewRowForCopy = { kind: string; dashboardId: string | null };
 
 /** `F4.320` PR 2 (decision 7) — the copy a Replace removed, as its audit row and answer name it. */
-type ReplacedCopy = { previousDashboardId: string; previousTemplateId: string; previousVersion: number };
-
-/**
- * A bulk Replace skip whose message no caller reads (the bulk answer carries the reason only). Per
- * site the same version is allowed, so this sentence never reaches a 409 body.
- */
-const SAME_VERSION_SKIP_MESSAGE = "This site's copy already holds this version";
-
-/** The bulk-only `newer_version` skip (owner ruling 2026-11-07): never a 409 body either. */
-const NEWER_VERSION_SKIP_MESSAGE = "This site's copy holds a newer version than this template";
+export type ReplacedCopy = { previousDashboardId: string; previousTemplateId: string; previousVersion: number };
 
 /** Either skip vocabulary: the make doors raise the first, the Replace doors the second. */
 type SiteLayoutConflictReason = SiteLayoutSkipReason | SiteLayoutReplaceSkipReason;
@@ -179,17 +160,8 @@ function isMakeSkip(reason: SiteLayoutConflictReason): reason is SiteLayoutSkipR
   return (siteLayoutSkipReasonSchema.options as readonly string[]).includes(reason);
 }
 
-function isReplaceSkip(reason: SiteLayoutConflictReason): reason is SiteLayoutReplaceSkipReason {
-  return (siteLayoutReplaceSkipReasonSchema.options as readonly string[]).includes(reason);
-}
-
-/** Who may see the newest edit's actor (decision 9): the roles `AuditService` serves. */
-function readsAuditActors(role: string): boolean {
-  return role === "admin" || role === "organization_admin";
-}
-
 /** The planner's readonly ambiguous list, as the contract's plain arrays. */
-function mutableAmbiguous(list: readonly SiteLayoutAmbiguousTab[]): SiteLayoutAmbiguousDto["ambiguous"] {
+export function mutableAmbiguous(list: readonly SiteLayoutAmbiguousTab[]): SiteLayoutAmbiguousDto["ambiguous"] {
   return list.map((tab) => ({ tabKey: tab.tabKey, domain: tab.domain, candidates: tab.candidates.map((c) => ({ ...c })) }));
 }
 
@@ -268,104 +240,6 @@ export class SiteLayoutService {
   }
 
   /**
-   * `F4.320` PR 2 (ADR 0087 Amendment 4 decisions 2–5, 10) — "Replace with this version" on one
-   * site: delete the site's template copy and make it again, in one transaction after the Make
-   * lock. The Make permission rule. `templateId` absent means the newest published version of the
-   * copy's own template code (decision 5: Replace never crosses codes). The same version is
-   * allowed: an explicit rebuild that discards the copy's edits.
-   */
-  async replaceForSite(
-    jwt: JwtPayload,
-    input: { locationId: string; templateId?: string; tabGroups?: SiteLayoutChoice },
-  ): Promise<SiteLayoutReplaceResultDto> {
-    const { user, site } = await this.authorizeSite(jwt, input.locationId);
-    const named =
-      input.templateId === undefined
-        ? null
-        : this.checkedTemplate(await this.readTemplate(input.templateId, site.organizationId));
-    const updatedBy = await this.provisionedUserId(user.id);
-    return this.inSiteTransaction(site, (tx) =>
-      this.replaceInTransaction(
-        tx,
-        jwt,
-        site,
-        async (held) => named ?? (await this.newestPublishedSiteTemplate(site.organizationId, held.templateCode)),
-        "site",
-        input.tabGroups ?? {},
-        updatedBy,
-      ),
-    );
-  }
-
-  /**
-   * `F4.320` PR 2 (decisions 5, 10) — "Replace existing copies": every active site whose copy is
-   * of this template's code at an older version (owner ruling 2026-11-07), one transaction each. The bulk Make rule
-   * (organization admin or `admin`). A skip is reported, never raised; a site replaced stays
-   * replaced when a later one is skipped.
-   */
-  async replaceForOrganization(jwt: JwtPayload, templateId: string): Promise<SiteLayoutBulkReplaceResultDto> {
-    const { user, template } = await this.authorizeBulk(jwt, templateId);
-    const sites = await this.activeSites(template.organizationId);
-
-    const updatedBy = await this.provisionedUserId(user.id);
-    const replaced: SiteLayoutReplaceResultDto[] = [];
-    const skipped: SiteLayoutBulkReplaceResultDto["skipped"] = [];
-    for (const site of sites) {
-      try {
-        replaced.push(
-          await this.inSiteTransaction(site, (tx) =>
-            this.replaceInTransaction(tx, jwt, site, async () => template, "bulk", {}, updatedBy),
-          ),
-        );
-      } catch (err) {
-        const reason = err instanceof SiteLayoutConflict ? (err.reason === "has_view" ? "no_copy" : err.reason) : null;
-        if (!(err instanceof SiteLayoutConflict) || reason === null || !isReplaceSkip(reason)) {
-          throw err;
-        }
-        skipped.push({
-          locationId: site.id,
-          reason,
-          ...(err.ambiguous !== undefined ? { ambiguous: mutableAmbiguous(err.ambiguous) } : {}),
-        });
-      }
-    }
-    return { replaced, skipped };
-  }
-
-  /**
-   * `F4.320` PR 2 (decisions 8, 9) — the per-site confirm step's read: the version Replace would
-   * copy, the copy held, the outcome and the edit flag. The Make permission rule, as the Replace
-   * it previews. Writes nothing.
-   */
-  async previewReplaceForSite(jwt: JwtPayload, locationId: string): Promise<SiteLayoutReplacePreviewDto> {
-    const { user, site } = await this.authorizeSite(jwt, locationId);
-    return withTenant(this.tenantDb, site.organizationId, async (tx) => {
-      const held = await this.readHeldCopy(tx, site.id);
-      // With no copy, the version Make would use (the outcome is `no_copy` whichever it is).
-      const template = await this.newestPublishedSiteTemplate(site.organizationId, held?.templateCode);
-      const row = await this.previewSite(tx, user.role, site, held, template, "site");
-      return { templateId: template.id, templateCode: template.code, version: template.version, sites: [row] };
-    });
-  }
-
-  /**
-   * `F4.320` PR 2 (decisions 8, 9) — the apply-to-sites dialog's read before "Replace existing
-   * copies": every active site of the template's organization, by name, with its held version,
-   * its edit flag and what the bulk Replace would do. The bulk permission rule. Writes nothing.
-   */
-  async previewReplaceForOrganization(jwt: JwtPayload, templateId: string): Promise<SiteLayoutReplacePreviewDto> {
-    const { user, template } = await this.authorizeBulk(jwt, templateId);
-    const sites = await this.activeSites(template.organizationId);
-    return withTenant(this.tenantDb, template.organizationId, async (tx) => {
-      const rows: SiteLayoutReplacePreviewSite[] = [];
-      for (const site of sites) {
-        rows.push(await this.previewSite(tx, user.role, site, await this.readHeldCopy(tx, site.id), template, "bulk"));
-      }
-      return { templateId: template.id, templateCode: template.code, version: template.version, sites: rows };
-    });
-  }
-
-  /**
    * The stored view row, read inside the copy's transaction. Advisory: the write re-states the
    * rule. `protected` so the integration spec can stage the race the write exists for.
    */
@@ -379,12 +253,22 @@ export class SiteLayoutService {
   }
 
   /**
+   * `F4.336` — the view-row read for `SiteLayoutReplaceService.readHeldCopy`. It goes through
+   * `readViewRow`, so a spec that stages `readViewRow` stages the Replace read too.
+   */
+  viewRowFor(tx: BmsTx, locationId: string): Promise<SiteViewRowForCopy | null> {
+    return this.readViewRow(tx, locationId);
+  }
+
+  /**
    * One site, one `withTenant` transaction, whose first statement is the per-site lock: a
    * concurrent copy or Replace on this site waits here, then reads the committed view row.
    * `F4.320` PR 2 (ADR 0087 Amendment 4 Consequences) split this out of `makeOne`, so Replace runs
-   * its delete and the make path in the one transaction.
+   * its delete and the make path in the one transaction. Public since `F4.336` for
+   * `SiteLayoutReplaceService`, as are `makeInTransaction` and the permission and template reads
+   * below; no route reaches them except through the two services.
    */
-  private async inSiteTransaction<T>(site: SiteRow, work: (tx: BmsTx) => Promise<T>): Promise<T> {
+  async inSiteTransaction<T>(site: SiteRow, work: (tx: BmsTx) => Promise<T>): Promise<T> {
     try {
       return await withTenant(this.tenantDb, site.organizationId, async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${siteLayoutLockKey(site.id)}, 0))`);
@@ -413,166 +297,11 @@ export class SiteLayoutService {
   }
 
   /**
-   * `F4.320` PR 2 (decisions 2–4, 6) — Replace on the caller's transaction, after its lock. The
-   * copy must be a template copy (else `no_copy`) of the same code (else `other_template`); in
-   * bulk at an older version (else `same_version` or `newer_version`, owner ruling 2026-11-07).
-   * The old tabs' groups are read, the copy's
-   * dashboard is deleted (its tabs, widgets, points and sources cascade; a drawn mimic's
-   * `mimic_layouts` row is owned by no widget and stays), and the view row, now the removed-copy
-   * state by `ON DELETE SET NULL`, is re-pointed in place by the make path. Not
-   * `DashboardsService.remove`: its operations-role gate is not the Make rule (Consequences).
-   */
-  private async replaceInTransaction(
-    tx: BmsTx,
-    jwt: JwtPayload,
-    site: SiteRow,
-    resolveTemplate: (held: SiteLayoutHeldCopy) => Promise<SiteTemplate>,
-    mode: "site" | "bulk",
-    choice: SiteLayoutChoice,
-    updatedBy: string | null,
-  ): Promise<SiteLayoutReplaceResultDto> {
-    const held = await this.readHeldCopy(tx, site.id);
-    if (held === null) {
-      throw new SiteLayoutConflict("no_copy", SITE_HAS_NO_COPY_MESSAGE);
-    }
-    const template = await resolveTemplate(held);
-    const outcome = replaceOutcome(held, template, mode);
-    if (outcome === "other_template") {
-      throw new SiteLayoutConflict("other_template", SITE_COPY_OTHER_TEMPLATE_MESSAGE);
-    }
-    if (outcome === "same_version") {
-      throw new SiteLayoutConflict("same_version", SAME_VERSION_SKIP_MESSAGE);
-    }
-    if (outcome === "newer_version") {
-      throw new SiteLayoutConflict("newer_version", NEWER_VERSION_SKIP_MESSAGE);
-    }
-
-    const oldTabs = await tx
-      .select({ tabKey: dashboardTabs.tabKey, assetGroupId: dashboardTabs.assetGroupId })
-      .from(dashboardTabs)
-      .where(eq(dashboardTabs.dashboardId, held.dashboardId))
-      .orderBy(asc(dashboardTabs.sortOrder), asc(dashboardTabs.tabKey));
-    const deleted = await tx
-      .delete(dashboards)
-      .where(and(eq(dashboards.id, held.dashboardId), eq(dashboards.organizationId, site.organizationId)))
-      .returning({ id: dashboards.id });
-    if (deleted.length !== 1) {
-      throw new SiteLayoutConflict("no_copy", SITE_HAS_NO_COPY_MESSAGE);
-    }
-    const groups = await tx
-      .select({ id: assetGroups.id, domain: assetGroups.domain })
-      .from(assetGroups)
-      .where(and(eq(assetGroups.locationId, site.id), eq(assetGroups.organizationId, site.organizationId)));
-    const carried = carriedTabGroups(template.content.tabs, oldTabs, groups, choice);
-
-    const replaced: ReplacedCopy = {
-      previousDashboardId: held.dashboardId,
-      previousTemplateId: held.templateId,
-      previousVersion: held.version,
-    };
-    let made: SiteLayoutResultDto;
-    try {
-      made = await this.makeInTransaction(tx, jwt, site, template, carried, updatedBy, replaced);
-    } catch (err) {
-      // The view row went live between the read and the delete (a view `PUT` takes no copy
-      // lock): the site no longer holds the copy this Replace was for.
-      if (err instanceof SiteLayoutConflict && err.reason === "has_view") {
-        throw new SiteLayoutConflict("no_copy", SITE_HAS_NO_COPY_MESSAGE);
-      }
-      throw err;
-    }
-    return { ...made, templateId: template.id, version: template.version, ...replaced };
-  }
-
-  /**
-   * The site's template copy (decision 2): a view row `kind = 'dashboard'` whose dashboard is at
-   * this site and carries the stamp of a `target = 'site'` template. `null` for anything else — no
-   * row, a builtin or generated view, a removed copy, a dashboard with no or another stamp.
-   */
-  private async readHeldCopy(tx: BmsTx, locationId: string): Promise<SiteLayoutHeldCopy | null> {
-    const view = await this.readViewRow(tx, locationId);
-    if (view === null || view.kind !== "dashboard" || view.dashboardId === null) {
-      return null;
-    }
-    const [row] = await tx
-      .select({
-        dashboardId: dashboards.id,
-        templateId: dashboardTemplates.id,
-        templateCode: dashboardTemplates.code,
-        version: dashboardTemplates.version,
-        target: dashboardTemplates.target,
-      })
-      .from(dashboards)
-      .innerJoin(dashboardTemplates, eq(dashboardTemplates.id, dashboards.templateId))
-      .where(and(eq(dashboards.id, view.dashboardId), eq(dashboards.locationId, locationId)))
-      .limit(1);
-    if (!row || row.target !== "site") {
-      return null;
-    }
-    return { dashboardId: row.dashboardId, templateId: row.templateId, templateCode: row.templateCode, version: row.version };
-  }
-
-  /** One preview row: the held copy, the outcome and, for a copy, its edit flag. */
-  private async previewSite(
-    tx: BmsTx,
-    role: string,
-    site: SiteRow,
-    held: SiteLayoutHeldCopy | null,
-    template: SiteTemplate,
-    mode: "site" | "bulk",
-  ): Promise<SiteLayoutReplacePreviewSite> {
-    return {
-      locationId: site.id,
-      locationName: site.name,
-      held,
-      outcome: replaceOutcome(held, template, mode),
-      edits: held === null ? null : await this.copyEdits(tx, held.dashboardId, readsAuditActors(role)),
-    };
-  }
-
-  /**
-   * Decision 9 — the edit flag: the `entity_type = 'dashboard'` audit rows on the copy's
-   * dashboard id (a builder save, a widget replace or append; the make row is on the location, so
-   * a copy nobody touched counts none). Read from `bms.audit_log` on the tenant transaction, not
-   * through `AuditService`, whose read scope refuses a `location_admin`. Only the count, the
-   * newest time and — for an `admin` or `organization_admin` — the newest actor's email, the form
-   * `AuditService` serves them; no payload leaves this read, so no `oidcSubject` either.
-   */
-  private async copyEdits(tx: BmsTx, dashboardId: string, withActor: boolean): Promise<SiteLayoutCopyEdits> {
-    const onTheCopy = and(eq(auditLog.entityType, "dashboard"), eq(auditLog.entityId, dashboardId));
-    const [counted] = await tx.select({ n: sql<number>`count(*)::int` }).from(auditLog).where(onTheCopy);
-    const [newest] = await tx
-      .select({ createdAt: auditLog.createdAt, actorId: auditLog.actorId })
-      .from(auditLog)
-      .where(onTheCopy)
-      .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
-      .limit(1);
-    const edits: SiteLayoutCopyEdits = {
-      count: counted?.n ?? 0,
-      lastEditedAt: newest === undefined ? null : newest.createdAt.toISOString(),
-    };
-    if (!withActor) {
-      return edits;
-    }
-    return { ...edits, lastEditedBy: newest?.actorId == null ? null : await this.actorEmail(newest.actorId) };
-  }
-
-  /**
-   * The actor's email, on `fleetDb`: `bms.users` is row-scoped to the GUC's organization for
-   * `bms_tenant`, and a global admin's row has none, so the tenant transaction would read it as
-   * absent. `AuditService` joins `users` on `fleetDb` for the same reason.
-   */
-  private async actorEmail(actorId: string): Promise<string | null> {
-    const [row] = await this.fleetDb.select({ email: users.email }).from(users).where(eq(users.id, actorId)).limit(1);
-    return row?.email ?? null;
-  }
-
-  /**
    * The copy itself on the caller's transaction, after its lock: plan, then write. `replaced` is
    * Replace's (decision 7): the audit row is then `master.location.site_layout.replace` with the
    * make payload and the old ids.
    */
-  private async makeInTransaction(
+  async makeInTransaction(
     tx: BmsTx,
     jwt: JwtPayload,
     site: SiteRow,
@@ -805,7 +534,7 @@ export class SiteLayoutService {
    * `requireMasterDataUser`, `canManageLocation` (403), `canManageDashboard` on the location
    * scope (404). Make, Replace and its preview share it.
    */
-  private async authorizeSite(
+  async authorizeSite(
     jwt: JwtPayload,
     locationId: string,
   ): Promise<{ user: Awaited<ReturnType<AccessControlService["requireMasterDataUser"]>>; site: SiteRow }> {
@@ -831,7 +560,7 @@ export class SiteLayoutService {
    * the status and target checks, so a caller who may not author in the organization learns
    * nothing about the template. The bulk Make, the bulk Replace and its preview share it.
    */
-  private async authorizeBulk(
+  async authorizeBulk(
     jwt: JwtPayload,
     templateId: string,
   ): Promise<{ user: Awaited<ReturnType<AccessControlService["requireMasterDataUser"]>>; template: SiteTemplate }> {
@@ -844,7 +573,7 @@ export class SiteLayoutService {
   }
 
   /** Every active site of the organization, by code: the bulk doors' walk. */
-  private activeSites(organizationId: string): Promise<SiteRow[]> {
+  activeSites(organizationId: string): Promise<SiteRow[]> {
     return this.fleetDb
       .select({ id: locations.id, organizationId: locations.organizationId, slug: locations.slug, name: locations.name })
       .from(locations)
@@ -865,7 +594,7 @@ export class SiteLayoutService {
   }
 
   /** One template by id — within `organizationId` when one is given (the per-site path). */
-  private async readTemplate(templateId: string, organizationId?: string): Promise<TemplateRow> {
+  async readTemplate(templateId: string, organizationId?: string): Promise<TemplateRow> {
     const byId = eq(dashboardTemplates.id, templateId);
     const [row] = await this.fleetDb
       .select()
@@ -883,7 +612,7 @@ export class SiteLayoutService {
    * with a `code`, the highest published version of that code (a per-site Replace with no
    * `templateId`, decision 5).
    */
-  private async newestPublishedSiteTemplate(organizationId: string, code?: string): Promise<SiteTemplate> {
+  async newestPublishedSiteTemplate(organizationId: string, code?: string): Promise<SiteTemplate> {
     const [row] = await this.fleetDb
       .select()
       .from(dashboardTemplates)
@@ -910,7 +639,7 @@ export class SiteLayoutService {
   }
 
   /** Only a published site template with at least one tab copies. */
-  private checkedTemplate(row: TemplateRow): SiteTemplate {
+  checkedTemplate(row: TemplateRow): SiteTemplate {
     if (row.status !== "published") {
       throw new ConflictException(`Only a published template can be instantiated; this one is ${row.status}`);
     }
@@ -933,7 +662,7 @@ export class SiteLayoutService {
   }
 
   /** `updated_by` takes an id read back from `bms.users` (the `SiteControlRoomViewService` rule). */
-  private async provisionedUserId(userId: string): Promise<string | null> {
+  async provisionedUserId(userId: string): Promise<string | null> {
     const [row] = await this.fleetDb.select({ id: users.id }).from(users).where(eq(users.id, userId)).limit(1);
     return row?.id ?? null;
   }

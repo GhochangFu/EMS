@@ -112,7 +112,7 @@ export async function assertReplaceKeepsSlugAndViewRow(ctx: SiteLayoutCtx): Prom
   const site = await zeroGroupSite(ctx, "r1", org);
   const first = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: v1 });
 
-  const result = await ctx.svc.replaceForSite(admin(), { locationId: site });
+  const result = await ctx.replace.replaceForSite(admin(), { locationId: site });
 
   expect(result.dashboardId).not.toBe(first.dashboardId);
   expect(result.dashboardSlug).toBe(first.dashboardSlug);
@@ -140,10 +140,10 @@ export async function assertOldGroupPicksAreKeptByTabKey(ctx: SiteLayoutCtx): Pr
   const b = await newGroup(ctx, site, "electrical-b", "electrical", org);
   await ctx.svc.makeForSite(admin(), { locationId: site, templateId: v1, tabGroups: { sld: b, ups: a } });
 
-  const kept = await ctx.svc.replaceForSite(admin(), { locationId: site });
+  const kept = await ctx.replace.replaceForSite(admin(), { locationId: site });
   expect(await tabGroups(ctx, kept.dashboardId)).toMatchObject({ sld: b, ups: a });
 
-  const swapped = await ctx.svc.replaceForSite(admin(), { locationId: site, tabGroups: { sld: a, ups: b } });
+  const swapped = await ctx.replace.replaceForSite(admin(), { locationId: site, tabGroups: { sld: a, ups: b } });
   expect(await tabGroups(ctx, swapped.dashboardId), "a tabGroups body overrides the carried picks").toMatchObject({ sld: a, ups: b });
 }
 
@@ -156,7 +156,7 @@ export async function assertAmbiguousReplaceRollsBack(ctx: SiteLayoutCtx): Promi
   const { org, v1, v2 } = await twoVersions(ctx, "r3", withUpsRekeyed());
   const { site, b, c, made } = await threeGroupCopy(ctx, "r3", org, v1);
 
-  const err = await caught(ctx.svc.replaceForSite(admin(), { locationId: site, templateId: v2 }));
+  const err = await caught(ctx.replace.replaceForSite(admin(), { locationId: site, templateId: v2 }));
   expect(err).toBeInstanceOf(ConflictException);
   const body = (err as ConflictException).getResponse() as { message: string; ambiguous: Array<{ tabKey: string; candidates: Array<{ id: string }> }> };
   expect(body.message).toBe(SITE_LAYOUT_AMBIGUOUS_MESSAGE);
@@ -176,11 +176,11 @@ export async function assertSameVersionPerSiteAndOtherTemplateRefused(ctx: SiteL
   const site = await zeroGroupSite(ctx, "r4", org);
   const first = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: v1 });
 
-  const again = await ctx.svc.replaceForSite(admin(), { locationId: site, templateId: v1 });
+  const again = await ctx.replace.replaceForSite(admin(), { locationId: site, templateId: v1 });
   expect(again.dashboardId).not.toBe(first.dashboardId);
   expect(again).toMatchObject({ version: 1, previousVersion: 1, previousTemplateId: v1 });
 
-  const err = await caught(ctx.svc.replaceForSite(admin(), { locationId: site, templateId: other }));
+  const err = await caught(ctx.replace.replaceForSite(admin(), { locationId: site, templateId: other }));
   expect(err).toBeInstanceOf(ConflictException);
   expect((err as Error).message).toBe(SITE_COPY_OTHER_TEMPLATE_MESSAGE);
   expect(await viewRows(ctx, site)).toEqual([{ kind: "dashboard", dashboard_id: again.dashboardId }]);
@@ -210,7 +210,7 @@ export async function assertANonTemplateViewIsRefused(ctx: SiteLayoutCtx): Promi
   const bareSite = await zeroGroupSite(ctx, "r5c");
 
   for (const site of [plainSite, generatedSite, bareSite]) {
-    const err = await caught(ctx.svc.replaceForSite(admin(), { locationId: site, templateId: ctx.templateId }));
+    const err = await caught(ctx.replace.replaceForSite(admin(), { locationId: site, templateId: ctx.templateId }));
     expect(err).toBeInstanceOf(ConflictException);
     expect((err as Error).message).toBe(SITE_HAS_NO_COPY_MESSAGE);
   }
@@ -221,7 +221,7 @@ export async function assertANonTemplateViewIsRefused(ctx: SiteLayoutCtx): Promi
   // RSMOC-WC's builtin row: the same 409, and the row is unchanged.
   const before = await viewRows(ctx, ctx.rsmocWcId);
   expect(before.map((row) => row.kind), "precondition: RSMOC-WC holds the builtin row").toEqual(["builtin"]);
-  const builtin = await caught(ctx.svc.replaceForSite(admin(), { locationId: ctx.rsmocWcId }));
+  const builtin = await caught(ctx.replace.replaceForSite(admin(), { locationId: ctx.rsmocWcId }));
   expect((builtin as Error).message).toBe(SITE_HAS_NO_COPY_MESSAGE);
   expect(await viewRows(ctx, ctx.rsmocWcId)).toEqual(before);
 }
@@ -246,7 +246,7 @@ export async function assertADrawnMimicLayoutRowIsKept(ctx: SiteLayoutCtx): Prom
     );
     expect(drawn.rowCount, "precondition: the copy holds a mimic to draw").toBe(1);
 
-    const result = await ctx.svc.replaceForSite(admin(), { locationId: site });
+    const result = await ctx.replace.replaceForSite(admin(), { locationId: site });
     const mimics = (source: string) =>
       count(
         ctx,
@@ -268,7 +268,7 @@ export async function assertADrawnMimicLayoutRowIsKept(ctx: SiteLayoutCtx): Prom
 export async function assertReplaceIsAuditedWithThePreviousIds(ctx: SiteLayoutCtx): Promise<void> {
   const site = await zeroGroupSite(ctx, "r7");
   const first = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: ctx.templateId });
-  const result = await ctx.svc.replaceForSite(admin(), { locationId: site });
+  const result = await ctx.replace.replaceForSite(admin(), { locationId: site });
 
   const { rows } = await ctx.fleetPool.query<{ action: string; payload: Record<string, unknown> }>(
     `SELECT action, payload FROM bms.audit_log WHERE entity_id = $1 ORDER BY created_at, action`,
@@ -312,7 +312,7 @@ export async function assertBulkReplacesOlderCopiesAndReportsSkips(ctx: SiteLayo
   await ctx.fleetPool.query(`UPDATE bms.locations SET active = true WHERE id = ANY($1::uuid[])`, [sites]);
   let result;
   try {
-    result = await ctx.svc.replaceForOrganization(admin(), v2);
+    result = await ctx.replace.replaceForOrganization(admin(), v2);
   } finally {
     await ctx.fleetPool.query(`UPDATE bms.locations SET active = false WHERE id = ANY($1::uuid[])`, [sites]);
   }
@@ -335,8 +335,8 @@ export async function assertBulkReplaceRefusesALocationAdmin(ctx: SiteLayoutCtx)
   const site = await newSite(ctx, "r8r");
   const email = await newLocationAdmin(ctx, site, "r8r");
   const jwt = jwtFor(email, "location_admin");
-  expect(await caught(ctx.svc.replaceForOrganization(jwt, ctx.templateId))).toBeInstanceOf(ForbiddenException);
-  expect(await caught(ctx.svc.previewReplaceForOrganization(jwt, ctx.templateId))).toBeInstanceOf(ForbiddenException);
+  expect(await caught(ctx.replace.replaceForOrganization(jwt, ctx.templateId))).toBeInstanceOf(ForbiddenException);
+  expect(await caught(ctx.replace.previewReplaceForOrganization(jwt, ctx.templateId))).toBeInstanceOf(ForbiddenException);
 }
 
 /** R8c (decision 10) — a location admin of another site gets 403 on the per-site Replace and preview. */
@@ -346,8 +346,8 @@ export async function assertPerSiteReplaceRefusesAnotherSitesAdmin(ctx: SiteLayo
   const site = await zeroGroupSite(ctx, "r8s");
   const first = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: ctx.templateId });
   const jwt = jwtFor(email, "location_admin");
-  expect(await caught(ctx.svc.replaceForSite(jwt, { locationId: site }))).toBeInstanceOf(ForbiddenException);
-  expect(await caught(ctx.svc.previewReplaceForSite(jwt, site))).toBeInstanceOf(ForbiddenException);
+  expect(await caught(ctx.replace.replaceForSite(jwt, { locationId: site }))).toBeInstanceOf(ForbiddenException);
+  expect(await caught(ctx.replace.previewReplaceForSite(jwt, site))).toBeInstanceOf(ForbiddenException);
   expect(await viewRows(ctx, site)).toEqual([{ kind: "dashboard", dashboard_id: first.dashboardId }]);
 }
 
@@ -361,7 +361,7 @@ export async function assertPreviewCountsEditsAndRedactsTheActor(ctx: SiteLayout
   const site = await zeroGroupSite(ctx, "r9");
   const first = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: ctx.templateId });
 
-  const untouched = await ctx.svc.previewReplaceForSite(admin(), site);
+  const untouched = await ctx.replace.previewReplaceForSite(admin(), site);
   expect(untouched.sites).toEqual([
     {
       locationId: site,
@@ -382,7 +382,7 @@ export async function assertPreviewCountsEditsAndRedactsTheActor(ctx: SiteLayout
   const newest = rows[0];
   expect(newest?.email, "precondition: the builder writes are audited on the dashboard").toBe("admin@bms.local");
 
-  const edited = await ctx.svc.previewReplaceForSite(admin(), site);
+  const edited = await ctx.replace.previewReplaceForSite(admin(), site);
   expect(edited.sites[0]?.edits).toEqual({
     count: 2,
     lastEditedAt: newest?.created_at.toISOString(),
@@ -390,13 +390,13 @@ export async function assertPreviewCountsEditsAndRedactsTheActor(ctx: SiteLayout
   });
 
   const email = await newLocationAdmin(ctx, site, "r9");
-  const asSiteAdmin = await ctx.svc.previewReplaceForSite(jwtFor(email, "location_admin"), site);
+  const asSiteAdmin = await ctx.replace.previewReplaceForSite(jwtFor(email, "location_admin"), site);
   const edits = asSiteAdmin.sites[0]?.edits;
   expect(edits).toEqual({ count: 2, lastEditedAt: newest?.created_at.toISOString() });
   expect(edits !== null && edits !== undefined && "lastEditedBy" in edits, "no actor for a location admin").toBe(false);
 
-  const rebuilt = await ctx.svc.replaceForSite(jwtFor(email, "location_admin"), { locationId: site });
-  const after = await ctx.svc.previewReplaceForSite(admin(), site);
+  const rebuilt = await ctx.replace.replaceForSite(jwtFor(email, "location_admin"), { locationId: site });
+  const after = await ctx.replace.previewReplaceForSite(admin(), site);
   expect(after.sites[0]?.held?.dashboardId).toBe(rebuilt.dashboardId);
   expect(after.sites[0]?.edits, "the rebuilt copy has no recorded edit").toEqual({ count: 0, lastEditedAt: null, lastEditedBy: null });
 }
@@ -448,10 +448,10 @@ export async function assertAnotherOrganizationsAdminIsRefusedEverywhere(ctx: Si
 
   const before = await orgState(ctx, org, site);
   const calls: ReadonlyArray<[string, () => Promise<unknown>]> = [
-    ["replaceForSite", () => ctx.svc.replaceForSite(jwt, { locationId: site, templateId: v2 })],
-    ["previewReplaceForSite", () => ctx.svc.previewReplaceForSite(jwt, site)],
-    ["replaceForOrganization", () => ctx.svc.replaceForOrganization(jwt, v2)],
-    ["previewReplaceForOrganization", () => ctx.svc.previewReplaceForOrganization(jwt, v2)],
+    ["replaceForSite", () => ctx.replace.replaceForSite(jwt, { locationId: site, templateId: v2 })],
+    ["previewReplaceForSite", () => ctx.replace.previewReplaceForSite(jwt, site)],
+    ["replaceForOrganization", () => ctx.replace.replaceForOrganization(jwt, v2)],
+    ["previewReplaceForOrganization", () => ctx.replace.previewReplaceForOrganization(jwt, v2)],
   ];
   for (const [name, call] of calls) {
     const err = await caught(call());
@@ -474,7 +474,7 @@ export async function assertAnOrganizationAdminGetsTheActor(ctx: SiteLayoutCtx):
   await ctx.dashboards.update(admin(), copy.dashboardId, { name: "F4.320 r11 edit" });
   const jwt = jwtFor(await newOrganizationAdmin(ctx, org, "r11"), "organization_admin");
 
-  const preview = await ctx.svc.previewReplaceForSite(jwt, site);
+  const preview = await ctx.replace.previewReplaceForSite(jwt, site);
   expect(preview.sites[0]?.held?.dashboardId).toBe(copy.dashboardId);
   expect(preview.sites[0]?.edits?.count).toBe(1);
   expect(preview.sites[0]?.edits?.lastEditedBy).toBe("admin@bms.local");
@@ -511,7 +511,7 @@ export async function assertAnotherOrganizationsAuditRowIsNotCounted(ctx: SiteLa
     "precondition: two rows carry the copy's id, one per organization",
   ).toBe(2);
 
-  const preview = await ctx.svc.previewReplaceForSite(admin(), site);
+  const preview = await ctx.replace.previewReplaceForSite(admin(), site);
   expect(preview.sites[0]?.edits).toEqual({
     count: 1,
     lastEditedAt: own[0]?.created_at.toISOString(),
@@ -533,7 +533,7 @@ export async function assertACopyWithNoPublishedVersionHasItsOwnSentence(ctx: Si
   const copy = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: v1 });
   await ctx.fleetPool.query(`UPDATE bms.dashboard_templates SET status = 'archived' WHERE id = ANY($1::uuid[])`, [[v1, v2]]);
 
-  const calls = [() => ctx.svc.replaceForSite(admin(), { locationId: site }), () => ctx.svc.previewReplaceForSite(admin(), site)];
+  const calls = [() => ctx.replace.replaceForSite(admin(), { locationId: site }), () => ctx.replace.previewReplaceForSite(admin(), site)];
   for (const call of calls) {
     const err = await caught(call());
     expect(err).toBeInstanceOf(ConflictException);
@@ -557,8 +557,8 @@ export async function assertBulkSkipsANewerCopy(ctx: SiteLayoutCtx): Promise<voi
   let result;
   let preview;
   try {
-    preview = await ctx.svc.previewReplaceForOrganization(admin(), v1);
-    result = await ctx.svc.replaceForOrganization(admin(), v1);
+    preview = await ctx.replace.previewReplaceForOrganization(admin(), v1);
+    result = await ctx.replace.replaceForOrganization(admin(), v1);
   } finally {
     await ctx.fleetPool.query(`UPDATE bms.locations SET active = false WHERE id = $1`, [site]);
   }
@@ -588,7 +588,7 @@ export async function assertBulkPreviewListsEverySite(ctx: SiteLayoutCtx): Promi
   await ctx.fleetPool.query(`UPDATE bms.locations SET active = true WHERE id = ANY($1::uuid[])`, [sites]);
   let preview;
   try {
-    preview = await ctx.svc.previewReplaceForOrganization(admin(), v2);
+    preview = await ctx.replace.previewReplaceForOrganization(admin(), v2);
   } finally {
     await ctx.fleetPool.query(`UPDATE bms.locations SET active = false WHERE id = ANY($1::uuid[])`, [sites]);
   }
