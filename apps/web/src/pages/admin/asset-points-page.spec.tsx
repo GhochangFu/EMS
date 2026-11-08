@@ -306,6 +306,7 @@ function rtu(id: string, code: string, active: boolean): AdminRtuDto {
     meta: null,
     createdAt: new Date(0).toISOString(),
     tls: null,
+    payloadFormat: null,
   };
 }
 

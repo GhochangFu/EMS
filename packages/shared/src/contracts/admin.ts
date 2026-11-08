@@ -101,6 +101,12 @@ export const adminRtuDtoSchema = z.object({
    * `true` = TLS; `null` = no connection row, or not MQTT.
    */
   tls: z.boolean().nullable(),
+  /**
+   * `F4.334` / ADR 0116 decision 4 (plan R9) — the catalog code the RTU's MQTT
+   * connection config names; `null` when there is no config row, the row is not
+   * MQTT, or it names none (the built-in envelope).
+   */
+  payloadFormat: z.string().nullable(),
 });
 
 export const adminAssetDtoSchema = z.object({
