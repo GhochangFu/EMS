@@ -2364,7 +2364,7 @@ choice the owner may change at review.
 
 ## Amendment 17 — MQTT payload formats in the copilot (ADR 0116, `F4.334`)
 
-**Status: proposed.** Drafted on 2026-11-08 against `main` at `0f8d50df`. The
+**Status: accepted — 2026-11-08** (owner, in chat: "Accept"). Drafted on 2026-11-08 against `main` at `0f8d50df`. The
 `F4.334` plan's owner ruling Q12 (2026-11-08) puts the **Payload formats** page
 in a `WizardShell` and lets the copilot draft a format from a pasted sample
 message. That adds copilot surface, so it needs this amendment before the
