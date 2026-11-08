@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { assetTemplates, pointKeys, templatePoints } from "@bms/db";
+import { assetTemplates, mqttPayloadFormats, pointKeys, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { FLEET_DRIZZLE } from "../../database/database.tokens";
@@ -169,7 +169,14 @@ export class OnboardingTemplateCatalogService {
       organization: organizationId === undefined ? [] : await this.listOrganizationTemplates(organizationId),
       stock: this.listStock(),
       ...(await this.listPointKeyCatalog()),
+      payloadFormats: await this.listPayloadFormatCodes(),
     };
+  }
+
+  /** `F4.334` (plan R10): the payload format catalog's codes, for the validator. */
+  private async listPayloadFormatCodes(): Promise<ReadonlySet<string>> {
+    const rows = await this.db.select({ code: mqttPayloadFormats.code }).from(mqttPayloadFormats);
+    return new Set(rows.map((row) => row.code));
   }
 
   /**

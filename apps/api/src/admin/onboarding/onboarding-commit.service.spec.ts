@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
 
+import { MQTT_PAYLOAD_FORMAT_UNKNOWN_MESSAGE } from "@bms/shared";
 import type { JwtPayload, OnboardingDraft } from "@bms/shared";
 
 import { OnboardingCommitService } from "./onboarding-commit.service";
@@ -60,6 +61,8 @@ function buildService(
     insertError?: unknown;
     /** F4.243 review #4: run the real validator over these parent candidates. */
     candidates?: readonly ParentCandidate[];
+    /** F4.334: the catalog codes `listPayloadFormatCodes` answers. */
+    knownFormats?: readonly string[];
   },
 ): Harness {
   const events: string[] = [];
@@ -116,7 +119,10 @@ function buildService(
     {} as never,
     validateService,
     vocabularies,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
+    {
+      context: async () => ({ ...EMPTY_TEMPLATE_CONTEXT, payloadFormats: new Set<string>(opts.knownFormats ?? []) }),
+      pointKeyQuota: async () => "exempt",
+    } as never,
     // F3.22: the three template services; this draft holds no template, so none is called.
     {} as never,
     {} as never,
@@ -231,4 +237,45 @@ export async function assertAnOpenParentChoiceOpensNoTransaction(): Promise<void
   const { service, events } = buildService(draftWithType("pump_station"), { liveTypes: ["pump_station"], candidates: [root] });
   await settle(service.commit(JWT, "s-1"));
   assert(!events.includes("transaction"), `nothing may be written, got ${JSON.stringify(events)}`);
+}
+
+/**
+ * `F4.334` (ADR 0116 decision 4, plan R10) — the commit's template context
+ * carries the catalog codes to the real validate: a draft whose MQTT RTU names a format
+ * with no catalog row is the validate gate's 400 at its path, and nothing is
+ * written. The positive twin: the same draft with the code in the catalog has
+ * no `payloadFormat` error (the mutation that drops the read reddens it).
+ */
+export async function assertAnUnknownPayloadFormatCommitsNothing(): Promise<void> {
+  const draft: OnboardingDraft = {
+    ...draftWithType("pump_station"),
+    rtus: [
+      {
+        code: "BCPL_LAKWA_02",
+        displayName: "BCPL LAKWA 02",
+        protocol: "mqtt",
+        ingestEnabled: true,
+        credentialsSet: true,
+        config: { topic: "BCPL/LAKWA", payloadFormat: "thinkiot-register-array" },
+      },
+    ],
+  };
+  const formatErrors = (err: unknown) => {
+    const body = err instanceof BadRequestException ? (err.getResponse() as { errors?: unknown }) : null;
+    return Array.isArray(body?.errors)
+      ? (body.errors as { path: string; message: string }[]).filter((e) => e.path === "rtus.0.config.payloadFormat")
+      : [];
+  };
+  const unknown = buildService(draft, { liveTypes: ["pump_station"], candidates: [], knownFormats: ["thinkiot-envelope"] });
+  const refused = await settle(unknown.service.commit(JWT, "s-1"));
+  assert(
+    JSON.stringify(formatErrors(refused)) ===
+      JSON.stringify([{ path: "rtus.0.config.payloadFormat", message: MQTT_PAYLOAD_FORMAT_UNKNOWN_MESSAGE }]),
+    `expected the unknown-format row, got ${String(refused)}`,
+  );
+  assert(!unknown.events.includes("transaction"), `nothing may be written, got ${JSON.stringify(unknown.events)}`);
+
+  const known = buildService(draft, { liveTypes: ["pump_station"], candidates: [], knownFormats: ["thinkiot-register-array"] });
+  const result = await settle(known.service.commit(JWT, "s-1"));
+  assert(formatErrors(result).length === 0, `a known code has no payloadFormat row, got ${String(result)}`);
 }

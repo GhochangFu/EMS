@@ -22,6 +22,11 @@ import {
   assertTheCredentialsRequiredRowStays,
   assertTheOverLongTopicRowStays,
   assertTheTopicRequiredRowStays,
+  assertAKnownPayloadFormatPasses,
+  assertAMalformedCodeCarriesTheSchemaIssueOnly,
+  assertAnUnknownPayloadFormatIsReported,
+  assertNoCatalogSetFailsClosed,
+  assertNoPayloadFormatNeedsNoSet,
 } from "./onboarding-validate-protocol-config.spec";
 
 describe("validate — rtus[].config against the protocol's draft schema (F3.24a, ADR 0093)", () => {
@@ -47,4 +52,9 @@ describe("validate — rtus[].config against the protocol's draft schema (F3.24a
   it("accepts a plain topic (F4.234)", () => assertAPlainTopicHasNoConfigError());
   it("keeps a whitespace topic passing the required check (F4.234)", () => assertAWhitespaceTopicPassesTheRequiredCheck());
   it("holds a whitespace-topic draft at the rtu phase (F4.234)", () => assertAWhitespaceTopicHoldsTheDraftAtTheRtuPhase());
+  it("P1 accepts a payloadFormat in the catalog (F4.334)", () => assertAKnownPayloadFormatPasses());
+  it("P2 reports a payloadFormat not in the catalog (F4.334)", () => assertAnUnknownPayloadFormatIsReported());
+  it("P3 fails closed with no catalog set (F4.334)", () => assertNoCatalogSetFailsClosed());
+  it("P4 leaves a draft naming no format unaffected (F4.334)", () => assertNoPayloadFormatNeedsNoSet());
+  it("P5 gives a malformed code the schema issue only (F4.334)", () => assertAMalformedCodeCarriesTheSchemaIssueOnly());
 });

@@ -87,6 +87,14 @@ export type ValidateTemplateContext = {
    * Required, so every builder states it (the `formulaPointKeys` precedent).
    */
   readonly pointKeyFields: CatalogPointKeyFields;
+  /**
+   * `F4.334` (ADR 0116 decision 4, plan R10): every `bms.mqtt_payload_formats`
+   * code, read with the point-key catalog (both fleet-wide). An MQTT RTU's
+   * `config.payloadFormat` must be one of them. Optional so every builder that
+   * predates it keeps compiling, and **fail closed**: absent, a draft that
+   * names a format is reported unknown.
+   */
+  readonly payloadFormats?: ReadonlySet<string>;
 };
 
 /** For a caller with no organization and no catalog — a spec, or a draft that names no template. */

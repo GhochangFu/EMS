@@ -7,6 +7,7 @@ import {
   assertARefusedLocationTypeNeverOpensTheTransaction,
   assertATreeGuardRaceAnswersTheConflict,
   assertTheCommitAssertsTheLocationTypeBeforeTheTransaction,
+  assertAnUnknownPayloadFormatCommitsNothing,
 } from "./onboarding-commit.service.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -37,5 +38,11 @@ describe("F4.243 review #4 - the commit's validate reads the parent candidates",
 
   it("and the transaction never opens", async () => {
     await assertAnOpenParentChoiceOpensNoTransaction();
+  });
+});
+
+describe("F4.334 (ADR 0116 decision 4) - the commit's validate reads the payload format catalog", () => {
+  it("a draft naming an unknown payloadFormat is the validate gate's 400 and writes nothing", async () => {
+    await assertAnUnknownPayloadFormatCommitsNothing();
   });
 });

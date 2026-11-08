@@ -2,7 +2,7 @@
 // decorator calls `Reflect.defineMetadata` when the module is evaluated.
 import "reflect-metadata";
 
-import { assetTemplates, pointKeys, templatePoints } from "@bms/db";
+import { assetTemplates, mqttPayloadFormats, pointKeys, templatePoints } from "@bms/db";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 
@@ -197,8 +197,13 @@ export async function assertTheContextWithNoOrganizationReadsOnlyTheStock(): Pro
   const stock = { list: () => ({ items: entries }) } as never;
   const { db, selects } = fakeDb([], []);
   const context = await new OnboardingTemplateCatalogService(db, stock).context(undefined);
-  // F4.196: the point-key catalog is fleet-wide, so it is the one select.
-  assert(selects.length === 1 && selects[0].table === pointKeys, `no organization, no template select, got ${selects.length}`);
+  // F4.196: the point-key catalog is fleet-wide; F4.334: so is the payload format
+  // catalog. Those two are the only selects.
+  assert(
+    selects.length === 2 && selects[0].table === pointKeys && selects[1].table === mqttPayloadFormats,
+    `no organization, no template select, got ${selects.length}`,
+  );
+  assert(context.payloadFormats instanceof Set, "the payload format codes travel with the context");
   assert(context.organization.length === 0 && context.stock.length === 1, `got ${JSON.stringify(context).slice(0, 200)}`);
 }
 
