@@ -7,6 +7,7 @@ import {
   MQTT_DISCOVERY_MIN_WINDOW_SECONDS,
   MQTT_DISCOVERY_TOPIC_MAX,
   mqttTopicHasWildcard,
+  ONBOARDING_DRAFT_STRING_MAX,
   type OnboardingDiscoveryDevice,
   type OnboardingDiscoveryStored,
   type OnboardingDraft,
@@ -333,6 +334,23 @@ function proposeDiscovery(args: z.infer<(typeof DISCOVERY_TOOL_SCHEMAS)["propose
   );
 }
 
+/**
+ * `F4.339` (plan R6, ruling Q2) — the offer a one-device result carries. The
+ * write is the RTU's `rtuCode` (the device key ingest routes by) and
+ * `ingestEnabled: true`, never `code`: `code` is frozen once credentials
+ * exist, and discovery needs credentials. The devId is wire data, quoted and
+ * bounded; the write waits for the user's agreement, so it runs in a later
+ * turn, outside this turn's post-read scope.
+ */
+export function fitsRtuCode(devId: string): boolean {
+  return devId.length > 0 && devId.length <= ONBOARDING_DRAFT_STRING_MAX["rtus.rtuCode"];
+}
+
+/** The offer sentence for one found device (see {@link fitsRtuCode}: never offered past the `rtuCode` bound). */
+export function deviceKeyOffer(devId: string): string {
+  return `Offer the user: Use ${quoteCell(devId)} as this RTU's device key — one update_rtu write of rtuCode and ingestEnabled: true, only if the user agrees.`;
+}
+
 function discoveryResults(args: z.infer<(typeof DISCOVERY_TOOL_SCHEMAS)["get_discovery_results"]>, state: ToolState): ToolOutcome {
   const result = readStoredDiscovery(state.working);
   if (result === null) {
@@ -356,6 +374,9 @@ function discoveryResults(args: z.infer<(typeof DISCOVERY_TOOL_SCHEMAS)["get_dis
     topicFilter: result.topicFilter,
     windowSeconds: result.windowSeconds,
     ...(result.truncated ? { truncated: "The discovery stopped at a cap, so this list is partial. Say so to the user." } : {}),
+    // F4.339 (ADR 0117 decision 6, plan R6, ruling Q2): one device found → offer it as the RTU's device key.
+    // A devId longer than `rtuCode` holds is not offered (code review): a cut key would route nothing.
+    ...(result.devices.length === 1 && fitsRtuCode(result.devices[0]!.devId) ? { offer: deviceKeyOffer(result.devices[0]!.devId) } : {}),
   };
   if (result.devices.length === 0) {
     // F4.335 (plan R11): say how many messages arrived and were not decoded, in

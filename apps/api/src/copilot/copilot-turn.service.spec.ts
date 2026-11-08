@@ -119,6 +119,8 @@ type Options = {
   /** `F3.86` PR 6: the stored commit proposal's reader, and the conversation's open changes. */
   commitReader?: OnboardingCommitReader;
   open?: CopilotPendingChangeDto[];
+  /** `F4.339`: `propose` answers `null`, as it does while another change is applying. */
+  proposeBlocked?: boolean;
   /** `F3.87` PR 7: the organization's attachment switch (on unless false). */
   attachmentsOn?: boolean;
   /** `F4.267` (ADR 0090 Amendment 3 C3): the provider an image turn resolves to (absent: the main one, `vision: false`). */
@@ -205,8 +207,9 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
     options.target === undefined ? { organizationId: ORG_X, organizationName: "Org X", targetName: "T", status: "draft" } : options.target;
   const pending = {
     hasOpen: async () => options.cardOpen === true,
-    propose: async (_userId: string, change: NewPendingChange): Promise<CopilotPendingChangeDto> => {
+    propose: async (_userId: string, change: NewPendingChange): Promise<CopilotPendingChangeDto | null> => {
       proposed.push(change);
+      if (options.proposeBlocked === true) return null;
       return {
         id: CHANGE_ID,
         catalogId: change.catalogId,

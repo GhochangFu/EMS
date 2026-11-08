@@ -88,8 +88,12 @@ export async function theEmptyResultSaysHowManyArrived(): Promise<void> {
     body.empty === "6 messages arrived but none matched a known payload format. Say so to the user.",
     `the F4.335 sentence, got ${outcome.content}`,
   );
-  const plain = await runTool(call("get_discovery_results", {}), { working: draft(stored({ devices: [] })) }, context());
-  assert(plain.content.includes("No device published in the window."), `nothing arrived: the old sentence, got ${plain.content}`);
+  const plain = await runTool(call("get_discovery_results", {}), { working: draft(stored({ devices: [], messages: 0, skipped: 0 })) }, context());
+  // F4.339: nothing arrived → the sentence names the chosen filter and window.
+  assert(
+    plain.content.includes("No message arrived on topic 'BCPL_LAK_PLANT_03_LAKWA/#' in 60 s — check the topic name and the window."),
+    `nothing arrived: the topic sentence, got ${plain.content}`,
+  );
 }
 
 /** T2 — the devices page carries each device's payload format. */

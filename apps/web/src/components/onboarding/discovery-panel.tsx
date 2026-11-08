@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { OnboardingDiscoveryErrorClass, OnboardingDiscoverySkipReason, OnboardingSessionDto } from "@bms/shared";
-import { discoveryEmptySentence, discoveryIsActive, MQTT_DISCOVERY_SHARED_USER_WARNING } from "@bms/shared/contracts";
+import {
+  discoveryEmptySentence,
+  discoveryIsActive,
+  MQTT_DISCOVERY_SHARED_USER_WARNING,
+  ONBOARDING_DRAFT_STRING_MAX,
+} from "@bms/shared/contracts";
 
 import { fetchMqttPayloadFormats, mqttPayloadFormatsQueryKey } from "../../api/admin/mqtt-payload-formats";
 import { fetchOnboardingSession, patchOnboardingDraft } from "../../api/admin/onboarding";
@@ -123,11 +128,25 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
     },
     onError: (err: Error) => setFormatError(apiErrorMessage(err)),
   });
+  // F4.339 (ADR 0117 decision 6, ruling Q2): one found device → its devId as the discovered RTU's device key.
+  const deviceKeyMutation = useMutation({
+    mutationFn: (vars: { index: number; devId: string }) =>
+      patchOnboardingDraft(session.id, {
+        rtus: (session.draft?.rtus ?? []).map((rtu, i) => (i === vars.index ? { ...rtu, rtuCode: vars.devId, ingestEnabled: true } : rtu)),
+      }),
+    onSuccess: (updated) => {
+      setFormatError(null);
+      onSessionChange(updated);
+      queryClient.setQueryData(["onboarding", updated.id], updated);
+    },
+    onError: (err: Error) => setFormatError(apiErrorMessage(err)),
+  });
   const rtus = session.draft?.rtus ?? [];
   const mqtt = rtus.map((rtu, index) => ({ rtu, index })).filter(({ rtu }) => rtu.protocol === "mqtt");
   if (mqtt.length === 0) return null;
 
   const result = session.discovery;
+  const deviceKeyIndex = result === null ? -1 : rtus.findIndex((rtu) => rtu.code === result.rtuCode);
   // The route's own busy rule (`discoveryIsActive`): a `running` past its window + 60 s no longer holds the session.
   const active = discoveryIsActive(result, Date.now());
   const discovered = (session.draft?.assetPoints ?? []).filter((row) => row.source === "discovery");
@@ -214,6 +233,22 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
             <li className="text-ink-muted">{`and ${result.devices.length - LISTED_ROWS} more`}</li>
           )}
         </ul>
+      )}
+      {result !== null &&
+        result.status === "done" &&
+        result.devices.length === 1 &&
+        deviceKeyIndex >= 0 &&
+        // A devId longer than `rtuCode` holds is not offered: the PATCH would be refused (code review).
+        result.devices[0]!.devId.length <= ONBOARDING_DRAFT_STRING_MAX["rtus.rtuCode"] && (
+        <button
+          type="button"
+          className="mt-1 rounded border border-hairline px-2 py-0.5 text-[11px]"
+          disabled={busy || deviceKeyMutation.isPending}
+          aria-busy={deviceKeyMutation.isPending}
+          onClick={() => deviceKeyMutation.mutate({ index: deviceKeyIndex, devId: result.devices[0]!.devId })}
+        >
+          {deviceKeyMutation.isPending ? "Saving the RTU code…" : `Use ${result.devices[0]!.devId} as the RTU code`}
+        </button>
       )}
       {discovered.length > 0 && (
         <ul aria-label="Discovered mappings" className="mt-2 space-y-1 text-[11px]">

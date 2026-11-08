@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { OnboardingSessionDto, StartOnboardingDiscoveryBody, StartOnboardingDiscoveryResponseDto } from "@bms/shared";
 import {
   MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS,
+  MQTT_DISCOVERY_MAX_WINDOW_SECONDS,
   MQTT_DISCOVERY_SHARED_USER_WARNING,
   MQTT_PLAIN_TLS_OFF_SENTENCE,
 } from "@bms/shared/contracts";
@@ -108,6 +109,21 @@ export function OnboardingDiscoveryWizard({ session, rtu, onStarted, onRefused, 
                   className="surface-field mt-1 w-full px-2 py-1 font-mono"
                   value={topicPrefix}
                   onChange={(e) => setValues({ ...values, topicPrefix: e.target.value })}
+                />
+              </label>
+              {/* F4.339 (ADR 0117 decision 5): the window is the user's, up to the shared maximum; the
+                  shell's Review check refuses a value outside it with the shared schema's message. */}
+              <label className="block">
+                Window (s)
+                <input
+                  aria-label="Window (s)"
+                  type="number"
+                  min={10}
+                  max={MQTT_DISCOVERY_MAX_WINDOW_SECONDS}
+                  step={10}
+                  className="surface-field mt-1 w-28 px-2 py-1 font-mono"
+                  value={seconds}
+                  onChange={(e) => setValues({ ...values, windowSeconds: Number(e.target.value) })}
                 />
               </label>
               <p>

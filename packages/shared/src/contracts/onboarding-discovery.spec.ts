@@ -93,11 +93,12 @@ export function theBodyRefusesA256CharPrefix(): void {
 export function theBodyRefusesWindow4(): void {
   expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, windowSeconds: 4 }).success).toBe(false);
 }
-export function theBodyRefusesWindow121(): void {
-  expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, windowSeconds: 121 }).success).toBe(false);
+/** F4.339 (ADR 0117 decision 5): the maximum is 300 s. */
+export function theBodyRefusesWindow301(): void {
+  expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, windowSeconds: 301 }).success).toBe(false);
 }
-export function theBodyAcceptsWindow120(): void {
-  expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, windowSeconds: 120 }).success).toBe(true);
+export function theBodyAcceptsWindow300(): void {
+  expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, windowSeconds: 300 }).success).toBe(true);
 }
 export function theBodyRefusesAnUnknownKey(): void {
   expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, host: "x" }).success).toBe(false);
@@ -225,16 +226,22 @@ export function aResultStoredBeforeAdr0116StillParses(): void {
 
 /** `F4.335` (plan R11) — the three sentences a discovery with no device says. */
 export function theEmptySentenceSaysWhatArrived(): void {
-  expect(discoveryEmptySentence({ messages: 0, skipped: 0 })).toBe("No device published in the window.");
-  expect(discoveryEmptySentence({ messages: 0, skipped: 6, skippedReasons: { "no-format": 6 } })).toBe(
+  // F4.339 (ADR 0117 decision 6): nothing arrived → the sentence names the chosen filter and window.
+  const W = { topicFilter: "BCPL/LAL/#", windowSeconds: 120 };
+  expect(discoveryEmptySentence({ ...W, messages: 0, skipped: 0 })).toBe(
+    "No message arrived on topic 'BCPL/LAL/#' in 120 s — check the topic name and the window.",
+  );
+  // Decoded messages but no device (cannot happen today) keep the old sentence.
+  expect(discoveryEmptySentence({ ...W, messages: 3, skipped: 0 })).toBe("No device published in the window.");
+  expect(discoveryEmptySentence({ ...W, messages: 0, skipped: 6, skippedReasons: { "no-format": 6 } })).toBe(
     "6 messages arrived but none matched a known payload format.",
   );
-  expect(discoveryEmptySentence({ messages: 0, skipped: 6, skippedReasons: { "no-format": 4, oversize: 2 } })).toBe(
+  expect(discoveryEmptySentence({ ...W, messages: 0, skipped: 6, skippedReasons: { "no-format": 4, oversize: 2 } })).toBe(
     "6 messages arrived and were not decoded.",
   );
   // A result stored before ADR 0116 has no reasons: the general sentence.
-  expect(discoveryEmptySentence({ messages: 0, skipped: 6 })).toBe("6 messages arrived and were not decoded.");
-  expect(discoveryEmptySentence({ messages: 0, skipped: 1, skippedReasons: { "no-format": 1 } })).toBe(
+  expect(discoveryEmptySentence({ ...W, messages: 0, skipped: 6 })).toBe("6 messages arrived and were not decoded.");
+  expect(discoveryEmptySentence({ ...W, messages: 0, skipped: 1, skippedReasons: { "no-format": 1 } })).toBe(
     "1 message arrived but none matched a known payload format.",
   );
 }
@@ -271,6 +278,12 @@ export function aRunningDiscoveryInsideWindowPlusGraceIsActive(): void {
 }
 export function aRunningDiscoveryPastWindowPlusGraceIsNotActive(): void {
   expect(discoveryIsActive({ status: "running", windowSeconds: 60, startedAt: "2026-10-18T11:57:59.000Z" }, ACTIVE_NOW)).toBe(false);
+}
+/** F4.339 (plan R5): a 300 s discovery is active at started + 359 s and not at + 361 s. */
+export function aRunning300sDiscoveryStaysActivePastItsDeadline(): void {
+  const started = "2026-10-18T11:54:01.000Z"; // ACTIVE_NOW − 359 s
+  expect(discoveryIsActive({ status: "running", windowSeconds: 300, startedAt: started }, ACTIVE_NOW)).toBe(true);
+  expect(discoveryIsActive({ status: "running", windowSeconds: 300, startedAt: "2026-10-18T11:53:59.000Z" }, ACTIVE_NOW)).toBe(false);
 }
 export function aRunningDiscoveryWithNoStartIsActive(): void {
   expect(discoveryIsActive({ status: "running", windowSeconds: 60, startedAt: null }, ACTIVE_NOW)).toBe(true);

@@ -63,6 +63,22 @@ export const ONBOARDING_DISCOVERY = "onboarding.discovery";
 export const isServerMadeCard = (catalogId: string): boolean =>
   catalogId === ONBOARDING_COMMIT || catalogId === ONBOARDING_DISCOVERY;
 
+/**
+ * The thread's open cards after a turn: a returned card replaces its cached copy, and a returned
+ * server-made card replaces every cached server-made card — the server discarded them (`F3.86` PR 6;
+ * `F4.339` plan R4: a discovery card withdraws an open commit card too).
+ */
+export function mergePendingChanges<T extends { readonly id: string; readonly catalogId: string }>(
+  cached: readonly T[],
+  incoming: readonly T[],
+): T[] {
+  const serverMade = incoming.some((n) => isServerMadeCard(n.catalogId));
+  return [
+    ...cached.filter((c) => !incoming.some((n) => n.id === c.id) && !(serverMade && isServerMadeCard(c.catalogId))),
+    ...incoming,
+  ];
+}
+
 /** "Onboard a site" needs an organization: the global administrator's cross-organization scope names none. */
 export const ONBOARD_PICK_SENTENCE = "Pick an organization to onboard a site.";
 

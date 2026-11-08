@@ -49,8 +49,8 @@ import {
   skillStateOf,
   skillStateOfSession,
 } from "./copilot-onboarding-skill";
-import { CopilotOnboardingCommitReader, discardOnboardingCommitCards, onboardingCommitCards } from "./copilot-onboarding-commit";
-import { onboardingDiscoveryCards, turnProposedDiscovery } from "./copilot-onboarding-discovery";
+import { CopilotOnboardingCommitReader, discardOnboardingCommitCards } from "./copilot-onboarding-commit";
+import { onboardingSkillCards } from "./copilot-onboarding-discovery";
 import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pending-changes.service";
 import { accessIntentOf } from "./copilot-access-intent";
 import { assetIntentOf } from "./copilot-asset-intent";
@@ -910,26 +910,20 @@ export class CopilotTurnService {
       // replays it as a marked record, never as the model's own words (security review L1, the review L4 rule).
       { role: "action", content: reply, organizationIds: [organizationId] },
     ]);
-    // `F3.86` PR 6 (plan §8.2): a turn whose agent proposed the commit gets the one Confirm card, bound to
-    // the hash of the draft this turn stored. After the store, so a failed store leaves no orphan card.
-    const commitCards = await onboardingCommitCards(
+    // `F3.86` PR 6 / `F3.24b`: the commit or the discovery Confirm card, after the store (no orphan card on a failed
+    // store). `F4.339` (plan R4): a withdrawn commit card or a blocked discovery card gains a fixed note, stored as a record.
+    const cards = await onboardingSkillCards(
       { reader: this.commitReader, pending: this.pending },
-      { userId: identity.id, conversationId, organizationId, sessionId, answer, wrote: own },
+      { userId: identity.id, conversationId, organizationId, sessionId, answer, wrote: own, actions },
     );
-    // `F3.24b` (ADR 0103 decision 2): a turn whose agent proposed a discovery gets its Confirm card, made the same way.
-    // At most one of the two is non-empty: a write drops both proposals, and the conversation holds one open change.
-    const pendingChanges =
-      commitCards.length > 0
-        ? commitCards
-        : await onboardingDiscoveryCards(
-            { reader: this.commitReader, pending: this.pending },
-            { userId: identity.id, conversationId, organizationId, sessionId, answer, wrote: own, proposed: turnProposedDiscovery(actions) },
-          );
+    const noted = cards.note === "" ? [] : await this.conversations.appendTurn(identity.id, conversationId, [{ role: "action", content: cards.note, organizationIds: [organizationId] }]);
+    const { pendingChanges, cardBlocked, commitWithdrawn } = cards;
     this.logger.log(
-      { conversationId, kind: "skill", sessionId, actions: actions.length, proposed: pendingChanges.length },
+      { conversationId, kind: "skill", sessionId, actions: actions.length, proposed: pendingChanges.length, cardBlocked, commitWithdrawn },
       "copilot skill turn",
     );
-    return respond(conversationId, "answered", reply, { messages: stored, pendingChanges, skill: skillStateOf(sessionId, answer) });
+    const answered = cards.note === "" ? reply : `${reply.trimEnd()} ${cards.note}`;
+    return respond(conversationId, "answered", answered, { messages: [...stored, ...noted], pendingChanges, skill: skillStateOf(sessionId, answer) });
   }
 
   /** `GET /copilot/status`'s `configured`: whether a key resolves for this scope (`null`: cross-organization). */

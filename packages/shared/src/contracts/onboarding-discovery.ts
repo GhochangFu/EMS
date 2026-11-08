@@ -24,7 +24,15 @@ import { z } from "zod";
 import { mqttTopicHasWildcard } from "../mqtt-topic";
 
 export const MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS = 60;
-export const MQTT_DISCOVERY_MAX_WINDOW_SECONDS = 120;
+/**
+ * `F4.339` (ADR 0117 decision 5, plan R5): 300, from 120 — BCPL meters publish
+ * about every 160 s, so a 120 s window could miss every device. No other
+ * constant moves: the job's hard deadline is 10 + 300 + 5 = 315 s, the running
+ * grace stays window + 60 s, and BullMQ renews the job lock (no `lockDuration`
+ * set). The 30 min queued bound now covers about six 300 s jobs ahead in the
+ * one-worker queue; a job read as stale past it is superseded, not lost.
+ */
+export const MQTT_DISCOVERY_MAX_WINDOW_SECONDS = 300;
 export const MQTT_DISCOVERY_MIN_WINDOW_SECONDS = 5;
 export const MQTT_DISCOVERY_MAX_MESSAGES = 5_000;
 export const MQTT_DISCOVERY_MAX_PAYLOAD_BYTES = 256 * 1024;
@@ -203,6 +211,10 @@ export const startOnboardingDiscoveryResponseDtoSchema = z
  * hard deadline (connect timeout + window + a few seconds) and the second
  * transaction fit well inside it. A worker that died mid-window, or a final
  * write that failed, must not hold the session for ever (decisions #7).
+ *
+ * `F4.339` (plan R5): at the 300 s maximum a running discovery stays active
+ * until `startedAt + 360 s` — past the job's own 315 s hard deadline
+ * (`DISCOVERY_DEADLINE_MARGIN_MS`), so a live job is never read as stale.
  */
 export const MQTT_DISCOVERY_RUNNING_GRACE_MS = 60_000;
 
@@ -266,6 +278,9 @@ export function discoveryDtoOf(
 
 /** The fields {@link discoveryEmptySentence} reads. */
 export type DiscoveryEmptyFields = {
+  /** `F4.339`: the filter the user chose, `<prefix>/#` — the operator's own input, not wire data. */
+  readonly topicFilter: string;
+  readonly windowSeconds: number;
   readonly messages: number;
   readonly skipped: number;
   readonly skippedReasons?: Partial<Record<z.infer<typeof onboardingDiscoverySkipReasonSchema>, number>>;
@@ -274,9 +289,19 @@ export type DiscoveryEmptyFields = {
 /**
  * `F4.335` / ADR 0116 decision 8 (plan R11) — what a discovery with no device
  * says, for the drawer and the copilot alike. Fixed text: it echoes no
- * payload, topic or key, only counts.
+ * payload, device topic or key, only counts.
+ *
+ * `F4.339` (ADR 0117 decision 6): when **no message** arrived (none decoded,
+ * none skipped), the sentence
+ * names the filter and the window the user chose — both their own input — so
+ * a wrong topic or a too-short window is visible (BCPL meters publish about
+ * every 160 s). The two F4.335 sentences stay for messages that arrived.
  */
 export function discoveryEmptySentence(result: DiscoveryEmptyFields): string {
+  // `messages` counts decoded messages and `skipped` the dropped ones, so both 0 is "nothing arrived".
+  if (result.messages === 0 && result.skipped <= 0) {
+    return `No message arrived on topic '${result.topicFilter}' in ${result.windowSeconds} s — check the topic name and the window.`;
+  }
   if (result.skipped <= 0) {
     return "No device published in the window.";
   }

@@ -159,6 +159,14 @@ export async function assertD2TheActionLineNamesTheFilterAndWindow(): Promise<vo
   );
 }
 
+/** F4.339 (ADR 0117 decision 5): the tool takes a 300 s window and refuses 301 s. */
+export async function assertTheToolWindowIsBoundedAt300Seconds(): Promise<void> {
+  const { outcome } = await proposeOn(draft(), { ...PROPOSE, windowSeconds: 300 });
+  assert(outcome.ok && outcome.actionLine?.endsWith("for 300 s") === true, `300 s is proposed, got ${outcome.actionLine}`);
+  const { outcome: over } = await proposeOn(draft(), { ...PROPOSE, windowSeconds: 301 });
+  assert(!over.ok, "301 s is refused");
+}
+
 async function refused(working: OnboardingDraft, args: unknown, fragment: string): Promise<void> {
   const { state, outcome } = await proposeOn(working, args);
   assert(!outcome.ok, "the proposal is refused");
@@ -308,8 +316,13 @@ export async function assertG7AnOffsetReadsTheNextPage(): Promise<void> {
 
 /** G8 — a done result with no device says so. */
 export async function assertG8AnEmptyResultSaysSo(): Promise<void> {
-  const outcome = await runTool(call("get_discovery_results", {}), { working: draft({ _discovery: stored({ devices: [] }) }) }, context());
-  assert(outcome.content.includes("No device published"), `the empty sentence, got ${outcome.content}`);
+  const outcome = await runTool(call("get_discovery_results", {}), { working: draft({ _discovery: stored({ devices: [], messages: 0, skipped: 0 }) }) }, context());
+  // F4.339 (ADR 0117 decision 6): nothing arrived → the sentence names the chosen filter and window (exact string).
+  const body = parsed(outcome.content) as { empty?: string };
+  assert(
+    body.empty === "No message arrived on topic 'site/data/#' in 60 s — check the topic name and the window. Say so to the user.",
+    `the empty sentence, got ${outcome.content}`,
+  );
 }
 
 /** G9 — a truncated result says so. */
@@ -574,4 +587,24 @@ export async function assertM8MapPointStampsADiscoveredKey(): Promise<void> {
   const outcome = await runTool(call("map_point", { assetIndex: 2, pointKey: "kw", sourceDataKey: "kw" }), state, context());
   assert(outcome.ok, `runs, got ${outcome.error}`);
   assert(state.working.assetPoints?.[0]?.source === "discovery", `stamped, got ${JSON.stringify(state.working.assetPoints)}`);
+}
+
+/** F4.339 (plan R6, ruling Q2): one device → the result offers its devId as the RTU's device key; two → no offer. */
+export async function assertOneDeviceIsOfferedAsTheDeviceKey(): Promise<void> {
+  const one = stored();
+  one.devices = [one.devices[0]!];
+  const single = parsed((await runTool(call("get_discovery_results", {}), { working: draft({ _discovery: one }) }, context())).content);
+  assert(
+    single.offer === "Offer the user: Use '1051' as this RTU's device key — one update_rtu write of rtuCode and ingestEnabled: true, only if the user agrees.",
+    `the offer, got ${JSON.stringify(single.offer)}`,
+  );
+  const two = parsed((await runTool(call("get_discovery_results", {}), { working: draft({ _discovery: stored() }) }, context())).content);
+  assert(two.offer === undefined, "no offer for two devices");
+  // Code review: a devId past the 64-character rtuCode bound is not offered; one at the bound is.
+  for (const [length, offered] of [[64, true], [65, false]] as const) {
+    const long = stored();
+    long.devices = [{ ...one.devices[0]!, devId: "d".repeat(length) }];
+    const body = parsed((await runTool(call("get_discovery_results", {}), { working: draft({ _discovery: long }) }, context())).content);
+    assert((body.offer !== undefined) === offered, `a ${length}-character devId: offered ${String(offered)}, got ${JSON.stringify(body.offer)}`);
+  }
 }
