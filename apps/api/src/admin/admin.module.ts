@@ -54,6 +54,8 @@ import { PointKeysAdminController } from "./point-keys/point-keys.controller";
 import { PointKeysAdminService } from "./point-keys/point-keys.service";
 import { PointKeyStatesAdminController } from "./point-key-states/point-key-states.controller";
 import { PointKeyStatesAdminService } from "./point-key-states/point-key-states.service";
+import { MqttPayloadFormatsAdminController } from "./mqtt-payload-formats/mqtt-payload-formats.controller";
+import { MqttPayloadFormatsAdminService } from "./mqtt-payload-formats/mqtt-payload-formats.service";
 import { AssetRolesAdminController } from "./vocabularies/asset-roles/asset-roles.controller";
 import { AssetRolesAdminService } from "./vocabularies/asset-roles/asset-roles.service";
 import { LocationTypesVocabularyAdminController } from "./vocabularies/location-types.controller";
@@ -124,6 +126,8 @@ import { UsersService } from "./users/users.service";
     PointKeysAdminController,
     // F4.309 / ADR 0088 Amendment 3 — the state labels of switching points, global admin only.
     PointKeyStatesAdminController,
+    // F4.334 / ADR 0116 decision 5 — the MQTT payload format catalog.
+    MqttPayloadFormatsAdminController,
     // E4.1a / ADR 0070 decision 2 — the calc parameter store and its vocabulary read.
     CalcParametersAdminController,
     AssetRolesAdminController,
@@ -177,6 +181,7 @@ import { UsersService } from "./users/users.service";
     CalcBackfillRequestService,
     PointKeysAdminService,
     PointKeyStatesAdminService,
+    MqttPayloadFormatsAdminService,
     CalcParametersAdminService,
     AssetRolesAdminService,
     LocationTypesVocabularyAdminService,

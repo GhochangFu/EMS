@@ -84,58 +84,15 @@ export const DELETE_ALLOWANCE: readonly { readonly method: "DELETE"; readonly pa
 
 const NO_DELETE = "a hard DELETE is never in the catalog (decision 3)";
 const COPILOT_OWN = "the copilot's own route: a proposal must never change the copilot itself";
+const AMENDMENT_17 = "copilot entry in ADR 0099 Amendment 17";
 
-/** Write routes the copilot never proposes (decision 2), with the reason. Paths are below the global prefix. */
-export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
-  // The AI key routes: a key never goes through the copilot (ADR 0022).
-  { method: "PUT", path: "/admin/organizations/:orgId/ai-assistant", reason: "an AI key route" },
-  { method: "DELETE", path: "/admin/organizations/:orgId/ai-assistant", reason: "an AI key route" },
-  { method: "POST", path: "/admin/organizations/:orgId/ai-assistant/test", reason: "an AI key route" },
-  // The copilot's own access, usage, conversation, turn and reject routes.
-  { method: "PUT", path: "/admin/organizations/:orgId/copilot-access", reason: COPILOT_OWN },
-  { method: "POST", path: "/copilot/conversations", reason: COPILOT_OWN },
-  { method: "POST", path: "/copilot/conversations/:id/turns", reason: COPILOT_OWN },
-  // `F3.86` PR 5: starting and ending the onboarding skill in a conversation (decision 7).
-  { method: "POST", path: "/copilot/conversations/:id/skills/onboarding", reason: COPILOT_OWN },
-  { method: "DELETE", path: "/copilot/conversations/:id/skills/onboarding", reason: COPILOT_OWN },
-  { method: "POST", path: "/copilot/changes/:id/reject", reason: COPILOT_OWN },
-  // A temporary password is typed by a person, never proposed.
-  { method: "POST", path: "/admin/users/:id/temporary-password", reason: "a credential route" },
-  // `F4.303` excluded the append route here; `F4.324` (ADR 0099 Amendment 16) makes its chart arm
-  // the entry `dashboard.widgets.appendChart`, and the trend arm stays out through that body.
-  // Every DELETE in the in-release controllers.
-  { method: "DELETE", path: "/dashboards/:id", reason: NO_DELETE },
-  { method: "DELETE", path: "/admin/dashboard-templates/:id", reason: NO_DELETE },
-  { method: "DELETE", path: "/admin/asset-templates/:id", reason: NO_DELETE },
-  { method: "DELETE", path: "/admin/calc-parameters/:id", reason: NO_DELETE },
-  // `F3.87` (Amendment 3 A1): the layout DELETE. The unit-role edit and retire are entries since
-  // `F4.282` (Amendment 8, Q17 withdraws A1's exclusion).
-  { method: "DELETE", path: "/mimic-layouts/:id", reason: NO_DELETE },
-  // `F3.86`: each area's routes that are not (yet) entries.
-  ...ASSET_TEMPLATE_PENDING,
-  ...LOCATION_PENDING,
-  ...SITE_VIEW_PENDING,
-  ...RTU_PENDING,
-  ...ASSET_PENDING,
-  ...ASSET_POINT_PENDING,
-  ...ASSET_GROUP_PENDING,
-  ...POINT_KEY_PENDING,
-  // `F4.309` PR 3 (Amendment 13 decision 5): the state-label DELETE stays manual.
-  ...POINT_KEY_STATE_PENDING,
-  ...USER_PENDING,
-  ...ONBOARDING_PENDING,
-  // `F3.87`: the mimic areas, each route pending until its PR.
-  ...MIMIC_LAYOUT_PENDING,
-  ...MIMIC_SYMBOL_LIBRARY_PENDING,
-  ...ASSET_ROLE_PENDING,
-  ...LOCATION_TYPE_PENDING,
-  ...RULE_PENDING,
-  ...NOTIFICATION_PENDING,
-  // F4.280 (Amendment 8): the two report DELETEs stay manual.
-  ...REPORT_PENDING,
-  // F4.281 (Amendment 8) excluded the maintenance convert; F4.284 (ADR 0106 Q6) made it an entry.
-  // F4.283 (Amendment 8): the import preview runs inside the propose step; the image DELETE stays manual.
-  ...FILE_DATA_PENDING,
+/** `F4.334` — the routes Amendment 17 turns into entries at its build. */
+const MQTT_PAYLOAD_FORMAT_PENDING: readonly ExcludedRoute[] = [
+  { method: "POST", path: "/admin/mqtt-payload-formats", reason: AMENDMENT_17 },
+  { method: "PUT", path: "/admin/mqtt-payload-formats/:code", reason: AMENDMENT_17 },
+  { method: "DELETE", path: "/admin/mqtt-payload-formats/:code", reason: AMENDMENT_17 },
+  { method: "POST", path: "/admin/mqtt-payload-formats/test", reason: AMENDMENT_17 },
+  { method: "PUT", path: "/admin/rtus/:id/payload-format", reason: AMENDMENT_17 },
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */
@@ -311,3 +268,60 @@ export function formulaRefsOf(body: unknown, formula: CatalogFormula): string[] 
   }
   return names;
 }
+
+/** Write routes the copilot never proposes (decision 2), with the reason. Paths are below the global prefix. */
+export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
+  // The AI key routes: a key never goes through the copilot (ADR 0022).
+  { method: "PUT", path: "/admin/organizations/:orgId/ai-assistant", reason: "an AI key route" },
+  { method: "DELETE", path: "/admin/organizations/:orgId/ai-assistant", reason: "an AI key route" },
+  { method: "POST", path: "/admin/organizations/:orgId/ai-assistant/test", reason: "an AI key route" },
+  // The copilot's own access, usage, conversation, turn and reject routes.
+  { method: "PUT", path: "/admin/organizations/:orgId/copilot-access", reason: COPILOT_OWN },
+  { method: "POST", path: "/copilot/conversations", reason: COPILOT_OWN },
+  { method: "POST", path: "/copilot/conversations/:id/turns", reason: COPILOT_OWN },
+  // `F3.86` PR 5: starting and ending the onboarding skill in a conversation (decision 7).
+  { method: "POST", path: "/copilot/conversations/:id/skills/onboarding", reason: COPILOT_OWN },
+  { method: "DELETE", path: "/copilot/conversations/:id/skills/onboarding", reason: COPILOT_OWN },
+  { method: "POST", path: "/copilot/changes/:id/reject", reason: COPILOT_OWN },
+  // A temporary password is typed by a person, never proposed.
+  { method: "POST", path: "/admin/users/:id/temporary-password", reason: "a credential route" },
+  // `F4.303` excluded the append route here; `F4.324` (ADR 0099 Amendment 16) makes its chart arm
+  // the entry `dashboard.widgets.appendChart`, and the trend arm stays out through that body.
+  // Every DELETE in the in-release controllers.
+  { method: "DELETE", path: "/dashboards/:id", reason: NO_DELETE },
+  { method: "DELETE", path: "/admin/dashboard-templates/:id", reason: NO_DELETE },
+  { method: "DELETE", path: "/admin/asset-templates/:id", reason: NO_DELETE },
+  { method: "DELETE", path: "/admin/calc-parameters/:id", reason: NO_DELETE },
+  // `F3.87` (Amendment 3 A1): the layout DELETE. The unit-role edit and retire are entries since
+  // `F4.282` (Amendment 8, Q17 withdraws A1's exclusion).
+  { method: "DELETE", path: "/mimic-layouts/:id", reason: NO_DELETE },
+  // `F3.86`: each area's routes that are not (yet) entries.
+  ...ASSET_TEMPLATE_PENDING,
+  ...LOCATION_PENDING,
+  ...SITE_VIEW_PENDING,
+  ...RTU_PENDING,
+  ...ASSET_PENDING,
+  ...ASSET_POINT_PENDING,
+  ...ASSET_GROUP_PENDING,
+  ...POINT_KEY_PENDING,
+  // `F4.309` PR 3 (Amendment 13 decision 5): the state-label DELETE stays manual.
+  ...POINT_KEY_STATE_PENDING,
+  ...USER_PENDING,
+  ...ONBOARDING_PENDING,
+  // `F3.87`: the mimic areas, each route pending until its PR.
+  ...MIMIC_LAYOUT_PENDING,
+  ...MIMIC_SYMBOL_LIBRARY_PENDING,
+  ...ASSET_ROLE_PENDING,
+  ...LOCATION_TYPE_PENDING,
+  ...RULE_PENDING,
+  ...NOTIFICATION_PENDING,
+  // F4.280 (Amendment 8): the two report DELETEs stay manual.
+  ...REPORT_PENDING,
+  // F4.281 (Amendment 8) excluded the maintenance convert; F4.284 (ADR 0106 Q6) made it an entry.
+  // F4.283 (Amendment 8): the import preview runs inside the propose step; the image DELETE stays manual.
+  ...FILE_DATA_PENDING,
+  // `F4.334` (ADR 0099 Amendment 17 decision 5): until that amendment's build (plan PR 5) moves
+  // them into catalog entries, the payload-format writes and the RTU format route are excluded.
+  ...MQTT_PAYLOAD_FORMAT_PENDING,
+];
+
