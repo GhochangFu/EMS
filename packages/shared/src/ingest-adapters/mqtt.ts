@@ -194,12 +194,36 @@ const draftTopic = z.union([z.literal(""), mqttDeviceSchema.shape.topic]);
  * config field since ADR 0114 (decision 2): checked as a boolean, so the string
  * `"false"` is a schema issue rather than a silent TLS connect. Whether a
  * `tls: false` draft may commit is the validator's check against
- * `MQTT_PLAINTEXT_HOSTS`, not this schema's. `.passthrough()`: other draft-only
- * keys are kept, not stripped.
+ * `MQTT_PLAINTEXT_HOSTS`, not this schema's. `.passthrough()` keeps the keys,
+ * and since `F4.339` (ADR 0117 decision 10) every key outside
+ * `MQTT_DRAFT_CONFIG_KEYS` is an issue with a fixed hint.
  *
  * Every issue message is fixed text — none echoes the offending value (§9.6),
  * because the validator and the tools forward these messages.
  */
+/** `F4.339` (plan R9): the keys an MQTT draft config may carry; `rejectUnauthorized` has its own refusal above. */
+export const MQTT_DRAFT_CONFIG_KEYS: ReadonlySet<string> = new Set([
+  "host",
+  "port",
+  "tls",
+  "payloadFormat",
+  "topic",
+  "mqttTopic",
+  "device",
+  "rejectUnauthorized",
+]);
+
+export const MQTT_CONFIG_HOST_HINT = "use host for the broker host";
+export const MQTT_CONFIG_DEVICE_KEY_HINT = "the device key is the RTU's rtuCode, not a config key";
+export const MQTT_CONFIG_UNKNOWN_KEY_HINT = "unknown MQTT config key; the config takes host, port, tls, topic, payloadFormat";
+
+/** The fixed hint for an unknown MQTT draft config key: two known mistakes, then the generic sentence. */
+export function mqttDraftConfigKeyHint(key: string): string {
+  if (["brokerHost", "broker", "hostname", "url"].includes(key)) return MQTT_CONFIG_HOST_HINT;
+  if (["devId", "dev_id", "deviceId", "device_id"].includes(key)) return MQTT_CONFIG_DEVICE_KEY_HINT;
+  return MQTT_CONFIG_UNKNOWN_KEY_HINT;
+}
+
 export const mqttDraftConfigSchema = z
   .object({
     host: mqttConfigSchema.shape.host.optional(),
@@ -223,5 +247,13 @@ export const mqttDraftConfigSchema = z
         path: ["rejectUnauthorized"],
         message: MQTT_REJECT_UNAUTHORIZED_DRAFT_MESSAGE,
       });
+    }
+    // F4.339 (ADR 0117 decision 10, plan R9): an unknown key is refused at its
+    // own path with a fixed hint — never the value. The issue's path names the
+    // key; the message does not echo it.
+    for (const key of Object.keys(config)) {
+      if (!MQTT_DRAFT_CONFIG_KEYS.has(key)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: mqttDraftConfigKeyHint(key) });
+      }
     }
   });

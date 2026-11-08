@@ -56,6 +56,13 @@ export type ValidateResult = {
   suggestedPhase: OnboardingPhase;
 };
 
+/** `F4.339` (plan R9): the fixed sentence for an MQTT RTU with no broker host. */
+export const MQTT_RTU_HOST_REQUIRED_MESSAGE = "An MQTT RTU needs a broker host";
+
+/** `F4.339` (ruling Q5): the fixed sentence for an ingest-enabled MQTT RTU with no device key. */
+export const MQTT_RTU_CODE_REQUIRED_MESSAGE =
+  "An MQTT RTU with ingest on needs an rtuCode, the device key ingest routes by";
+
 /**
  * Whether the draft still has to declare point keys: it declares none, does not
  * use the existing catalog, and holds a plain asset or no asset at all.
@@ -273,6 +280,19 @@ export class OnboardingValidateService {
             path: `rtus.${i}.config.device.topic`,
             message: "MQTT topic must name one device; # and + are wildcards",
           });
+        }
+        // F4.339 (ADR 0117 decision 10, plan R9): ingest connects to `config.host`,
+        // so an MQTT RTU without one would commit and never connect (F4.327).
+        // Ruling Q5: ingest routes by `rtuCode` and skips an RTU without it
+        // (`missing-rtu-code`), so ingest on with no device key is refused too.
+        if (rtu.protocol === "mqtt") {
+          const host = rtu.config?.host;
+          if (typeof host !== "string" || host.trim() === "") {
+            errors.push({ path: `rtus.${i}.config.host`, message: MQTT_RTU_HOST_REQUIRED_MESSAGE });
+          }
+          if (rtu.ingestEnabled === true && (typeof rtu.rtuCode !== "string" || rtu.rtuCode.trim() === "")) {
+            errors.push({ path: `rtus.${i}.rtuCode`, message: MQTT_RTU_CODE_REQUIRED_MESSAGE });
+          }
         }
         // F4.326 / ADR 0114 decision 5: a literal `tls: false` commits only for a
         // host on `MQTT_PLAINTEXT_HOSTS` — ingest would skip it otherwise. No host

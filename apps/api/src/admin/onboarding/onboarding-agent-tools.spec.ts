@@ -416,7 +416,7 @@ export async function assertADeepWriteIsRefused(): Promise<void> {
     deep = { child: deep };
   }
   const state: ToolState = { working: {} };
-  const out = await runTool(call("add_rtu", { ...PLAIN_RTU, config: { ...PLAIN_RTU.config, extra: deep } }), state, context());
+  const out = await runTool(call("add_rtu", { ...PLAIN_RTU, config: { ...PLAIN_RTU.config, device: { extra: deep } } }), state, context());
   assert(!out.ok && String(parsed(out.content).error).startsWith("The draft nests deeper than"), "the depth bound holds");
   assert((state.working.rtus?.length ?? 0) === 0, "nothing was written");
 }
@@ -612,4 +612,26 @@ export async function assertSetLocationStoresTheTimezone(): Promise<void> {
   assert(!bad.ok && bad.content.includes("timezone must be an IANA zone name such as Asia/Kolkata"), `refused with the fixed message, got ${bad.content}`);
   const description = TOOL_DEFINITIONS.find((tool) => tool.name === "set_location")?.description ?? "";
   assert(description.includes("`timezone` is the site's IANA zone name"), "the description names the field");
+}
+
+/** F4.339 (plan R9): update_rtu removes a key set to null before the merged config is checked; host stays frozen once credentialed. */
+export async function assertUpdateRtuRemovesANullKey(): Promise<void> {
+  const stray = { code: "RTU-1", displayName: "RTU-1", protocol: "mqtt" as const, config: { brokerHost: "h", port: 1883 }, credentialsSet: false, ingestEnabled: false };
+  const state: ToolState = { working: { rtus: [stray] } as OnboardingDraft };
+  const out = await runTool(call("update_rtu", { index: 0, patch: { config: { brokerHost: null, host: "h" } } }), state, context());
+  assert(out.ok, `the repair is accepted, got ${out.content}`);
+  assert(JSON.stringify(state.working.rtus?.[0]?.config) === JSON.stringify({ port: 1883, host: "h" }), `the stored config, got ${JSON.stringify(state.working.rtus?.[0]?.config)}`);
+  assert(
+    out.actionLine?.includes("'config.brokerHost'") === true && out.actionLine.includes("'config.host'"),
+    `the line names both fields, got ${out.actionLine}`,
+  );
+  const credentialed: ToolState = { working: { rtus: [{ ...stray, credentialsSet: true }] } as OnboardingDraft };
+  const frozen = await runTool(call("update_rtu", { index: 0, patch: { config: { brokerHost: null, host: "h" } } }), credentialed, context());
+  assert(!frozen.ok && String(parsed(frozen.content).error) === CREDENTIALED_CONNECTION_ERROR, `the host stays frozen, got ${frozen.content}`);
+  const stuck = await runTool(call("update_rtu", { index: 0, patch: { displayName: "Meter one" } }), { working: { rtus: [stray] } as OnboardingDraft }, context());
+  assert(!stuck.ok && String(parsed(stuck.content).error).includes("use host for the broker host"), `a stray key alone is refused with the hint, got ${stuck.content}`);
+  const add = TOOL_DEFINITIONS.find((tool) => tool.name === "add_rtu")?.description ?? "";
+  assert(add.includes("`config.host`") && add.includes("`rtuCode`") && add.includes("`ingestEnabled: true`"), "add_rtu names host, rtuCode and ingestEnabled");
+  const update = TOOL_DEFINITIONS.find((tool) => tool.name === "update_rtu")?.description ?? "";
+  assert(update.includes("a key set to null is removed"), "update_rtu names the null removal");
 }

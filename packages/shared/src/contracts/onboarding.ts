@@ -221,7 +221,8 @@ export const ONBOARDING_TIMEZONE_MESSAGE = "timezone must be an IANA zone name s
 export const onboardingTimezoneSchema = z
   .string()
   .max(ONBOARDING_DRAFT_STRING_MAX["location.timezone"])
-  .refine(isIanaTimeZone, { message: ONBOARDING_TIMEZONE_MESSAGE });
+  .refine(isIanaTimeZone, { message: ONBOARDING_TIMEZONE_MESSAGE })
+  .describe("The site's IANA zone name, such as Asia/Kolkata (or UTC); any other name is refused.");
 
 /**
  * `F4.208` — the longest MQTT topic an onboarding draft may carry: the width of

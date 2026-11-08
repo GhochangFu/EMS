@@ -21,6 +21,7 @@ import {
   assertSetLocationDerivesSlugAndCode,
   assertSetLocationNamesTheDefaultCoordinates,
   assertSetLocationStoresTheTimezone,
+  assertUpdateRtuRemovesANullKey,
   assertSetLocationRefusesAnInactiveTypeNamingTheActiveCodes,
   assertUnknownToolAndBadArgumentsAreToolErrors,
   assertAFailedOutcomeCarriesItsError,
@@ -95,6 +96,10 @@ describe("onboarding agent tools (F3.21, ADR 0090 decision 4)", () => {
 
   it("F4.339: set_location stores the timezone and never touches capital", async () => {
     await assertSetLocationStoresTheTimezone();
+  });
+
+  it("F4.339: update_rtu removes a null key, and the host stays frozen once credentialed", async () => {
+    await assertUpdateRtuRemovesANullKey();
   });
 
   it("writes only useExistingPointKeys", async () => {

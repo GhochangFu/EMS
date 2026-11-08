@@ -27,6 +27,8 @@ import {
   assertAnUnknownPayloadFormatIsReported,
   assertNoCatalogSetFailsClosed,
   assertNoPayloadFormatNeedsNoSet,
+  assertAStoredStrayKeyIsReportedAndKept,
+  assertIngestOnWithoutAnRtuCodeIsAnError,
 } from "./onboarding-validate-protocol-config.spec";
 
 describe("validate — rtus[].config against the protocol's draft schema (F3.24a, ADR 0093)", () => {
@@ -57,4 +59,12 @@ describe("validate — rtus[].config against the protocol's draft schema (F3.24a
   it("P3 fails closed with no catalog set (F4.334)", () => assertNoCatalogSetFailsClosed());
   it("P4 leaves a draft naming no format unaffected (F4.334)", () => assertNoPayloadFormatNeedsNoSet());
   it("P5 gives a malformed code the schema issue only (F4.334)", () => assertAMalformedCodeCarriesTheSchemaIssueOnly());
+
+  it("F4.339: reports a stored stray key at its path with the hint, draft unchanged", () => {
+    assertAStoredStrayKeyIsReportedAndKept();
+  });
+
+  it("F4.339: refuses ingest on without an rtuCode (ruling Q5)", () => {
+    assertIngestOnWithoutAnRtuCodeIsAnError();
+  });
 });

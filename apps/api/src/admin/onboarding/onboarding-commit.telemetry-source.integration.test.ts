@@ -101,9 +101,12 @@ function draftFor(
         code: codes.rtuCode,
         displayName: "F4.140 Onboarding RTU",
         protocol: rtu.protocol,
-        // draftRtuSchema requires an mqtt RTU to declare a topic.
-        config: rtu.protocol === "mqtt" ? { topic: `F4140/${codes.rtuCode}` } : {},
+        // draftRtuSchema requires an mqtt RTU to declare a topic; F4.339 (ADR
+        // 0117 decision 10) a broker host too.
+        config: rtu.protocol === "mqtt" ? { host: "broker.f4140.example", topic: `F4140/${codes.rtuCode}` } : {},
         ingestEnabled: rtu.ingestEnabled,
+        // F4.339 (ruling Q5): an ingest-enabled MQTT RTU needs the device key.
+        ...(rtu.protocol === "mqtt" && rtu.ingestEnabled ? { rtuCode: codes.rtuCode } : {}),
         // OnboardingValidateService refuses readyToCommit for an
         // ingest-enabled mqtt RTU with no credentials declared.
         credentialsSet: rtu.protocol === "mqtt" ? true : undefined,
