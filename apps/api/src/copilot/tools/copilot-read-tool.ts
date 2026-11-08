@@ -3,6 +3,7 @@ import type { z, ZodType, ZodTypeAny, ZodTypeDef } from "zod";
 import type { AssetTemplatesAdminService } from "../../admin/asset-templates/asset-templates.service";
 import type { AuditAdminService } from "../../admin/audit/audit.service";
 import type { LocationsAdminService } from "../../admin/locations/locations.service";
+import type { MqttPayloadFormatsAdminService } from "../../admin/mqtt-payload-formats/mqtt-payload-formats.service";
 import type { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
 import type { AlarmDetailsService } from "../../alarms/alarm-details.service";
 import type { AlarmStatsService } from "../../alarms/alarm-stats.service";
@@ -152,6 +153,12 @@ export interface CopilotReadServices {
    * `canManageOrganization`; `list` only, so no write and no audit row is reachable.
    */
   readonly assetTemplates: Pick<AssetTemplatesAdminService, "list">;
+  /**
+   * `F4.334` PR 5 (ADR 0099 Amendment 17 decisions 2, 3): the payload format catalog's list, the RTU
+   * counts inside the allowed organizations (one `withTenant` read each), and the test route's
+   * decode (writes nothing, no audit row). No write is reachable.
+   */
+  readonly mqttPayloadFormats: Pick<MqttPayloadFormatsAdminService, "list" | "rtuCountsInOrganizations" | "test">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */

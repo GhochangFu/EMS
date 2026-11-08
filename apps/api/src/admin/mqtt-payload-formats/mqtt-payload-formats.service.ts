@@ -29,7 +29,8 @@ import type {
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { noRowWritten, updatedAtMatches } from "../../common/if-match";
-import { FLEET_DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { translateConstraintErrors } from "../../database/translate-constraint-errors";
 import { MasterDataAuditService } from "../master-data-audit.service";
 
@@ -65,6 +66,8 @@ export class MqttPayloadFormatsAdminService {
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    // `F4.334` PR 5: the tenant pool, for the copilot's RTU counts (`rtu_connection_configs` is FORCE RLS).
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
   ) {}
 
   /** Every format, built-in first, then by code. */
@@ -205,6 +208,38 @@ export class MqttPayloadFormatsAdminService {
     await this.requireGlobalAdmin(jwt);
     const body = parseBody(testMqttPayloadFormatBodySchema.safeParse(input));
     return testResponse(decodeMqttPayload(body.definition, body.topic, body.sample));
+  }
+
+  /**
+   * `F4.334` PR 5 (ADR 0099 Amendment 17 decision 2) — how many RTUs name each format, counted
+   * **only** inside `organizationIds`: one `withTenant` read per organization on the tenant pool,
+   * so Row Level Security bounds each count and no fleet-wide read is made. Global admin only.
+   * Reads `config->>'payloadFormat'` alone — never a credential column. Returns the counts by
+   * code (a code no RTU names is absent) and the organizations counted.
+   */
+  async rtuCountsInOrganizations(
+    jwt: JwtPayload,
+    organizationIds: readonly string[],
+  ): Promise<{ counts: Record<string, number>; organizationIds: string[] }> {
+    await this.requireGlobalAdmin(jwt);
+    // A Map, not an object: a code such as `constructor` must not meet the prototype.
+    const counts = new Map<string, number>();
+    const counted: string[] = [];
+    for (const organizationId of organizationIds) {
+      const result = await withTenant(this.tenantDb, organizationId, (tx) =>
+        tx.execute(sql`
+          SELECT c.config->>'payloadFormat' AS code, count(*)::int AS rtus
+            FROM bms.rtu_connection_configs c
+           WHERE c.organization_id = ${organizationId}
+             AND c.config->>'payloadFormat' IS NOT NULL
+           GROUP BY 1`),
+      );
+      for (const row of rowsOf<{ code: string; rtus: number }>(result)) {
+        counts.set(row.code, (counts.get(row.code) ?? 0) + Number(row.rtus));
+      }
+      counted.push(organizationId);
+    }
+    return { counts: Object.fromEntries(counts), organizationIds: counted };
   }
 
   /** The RTUs and open drafts that name `code`, on the fleet pool (it reads every organization). */

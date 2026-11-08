@@ -4,6 +4,7 @@ import type { ZodTypeAny } from "zod";
 import { AssetTemplatesAdminService } from "../../admin/asset-templates/asset-templates.service";
 import { AuditAdminService } from "../../admin/audit/audit.service";
 import { LocationsAdminService } from "../../admin/locations/locations.service";
+import { MqttPayloadFormatsAdminService } from "../../admin/mqtt-payload-formats/mqtt-payload-formats.service";
 import { PointKeyStatesAdminService } from "../../admin/point-key-states/point-key-states.service";
 import { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
 import { AlarmDetailsService } from "../../alarms/alarm-details.service";
@@ -38,6 +39,7 @@ import { getAlarmDetailsTool } from "./get-alarm-details.tool";
 import { getAlarmKbTool } from "./get-alarm-kb.tool";
 import { getAlarmStatsTool } from "./get-alarm-stats.tool";
 import { getAssetKpisTool } from "./get-asset-kpis.tool";
+import { decodePayloadSampleTool } from "./decode-payload-sample.tool";
 import { getDashboardKpisTool } from "./get-dashboard-kpis.tool";
 import { getEnergyReportPreviewTool } from "./get-energy-report-preview.tool";
 import { getEnergySourceMixTool } from "./get-energy-source-mix.tool";
@@ -69,6 +71,7 @@ import { listRulesTool } from "./list-rules.tool";
 import { listNotificationChannelsTool } from "./list-notification-channels.tool";
 import { listEscalationProfilesTool } from "./list-escalation-profiles.tool";
 import { listMaintenanceSchedulesTool } from "./list-maintenance-schedules.tool";
+import { listPayloadFormatsTool } from "./list-payload-formats.tool";
 import { listPointKeyStatesTool } from "./list-point-key-states.tool";
 import { listUsersTool } from "./list-users.tool";
 import { listWorkOrdersTool } from "./list-work-orders.tool";
@@ -88,7 +91,8 @@ import { openPageTool } from "./open-page.tool";
  * `list_rules`. `F4.290` PR 2 adds `get_location_summary` after
  * `get_energy_report_preview`. `F4.309` PR 3 adds `list_point_key_states` after
  * `list_alarm_skills`. `F4.315` PR A adds `list_asset_templates` after
- * `list_point_key_states`.
+ * `list_point_key_states`. `F4.334` PR 5 adds `list_payload_formats` and
+ * `decode_payload_sample` after `list_asset_templates`.
  */
 export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[] = [
   listAlarmsTool,
@@ -140,6 +144,9 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   listPointKeyStatesTool,
   // `F4.315` PR A (ADR 0099 Amendment 14 decision 1): the version ids an assetTemplate.adopt names.
   listAssetTemplatesTool,
+  // `F4.334` PR 5 (ADR 0099 Amendment 17 decision 2): the payload formats, and a decode of a pasted sample.
+  listPayloadFormatsTool,
+  decodePayloadSampleTool,
   openPageTool,
 ];
 
@@ -226,6 +233,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
     @Inject(PointKeyStatesAdminService) pointKeyStates: PointKeyStatesAdminService,
     // `F4.315` PR A: appended last (slot 29), the same reason. `AdminModule` exports it.
     @Inject(AssetTemplatesAdminService) assetTemplates: AssetTemplatesAdminService,
+    // `F4.334` PR 5: appended last (slot 30), the same reason. `AdminModule` exports it.
+    @Inject(MqttPayloadFormatsAdminService) mqttPayloadFormats: MqttPayloadFormatsAdminService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -258,6 +267,7 @@ export class CopilotReadToolSet implements CopilotReadTools {
       locationSummary,
       pointKeyStates,
       assetTemplates,
+      mqttPayloadFormats,
     });
   }
 

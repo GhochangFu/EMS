@@ -49,7 +49,7 @@ function serviceFor(role: string, events: string[]): MqttPayloadFormatsAdminServ
       events.push("audit");
     },
   };
-  return new MqttPayloadFormatsAdminService(untouched as never, accessControl as never, audit as never);
+  return new MqttPayloadFormatsAdminService(untouched as never, accessControl as never, audit as never, untouched as never);
 }
 
 /** G1 — every write and the test route are the global admin's, refused before any parse or read. */
