@@ -247,7 +247,7 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
           aria-busy={deviceKeyMutation.isPending}
           onClick={() => deviceKeyMutation.mutate({ index: deviceKeyIndex, devId: result.devices[0]!.devId })}
         >
-          {`Use ${result.devices[0]!.devId} as the RTU code`}
+          {deviceKeyMutation.isPending ? "Saving the RTU code…" : `Use ${result.devices[0]!.devId} as the RTU code`}
         </button>
       )}
       {discovered.length > 0 && (
