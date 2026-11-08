@@ -600,4 +600,11 @@ export async function assertOneDeviceIsOfferedAsTheDeviceKey(): Promise<void> {
   );
   const two = parsed((await runTool(call("get_discovery_results", {}), { working: draft({ _discovery: stored() }) }, context())).content);
   assert(two.offer === undefined, "no offer for two devices");
+  // Code review: a devId past the 64-character rtuCode bound is not offered; one at the bound is.
+  for (const [length, offered] of [[64, true], [65, false]] as const) {
+    const long = stored();
+    long.devices = [{ ...one.devices[0]!, devId: "d".repeat(length) }];
+    const body = parsed((await runTool(call("get_discovery_results", {}), { working: draft({ _discovery: long }) }, context())).content);
+    assert((body.offer !== undefined) === offered, `a ${length}-character devId: offered ${String(offered)}, got ${JSON.stringify(body.offer)}`);
+  }
 }

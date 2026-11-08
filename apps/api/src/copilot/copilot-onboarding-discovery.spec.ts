@@ -262,7 +262,7 @@ export async function anApplyingChangeBlocksTheCardAndTheReplySaysSo(): Promise<
   expect(response.pendingChanges).toEqual([]);
   expect(response.reply).toBe(`Confirm the card to listen. ${DISCOVERY_CARD_BLOCKED_SENTENCE}`);
   expect(DISCOVERY_CARD_BLOCKED_SENTENCE).toBe(
-    "The discovery card could not be shown while another change is being applied; ask for the discovery again in a moment.",
+    "The discovery card could not be shown while another change is open or being applied; confirm or reject it, then ask for the discovery again.",
   );
 }
 

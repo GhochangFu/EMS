@@ -219,3 +219,9 @@ export function theRtuCodeButtonWaitsForTheChatTurn(): void {
   mount(session({ discovery: discovery({ devices: [ONE_DEVICE], messages: 3 }) }), true);
   expect((screen.getByRole("button", { name: "Use 1051 as the RTU code" }) as HTMLButtonElement).disabled).toBe(true);
 }
+
+/** Code review: a devId past the 64-character rtuCode bound gets no button. */
+export function aDevIdPastTheRtuCodeBoundOffersNoButton(): void {
+  mount(session({ discovery: discovery({ devices: [{ ...ONE_DEVICE, devId: "d".repeat(65) }], messages: 3 }) }));
+  expect(screen.queryByRole("button", { name: /as the RTU code$/ })).toBeNull();
+}

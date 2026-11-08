@@ -22,6 +22,7 @@ import {
   oneFoundDeviceOffersItsDevIdAsTheRtuCode,
   theRtuCodeButtonWaitsForTheChatTurn,
   twoFoundDevicesOfferNoRtuCode,
+  aDevIdPastTheRtuCodeBoundOffersNoButton,
 } from "./discovery-panel.spec";
 
 afterEach(() => {
@@ -49,4 +50,5 @@ describe("F3.24b discovery panel", () => {
   it("one found device offers its devId as the RTU code (F4.339)", oneFoundDeviceOffersItsDevIdAsTheRtuCode);
   it("two found devices offer no RTU code (F4.339)", twoFoundDevicesOfferNoRtuCode);
   it("the RTU code button waits for the chat turn (F4.339)", theRtuCodeButtonWaitsForTheChatTurn);
+  it("a devId past the rtuCode bound offers no button (F4.339 review)", aDevIdPastTheRtuCodeBoundOffersNoButton);
 });

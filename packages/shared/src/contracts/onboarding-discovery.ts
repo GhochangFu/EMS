@@ -26,9 +26,11 @@ import { mqttTopicHasWildcard } from "../mqtt-topic";
 export const MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS = 60;
 /**
  * `F4.339` (ADR 0117 decision 5, plan R5): 300, from 120 — BCPL meters publish
- * about every 160 s, so a 120 s window could miss every device. Nothing else
- * moves: the job's hard deadline is 10 + 300 + 5 = 315 s, the running grace
- * stays window + 60 s, and BullMQ renews the job lock (no `lockDuration` set).
+ * about every 160 s, so a 120 s window could miss every device. No other
+ * constant moves: the job's hard deadline is 10 + 300 + 5 = 315 s, the running
+ * grace stays window + 60 s, and BullMQ renews the job lock (no `lockDuration`
+ * set). The 30 min queued bound now covers about six 300 s jobs ahead in the
+ * one-worker queue; a job read as stale past it is superseded, not lost.
  */
 export const MQTT_DISCOVERY_MAX_WINDOW_SECONDS = 300;
 export const MQTT_DISCOVERY_MIN_WINDOW_SECONDS = 5;

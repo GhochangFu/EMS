@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { OnboardingDiscoveryErrorClass, OnboardingDiscoverySkipReason, OnboardingSessionDto } from "@bms/shared";
-import { discoveryEmptySentence, discoveryIsActive, MQTT_DISCOVERY_SHARED_USER_WARNING } from "@bms/shared/contracts";
+import {
+  discoveryEmptySentence,
+  discoveryIsActive,
+  MQTT_DISCOVERY_SHARED_USER_WARNING,
+  ONBOARDING_DRAFT_STRING_MAX,
+} from "@bms/shared/contracts";
 
 import { fetchMqttPayloadFormats, mqttPayloadFormatsQueryKey } from "../../api/admin/mqtt-payload-formats";
 import { fetchOnboardingSession, patchOnboardingDraft } from "../../api/admin/onboarding";
@@ -229,7 +234,12 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
           )}
         </ul>
       )}
-      {result !== null && result.status === "done" && result.devices.length === 1 && deviceKeyIndex >= 0 && (
+      {result !== null &&
+        result.status === "done" &&
+        result.devices.length === 1 &&
+        deviceKeyIndex >= 0 &&
+        // A devId longer than `rtuCode` holds is not offered: the PATCH would be refused (code review).
+        result.devices[0]!.devId.length <= ONBOARDING_DRAFT_STRING_MAX["rtus.rtuCode"] && (
         <button
           type="button"
           className="mt-1 rounded border border-hairline px-2 py-0.5 text-[11px]"

@@ -124,9 +124,12 @@ export type DiscoveryCardsResult = {
   readonly withdrewCommit: boolean;
 };
 
-/** `F4.339` (plan R4): appended to the reply when an applying change blocked the discovery card. */
+/**
+ * `F4.339` (plan R4): appended to the reply when another change kept the card from being stored — one being
+ * applied, or (code review) a pending card that is not an onboarding one, which this turn does not discard.
+ */
 export const DISCOVERY_CARD_BLOCKED_SENTENCE =
-  "The discovery card could not be shown while another change is being applied; ask for the discovery again in a moment.";
+  "The discovery card could not be shown while another change is open or being applied; confirm or reject it, then ask for the discovery again.";
 
 /** `F4.339` (plan R4): appended to the reply when the discovery card replaced an open commit card. */
 export const COMMIT_CARD_WITHDRAWN_SENTENCE = "The earlier commit card was withdrawn; ask for the commit again after the discovery.";

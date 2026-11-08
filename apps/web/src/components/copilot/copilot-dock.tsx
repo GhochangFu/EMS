@@ -51,6 +51,7 @@ import {
   DockTitle,
   EMPTY_THREAD_SENTENCE,
   isServerMadeCard,
+  mergePendingChanges,
   limitSentence,
   NOT_CONFIGURED_SENTENCE,
   ONBOARD_PICK_SENTENCE,
@@ -442,15 +443,7 @@ function DockPanel({
               ...prev,
               // A focus read that answered before this response may hold these rows already.
               messages: appendMessages(prev.messages, data.messages),
-              pendingChanges: [
-                ...prev.pendingChanges.filter(
-                  (c) =>
-                    !data.pendingChanges.some((n) => n.id === c.id) &&
-                    // `F3.86` PR 6: a new onboarding commit card replaces the old one (the server discarded it).
-                    !(isServerMadeCard(c.catalogId) && data.pendingChanges.some((n) => n.catalogId === c.catalogId)),
-                ),
-                ...data.pendingChanges,
-              ],
+              pendingChanges: mergePendingChanges(prev.pendingChanges, data.pendingChanges),
             }
           : prev,
       );
