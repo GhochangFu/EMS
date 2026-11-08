@@ -904,6 +904,13 @@
       "when": 1794073157283,
       "tag": "0129_dashboard_widget_sources_energy_cost_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1794119871850,
+      "tag": "0130_mqtt_payload_formats",
+      "breakpoints": true
     }
   ]
 }

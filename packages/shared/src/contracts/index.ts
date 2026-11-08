@@ -69,6 +69,8 @@ export * from "./onboarding-discovery";
 export * from "./operations";
 export * from "./point-keys";
 export * from "./point-key-states";
+// `F4.334` (ADR 0116 decision 5): the MQTT payload format catalog.
+export * from "./mqtt-payload-formats";
 export * from "./point-metadata";
 export * from "./point-metadata-writes";
 export * from "./reports";

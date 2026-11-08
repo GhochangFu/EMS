@@ -589,6 +589,24 @@ export const pointKeyStates = bmsSchema.table(
 );
 
 /**
+ * MQTT payload formats (ADR 0116 decision 1, `F4.334`, migration `0130`) — a
+ * platform catalog, no `organization_id`, no RLS. `definition` is validated by
+ * `mqttPayloadFormatDefinitionSchema` in `@bms/shared/ingest`; an MQTT RTU names
+ * a row by `code` in its connection config (`payloadFormat`).
+ */
+export const mqttPayloadFormats = bmsSchema.table("mqtt_payload_formats", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: varchar("code", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 128 }).notNull(),
+  description: text("description").notNull().default(""),
+  definition: jsonb("definition").notNull(),
+  builtin: boolean("builtin").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: uuid("updated_by"),
+});
+
+/**
  * Asset templates (ADR 0015) — one row per template *version*.
  *
  * Identity is `(organizationId, code, version)`, and `assets.templateId` points

@@ -92,6 +92,16 @@ describe("ADR 0016 ingest contracts", () => {
     );
   });
 
+  it("publishes the payload format decoder and schema through ./ingest", () => {
+    // `F4.334` (ADR 0116 decision 3): the ingest host and the worker load the
+    // built subpath, so the decoder must be in `dist/ingest.js`, not only in source.
+    const ingest = require_("@bms/shared/ingest") as Record<string, unknown>;
+    expect(typeof ingest.decodeMqttPayload, "decodeMqttPayload is not exported").toBe("function");
+    const schema = ingest.mqttPayloadFormatDefinitionSchema as { safeParse?: unknown } | undefined;
+    expect(typeof schema?.safeParse, "mqttPayloadFormatDefinitionSchema is not exported").toBe("function");
+    expect(ingest.MQTT_BUILTIN_PAYLOAD_FORMAT_CODE).toBe("thinkiot-envelope");
+  });
+
   it("publishes ./ingest under both import and require conditions", () => {
     // ADR 0016 §8 calls this out specifically: `apps/sim` consumes @bms/shared
     // through `createRequire(import.meta.url)`, so an import-only condition

@@ -277,6 +277,7 @@
     "tests/f4.319-pump-station-roles-schema.test.ts",
     "tests/f4.319-pump-station-roles.integration.test.ts",
     "tests/f4.319-pump-station-site-move.integration.test.ts",
-    "tests/f4.330-organization-ingest-enabled-schema.test.ts"
+    "tests/f4.330-organization-ingest-enabled-schema.test.ts",
+    "tests/f4.334-mqtt-payload-formats-schema.test.ts"
   ]
 }

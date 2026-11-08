@@ -3,6 +3,7 @@ import { z } from "zod";
 // The leaf module, not `../ingest`: that module re-exports this one, and a
 // runtime import back from it would make the catalog depend on entry order.
 import { mqttTopicHasWildcard } from "../mqtt-topic";
+import { mqttPayloadFormatCodeSchema } from "./mqtt-payload-format";
 
 /**
  * The MQTT adapter's config and device schemas (ADR 0016 §6), and the onboarding
@@ -36,6 +37,15 @@ export const mqttConfigSchema = z.object({
    * connected with TLS instead.
    */
   tls: z.boolean().default(true),
+  /**
+   * The catalog code of the payload format this RTU publishes in (ADR 0116
+   * decisions 2 and 4, `F4.334`). Absent means the built-in
+   * `thinkiot-envelope`, so every RTU committed before ADR 0116 keeps its
+   * behaviour. The ingest host joins the catalog by this code; a code with no
+   * catalog row is skipped (`payload-format-unknown`), never decoded as the
+   * built-in instead.
+   */
+  payloadFormat: mqttPayloadFormatCodeSchema.optional(),
 });
 
 export type MqttConfig = z.infer<typeof mqttConfigSchema>;
@@ -186,6 +196,9 @@ export const mqttDraftConfigSchema = z
     host: mqttConfigSchema.shape.host.optional(),
     port: mqttConfigSchema.shape.port.optional(),
     tls: z.boolean().optional(),
+    // ADR 0116 decision 4: the catalog code; whether it names a catalog row is
+    // the validator's check, not this schema's.
+    payloadFormat: mqttConfigSchema.shape.payloadFormat,
     topic: draftTopic.optional(),
     mqttTopic: draftTopic.optional(),
     device: z

@@ -119,6 +119,7 @@ const NO_COLUMN = [
   "notification_channel_kinds",
   "location_types",
   "point_key_states",
+  "mqtt_payload_formats", // F4.334 / ADR 0116 decision 1: a platform catalog
   "map_locations",
   "user_location_access",
   "user_asset_group_access",
