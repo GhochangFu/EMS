@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -16,6 +17,8 @@ import { ZodError } from "zod";
 import type { JwtPayload } from "@bms/shared";
 // `F3.86` PR 3a — the copilot catalog's bodies, by identity (`tests/f3.85-catalog-coverage`).
 import { createRtuBodySchema, updateRtuBodySchema } from "@bms/shared";
+// `F4.334` (ADR 0116 decision 4, plan R9): the RTU's payload format.
+import { setRtuPayloadFormatBodySchema } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
@@ -68,6 +71,26 @@ export class RtusAdminController {
         user,
         idParamSchema.parse(id),
         updateRtuBodySchema.parse(body),
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  @Put(":id/payload-format")
+  async setPayloadFormat(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      return await this.service.setPayloadFormat(
+        user,
+        idParamSchema.parse(id),
+        setRtuPayloadFormatBodySchema.parse(body),
       );
     } catch (err) {
       if (err instanceof ZodError) {

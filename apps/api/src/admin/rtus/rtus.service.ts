@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -9,9 +10,10 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { assets, locations, organizations, rtuConnectionConfigs, rtus } from "@bms/db";
+import { assets, locations, mqttPayloadFormats, organizations, rtuConnectionConfigs, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AdminRtuDto, AdminRtuSummaryDto, JwtPayload } from "@bms/shared";
+import { MQTT_PAYLOAD_FORMAT_UNKNOWN_MESSAGE } from "@bms/shared";
+import type { AdminRtuDto, AdminRtuSummaryDto, JwtPayload, SetRtuPayloadFormatBody } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
@@ -20,7 +22,7 @@ import { assertLocationActive } from "../locations/assert-location-active";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { emptyTopicAsNull } from "../rtu-topic";
 import { resolveTelemetrySource } from "../telemetry-source";
-import { connectionTlsOf } from "./rtu-connection-tls";
+import { connectionPayloadFormatOf, connectionTlsOf } from "./rtu-connection-tls";
 import { translateRtuUniqueConflict } from "./rtus-conflict";
 import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
 
@@ -505,6 +507,82 @@ export class RtusAdminService {
   }
 
   /**
+   * `F4.334` / ADR 0116 decision 4 (plan R9, ruling Q9) — sets or clears the
+   * payload format an MQTT RTU's connection config names. The same gate as
+   * `update` (`canManageLocation`); 404 without a connection row; 400 for a
+   * non-MQTT row; 409 for a code not in the catalog. `null` removes the key,
+   * which is the built-in envelope. The ingest host picks it up at its next
+   * reload (`payload-format-changed`).
+   */
+  async setPayloadFormat(jwt: JwtPayload, id: string, body: SetRtuPayloadFormatBody): Promise<AdminRtuDto> {
+    const [existing] = await this.fleetDb.select().from(rtus).where(eq(rtus.id, id)).limit(1);
+    if (!existing) {
+      throw new NotFoundException("RTU not found");
+    }
+    if (!(await this.accessControl.canManageLocation(jwt, existing.locationId))) {
+      throw new ForbiddenException("RTU is outside your access scope");
+    }
+    const organizationId = await this.resolveAgreedOrg(existing);
+
+    const [connection] = await this.fleetDb
+      .select({ protocol: rtuConnectionConfigs.protocol, config: rtuConnectionConfigs.config })
+      .from(rtuConnectionConfigs)
+      .where(eq(rtuConnectionConfigs.rtuId, id))
+      .limit(1);
+    if (!connection) {
+      throw new NotFoundException("RTU has no connection config");
+    }
+    if (connection.protocol !== "mqtt") {
+      throw new BadRequestException("payload format applies to MQTT RTUs only");
+    }
+    const code = body.payloadFormat;
+    if (code !== null) {
+      const [known] = await this.fleetDb
+        .select({ code: mqttPayloadFormats.code })
+        .from(mqttPayloadFormats)
+        .where(eq(mqttPayloadFormats.code, code))
+        .limit(1);
+      if (!known) {
+        throw new ConflictException(MQTT_PAYLOAD_FORMAT_UNKNOWN_MESSAGE);
+      }
+    }
+    const from = connectionPayloadFormatOf(connection.protocol, connection.config);
+
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
+      const written = await tx
+        .update(rtuConnectionConfigs)
+        .set({
+          // One key only: the rest of the config (host, port, tls, device) is
+          // left as stored, so this route cannot widen what a row connects to.
+          config:
+            code === null
+              ? sql`${rtuConnectionConfigs.config} - 'payloadFormat'`
+              : sql`jsonb_set(${rtuConnectionConfigs.config}, '{payloadFormat}', to_jsonb(${code}::text))`,
+          updatedAt: new Date(),
+        })
+        .where(eq(rtuConnectionConfigs.rtuId, id))
+        .returning({ rtuId: rtuConnectionConfigs.rtuId });
+      // Security review L2: no audit row for a write that hit nothing (a row
+      // deleted since the read, or one the tenant policy hides).
+      if (written.length === 0) {
+        throw new NotFoundException("RTU has no connection config");
+      }
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.rtu.payload_format.update",
+          entityType: "rtu",
+          entityId: id,
+          organizationId,
+          payload: { from, to: code },
+        },
+        tx,
+      );
+    });
+    return this.fetchRow(id);
+  }
+
+  /**
    * Resolves a location's organization on `fleetDb` before a write opens its
    * tenant context. `locations` carries a policy (`0040`); the caller has
    * already passed `canManageLocation` for this location, which is the
@@ -609,6 +687,7 @@ export class RtusAdminService {
       meta: (rtu.meta as Record<string, unknown> | null) ?? null,
       createdAt: rtu.createdAt.toISOString(),
       tls: connectionTlsOf(row.connectionProtocol, row.connectionConfig),
+      payloadFormat: connectionPayloadFormatOf(row.connectionProtocol, row.connectionConfig),
     };
   }
 }

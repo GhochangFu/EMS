@@ -1,4 +1,9 @@
-import { MAX_RTU_TOPIC_CHARS, MQTT_REJECT_UNAUTHORIZED_DRAFT_MESSAGE, type OnboardingDraft } from "@bms/shared";
+import {
+  MAX_RTU_TOPIC_CHARS,
+  MQTT_PAYLOAD_FORMAT_UNKNOWN_MESSAGE,
+  MQTT_REJECT_UNAUTHORIZED_DRAFT_MESSAGE,
+  type OnboardingDraft,
+} from "@bms/shared";
 
 import { EMPTY_PLACEMENT } from "./onboarding-location-parent";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
@@ -245,4 +250,54 @@ export function assertAWhitespaceTopicPassesTheRequiredCheck(): void {
 export function assertAWhitespaceTopicHoldsTheDraftAtTheRtuPhase(): void {
   const result = validateAWhitespaceTopic();
   assert(result.suggestedPhase === "rtu", `the draft stays at phase rtu, got ${String(result.suggestedPhase)}`);
+}
+
+/**
+ * P1–P5 (`F4.334`, ADR 0116 decision 4, plan R10) — `config.payloadFormat` must
+ * name a catalog row; with no catalog set the check fails closed.
+ */
+const FORMAT_PATH = "rtus.0.config.payloadFormat";
+
+function formatErrors(config: Record<string, unknown>, known?: ReadonlySet<string>) {
+  const draft: OnboardingDraft = { location: { ...LOCATION }, rtus: [mqttRtu({ topic: "a/b", ...config })] };
+  const templates = known === undefined ? EMPTY_TEMPLATE_CONTEXT : { ...EMPTY_TEMPLATE_CONTEXT, payloadFormats: known };
+  return new OnboardingValidateService()
+    .validate(draft, ACTIVE_TYPES, templates, EMPTY_PLACEMENT)
+    .errors.filter((error) => error.path === FORMAT_PATH);
+}
+
+export function assertAKnownPayloadFormatPasses(): void {
+  const rows = formatErrors({ payloadFormat: "thinkiot-register-array" }, new Set(["thinkiot-register-array"]));
+  assert(rows.length === 0, `a known code passes, got ${JSON.stringify(rows)}`);
+}
+
+export function assertAnUnknownPayloadFormatIsReported(): void {
+  const rows = formatErrors({ payloadFormat: "thinkiot-register-array" }, new Set(["thinkiot-envelope"]));
+  assert(
+    JSON.stringify(rows) === JSON.stringify([{ path: FORMAT_PATH, message: MQTT_PAYLOAD_FORMAT_UNKNOWN_MESSAGE }]),
+    `an unknown code is one fixed row, got ${JSON.stringify(rows)}`,
+  );
+  assert(!rows[0]?.message.includes("thinkiot"), "the message names no code");
+}
+
+export function assertNoCatalogSetFailsClosed(): void {
+  const rows = formatErrors({ payloadFormat: "thinkiot-register-array" });
+  assert(
+    rows.length === 1 && rows[0]?.message === MQTT_PAYLOAD_FORMAT_UNKNOWN_MESSAGE,
+    `no set fails closed, got ${JSON.stringify(rows)}`,
+  );
+}
+
+export function assertNoPayloadFormatNeedsNoSet(): void {
+  const rows = formatErrors({});
+  assert(rows.length === 0, `a draft naming no format is unaffected, got ${JSON.stringify(rows)}`);
+}
+
+export function assertAMalformedCodeCarriesTheSchemaIssueOnly(): void {
+  const rows = formatErrors({ payloadFormat: "Bad Code" }, new Set(["thinkiot-register-array"]));
+  assert(
+    rows.length === 1 && rows[0]?.message !== MQTT_PAYLOAD_FORMAT_UNKNOWN_MESSAGE,
+    `a malformed code has the schema issue alone, got ${JSON.stringify(rows)}`,
+  );
+  assert(!rows[0]?.message.includes("Bad Code"), "the schema issue echoes no value");
 }

@@ -46,6 +46,7 @@ import {
   assertUseExistingPointKeysFalsePassesWithoutAnActiveKw,
   assertAddPointKeyLineIsQuoted,
   assertRemoveAssetPointLineIsQuoted,
+  assertTheRtuToolsKeepAPayloadFormat,
 } from "./onboarding-agent-tools.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -230,5 +231,11 @@ describe("add_point_key against the catalog unit and domain (F4.225)", () => {
 
   it("A3 judges only the appended key", async () => {
     await assertA3OnlyTheAppendedKeyIsJudged();
+  });
+});
+
+describe("F4.334 — the RTU tools keep config.payloadFormat (ADR 0116 decision 4)", () => {
+  it("add_rtu and update_rtu store it; a malformed code is refused without echo", async () => {
+    await assertTheRtuToolsKeepAPayloadFormat();
   });
 });

@@ -60,6 +60,7 @@ function rtu(overrides: Partial<AdminRtuDto>): AdminRtuDto {
     meta: null,
     createdAt: new Date(0).toISOString(),
     tls: true,
+    payloadFormat: null,
     ...overrides,
   };
 }

@@ -6,6 +6,8 @@ import {
   type OnboardingDraftAssetPoint,
   type OnboardingFieldError,
   type OnboardingPhase,
+  MQTT_PAYLOAD_FORMAT_CODE,
+  MQTT_PAYLOAD_FORMAT_UNKNOWN_MESSAGE,
   MQTT_PLAINTEXT_NOT_ALLOWED_MESSAGE,
   mqttPlaintextDecision,
   protocolCatalogEntry,
@@ -72,6 +74,28 @@ export function draftNeedsPointKeys(draft: OnboardingDraft): boolean {
   return assets.length === 0 || assets.some((asset) => !asset.template);
 }
 
+/**
+ * `F4.334` / ADR 0116 decision 4: an MQTT RTU's `config.payloadFormat` must name
+ * a catalog row. Only a well-formed code is checked here — a malformed one
+ * carries the draft schema's own issue at the same path. `known` absent fails
+ * closed (plan R10). Fixed text: the message names no code (§9.6).
+ */
+function validatePayloadFormats(
+  d: OnboardingDraft,
+  known: ReadonlySet<string> | undefined,
+  errors: OnboardingFieldError[],
+): void {
+  (d.rtus ?? []).forEach((rtu, i) => {
+    const code: unknown = (rtu.config as { payloadFormat?: unknown } | undefined)?.payloadFormat;
+    if (rtu.protocol !== "mqtt" || typeof code !== "string" || !MQTT_PAYLOAD_FORMAT_CODE.test(code)) {
+      return;
+    }
+    if (known === undefined || !known.has(code)) {
+      errors.push({ path: `rtus.${i}.config.payloadFormat`, message: MQTT_PAYLOAD_FORMAT_UNKNOWN_MESSAGE });
+    }
+  });
+}
+
 /** Validates onboarding draft business rules. */
 @Injectable()
 export class OnboardingValidateService {
@@ -133,6 +157,8 @@ export class OnboardingValidateService {
 
     const d = parsed.data as OnboardingDraft;
     this.validateCrossField(d, errors, activeLocationTypeCodes);
+    // F4.334 (plan R10): the catalog codes travel with the template context.
+    validatePayloadFormats(d, templates.payloadFormats, errors);
     validateParentPlacement(d, placement, errors);
     validateDraftTemplates(d, templates, errors);
     validateTemplatedAssets(d, templates, errors);

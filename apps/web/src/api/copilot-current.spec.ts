@@ -105,6 +105,7 @@ const RTU_ROW = {
   meta: null,
   createdAt: "2026-10-01T00:00:00.000Z",
   tls: true,
+  payloadFormat: null,
 };
 
 /** A location edit card's Now values: the listed row, as `updateLocationBodySchema`'s fields. */

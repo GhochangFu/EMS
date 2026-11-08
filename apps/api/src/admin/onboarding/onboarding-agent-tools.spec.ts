@@ -548,3 +548,34 @@ export async function assertA3OnlyTheAppendedKeyIsJudged(): Promise<void> {
   const out = await runTool(call("add_point_key", { code: "flow", name: "Flow" }), state, context({ templates: KW_FIELDS }));
   assert(out.ok && state.working.pointKeys?.length === 2, `A3 flow lands beside the earlier kw, got ${JSON.stringify(out)}`);
 }
+
+/** `F4.334` (ADR 0116 decision 4, plan T3.4) — `add_rtu` and `update_rtu` keep `config.payloadFormat`. */
+export async function assertTheRtuToolsKeepAPayloadFormat(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const added = await runTool(
+    call("add_rtu", { ...PLAIN_RTU, config: { ...PLAIN_RTU.config, payloadFormat: "thinkiot-register-array" } }),
+    state,
+    context(),
+  );
+  assert(added.ok, `add_rtu accepts a payloadFormat: ${added.content}`);
+  assert(
+    (state.working.rtus?.[0]?.config as { payloadFormat?: unknown } | undefined)?.payloadFormat === "thinkiot-register-array",
+    "add_rtu stores config.payloadFormat",
+  );
+  const patched = await runTool(
+    call("update_rtu", { index: 0, patch: { config: { ...PLAIN_RTU.config, payloadFormat: "thinkiot-envelope" } } }),
+    state,
+    context(),
+  );
+  assert(patched.ok, `update_rtu accepts a payloadFormat: ${patched.content}`);
+  assert(
+    (state.working.rtus?.[0]?.config as { payloadFormat?: unknown } | undefined)?.payloadFormat === "thinkiot-envelope",
+    "update_rtu stores the patched config.payloadFormat",
+  );
+  const bad = await runTool(
+    call("add_rtu", { ...PLAIN_RTU, code: "RTU-BAD", config: { ...PLAIN_RTU.config, payloadFormat: "Bad Code" } }),
+    state,
+    context(),
+  );
+  assert(!bad.ok && !bad.content.includes("Bad Code"), `a malformed code is refused without echo: ${bad.content}`);
+}

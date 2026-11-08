@@ -94,6 +94,8 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   // `F4.284` (ADR 0106): the alarm and work-order writes.
   { file: "apps/api/src/alarms/alarms.controller.ts", full: true },
   { file: "apps/api/src/work-orders/work-orders.controller.ts", full: true },
+  // `F4.334` (ADR 0099 Amendment 17 decision 5): every write excluded until that amendment's build.
+  { file: "apps/api/src/admin/mqtt-payload-formats/mqtt-payload-formats.controller.ts", full: true },
 ];
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;

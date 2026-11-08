@@ -305,7 +305,8 @@ const DESCRIPTIONS: Record<ToolName, string> = {
     "`floorArea` is `{ value, unit }` with unit `m2` or `ft2` (default `m2`); the commit stores square metres; `null` clears it.",
   add_rtu:
     "Adds an RTU. Never put a username, password, token or key in `config`: credentials are set on the RTU step only. " +
-    "A config that fails the protocol's schema is refused with the field path.",
+    "A config that fails the protocol's schema is refused with the field path. " +
+    "For MQTT, `config.payloadFormat` is a payload format code; omit it for the default ThinkIoT envelope.",
   update_rtu:
     "Changes fields of the RTU at `index`. Never put a credential in `config`. " +
     "A config that fails the protocol's schema is refused with the field path.",
