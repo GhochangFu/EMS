@@ -28,6 +28,7 @@ import {
   type ToolContext,
 } from "./onboarding-agent-tools";
 import { ONBOARDING_ACTION_RECORD_PREFIX } from "../../llm/action-record";
+import { NOTHING_WRITTEN_LINE, writeClaimRetryFor } from "./onboarding-write-claim";
 import type { LlmMessage, LlmReply, LlmToolCall, LlmProvider } from "../../llm/llm-port";
 import { stepLabelFor } from "./onboarding-chat-rule-based";
 import { filterSuggestedReplies } from "./onboarding-suggested-replies";
@@ -648,4 +649,49 @@ export function assertEveryToolIsClassifiedAsADraftWriteOrNot(): void {
   const nonWrites = names.filter((name) => isToolName(name) && !DRAFT_WRITE_TOOLS.has(name)).sort();
   const classified = [...NON_DRAFT_WRITE_TOOLS].sort();
   assert(JSON.stringify(nonWrites) === JSON.stringify(classified), `every other tool is a non-write, got ${JSON.stringify(classified)}`);
+}
+
+const GOOD_ASSET = { rtuIndex: 0, code: "FM3", name: "Flow meter 3", siteName: "Berhampur", domain: "electrical" };
+const CLAIM = "Added asset FM3 on RTU RTU-1";
+
+/** F4.339 (a): a claim with no tool call goes back once; the model then calls add_asset and its second text is the reply. */
+export async function assertAClaimWithNoWriteIsRetriedAndTheRetryWrites(): Promise<void> {
+  const llm = new FakeLlmProvider([
+    { kind: "final", text: CLAIM },
+    calls(toolCall("add_asset", GOOD_ASSET)),
+    { kind: "final", text: "FM3 is on RTU-1 now. Say Next for the next asset." },
+  ]);
+  const result = await runAgentTurn(turn(llm, { draft: readyDraft() }));
+  const second = llm.seen[1] ?? [];
+  const last = second[second.length - 1] as { role: string; content: string };
+  assert(last.role === "user" && last.content === writeClaimRetryFor(CLAIM, false), `the second round ends with the retry, got ${last.content}`);
+  assert(last.content.includes("call add_asset now"), "the retry names add_asset");
+  assert(result.reply === "FM3 is on RTU-1 now. Say Next for the next asset.", `the reply is the second text, got ${result.reply}`);
+  assert(result.record.corrected === true && result.record.claimReplaced === undefined, "corrected, not replaced");
+  assert(result.actionLines.length === 1 && result.actionLines[0]!.startsWith("Added asset FM3"), `one action line, got ${JSON.stringify(result.actionLines)}`);
+}
+
+/** F4.339 (b): the retry still writes nothing → the stored reply leads with the fixed line. */
+export async function assertAClaimStillUnwrittenAfterTheRetryIsReplaced(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: CLAIM }, { kind: "final", text: `${CLAIM}\nSay Next.` }]);
+  const result = await runAgentTurn(turn(llm, { draft: readyDraft() }));
+  assert(llm.calls === 2, `one retry round, got ${llm.calls} calls`);
+  assert(result.reply === `${NOTHING_WRITTEN_LINE}\nSay Next.`, `the claim is dropped, got ${JSON.stringify(result.reply)}`);
+  assert(result.record.claimReplaced === true && result.record.corrected === true, "the record says corrected and replaced");
+}
+
+/** F4.339 (c): a turn that wrote and claims is untouched and gets no retry. */
+export async function assertAClaimAfterAWriteIsUntouched(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("add_asset", GOOD_ASSET)), { kind: "final", text: CLAIM }]);
+  const result = await runAgentTurn(turn(llm, { draft: readyDraft() }));
+  assert(llm.calls === 2, `no retry round, got ${llm.calls} calls`);
+  assert(result.reply === CLAIM && result.record.corrected === undefined && result.record.claimReplaced === undefined, "untouched");
+}
+
+/** F4.339 (d): the retry round hits the deadline → the loop returns the first text, and it is replaced. */
+export async function assertAClaimWhoseRetryTimesOutIsReplaced(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: CLAIM }, "hang"]);
+  const result = await runAgentTurn(turn(llm, { draft: readyDraft() }), { deadlineMs: 30 });
+  assert(result.stopReason === "final" && result.record.correctionFailed === "cap_time", `the loop falls back to the first text, got ${result.stopReason}`);
+  assert(result.reply === NOTHING_WRITTEN_LINE && result.record.claimReplaced === true, `the first text is replaced, got ${result.reply}`);
 }

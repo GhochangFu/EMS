@@ -8,6 +8,7 @@ import { AGENT_NOT_SET_UP_NOTICE, AGENT_UNAVAILABLE_NOTICE, OnboardingChatServic
 import type { ResolvedLlm } from "../../llm/llm-resolver";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
+import { NOTHING_WRITTEN_LINE } from "./onboarding-write-claim";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -201,4 +202,32 @@ export async function assertAnAgentReplysChipsAreTheFilteredOfferPlusTheStepLabe
   assert(chips.includes("MQTT"), `the offered protocol stays, got ${JSON.stringify(chips)}`);
   assert(!chips.some((chip) => chip.toLowerCase() === "undo"), `the undo phrase is dropped, got ${JSON.stringify(chips)}`);
   assert(JSON.stringify(chips) === '["MQTT","confirm rtu","View draft"]', `the full list, got ${JSON.stringify(chips)}`);
+}
+
+/**
+ * F4.339 (ADR 0117 decision 2): a reply that claims a write twice with no tool
+ * call is replaced before it is stored — `assistantMessage` is what
+ * `OnboardingService.chat` writes to `messages` — and the log line carries the
+ * flag, never the text.
+ */
+export async function assertAClaimedWriteWithNoToolIsReplacedBeforeItIsStored(): Promise<void> {
+  const original = Logger.prototype.log;
+  const logged: unknown[][] = [];
+  Logger.prototype.log = function (...args: unknown[]) {
+    logged.push(args);
+  } as typeof Logger.prototype.log;
+  let result;
+  try {
+    const claim = "Mapped 'treated_water_flow_klh' → 'tired_water_flow_klh' on asset 'BCPL-LAL-FM2'";
+    const llm = new FakeLlmProvider([{ kind: "final", text: claim }, { kind: "final", text: claim }]);
+    result = await service(ready(llm)).chat.handleTurn("map the flow", AT_RTU, "rtu", "Ion Exchange", "org-7", CONTEXT);
+  } finally {
+    Logger.prototype.log = original;
+  }
+  assert(result.assistantMessage.startsWith(NOTHING_WRITTEN_LINE), `the stored reply leads with the fixed line, got ${result.assistantMessage}`);
+  assert(!result.assistantMessage.includes("tired_water_flow_klh"), "the claim is not stored");
+  assert(result.actionLines.length === 0 && Object.keys(result.draftPatch).length === 0, "nothing was written");
+  const record = logged.find((args) => args[1] === "onboarding agent turn")?.[0] as Record<string, unknown> | undefined;
+  assert(record?.claimReplaced === true && record.corrected === true, `the log line carries the flags, got ${JSON.stringify(record)}`);
+  assert(!JSON.stringify(record).includes("tired_water"), "and no text");
 }

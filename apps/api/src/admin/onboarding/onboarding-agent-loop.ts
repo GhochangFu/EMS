@@ -25,6 +25,7 @@ import { PROMPT_MARKER_SENTENCE, serialiseDraftForPrompt } from "./onboarding-pr
 import { readStoredDiscovery } from "./onboarding-discovery-state";
 import type { DiscoveryProposal, DiscoverySecretCopy } from "./onboarding-tool-outcome";
 import type { OnboardingDraftInput, OnboardingPhase } from "./onboarding.schema";
+import { claimsAWrite, withoutWriteClaims, writeClaimRetryFor } from "./onboarding-write-claim";
 
 /**
  * The onboarding agent loop (`F3.21`, ADR 0090 decisions 2, 3, 7 and 9).
@@ -75,6 +76,9 @@ export const ONE_DEVICE_PER_TURN_HINT = " Ask me to map one discovered device at
 export const ONE_DEVICE_PER_TURN_RULE =
   "Map one discovered device per turn, even when the user asks for several: finish that device, then name the next devId and offer \"Map the next device\" with suggest_replies. ";
 
+/** `F4.339` (ADR 0117 decision 2): the onboarding turn record — the loop's, plus a flag when the reply's write claims were dropped. Counts and flags only. */
+export type OnboardingTurnRecord = AgentTurnRecord & { readonly claimReplaced?: true };
+
 export type AgentTurnResult = {
   readonly reply: string;
   readonly draftPatch: OnboardingDraftInput;
@@ -89,8 +93,22 @@ export type AgentTurnResult = {
   readonly stopReason: AgentStopReason;
   /** `true` only for `provider_error`: the caller runs the guided mode instead. */
   readonly fallback: boolean;
-  readonly record: AgentTurnRecord;
+  readonly record: OnboardingTurnRecord;
 };
+
+/**
+ * `F4.339` (plan R2): whether the turn wrote so far — a changed draft section,
+ * a commit proposal or a discovery proposal. A draft too deep to diff counts as
+ * written, so the guard never retries on it and `correctFinal` never throws.
+ */
+function wroteSoFar(before: OnboardingDraft, state: ToolState): boolean {
+  if (state.pendingProposal !== undefined || state.pendingDiscovery !== undefined) return true;
+  try {
+    return Object.keys(diffSections(before, state.working)).length > 0;
+  } catch {
+    return true;
+  }
+}
 
 /**
  * `F3.25` moved `DRAFT_SECTIONS` and `diffSections` to `onboarding-draft-merge.ts`
@@ -234,6 +252,8 @@ export async function runAgentTurn(
         return refused === undefined ? outcome : { ...outcome, actionLine: refused };
       },
       llm: input.llm,
+      // F4.339 (ADR 0117 decision 2): a final text that claims a write the turn did not make goes back once.
+      correctFinal: (text) => writeClaimRetryFor(text, wroteSoFar(input.draft, state)),
     },
     options,
   );
@@ -257,8 +277,15 @@ export async function runAgentTurn(
       record: { ...record, stopReason: "provider_error", ...errorFacts(error) },
     };
   }
+  // F4.339: still claiming after the one correction, with nothing written — the claims drop and a fixed line leads.
+  const claimReplaced =
+    stopReason === "final" &&
+    Object.keys(draftPatch).length === 0 &&
+    state.pendingProposal === undefined &&
+    state.pendingDiscovery === undefined &&
+    claimsAWrite(reply);
   return {
-    reply: stopReason === "final" ? reply : stopReply(stopReason, draftPatch, state),
+    reply: stopReason === "final" ? (claimReplaced ? withoutWriteClaims(reply) : reply) : stopReply(stopReason, draftPatch, state),
     draftPatch,
     actionLines,
     ...(state.pendingProposal ? { commitProposal: state.pendingProposal } : {}),
@@ -267,6 +294,6 @@ export async function runAgentTurn(
     suggestedReplies: state.suggestedReplies ?? [],
     stopReason,
     fallback: false,
-    record,
+    record: claimReplaced ? { ...record, claimReplaced: true } : record,
   };
 }

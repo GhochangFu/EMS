@@ -44,6 +44,10 @@ import {
   assertARefusedWriteKeepsTheTurnsOtherWrites,
   assertARefusedReadGetsNoLine,
   assertEveryToolIsClassifiedAsADraftWriteOrNot,
+  assertAClaimWithNoWriteIsRetriedAndTheRetryWrites,
+  assertAClaimStillUnwrittenAfterTheRetryIsReplaced,
+  assertAClaimAfterAWriteIsUntouched,
+  assertAClaimWhoseRetryTimesOutIsReplaced,
 } from "./onboarding-agent-loop.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -232,5 +236,23 @@ describe("refused draft writes (F4.135, ADR 0090 Amendment 4)", () => {
 
   it("pins the draft-write tools by name and classifies the rest (F4.135)", () => {
     assertEveryToolIsClassifiedAsADraftWriteOrNot();
+  });
+});
+
+describe("the write-claim guard in the turn (F4.339, ADR 0117 decision 2)", () => {
+  it("retries a claim with no write once, and the retry may write", async () => {
+    await assertAClaimWithNoWriteIsRetriedAndTheRetryWrites();
+  });
+
+  it("replaces a claim still unwritten after the retry", async () => {
+    await assertAClaimStillUnwrittenAfterTheRetryIsReplaced();
+  });
+
+  it("leaves a claim after a write untouched", async () => {
+    await assertAClaimAfterAWriteIsUntouched();
+  });
+
+  it("replaces the first text when the retry round times out", async () => {
+    await assertAClaimWhoseRetryTimesOutIsReplaced();
   });
 });
