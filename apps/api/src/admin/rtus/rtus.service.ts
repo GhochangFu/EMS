@@ -507,12 +507,6 @@ export class RtusAdminService {
   }
 
   /**
-   * Resolves a location's organization on `fleetDb` before a write opens its
-   * tenant context. `locations` carries a policy (`0040`); the caller has
-   * already passed `canManageLocation` for this location, which is the
-   * isolation control.
-   */
-  /**
    * `F4.334` / ADR 0116 decision 4 (plan R9, ruling Q9) — sets or clears the
    * payload format an MQTT RTU's connection config names. The same gate as
    * `update` (`canManageLocation`); 404 without a connection row; 400 for a
@@ -555,7 +549,7 @@ export class RtusAdminService {
     const from = connectionPayloadFormatOf(connection.protocol, connection.config);
 
     await withTenant(this.tenantDb, organizationId, async (tx) => {
-      await tx
+      const written = await tx
         .update(rtuConnectionConfigs)
         .set({
           // One key only: the rest of the config (host, port, tls, device) is
@@ -566,7 +560,13 @@ export class RtusAdminService {
               : sql`jsonb_set(${rtuConnectionConfigs.config}, '{payloadFormat}', to_jsonb(${code}::text))`,
           updatedAt: new Date(),
         })
-        .where(eq(rtuConnectionConfigs.rtuId, id));
+        .where(eq(rtuConnectionConfigs.rtuId, id))
+        .returning({ rtuId: rtuConnectionConfigs.rtuId });
+      // Security review L2: no audit row for a write that hit nothing (a row
+      // deleted since the read, or one the tenant policy hides).
+      if (written.length === 0) {
+        throw new NotFoundException("RTU has no connection config");
+      }
       await this.audit.write(
         {
           actor: jwt,
@@ -582,6 +582,12 @@ export class RtusAdminService {
     return this.fetchRow(id);
   }
 
+  /**
+   * Resolves a location's organization on `fleetDb` before a write opens its
+   * tenant context. `locations` carries a policy (`0040`); the caller has
+   * already passed `canManageLocation` for this location, which is the
+   * isolation control.
+   */
   private async resolveLocationOrg(locationId: string): Promise<string> {
     const [row] = await this.fleetDb
       .select({ organizationId: locations.organizationId })
