@@ -46,7 +46,7 @@ import { translateAssetCodeCollision } from "../asset-templates/asset-templates-
 import { AssetTemplateInstantiationService } from "../asset-templates/asset-templates-instantiate.service";
 import { AssetTemplatesStockService } from "../asset-templates/asset-templates-stock.service";
 import { plaintextRtusOf } from "./onboarding-commit-plaintext";
-import { metaTimezone } from "./onboarding-commit-values";
+import { metaTimezone, unitOf } from "./onboarding-commit-values";
 import { translateCommitUniqueConflict } from "./onboarding-commit-conflict";
 import {
   assertDraftTemplateAccess,
@@ -668,7 +668,8 @@ export class OnboardingCommitService {
             pointKey: ap.pointKey,
             sourceDataKey: ap.sourceDataKey,
             sensorCode: ap.sensorCode ?? null,
-            unit: ap.unit ?? null,
+            // F4.339 (ADR 0117 decision 11): no unit → the draft's own declaration, then the catalog's.
+            unit: ap.unit ?? unitOf(ap.pointKey, draft.pointKeys, templates.pointKeyFields) ?? null,
             active: true,
             rtuId: sourceRtuId,
             sourceKind: sourceRtuId ? "measured" : "unmapped",

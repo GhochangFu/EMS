@@ -13,6 +13,9 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import {
+  assertACatalogMappingTakesTheCatalogUnit,
+  assertADeclaredKeyUnitWins,
+  assertAMappingKeepsItsOwnUnit,
   assertAMetaTimezoneIsCommitted,
   assertNoTimezoneCommitsNull,
   assertTheTimezoneFieldIsCommitted,
@@ -86,7 +89,10 @@ async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
 
 type Variant = "field" | "meta" | "none";
 
-function draftFor(domain: string, variant: Variant): OnboardingDraft {
+/** A seeded active catalog key with a unit: what a mapping with no unit should commit with (decision 11). */
+type CatalogKey = { code: string; unit: string; domain: string };
+
+function draftFor(domain: string, variant: Variant, catalogKey: CatalogKey): OnboardingDraft {
   const tag = `${RUN}-${variant}`;
   return {
     location: {
@@ -117,7 +123,14 @@ function draftFor(domain: string, variant: Variant): OnboardingDraft {
         domain,
       },
     ],
-    assetPoints: [{ assetIndex: 0, pointKey: `F4339_TZU_PK_${RUN}_${variant}`.toUpperCase(), sourceDataKey: `F4339/TZU/${tag}` }],
+    assetPoints: [
+      // The declared key's own unit wins for a new key (no unit on the mapping).
+      { assetIndex: 0, pointKey: `F4339_TZU_PK_${RUN}_${variant}`.toUpperCase(), sourceDataKey: `F4339/TZU/${tag}` },
+      // "field": a catalog key with no unit → the catalog's unit; "meta": the mapping's own unit is kept.
+      ...(variant === "none"
+        ? []
+        : [{ assetIndex: 0, pointKey: catalogKey.code, sourceDataKey: `F4339/TZU/${tag}/cat`, ...(variant === "meta" ? { unit: "m3/h" } : {}) }]),
+    ],
   } as OnboardingDraft;
 }
 
@@ -165,12 +178,26 @@ describe.skipIf(!connectionString)("F4.339 — the onboarding commit writes the 
     }
     const organizationId = org.rows[0].id;
 
-    const dom = await ownerPool.query<{ code: string }>(
-      "SELECT code FROM bms.asset_domains WHERE active = true LIMIT 1",
+    // Read the catalog's unit rather than hard-coding it (plan T2.4).
+    const key = await ownerPool.query<CatalogKey>(
+      `SELECT pk.code, pk.unit, pk.domain
+         FROM bms.point_keys pk
+         JOIN bms.asset_domains d ON d.code = pk.domain AND d.active = true
+        WHERE pk.active = true AND pk.unit IS NOT NULL AND pk.unit <> ''
+        ORDER BY (pk.code = 'treated_water_flow_klh') DESC, pk.code
+        LIMIT 1`,
     );
-    if (!dom.rows[0]) {
-      throw new Error("F4.339: no active asset_domain — run pnpm db:seed.");
+    if (!key.rows[0]) {
+      throw new Error("F4.339: no active catalog point key with a unit and an active domain — run pnpm db:seed.");
     }
+    const catalogKey = key.rows[0];
+    ctx.catalogKey = catalogKey;
+    const dom = { rows: [{ code: catalogKey.domain }] };
+    const templates = {
+      ...EMPTY_TEMPLATE_CONTEXT,
+      pointKeys: new Map([[catalogKey.code, true]]),
+      pointKeyFields: new Map([[catalogKey.code, { unit: catalogKey.unit, domain: catalogKey.domain }]]),
+    };
 
     const tenantDb = createDb(tenantPool);
     const fleetDb = createDb(fleetPool);
@@ -183,7 +210,7 @@ describe.skipIf(!connectionString)("F4.339 — the onboarding commit writes the 
       new MasterDataAuditService(tenantDb, fleetDb),
       new OnboardingValidateService(),
       new VocabulariesService(fleetDb),
-      { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
+      { context: async () => templates, pointKeyQuota: async () => "exempt" } as never,
       // F3.22: the three template services; these drafts hold no template, so none is called.
       {} as never,
       {} as never,
@@ -197,7 +224,7 @@ describe.skipIf(!connectionString)("F4.339 — the onboarding commit writes the 
       const sessionId = await withTenant(tenantDb, organizationId, async (tx) => {
         const [row] = await tx
           .insert(onboardingSessions)
-          .values({ organizationId, status: "draft", currentPhase: "review", draft: draftFor(dom.rows[0]!.code, variant) })
+          .values({ organizationId, status: "draft", currentPhase: "review", draft: draftFor(dom.rows[0]!.code, variant, catalogKey) })
           .returning({ id: onboardingSessions.id });
         return row.id;
       });
@@ -237,5 +264,17 @@ describe.skipIf(!connectionString)("F4.339 — the onboarding commit writes the 
 
   it("TZ3 commits NULL with neither", async () => {
     await assertNoTimezoneCommitsNull(ctx);
+  }, 30_000);
+
+  it("U1 commits the catalog unit for a mapping with none", async () => {
+    await assertACatalogMappingTakesTheCatalogUnit(ctx);
+  }, 30_000);
+
+  it("U2 keeps a mapping's own unit", async () => {
+    await assertAMappingKeepsItsOwnUnit(ctx);
+  }, 30_000);
+
+  it("U3 commits a declared new key's unit", async () => {
+    await assertADeclaredKeyUnitWins(ctx);
   }, 30_000);
 });
