@@ -10,6 +10,8 @@ import {
   aPlainRtuSaysTlsOffAndPostsExpectedTlsFalse,
   theDefaultPrefixIsTheSavedTopicUpToItsLastSlash,
   theStepShowsTheBrokerTheFilterAndTheWarning,
+  aChosenWindowIsShownAndPosted,
+  aWindowOver300IsRefusedBeforeItIsSent,
 } from "./onboarding-discovery-wizard.spec";
 
 afterEach(() => {
@@ -25,4 +27,6 @@ describe("F3.24b onboarding discovery wizard", () => {
   it("a plain RTU says TLS off and posts expected.tls false (F4.326)", aPlainRtuSaysTlsOffAndPostsExpectedTlsFalse);
   it("a 202 hands the discovery id up", a202HandsTheDiscoveryIdUp);
   it("a 409 shows the conflict sentence and starts nothing", a409ShowsTheConflictSentence);
+  it("a chosen window is shown and posted (F4.339)", aChosenWindowIsShownAndPosted);
+  it("a window over 300 s is refused before it is sent (F4.339)", aWindowOver300IsRefusedBeforeItIsSent);
 });

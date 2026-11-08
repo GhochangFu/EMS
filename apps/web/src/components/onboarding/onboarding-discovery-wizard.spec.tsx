@@ -113,3 +113,29 @@ export async function a409ShowsTheConflictSentence(): Promise<void> {
   expect(await within(wizard).findByText(ONBOARDING_DISCOVERY_CONFLICT)).toBeTruthy();
   expect(onStarted).not.toHaveBeenCalled();
 }
+
+/** F4.339 (ADR 0117 decision 5): a chosen window reaches the step text and the body. */
+export async function aChosenWindowIsShownAndPosted(): Promise<void> {
+  const fetchMock = stubFetch(202, { discoveryId: DISCOVERY_ID });
+  renderWizard();
+  const wizard = screen.getByRole("dialog");
+  fireEvent.change(within(wizard).getByLabelText("Window (s)"), { target: { value: "180" } });
+  expect(within(wizard).getByText(/Window: 180 s\./)).toBeTruthy();
+  await submit();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+  expect((JSON.parse(String(init.body)) as { windowSeconds: unknown }).windowSeconds).toBe(180);
+}
+
+/** F4.339: 301 s is refused client-side, at the step, with the shared schema's message, and nothing is sent. */
+export async function aWindowOver300IsRefusedBeforeItIsSent(): Promise<void> {
+  const fetchMock = stubFetch(202, { discoveryId: DISCOVERY_ID });
+  renderWizard();
+  const wizard = screen.getByRole("dialog");
+  fireEvent.change(within(wizard).getByLabelText("Window (s)"), { target: { value: "301" } });
+  // The step check reads the shared schema, so Next stays on the step with its message.
+  fireEvent.click(within(wizard).getByRole("button", { name: "Next" }));
+  expect(await within(wizard).findByText(/windowSeconds: Number must be less than or equal to 300/)).toBeTruthy();
+  expect(within(wizard).queryByRole("button", { name: "Submit" })).toBeNull();
+  expect(fetchMock).not.toHaveBeenCalled();
+}
