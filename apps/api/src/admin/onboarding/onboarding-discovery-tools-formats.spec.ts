@@ -115,6 +115,10 @@ export async function addRtuCopiesTheDiscoveredFormat(): Promise<void> {
   const read: ToolState = { working: draft(stored()) };
   const copied = await runTool(call("add_rtu", rtu({})), read, context());
   assert(copied.ok, `add_rtu runs, got ${copied.error ?? ""}`);
+  assert(
+    copied.actionLine?.includes("(payload format thinkiot-register-array)") === true,
+    `the action line names the copied format, got ${copied.actionLine ?? ""}`,
+  );
   const added = read.working.rtus?.find((r) => r.code === "BCPL_LAKWA_02");
   assert(
     (added?.config as { payloadFormat?: unknown } | undefined)?.payloadFormat === "thinkiot-register-array",

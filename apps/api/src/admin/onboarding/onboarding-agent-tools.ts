@@ -568,7 +568,8 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       // F3.24b (accuracy review #3): an RTU for a discovered device on the confirmed broker earns a copy of the
       // source RTU's encrypted credential, applied by code after the turn and checked again there.
       const source = discoveredRtuSource(draft, rtu);
-      const copied = source === null ? "" : ` (credentials of RTU ${source})`;
+      // F4.334 security review L1: a copied format is named, so the user sees it before commit.
+      const copied = `${source === null ? "" : ` (credentials of RTU ${source})`}${format === undefined ? "" : ` (payload format ${format})`}`;
       const outcome = write(
         state,
         { rtus: [...(draft.rtus ?? []), rtu] },
