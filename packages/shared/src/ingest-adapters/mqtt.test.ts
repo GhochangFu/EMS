@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertNoDraftIssueMessageEchoesAValue,
+  assertPayloadFormatIsAnOptionalCatalogCode,
   assertTheConfigSchemaDefaultsTlsVerificationOn,
   assertTheConfigSchemaRefusesAStringOrZeroPort,
   assertTheDeviceSchemaAcceptsAnOrdinaryTopic,
@@ -48,5 +49,9 @@ describe("F3.24a — the shared MQTT schemas (ADR 0093 decision 4)", () => {
 
   it("S9 never echoes the offending value in an issue message", () => {
     assertNoDraftIssueMessageEchoesAValue();
+  });
+
+  it("S10 takes payloadFormat as an optional catalog code (F4.334)", () => {
+    assertPayloadFormatIsAnOptionalCatalogCode();
   });
 });

@@ -106,3 +106,23 @@ export function assertNoDraftIssueMessageEchoesAValue(): void {
     }
   }
 }
+
+/** S10 (`F4.334`, ADR 0116 decision 4) — `payloadFormat` is an optional kebab-case catalog code, on the config and the draft. */
+export function assertPayloadFormatIsAnOptionalCatalogCode(): void {
+  expect(mqttConfigSchema.safeParse({ host: "h", port: 1883 }).success).toBe(true);
+  const config = mqttConfigSchema.safeParse({ host: "h", port: 1883, payloadFormat: "thinkiot-register-array" });
+  expect(config.success && config.data.payloadFormat).toBe("thinkiot-register-array");
+  expect(issuePaths(mqttConfigSchema, { host: "h", port: 1883, payloadFormat: "Thinkiot_Register" })).toEqual([
+    "payloadFormat",
+  ]);
+  expect(issuePaths(mqttConfigSchema, { host: "h", port: 1883, payloadFormat: "a".repeat(65) })).toEqual([
+    "payloadFormat",
+  ]);
+  expect(issuePaths(mqttDraftConfigSchema, { payloadFormat: "thinkiot-register-array" })).toEqual([]);
+  expect(issuePaths(mqttDraftConfigSchema, {})).toEqual([]);
+  expect(issuePaths(mqttDraftConfigSchema, { payloadFormat: "Thinkiot_Register" })).toEqual(["payloadFormat"]);
+  const draft = mqttDraftConfigSchema.safeParse({ payloadFormat: "Bad Code" });
+  for (const issue of draft.success ? [] : draft.error.issues) {
+    expect(issue.message).not.toContain("Bad Code");
+  }
+}
