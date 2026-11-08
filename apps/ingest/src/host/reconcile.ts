@@ -173,7 +173,7 @@ export function createEndpointRegistry(deps: EndpointRegistryDeps): EndpointRegi
       // Built but refused to start: stop it, so nothing half-started keeps a
       // connection or a timer. `stop()` is idempotent and never rejects.
       if (supervisor !== undefined) {
-        void supervisor.stop();
+        void supervisor.stop().catch(() => undefined);
       }
       // Not running, so the next reload sees the key absent and retries it.
       deps.logger.error("endpoint start failed", { ...where(plan), reason: reasonOf(error) });

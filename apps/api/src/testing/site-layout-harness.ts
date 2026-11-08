@@ -19,6 +19,7 @@ import {
   newSiteTemplate,
   serviceWithViewRow,
 } from "../control-room/site-layout.service.integration.spec";
+import { SiteLayoutReplaceService } from "../control-room/site-layout-replace.service";
 import { SiteLayoutService, siteTemplateArmOf } from "../control-room/site-layout.service";
 import { primeSeededSubjects } from "./seeded-subjects";
 
@@ -173,6 +174,7 @@ export function useSiteLayoutHarness(
     const templates = new DashboardTemplatesService(fleetDb, tenantDb, accessControl, audit, new VocabulariesService(fleetDb));
     ctx = {
       svc,
+      replace: new SiteLayoutReplaceService(fleetDb, tenantDb, svc),
       dashboards: new DashboardsService(tenantDb, fleetDb, accessControl, audit),
       mimicNodes: new MimicNodesService(fleetDb, fleetPool, accessControl),
       // The arm `AdminModule` provides: its factory is `siteTemplateArmOf`.

@@ -40,7 +40,7 @@ function controllerWith(answer: () => Promise<unknown>): { controller: Locations
       return answer();
     },
   } as unknown as SiteLayoutService;
-  return { controller: new LocationsAdminController({} as never, {} as never, siteLayout), calls };
+  return { controller: new LocationsAdminController({} as never, {} as never, siteLayout, {} as never), calls };
 }
 
 async function refusal(promise: Promise<unknown>): Promise<unknown> {

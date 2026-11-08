@@ -6,6 +6,8 @@ import type { SiteLayoutReplacePreviewDto } from "@bms/shared";
 import * as replaceApi from "../../api/admin/site-layout-replace";
 import { REPLACED_BODY } from "../../api/admin/site-layout-replace.spec";
 import * as vocabApi from "../../api/vocabularies";
+import { isStaleAfterReplace } from "../../lib/site-layout-replace";
+import { expectOnlySlugAndListReadsRefetched, seedDashboardReads } from "../../lib/site-layout-replace.spec";
 import { resetWizardStore } from "../../stores/wizard-store";
 import { ReplaceSiteLayoutWizard } from "./replace-site-layout-wizard";
 
@@ -150,7 +152,7 @@ export async function theConfirmStepShowsNoRecordedEdit(): Promise<void> {
 /**
  * B5 — Submit calls the replace client for the page's site with the body (`{}`: the newest version
  * of the copy's own code); the summary names both versions; Close invalidates the site's resolve
- * read and the dashboards.
+ * read and the dashboards read by slug or list (the predicate skips the deleted id's reads).
  */
 export async function submitCallsTheReplaceClient(): Promise<void> {
   const { replace } = renderWizard(preview("replace", WITH_ACTOR));
@@ -166,6 +168,25 @@ export async function submitCallsTheReplaceClient(): Promise<void> {
     ["control-room", "site-view", LOCATION_ID],
     ["dashboards"],
   ]);
+  expect(invalidate.mock.calls[1]?.[0]?.predicate).toBe(isStaleAfterReplace);
+}
+
+/**
+ * B8 — the canvas still mounted with the OLD dashboard id: Close re-reads the slug and list reads, and
+ * never the old id's site-widgets, catalog-values or mimic-nodes (the API answers 404 for each).
+ */
+export async function closeDoesNotRefetchTheDeletedDashboard(): Promise<void> {
+  renderWizard(preview("replace", WITH_ACTOR));
+  const reads = await seedDashboardReads(queryClient);
+  try {
+    const dialog = await openReview();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+    await within(dialog).findByText(/Replaced v1 with v2/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await expectOnlySlugAndListReadsRefetched(reads);
+  } finally {
+    reads.stop();
+  }
 }
 
 /** B6 — while the Replace pends, Submit is disabled, renamed and `aria-busy`. */

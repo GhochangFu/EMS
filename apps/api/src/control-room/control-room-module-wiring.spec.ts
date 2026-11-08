@@ -27,6 +27,7 @@ import { GeneratedSiteViewService } from "./generated-site-view.service";
 import { OrganizationLayoutService } from "./organization-layout.service";
 import { OrganizationViewController } from "./organization-view.controller";
 import { SiteControlRoomViewService } from "./site-control-room-view.service";
+import { SiteLayoutReplaceService } from "./site-layout-replace.service";
 import { SiteLayoutService } from "./site-layout.service";
 import { SiteViewController } from "./site-view.controller";
 
@@ -164,7 +165,12 @@ export function assertAppModuleImportsControlRoomModule(): void {
 /** Positive control: the scan finds the token that would be missing without the AdminModule import. */
 export function assertScanFindsTheServiceOnLocationsAdminController(): void {
   const classes = classTypedParams("apps/api/src/admin/locations", "locations.controller.ts", "LocationsAdminController");
-  expect(classes).toEqual(["LocationsAdminService", "SiteControlRoomViewService", "SiteLayoutService"]);
+  expect(classes).toEqual([
+    "LocationsAdminService",
+    "SiteControlRoomViewService",
+    "SiteLayoutService",
+    "SiteLayoutReplaceService",
+  ]);
 }
 
 export function assertLocationsAdminControllerDepsResolveThroughAdmin(): void {
@@ -256,6 +262,23 @@ export function assertDashboardTemplatesControllerDepsResolveThroughAdmin(): voi
     "DashboardTemplatesController",
   );
   expect(classes).toContain("SiteLayoutService");
+  expect(classes).toContain("SiteLayoutReplaceService");
+  expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+/**
+ * `F4.336` — `ControlRoomModule` provides AND exports `SiteLayoutReplaceService` (the Replace half,
+ * moved out of `SiteLayoutService`), and its own dependencies resolve inside the module's scope.
+ */
+export function assertControlRoomModuleWiresSiteLayoutReplace(): void {
+  expect(moduleList(ControlRoomModule, "providers").map(tokenOf)).toContain(SiteLayoutReplaceService);
+  expect(moduleList(ControlRoomModule, "exports").map(tokenOf)).toContain(SiteLayoutReplaceService);
+  const { byIdentity, byName } = controlRoomResolvableTokens();
+  const tokens = injectedTokens(SiteLayoutReplaceService).map((d) => d.param);
+  expect(tokens).toEqual(expect.arrayContaining([FLEET_DRIZZLE, TENANT_DRIZZLE]));
+  expect(tokens.filter((t) => !byIdentity.has(t)).map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
+  const classes = classTypedParams("apps/api/src/control-room", "site-layout-replace.service.ts", "SiteLayoutReplaceService");
+  expect(classes).toEqual(["SiteLayoutService"]);
   expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
 }
 
