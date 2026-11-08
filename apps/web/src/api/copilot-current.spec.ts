@@ -97,6 +97,7 @@ const RTU_ROW = {
   externalRtuId: 42,
   rtuCode: "R1",
   mqttTopic: "phe/lot/1",
+  releasedMqttTopic: null,
   stationCode: "S1",
   stationName: "Station 1",
   ingestEnabled: true,

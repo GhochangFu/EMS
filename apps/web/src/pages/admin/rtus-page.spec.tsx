@@ -52,6 +52,7 @@ function rtu(overrides: Partial<AdminRtuDto>): AdminRtuDto {
     externalRtuId: null,
     rtuCode: null,
     mqttTopic: null,
+    releasedMqttTopic: null,
     stationCode: null,
     stationName: null,
     ingestEnabled: true,

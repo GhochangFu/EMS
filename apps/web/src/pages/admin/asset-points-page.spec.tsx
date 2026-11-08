@@ -298,6 +298,7 @@ function rtu(id: string, code: string, active: boolean): AdminRtuDto {
     externalRtuId: null,
     rtuCode: null,
     mqttTopic: null,
+    releasedMqttTopic: null,
     stationCode: null,
     stationName: null,
     ingestEnabled: true,

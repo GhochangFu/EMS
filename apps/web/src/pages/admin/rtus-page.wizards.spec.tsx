@@ -40,6 +40,7 @@ const RTU: AdminRtuDto = {
   externalRtuId: null,
   rtuCode: null,
   mqttTopic: "site-a/gw-1",
+  releasedMqttTopic: null,
   stationCode: null,
   stationName: null,
   ingestEnabled: true,

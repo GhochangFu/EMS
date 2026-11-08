@@ -87,6 +87,8 @@ export const adminRtuDtoSchema = z.object({
   externalRtuId: z.number().nullable(),
   rtuCode: z.string().nullable(),
   mqttTopic: z.string().nullable(),
+  /** F4.339 (ADR 0117 decision 8): the topic a deactivate released; restored on reactivate when still free. */
+  releasedMqttTopic: z.string().nullable(),
   stationCode: z.string().nullable(),
   stationName: z.string().nullable(),
   ingestEnabled: z.boolean(),

@@ -456,7 +456,12 @@ export class RtusAdminService {
       if ((activeAsset?.count ?? 0) > 0) {
         throw new ConflictException("Cannot deactivate RTU with active assets");
       }
-      await tx.update(rtus).set({ active: false }).where(eq(rtus.id, id));
+      // F4.339 (ADR 0117 decision 8): the topic is released, so another RTU can take it, and kept in
+      // `released_mqtt_topic` for reactivate. Both from the row's own old values (one SET, race-safe).
+      await tx
+        .update(rtus)
+        .set({ active: false, mqttTopic: null, releasedMqttTopic: sql`coalesce(${rtus.mqttTopic}, ${rtus.releasedMqttTopic})` })
+        .where(eq(rtus.id, id));
       await this.audit.write(
         {
           actor: jwt,
@@ -464,6 +469,8 @@ export class RtusAdminService {
           entityType: "rtu",
           entityId: id,
           organizationId,
+          // Booleans only: the topic itself is not audited.
+          payload: { topicReleased: existing.mqttTopic !== null },
         },
         tx,
       );
@@ -491,7 +498,19 @@ export class RtusAdminService {
     await withTenant(this.tenantDb, organizationId, async (tx) => {
       // F2.10 / ADR 0098 ruling 15 — an RTU is not restored onto an inactive location.
       await assertLocationActive(tx, existing.locationId);
-      await tx.update(rtus).set({ active: true }).where(eq(rtus.id, id));
+      const released = existing.releasedMqttTopic;
+      // F4.339 (ADR 0117 decision 8): the released topic comes back only while no RTU holds it. The
+      // index is global, so the holder may be another tenant's: read on the fleet pool, as a count, and
+      // never named in the response.
+      const free = released !== null && !(await this.topicHeld(released));
+      await tx
+        .update(rtus)
+        .set(free ? { active: true, mqttTopic: released, releasedMqttTopic: null } : { active: true })
+        .where(eq(rtus.id, id))
+        .catch((err: unknown) => {
+          // A topic taken between the check and the write is the index's 409, as an update's is.
+          throw translateRtuUniqueConflict(err);
+        });
       await this.audit.write(
         {
           actor: jwt,
@@ -499,6 +518,7 @@ export class RtusAdminService {
           entityType: "rtu",
           entityId: id,
           organizationId,
+          payload: { topicRestored: free },
         },
         tx,
       );
@@ -658,6 +678,12 @@ export class RtusAdminService {
     return this.mapRow(row);
   }
 
+  /** F4.339: whether any RTU, of any organization, holds `topic` (the global `rtus_mqtt_topic_idx`). A boolean, never a row. */
+  private async topicHeld(topic: string): Promise<boolean> {
+    const [hit] = await this.fleetDb.select({ id: rtus.id }).from(rtus).where(eq(rtus.mqttTopic, topic)).limit(1);
+    return hit !== undefined;
+  }
+
   private mapRow(row: {
     rtu: typeof rtus.$inferSelect;
     locationName: string;
@@ -679,6 +705,7 @@ export class RtusAdminService {
       externalRtuId: rtu.externalRtuId,
       rtuCode: rtu.rtuCode,
       mqttTopic: rtu.mqttTopic,
+      releasedMqttTopic: rtu.releasedMqttTopic,
       stationCode: rtu.stationCode,
       stationName: rtu.stationName,
       ingestEnabled: rtu.ingestEnabled,
