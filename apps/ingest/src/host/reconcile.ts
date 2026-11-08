@@ -25,6 +25,11 @@ import type { Supervisor, SupervisorHealth } from "./supervisor.js";
  * running endpoint whose device set is unchanged is a `swap-index`, so it still
  * needs a restart (plan R5): detecting it would mean fingerprinting the
  * plaintext credentials (AGENTS.md §9.6).
+ *
+ * **What is (ADR 0116 decision 6, `F4.334` plan R8).** A change to the payload
+ * format an endpoint decodes with — or to a binding's topic, which the same
+ * fingerprint covers — is a `replace` with `reason: "payload-format-changed"`,
+ * through `EndpointPlan.decoderFingerprint`, which holds no secret.
  */
 
 export type ReconcileAction =
@@ -35,6 +40,8 @@ export type ReconcileAction =
       readonly plan: EndpointPlan;
       readonly added: readonly string[];
       readonly removed: readonly string[];
+      /** Set when the device set is unchanged and only the decoder fingerprint moved. */
+      readonly reason?: "payload-format-changed";
     }
   | { readonly kind: "stop"; readonly key: string }
   | { readonly kind: "swap-index"; readonly key: string; readonly pointIndex: PointIndex };
@@ -55,8 +62,14 @@ function byKey(a: { key: string }, b: { key: string }): number {
  * `next` comes from `planEndpoints`, which yields one plan per key; were a key
  * to repeat, the last plan for it would win.
  */
+/** What the registry knows of one running endpoint. */
+export type RunningEndpoint = {
+  readonly devices: ReadonlySet<string>;
+  readonly fingerprint: string;
+};
+
 export function diffEndpoints(
-  running: ReadonlyMap<string, ReadonlySet<string>>,
+  running: ReadonlyMap<string, RunningEndpoint>,
   next: readonly EndpointPlan[],
 ): readonly ReconcileAction[] {
   const wanted = new Map<string, EndpointPlan>();
@@ -74,16 +87,19 @@ export function diffEndpoints(
     }
   }
   for (const [key, plan] of wanted) {
-    const served = running.get(key);
-    if (served === undefined) {
+    const current = running.get(key);
+    if (current === undefined) {
       starts.push({ kind: "start", key, plan });
       continue;
     }
+    const served = current.devices;
     const devices = new Set(plan.bindings.map((binding) => binding.deviceKey));
     const added = [...devices].filter((d) => !served.has(d)).sort();
     const removed = [...served].filter((d) => !devices.has(d)).sort();
     if (added.length > 0 || removed.length > 0) {
       closing.push({ kind: "replace", key, plan, added, removed });
+    } else if (current.fingerprint !== plan.decoderFingerprint) {
+      closing.push({ kind: "replace", key, plan, added, removed, reason: "payload-format-changed" });
     } else {
       swaps.push({ kind: "swap-index", key, pointIndex: plan.pointIndex });
     }
@@ -204,9 +220,9 @@ export function createEndpointRegistry(deps: EndpointRegistryDeps): EndpointRegi
   }
 
   async function apply(next: readonly EndpointPlan[]): Promise<void> {
-    const served = new Map<string, ReadonlySet<string>>();
+    const served = new Map<string, RunningEndpoint>();
     for (const [key, entry] of running) {
-      served.set(key, entry.devices);
+      served.set(key, { devices: entry.devices, fingerprint: entry.plan.decoderFingerprint });
     }
     for (const action of diffEndpoints(served, next)) {
       const current = running.get(action.key);
@@ -244,6 +260,7 @@ export function createEndpointRegistry(deps: EndpointRegistryDeps): EndpointRegi
               added: action.added,
               removed: action.removed,
               devices: action.plan.bindings.length,
+              ...(action.reason === undefined ? {} : { reason: action.reason }),
             });
           }
           break;

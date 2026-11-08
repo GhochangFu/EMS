@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runDiffChangedDeviceSetReplacesTests,
+  runDiffFingerprintChangeReplacesTests,
   runDiffGoneEndpointStopsTests,
   runDiffOrderingTests,
   runDiffPurityTests,
@@ -10,6 +11,7 @@ import {
   runRegistryBootTests,
   runRegistryFailedLaunchListedTests,
   runRegistryFailureIsolationTests,
+  runRegistryFingerprintReplaceLogsReasonTests,
   runRegistryLogsNoCredentialsTests,
   runRegistryNoOverlapTests,
   runRegistryRejectedApplyClearsBusyTests,
@@ -110,5 +112,15 @@ describe("reload reconciliation — the endpoint registry", () => {
 
   it("names a scanned backlog the boot plan does not start (ADR 0115 Amendment 1)", async () => {
     await runRegistryScannedBacklogTests();
+  });
+});
+
+describe("reload reconciliation — the decoder fingerprint (ADR 0116 decision 6)", () => {
+  it("replaces an endpoint whose payload format changed, with the reason", () => {
+    runDiffFingerprintChangeReplacesTests();
+  });
+
+  it("rebuilds on a fingerprint change and logs payload-format-changed", async () => {
+    await runRegistryFingerprintReplaceLogsReasonTests();
   });
 });
