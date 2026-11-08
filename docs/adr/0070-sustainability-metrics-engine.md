@@ -906,3 +906,106 @@ key, and when an identity is ambiguous (two rows claim it, and the oldest is not
 the one row keyed for it) the seed writes nothing for it and logs the
 candidates. In that state a re-seed does not re-assert `timezone` until an
 administrator resolves the rows.
+
+## Amendment 7 (2026-11-07, `F4.332`) — a cost per day, priced hour by hour at the dated rate, at read time
+
+**Status: Proposed — accepted when the PR that adds it merges** (owner gate).
+Source: owner rulings of 2026-11-07, asked by the owner's local session after
+the owner asked how energy cost is calculated and what happens to past days
+when the rate changes. Code citations are to `main` at `be02de7`. The chart and
+template half is [ADR 0112](0112-organization-control-room-layout-from-a-template.md)
+Amendment 3 and [ADR 0047](0047-configurable-dashboards.md) Amendment 9.
+
+### The question
+
+Two cost paths exist today, and they answer a rate change differently.
+
+| Path | How it prices | What a rate change does |
+| --- | --- | --- |
+| The stored meter cost points (`energy_cost_per_h`, `energy_cost_today`, `_this_month`, `_this_year`; `bms-calc-v3` rows in `apps/api/src/admin/asset-templates/stock-catalog/electrical-feeder.ts`) | The calc engine writes `delta({kwh_total}, <period>) × $energy_tariff_per_kwh` every 60 s, with the rate in force **at the tick** | From the next tick, the whole current period (today, this month, this year) is priced again at the new rate. Rows already stored keep the old figure. Nothing recomputes history (§"Ruled here without a question", Backfill). |
+| The Energy view / Energy Centre "indicative cost" (`apps/api/src/telemetry/energy-cost.ts`, `reports/energy-view.service.ts`, `dashboard/energy-centre.ts`) | Σ per-asset kWh in the window × the rate resolved **at the window end** (`resolveTariffs(..., end)`) | The whole past window is priced again at today's rate on the next read. |
+
+Neither gives a daily cost history that stays true when the rate changes. The
+rate itself is dated: `bms.calc_parameters` rows carry `effective_from` /
+`effective_to`, and the nearest scope wins (asset → location → organization),
+key `energy_tariff_per_kwh` (decision 2). `CalcParametersService.resolveSeriesForAssets`
+(`F4.311`, ADR 0109 decision 7) already reads every row in force across a range,
+and `parameterValueAt` picks the row at an instant.
+
+### The decision (owner ruling 1, 2026-11-07)
+
+1. **A new read: the energy cost per local day, computed at read time.** For each
+   asset in scope and each hour:
+   `cost(asset, hour) = kWh(asset, hour) × rate(asset, hour)`, where
+   - `kWh(asset, hour)` is the hourly energy the existing read already uses: the
+     `_1h` continuous aggregate of point key `kw`, `avgExpr()` × 1 h (ADR 0023;
+     decision 5's time integral; the `perAssetEnergy` statement at level `1h`).
+     An hour with no bucket adds no energy.
+   - `rate(asset, hour)` is the `energy_tariff_per_kwh` row **in force at the
+     start of that hour**, nearest scope, from `resolveSeriesForAssets` and
+     `parameterValueAt`. The rate is applied per hour, so a rate that changes at
+     a whole hour splits the day at that hour. A change at 12:30 prices the
+     12:00 hour at the old rate (the hour is the read's resolution).
+2. **Summed per local day.** The day is the calendar date in the asset's
+   location time zone, by `resolveSiteTimeZone(location.timezone, organization.timezone)`
+   (`packages/shared/src/contracts/time-zone-chain.ts`). A location's cost for
+   date D is the sum over its assets; an organization's is the sum over its
+   locations for the same date label. The list of dates is counted back from
+   today in the scope's zone: the location's for a location or asset scope, the
+   organization's for an organization scope (for PHE every location is
+   `Asia/Kolkata`, so the two agree).
+3. **One figure per day, and every total is a sum of those figures.** Each day's
+   cost is rounded to two decimals once. "Cost today", "Cost last 7 days",
+   "Cost this month" and the total under a chart are sums of the same rounded
+   daily figures, so a tile and the chart beside it cannot disagree. Today is
+   the hours so far.
+4. **What a rate change does now.**
+
+   | Change | Effect on this read |
+   | --- | --- |
+   | A new rate row from 14:00 today | Today = the hours before 14:00 at the old rate + the hours from 14:00 at the new rate. Past days do not change. |
+   | An old rate row edited (its value, or its dates) | Only the days that the row covers are priced again, on the next read. No backfill job, nothing stored. |
+   | A location or asset row added beside the organization row | The nearest scope wins for that location or asset, for the hours the row covers. |
+
+5. **`null`, never `0`, with a reason.** A day's cost is `null` when:
+   - `rate_missing` — an asset has energy in an hour with no rate row in force
+     (one unpriced hour fails that day closed, the `energyCost` rule);
+   - `currency_mixed` — the assets in scope belong to organizations with more
+     than one currency (only a global reader can see two); every day is `null`;
+   - `no_energy` — no asset in scope has an hourly bucket that day (no samples is
+     not zero consumption).
+   A window total is the sum of the priced days, and it carries how many of the
+   window's days were priced (the `coverage` of ADR 0072 ruling 1: `fresh` =
+   priced days, `carrying` = days in the window). When no day is priced the total
+   is `null` with the first day's reason. *Drafter choice, for the owner to
+   overturn:* a window total does not fail closed on one unpriced day, because a
+   month tile that goes blank for one missing hour hides 29 good days; the tile
+   shows "27 of 30 days" instead, as every partial roll-up tile already does.
+6. **The window is 1 to 90 days**, counted back from today, today included. 90
+   days × 24 hours is at most 2,160 hourly rows per asset, read from the `_1h`
+   aggregate in one statement, and the rate rows in one more.
+7. **Isolation.** The read takes the caller's readable asset ids
+   (`AccessControlService.readableAssetIds`, organization-bounded by the catalog
+   resolve), as `perAssetEnergy` does; its `$1::uuid[]` scope is the isolation
+   control on the fleet pool, and `resolveSeriesForAssets` keeps
+   `cp.organization_id = a.organization_id`. A reader never prices another
+   organization's assets.
+8. **The old stored cost points stay, and are labelled.** `energy_cost_*` keeps
+   being written as today (no calc or meter-template change). The label
+   **"at the rate effective now"** is added by the web, by point key: a value
+   tile or chart that shows a point whose key starts with `energy_cost_` —
+   bound directly, or through a `sustainability.total` /
+   `sustainability.by_location` source's `pointKey` — carries the note under
+   its value. Being keyed on the point, it reaches every existing dashboard
+   (the six live PHE dashboards included) with no data change. That is what the
+   value is: the period priced at the rate of the latest tick. The new
+   read is labelled "Energy cost" with no such note. The Energy view's
+   "indicative cost" is not changed by this row.
+
+### What does not change
+
+- No migration for this read: it reads the `_1h` aggregate and
+  `bms.calc_parameters` as they are. (The catalog keys that expose it to
+  dashboards need one CHECK widening; ADR 0112 Amendment 3.)
+- No new dependency. No stored cost history, no backfill job.
+- The calc engine, the meter templates and the stored cost points.

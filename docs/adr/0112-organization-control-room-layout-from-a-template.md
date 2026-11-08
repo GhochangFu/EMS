@@ -218,3 +218,96 @@ What changes:
   accepts it (`METRIC_CATALOG_PARAMS_WRITE`) and
   `assertSourceParamsBalanceRolesActive` requires `intake` to be a live
   `bms.water_balance_roles` code (seeded by migration `0080`).
+
+## Amendment 3 — 2026-11-07 (`F4.332`): the organization template may hold the daily cost chart
+
+**Status: Proposed — accepted when the PR that adds it merges** (owner gate).
+Source: owner ruling 2 of 2026-11-07. The cost read itself is
+[ADR 0070](0070-sustainability-metrics-engine.md) Amendment 7; the chart kind is
+[ADR 0047](0047-configurable-dashboards.md) Amendment 9. Code citations are to
+`main` at `be02de7`.
+
+### What changes
+
+1. **Two catalog keys, from the ADR 0070 Amendment 7 read** (amends ADR 0048's
+   closed catalog and decision 9 here):
+
+   | Key | Shape | Params (`.strict()`) | Resolves to |
+   | --- | --- | --- | --- |
+   | `energy.cost_by_day` | `dataset` | `{ days: 1–90 }` (integer) | One row per local day, oldest first, today last: columns `day` (`YYYY-MM-DD`), `kwh`, `cost`, `currency`, `reason` (`null` when priced) |
+   | `energy.cost.total` | `metric` | `{ period: "today" \| "last_7_days" \| "this_month" }` | The sum of the same daily figures for the period, with `currency`, `coverage` (`fresh` = priced days, `carrying` = days) and, when `null`, the reason |
+
+   Both resolve over the dashboard's scope intersected with the reader's readable
+   assets, like every catalog entry (`metric-catalog.service.ts`). Both read the
+   pool, so both are in `RESOLVE_AFTER_COMMIT`.
+2. **The metric arm of `metricCatalogValueDtoSchema` gains an optional
+   `reason: string | null`**, so a `null` cost tile can say why ("No rate for
+   part of today"). Optional, so every stored reader and every other entry is
+   unchanged (§4.8, additive).
+3. **Decision 2 is widened.** The `organization` target accepts, besides value
+   tiles, a `chart` widget whose `config.series` is `"cost_by_day"`, binding
+   exactly one `energy.cost_by_day` source and no role binding. Any other chart
+   kind, and every other widget type, is still refused with
+   `ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE` (text updated to name the chart).
+   Tabs stay refused.
+4. **The organization view carries the chart.** `organizationStripTileDtoSchema`
+   gains `widgetType: "value_tile" | "chart"`, defaulted to `"value_tile"` so a
+   reader of the old shape parses, and `config` becomes the value-tile config or
+   the chart config by `widgetType`. The fail-safe stock content and a copied
+   organization dashboard both resolve the chart's source the same way they
+   resolve a tile's.
+5. **The default strip** (`organization-standard`, `stockVersion` 1 → 2, ADR
+   0052 decision 7) gains two widgets after tile 14:
+
+   | # | Widget | Source |
+   | --- | --- | --- |
+   | 15 | "Cost this month" tile | `energy.cost.total { period: "this_month" }` |
+   | 16 | "Daily energy cost (30 days)" bar chart, full width | `energy.cost_by_day { days: 30 }` |
+
+   Tiles 10 and 12 (the stored `energy_cost_today` / `energy_cost_this_month`
+   points) stay unchanged in the content; the web adds "at the rate effective
+   now" to them by point key (ADR 0070 Amendment 7 decision 8). The seed copies of ruling Q3 follow the stock version. The six
+   live PHE dashboards on AWS are **not** replaced: the owner's session adds the
+   widgets in place after the deploy (owner ruling 4).
+
+6. **The pump-station site layout** (`pump-station-standard`, a `site`
+   template, `stockVersion` 1 → 2, ADR 0052 decision 7) gains, on its
+   Electrical tab under the existing widgets, a row of three tiles — "Cost
+   today", "Cost last 7 days", "Cost this month" (`energy.cost.total` with
+   `period` `today`, `last_7_days`, `this_month`) — and a full-width "Daily
+   energy cost" `cost_by_day` chart (`energy.cost_by_day { days: 90 }`, so the
+   viewer switch offers 7 / 30 / 90 days, default 30). A site tab already holds
+   catalog-bound tiles and charts, so the `site` target needs no rule change;
+   the widgets resolve over the tab's group, inside the site. The published v2
+   on AWS (made from the Bilsi layout) is not in the repository: the owner's
+   session adds the same widgets there in place (owner ruling 4).
+
+### Why a catalog source, and not a new chart binding or endpoint
+
+- The catalog already does the hard part: scope (organization, location, asset
+  group, asset) intersected with the reader's readable assets, inside the
+  organization, for both a saved dashboard and the organization fail-safe. A
+  new endpoint would restate that access rule a second time.
+- The organization strip and every site tile already resolve through it, so the
+  web needs no second fetch path, and a tile and a chart from the same key read
+  the same rows.
+- A tile and a chart share one read: `energy.cost.total` is the sum of
+  `energy.cost_by_day`'s rows, so they cannot disagree (ADR 0070 Amendment 7
+  decision 3).
+
+### The one migration (it needs the migration reviewer)
+
+The catalog is closed in the database too: `dashboard_widget_sources_catalog_key_check`
+(last widened by `0126`). One forward-only migration drops and re-adds it with
+the two new keys, the `0126` shape. No table, column, data or RLS change. It is
+numbered `0129`, after `0128_organization_ingest_enabled` (`F4.330`, merged as
+GhochangFu/EMS#1123 while this row was in review). Its journal entry is appended
+after `0128`'s, and its `when` is newer than `0128`'s, so every existing
+database applies it. (The migrator applies only entries newer than the newest
+one already applied, so an entry placed before an applied one would be skipped
+silently; measured by the migration review at the build.)
+
+### Still deferred
+
+- Widget types other than `value_tile` and the cost chart on this target.
+- A water cost per day (no dated water-rate read exists yet).
