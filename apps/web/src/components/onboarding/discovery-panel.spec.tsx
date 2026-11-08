@@ -117,14 +117,15 @@ export function aNonMqttDraftRendersNoSection(): void {
 
 export function aDoneDiscoveryWithNoDeviceShowsTheEmptySentence(): void {
   mount(session({ discovery: discovery() }));
-  expect(screen.getByText("No device published in the window.")).toBeTruthy();
+  // F4.339 (ADR 0117 decision 6): the sentence names the chosen filter and window.
+  expect(screen.getByText("No message arrived on topic 'Airsprint-1051/Data/#' in 60 s — check the topic name and the window.")).toBeTruthy();
 }
 
 /** F4.335 — messages that arrived and were not decoded are said, not read as a silent broker. */
 export function aDoneDiscoveryWithSkippedMessagesSaysSo(): void {
   mount(session({ discovery: discovery({ messages: 0, skipped: 6, skippedReasons: { "no-format": 6 } }) }));
   expect(screen.getByText("6 messages arrived but none matched a known payload format.")).toBeTruthy();
-  expect(screen.queryByText("No device published in the window.")).toBeNull();
+  expect(screen.queryByText(/No message arrived on topic/)).toBeNull();
 }
 
 export function aDoneDiscoveryShowsTheCountsAndTheTruncatedNote(): void {
@@ -186,4 +187,35 @@ export async function aWorkerRefusalDisablesTheButtonWithTheWorkerReason(): Prom
   fireEvent.click(within(wizard).getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(discoverButton().disabled).toBe(true);
+}
+
+const ONE_DEVICE = { topic: "Airsprint-1051/Data/1051", devId: "1051", messageCount: 3, keys: [{ sourceKey: "kw", sampleValue: 1 }] };
+
+/** F4.339 (ADR 0117 decision 6, ruling Q2): one found device → the button writes rtuCode and ingestEnabled on the discovered RTU. */
+export async function oneFoundDeviceOffersItsDevIdAsTheRtuCode(): Promise<void> {
+  const patches: unknown[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") patches.push(JSON.parse(String(init.body)));
+      return new Response("{}", { status: 500 });
+    }),
+  );
+  mount(session({ discovery: discovery({ devices: [ONE_DEVICE], messages: 3 }) }));
+  fireEvent.click(screen.getByRole("button", { name: "Use 1051 as the RTU code" }));
+  await waitFor(() => expect(patches).toHaveLength(1));
+  expect(patches[0]).toEqual({ draft: { rtus: [{ ...rtu(BROKER), rtuCode: "1051", ingestEnabled: true }] } });
+}
+
+/** F4.339: no button for two devices. */
+export function twoFoundDevicesOfferNoRtuCode(): void {
+  const two = [ONE_DEVICE, { ...ONE_DEVICE, topic: "Airsprint-1051/Data/1052", devId: "1052" }];
+  mount(session({ discovery: discovery({ devices: two, messages: 4 }) }));
+  expect(screen.queryByRole("button", { name: /as the RTU code$/ })).toBeNull();
+}
+
+/** F4.339: the button is disabled while a chat turn is in flight. */
+export function theRtuCodeButtonWaitsForTheChatTurn(): void {
+  mount(session({ discovery: discovery({ devices: [ONE_DEVICE], messages: 3 }) }), true);
+  expect((screen.getByRole("button", { name: "Use 1051 as the RTU code" }) as HTMLButtonElement).disabled).toBe(true);
 }

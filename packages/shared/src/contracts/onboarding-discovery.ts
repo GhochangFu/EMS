@@ -276,6 +276,9 @@ export function discoveryDtoOf(
 
 /** The fields {@link discoveryEmptySentence} reads. */
 export type DiscoveryEmptyFields = {
+  /** `F4.339`: the filter the user chose, `<prefix>/#` — the operator's own input, not wire data. */
+  readonly topicFilter: string;
+  readonly windowSeconds: number;
   readonly messages: number;
   readonly skipped: number;
   readonly skippedReasons?: Partial<Record<z.infer<typeof onboardingDiscoverySkipReasonSchema>, number>>;
@@ -284,9 +287,19 @@ export type DiscoveryEmptyFields = {
 /**
  * `F4.335` / ADR 0116 decision 8 (plan R11) — what a discovery with no device
  * says, for the drawer and the copilot alike. Fixed text: it echoes no
- * payload, topic or key, only counts.
+ * payload, device topic or key, only counts.
+ *
+ * `F4.339` (ADR 0117 decision 6): when **no message** arrived (none decoded,
+ * none skipped), the sentence
+ * names the filter and the window the user chose — both their own input — so
+ * a wrong topic or a too-short window is visible (BCPL meters publish about
+ * every 160 s). The two F4.335 sentences stay for messages that arrived.
  */
 export function discoveryEmptySentence(result: DiscoveryEmptyFields): string {
+  // `messages` counts decoded messages and `skipped` the dropped ones, so both 0 is "nothing arrived".
+  if (result.messages === 0 && result.skipped <= 0) {
+    return `No message arrived on topic '${result.topicFilter}' in ${result.windowSeconds} s — check the topic name and the window.`;
+  }
   if (result.skipped <= 0) {
     return "No device published in the window.";
   }

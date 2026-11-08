@@ -54,6 +54,7 @@ import {
   assertM7AMapPointCarryingSourceIsRefused,
   assertM8MapPointStampsADiscoveredKey,
   assertTheToolWindowIsBoundedAt300Seconds,
+  assertOneDeviceIsOfferedAsTheDeviceKey,
 } from "./onboarding-discovery-tools.spec";
 
 /** Vitest entry point (ADR 0014). One `it()` per claim. */
@@ -217,5 +218,9 @@ describe("onboarding discovery tools (F3.24b, ADR 0103 decisions 2, 7 and 8)", (
 
   it("F4.339: takes a 300 s window and refuses 301 s", async () => {
     await assertTheToolWindowIsBoundedAt300Seconds();
+  });
+
+  it("F4.339: offers a single found device as the RTU's device key", async () => {
+    await assertOneDeviceIsOfferedAsTheDeviceKey();
   });
 });

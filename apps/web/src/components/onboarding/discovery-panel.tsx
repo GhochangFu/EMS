@@ -123,11 +123,25 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
     },
     onError: (err: Error) => setFormatError(apiErrorMessage(err)),
   });
+  // F4.339 (ADR 0117 decision 6, ruling Q2): one found device → its devId as the discovered RTU's device key.
+  const deviceKeyMutation = useMutation({
+    mutationFn: (vars: { index: number; devId: string }) =>
+      patchOnboardingDraft(session.id, {
+        rtus: (session.draft?.rtus ?? []).map((rtu, i) => (i === vars.index ? { ...rtu, rtuCode: vars.devId, ingestEnabled: true } : rtu)),
+      }),
+    onSuccess: (updated) => {
+      setFormatError(null);
+      onSessionChange(updated);
+      queryClient.setQueryData(["onboarding", updated.id], updated);
+    },
+    onError: (err: Error) => setFormatError(apiErrorMessage(err)),
+  });
   const rtus = session.draft?.rtus ?? [];
   const mqtt = rtus.map((rtu, index) => ({ rtu, index })).filter(({ rtu }) => rtu.protocol === "mqtt");
   if (mqtt.length === 0) return null;
 
   const result = session.discovery;
+  const deviceKeyIndex = result === null ? -1 : rtus.findIndex((rtu) => rtu.code === result.rtuCode);
   // The route's own busy rule (`discoveryIsActive`): a `running` past its window + 60 s no longer holds the session.
   const active = discoveryIsActive(result, Date.now());
   const discovered = (session.draft?.assetPoints ?? []).filter((row) => row.source === "discovery");
@@ -214,6 +228,17 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
             <li className="text-ink-muted">{`and ${result.devices.length - LISTED_ROWS} more`}</li>
           )}
         </ul>
+      )}
+      {result !== null && result.status === "done" && result.devices.length === 1 && deviceKeyIndex >= 0 && (
+        <button
+          type="button"
+          className="mt-1 rounded border border-hairline px-2 py-0.5 text-[11px]"
+          disabled={busy || deviceKeyMutation.isPending}
+          aria-busy={deviceKeyMutation.isPending}
+          onClick={() => deviceKeyMutation.mutate({ index: deviceKeyIndex, devId: result.devices[0]!.devId })}
+        >
+          {`Use ${result.devices[0]!.devId} as the RTU code`}
+        </button>
       )}
       {discovered.length > 0 && (
         <ul aria-label="Discovered mappings" className="mt-2 space-y-1 text-[11px]">

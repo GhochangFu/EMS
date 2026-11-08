@@ -226,16 +226,22 @@ export function aResultStoredBeforeAdr0116StillParses(): void {
 
 /** `F4.335` (plan R11) — the three sentences a discovery with no device says. */
 export function theEmptySentenceSaysWhatArrived(): void {
-  expect(discoveryEmptySentence({ messages: 0, skipped: 0 })).toBe("No device published in the window.");
-  expect(discoveryEmptySentence({ messages: 0, skipped: 6, skippedReasons: { "no-format": 6 } })).toBe(
+  // F4.339 (ADR 0117 decision 6): nothing arrived → the sentence names the chosen filter and window.
+  const W = { topicFilter: "BCPL/LAL/#", windowSeconds: 120 };
+  expect(discoveryEmptySentence({ ...W, messages: 0, skipped: 0 })).toBe(
+    "No message arrived on topic 'BCPL/LAL/#' in 120 s — check the topic name and the window.",
+  );
+  // Decoded messages but no device (cannot happen today) keep the old sentence.
+  expect(discoveryEmptySentence({ ...W, messages: 3, skipped: 0 })).toBe("No device published in the window.");
+  expect(discoveryEmptySentence({ ...W, messages: 0, skipped: 6, skippedReasons: { "no-format": 6 } })).toBe(
     "6 messages arrived but none matched a known payload format.",
   );
-  expect(discoveryEmptySentence({ messages: 0, skipped: 6, skippedReasons: { "no-format": 4, oversize: 2 } })).toBe(
+  expect(discoveryEmptySentence({ ...W, messages: 0, skipped: 6, skippedReasons: { "no-format": 4, oversize: 2 } })).toBe(
     "6 messages arrived and were not decoded.",
   );
   // A result stored before ADR 0116 has no reasons: the general sentence.
-  expect(discoveryEmptySentence({ messages: 0, skipped: 6 })).toBe("6 messages arrived and were not decoded.");
-  expect(discoveryEmptySentence({ messages: 0, skipped: 1, skippedReasons: { "no-format": 1 } })).toBe(
+  expect(discoveryEmptySentence({ ...W, messages: 0, skipped: 6 })).toBe("6 messages arrived and were not decoded.");
+  expect(discoveryEmptySentence({ ...W, messages: 0, skipped: 1, skippedReasons: { "no-format": 1 } })).toBe(
     "1 message arrived but none matched a known payload format.",
   );
 }
