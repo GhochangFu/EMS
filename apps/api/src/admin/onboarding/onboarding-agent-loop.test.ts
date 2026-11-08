@@ -7,6 +7,9 @@ import {
   assertAProviderRejectionDiscardsTheTurn,
   assertAToolErrorGoesBackAsAResultNotAThrow,
   assertActionMessagesReachTheModelAsAssistantText,
+  assertBuildHistoryMarksActionRowsAsRecords,
+  assertTheHistoryCutCoversTheRecordPrefix,
+  assertThePromptSaysRecordsAreTheSystems,
   assertCapsArePinned,
   assertHistoryCarriesNoProviderContent,
   assertHistoryIsTheLastTwentyCutToTwoThousand,
@@ -41,6 +44,17 @@ import {
   assertARefusedWriteKeepsTheTurnsOtherWrites,
   assertARefusedReadGetsNoLine,
   assertEveryToolIsClassifiedAsADraftWriteOrNot,
+  assertAClaimWithNoWriteIsRetriedAndTheRetryWrites,
+  assertAClaimStillUnwrittenAfterTheRetryIsReplaced,
+  assertAClaimAfterAWriteIsUntouched,
+  assertAClaimWhoseRetryTimesOutIsReplaced,
+  assertAStopAfterTwoWritesNamesBoth,
+  assertAStopAfterElevenWritesCutsToTen,
+  assertTheNoWriteConstantsAndTheDiscoveryHintStand,
+  assertThePromptCarriesTheOneAssetPerTurnRule,
+  assertATopLevelMessageStampsParentCodeNull,
+  assertTheTopLevelStampLeavesOtherCallsAlone,
+  assertANoOpWriteCountsAsWritten,
 } from "./onboarding-agent-loop.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -101,8 +115,20 @@ describe("onboarding agent loop (F3.21, ADR 0090 decisions 2, 3, 7, 9)", () => {
     await assertHistoryIsTheLastTwentyCutToTwoThousand();
   });
 
-  it("sends action rows as assistant text and drops system rows", async () => {
+  it("sends action rows as marked assistant text and drops system rows", async () => {
     await assertActionMessagesReachTheModelAsAssistantText();
+  });
+
+  it("F4.339: buildHistory marks an action row as a draft-write record", () => {
+    assertBuildHistoryMarksActionRowsAsRecords();
+  });
+
+  it("F4.339: the history cut covers the record prefix", () => {
+    assertTheHistoryCutCoversTheRecordPrefix();
+  });
+
+  it("F4.339: the prompt says record lines are written by the system", () => {
+    assertThePromptSaysRecordsAreTheSystems();
   });
 
   it("sends history as plain text", async () => {
@@ -217,5 +243,55 @@ describe("refused draft writes (F4.135, ADR 0090 Amendment 4)", () => {
 
   it("pins the draft-write tools by name and classifies the rest (F4.135)", () => {
     assertEveryToolIsClassifiedAsADraftWriteOrNot();
+  });
+});
+
+describe("the write-claim guard in the turn (F4.339, ADR 0117 decision 2)", () => {
+  it("retries a claim with no write once, and the retry may write", async () => {
+    await assertAClaimWithNoWriteIsRetriedAndTheRetryWrites();
+  });
+
+  it("replaces a claim still unwritten after the retry", async () => {
+    await assertAClaimStillUnwrittenAfterTheRetryIsReplaced();
+  });
+
+  it("leaves a claim after a write untouched", async () => {
+    await assertAClaimAfterAWriteIsUntouched();
+  });
+
+  it("replaces the first text when the retry round times out", async () => {
+    await assertAClaimWhoseRetryTimesOutIsReplaced();
+  });
+
+  it("counts a write that changes nothing as written", async () => {
+    await assertANoOpWriteCountsAsWritten();
+  });
+});
+
+describe("stop replies name what was stored (F4.339, ADR 0117 decision 3)", () => {
+  it("joins two stored lines and leaves refused lines out", () => {
+    assertAStopAfterTwoWritesNamesBoth();
+  });
+
+  it("cuts eleven stored lines to ten and a tail", () => {
+    assertAStopAfterElevenWritesCutsToTen();
+  });
+
+  it("keeps the fixed replies when nothing was named, and the discovery hint", () => {
+    assertTheNoWriteConstantsAndTheDiscoveryHintStand();
+  });
+
+  it("tells the model to write one asset per turn", () => {
+    assertThePromptCarriesTheOneAssetPerTurnRule();
+  });
+});
+
+describe("the top-level stamp (F4.339, ADR 0117 decision 10, plan R11)", () => {
+  it("writes parentCode null when the message says top level and the call omits it", async () => {
+    await assertATopLevelMessageStampsParentCodeNull();
+  });
+
+  it("leaves a named parent, another tool and a plain message alone", () => {
+    assertTheTopLevelStampLeavesOtherCallsAlone();
   });
 });

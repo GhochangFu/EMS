@@ -38,6 +38,9 @@ import {
   type PlacementContext,
 } from "./onboarding-location-parent";
 import * as locationTypes from "./onboarding-location-type-match";
+
+/** `F4.339` (plan R11): the B6 phrase matcher, reused by the agent loop's `set_location` stamp. */
+export { isTopLevelPhrase } from "./onboarding-location-parent";
 import {
   MQTT_RTU_ADDED_REPLY,
   mqttRtusWaitingPrompt,

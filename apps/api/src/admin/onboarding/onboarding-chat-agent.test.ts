@@ -11,6 +11,7 @@ import {
   assertTheTurnLogsOneTextFreeLineWithTheProviderName,
   assertAStepLabelOnTheAgentPathNeverReachesTheModel,
   assertAnAgentReplysChipsAreTheFilteredOfferPlusTheStepLabel,
+  assertAClaimedWriteWithNoToolIsReplacedBeforeItIsStored,
 } from "./onboarding-chat-agent.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -53,5 +54,9 @@ describe("OnboardingChatService — the agent branch (F3.21, ADR 0090)", () => {
 
   it("answers the model's filtered replies plus the step label and View draft (F3.25, ADR 0094 decision 9)", async () => {
     await assertAnAgentReplysChipsAreTheFilteredOfferPlusTheStepLabel();
+  });
+
+  it("F4.339: replaces a claimed write with no tool before it is stored, and logs the flag", async () => {
+    await assertAClaimedWriteWithNoToolIsReplacedBeforeItIsStored();
   });
 });

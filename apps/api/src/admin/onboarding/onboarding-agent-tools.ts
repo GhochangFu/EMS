@@ -20,7 +20,7 @@ import { dispatchMappingTool, isMappingToolName, MAPPING_TOOL_DESCRIPTIONS, MAPP
 import { cutToBound, draftCountProblem, pointKeyQuotaProblem, type PointKeyQuota } from "./onboarding-draft-caps";
 import type { LlmToolCall, LlmToolDefinition } from "../../llm/llm-port";
 import { defineToolRegistry, runToolCall, type ToolGuard } from "../../llm/tool-registry";
-import { deriveLocationPatch } from "./onboarding-location-derive";
+import { deriveLocationPatch, ONBOARDING_DEFAULT_COORDINATES } from "./onboarding-location-derive";
 import { canonicalParentCode, parentPlacementProblem, type PlacementContext } from "./onboarding-location-parent";
 import { pointKeyDeclarationProblems } from "./onboarding-point-key-conflict";
 import type { OrgPointKeySummary } from "./onboarding-catalog.service";
@@ -232,6 +232,19 @@ function parentTail(namedParentCode: string | null | undefined): string {
   return namedParentCode === undefined ? "" : namedParentCode === null ? " as a top-level location" : ` under ${namedParentCode}`;
 }
 
+/** `F4.339` (plan R13, closes F4.328's fix list): the code-written tail when the call gave no coordinates and the defaults stand. */
+export const DEFAULT_COORDINATES_TAIL = " (default coordinates applied — tell me the real ones if the site is elsewhere)";
+
+function defaultCoordinatesTail(
+  named: { readonly latitude?: number; readonly longitude?: number },
+  derived: { readonly latitude: number; readonly longitude: number },
+): string {
+  const omitted = named.latitude === undefined || named.longitude === undefined;
+  const defaults =
+    derived.latitude === ONBOARDING_DEFAULT_COORDINATES.latitude && derived.longitude === ONBOARDING_DEFAULT_COORDINATES.longitude;
+  return omitted && defaults ? DEFAULT_COORDINATES_TAIL : "";
+}
+
 const indexSchema = z.object({ index: z.number().int().min(0) }).strict();
 const noArgs = z.object({}).strict();
 
@@ -302,7 +315,9 @@ const DESCRIPTIONS: Record<ToolName, string> = {
     "the required and optional config fields and an example config. Call it before add_rtu for any protocol other than mqtt.",
   set_location:
     "Sets the location. `name` is required; `slug` and `code` are derived from it when omitted. `type` must be an active location type code. " +
-    "`parentCode` is the code of the existing location the new one is under (from find_existing), or null for a top-level location. " +
+    "`parentCode` is the code of the existing location the new one is under (from find_existing), or null for a top-level location; " +
+    "when the user says top level and you omit it, it is written as null. " +
+    "`latitude` and `longitude` default to Mumbai when omitted, and the action line says so: ask the user for the real ones. " +
     "`floorArea` is `{ value, unit }` with unit `m2` or `ft2` (default `m2`); the commit stores square metres; `null` clears it.",
   add_rtu:
     "Adds an RTU. Never put a username, password, token or key in `config`: credentials are set on the RTU step only. " +
@@ -544,7 +559,11 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       const kept = stored && stored.name === location.name ? { slug: stored.slug, code: stored.code, ...location } : location;
       const derived = deriveLocationPatch({ name: location.name, stored, kept, type: location.type });
       const type = derived.type ?? draft.location?.type;
-      return write(state, { location: derived }, `Set location ${derived.name} (${type ?? "type not set"})${parentTail(location.parentCode)}`);
+      return write(
+        state,
+        { location: derived },
+        `Set location ${derived.name} (${type ?? "type not set"})${parentTail(location.parentCode)}${state.namesDefaultCoordinates ? defaultCoordinatesTail(location, derived) : ""}`,
+      );
     }
 
     case "add_rtu": {

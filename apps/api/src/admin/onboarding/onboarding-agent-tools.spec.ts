@@ -11,6 +11,7 @@ import {
   runTool,
   type ToolContext,
   type ToolState,
+  DEFAULT_COORDINATES_TAIL,
 } from "./onboarding-agent-tools";
 import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
 import { commitSummary } from "./onboarding-commit-proposal";
@@ -174,6 +175,27 @@ export async function assertSetLocationDerivesSlugAndCode(): Promise<void> {
   assert(location?.slug === "berhampur" && location?.code === "BERHAMPUR", "slug and code derive from the name");
   assert(location?.latitude === 19.076 && location?.longitude === 72.8777, "the coordinates take the shared Mumbai defaults (F3.79)");
   assert(out.actionLine === "Set location Berhampur (pump_station)", `the action line is code-written: ${out.actionLine}`);
+}
+
+/** F4.339 (plan R13, ruling Q9): no coordinates → the default tail; given coordinates → none; the description names both behaviours. */
+export async function assertSetLocationNamesTheDefaultCoordinates(): Promise<void> {
+  const bare = await runTool(call("set_location", { name: "Lalpur", type: "pump_station" }), { working: {}, namesDefaultCoordinates: true }, context());
+  const guided = await runTool(call("set_location", { name: "Lalpur", type: "pump_station" }), { working: {} }, context());
+  assert(guided.ok && guided.actionLine === "Set location Lalpur (pump_station)", `no tail on the guided path, got ${guided.actionLine}`);
+  assert(bare.ok && bare.actionLine?.endsWith(DEFAULT_COORDINATES_TAIL) === true, `the default tail, got ${bare.actionLine}`);
+  assert(
+    DEFAULT_COORDINATES_TAIL === " (default coordinates applied — tell me the real ones if the site is elsewhere)",
+    "the tail is pinned",
+  );
+  const placed = await runTool(
+    call("set_location", { name: "Lalpur", type: "pump_station", latitude: 26.1, longitude: 91.7 }),
+    { working: {}, namesDefaultCoordinates: true },
+    context(),
+  );
+  assert(placed.ok && placed.actionLine === "Set location Lalpur (pump_station)", `no tail with coordinates, got ${placed.actionLine}`);
+  const description = TOOL_DEFINITIONS.find((tool) => tool.name === "set_location")?.description ?? "";
+  assert(description.includes("when the user says top level and you omit it, it is written as null"), "the description names the top-level stamp");
+  assert(description.includes("default to Mumbai when omitted"), "the description names the default coordinates");
 }
 
 export async function assertUseExistingPointKeysWritesOnlyThatFlag(): Promise<void> {

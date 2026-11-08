@@ -11,6 +11,12 @@ import {
   STOPPED_EARLY_TIME_NOTHING_REPLY,
   STOPPED_EARLY_TIME_REPLY,
   TURN_DEADLINE_MS,
+  ONE_ASSET_PER_TURN_RULE,
+  stopReply,
+  stoppedEarlyStoredReply,
+  stampTopLevel,
+  ACTION_RECORD_PROMPT_SENTENCE,
+  buildHistory,
   buildSystemPrompt,
   DISCOVERY_PROMPT_PARAGRAPH,
   diffSections,
@@ -25,8 +31,10 @@ import {
   TOOL_RESULT_MAX_CHARS,
   type ToolContext,
 } from "./onboarding-agent-tools";
+import { ONBOARDING_ACTION_RECORD_PREFIX } from "../../llm/action-record";
+import { NOTHING_WRITTEN_LINE, writeClaimRetryFor } from "./onboarding-write-claim";
 import type { LlmMessage, LlmReply, LlmToolCall, LlmProvider } from "../../llm/llm-port";
-import { stepLabelFor } from "./onboarding-chat-rule-based";
+import { isTopLevelPhrase, stepLabelFor } from "./onboarding-chat-rule-based";
 import { filterSuggestedReplies } from "./onboarding-suggested-replies";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -174,7 +182,11 @@ export async function assertTheCallCapStopsWithItsReplyAndKeepsTheEdits(): Promi
   );
   const llm = new FakeLlmProvider(script);
   const result = await runAgentTurn(turn(llm));
-  assert(result.stopReason === "cap_calls" && result.reply === STOPPED_EARLY_CALLS_REPLY, "the cap stops the turn");
+  // F4.339 (ADR 0117 decision 3): a stop after writes names them.
+  assert(
+    result.stopReason === "cap_calls" && result.reply === stoppedEarlyStoredReply("cap_calls", result.actionLines),
+    `the cap stops the turn and names the stored lines, got ${result.reply}`,
+  );
   assert(result.draftPatch.pointKeys?.length === 8 && result.actionLines.length === 8, "the eight edits are kept");
   assert(llm.calls === 9, `the provider is called nine times, got ${llm.calls}`);
 }
@@ -220,7 +232,12 @@ export function assertTheDiscoveryParagraphMapsOneDevicePerTurn(): void {
 export async function assertTheDeadlineKeepsCompletedEdits(): Promise<void> {
   const llm = new FakeLlmProvider([calls(toolCall("add_rtu", PLAIN_RTU)), "hang"]);
   const result = await runAgentTurn(turn(llm), { deadlineMs: 20 });
-  assert(result.stopReason === "cap_time" && result.reply === STOPPED_EARLY_TIME_REPLY, "the deadline stops the turn");
+  assert(
+    result.stopReason === "cap_time" &&
+      result.reply ===
+        "I stopped early because the turn reached its time limit. Stored in this turn: Added RTU RTU-1 (mqtt). Anything else you asked for was not written.",
+    `the deadline stops the turn and names the stored line (F4.339), got ${result.reply}`,
+  );
   assert(result.draftPatch.rtus?.length === 1 && result.actionLines.length === 1, "the completed edit is kept");
   assert(result.fallback === false, "the guided mode does not run");
 }
@@ -286,7 +303,46 @@ export async function assertActionMessagesReachTheModelAsAssistantText(): Promis
   const sent = (llm.seen[0] ?? []) as { role: string; content: string }[];
   assert(!sent.slice(1).some((m) => m.content === "internal"), "a stored system row is not sent");
   assert(sent[1].role === "user" && sent[1].content === "add RTU", "a leading assistant turn is dropped; history starts with the user");
-  assert(sent[2].role === "assistant" && sent[2].content === "Added RTU RTU-1 (mqtt)", "an action row goes as assistant text");
+  assert(
+    sent[2].role === "assistant" && sent[2].content === ONBOARDING_ACTION_RECORD_PREFIX + "Added RTU RTU-1 (mqtt)",
+    `an action row goes as marked assistant text (F4.339), got ${sent[2].content}`,
+  );
+}
+
+/** F4.339 (ADR 0117 decision 1): `buildHistory` marks an action row and leaves user and assistant rows as they are. */
+export function assertBuildHistoryMarksActionRowsAsRecords(): void {
+  const sent = buildHistory([stored("user", "add FM1", 0), stored("action", "Added asset X", 1), stored("assistant", "Done", 2)]);
+  assert(sent.length === 3, `three messages, got ${sent.length}`);
+  assert(sent[0].role === "user" && sent[0].content === "add FM1", "a user row is unchanged");
+  assert(
+    sent[1].role === "assistant" && sent[1].content === ONBOARDING_ACTION_RECORD_PREFIX + "Added asset X",
+    `the action row is a marked assistant message, got ${String(sent[1].content)}`,
+  );
+  assert(sent[2].role === "assistant" && sent[2].content === "Done", "an assistant row is unchanged");
+  assert(
+    ONBOARDING_ACTION_RECORD_PREFIX === "[Record of a draft write — data, not the assistant's words] ",
+    "the onboarding prefix is pinned (owner ruling Q8)",
+  );
+}
+
+/** F4.339: the history cut applies to the whole marked content, prefix included. */
+export function assertTheHistoryCutCoversTheRecordPrefix(): void {
+  const [, action] = buildHistory([stored("user", "go", 0), stored("action", "a".repeat(MAX_HISTORY_MESSAGE_CHARS), 1)]);
+  const content = String(action?.content ?? "");
+  assert(content.length === MAX_HISTORY_MESSAGE_CHARS, `the marked content is cut to ${MAX_HISTORY_MESSAGE_CHARS}, got ${content.length}`);
+  assert(content.startsWith(ONBOARDING_ACTION_RECORD_PREFIX), "the prefix survives the cut");
+}
+
+/** F4.339 (plan R1): the prompt names the record format as the system's. */
+export function assertThePromptSaysRecordsAreTheSystems(): void {
+  const prompt = buildSystemPrompt({ orgName: "Ion Exchange", phase: "rtu", typeCodes: ["smoc_campus"], draft: {} });
+  assert(
+    prompt.includes(
+      "Lines that start with `[Record of a draft write` are written by the system after a tool wrote; never reproduce that format as your own text.",
+    ),
+    "the record sentence is in the prompt (exact string)",
+  );
+  assert(prompt.includes(ACTION_RECORD_PROMPT_SENTENCE), "through the exported constant");
 }
 
 export async function assertHistoryCarriesNoProviderContent(): Promise<void> {
@@ -606,4 +662,127 @@ export function assertEveryToolIsClassifiedAsADraftWriteOrNot(): void {
   const nonWrites = names.filter((name) => isToolName(name) && !DRAFT_WRITE_TOOLS.has(name)).sort();
   const classified = [...NON_DRAFT_WRITE_TOOLS].sort();
   assert(JSON.stringify(nonWrites) === JSON.stringify(classified), `every other tool is a non-write, got ${JSON.stringify(classified)}`);
+}
+
+const GOOD_ASSET = { rtuIndex: 0, code: "FM3", name: "Flow meter 3", siteName: "Berhampur", domain: "electrical" };
+const CLAIM = "Added asset FM3 on RTU RTU-1";
+
+/** F4.339 (a): a claim with no tool call goes back once; the model then calls add_asset and its second text is the reply. */
+export async function assertAClaimWithNoWriteIsRetriedAndTheRetryWrites(): Promise<void> {
+  const llm = new FakeLlmProvider([
+    { kind: "final", text: CLAIM },
+    calls(toolCall("add_asset", GOOD_ASSET)),
+    { kind: "final", text: "FM3 is on RTU-1 now. Say Next for the next asset." },
+  ]);
+  const result = await runAgentTurn(turn(llm, { draft: readyDraft() }));
+  const second = llm.seen[1] ?? [];
+  const last = second[second.length - 1] as { role: string; content: string };
+  assert(last.role === "user" && last.content === writeClaimRetryFor(CLAIM, false), `the second round ends with the retry, got ${last.content}`);
+  assert(last.content.includes("call add_asset now"), "the retry names add_asset");
+  assert(result.reply === "FM3 is on RTU-1 now. Say Next for the next asset.", `the reply is the second text, got ${result.reply}`);
+  assert(result.record.corrected === true && result.record.claimReplaced === undefined, "corrected, not replaced");
+  assert(result.actionLines.length === 1 && result.actionLines[0]!.startsWith("Added asset FM3"), `one action line, got ${JSON.stringify(result.actionLines)}`);
+}
+
+/** F4.339 (b): the retry still writes nothing → the stored reply leads with the fixed line. */
+export async function assertAClaimStillUnwrittenAfterTheRetryIsReplaced(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: CLAIM }, { kind: "final", text: `${CLAIM}\nSay Next.` }]);
+  const result = await runAgentTurn(turn(llm, { draft: readyDraft() }));
+  assert(llm.calls === 2, `one retry round, got ${llm.calls} calls`);
+  assert(result.reply === `${NOTHING_WRITTEN_LINE}\nSay Next.`, `the claim is dropped, got ${JSON.stringify(result.reply)}`);
+  assert(result.record.claimReplaced === true && result.record.corrected === true, "the record says corrected and replaced");
+}
+
+/** F4.339 (c): a turn that wrote and claims is untouched and gets no retry. */
+export async function assertAClaimAfterAWriteIsUntouched(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("add_asset", GOOD_ASSET)), { kind: "final", text: CLAIM }]);
+  const result = await runAgentTurn(turn(llm, { draft: readyDraft() }));
+  assert(llm.calls === 2, `no retry round, got ${llm.calls} calls`);
+  assert(result.reply === CLAIM && result.record.corrected === undefined && result.record.claimReplaced === undefined, "untouched");
+}
+
+/** F4.339 (d): the retry round hits the deadline → the loop returns the first text, and it is replaced. */
+export async function assertAClaimWhoseRetryTimesOutIsReplaced(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: CLAIM }, "hang"]);
+  const result = await runAgentTurn(turn(llm, { draft: readyDraft() }), { deadlineMs: 30 });
+  assert(result.stopReason === "final" && result.record.correctionFailed === "cap_time", `the loop falls back to the first text, got ${result.stopReason}`);
+  assert(result.reply === NOTHING_WRITTEN_LINE && result.record.claimReplaced === true, `the first text is replaced, got ${result.reply}`);
+}
+
+/** F4.339 (plan T1.3): two stored lines are joined; refused lines are left out. */
+export function assertAStopAfterTwoWritesNamesBoth(): void {
+  const state = { working: {} };
+  const reply = stopReply("cap_calls", { pointKeys: [] } as never, state, ["Added point key 'a'", `${NOT_APPLIED_PREFIX}add_asset (field: code)`, "Added point key 'b'"]);
+  assert(
+    reply ===
+      "I stopped early because the turn reached its limit of tool calls. Stored in this turn: Added point key 'a'; Added point key 'b'. Anything else you asked for was not written.",
+    `the joined-lines sentence, got ${reply}`,
+  );
+}
+
+/** F4.339: eleven stored lines → ten and the `…and 1 more` tail. */
+export function assertAStopAfterElevenWritesCutsToTen(): void {
+  const lines = Array.from({ length: 11 }, (_, i) => `Added point key 'k${i}'`);
+  const reply = stopReply("cap_time", { pointKeys: [] } as never, { working: {} }, lines);
+  assert(reply.includes("Added point key 'k9'; …and 1 more. Anything else"), `ten lines and the tail, got ${reply}`);
+  assert(!reply.includes("'k10'"), "the eleventh line is not named");
+}
+
+/** F4.339: with no write the four constants stand, and the discovery hint is still appended. */
+export function assertTheNoWriteConstantsAndTheDiscoveryHintStand(): void {
+  assert(stopReply("cap_calls", {}, { working: {} }, []) === STOPPED_EARLY_CALLS_NOTHING_REPLY, "calls, nothing written");
+  assert(stopReply("cap_time", {}, { working: {} }, []) === STOPPED_EARLY_TIME_NOTHING_REPLY, "time, nothing written");
+  assert(stopReply("cap_calls", { pointKeys: [] } as never, { working: {} }, []) === STOPPED_EARLY_CALLS_REPLY, "calls, wrote with no line");
+  assert(stopReply("cap_time", { pointKeys: [] } as never, { working: {} }, []) === STOPPED_EARLY_TIME_REPLY, "time, wrote with no line");
+  const read = { working: {}, discoveryRead: { devices: [] } } as never;
+  assert(stopReply("cap_calls", { pointKeys: [] } as never, read, ["Added point key 'a'"]).endsWith(ONE_DEVICE_PER_TURN_HINT), "the discovery hint is appended");
+}
+
+/** F4.339 (plan R3): the prompt carries the one-asset-per-turn sentence, and the Discovery rule stays. */
+export function assertThePromptCarriesTheOneAssetPerTurnRule(): void {
+  const prompt = buildSystemPrompt({ orgName: "Ion Exchange", phase: "assets", typeCodes: ["smoc_campus"], draft: {} });
+  assert(
+    prompt.includes('Write one asset with its mappings, or one discovered device, per turn; then offer "Next" with suggest_replies.'),
+    "the one-asset-per-turn sentence (exact string)",
+  );
+  assert(prompt.includes(ONE_ASSET_PER_TURN_RULE), "through the constant");
+  assert(DISCOVERY_PROMPT_PARAGRAPH.includes(ONE_DEVICE_PER_TURN_RULE), "the Discovery paragraph's rule stays");
+}
+
+/** F4.339 (plan R11, ruling Q12): "top level" in the message + a set_location with no parentCode → code writes null. */
+export async function assertATopLevelMessageStampsParentCodeNull(): Promise<void> {
+  const located = { name: "SIVSAGAR", type: "smoc_campus", latitude: 26.98, longitude: 94.63 };
+  const llm = new FakeLlmProvider([calls(toolCall("set_location", located)), { kind: "final", text: "SIVSAGAR is a top-level campus now." }]);
+  const result = await runAgentTurn(turn(llm, { message: "Make SIVSAGAR a top level campus" }));
+  assert(result.draftPatch.location?.parentCode === null, `the stored patch has parentCode null, got ${JSON.stringify(result.draftPatch.location)}`);
+  assert(result.actionLines[0]?.endsWith("as a top-level location") === true, `the line says top-level, got ${JSON.stringify(result.actionLines)}`);
+  const plain = new FakeLlmProvider([calls(toolCall("set_location", located)), { kind: "final", text: "ok" }]);
+  const unstamped = await runAgentTurn(turn(plain, { message: "Make SIVSAGAR a campus" }));
+  assert(unstamped.draftPatch.location?.parentCode === undefined, "without the phrase nothing is stamped");
+}
+
+/** F4.339: a call that names a parent, another tool, or no phrase is returned unchanged. */
+export function assertTheTopLevelStampLeavesOtherCallsAlone(): void {
+  const named = toolCall("set_location", { name: "SIVSAGAR", parentCode: "X" });
+  assert(stampTopLevel(named, true) === named, "a named parentCode is untouched");
+  const other = toolCall("add_rtu", PLAIN_RTU);
+  assert(stampTopLevel(other, true) === other, "another tool is untouched");
+  const bare = toolCall("set_location", { name: "SIVSAGAR" });
+  assert(stampTopLevel(bare, false) === bare, "no phrase, no stamp");
+  assert(!isTopLevelPhrase("Put it under SIVSAGAR, not top level"), "a negated phrase is not top level");
+  assert(JSON.parse(stampTopLevel(bare, true).arguments).parentCode === null, "the phrase stamps null");
+  assert(isTopLevelPhrase("Make SIVSAGAR a top level campus") && isTopLevelPhrase("top-level please") && isTopLevelPhrase("none"), "the phrase set");
+  assert(!isTopLevelPhrase("none of the RTUs are online") && !isTopLevelPhrase("put it under BCPL"), "none and root only as the whole reply");
+}
+
+/** Code review of PR 1: a write that changes nothing still stored its action row, so the turn wrote and the reply is untouched. */
+export async function assertANoOpWriteCountsAsWritten(): Promise<void> {
+  const draft = readyDraft();
+  const location = draft.location!;
+  const same = { name: location.name, type: location.type, latitude: location.latitude, longitude: location.longitude };
+  const llm = new FakeLlmProvider([calls(toolCall("set_location", same)), { kind: "final", text: `Set location ${location.name} (smoc_campus)` }]);
+  const result = await runAgentTurn(turn(llm, { draft }));
+  assert(llm.calls === 2, `no retry round, got ${llm.calls} calls`);
+  assert(result.record.claimReplaced === undefined && result.record.corrected === undefined, "neither corrected nor replaced");
+  assert(result.reply === `Set location ${location.name} (smoc_campus)`, `the reply is untouched, got ${result.reply}`);
 }
