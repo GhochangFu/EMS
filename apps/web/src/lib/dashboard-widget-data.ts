@@ -368,6 +368,8 @@ function catalogWidgetData(
     // filled it for the seven money codes since PR 1, and until this line
     // nothing in `apps/web` read it, so every cost tile drew a bare number.
     currency: resolved?.shape === "metric" ? (resolved.currency ?? null) : null,
+    // `F4.332` — why the value is null (`energy.cost.total`), read the same way.
+    reason: resolved?.shape === "metric" ? (resolved.reason ?? null) : null,
   };
 }
 

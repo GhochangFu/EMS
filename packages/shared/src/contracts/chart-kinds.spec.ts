@@ -2,6 +2,9 @@ import {
   CHART_COLORS_LENGTH_MESSAGE,
   CHART_KIND_LABELS,
   CHART_KINDS_NEEDING_AGGREGATE,
+  chartKindSourceMessage,
+  COST_BY_DAY_NO_POINTS_MESSAGE,
+  COST_BY_DAY_SOURCE_MESSAGE,
   chartColorIssues,
   chartKindAggregateMessage,
   chartKindIssues,
@@ -373,4 +376,44 @@ export function everyKindHasItsPlainLabel(): void {
     `one label per kind, in order; got ${JSON.stringify(Object.keys(CHART_KIND_LABELS))}`,
   );
   assert(CHART_KIND_LABELS.donut === "Share (donut)" && CHART_KIND_LABELS.line === "Trend", "the owner's labels");
+}
+
+/**
+ * `F4.332` / ADR 0047 Amendment 9 item 2 — a `cost_by_day` chart binds exactly one
+ * `energy.cost_by_day` source and no point; every other kind binds no source.
+ */
+export function theCostByDayRules(): void {
+  const at = (issues: ReturnType<typeof chartKindIssues>) => issues.map((i) => `${i.path.join(".")}:${i.message}`);
+  assert(chartKindIssues({ series: "cost_by_day" }, 0, ["energy.cost_by_day"]).length === 0, "one source, no point passes");
+  assert(
+    JSON.stringify(at(chartKindIssues({ series: "cost_by_day" }, 1, ["energy.cost_by_day"]))) ===
+      JSON.stringify([`points:${COST_BY_DAY_NO_POINTS_MESSAGE}`]),
+    "a point on a cost_by_day chart is refused",
+  );
+  for (const keys of [[], ["sustainability.total"], ["energy.cost_by_day", "energy.cost_by_day"]]) {
+    assert(
+      JSON.stringify(at(chartKindIssues({ series: "cost_by_day" }, 0, keys))) === JSON.stringify([`sources:${COST_BY_DAY_SOURCE_MESSAGE}`]),
+      `cost_by_day with ${JSON.stringify(keys)} must be refused at sources`,
+    );
+  }
+  assert(
+    JSON.stringify(at(chartKindIssues({ series: "bar" }, 1, ["energy.cost_by_day"]))) ===
+      JSON.stringify([`sources:${chartKindSourceMessage("bar")}`]),
+    "a source on any other kind is refused",
+  );
+  const live = putDashboardWidgetsBodySchema.safeParse({
+    widgets: [{ ...chart({ series: "cost_by_day" }, []), sources: [{ catalogKey: "energy.cost_by_day", params: { days: 90 } }] }],
+  });
+  assert(live.success, `PUT :id/widgets must take a cost_by_day chart: ${JSON.stringify(live.error?.issues)}`);
+  const lineWithSource = putDashboardWidgetsBodySchema.safeParse({
+    widgets: [{ ...chart({ series: "line" }, []), sources: [{ catalogKey: "energy.cost_by_day", params: { days: 90 } }] }],
+  });
+  assert(!lineWithSource.success, "PUT :id/widgets must refuse a line chart bound to the cost dataset");
+}
+
+/** `F4.332` (security review) — the asset-template chart still needs a point key: it has no source. */
+export function theAssetTemplateChartStillNeedsAPoint(): void {
+  const base = { gridX: 0, gridY: 0, gridW: 6, gridH: 4, widgetType: "chart", config: { series: "line" } };
+  assert(templateDashboardWidgetSchema.safeParse({ ...base, pointKeys: [] }).success === false, "zero point keys must be refused");
+  assert(templateDashboardWidgetSchema.safeParse({ ...base, pointKeys: ["kw"] }).success, "one point key passes");
 }

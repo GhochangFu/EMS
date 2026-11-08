@@ -303,7 +303,7 @@ export type ChartSeriesShape = {
   readonly type: "line" | "bar" | "scatter" | "pie" | "heatmap";
   readonly area: boolean;
   readonly step: "end" | null;
-  readonly axis: "time" | "category" | "none" | "grid" | "matrix";
+  readonly axis: "time" | "category" | "none" | "grid" | "matrix" | "day";
 };
 
 export const CHART_SERIES = {
@@ -316,6 +316,9 @@ export const CHART_SERIES = {
   donut: { label: CHART_KIND_LABELS.donut, type: "pie", area: false, step: null, axis: "none" },
   heatmap: { label: CHART_KIND_LABELS.heatmap, type: "heatmap", area: false, step: null, axis: "grid" },
   matrix: { label: CHART_KIND_LABELS.matrix, type: "heatmap", area: false, step: null, axis: "matrix" },
+  // `F4.332` (ADR 0047 Amendment 9) — one bar per local day from `energy.cost_by_day`; drawn by
+  // `CostByDayChartWidget`, never by `buildChartOption`.
+  cost_by_day: { label: CHART_KIND_LABELS.cost_by_day, type: "bar", area: false, step: null, axis: "day" },
   // `as const satisfies`, not an annotation: each entry keeps its literal `type`, so the
   // hand-written charts that read `CHART_SERIES.line.type` still get `"line"`, and
   // `buildChartOption` narrows by `axis` to the time kinds' cartesian types.

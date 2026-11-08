@@ -127,11 +127,13 @@ export const HEATMAP_WINDOW_FORM_MESSAGE =
 
 /**
  * `F4.323` PR 2 — the per-kind point rule (a heatmap binds one point), for the two forms that
- * see a widget's points. The message is the API's.
+ * see a widget's points. The message is the API's. `F4.332` — a form that also sees the sources
+ * (the dashboard builder) passes their keys and gets the source half too: a daily cost chart
+ * binds the one `energy.cost_by_day` source, and no other kind binds any.
  */
-export function chartPointIssues(kind: ChartSeriesKind, pointCount: number): string[] {
-  return chartKindIssues({ series: kind, aggregate: "avg", windowMinutes: HEATMAP_MIN_WINDOW_MINUTES }, pointCount)
-    .filter((issue) => issue.path[0] === "points")
+export function chartPointIssues(kind: ChartSeriesKind, pointCount: number, sourceKeys?: readonly string[]): string[] {
+  return chartKindIssues({ series: kind, aggregate: "avg", windowMinutes: HEATMAP_MIN_WINDOW_MINUTES }, pointCount, sourceKeys ?? [])
+    .filter((issue) => issue.path[0] === "points" || (sourceKeys !== undefined && issue.path[0] === "sources"))
     .map((issue) => issue.message);
 }
 
@@ -460,7 +462,8 @@ export function widgetConfigErrors(
         windowMinutes: fixedWindow ? MATRIX_WINDOW_MINUTES : parseWindowMinutes(config.windowMinutes),
       },
       0,
-    )) {
+      // `F4.332` — only the config half is this form's: points and sources are `chartPointIssues`'.
+    ).filter((issue) => issue.path[0] === "config")) {
       // Plain words for the author; `issue.message` is the API's wording for the same rule.
       if (issue.path.at(-1) === "windowMinutes") push("windowMinutes", HEATMAP_WINDOW_FORM_MESSAGE);
       else push("chartAggregate", chartReadsHours(config.series) ? HEATMAP_VALUE_NEEDED_MESSAGE : CHART_VALUE_NEEDED_MESSAGE);

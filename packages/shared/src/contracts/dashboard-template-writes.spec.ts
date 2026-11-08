@@ -146,7 +146,8 @@ export function rejectsAPatchBodyWhoseChartWidgetCarriesAMetricSource(): void {
       },
     },
     ["content", "widgets", 0, "sources"],
-    /at most 0/,
+    // `F4.332`: a chart may bind one source now, for `cost_by_day` only; any other kind is refused.
+    /binds points, not a named metric/,
     "a PATCH body whose one widget is a chart carrying a metric source",
   );
 }

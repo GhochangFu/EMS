@@ -440,7 +440,9 @@ function WidgetEditor({
               }
               className="w-full surface-field px-2 py-1.5 text-xs"
             >
-              {CHART_SERIES_OPTIONS.map((option) => (
+              {/* `F4.332` — an asset template binds point keys, never a named metric, so it cannot
+                  hold a daily energy cost chart (ADR 0047 Amendment 9; refused by `chartKindIssues`). */}
+              {CHART_SERIES_OPTIONS.filter((option) => option.value !== "cost_by_day").map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>

@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   compareAndDonutNeedAnAggregate,
+  theAssetTemplateChartStillNeedsAPoint,
+  theCostByDayRules,
   theMatrixRules,
   theColorRule,
   theLiveWritePathChecksColours,
@@ -35,4 +37,9 @@ describe("F4.325 — a colour per chart point (ADR 0047 Amendment 8 item 1)", ()
 
 describe("F4.325 — the hour-by-point matrix (ADR 0047 Amendment 8 item 2)", () => {
   it("needs an aggregate and a window of exactly a day, on every write path", () => theMatrixRules());
+});
+
+describe("F4.332 — the daily energy cost chart (ADR 0047 Amendment 9)", () => {
+  it("binds one energy.cost_by_day source and no point; no other kind binds a source", () => theCostByDayRules());
+  it("keeps the asset-template chart at one point key at least", () => theAssetTemplateChartStillNeedsAPoint());
 });

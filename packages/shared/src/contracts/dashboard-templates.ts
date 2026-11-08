@@ -281,7 +281,11 @@ export const sectionTemplateWidgetSchema = z
     // `F4.323` / ADR 0047 Amendment 7 — the shared chart kind rule, counting asset-role
     // `bindings` as the live path counts `points`.
     if (widget.widgetType === "chart") {
-      for (const issue of chartKindIssues(widget.config, widget.bindings.length)) {
+      for (const issue of chartKindIssues(
+        widget.config,
+        widget.bindings.length,
+        widget.sources.map((source) => source.catalogKey),
+      )) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: [...issue.path],

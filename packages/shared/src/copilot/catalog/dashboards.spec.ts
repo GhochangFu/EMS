@@ -25,6 +25,11 @@ const body = (config: Record<string, unknown>, points = 1) => ({
 
 export function eachKindIsProposable(): void {
   for (const series of chartSeriesKindSchema.options) {
+    // `F4.332` — a daily cost chart binds a named metric, not points; the copilot cannot append one.
+    if (series === "cost_by_day") {
+      expect(entry().body.safeParse(body({ series })).success, "cost_by_day must not be proposable").toBe(false);
+      continue;
+    }
     // `F4.325` — each kind at a window it fits: the 7-day fixture suits the heatmap, a matrix reads a day.
     const result = entry().body.safeParse(body({ series, ...(series === "matrix" ? { windowMinutes: 1_440 } : {}) }));
     expect(result.success, `${series}: ${JSON.stringify(result.error?.issues)}`).toBe(true);

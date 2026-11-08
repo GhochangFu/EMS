@@ -21,6 +21,10 @@ type ValueTileWidgetProps = {
   currency?: string | null;
   /** The widget's first bound metric; `assets.health.score` renders as a percentage. */
   catalogKey?: string | null;
+  /** `F4.332` — why the metric is null (`energy.cost.total`). */
+  reason?: string | null;
+  /** `F4.332` — the tile shows a stored `energy_cost_*` point, priced at the latest tick's rate. */
+  storedCost?: boolean;
 };
 
 /**
@@ -52,7 +56,9 @@ export function ValueTileWidget({
   coverage,
   currency,
   catalogKey,
+  reason,
+  storedCost,
 }: ValueTileWidgetProps) {
-  const props = toKpiTileProps({ title, status, primary, config, compareValue, coverage, currency, catalogKey });
+  const props = toKpiTileProps({ title, status, primary, config, compareValue, coverage, currency, catalogKey, reason, storedCost });
   return <KpiTile {...props} icon={WidgetIconGlyph(props.icon)} stale={stale && status === "ready"} />;
 }

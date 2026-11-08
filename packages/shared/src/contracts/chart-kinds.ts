@@ -65,6 +65,8 @@ export const CHART_KIND_LABELS = {
   heatmap: "Daily pattern (hour × day)",
   // `F4.325` — ADR 0047 Amendment 8 item 2.
   matrix: "Hour by point (24 h)",
+  // `F4.332` — ADR 0047 Amendment 9 item 1.
+  cost_by_day: "Daily energy cost",
 } as const satisfies Readonly<Record<ChartSeriesKind, string>>;
 
 /** The refusal of a kind in {@link CHART_KINDS_NEEDING_AGGREGATE} saved without `config.aggregate`. */
@@ -79,14 +81,38 @@ export interface ChartKindIssue {
   readonly message: string;
 }
 
+/** `F4.332` — the one catalog key a `cost_by_day` chart binds (ADR 0047 Amendment 9 item 2). */
+export const COST_BY_DAY_SOURCE_KEY = "energy.cost_by_day";
+
+export const COST_BY_DAY_NO_POINTS_MESSAGE = "a daily energy cost chart binds no point: it draws energy.cost_by_day";
+
+export const COST_BY_DAY_SOURCE_MESSAGE = "a daily energy cost chart binds exactly one energy.cost_by_day metric";
+
+/** The refusal of a named metric on any chart kind but `cost_by_day`. */
+export const chartKindSourceMessage = (kind: ChartSeriesKind): string =>
+  `a ${kind} chart binds points, not a named metric`;
+
 /** Every per-kind rule the config breaks, given how many points the widget binds. */
 export function chartKindIssues(
   config: Pick<ChartConfig, "series" | "aggregate" | "windowMinutes">,
   // The three write paths pass the real count; the builder form passes 0 and checks the count
   // where it sees the points (`chartPointIssues`, `widget-config-form.ts`).
   pointCount: number,
+  // `F4.332` — the catalog keys the widget binds, in order. A path that cannot carry a source
+  // (the asset-template default dashboard, the append route) passes none.
+  sourceKeys: readonly string[] = [],
 ): ChartKindIssue[] {
   const issues: ChartKindIssue[] = [];
+  if (config.series === "cost_by_day") {
+    if (pointCount > 0) issues.push({ path: ["points"], message: COST_BY_DAY_NO_POINTS_MESSAGE });
+    if (sourceKeys.length !== 1 || sourceKeys[0] !== COST_BY_DAY_SOURCE_KEY) {
+      issues.push({ path: ["sources"], message: COST_BY_DAY_SOURCE_MESSAGE });
+    }
+    return issues;
+  }
+  if (sourceKeys.length > 0) {
+    issues.push({ path: ["sources"], message: chartKindSourceMessage(config.series) });
+  }
   if ((CHART_KINDS_NEEDING_AGGREGATE as readonly ChartSeriesKind[]).includes(config.series) && !config.aggregate) {
     issues.push({ path: ["config", "aggregate"], message: chartKindAggregateMessage(config.series) });
   }

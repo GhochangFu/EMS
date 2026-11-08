@@ -204,7 +204,9 @@ export function WidgetEditor({
         catalog shape, so `WIDGET_CATALOG[type].sources` gives them `max: 0` and the whole
         block is absent rather than empty.
       */}
-      {sourceCardinality.max > 0 ? (
+      {/* `F4.332` — a chart's one source belongs to the daily cost kind (ADR 0047 Amendment 9), not
+          the picker: hidden for a chart, as in `WidgetInspector`. */}
+      {sourceCardinality.max > 0 && row.widgetType !== "chart" ? (
         <div>
           <span className="text-[11px] font-semibold text-ink">Named metric</span>
           <ul className="mt-1 space-y-1">

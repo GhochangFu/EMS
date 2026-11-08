@@ -420,10 +420,12 @@ export function runChartSeriesMappingTests(): void {
     "Daily pattern (hour × day)": "heatmap",
     // `F4.325` — ADR 0047 Amendment 8 item 2.
     "Hour by point (24 h)": "matrix",
+    // `F4.332` — ADR 0047 Amendment 9 item 1.
+    "Daily energy cost": "cost_by_day",
   };
   assert(
-    CHART_SERIES_OPTIONS.length === 9,
-    `the mapping names exactly nine series — got ${CHART_SERIES_OPTIONS.length}`,
+    CHART_SERIES_OPTIONS.length === 10,
+    `the mapping names exactly ten series — got ${CHART_SERIES_OPTIONS.length}`,
   );
   for (const option of CHART_SERIES_OPTIONS) {
     assert(

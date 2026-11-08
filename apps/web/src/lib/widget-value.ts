@@ -1,5 +1,6 @@
 import type { RollupCoverage, WidgetIcon, WidgetType } from "@bms/shared";
 
+import { costDaysNote, costReasonText, RATE_EFFECTIVE_NOW_NOTE } from "./energy-cost-labels";
 import { formatMoney } from "./money";
 import { WIDGET_CATALOG, type ValueTileConfig, type WidgetStatus, type WidgetTone } from "./widget-catalog";
 
@@ -309,6 +310,10 @@ export function toKpiTileProps(params: {
    * reading is formatted as the plain number it always was.
    */
   readonly catalogKey?: string | null;
+  /** `F4.332` — why a catalog metric is null; an `energy.cost.total` tile says it in its note. */
+  readonly reason?: string | null;
+  /** `F4.332` — a stored `energy_cost_*` point: its note says "at the rate effective now". */
+  readonly storedCost?: boolean;
 }): KpiTileWidgetProps {
   const {
     title,
@@ -320,6 +325,8 @@ export function toKpiTileProps(params: {
     coverage = null,
     currency = null,
     catalogKey = null,
+    reason = null,
+    storedCost = false,
   } = params;
   const ready = status === "ready";
   const isHealthScore = catalogKey === HEALTH_SCORE_KEY;
@@ -355,11 +362,35 @@ export function toKpiTileProps(params: {
     // Query keeps the previous `data` through a refetch error, so an errored
     // tile can still hold a coverage object. "Could not load" above "4 of 6
     // assets" would describe a number the tile is refusing to show.
-    note: ready ? coverageNote(coverage) : undefined,
+    note: ready ? tileNote(catalogKey, primary, coverage, reason, storedCost) : undefined,
     tone: WIDGET_TONE_TO_KPI_TONE[tone ?? config.tone ?? "ok"],
     icon: config.icon,
   };
 }
+
+/**
+ * `F4.332` — the tile's note: the cost tile counts days and names why it is null; a stored cost
+ * point adds "at the rate effective now" (ADR 0070 Amendment 7 decision 8); every other tile is
+ * the coverage line it always was.
+ */
+function tileNote(
+  catalogKey: string | null,
+  primary: number | null,
+  coverage: RollupCoverage | null,
+  reason: string | null,
+  storedCost: boolean,
+): string | undefined {
+  const base =
+    catalogKey === ENERGY_COST_TOTAL_KEY
+      ? primary === null
+        ? costReasonText(reason)
+        : costDaysNote(coverage)
+      : coverageNote(coverage);
+  if (!storedCost) return base;
+  return base === undefined ? RATE_EFFECTIVE_NOW_NOTE : `${base} · ${RATE_EFFECTIVE_NOW_NOTE}`;
+}
+
+const ENERGY_COST_TOTAL_KEY = "energy.cost.total";
 
 /**
  * `E4.2` U10, ADR 0072 decision 2 — the roll-up's coverage as one line, or
