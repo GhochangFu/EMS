@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { afterEach, describe, it } from "vitest";
+import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  theStripDrawsTheDailyCostChart,
   aCopyShowsResetAndTheBuilderLink,
   aFailedReadDrawsOneLine,
   aRefusedMakeShowsTheApisSentence,
@@ -13,6 +14,9 @@ import {
   theStripDrawsFourteenTilesInOrder,
   tileTwoReadsLiveOverTotal,
 } from "./organization-kpi-strip.spec";
+
+// `F4.332` — the daily cost chart draws through ECharts, which jsdom cannot (no canvas).
+vi.mock("echarts-for-react", () => ({ default: () => null }));
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and the jsdom docblock
@@ -58,4 +62,6 @@ describe("F4.317 OrganizationKpiStrip", () => {
   it("C9 ignores a skewed server clock", async () => {
     await aSkewedServerClockDoesNotStaleTheStrip();
   });
+  // `F4.332` — ADR 0112 Amendment 3.
+  it("draws the daily energy cost chart and its total", () => theStripDrawsTheDailyCostChart());
 });

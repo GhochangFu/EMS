@@ -155,10 +155,13 @@ function stripView(organizationId: string): OrganizationControlRoomViewDto {
         gridW: 3,
         gridH: 2,
         config: {},
+        widgetType: "value_tile",
+        chartConfig: null,
         sources: [
           {
             catalogKey: "sites.live.count",
             sortOrder: 0,
+            pointKey: null,
             resolved: { shape: "metric", key: "sites.live.count", value: 1, unit: null, coverage: { fresh: 1, carrying: 3 } },
           },
         ],

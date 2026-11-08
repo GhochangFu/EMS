@@ -258,7 +258,14 @@ export function runStockCatalogTests(): void {
         );
       }
 
-      if (widget.widgetType === "chart") {
+      if (widget.widgetType === "chart" && widget.config.series === "cost_by_day") {
+        // `F4.332` (ADR 0047 Amendment 9) — the daily cost chart binds the one dataset, no point.
+        assert(
+          widget.sources.length === 1 && widget.sources[0]?.catalogKey === "energy.cost_by_day",
+          `${entry.code}/${widget.key} cost_by_day chart must bind energy.cost_by_day only`,
+        );
+        assert(widget.bindings.length === 0, `${entry.code}/${widget.key} cost_by_day chart must bind no points`);
+      } else if (widget.widgetType === "chart") {
         assert(widget.sources.length === 0, `${entry.code}/${widget.key} chart must bind no sources`);
         assert(widget.bindings.length >= 1, `${entry.code}/${widget.key} chart must bind at least one point`);
       }

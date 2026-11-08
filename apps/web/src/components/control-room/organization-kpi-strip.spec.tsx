@@ -242,3 +242,38 @@ export async function aSkewedServerClockDoesNotStaleTheStrip(): Promise<void> {
   const tile = await screen.findByTestId("org-strip-tile-pue-tile");
   expect(tile.innerHTML).not.toContain("ring-warning");
 }
+
+/** `F4.332` (ADR 0112 Amendment 3) — the daily cost chart draws its rows and their total. */
+export async function theStripDrawsTheDailyCostChart(): Promise<void> {
+  const rows = Array.from({ length: 30 }, (_, i) => ({
+    day: `2026-10-${String(i + 1).padStart(2, "0")}`,
+    kwh: 10,
+    cost: 100,
+    currency: "INR",
+    reason: null,
+  }));
+  const chart = {
+    key: "daily-energy-cost-chart",
+    title: "Daily energy cost (30 days)",
+    gridX: 0,
+    gridY: 8,
+    gridW: 12,
+    gridH: 5,
+    config: {},
+    widgetType: "chart",
+    chartConfig: { series: "cost_by_day" },
+    sources: [
+      {
+        catalogKey: "energy.cost_by_day",
+        sortOrder: 0,
+        pointKey: null,
+        resolved: { shape: "dataset", key: "energy.cost_by_day", columns: [], rows, truncated: false },
+      },
+    ],
+  } as unknown as OrganizationStripTileDto;
+  vi.spyOn(controlRoomApi, "fetchOrganizationControlRoomView").mockResolvedValue(view({ tiles: [chart] }));
+  renderStrip();
+  const tile = await screen.findByTestId("org-strip-tile-daily-energy-cost-chart");
+  expect(within(tile).getByText("Daily energy cost (30 days)")).toBeInTheDocument();
+  expect(within(tile).getByTestId("cost-window-total").textContent).toContain("3,000");
+}

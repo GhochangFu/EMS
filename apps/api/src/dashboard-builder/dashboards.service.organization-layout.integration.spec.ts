@@ -54,6 +54,43 @@ const oneTile = putDashboardWidgetsBodySchema.parse({
   ],
 });
 
+/** `F4.332` (ADR 0112 Amendment 3) — the one chart the strip holds: the daily energy cost. */
+const oneCostChart = putDashboardWidgetsBodySchema.parse({
+  widgets: [
+    {
+      widgetType: "chart",
+      title: "Daily energy cost",
+      gridX: 0,
+      gridY: 2,
+      gridW: 12,
+      gridH: 5,
+      config: { series: "cost_by_day" },
+      points: [],
+      sources: [{ catalogKey: "energy.cost_by_day", params: { days: 30 } }],
+    },
+  ],
+});
+
+/**
+ * `F4.332` — any other chart kind is still refused under the grant. The point id is never read:
+ * the grant check refuses before any statement that would resolve it.
+ */
+const oneLineChart = putDashboardWidgetsBodySchema.parse({
+  widgets: [
+    {
+      widgetType: "chart",
+      title: "Load",
+      gridX: 0,
+      gridY: 2,
+      gridW: 12,
+      gridH: 5,
+      config: { series: "line" },
+      points: [{ pointId: "66666666-6666-4666-8666-666666666666", role: "series", sortOrder: 0 }],
+      sources: [],
+    },
+  ],
+});
+
 /** The same tile on a tab: the organization target refuses tabs (ADR 0112 decision 2). */
 const oneTileOnATab = putDashboardWidgetsBodySchema.parse({
   tabs: [{ key: "more", label: "More" }],
@@ -118,7 +155,7 @@ export async function assertWidgetsOnThePointedDashboard(ctx: GrantCtx): Promise
 export async function assertTheGrantAdmitsOrganizationContentOnly(ctx: GrantCtx): Promise<void> {
   const svc = serviceOf(ctx.fx);
   const before = (await svc.putWidgets(ctx.fx.jwt.locAdminA, ctx.pointed, oneTile)).widgets.length;
-  for (const body of [oneTileOnATab, oneAlarmList]) {
+  for (const body of [oneTileOnATab, oneAlarmList, oneLineChart]) {
     expect(await refusalOf(svc.putWidgets(ctx.fx.jwt.locAdminA, ctx.pointed, body))).toEqual({
       status: 400,
       message: ORGANIZATION_STRIP_CONTENT_MESSAGE,
@@ -129,6 +166,10 @@ export async function assertTheGrantAdmitsOrganizationContentOnly(ctx: GrantCtx)
     [ctx.pointed],
   );
   expect(rows[0]?.n).toBe(before);
+  // `F4.332` — the daily cost chart IS organization content: admitted under the grant.
+  const admitted = await svc.putWidgets(ctx.fx.jwt.locAdminA, ctx.pointed, oneCostChart);
+  expect(admitted.widgets.map((w) => w.widgetType)).toEqual(["chart"]);
+  await svc.putWidgets(ctx.fx.jwt.locAdminA, ctx.pointed, oneTile);
   // An organization admin passes canManageDashboard itself; the grant's rule is not theirs.
   expect((await svc.putWidgets(ctx.fx.jwt.orgAdminA, ctx.pointed, oneAlarmList)).widgets).toHaveLength(1);
   await svc.putWidgets(ctx.fx.jwt.orgAdminA, ctx.pointed, oneTile);

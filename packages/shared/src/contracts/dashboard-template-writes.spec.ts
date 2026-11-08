@@ -606,6 +606,18 @@ export function rejectsAnOrganizationCreateBodyWithANonTileWidget(): void {
     new RegExp(ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE),
     "an organization-target create body holding a state_legend",
   );
+  // `F4.332` (ADR 0112 Amendment 3) — a chart of any kind but the daily cost one is refused too.
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    createBody({
+      target: "organization",
+      section: "organization",
+      content: { widgets: [widget(), widget({ key: "trend", widgetType: "chart", config: { series: "line" } })] },
+    }),
+    ["content", "widgets"],
+    new RegExp(ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE),
+    "an organization-target create body holding a line chart",
+  );
 }
 
 /** The positive control: a flat list of value tiles is an organization create body. */

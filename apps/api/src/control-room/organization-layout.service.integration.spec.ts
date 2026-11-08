@@ -57,7 +57,11 @@ async function viewRow(fx: OrganizationLayoutFixture, org: string): Promise<{ da
   return rows[0];
 }
 
-/** No row: the stock strip, fourteen tiles in decision 6's order, every source resolved. */
+/** `F4.332` — the stock strip's size: fifteen tiles and the daily cost chart since v2. */
+const STOCK_WIDGETS = ORGANIZATION_STANDARD_TEMPLATE.content.widgets.length;
+const STOCK_SOURCES = ORGANIZATION_STANDARD_TEMPLATE.content.widgets.reduce((n, w) => n + w.sources.length, 0);
+
+/** No row: the stock strip, decision 6's tiles in order, every source resolved. */
 export async function assertNoRowReadsTheStockStrip(fx: OrganizationLayoutFixture): Promise<void> {
   await clearOrganizationView(fx, fx.orgA);
   const view = await serviceOf(fx).view(fx.jwt.admin, fx.orgA);
@@ -65,7 +69,7 @@ export async function assertNoRowReadsTheStockStrip(fx: OrganizationLayoutFixtur
   expect(view.dashboardId).toBeNull();
   expect(view.layoutName).toBe(ORGANIZATION_STANDARD_TEMPLATE.name);
   expect(view.tiles.map((t) => t.key)).toEqual(ORGANIZATION_STANDARD_TEMPLATE.content.widgets.map((w) => w.key));
-  expect(view.tiles).toHaveLength(14);
+  expect(view.tiles).toHaveLength(STOCK_WIDGETS);
   expect(view.tiles.every((t) => t.sources.every((s) => s.resolved !== null))).toBe(true);
   // Tile 3 carries both keys, the primary first (ruling Q1b).
   expect(view.tiles[2]?.sources.map((s) => s.catalogKey)).toEqual(["alarms.active.count", "alarms.critical.count"]);
@@ -75,6 +79,14 @@ export async function assertNoRowReadsTheStockStrip(fx: OrganizationLayoutFixtur
   const pue = view.tiles[3]?.sources[0]?.resolved;
   expect(pue?.shape === "metric" && pue.prior === undefined).toBe(true);
   expect(view.canManage).toBe(true);
+  // `F4.332` (ADR 0112 Amendment 3) — the last widget is the daily cost chart, resolved as rows;
+  // a stored cost tile carries its point key for the "at the rate effective now" note.
+  const chart = view.tiles.at(-1);
+  expect(chart?.widgetType).toBe("chart");
+  expect(chart?.chartConfig?.series).toBe("cost_by_day");
+  expect(chart?.sources[0]?.resolved?.shape).toBe("dataset");
+  expect(view.tiles.find((t) => t.key === "energy-cost-today-tile")?.sources[0]?.pointKey).toBe("energy_cost_today");
+  expect(view.tiles.find((t) => t.key === "cost-this-month-tile")?.sources[0]?.pointKey).toBeNull();
 }
 
 /** Tile 2 is live / total locations: A has two, one reporting. */
@@ -133,7 +145,7 @@ export async function assertMakeCopiesAndPoints(fx: OrganizationLayoutFixture): 
                 WHERE w.dashboard_id = $1 AND s.organization_id = $2) AS sources`,
       [made.dashboardId, fx.orgA],
     );
-    expect(counts[0]).toEqual({ widgets: 14, sources: 15 });
+    expect(counts[0]).toEqual({ widgets: STOCK_WIDGETS, sources: STOCK_SOURCES });
     const { rows: audits } = await fx.superuserPool.query(
       `SELECT 1 FROM bms.audit_log WHERE organization_id = $1 AND action = 'master.organization.control_room_view.make'
          AND entity_id = $1 AND payload->>'dashboardId' = $2`,
@@ -145,7 +157,7 @@ export async function assertMakeCopiesAndPoints(fx: OrganizationLayoutFixture): 
     expect(view.kind).toBe("dashboard");
     expect(view.dashboardId).toBe(made.dashboardId);
     expect(view.dashboardSlug).toBe(made.dashboardSlug);
-    expect(view.tiles).toHaveLength(14);
+    expect(view.tiles).toHaveLength(STOCK_WIDGETS);
     expect(view.tiles[2]?.sources.map((s) => s.catalogKey)).toEqual(["alarms.active.count", "alarms.critical.count"]);
   } finally {
     await clearOrganizationView(fx, fx.orgA);
@@ -332,7 +344,7 @@ export async function assertATabbedTileIsNotDrawn(fx: OrganizationLayoutFixture)
     );
     const view = await svc.view(fx.jwt.admin, fx.orgA);
     expect(view.kind).toBe("dashboard");
-    expect(view.tiles).toHaveLength(14);
+    expect(view.tiles).toHaveLength(STOCK_WIDGETS);
     expect(view.tiles.some((t) => t.title === "On a tab")).toBe(false);
   } finally {
     await clearOrganizationView(fx, fx.orgA);

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { metricCatalogKeySchema, valueTileConfigSchema } from "./dashboard-builder";
+import { chartConfigSchema, metricCatalogKeySchema, valueTileConfigSchema } from "./dashboard-builder";
 import { metricCatalogValueDtoSchema } from "./metric-catalog-values";
 
 /**
@@ -23,6 +23,12 @@ export const organizationControlRoomViewKindSchema = z.enum(["stock", "dashboard
  */
 export const organizationStripSourceDtoSchema = z.object({
   catalogKey: metricCatalogKeySchema,
+  /**
+   * `F4.332` — the binding's `params.pointKey` for a `sustainability.*` source, else `null`, so the
+   * strip can mark a stored `energy_cost_*` point "at the rate effective now" (ADR 0070
+   * Amendment 7 decision 8). Defaulted, so a reader of the older shape parses.
+   */
+  pointKey: z.string().max(128).nullable().default(null),
   sortOrder: z.number().int(),
   resolved: metricCatalogValueDtoSchema.nullable(),
 });
@@ -40,6 +46,14 @@ export const organizationStripTileDtoSchema = z.object({
   gridW: z.number().int(),
   gridH: z.number().int(),
   config: valueTileConfigSchema,
+  /**
+   * `F4.332` (ADR 0112 Amendment 3 item 4) — a strip widget is a value tile or the daily energy
+   * cost chart. Defaulted to a tile, so a reader of the older shape parses; a chart carries its
+   * own config in `chartConfig` (and `config` is `{}`), rather than a union `config` that a
+   * non-strict tile schema would also accept.
+   */
+  widgetType: z.enum(["value_tile", "chart"]).default("value_tile"),
+  chartConfig: chartConfigSchema.nullable().default(null),
   sources: z.array(organizationStripSourceDtoSchema),
 });
 
@@ -87,7 +101,30 @@ export const ORGANIZATION_HAS_LAYOUT_MESSAGE = "This organization already has a 
  * the organization target's content only: value tiles, no tabs (400).
  */
 export const ORGANIZATION_STRIP_CONTENT_MESSAGE =
-  "The organization strip holds value tiles only, with no tabs (ADR 0112 decision 2)";
+  "The organization strip holds value tiles and the daily energy cost chart only, with no tabs " +
+  "(ADR 0112 decision 2 and Amendment 3)";
+
+/**
+ * `F4.332` (ADR 0112 Amendment 3 item 3) — whether a widget may sit on the organization strip: a
+ * value tile, or a chart of the `cost_by_day` kind. One predicate for the template target
+ * (`templateTargetContentMessage`) and the location-admin write to the pointed copy
+ * (`DashboardsService.putWidgets`), so the two cannot admit different widgets.
+ */
+export function organizationStripHolds(widget: {
+  readonly widgetType: string;
+  readonly config: unknown;
+  /** When the caller has them: a strip chart binds the one `energy.cost_by_day` source … */
+  readonly sources?: readonly { readonly catalogKey: string }[];
+  /** … and no point or role binding (the write schemas hold this too; this is the second guard). */
+  readonly points?: readonly unknown[];
+  readonly bindings?: readonly unknown[];
+}): boolean {
+  if (widget.widgetType === "value_tile") return true;
+  if (widget.widgetType !== "chart" || typeof widget.config !== "object" || widget.config === null) return false;
+  if ((widget.config as { series?: unknown }).series !== "cost_by_day") return false;
+  if ((widget.points?.length ?? 0) > 0 || (widget.bindings?.length ?? 0) > 0) return false;
+  return widget.sources === undefined || (widget.sources.length === 1 && widget.sources[0]?.catalogKey === "energy.cost_by_day");
+}
 
 /** No published `organization` template to copy (409). */
 export const NO_ORGANIZATION_TEMPLATE_MESSAGE =
