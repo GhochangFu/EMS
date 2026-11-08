@@ -22,4 +22,3 @@ export function isValidTimeZone(zone: string): boolean {
     throw err;
   }
 }
-

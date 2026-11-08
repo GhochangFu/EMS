@@ -9,6 +9,7 @@ import {
   reportTemplateIdSchema,
   RUN_AT_LOCAL_PATTERN,
 } from "./reports";
+import { isValidTimeZone } from "./time-zone";
 import { reportScheduleParamsSchema } from "./trend-points-report";
 
 /**
@@ -58,8 +59,6 @@ import { reportScheduleParamsSchema } from "./trend-points-report";
 
 // F4.339: the R-6 rule moved to `time-zone.ts` (no imports), so `onboarding.ts`
 // can use it without the cycle through `copilot.ts`; re-exported unchanged.
-import { isValidTimeZone } from "./time-zone";
-
 export { isValidTimeZone };
 
 /**
