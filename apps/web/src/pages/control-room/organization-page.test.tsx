@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, it } from "vitest";
+import { afterEach, describe, it, vi } from "vitest";
 
 import {
   anotherOrganizationMountsANewSiteMap,
@@ -29,7 +29,11 @@ import {
   theRailReadsByTheOrganizationId,
   theSiteMapReadsByTheOrganizationId,
   theSiteMapSitsAboveTheSiteCards,
+  theCostChartSitsBetweenTheAlarmsAndAssetHealth,
 } from "./organization-page.spec";
+
+// `F4.337` — the daily cost chart draws through ECharts, which jsdom cannot (no canvas).
+vi.mock("echarts-for-react", () => ({ default: () => null }));
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and
@@ -123,6 +127,10 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
 
   it("L1 draws the KPI strip from the organization view in place of the live status strip (F4.317)", async () => {
     await theKpiStripReplacesTheLiveStatusStrip();
+  });
+
+  it("P10 draws the cost chart between the alarms and Asset health (F4.337)", async () => {
+    await theCostChartSitsBetweenTheAlarmsAndAssetHealth();
   });
 
   it("L2 shows the live sites first, in their own group (F4.259)", async () => {

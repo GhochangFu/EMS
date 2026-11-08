@@ -2,7 +2,9 @@
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
-  theStripDrawsTheDailyCostChart,
+  aStripWithNoChartDrawsNoBlock,
+  theChartBlockDrawsTheDailyCostChart,
+  theStripDrawsNoChart,
   aCopyShowsResetAndTheBuilderLink,
   aFailedReadDrawsOneLine,
   aRefusedMakeShowsTheApisSentence,
@@ -62,6 +64,8 @@ describe("F4.317 OrganizationKpiStrip", () => {
   it("C9 ignores a skewed server clock", async () => {
     await aSkewedServerClockDoesNotStaleTheStrip();
   });
-  // `F4.332` — ADR 0112 Amendment 3.
-  it("draws the daily energy cost chart and its total", () => theStripDrawsTheDailyCostChart());
+  // `F4.332` — ADR 0112 Amendment 3; `F4.337` moved the chart out of the strip.
+  it("draws the daily energy cost chart and its total in the chart block", () => theChartBlockDrawsTheDailyCostChart());
+  it("F4.337 the strip draws no chart", () => theStripDrawsNoChart());
+  it("F4.337 a strip with no chart draws no chart block", () => aStripWithNoChartDrawsNoBlock());
 });
