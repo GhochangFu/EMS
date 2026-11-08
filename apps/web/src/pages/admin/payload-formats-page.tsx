@@ -236,6 +236,7 @@ function PayloadFormatsCatalog() {
         type="button"
         className="surface-button px-2 py-1 text-xs"
         disabled={testMutation.isPending || testSample === ""}
+        aria-busy={testMutation.isPending}
         onClick={() => testMutation.mutate()}
       >
         {testMutation.isPending ? "Decoding…" : "Decode sample"}
