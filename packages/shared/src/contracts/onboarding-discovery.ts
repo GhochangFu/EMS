@@ -121,8 +121,31 @@ export const onboardingDiscoveryDeviceSchema = z
     devId: z.string().max(MQTT_DISCOVERY_DEV_ID_MAX),
     messageCount: z.number().int(),
     keys: z.array(onboardingDiscoveryKeySchema).max(MQTT_DISCOVERY_MAX_KEYS_PER_DEVICE),
+    /**
+     * `F4.334` / ADR 0116 decision 8: the catalog code of the payload format that
+     * first decoded this device. Optional, so a result stored before ADR 0116
+     * still parses (a new required field would blank every stored result).
+     */
+    payloadFormat: z.string().max(64).optional(),
   })
   .strict();
+
+/**
+ * `F4.334` / ADR 0116 decision 8 (plan R11): why the collector dropped a
+ * message. `no-format` — no catalog format decoded it.
+ */
+export const onboardingDiscoverySkipReasonSchema = z.enum([
+  "oversize",
+  "unusable-topic",
+  "no-format",
+  "unusable-device-key",
+]);
+
+/** Per-reason skip counts; a reason with no skip is absent. */
+export const onboardingDiscoverySkippedReasonsSchema = z.record(
+  onboardingDiscoverySkipReasonSchema,
+  z.number().int().nonnegative(),
+);
 
 export const onboardingDiscoveryResultDtoSchema = z
   .object({
@@ -137,6 +160,11 @@ export const onboardingDiscoveryResultDtoSchema = z
     truncated: z.boolean(),
     error: onboardingDiscoveryErrorClassSchema.optional(),
     devices: z.array(onboardingDiscoveryDeviceSchema).max(MQTT_DISCOVERY_MAX_DEVICES),
+    /** `F4.335` (plan R11): messages decoded and grouped. */
+    messages: z.number().int(),
+    /** `F4.335`: messages that arrived and were dropped, and why. */
+    skipped: z.number().int(),
+    skippedReasons: onboardingDiscoverySkippedReasonsSchema.optional(),
   })
   .strict();
 
@@ -161,6 +189,8 @@ export const onboardingDiscoveryStoredSchema = z
     messages: z.number().int(),
     /** Messages it counted and dropped (oversize, bad JSON, no devId, over a cap). */
     skipped: z.number().int(),
+    /** `F4.334`: `skipped` per reason. Optional: results stored before ADR 0116 have none. */
+    skippedReasons: onboardingDiscoverySkippedReasonsSchema.optional(),
   })
   .strict();
 
@@ -222,10 +252,38 @@ export function discoveryIsActive(d: DiscoveryActivityFields | null | undefined,
   return nowMs <= started + d.windowSeconds * 1000 + MQTT_DISCOVERY_RUNNING_GRACE_MS;
 }
 
-/** The stored `_discovery` as the DTO the client sees: `queuedAt` and the counters stay server-side. */
+/**
+ * The stored `_discovery` as the DTO the client sees: `queuedAt` stays
+ * server-side. Since `F4.335` the counters reach the client, so the drawer can
+ * say that messages arrived and were not decoded.
+ */
 export function discoveryDtoOf(
   stored: z.infer<typeof onboardingDiscoveryStoredSchema>,
 ): z.infer<typeof onboardingDiscoveryResultDtoSchema> {
-  const { queuedAt: _queuedAt, messages: _messages, skipped: _skipped, ...dto } = stored;
+  const { queuedAt: _queuedAt, ...dto } = stored;
   return dto;
+}
+
+/** The fields {@link discoveryEmptySentence} reads. */
+export type DiscoveryEmptyFields = {
+  readonly messages: number;
+  readonly skipped: number;
+  readonly skippedReasons?: Partial<Record<z.infer<typeof onboardingDiscoverySkipReasonSchema>, number>>;
+};
+
+/**
+ * `F4.335` / ADR 0116 decision 8 (plan R11) — what a discovery with no device
+ * says, for the drawer and the copilot alike. Fixed text: it echoes no
+ * payload, topic or key, only counts.
+ */
+export function discoveryEmptySentence(result: DiscoveryEmptyFields): string {
+  if (result.skipped <= 0) {
+    return "No device published in the window.";
+  }
+  const reasons = result.skippedReasons ?? {};
+  const noFormat = reasons["no-format"] ?? 0;
+  const noun = result.skipped === 1 ? "message" : "messages";
+  return noFormat === result.skipped
+    ? `${result.skipped} ${noun} arrived but none matched a known payload format.`
+    : `${result.skipped} ${noun} arrived and were not decoded.`;
 }
