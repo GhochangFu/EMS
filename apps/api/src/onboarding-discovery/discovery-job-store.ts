@@ -4,6 +4,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
 
 import { lockSession, type LockedSession } from "../admin/onboarding/onboarding-locked-writes";
+import type { DiscoveryFormat } from "./discovery-collector";
+import { loadDiscoveryFormats, type DiscoveryFormatsReader } from "./discovery-formats";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 
@@ -44,6 +46,11 @@ export class DiscoveryJobStore {
 
   lock(tx: BmsTx, sessionId: string): Promise<LockedSession> {
     return lockSession(tx, sessionId);
+  }
+
+  /** `F4.334` / ADR 0116 decision 8: the catalog formats for the collector, `chosen` first. */
+  formats(tx: BmsTx, chosen: string | undefined): Promise<{ formats: DiscoveryFormat[]; invalid: string[] }> {
+    return loadDiscoveryFormats(tx as unknown as DiscoveryFormatsReader, chosen);
   }
 
   async writeDiscovery(tx: BmsTx, sessionId: string, stored: StoredDiscovery): Promise<void> {

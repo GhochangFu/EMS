@@ -9,7 +9,7 @@ import type { onboardingDiscoveryQueue } from "../queue/onboarding-discovery";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { MQTT_PLAINTEXT_ALLOWLIST } from "../security/mqtt-plaintext-hosts";
 import { looksLikeCredential } from "../security/credential-detect";
-import { createDiscoveryCollector, type CollectorResult } from "./discovery-collector";
+import { createDiscoveryCollector, type CollectorResult, type DiscoveryFormat } from "./discovery-collector";
 import { readDiscoveryCredentials, type DiscoveryCredentials } from "./discovery-credentials";
 import { checkPort } from "./discovery-host-guard";
 import { DiscoveryJobStore, type StoredDiscovery } from "./discovery-job-store";
@@ -40,6 +40,8 @@ type Prepared = {
   readonly credentials: DiscoveryCredentials;
   /** ADR 0114 decision 4: connect `mqtt` rather than `mqtts`. */
   readonly plaintext: boolean;
+  /** `F4.334` / ADR 0116 decision 8: the catalog formats, the RTU's chosen one first. */
+  readonly formats: readonly DiscoveryFormat[];
 };
 
 /**
@@ -211,6 +213,14 @@ export class DiscoveryJobService {
       return null;
     }
 
+    // F4.334 (ADR 0116 decision 8): every catalog format, the draft RTU's own
+    // `payloadFormat` first. An invalid row is left out and named by code only.
+    const chosen = typeof config.payloadFormat === "string" ? config.payloadFormat : undefined;
+    const catalog = await this.store.formats(tx, chosen);
+    for (const code of catalog.invalid) {
+      this.logger.warn(`discovery: payload format ${code} fails the schema and is not tried ${this.ids(payload)}`);
+    }
+
     const running: StoredDiscovery = { ...stored, status: "running", startedAt: new Date().toISOString() };
     await this.store.writeDiscovery(tx, payload.sessionId, running);
     return {
@@ -220,6 +230,7 @@ export class DiscoveryJobService {
       port,
       credentials,
       plaintext: transport === "plain",
+      formats: catalog.formats,
     };
   }
 
@@ -227,7 +238,7 @@ export class DiscoveryJobService {
     const secrets = [prepared.credentials.username, prepared.credentials.password].filter(
       (s): s is string => s !== undefined,
     );
-    const collector = createDiscoveryCollector({ secrets });
+    const collector = createDiscoveryCollector({ secrets, formats: prepared.formats });
     let outcome: ListenOutcome = { kind: "failed" };
     try {
       outcome = await listenForDevices({
@@ -281,6 +292,7 @@ export class DiscoveryJobService {
             devices: result.devices,
             messages: result.messages,
             skipped: result.skipped,
+            skippedReasons: result.skippedReasons,
             ...(error === undefined ? {} : { error }),
           };
           await this.store.writeDiscovery(tx, payload.sessionId, final);
@@ -299,11 +311,12 @@ export class DiscoveryJobService {
             keys: result.keys,
             messages: result.messages,
             skipped: result.skipped,
+            skippedReasons: result.skippedReasons,
           },
         });
       });
       this.logger.log(
-        `discovery finished: status=${status} devices=${result.devices.length} keys=${result.keys} messages=${result.messages} ${this.ids(payload)}`,
+        `discovery finished: status=${status} devices=${result.devices.length} keys=${result.keys} messages=${result.messages} skipped=${result.skipped} ${this.ids(payload)}`,
       );
     } catch (err) {
       this.logger.error(`discovery finish write failed: ${errorName(err)} ${this.ids(payload)}`);

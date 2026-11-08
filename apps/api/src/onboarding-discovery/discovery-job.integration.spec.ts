@@ -7,6 +7,9 @@ import { connect, type MqttClient } from "mqtt";
 import type { BmsTx } from "../database/tenant-context";
 import type { CredentialCryptoService } from "../security/credential-crypto.service";
 import { until } from "../testing/until";
+import { mqttPayloadFormatDefinitionSchema } from "@bms/shared";
+
+import { BUILTIN_DISCOVERY_FORMATS, type DiscoveryFormat } from "./discovery-collector";
 import type { DiscoveryAuditRow, DiscoveryJobStore, StoredDiscovery } from "./discovery-job-store";
 import { DiscoveryJobService, type DiscoveryJobPayload } from "./discovery-job.service";
 import {
@@ -44,6 +47,21 @@ type Run = {
   readonly audits: () => readonly DiscoveryAuditRow[];
 };
 
+/** `F4.334`: the seeded `thinkiot-register-array` format (migration `0130`). */
+const BCPL_FORMAT: DiscoveryFormat = {
+  code: "thinkiot-register-array",
+  definition: mqttPayloadFormatDefinitionSchema.parse({
+    kind: "declarative",
+    root: "array",
+    deviceKey: ["TagName"],
+    time: { path: ["Timestamp"], unit: "epoch_s" },
+    readings: [
+      { key: "treated_water_flow_klh", register: { path: ["Data"], index: 0, type: "float32" } },
+      { key: "outlet_flow_totalizer_kl", register: { path: ["Data"], index: 3, type: "float32" } },
+    ],
+  }),
+};
+
 export type MqttSuite = {
   readonly url: URL;
   readonly prefix: string;
@@ -55,6 +73,8 @@ export type MqttSuite = {
 function memoryStore(drafts: Map<string, Record<string, unknown>>, audits: Map<string, DiscoveryAuditRow[]>) {
   return {
     inTenant: async <T>(_org: string, fn: (tx: BmsTx) => Promise<T>) => fn({} as BmsTx),
+    // F4.334: the built-in envelope and the seeded BCPL format, as the catalog holds them.
+    formats: async () => ({ formats: [...BUILTIN_DISCOVERY_FORMATS, BCPL_FORMAT], invalid: [] }),
     lock: async (_tx: BmsTx, sessionId: string) => {
       const draft = drafts.get(sessionId);
       return draft === undefined ? undefined : { draft, status: "draft", messages: [], checkpoints: [] };
@@ -330,5 +350,42 @@ export function assertThePlainDiscoveryReturnsTheDevice(o: PlainOutcome): void {
   assert(
     s?.status === "done" && s.devices.some((d) => d.devId === "LALRLY1" && d.topic === `${o.prefix}/m`),
     `the plain discovery returns the device; got status=${String(s?.status)} devices=${JSON.stringify(s?.devices)}`,
+  );
+}
+
+/**
+ * `F4.334` / ADR 0116 decision 8 (plan §4.6 for PR 4) — the BCPL golden sample
+ * through the real broker: the job decodes it with the register-array format
+ * and stores the device with its format and the two readings.
+ */
+export async function runBcplWindow(suite: MqttSuite): Promise<Run> {
+  const job = await startJob(suite, "bcpl");
+  let finished = false;
+  const done = job.done.then(() => {
+    finished = true;
+  });
+  const publisher = await client(suite, `bms-it-bcpl-publisher-${randomUUID()}`);
+  const sample = JSON.stringify([
+    { Data: [16294, 26214, 81, 18230, 9202, 113, 17852, -17809, 177, 82], Timestamp: "1794077986", TagName: "BCPL_LAKWA_02" },
+  ]);
+  while (!finished) {
+    await publisher.publishAsync(`${job.run.payload.topicPrefix}/data`, sample, { qos: 1 });
+    await new Promise<void>((resolve) => setTimeout(resolve, 200));
+  }
+  await done;
+  return job.run;
+}
+
+export function assertTheBcplDeviceDecodesWithItsFormat(run: Run): void {
+  const s = run.stored();
+  const device = s?.devices.find((d) => d.devId === "BCPL_LAKWA_02");
+  const keys = Object.fromEntries((device?.keys ?? []).map((k) => [k.sourceKey, k.sampleValue]));
+  assert(
+    s?.status === "done" &&
+      device?.payloadFormat === "thinkiot-register-array" &&
+      keys.treated_water_flow_klh === 1.2999999523162842 &&
+      keys.outlet_flow_totalizer_kl === 46627.9453125 &&
+      s.skipped === 0,
+    `the BCPL device decodes with its format; got ${JSON.stringify(s)}`,
   );
 }

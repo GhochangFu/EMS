@@ -8,9 +8,14 @@ import {
   MQTT_DISCOVERY_SAMPLE_STRING_MAX,
   MQTT_DISCOVERY_SOURCE_KEY_MAX,
   MQTT_DISCOVERY_TOPIC_MAX,
+  MQTT_BUILTIN_PAYLOAD_FORMAT_CODE,
+  MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION,
+  decodeMqttPayload,
+  type MqttDecodedRecord,
+  type MqttPayloadFormatDefinition,
   type OnboardingDiscoveryDevice,
   type OnboardingDiscoveryKey,
-  parseMqttEnvelope,
+  type OnboardingDiscoverySkipReason,
 } from "@bms/shared";
 
 import { isDraftRecordSecretKey } from "../admin/onboarding/onboarding-redaction";
@@ -39,6 +44,13 @@ import { looksLikeCredential } from "../security/credential-detect";
  * `isDraftRecordSecretKey` (the draft scrub's predicate, short names whole
  * included, `F4.272`), is `"<redacted>"`. The key itself is kept: it names a
  * point, and only the sample can carry the secret.
+ *
+ * **Payload formats (`F4.334`, ADR 0116 decision 8).** Each message is tried
+ * against every catalog format, in the order given (the RTU's chosen format
+ * first); the first that yields records with a device key decodes it. Each
+ * device records the format that first decoded it, and keeps it. A message no
+ * format decodes is skipped as `no-format`; `skippedReasons` counts each
+ * reason. One array-root message may yield several devices.
  */
 
 export type CollectorCaps = {
@@ -74,6 +86,8 @@ export type CollectorResult = {
   readonly messages: number;
   /** Messages counted and dropped: oversize, not an envelope, an unusable topic or `dev_id`. */
   readonly skipped: number;
+  /** `F4.334`: `skipped` per reason; a reason with no skip is absent. */
+  readonly skippedReasons: Partial<Record<OnboardingDiscoverySkipReason, number>>;
   /** Keys counted and dropped: empty, over 128 characters, or credential-looking. */
   readonly skippedKeys: number;
   /** Keys stored across all devices. */
@@ -108,12 +122,47 @@ function cutAt(value: string, max: number): string {
   return value.length <= max ? value : value.slice(0, max).replace(LONE_SURROGATE, "");
 }
 
-type Device = { topic: string; devId: string; messageCount: number; keys: Map<string, OnboardingDiscoveryKey["sampleValue"]> };
+type Device = {
+  topic: string;
+  devId: string;
+  messageCount: number;
+  keys: Map<string, OnboardingDiscoveryKey["sampleValue"]>;
+  payloadFormat: string;
+};
+
+/** One catalog format the collector may decode with. */
+export type DiscoveryFormat = { readonly code: string; readonly definition: MqttPayloadFormatDefinition };
+
+/** The built-in envelope alone: what a collector built with no `formats` decodes. */
+export const BUILTIN_DISCOVERY_FORMATS: readonly DiscoveryFormat[] = [
+  { code: MQTT_BUILTIN_PAYLOAD_FORMAT_CODE, definition: MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION },
+];
+
+/**
+ * The first format whose decode yields at least one record with a non-blank
+ * device key. A built-in decode of a payload with no `dev_id` (every BCPL
+ * message) yields the empty key, so it falls through to the next format.
+ */
+function decodeWithFirst(
+  formats: readonly DiscoveryFormat[],
+  topic: string,
+  raw: string,
+): { code: string; records: MqttDecodedRecord[] } | null {
+  for (const format of formats) {
+    const decoded = decodeMqttPayload(format.definition, topic, raw);
+    if (decoded.ok && decoded.records.some((record) => record.deviceKey.trim() !== "")) {
+      return { code: format.code, records: decoded.records };
+    }
+  }
+  return null;
+}
 
 export function createDiscoveryCollector(opts: {
   caps?: Partial<CollectorCaps>;
   /** The decrypted broker username and password: never stored, never echoed. */
   secrets?: readonly string[];
+  /** `F4.334`: the catalog formats, the RTU's chosen one first. Default: the built-in envelope. */
+  formats?: readonly DiscoveryFormat[];
 }): DiscoveryCollector {
   const caps: CollectorCaps = { ...DISCOVERY_CAPS, ...opts.caps };
   const secrets = (opts.secrets ?? []).filter((s) => s.length > 0);
@@ -122,6 +171,12 @@ export function createDiscoveryCollector(opts: {
   let truncated = false;
   let messages = 0;
   let skipped = 0;
+  const skippedReasons: Partial<Record<OnboardingDiscoverySkipReason, number>> = {};
+  const skip = (reason: OnboardingDiscoverySkipReason): void => {
+    skipped += 1;
+    skippedReasons[reason] = (skippedReasons[reason] ?? 0) + 1;
+  };
+  const formats = opts.formats !== undefined && opts.formats.length > 0 ? opts.formats : BUILTIN_DISCOVERY_FORMATS;
   let skippedKeys = 0;
   let totalKeys = 0;
 
@@ -160,7 +215,7 @@ export function createDiscoveryCollector(opts: {
     }
     const bytes = typeof payload === "string" ? Buffer.byteLength(payload, "utf8") : payload.byteLength;
     if (bytes > caps.maxPayloadBytes) {
-      skipped += 1;
+      skip("oversize");
       return;
     }
     if (messages >= caps.maxMessages) {
@@ -169,35 +224,50 @@ export function createDiscoveryCollector(opts: {
     }
     const topic = stripUnsafe(rawTopic);
     if (topic.length === 0 || topic.length > caps.topicMax || untrusted(topic)) {
-      skipped += 1;
+      skip("unusable-topic");
       return;
     }
-    let envelope: { devId: string; values: Record<string, unknown> };
-    try {
-      envelope = parseMqttEnvelope(typeof payload === "string" ? payload : new TextDecoder().decode(payload));
-    } catch {
-      skipped += 1;
+    const decoded = decodeWithFirst(formats, topic, typeof payload === "string" ? payload : new TextDecoder().decode(payload));
+    if (decoded === null) {
+      skip("no-format");
       return;
     }
-    const devId = stripUnsafe(envelope.devId).trim();
+    let grouped = false;
+    for (const record of decoded.records) {
+      if (stopped) {
+        return;
+      }
+      if (offerRecord(topic, record, decoded.code)) {
+        grouped = true;
+      }
+    }
+    if (grouped) {
+      messages += 1;
+    } else if (!stopped) {
+      skip("unusable-device-key");
+    }
+  }
+
+  /** Groups one decoded record; false when its device key is unusable or a cap stopped the job. */
+  function offerRecord(topic: string, record: MqttDecodedRecord, formatCode: string): boolean {
+    const devId = stripUnsafe(record.deviceKey).trim();
     if (devId.length === 0 || devId.length > caps.devIdMax || untrusted(devId)) {
-      skipped += 1;
-      return;
+      return false;
     }
     const id = `${topic}\u0000${devId}`;
     let device = devices.get(id);
     if (device === undefined) {
       if (devices.size >= caps.maxDevices) {
         halt();
-        return;
+        return false;
       }
-      device = { topic, devId, messageCount: 0, keys: new Map() };
+      // The first format that decoded a device is its format, kept for good.
+      device = { topic, devId, messageCount: 0, keys: new Map(), payloadFormat: formatCode };
       devices.set(id, device);
     }
     device.messageCount += 1;
-    messages += 1;
 
-    for (const [rawKey, value] of Object.entries(envelope.values)) {
+    for (const [rawKey, value] of Object.entries(record.values)) {
       const key = stripUnsafe(rawKey);
       if (key.length === 0 || key.length > caps.sourceKeyMax || untrusted(key)) {
         skippedKeys += 1;
@@ -213,11 +283,12 @@ export function createDiscoveryCollector(opts: {
       }
       if (totalKeys >= caps.maxTotalKeys) {
         halt();
-        return;
+        return true;
       }
       device.keys.set(key, sampleOf(key, value));
       totalKeys += 1;
     }
+    return true;
   }
 
   return {
@@ -231,10 +302,12 @@ export function createDiscoveryCollector(opts: {
         devId: d.devId,
         messageCount: d.messageCount,
         keys: [...d.keys].map(([sourceKey, sampleValue]) => ({ sourceKey, sampleValue })),
+        payloadFormat: d.payloadFormat,
       })),
       truncated,
       messages,
       skipped,
+      skippedReasons: { ...skippedReasons },
       skippedKeys,
       keys: totalKeys,
     }),

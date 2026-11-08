@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { requireIntegrationMqtt } from "../testing/integration-mqtt-gate";
 import {
   assertBothDevicesAndTheirKeys,
+  assertTheBcplDeviceDecodesWithItsFormat,
   assertEachJobUsedItsOwnClientId,
   assertOneFinishRowPerJob,
   assertTheConcurrentSubscriberKeptReceiving,
@@ -11,6 +12,7 @@ import {
   assertTheWideDeviceIsTruncated,
   closeMqttSuite,
   openMqttSuite,
+  runBcplWindow,
   runPlainWindow,
   runWindow,
   type MqttSuite,
@@ -31,12 +33,14 @@ describe.skipIf(!mqttUrl)("F3.24b — the discovery job against a real broker", 
   let suite: MqttSuite;
   let outcome: WindowOutcome;
   let plain: PlainOutcome;
+  let bcpl: Awaited<ReturnType<typeof runBcplWindow>>;
 
   beforeAll(async () => {
     suite = openMqttSuite(mqttUrl as string);
     outcome = await runWindow(suite);
     plain = await runPlainWindow(suite);
-  }, 45_000);
+    bcpl = await runBcplWindow(suite);
+  }, 60_000);
 
   afterAll(async () => {
     await closeMqttSuite(suite);
@@ -50,4 +54,5 @@ describe.skipIf(!mqttUrl)("F3.24b — the discovery job against a real broker", 
   it("writes one finish row per job", () => assertOneFinishRowPerJob(outcome));
   it("reaches a plain broker only through the allowlist rule (F4.326, ADR 0114)", () =>
     assertThePlainDiscoveryReturnsTheDevice(plain));
+  it("decodes the BCPL sample with its payload format (F4.334, ADR 0116)", () => assertTheBcplDeviceDecodesWithItsFormat(bcpl));
 });
