@@ -31,7 +31,7 @@ const { ORGANIZATION_LAYOUT_SEED_SLUG, seedOrganizationLayout } = require_(
  *
  * **After a full `pnpm db:seed`.** The first cases read what the database holds NOW, accepting
  * every state the boot gate accepts: the seed-slug copy (organization-wide, stamped with a
- * `organization-standard` template, 14 tiles and 15 sources) is present, and the pointer row is
+ * `organization-standard` template, with that version's widgets and sources) is present, and the pointer row is
  * either there (at an organization-wide dashboard) or absent (an administrator's Reset). Counts
  * are of published templates only, so a stock re-import's draft or a concurrent suite's draft
  * does not move them. The strict "pointer at the seed copy" shape is asserted only in the
@@ -244,7 +244,7 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
         )
       ).rows[0]!.v;
       const outcome = await seedOrganizationLayout(pool, id, () => undefined);
-      // The seed publishes the stock content as it is now (`F4.332`: v2, 16 widgets, 17 sources).
+      // The seed publishes the stock content as it is now (`F4.338`: v3, 15 widgets, 16 sources).
       expect(outcome).toMatchObject({ made: true, ...stockCounts() });
       const published = await pool.query<{ n: number }>(
         `SELECT count(*)::int AS n FROM bms.dashboard_templates
@@ -297,7 +297,8 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
       ]);
       const outcome = await seedOrganizationLayout(pool, id, () => undefined);
       // The copy is the newest PUBLISHED version, which a database seeded before `F4.332` holds at
-      // v1 (14 / 15) and a fresh one at v2 (16 / 17): read it rather than pin one history.
+      // v1 (14 / 15), one seeded before `F4.338` at v2 (16 / 17) and a fresh one at v3 (15 / 16):
+      // read it rather than pin one history.
       const expected = await publishedCounts(pool, id);
       expect(outcome).toMatchObject({ made: true, ...expected });
       expect((await pool.query(COUNTS_SQL, [id, ORGANIZATION_LAYOUT_SEED_SLUG])).rows[0]).toMatchObject({

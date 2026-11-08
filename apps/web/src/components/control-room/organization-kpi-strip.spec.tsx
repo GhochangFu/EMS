@@ -32,11 +32,12 @@ const TILES: readonly (readonly [string, string, string])[] = [
   ["assets-offline-tile", "Assets offline", "assets.offline.count"],
   ["asset-health-tile", "Asset health", "assets.health.score"],
   ["open-work-orders-tile", "Open work orders", "workorders.open.count"],
-  ["energy-cost-today-tile", "Energy cost today", "sustainability.total"],
+  // `F4.338` (ADR 0112 Amendment 4) — the stock v3 tiles: both energy cost tiles read at read time.
+  ["energy-cost-today-tile", "Energy cost today", "energy.cost.total"],
   ["water-cost-today-tile", "Water cost today", "sustainability.total"],
-  ["energy-cost-month-tile", "Energy cost this month", "sustainability.total"],
   ["water-cost-month-tile", "Water cost this month", "sustainability.total"],
   ["availability-tile", "Availability (24 h)", "sustainability.total"],
+  ["cost-this-month-tile", "Cost this month", "energy.cost.total"],
 ];
 
 function tileDto(slot: number): OrganizationStripTileDto {

@@ -57,7 +57,7 @@ async function viewRow(fx: OrganizationLayoutFixture, org: string): Promise<{ da
   return rows[0];
 }
 
-/** `F4.332` — the stock strip's size: fifteen tiles and the daily cost chart since v2. */
+/** The stock strip's size: fourteen tiles and the daily cost chart since v3 (`F4.338`). */
 const STOCK_WIDGETS = ORGANIZATION_STANDARD_TEMPLATE.content.widgets.length;
 const STOCK_SOURCES = ORGANIZATION_STANDARD_TEMPLATE.content.widgets.reduce((n, w) => n + w.sources.length, 0);
 
@@ -79,13 +79,17 @@ export async function assertNoRowReadsTheStockStrip(fx: OrganizationLayoutFixtur
   const pue = view.tiles[3]?.sources[0]?.resolved;
   expect(pue?.shape === "metric" && pue.prior === undefined).toBe(true);
   expect(view.canManage).toBe(true);
-  // `F4.332` (ADR 0112 Amendment 3) — the last widget is the daily cost chart, resolved as rows;
-  // a stored cost tile carries its point key for the "at the rate effective now" note.
+  // `F4.332` (ADR 0112 Amendment 3) — the last widget is the daily cost chart, resolved as rows.
+  // `F4.338` (Amendment 4) — both energy cost tiles read the read-time cost, so neither carries a
+  // stored point key (no "at the rate effective now" note), and the stored month tile is gone.
   const chart = view.tiles.at(-1);
   expect(chart?.widgetType).toBe("chart");
   expect(chart?.chartConfig?.series).toBe("cost_by_day");
   expect(chart?.sources[0]?.resolved?.shape).toBe("dataset");
-  expect(view.tiles.find((t) => t.key === "energy-cost-today-tile")?.sources[0]?.pointKey).toBe("energy_cost_today");
+  const costToday = view.tiles.find((t) => t.key === "energy-cost-today-tile")?.sources[0];
+  expect(costToday?.catalogKey).toBe("energy.cost.total");
+  expect(costToday?.pointKey).toBeNull();
+  expect(view.tiles.some((t) => t.key === "energy-cost-month-tile")).toBe(false);
   expect(view.tiles.find((t) => t.key === "cost-this-month-tile")?.sources[0]?.pointKey).toBeNull();
 }
 
@@ -116,7 +120,7 @@ export async function assertUnreadableIsNotFound(fx: OrganizationLayoutFixture):
 }
 
 /**
- * Make: one organization-wide copy stamped with the template, its fourteen tiles and their
+ * Make: one organization-wide copy stamped with the template, its widgets and their
  * sources, the row pointing at it, an audit row — and the read now answers the copy.
  */
 export async function assertMakeCopiesAndPoints(fx: OrganizationLayoutFixture): Promise<void> {
