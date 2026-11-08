@@ -2361,3 +2361,103 @@ choice the owner may change at review.
   if it is over its bound, the bound rises by release 4's rule and the owner is
   asked, as in Amendment 13.
 - No migration, no new route, no new permission.
+
+## Amendment 17 — MQTT payload formats in the copilot (ADR 0116, `F4.334`)
+
+**Status: accepted — 2026-11-08** (owner, in chat: "Accept"). Drafted on 2026-11-08 against `main` at `0f8d50df`. The
+`F4.334` plan's owner ruling Q12 (2026-11-08) puts the **Payload formats** page
+in a `WizardShell` and lets the copilot draft a format from a pasted sample
+message. That adds copilot surface, so it needs this amendment before the
+plan's PR 5. The owner ruled four gate questions one at a time on 2026-11-08,
+all as recommended (listed under *Gate questions*). The merge of this amendment
+approves it. A line marked *(drafter)* is a choice the owner may change at
+review.
+
+### Facts the amendment rests on
+
+- ADR 0116 adds the platform catalog `bms.mqtt_payload_formats` (no
+  `organization_id`, column `updated_at`) and the global-admin routes
+  `GET|POST /admin/mqtt-payload-formats`, `GET|PUT|DELETE
+  /admin/mqtt-payload-formats/:code` and `POST /admin/mqtt-payload-formats/test`
+  (decode a sample, store nothing). The `F4.334` plan's ruling Q9 adds
+  `PUT /admin/rtus/:id/payload-format`. These are built in the plan's PRs 1–4.
+- `tests/f3.85-stepper-coverage.test.ts` requires a copilot catalog entry for
+  every `<WizardShell`, and `tests/f3.85-catalog-coverage.test.ts` requires
+  every write route to be a catalog entry or in `EXCLUDED_ROUTES`
+  (`packages/shared/src/copilot/catalog/index.ts`).
+- The fleet-wide location-type vocabulary (Amendment 8, `location-types.ts`)
+  is the precedent for a catalog with no organization: create is a `fleet`
+  target, the other writes name the row by its `code`, and the entries are
+  offered to the global admin alone.
+- The copilot has about forty read tools (`list_assets`,
+  `list_asset_templates`, …) and none for payload formats.
+
+### Decisions
+
+1. **Three catalog entries** (Q1), in a new
+   `packages/shared/src/copilot/catalog/mqtt-payload-formats.ts`, offered to
+   the global admin alone, on the shared contracts of ADR 0116 decision 5:
+   - `mqttPayloadFormat.create` — `POST /admin/mqtt-payload-formats`, risk
+     `create`, target `{ kind: "fleet" }`.
+   - `mqttPayloadFormat.update` — `PUT /admin/mqtt-payload-formats/:code`,
+     risk `edit`, the row named by its `code`, `precondition: "updatedAt"`
+     *(drafter: the table has `updated_at`, so a stale card is refused)*.
+   - `mqttPayloadFormat.delete` — `DELETE /admin/mqtt-payload-formats/:code`,
+     risk `delete`, **`red: true`**.
+   - Steps *(drafter)*: **Format** (`code`, `name`, `description`) and
+     **Definition** (`definition`). The summaries call the catalog
+     platform-wide and name the code; the update summary says how many RTUs
+     use the format, because an edit changes ingest for all of them at the next
+     reload (ADR 0116 decision 6).
+   - The route stays the guard at Confirm: global admin only, the built-in
+     row refused (409), a format in use refused on delete (409, listing the
+     RTUs and drafts — plan ruling Q5), and the definition schema (400).
+2. **Two read tools** (Q2), beside the other list tools:
+   - `list_payload_formats` — `code`, `name`, `description`, `builtin`, and
+     the number of RTUs that name each format. No definition bodies in the
+     list *(drafter: cut at the house limit; the model reads one definition
+     through the optional `code` filter)*.
+   - `decode_payload_sample` — input: a candidate `definition`, a `sample`
+     string and an optional `topic`. It runs the same decoder as the test
+     route (`decodeMqttPayload`), writes nothing and writes no audit row, and
+     answers the decoded device keys, times and readings, or the schema
+     issues. The system prompt's note says to propose a format only after a
+     decode of the user's sample returned the readings the user expects.
+3. **The pasted sample** (Q3). A sample the user pastes goes to the
+   configured copilot model provider and stays in the conversation history,
+   like any message. Allowed for telemetry samples. Bounds: the tool refuses a
+   `sample` over **16 KiB**; the copilot never asks for, and the tool never
+   accepts, broker credentials *(drafter: no credential field exists in the
+   input schema)*. The Payload formats page shows a fixed note beside the
+   copilot that a pasted sample goes to the copilot model.
+4. **`rtu.setPayloadFormat`** (Q4) — `PUT /admin/rtus/:id/payload-format`,
+   risk `edit`, target `{ kind: "rtu", param: "id" }` as in `rtus.ts`, offered
+   to the roles that may edit the RTU, a canvas entry with no steps if the
+   RTU form already holds the field *(drafter: the build picks canvas or one
+   step)*. The summary names the RTU, the old and the new format. Switching
+   many RTUs (for example the 21 BCPL RTUs) is one card per RTU, as for every
+   per-row entry *(drafter)*.
+5. **Order with the `F4.334` build.** Plan PR 3 adds the RTU route before this
+   amendment's build. Until the build of this amendment lands, PR 3 lists
+   `PUT /admin/rtus/:id/payload-format` and the payload-format write routes in
+   `EXCLUDED_ROUTES` with the reason "copilot entry in ADR 0099 Amendment 17";
+   plan PR 5 moves them out of `EXCLUDED_ROUTES` into the entries above.
+
+### Gate questions
+
+| # | Question | Ruling (owner, 2026-11-08) |
+| - | -------- | -------------------------- |
+| Q1 | Which payload-format writes become catalog entries? | **Create, edit, delete**; delete is red (decision 1). |
+| Q2 | Read tools to check a draft before propose? | **Both** — `list_payload_formats` and `decode_payload_sample` (decision 2). |
+| Q3 | May a pasted sample go to the model provider? | **Yes, with a note**; 16 KiB cap; no credentials (decision 3). |
+| Q4 | `PUT /admin/rtus/:id/payload-format`: entry or excluded? | **Catalog entry** `rtu.setPayloadFormat` (decision 4). |
+
+### Consequences
+
+- Plan PR 5 (or a PR 6 for the copilot half) adds the four entries with their
+  fixtures in `catalog.fixtures.ts` and specs, the two read tools with specs,
+  the system-prompt note, and the page's `WizardShell`.
+- The propose budget (`copilot-propose-budget.spec.ts`) is measured at the
+  build; if it is over its bound, the bound rises by release 4's rule and the
+  owner is asked, as in Amendment 13.
+- No migration and no new route beyond ADR 0116 and plan ruling Q9.
