@@ -1,7 +1,7 @@
 import { Logger } from "@nestjs/common";
 import type { OnboardingDraft } from "@bms/shared";
 
-import { STOPPED_EARLY_TIME_REPLY } from "./onboarding-agent-loop";
+import { stoppedEarlyStoredReply } from "./onboarding-agent-loop";
 import { FakeLlmProvider, PLAIN_RTU, calls, toolCall } from "./onboarding-agent-loop.spec";
 import { CONFIRM_STEP_LABELS } from "./onboarding-chat-rule-based";
 import { AGENT_NOT_SET_UP_NOTICE, AGENT_UNAVAILABLE_NOTICE, OnboardingChatService } from "./onboarding-chat.service";
@@ -117,7 +117,11 @@ export async function assertCapTimeDoesNotFallBack(): Promise<void> {
   } finally {
     (globalThis as { setTimeout: unknown }).setTimeout = saved;
   }
-  assert(result.assistantMessage === STOPPED_EARLY_TIME_REPLY, `the time cap answers itself, got ${result.assistantMessage}`);
+  // F4.339 (ADR 0117 decision 3): the stop reply names the stored line.
+  assert(
+    result.assistantMessage === stoppedEarlyStoredReply("cap_time", ["Added RTU RTU-1 (mqtt)"]),
+    `the time cap answers itself, got ${result.assistantMessage}`,
+  );
   assert(result.draftPatch.rtus?.length === 1 && result.actionLines.length === 1, "the completed edit is kept");
 }
 

@@ -48,6 +48,10 @@ import {
   assertAClaimStillUnwrittenAfterTheRetryIsReplaced,
   assertAClaimAfterAWriteIsUntouched,
   assertAClaimWhoseRetryTimesOutIsReplaced,
+  assertAStopAfterTwoWritesNamesBoth,
+  assertAStopAfterElevenWritesCutsToTen,
+  assertTheNoWriteConstantsAndTheDiscoveryHintStand,
+  assertThePromptCarriesTheOneAssetPerTurnRule,
 } from "./onboarding-agent-loop.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -254,5 +258,23 @@ describe("the write-claim guard in the turn (F4.339, ADR 0117 decision 2)", () =
 
   it("replaces the first text when the retry round times out", async () => {
     await assertAClaimWhoseRetryTimesOutIsReplaced();
+  });
+});
+
+describe("stop replies name what was stored (F4.339, ADR 0117 decision 3)", () => {
+  it("joins two stored lines and leaves refused lines out", () => {
+    assertAStopAfterTwoWritesNamesBoth();
+  });
+
+  it("cuts eleven stored lines to ten and a tail", () => {
+    assertAStopAfterElevenWritesCutsToTen();
+  });
+
+  it("keeps the fixed replies when nothing was named, and the discovery hint", () => {
+    assertTheNoWriteConstantsAndTheDiscoveryHintStand();
+  });
+
+  it("tells the model to write one asset per turn", () => {
+    assertThePromptCarriesTheOneAssetPerTurnRule();
   });
 });

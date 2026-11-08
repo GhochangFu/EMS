@@ -1,8 +1,10 @@
 import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
 
 import { cloneJson } from "../stack-safe-json";
+import { echoedItems, moreTail } from "../spreadsheet-guard";
 import {
   isToolName,
+  NOT_APPLIED_PREFIX,
   refusedWriteLine,
   runTool,
   TOOL_DEFINITIONS,
@@ -68,6 +70,22 @@ export const STOPPED_EARLY_CALLS_NOTHING_REPLY =
 
 export const STOPPED_EARLY_TIME_NOTHING_REPLY =
   "I stopped early because the turn reached its time limit. Nothing was written to the draft in this turn.";
+
+/** F4.339 (plan R3): how many stored lines a stop reply names before the `…and N more` tail. */
+export const STOP_REPLY_MAX_LINES = 10;
+
+/** F4.339 (ADR 0117 decision 3): a stop reply after writes names them; the lines are the code's own action lines. */
+export function stoppedEarlyStoredReply(stopReason: "cap_calls" | "cap_time", storedLines: readonly string[]): string {
+  const limit = stopReason === "cap_calls" ? "limit of tool calls" : "time limit";
+  const { shown, omitted } = echoedItems(storedLines, STOP_REPLY_MAX_LINES);
+  const tail = moreTail(omitted);
+  const list = tail === "" ? shown.join("; ") : `${shown.join("; ")}; ${tail}`;
+  return `I stopped early because the turn reached its ${limit}. Stored in this turn: ${list}. Anything else you asked for was not written.`;
+}
+
+/** F4.339 (plan R3): the prompt sentence that keeps a mapping turn inside the caps. */
+export const ONE_ASSET_PER_TURN_RULE =
+  'Write one asset with its mappings, or one discovered device, per turn; then offer "Next" with suggest_replies.';
 
 /** F4.270 (owner ruling 2026-10-20): added to a stop reply when the turn read a discovery result. */
 export const ONE_DEVICE_PER_TURN_HINT = " Ask me to map one discovered device at a time.";
@@ -189,6 +207,7 @@ Before you add an RTU on any protocol other than mqtt, call list_protocols and a
 To map source tags on a plain asset: ask the user for the RTU's tag list, or take a pasted list. Match each tag to a point key with list_point_keys. Show the proposed table in text (tag, point key, unit) and offer the replies "Write these mappings" and "Change the table" with suggest_replies. Write only after the user agrees: declare missing keys with add_point_keys, then write the rows with map_points. Say which keys are new to the catalog. Never write a mapping the user has not seen.
 ${discoveryParagraph(input.draft)}You cannot commit. When the draft is ready, use propose_commit; the user then uses Commit in the draft preview, or Confirm on the copilot's commit card.
 When you need the user to choose, ask one question per turn and offer the choices with suggest_replies.
+${ONE_ASSET_PER_TURN_RULE}
 ${ACTION_RECORD_PROMPT_SENTENCE}
 ${PROMPT_MARKER_SENTENCE}
 Draft context (redacted): ${serialiseDraftForPrompt(input.draft)}`;
@@ -200,10 +219,20 @@ Draft context (redacted): ${serialiseDraftForPrompt(input.draft)}`;
  * device at a time. "Written" is the turn's own patch, a commit proposal or a
  * discovery proposal; a credential copy only follows an `add_rtu`, which is in
  * the patch.
+ *
+ * F4.339 (ADR 0117 decision 3): when the turn's completed calls left action
+ * lines, the reply names them — the "Not applied" lines are not stored, so
+ * they are left out — instead of "the changes made so far are in the draft".
  */
-function stopReply(stopReason: "cap_calls" | "cap_time", draftPatch: OnboardingDraftInput, state: ToolState): string {
+export function stopReply(
+  stopReason: "cap_calls" | "cap_time",
+  draftPatch: OnboardingDraftInput,
+  state: ToolState,
+  actionLines: readonly string[] = [],
+): string {
   const wrote = Object.keys(draftPatch).length > 0 || state.pendingProposal !== undefined || state.pendingDiscovery !== undefined;
-  const base =
+  const stored = actionLines.filter((line) => !line.startsWith(NOT_APPLIED_PREFIX));
+  const fixed =
     stopReason === "cap_calls"
       ? wrote
         ? STOPPED_EARLY_CALLS_REPLY
@@ -211,6 +240,7 @@ function stopReply(stopReason: "cap_calls" | "cap_time", draftPatch: OnboardingD
       : wrote
         ? STOPPED_EARLY_TIME_REPLY
         : STOPPED_EARLY_TIME_NOTHING_REPLY;
+  const base = wrote && stored.length > 0 ? stoppedEarlyStoredReply(stopReason, stored) : fixed;
   return state.discoveryRead !== undefined ? base + ONE_DEVICE_PER_TURN_HINT : base;
 }
 
@@ -285,7 +315,7 @@ export async function runAgentTurn(
     state.pendingDiscovery === undefined &&
     claimsAWrite(reply);
   return {
-    reply: stopReason === "final" ? (claimReplaced ? withoutWriteClaims(reply) : reply) : stopReply(stopReason, draftPatch, state),
+    reply: stopReason === "final" ? (claimReplaced ? withoutWriteClaims(reply) : reply) : stopReply(stopReason, draftPatch, state, actionLines),
     draftPatch,
     actionLines,
     ...(state.pendingProposal ? { commitProposal: state.pendingProposal } : {}),

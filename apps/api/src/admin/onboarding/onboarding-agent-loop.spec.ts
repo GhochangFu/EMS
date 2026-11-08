@@ -11,6 +11,9 @@ import {
   STOPPED_EARLY_TIME_NOTHING_REPLY,
   STOPPED_EARLY_TIME_REPLY,
   TURN_DEADLINE_MS,
+  ONE_ASSET_PER_TURN_RULE,
+  stopReply,
+  stoppedEarlyStoredReply,
   ACTION_RECORD_PROMPT_SENTENCE,
   buildHistory,
   buildSystemPrompt,
@@ -178,7 +181,11 @@ export async function assertTheCallCapStopsWithItsReplyAndKeepsTheEdits(): Promi
   );
   const llm = new FakeLlmProvider(script);
   const result = await runAgentTurn(turn(llm));
-  assert(result.stopReason === "cap_calls" && result.reply === STOPPED_EARLY_CALLS_REPLY, "the cap stops the turn");
+  // F4.339 (ADR 0117 decision 3): a stop after writes names them.
+  assert(
+    result.stopReason === "cap_calls" && result.reply === stoppedEarlyStoredReply("cap_calls", result.actionLines),
+    `the cap stops the turn and names the stored lines, got ${result.reply}`,
+  );
   assert(result.draftPatch.pointKeys?.length === 8 && result.actionLines.length === 8, "the eight edits are kept");
   assert(llm.calls === 9, `the provider is called nine times, got ${llm.calls}`);
 }
@@ -224,7 +231,12 @@ export function assertTheDiscoveryParagraphMapsOneDevicePerTurn(): void {
 export async function assertTheDeadlineKeepsCompletedEdits(): Promise<void> {
   const llm = new FakeLlmProvider([calls(toolCall("add_rtu", PLAIN_RTU)), "hang"]);
   const result = await runAgentTurn(turn(llm), { deadlineMs: 20 });
-  assert(result.stopReason === "cap_time" && result.reply === STOPPED_EARLY_TIME_REPLY, "the deadline stops the turn");
+  assert(
+    result.stopReason === "cap_time" &&
+      result.reply ===
+        "I stopped early because the turn reached its time limit. Stored in this turn: Added RTU RTU-1 (mqtt). Anything else you asked for was not written.",
+    `the deadline stops the turn and names the stored line (F4.339), got ${result.reply}`,
+  );
   assert(result.draftPatch.rtus?.length === 1 && result.actionLines.length === 1, "the completed edit is kept");
   assert(result.fallback === false, "the guided mode does not run");
 }
@@ -694,4 +706,44 @@ export async function assertAClaimWhoseRetryTimesOutIsReplaced(): Promise<void> 
   const result = await runAgentTurn(turn(llm, { draft: readyDraft() }), { deadlineMs: 30 });
   assert(result.stopReason === "final" && result.record.correctionFailed === "cap_time", `the loop falls back to the first text, got ${result.stopReason}`);
   assert(result.reply === NOTHING_WRITTEN_LINE && result.record.claimReplaced === true, `the first text is replaced, got ${result.reply}`);
+}
+
+/** F4.339 (plan T1.3): two stored lines are joined; refused lines are left out. */
+export function assertAStopAfterTwoWritesNamesBoth(): void {
+  const state = { working: {} };
+  const reply = stopReply("cap_calls", { pointKeys: [] } as never, state, ["Added point key 'a'", `${NOT_APPLIED_PREFIX}add_asset (field: code)`, "Added point key 'b'"]);
+  assert(
+    reply ===
+      "I stopped early because the turn reached its limit of tool calls. Stored in this turn: Added point key 'a'; Added point key 'b'. Anything else you asked for was not written.",
+    `the joined-lines sentence, got ${reply}`,
+  );
+}
+
+/** F4.339: eleven stored lines → ten and the `…and 1 more` tail. */
+export function assertAStopAfterElevenWritesCutsToTen(): void {
+  const lines = Array.from({ length: 11 }, (_, i) => `Added point key 'k${i}'`);
+  const reply = stopReply("cap_time", { pointKeys: [] } as never, { working: {} }, lines);
+  assert(reply.includes("Added point key 'k9'; …and 1 more. Anything else"), `ten lines and the tail, got ${reply}`);
+  assert(!reply.includes("'k10'"), "the eleventh line is not named");
+}
+
+/** F4.339: with no write the four constants stand, and the discovery hint is still appended. */
+export function assertTheNoWriteConstantsAndTheDiscoveryHintStand(): void {
+  assert(stopReply("cap_calls", {}, { working: {} }, []) === STOPPED_EARLY_CALLS_NOTHING_REPLY, "calls, nothing written");
+  assert(stopReply("cap_time", {}, { working: {} }, []) === STOPPED_EARLY_TIME_NOTHING_REPLY, "time, nothing written");
+  assert(stopReply("cap_calls", { pointKeys: [] } as never, { working: {} }, []) === STOPPED_EARLY_CALLS_REPLY, "calls, wrote with no line");
+  assert(stopReply("cap_time", { pointKeys: [] } as never, { working: {} }, []) === STOPPED_EARLY_TIME_REPLY, "time, wrote with no line");
+  const read = { working: {}, discoveryRead: { devices: [] } } as never;
+  assert(stopReply("cap_calls", { pointKeys: [] } as never, read, ["Added point key 'a'"]).endsWith(ONE_DEVICE_PER_TURN_HINT), "the discovery hint is appended");
+}
+
+/** F4.339 (plan R3): the prompt carries the one-asset-per-turn sentence, and the Discovery rule stays. */
+export function assertThePromptCarriesTheOneAssetPerTurnRule(): void {
+  const prompt = buildSystemPrompt({ orgName: "Ion Exchange", phase: "assets", typeCodes: ["smoc_campus"], draft: {} });
+  assert(
+    prompt.includes('Write one asset with its mappings, or one discovered device, per turn; then offer "Next" with suggest_replies.'),
+    "the one-asset-per-turn sentence (exact string)",
+  );
+  assert(prompt.includes(ONE_ASSET_PER_TURN_RULE), "through the constant");
+  assert(DISCOVERY_PROMPT_PARAGRAPH.includes(ONE_DEVICE_PER_TURN_RULE), "the Discovery paragraph's rule stays");
 }
