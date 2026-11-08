@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed — 2026-11-08.** Raised by the agent for backlog row `F4.339`, the
+**Accepted — 2026-11-08** (owner, in chat: "Accept"; proposed the same day). Raised by the agent for backlog row `F4.339`, the
 umbrella row the owner asked for after onboarding all six BCPL locations on
 `bms.demosites.co.in` on 2026-11-08 (21 RTUs; the copilot was used for LAKWA
 and LALMATI and then, on the owner's ruling, the draft API for the rest). The
