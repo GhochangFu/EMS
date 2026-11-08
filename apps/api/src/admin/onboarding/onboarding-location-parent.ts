@@ -50,7 +50,7 @@ type DraftLocation = NonNullable<OnboardingDraft["location"]>;
  * whole reply, since inside a sentence they mean other things.
  */
 export function isTopLevelPhrase(message: string): boolean {
-  return NO_PARENT_WORDS.has(normalisedReply(message)) || /\b(?:top[- ]level|no parent)\b/i.test(message);
+  return NO_PARENT_WORDS.has(normalisedReply(message)) || /(?<!\bnot (?:a )?)\b(?:top[- ]level|no parent)\b/i.test(message);
 }
 
 /**

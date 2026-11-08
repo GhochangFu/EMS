@@ -769,7 +769,20 @@ export function assertTheTopLevelStampLeavesOtherCallsAlone(): void {
   assert(stampTopLevel(other, true) === other, "another tool is untouched");
   const bare = toolCall("set_location", { name: "SIVSAGAR" });
   assert(stampTopLevel(bare, false) === bare, "no phrase, no stamp");
+  assert(!isTopLevelPhrase("Put it under SIVSAGAR, not top level"), "a negated phrase is not top level");
   assert(JSON.parse(stampTopLevel(bare, true).arguments).parentCode === null, "the phrase stamps null");
   assert(isTopLevelPhrase("Make SIVSAGAR a top level campus") && isTopLevelPhrase("top-level please") && isTopLevelPhrase("none"), "the phrase set");
   assert(!isTopLevelPhrase("none of the RTUs are online") && !isTopLevelPhrase("put it under BCPL"), "none and root only as the whole reply");
+}
+
+/** Code review of PR 1: a write that changes nothing still stored its action row, so the turn wrote and the reply is untouched. */
+export async function assertANoOpWriteCountsAsWritten(): Promise<void> {
+  const draft = readyDraft();
+  const location = draft.location!;
+  const same = { name: location.name, type: location.type, latitude: location.latitude, longitude: location.longitude };
+  const llm = new FakeLlmProvider([calls(toolCall("set_location", same)), { kind: "final", text: `Set location ${location.name} (smoc_campus)` }]);
+  const result = await runAgentTurn(turn(llm, { draft }));
+  assert(llm.calls === 2, `no retry round, got ${llm.calls} calls`);
+  assert(result.record.claimReplaced === undefined && result.record.corrected === undefined, "neither corrected nor replaced");
+  assert(result.reply === `Set location ${location.name} (smoc_campus)`, `the reply is untouched, got ${result.reply}`);
 }

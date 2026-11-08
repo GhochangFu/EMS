@@ -20,13 +20,21 @@
  */
 
 /** The code-written action-line shapes, matched at the start of a line (bullets and `**` stripped). */
-const LINE_CLAIM = /^(?:Added|Mapped|Updated|Removed|Set location|Proposed (?:commit|discovery)|Imported|Cleared|Declared|Point keys:)(?:\b|\s)/;
+const LINE_CLAIM = /^(?:Added|Mapped|Updated|Removed|Set location|Proposed (?:commit|discovery)|Imported|Cleared|Declared|Point keys:)(?![A-Za-z0-9])/;
 
-/** Claims in prose, matched per sentence. */
+/**
+ * Claims in prose, matched per sentence. Code review of PR 1: the perfect tense
+ * only ("I've added", not "I set" / "Should I set"), and a passive needs
+ * "has been" / "have been" or "now" — "are added to the draft when you choose
+ * Write" and "Two RTUs are stored in the draft" are not claims.
+ */
 const SENTENCE_CLAIMS: readonly RegExp[] = [
-  /\b(?:I|I've|I have|we've|we have)\s+(?:now\s+)?(?:added|mapped|updated|removed|set|cleared|imported|declared|proposed)\b/i,
-  /\b(?:is|are|has been|have been)\s+(?:now\s+)?(?:added|mapped|written|stored|saved|updated|removed)\s+(?:to|in|on)\s+the draft\b/i,
+  /\b(?:I've|I have|we've|we have)\s+(?:now\s+)?(?:added|mapped|updated|removed|set|cleared|imported|declared|proposed)\b/i,
+  /\b(?:has been|have been|(?:is|are)\s+now)\s+(?:now\s+)?(?:added|mapped|written|stored|saved|updated|removed)\s+(?:to|in|on)\s+the draft\b/i,
 ];
+
+/** A question, or a conditional / future sentence ("Once I've mapped these, I will offer Next"), claims nothing. */
+const NOT_A_REPORT = /\?\s*$|\b(?:once|when|after|before|if|until|will|would|should|shall)\b/i;
 
 /** The copilot's negation rule (`copilot-card-claim.ts`), per sentence. */
 const NEGATION = /\b(?:no|not|nothing|never)\b/i;
@@ -36,7 +44,7 @@ const NEGATION = /\b(?:no|not|nothing|never)\b/i;
  * a code-written line may itself carry "not" in its tail ("(type not set)",
  * a config-only note), and it is still a write.
  */
-const LINE_NEGATION = /^(?:\S+\s+){1,2}(?:nothing|no|not|never)\b/i;
+const LINE_NEGATION = /^(?:\S+\s+){1,2}(?:nothing|no|not|never)\b/;
 
 /** Every claim pattern, for the spec's table. */
 export const WRITE_CLAIM_PATTERNS: readonly RegExp[] = [LINE_CLAIM, ...SENTENCE_CLAIMS];
@@ -72,7 +80,7 @@ function sentencesOf(line: string): string[] {
 }
 
 function sentenceClaims(sentence: string): boolean {
-  return !negated(sentence) && SENTENCE_CLAIMS.some((pattern) => pattern.test(sentence));
+  return !negated(sentence) && !NOT_A_REPORT.test(sentence) && SENTENCE_CLAIMS.some((pattern) => pattern.test(sentence));
 }
 
 /** True when a line of the reply has an action-line shape, or a sentence says the draft was changed, without a negation. */

@@ -562,7 +562,7 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       return write(
         state,
         { location: derived },
-        `Set location ${derived.name} (${type ?? "type not set"})${parentTail(location.parentCode)}${defaultCoordinatesTail(location, derived)}`,
+        `Set location ${derived.name} (${type ?? "type not set"})${parentTail(location.parentCode)}${state.namesDefaultCoordinates ? defaultCoordinatesTail(location, derived) : ""}`,
       );
     }
 

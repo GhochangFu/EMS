@@ -81,6 +81,11 @@ export type ToolState = {
   discoveryRead?: { readonly rtuCode: string; readonly devIds: readonly string[] };
   /** F3.24b: the credential copies the turn's `add_rtu` calls earned; checked again when applied. */
   secretCopies?: DiscoverySecretCopy[];
+  /**
+   * F4.339 (plan R13): set by the agent turn only, so `set_location` adds the
+   * default-coordinates tail there; the guided path cannot read coordinates.
+   */
+  namesDefaultCoordinates?: true;
 };
 
 /**

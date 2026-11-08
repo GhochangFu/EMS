@@ -120,8 +120,8 @@ export type AgentTurnResult = {
  * a commit proposal or a discovery proposal. A draft too deep to diff counts as
  * written, so the guard never retries on it and `correctFinal` never throws.
  */
-function wroteSoFar(before: OnboardingDraft, state: ToolState): boolean {
-  if (state.pendingProposal !== undefined || state.pendingDiscovery !== undefined) return true;
+function wroteSoFar(before: OnboardingDraft, state: ToolState, wroteLine: boolean): boolean {
+  if (wroteLine || state.pendingProposal !== undefined || state.pendingDiscovery !== undefined) return true;
   try {
     return Object.keys(diffSections(before, state.working)).length > 0;
   } catch {
@@ -279,6 +279,9 @@ export async function runAgentTurn(
 ): Promise<AgentTurnResult> {
   const state: ToolState = { working: cloneJson(input.draft) };
   const topLevel = isTopLevelPhrase(input.message);
+  state.namesDefaultCoordinates = true;
+  // Code review of PR 1: a write that changes nothing still stores its action row, so it counts as written.
+  let wroteLine = false;
   const messages: LlmMessage[] = [
     {
       role: "system",
@@ -300,12 +303,13 @@ export async function runAgentTurn(
       runTool: async (asked) => {
         const call = stampTopLevel(asked, topLevel);
         const outcome = await runTool(call, state, input.tools);
+        if (outcome.ok && outcome.actionLine) wroteLine = true;
         const refused = refusedWriteLine(call.name, outcome);
         return refused === undefined ? outcome : { ...outcome, actionLine: refused };
       },
       llm: input.llm,
       // F4.339 (ADR 0117 decision 2): a final text that claims a write the turn did not make goes back once.
-      correctFinal: (text) => writeClaimRetryFor(text, wroteSoFar(input.draft, state)),
+      correctFinal: (text) => writeClaimRetryFor(text, wroteSoFar(input.draft, state, wroteLine)),
     },
     options,
   );
@@ -332,6 +336,7 @@ export async function runAgentTurn(
   // F4.339: still claiming after the one correction, with nothing written — the claims drop and a fixed line leads.
   const claimReplaced =
     stopReason === "final" &&
+    !wroteLine &&
     Object.keys(draftPatch).length === 0 &&
     state.pendingProposal === undefined &&
     state.pendingDiscovery === undefined &&

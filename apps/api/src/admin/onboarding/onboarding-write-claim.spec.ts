@@ -37,6 +37,8 @@ export const CODE_WRITTEN_LINES: readonly string[] = [
   "Added 2 assets from flow-meter v1 on R1",
   "Proposed discovery on RTU 'R1': 'bcpl/#' for 120 s",
   "- **Added asset FM4 on RTU R1**",
+  "Point keys:",
+  "Set location NO-1 (smoc_campus)",
 ];
 
 /** Plan T1.2: every code-written line shape is a claim. */
@@ -70,6 +72,13 @@ export function assertNegationsOffersAndReadsAreNotClaims(): void {
     "Added nothing this turn.",
     "I have not mapped the points yet.",
     "Which RTU should the asset go on?",
+    // Code review of PR 1: questions, proposals, read answers, recaps and futures.
+    "Should I set the location type to smoc_campus?",
+    "Before I set the location, which type is it?",
+    "The mappings are added to the draft when you choose Write these mappings.",
+    "Two RTUs are stored in the draft: R1 and R2.",
+    "So far in this session I added FM1 and FM2.",
+    "Once I've mapped these, I will offer Next.",
   ]) {
     assert(!claimsAWrite(reply), `not a claim: ${reply}`);
   }

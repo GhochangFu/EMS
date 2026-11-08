@@ -629,12 +629,12 @@ export async function assertRetiredTypeTurnIsNotReadyToCommit(): Promise<void> {
 export async function assertLocationTurnsAnswerTheirActionLines(): Promise<void> {
   const first = await ruleBasedTurn("Berhampur", {}, "location");
   assert(
-    JSON.stringify(first.actionLines) === JSON.stringify(["Set location Berhampur (type not set) (default coordinates applied — tell me the real ones if the site is elsewhere)"]),
+    JSON.stringify(first.actionLines) === JSON.stringify(["Set location Berhampur (type not set)"]),
     `the name turn's action line, got ${JSON.stringify(first.actionLines)}`,
   );
   const second = await ruleBasedTurn("SMOC campus", { location: first.draftPatch.location } as OnboardingDraft, "location");
   assert(
-    JSON.stringify(second.actionLines) === JSON.stringify(["Set location Berhampur (smoc_campus) (default coordinates applied — tell me the real ones if the site is elsewhere)"]),
+    JSON.stringify(second.actionLines) === JSON.stringify(["Set location Berhampur (smoc_campus)"]),
     `the type turn's action line, got ${JSON.stringify(second.actionLines)}`,
   );
 }

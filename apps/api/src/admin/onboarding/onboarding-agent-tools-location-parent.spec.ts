@@ -68,7 +68,7 @@ export async function assertAnActiveParentIsWrittenWithItsActionLine(): Promise<
   const state: ToolState = { working: {} };
   const out = await runTool(call({ name: "Thane Pump", type: "pump_station", parentCode: "CAMPUS-1" }), state, context());
   assert(
-    out.ok && state.working.location?.parentCode === "CAMPUS-1" && out.actionLine === "Set location Thane Pump (pump_station) under CAMPUS-1 (default coordinates applied — tell me the real ones if the site is elsewhere)",
+    out.ok && state.working.location?.parentCode === "CAMPUS-1" && out.actionLine === "Set location Thane Pump (pump_station) under CAMPUS-1",
     `expected the parent written and named, got ${JSON.stringify(out)} / ${JSON.stringify(state.working.location)}`,
   );
 }
@@ -78,7 +78,7 @@ export async function assertANullParentIsATopLevelLocation(): Promise<void> {
   const state: ToolState = { working: {} };
   const out = await runTool(call({ name: "Thane Pump", type: "pump_station", parentCode: null }), state, context());
   assert(
-    out.ok && state.working.location?.parentCode === null && out.actionLine === "Set location Thane Pump (pump_station) as a top-level location (default coordinates applied — tell me the real ones if the site is elsewhere)",
+    out.ok && state.working.location?.parentCode === null && out.actionLine === "Set location Thane Pump (pump_station) as a top-level location",
     `expected a top-level location, got ${JSON.stringify(out)} / ${JSON.stringify(state.working.location)}`,
   );
 }
@@ -233,7 +233,7 @@ export async function assertACodeInAnotherCaseIsNamedAsStored(): Promise<void> {
   const state: ToolState = { working: {} };
   const out = await runTool(call({ name: "Thane Pump", type: "pump_station", parentCode: "campus-1" }), state, context());
   assert(
-    out.ok && out.actionLine === "Set location Thane Pump (pump_station) under CAMPUS-1 (default coordinates applied — tell me the real ones if the site is elsewhere)",
+    out.ok && out.actionLine === "Set location Thane Pump (pump_station) under CAMPUS-1",
     `the action line names the stored code, got ${JSON.stringify(out)}`,
   );
 }
