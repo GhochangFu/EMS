@@ -318,3 +318,67 @@ silently; measured by the migration review at the build.)
 
 - Widget types other than `value_tile` and the cost chart on this target.
 - A water cost per day (no dated water-rate read exists yet).
+
+## Amendment 4 — 2026-11-08 (`F4.338`): the strip's energy cost reads the read-time cost
+
+**Status: Proposed — accepted when the PR that adds it merges** (owner gate).
+Source: owner ruling of 2026-11-08, on the PHEWB control room after `F4.332`
+and `F4.337`. Code citations are to `main` at `2d01512`.
+
+This amends **Amendment 3 item 5**, the sentence "Tiles 10 and 12 (the stored
+`energy_cost_today` / `energy_cost_this_month` points) stay unchanged in the
+content".
+
+### What changes
+
+The default strip (`organization-standard`, `stockVersion` 2 → 3, ADR 0052
+decision 7):
+
+| # | Widget | v2 source | v3 |
+| --- | --- | --- | --- |
+| 10 | "Energy cost today" tile | `sustainability.total { pointKey: "energy_cost_today", aggregate: "sum" }` | `energy.cost.total { period: "today" }`, title kept, config `{ icon: "bolt" }` as "Cost this month" |
+| 12 | "Energy cost this month" tile | `sustainability.total { pointKey: "energy_cost_this_month", aggregate: "sum" }` | **removed** |
+
+The later widgets move up one grid slot, so the strip holds fourteen tiles and
+the daily cost chart. The chart stays full width under the last tile row.
+
+The web needs no change. The "at the rate effective now" note is keyed on a
+source's `sustainability.*` `pointKey` (ADR 0070 Amendment 7 decision 8), not
+on the template, so tile 10 loses the note because it no longer reads a stored
+point. Any other dashboard that still binds a stored `energy_cost_*` point keeps
+the note.
+
+### Why
+
+- **The stored points answer a different question.** `sustainability.total`
+  sums the point over the assets that report it now, so a partial organization
+  reads as, for example, "5 of 12 assets". The points are priced at the rate in
+  force at the latest calc tick, so a rate change prices the whole period again.
+- **The two month tiles disagreed on the live strip.** On AWS PHEWB the stored
+  "Energy cost this month" read ₹13,800 and the read-time "Cost this month"
+  (`energy.cost.total { period: "this_month" }`, each hour priced at that
+  hour's rate over every meter) read ₹13,968. Two tiles with the same meaning
+  and different numbers on one strip read as a defect.
+- **The read-time value matches the chart.** `energy.cost.total` is the sum of
+  `energy.cost_by_day`'s rows (ADR 0070 Amendment 7 decision 3), so "Energy
+  cost today" now equals the last bar of the daily cost chart under it.
+- So the month figure stays once, as "Cost this month", and "Energy cost today"
+  reads the same source for today.
+
+### What does not change
+
+- **ADR 0052 decision 7.** The bump touches no organization's row. An
+  organization with a published version keeps it; a new database seeds v3
+  (ruling Q3: the seed publishes only where no version exists); "Reset to
+  default" draws the stock content from code, so it gives v3. The live PHEWB
+  strip is edited in place by the owner's session after the deploy, and the
+  owner publishes the organization template v3 there; neither is done from this
+  repository.
+- **No contract, catalog or schema change.** `energy.cost.total` and its
+  `today` period already exist (Amendment 3 item 1), and the organization
+  target already accepts it.
+- **Out of scope.** The `sustainability-overview` stock template and its stored
+  cost tiles stay as they are. The PUE tile stays in the stock strip; the owner
+  removed it in place on PHEWB only. The water cost tiles still read the stored
+  `water_cost_*` points (no dated water rate exists, Amendment 3 "Still
+  deferred").
