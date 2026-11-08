@@ -482,6 +482,53 @@ export async function theSiteMapSitsAboveTheSiteCards(): Promise<void> {
   ).toBeTruthy();
 }
 
+/**
+ * P10 — `F4.337` (owner, 2026-11-08): the strip's daily cost chart is drawn between the sites and
+ * alarms block and the Asset health panel, not inside the strip at the top of the page.
+ */
+export async function theCostChartSitsBetweenTheAlarmsAndAssetHealth(): Promise<void> {
+  stubReads(TWO_ORGS);
+  vi.spyOn(controlRoomApi, "fetchOrganizationControlRoomView").mockImplementation(async (organizationId) => {
+    const base = stripView(organizationId);
+    const chart = {
+      key: "daily-energy-cost-chart",
+      title: "Daily energy cost (30 days)",
+      gridX: 0,
+      gridY: 2,
+      gridW: 12,
+      gridH: 5,
+      config: {},
+      widgetType: "chart",
+      chartConfig: { series: "cost_by_day" },
+      sources: [
+        {
+          catalogKey: "energy.cost_by_day",
+          sortOrder: 0,
+          pointKey: null,
+          resolved: { shape: "dataset", key: "energy.cost_by_day", columns: [], rows: [], truncated: false },
+        },
+      ],
+    } as unknown as OrganizationControlRoomViewDto["tiles"][number];
+    return { ...base, tiles: [...base.tiles, chart] };
+  });
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  const charts = await screen.findByTestId("organization-strip-charts");
+  const strip = screen.getByTestId("organization-kpi-strip");
+  const rail = screen.getByTestId("alarms-rail");
+  const health = screen.getByTestId("health-panel");
+  expect(strip.contains(charts), "the chart must not sit in the strip").toBe(false);
+  expect(
+    rail.compareDocumentPosition(charts) & Node.DOCUMENT_POSITION_FOLLOWING,
+    "the cost chart must follow the alarms rail",
+  ).toBeTruthy();
+  expect(
+    charts.compareDocumentPosition(health) & Node.DOCUMENT_POSITION_FOLLOWING,
+    "the Asset health panel must follow the cost chart",
+  ).toBeTruthy();
+}
+
 /** Two organizations, each with two sites, so neither skips to a site. */
 const TWO_FULL_ORGS: LocationKpiSummary[] = [
   ...TWO_ORGS,

@@ -6,7 +6,7 @@ import { fetchLocationKpis } from "../../api/locations";
 import { HealthSummarySection } from "../../components/asset-health/health-summary-section";
 import { ActiveAlarmsRail } from "../../components/control-room/active-alarms-rail";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
-import { OrganizationKpiStrip } from "../../components/control-room/organization-kpi-strip";
+import { OrganizationKpiStrip, OrganizationStripCharts } from "../../components/control-room/organization-kpi-strip";
 import { OrganizationLoadTrend } from "../../components/control-room/organization-load-trend";
 import { OrganizationSiteMap } from "../../components/control-room/organization-site-map";
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
@@ -156,6 +156,8 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
         </div>
         <ActiveAlarmsRail organizationId={organizationId} />
       </div>
+      {/* `F4.337` — the strip's daily cost chart, between the alarms and Asset health. */}
+      <OrganizationStripCharts key={`strip-charts-${organizationId}`} organizationId={organizationId} />
       <HealthSummarySection organizationId={organizationId} />
       <OrganizationLoadTrend organizationId={organizationId} />
       <ScopedDashboardsList organizationId={organizationId} />

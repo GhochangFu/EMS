@@ -8,7 +8,7 @@ import type { OrganizationControlRoomViewDto, OrganizationStripTileDto } from "@
 import * as controlRoomApi from "../../api/control-room";
 import { ApiError } from "../../lib/api-error";
 import { STRIP_STALE_MS } from "../../lib/organization-strip";
-import { OrganizationKpiStrip } from "./organization-kpi-strip";
+import { OrganizationKpiStrip, OrganizationStripCharts } from "./organization-kpi-strip";
 
 /**
  * `F4.317` task 5.3 — `OrganizationKpiStrip` (ADR 0112 decisions 2 to 6): the 14 tiles in order,
@@ -243,8 +243,8 @@ export async function aSkewedServerClockDoesNotStaleTheStrip(): Promise<void> {
   expect(tile.innerHTML).not.toContain("ring-warning");
 }
 
-/** `F4.332` (ADR 0112 Amendment 3) — the daily cost chart draws its rows and their total. */
-export async function theStripDrawsTheDailyCostChart(): Promise<void> {
+/** `F4.332` — a strip answer's daily cost chart widget (30 rows of ₹100). */
+function costChartTile(): OrganizationStripTileDto {
   const rows = Array.from({ length: 30 }, (_, i) => ({
     day: `2026-10-${String(i + 1).padStart(2, "0")}`,
     kwh: 10,
@@ -271,9 +271,49 @@ export async function theStripDrawsTheDailyCostChart(): Promise<void> {
       },
     ],
   } as unknown as OrganizationStripTileDto;
-  vi.spyOn(controlRoomApi, "fetchOrganizationControlRoomView").mockResolvedValue(view({ tiles: [chart] }));
-  renderStrip();
-  const tile = await screen.findByTestId("org-strip-tile-daily-energy-cost-chart");
+  return chart;
+}
+
+function renderCharts(): void {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <OrganizationStripCharts organizationId={ORG_ID} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/**
+ * `F4.332` (ADR 0112 Amendment 3) / `F4.337` — the daily cost chart draws its rows and their total,
+ * in the chart block the page places below the alarms, not in the strip.
+ */
+export async function theChartBlockDrawsTheDailyCostChart(): Promise<void> {
+  vi.spyOn(controlRoomApi, "fetchOrganizationControlRoomView").mockResolvedValue(view({ tiles: [costChartTile()] }));
+  renderCharts();
+  const block = await screen.findByTestId("organization-strip-charts");
+  const tile = within(block).getByTestId("org-strip-tile-daily-energy-cost-chart");
   expect(within(tile).getByText("Daily energy cost (30 days)")).toBeInTheDocument();
   expect(within(tile).getByTestId("cost-window-total").textContent).toContain("3,000");
+}
+
+/** `F4.337` — the strip draws its tiles and no chart, wherever the chart sits on the grid. */
+export async function theStripDrawsNoChart(): Promise<void> {
+  const tiles = [...view().tiles.slice(0, 2), costChartTile()];
+  vi.spyOn(controlRoomApi, "fetchOrganizationControlRoomView").mockResolvedValue(view({ tiles }));
+  renderStrip();
+  const strip = await screen.findByTestId("organization-kpi-strip");
+  expect(within(strip).getByTestId(`org-strip-tile-${tiles[0]!.key}`)).toBeInTheDocument();
+  expect(within(strip).queryByTestId("org-strip-tile-daily-energy-cost-chart")).toBeNull();
+  expect(within(strip).queryByTestId("cost-window-total")).toBeNull();
+}
+
+/** `F4.337` — a strip with no chart draws no chart block, not an empty frame. */
+export async function aStripWithNoChartDrawsNoBlock(): Promise<void> {
+  vi.spyOn(controlRoomApi, "fetchOrganizationControlRoomView").mockResolvedValue(view());
+  renderCharts();
+  await waitFor(() => expect(controlRoomApi.fetchOrganizationControlRoomView).toHaveBeenCalled());
+  await act(async () => {});
+  expect(screen.queryByTestId("organization-strip-charts")).toBeNull();
 }

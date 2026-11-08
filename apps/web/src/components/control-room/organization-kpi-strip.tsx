@@ -23,6 +23,26 @@ export function organizationStripKey(organizationId: string): readonly string[] 
 }
 
 /**
+ * The strip's one read and a ticking clock, shared by the tiles (`OrganizationKpiStrip`) and the
+ * chart block (`OrganizationStripCharts`): both use the same query key, so the page sends one read.
+ * The clock lets a last answer that stops being refreshed still age on screen (as the estate
+ * ribbon's does): nothing else re-renders while reads fail or hang.
+ */
+function useOrganizationStripView(organizationId: string) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const viewQ = useQuery({
+    queryKey: organizationStripKey(organizationId),
+    queryFn: () => fetchOrganizationControlRoomView(organizationId),
+    refetchInterval: STRIP_REFETCH_MS,
+  });
+  return { viewQ, now };
+}
+
+/**
  * `F4.317` task 5.3 (ADR 0112 decisions 2 to 6) — the organization page's KPI strip: the tiles of
  * `GET /control-room/organizations/:id/view`, drawn on the estate grid, with a "Layout: …" status
  * line. A caller the API says may manage the strip (`canManage`) also sees **Make organization
@@ -37,18 +57,7 @@ export function OrganizationKpiStrip({ organizationId }: OrganizationKpiStripPro
   const queryClient = useQueryClient();
   const key = organizationStripKey(organizationId);
   const [actionError, setActionError] = useState<string | null>(null);
-  // A ticking clock, so a last answer that stops being refreshed still ages on screen (as the
-  // estate ribbon's does): nothing else re-renders the strip while reads fail or hang.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  const viewQ = useQuery({
-    queryKey: key,
-    queryFn: () => fetchOrganizationControlRoomView(organizationId),
-    refetchInterval: STRIP_REFETCH_MS,
-  });
+  const { viewQ, now } = useOrganizationStripView(organizationId);
   const settle = () => queryClient.invalidateQueries({ queryKey: key });
   const make = useMutation({
     mutationFn: () => makeOrganizationLayout(organizationId),
@@ -76,7 +85,11 @@ export function OrganizationKpiStrip({ organizationId }: OrganizationKpiStripPro
     );
   }
 
-  const tiles = [...view.tiles].sort((a, b) => a.gridY - b.gridY || a.gridX - b.gridX);
+  // `F4.337` — the strip draws the tiles only; `OrganizationStripCharts` draws the charts where
+  // the page puts it (below the alarms), whatever grid row the layout gives them.
+  const tiles = view.tiles
+    .filter((tile) => tile.widgetType !== "chart")
+    .sort((a, b) => a.gridY - b.gridY || a.gridX - b.gridX);
   const busy = make.isPending || reset.isPending;
   // Age is the browser's own clock from when the answer arrived, never the server's `resolvedAt`
   // against this clock: a skewed browser clock would show every tile stale.
@@ -129,21 +142,6 @@ export function OrganizationKpiStrip({ organizationId }: OrganizationKpiStripPro
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {tiles.map((tile) => {
-          // `F4.332` (ADR 0112 Amendment 3) — the daily energy cost chart, full width.
-          if (tile.widgetType === "chart") {
-            const resolved = tile.sources[0]?.resolved;
-            return (
-              <div key={tile.key} data-testid={`org-strip-tile-${tile.key}`} className="min-w-0 sm:col-span-2 lg:col-span-4">
-                <CostByDayChartWidget
-                  title={tile.title ?? "Daily energy cost"}
-                  status={resolved === null || resolved === undefined ? "empty" : "ready"}
-                  // The tiles' staleness rule (`stripTileProps`), so the chart ages with them.
-                  stale={Math.max(now, viewQ.dataUpdatedAt) - viewQ.dataUpdatedAt > STRIP_STALE_MS}
-                  rows={resolved?.shape === "dataset" ? resolved.rows : []}
-                />
-              </div>
-            );
-          }
           const { icon, stale, ...props } = stripTileProps(tile, receivedAt, Math.max(now, viewQ.dataUpdatedAt));
           return (
             <div key={tile.key} data-testid={`org-strip-tile-${tile.key}`} className="min-w-0">
@@ -152,6 +150,40 @@ export function OrganizationKpiStrip({ organizationId }: OrganizationKpiStripPro
           );
         })}
       </div>
+    </section>
+  );
+}
+
+/**
+ * `F4.337` (owner, 2026-11-08) — the strip's chart widgets (`F4.332`'s daily energy cost chart,
+ * ADR 0112 Amendment 3), drawn full width where the organization page places this block: after
+ * the sites and the active alarms, before Asset health. It reads the strip's own query (one
+ * request for both) and draws nothing while the read is pending or failed, or when the layout
+ * holds no chart — the strip above already says so in one line.
+ */
+export function OrganizationStripCharts({ organizationId }: OrganizationKpiStripProps) {
+  const { viewQ, now } = useOrganizationStripView(organizationId);
+  const charts = (viewQ.data?.tiles ?? [])
+    .filter((tile) => tile.widgetType === "chart")
+    .sort((a, b) => a.gridY - b.gridY || a.gridX - b.gridX);
+  if (charts.length === 0) return null;
+  // The tiles' staleness rule (`stripTileProps`), so the chart ages with them.
+  const stale = Math.max(now, viewQ.dataUpdatedAt) - viewQ.dataUpdatedAt > STRIP_STALE_MS;
+  return (
+    <section data-testid="organization-strip-charts" className="space-y-3">
+      {charts.map((tile) => {
+        const resolved = tile.sources[0]?.resolved;
+        return (
+          <div key={tile.key} data-testid={`org-strip-tile-${tile.key}`} className="min-w-0">
+            <CostByDayChartWidget
+              title={tile.title ?? "Daily energy cost"}
+              status={resolved === null || resolved === undefined ? "empty" : "ready"}
+              stale={stale}
+              rows={resolved?.shape === "dataset" ? resolved.rows : []}
+            />
+          </div>
+        );
+      })}
     </section>
   );
 }
