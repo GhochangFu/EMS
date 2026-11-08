@@ -39,6 +39,7 @@ const PAIR_QUERY = `
    WHERE ap.active = true
      AND ap.source_kind = 'measured'
      AND r.ingest_enabled = true
+     AND r.active = true
    ORDER BY a.created_at, ap.asset_id, ap.point_key
    LIMIT 1
 `;
@@ -293,6 +294,7 @@ const ORGANIZATION_RTU_QUERY = `
            AND ap.active = true
            AND ap.source_kind = 'measured'
    WHERE r.ingest_enabled = true
+     AND r.active = true
    ORDER BY r.created_at, r.id
    LIMIT 1
 `;
@@ -428,6 +430,30 @@ export async function assertThePayloadFormatJoin(pool: pg.Pool): Promise<void> {
 
     const after = (await bindingRows(client)).find((r) => r.rtu_id === rtuId) as BindingRow;
     expect(after.payload_format_code, "the fixture must leave nothing behind").toBeNull();
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * `F4.339` / ADR 0117 decision 8 — an inactive RTU yields no binding row. Positive twin first: the
+ * same RTU, active, yields rows. Inside `BEGIN … ROLLBACK` on one client.
+ */
+export async function assertAnInactiveRtuIsNotPlanned(pool: pg.Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const { rows: candidates } = await client.query<{ rtu_id: string }>(ORGANIZATION_RTU_QUERY);
+    expect(candidates.length, "no ingest-bound RTU to deactivate").toBe(1);
+    const { rtu_id: rtuId } = candidates[0]!;
+    await client.query("BEGIN");
+    try {
+      await client.query("UPDATE bms.rtus SET active = true WHERE id = $1", [rtuId]);
+      expect((await bindingRows(client)).filter((r) => r.rtu_id === rtuId).length, "active: rows").toBeGreaterThan(0);
+      await client.query("UPDATE bms.rtus SET active = false WHERE id = $1", [rtuId]);
+      expect((await bindingRows(client)).filter((r) => r.rtu_id === rtuId), "inactive: no row").toEqual([]);
+    } finally {
+      await client.query("ROLLBACK");
+    }
   } finally {
     client.release();
   }

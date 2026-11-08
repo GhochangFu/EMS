@@ -2,6 +2,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
 import {
+  assertAnInactiveRtuIsNotPlanned,
   assertCoalescePicksEachSidePerColumn,
   assertEveryRowCarriesResolvedMetadata,
   assertEveryRowCarriesTheOrganizationSwitch,
@@ -68,5 +69,10 @@ describe.skipIf(!connectionString)("F2.7 — resolved point metadata on the bind
   // `F4.334` / ADR 0116 decision 4.
   it("joins the payload format catalog on the config's code, null for an unknown code", async () => {
     await assertThePayloadFormatJoin(pool as pg.Pool);
+  });
+
+  // `F4.339` / ADR 0117 decision 8.
+  it("plans no row for an inactive RTU, and rows for the same RTU active", async () => {
+    await assertAnInactiveRtuIsNotPlanned(pool as pg.Pool);
   });
 });

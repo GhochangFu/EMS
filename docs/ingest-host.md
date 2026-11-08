@@ -222,7 +222,9 @@ dark rtu=861736076128245 endpoint=phe.thinkiot.co.in:8883 key=s12_r01 lastSample
   reason=organization-ingest-disabled detail=BCPL` — and is decided before any
   other reason, so a switched-off organization's RTU with a broken config still
   reads as switched off. An RTU whose own *Ingest enabled* box is off is not in
-  the binding query at all and is not listed, as before. The `skipped` lines
+  the binding query at all and is not listed, as before. Since `F4.339` (ADR
+  0117 decision 8) neither is an inactive RTU: deactivating one releases its
+  MQTT topic, so it never reaches the plan and has no skip reason. The `skipped` lines
   are rebuilt at every reload; the `rtu skipped` log line is written at boot
   only.
 - `dropped` is the memory tier's loss — the in-memory queue dropping oldest
