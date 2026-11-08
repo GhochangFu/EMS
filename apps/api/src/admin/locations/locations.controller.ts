@@ -26,6 +26,7 @@ import {
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { SiteControlRoomViewService } from "../../control-room/site-control-room-view.service";
+import { SiteLayoutReplaceService } from "../../control-room/site-layout-replace.service";
 import { SiteLayoutService } from "../../control-room/site-layout.service";
 import { idParamSchema, parseActiveFilter } from "../admin.schema";
 import { LocationsAdminService } from "./locations.service";
@@ -37,6 +38,7 @@ export class LocationsAdminController {
     private readonly service: LocationsAdminService,
     private readonly controlRoomView: SiteControlRoomViewService,
     private readonly siteLayout: SiteLayoutService,
+    private readonly siteLayoutReplace: SiteLayoutReplaceService,
   ) {}
 
   @Get()
@@ -166,7 +168,7 @@ export class LocationsAdminController {
     try {
       const locationId = idParamSchema.parse(id);
       const parsed = siteLayoutBodySchema.parse(body ?? {});
-      return await this.siteLayout.replaceForSite(user, { locationId, ...parsed });
+      return await this.siteLayoutReplace.replaceForSite(user, { locationId, ...parsed });
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -182,6 +184,6 @@ export class LocationsAdminController {
    */
   @Get(":id/site-layout/replace-preview")
   async previewSiteLayoutReplace(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
-    return this.siteLayout.previewReplaceForSite(user, idParamSchema.parse(id));
+    return this.siteLayoutReplace.previewReplaceForSite(user, idParamSchema.parse(id));
   }
 }

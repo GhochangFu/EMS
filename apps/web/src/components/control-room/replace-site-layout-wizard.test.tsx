@@ -5,6 +5,7 @@ import {
   aPendingSubmitIsDisabledAndBusy,
   anAmbiguousAnswerRetriesWithTheChoice,
   cleanupReplaceWizard,
+  closeDoesNotRefetchTheDeletedDashboard,
   submitCallsTheReplaceClient,
   openingTheWizardRefreshesTheEditFlag,
   theButtonShowsOnlyForATemplateCopy,
@@ -42,7 +43,7 @@ describe("F4.320 PR 2 Replace with this version (the site page's wizard)", () =>
     await theConfirmStepShowsNoRecordedEdit();
   });
 
-  it("B5 Submit calls the replace client with the body, and Close re-reads the site view", async () => {
+  it("B5 Submit calls the replace client with the body, and Close re-reads the site view and the slug reads", async () => {
     await submitCallsTheReplaceClient();
   });
 
@@ -52,5 +53,9 @@ describe("F4.320 PR 2 Replace with this version (the site page's wizard)", () =>
 
   it("B7 an ambiguous answer re-opens Groups and the retry carries the choice", async () => {
     await anAmbiguousAnswerRetriesWithTheChoice();
+  }, 20_000);
+
+  it("B8 Close does not re-read the deleted dashboard's id-keyed reads (F4.320 follow-up)", async () => {
+    await closeDoesNotRefetchTheDeletedDashboard();
   }, 20_000);
 });

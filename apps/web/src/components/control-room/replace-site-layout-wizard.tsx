@@ -12,7 +12,7 @@ import {
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { domainLabel } from "../../lib/asset-browser";
-import { editFlagText, heldCopyText, REPLACE_LOSES } from "../../lib/site-layout-replace";
+import { dashboardsAfterReplaceFilters, editFlagText, heldCopyText, REPLACE_LOSES } from "../../lib/site-layout-replace";
 import { madeSummary } from "../../lib/site-layout-made-summary";
 import { WizardShell } from "../wizard/wizard-shell";
 import { CHOOSE_EVERY_TAB, stockTabLabel, tabGroupsOf } from "./site-layout-wizard";
@@ -47,7 +47,9 @@ type ReplaceSiteLayoutWizardProps = {
  * since the copy"). The flag is advice: Submit is never refused for an edited copy.
  *
  * A rebuilt copy has a new dashboard id under the same slug, so Close invalidates the site's resolve
- * read (and, by prefix, this preview) and `["dashboards"]` (the canvas reads the dashboard by slug).
+ * read (and, by prefix, this preview) and the `["dashboards"]` reads by slug or list (the canvas reads
+ * the dashboard by slug). It skips the id-keyed reads (`dashboardsAfterReplaceFilters`): the canvas
+ * still holds the deleted id, and a re-read of it is a 404.
  * A Replace that lands after Cancel closed the wizard invalidates the same keys at once.
  */
 export function ReplaceSiteLayoutWizard({ locationId, siteName }: ReplaceSiteLayoutWizardProps) {
@@ -76,7 +78,7 @@ export function ReplaceSiteLayoutWizard({ locationId, siteName }: ReplaceSiteLay
 
   function refresh(): void {
     void queryClient.invalidateQueries({ queryKey: ["control-room", "site-view", locationId] });
-    void queryClient.invalidateQueries({ queryKey: ["dashboards"] });
+    void queryClient.invalidateQueries(dashboardsAfterReplaceFilters());
   }
 
   const replace = useMutation({

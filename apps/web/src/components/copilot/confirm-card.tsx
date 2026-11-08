@@ -22,7 +22,7 @@ import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { type ChangeRow, changeRows, type LayoutBaseline, layoutGraphRows } from "../../lib/copilot-diff";
 import { clientOnlyFieldsFor } from "../../lib/copilot-client-only-fields";
-import { invalidationKeysFor } from "../../lib/copilot-invalidations";
+import { invalidationFiltersFor } from "../../lib/copilot-invalidations";
 import { editorLayoutFromWriteBody } from "../../lib/mimic-editor";
 import { layoutWarnings } from "../../lib/mimic-editor-warnings";
 import { catalogOrgSymbols } from "../../lib/mimic-symbols";
@@ -291,7 +291,7 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
     onSuccess: async () => {
       setError(null);
       typed.current = {};
-      await Promise.all(invalidationKeysFor(change.catalogId).map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+      await Promise.all(invalidationFiltersFor(change.catalogId).map((filters) => queryClient.invalidateQueries(filters)));
       // A failed refresh never fails the applied change; the next app load refreshes it (B9).
       const accessToken = useAuthStore.getState().accessToken;
       if (accessToken && changesTheScope(change)) {
