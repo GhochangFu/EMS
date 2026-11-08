@@ -7,6 +7,7 @@ import { commitSummary } from "./onboarding-commit-proposal";
 import { looksLikeCredential } from "./onboarding-credential-detect";
 import { assetPointProblems } from "./onboarding-mapping-refs";
 import {
+  discoveredPayloadFormat,
   discoveredRtuSource,
   discoveryScopeProblem,
   dispatchDiscoveryTool,
@@ -547,7 +548,10 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
     }
 
     case "add_rtu": {
-      const rtu = { ...(args as z.infer<typeof rtuArgs>), credentialsSet: false };
+      const added = { ...(args as z.infer<typeof rtuArgs>), credentialsSet: false };
+      // F4.334 (ADR 0116 decision 8): a discovered device's payload format, when the call names none.
+      const format = added.config?.payloadFormat === undefined ? discoveredPayloadFormat(draft, added) : undefined;
+      const rtu = format === undefined ? added : { ...added, config: { ...added.config, payloadFormat: format } };
       // Security review M2 (code review's sibling note): `_secrets` is keyed by
       // RTU code, so re-adding a removed credentialed code would inherit its
       // credential at reconcile, pointed at whatever host this call names.

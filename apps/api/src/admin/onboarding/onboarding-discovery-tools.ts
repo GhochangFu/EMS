@@ -1,4 +1,6 @@
 import {
+  discoveryEmptySentence,
+  MQTT_BUILTIN_PAYLOAD_FORMAT_CODE,
   MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS,
   MQTT_DISCOVERY_DEV_ID_MAX,
   MQTT_DISCOVERY_MAX_WINDOW_SECONDS,
@@ -178,6 +180,27 @@ export function discoveredRtuSource(draft: OnboardingDraft, rtu: { code: string;
 }
 
 /**
+ * `F4.334` / ADR 0116 decision 8 — the payload format the latest done result
+ * recorded for the device this RTU names (its code is the device key, its topic
+ * the device's topic). `undefined` for no match or the built-in envelope, which
+ * an RTU states by naming no format. Code-owned, like `source: "discovery"`.
+ */
+export function discoveredPayloadFormat(
+  draft: OnboardingDraft,
+  rtu: { code: string; protocol: string; config?: unknown },
+): string | undefined {
+  const result = doneResult(draft);
+  if (result === null || rtu.protocol !== "mqtt") {
+    return undefined;
+  }
+  const code = rtu.code.trim();
+  const topic = ((rtu.config ?? {}) as RtuConfig).topic;
+  const device = result.devices.find((d) => d.devId === code && d.topic === topic);
+  const format = device?.payloadFormat;
+  return format === undefined || format === MQTT_BUILTIN_PAYLOAD_FORMAT_CODE ? undefined : format;
+}
+
+/**
  * Decisions Q3 — `rows` with `source: "discovery"` on each row whose
  * `sourceDataKey` the latest done result saw on a device that feeds the row's
  * asset's RTU. Code-owned: the tools' row schemas refuse a `source` argument.
@@ -335,14 +358,23 @@ function discoveryResults(args: z.infer<(typeof DISCOVERY_TOOL_SCHEMAS)["get_dis
     ...(result.truncated ? { truncated: "The discovery stopped at a cap, so this list is partial. Say so to the user." } : {}),
   };
   if (result.devices.length === 0) {
-    return succeed({ ...header, devices: [], empty: "No device published in the window. Say so to the user." });
+    // F4.335 (plan R11): say how many messages arrived and were not decoded, in
+    // fixed text that echoes no payload.
+    return succeed({ ...header, devices: [], empty: `${discoveryEmptySentence(result)} Say so to the user.` });
   }
   state.discoveryRead = { rtuCode: result.rtuCode, devIds: [...new Set(result.devices.map((d) => d.devId))] };
   const offset = args.offset ?? 0;
   if (args.devId === undefined) {
     const devices = result.devices
       .slice(offset)
-      .map((d) => ({ topic: d.topic, devId: d.devId, messageCount: d.messageCount, keyCount: d.keys.length }));
+      .map((d) => ({
+        topic: d.topic,
+        devId: d.devId,
+        messageCount: d.messageCount,
+        keyCount: d.keys.length,
+        // F4.334: the format that decoded the device; add_rtu copies it.
+        ...(d.payloadFormat === undefined ? {} : { payloadFormat: d.payloadFormat }),
+      }));
     return succeed({ ...header, ...paged(devices, "devices", offset) });
   }
   const matches = result.devices.filter((d) => d.devId === args.devId && (args.topic === undefined || d.topic === args.topic));

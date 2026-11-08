@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { OnboardingDiscoveryErrorClass, OnboardingSessionDto } from "@bms/shared";
-import { discoveryIsActive, MQTT_DISCOVERY_SHARED_USER_WARNING } from "@bms/shared/contracts";
+import { discoveryEmptySentence, discoveryIsActive, MQTT_DISCOVERY_SHARED_USER_WARNING } from "@bms/shared/contracts";
 
 import { fetchOnboardingSession } from "../../api/admin/onboarding";
 import { StatusPill } from "../status-pill";
@@ -124,7 +124,8 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
       {result !== null && (
         <div className="mt-2 text-[11px]">
           <p>{statusLine(result, active)}</p>
-          {result.status === "done" && result.devices.length === 0 && <p>No device published in the window.</p>}
+          {/* F4.335: when messages arrived and none decoded, say so (fixed text, counts only). */}
+          {result.status === "done" && result.devices.length === 0 && <p>{discoveryEmptySentence(result)}</p>}
         </div>
       )}
       {discovered.length > 0 && (
