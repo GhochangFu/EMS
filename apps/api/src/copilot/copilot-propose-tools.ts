@@ -649,6 +649,7 @@ export function createCopilotProposeTools(
         ...(target.currentWidgetIds ? { currentWidgetIds: target.currentWidgetIds } : {}),
         ...(target.refName !== undefined ? { refName: target.refName } : {}),
         ...(target.usageCount !== undefined ? { usageCount: target.usageCount } : {}),
+        ...(target.payloadFormat !== undefined ? { payloadFormat: target.payloadFormat } : {}),
         ...(target.lifecycle !== undefined ? { lifecycle: target.lifecycle } : {}),
         ...operationsSummaryInput(target),
       }) +

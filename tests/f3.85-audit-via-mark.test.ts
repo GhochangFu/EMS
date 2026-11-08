@@ -73,6 +73,8 @@ const CATALOG_WRITERS = [
   // `F4.309` PR 3 (ADR 0099 Amendment 13): `pointKeyState.create` and `.update` reach this service
   // (its excluded DELETE audits through the same funnel).
   "apps/api/src/admin/point-key-states/point-key-states.service.ts",
+  // `F4.334` (ADR 0099 Amendment 17): the payload format catalog.
+  "apps/api/src/admin/mqtt-payload-formats/mqtt-payload-formats.service.ts",
   "apps/api/src/admin/asset-points/asset-points.service.ts",
   "apps/api/src/admin/users/users.service.ts",
   "apps/api/src/admin/users/user-grants.service.ts",
@@ -166,6 +168,7 @@ const CATALOG_DIRS = [
   "admin/point-keys",
   // `F4.309` PR 3 (ADR 0099 Amendment 13): the state labels — two entries, the DELETE excluded.
   "admin/point-key-states",
+  "admin/mqtt-payload-formats",
   "admin/users",
   "admin/onboarding",
   "mimic-layouts",

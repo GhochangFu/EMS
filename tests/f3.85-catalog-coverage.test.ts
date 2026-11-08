@@ -260,6 +260,24 @@ const SERVICE_PARSERS: ReadonlyArray<{
     serviceField: "service",
     method: "update",
   },
+  // `F4.334` (ADR 0099 Amendment 17): the payload format service gates the global admin first,
+  // then `safeParse`s the shared body inside the method.
+  {
+    entryId: "mqttPayloadFormat.create",
+    bodyName: "createMqttPayloadFormatBodySchema",
+    controller: "apps/api/src/admin/mqtt-payload-formats/mqtt-payload-formats.controller.ts",
+    service: "apps/api/src/admin/mqtt-payload-formats/mqtt-payload-formats.service.ts",
+    serviceField: "service",
+    method: "create",
+  },
+  {
+    entryId: "mqttPayloadFormat.update",
+    bodyName: "updateMqttPayloadFormatBodySchema",
+    controller: "apps/api/src/admin/mqtt-payload-formats/mqtt-payload-formats.controller.ts",
+    service: "apps/api/src/admin/mqtt-payload-formats/mqtt-payload-formats.service.ts",
+    serviceField: "service",
+    method: "update",
+  },
 ];
 
 /** The source of one method of a class file: from its signature to the next method at the same indent. */
@@ -327,6 +345,8 @@ describe("F3.85 PR 8 — the copilot action catalog covers the write routes (ADR
     expect([...allowed].sort()).toEqual([
       "DELETE /admin/asset-group-members/:id",
       "DELETE /admin/assets/:assetId/calc-points/:pointKey",
+      // `F4.334`: ADR 0099 Amendment 17 decision 1 widens it to a fourth, the payload format.
+      "DELETE /admin/mqtt-payload-formats/:code",
       "DELETE /admin/users/:id/grants/:kind/:grantId",
     ]);
     // The allowance names routes that exist.
@@ -388,6 +408,14 @@ describe("F3.85 PR 8 — the copilot action catalog covers the write routes (ADR
       const r = byKey.get(key(e));
       return r !== undefined && viaServiceParser(e, r);
     }).map((e) => e.id);
-    expect(matched.sort()).toEqual(["pointKeyState.create", "pointKeyState.update", "user.create", "user.update", "userGrant.add"]);
+    expect(matched.sort()).toEqual([
+      "mqttPayloadFormat.create",
+      "mqttPayloadFormat.update",
+      "pointKeyState.create",
+      "pointKeyState.update",
+      "user.create",
+      "user.update",
+      "userGrant.add",
+    ]);
   });
 });

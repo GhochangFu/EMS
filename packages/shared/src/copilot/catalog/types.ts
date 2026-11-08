@@ -130,7 +130,8 @@ export type CatalogTarget =
    * alone may make it (`requireGlobalAdmin`); the resolver reads the label and refuses an
    * unknown code.
    */
-  | { readonly kind: "vocabulary"; readonly of: "locationType" | "assetRole"; readonly param: "code" }
+  // `F4.334` (ADR 0099 Amendment 17): `mqttPayloadFormat` — a payload format catalog row.
+  | { readonly kind: "vocabulary"; readonly of: "locationType" | "assetRole" | "mqttPayloadFormat"; readonly param: "code" }
   /**
    * `F4.309` PR 3 (ADR 0099 Amendment 13 decisions 1 and 4): a state-label row
    * (`bms.point_key_states`, no organization) named by the path's `id`. Like `fleet`, the change
@@ -279,8 +280,13 @@ export type CatalogSummaryInput = {
   readonly currentWidgetIds?: readonly string[];
   /** `F3.86` PR 4: the name of the row a change names beside its target (a grant's organization, site or group). */
   readonly refName?: string;
-  /** `F4.282`: `vocabulary` targets of `locationType` — how many locations in the turn's organizations use the type. */
+  /**
+   * `F4.282`: `vocabulary` targets of `locationType` — how many locations in the turn's organizations
+   * use the type. `F4.334`: of `mqttPayloadFormat` — how many RTUs there name the format.
+   */
   readonly usageCount?: number;
+  /** `F4.334` (Amendment 17 decision 4): an `rtu` target's payload format now, `null` for the built-in. */
+  readonly payloadFormat?: string | null;
   /** `F4.278` (Amendment 8 D3): a `rule` target's lifecycle status, so a PATCH of a published rule carries the live-effect line. */
   readonly lifecycle?: string;
   /** `F4.284` (ADR 0106 decision 3): an `alarm` target — the card names the alarm text, severity, asset and raised time. */

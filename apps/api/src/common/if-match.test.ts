@@ -9,6 +9,7 @@ import {
   noRowWithoutAHeaderIsTheRoutes404,
   theAssetTemplateUpdateHandlerTakesIfMatch,
   theEscalationProfileUpdateHandlerTakesIfMatch,
+  thePayloadFormatUpdateHandlerTakesIfMatch,
   thePredicateComparesTheStampAsText,
   thePutWidgetsHandlerTakesIfMatch,
 } from "./if-match.spec";
@@ -25,4 +26,5 @@ describe("F4.247 — the If-Match helpers and their wiring (ADR 0099 Amendment 5
   it("wires @Headers(\"if-match\") into PUT /dashboards/:id/widgets", () => thePutWidgetsHandlerTakesIfMatch());
   it("wires @Headers(\"if-match\") into PATCH /admin/asset-templates/:id", () => theAssetTemplateUpdateHandlerTakesIfMatch());
   it("wires @Headers(\"if-match\") into PATCH /admin/escalation-profiles/:id", () => theEscalationProfileUpdateHandlerTakesIfMatch());
+  it("wires @Headers(\"if-match\") into PUT /admin/mqtt-payload-formats/:code (F4.334)", () => thePayloadFormatUpdateHandlerTakesIfMatch());
 });

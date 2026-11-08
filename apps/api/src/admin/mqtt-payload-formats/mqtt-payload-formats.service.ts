@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { ZodError } from "zod";
 
 import { mqttPayloadFormats } from "@bms/db";
@@ -19,6 +19,7 @@ import {
 } from "@bms/shared";
 import type {
   DeleteMqttPayloadFormatConflict,
+  IfMatch,
   JwtPayload,
   MqttPayloadFormatDefinition,
   MqttPayloadFormatDto,
@@ -27,6 +28,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { noRowWritten, updatedAtMatches } from "../../common/if-match";
 import { FLEET_DRIZZLE } from "../../database/database.tokens";
 import { translateConstraintErrors } from "../../database/translate-constraint-errors";
 import { MasterDataAuditService } from "../master-data-audit.service";
@@ -116,7 +118,8 @@ export class MqttPayloadFormatsAdminService {
     return mapRow(created);
   }
 
-  async update(jwt: JwtPayload, code: string, input: unknown): Promise<MqttPayloadFormatDto> {
+  /** `ifMatch` (Amendment 17 decision 1): the row's `updatedAt` the copilot card showed; a mismatch is 412. */
+  async update(jwt: JwtPayload, code: string, input: unknown, ifMatch?: IfMatch): Promise<MqttPayloadFormatDto> {
     const userId = await this.requireGlobalAdmin(jwt);
     const key = parseCode(code);
     const body = parseBody(updateMqttPayloadFormatBodySchema.safeParse(input));
@@ -132,10 +135,15 @@ export class MqttPayloadFormatsAdminService {
       const [row] = await tx
         .update(mqttPayloadFormats)
         .set({ ...body, updatedAt: new Date(), updatedBy: userId })
-        .where(sql`${mqttPayloadFormats.code} = ${key} AND ${mqttPayloadFormats.builtin} = false`)
+        .where(
+          and(
+            sql`${mqttPayloadFormats.code} = ${key} AND ${mqttPayloadFormats.builtin} = false`,
+            updatedAtMatches(mqttPayloadFormats.updatedAt, ifMatch),
+          ),
+        )
         .returning();
       if (!row) {
-        throw new NotFoundException("Payload format not found");
+        throw noRowWritten(ifMatch, "Payload format not found");
       }
       await this.audit.write(
         {

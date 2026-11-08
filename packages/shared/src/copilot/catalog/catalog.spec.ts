@@ -142,13 +142,16 @@ export function theOnlyDeleteEntriesAreTheThreeRemovals(): void {
   expect(DELETE_ALLOWANCE.map((route) => route.path).sort()).toEqual([
     "/admin/asset-group-members/:id",
     "/admin/assets/:assetId/calc-points/:pointKey",
+    "/admin/mqtt-payload-formats/:code",
     "/admin/users/:id/grants/:kind/:grantId",
   ]);
   expect(deletesOutsideTheAllowance(COPILOT_CATALOG)).toEqual([]);
-  // PR 4 adds the grant revoke; PR 3c adds the member removal; `F4.311` PR 3 the standalone point.
+  // PR 4 adds the grant revoke; PR 3c adds the member removal; `F4.311` PR 3 the standalone point;
+  // `F4.334` (Amendment 17) the payload format.
   expect(COPILOT_CATALOG.filter((entry) => entry.method === "DELETE").map((entry) => entry.id).sort()).toEqual([
     "assetGroup.member.remove",
     "calcPoint.delete",
+    "mqttPayloadFormat.delete",
     "userGrant.remove",
   ]);
 }
@@ -827,10 +830,16 @@ export function theLibraryAndRoleSummariesNameTheirTarget(): void {
 
 /**
  * `F4.247` (ADR 0099 Amendment 5 C1): exactly the three list writes take an
- * `If-Match` precondition (`F4.279` Amendment 8 D6 adds the escalation ladder).
+ * `If-Match` precondition (`F4.279` Amendment 8 D6 adds the escalation ladder;
+ * `F4.334` Amendment 17 decision 1 the payload format edit).
  * Mutation: drop the flag from one entry.
  */
 export function exactlyTheThreeListWritesTakeAPrecondition(): void {
   const flagged = COPILOT_CATALOG.filter((e) => e.precondition === "updatedAt").map((e) => e.id).sort();
-  expect(flagged).toStrictEqual(["assetTemplate.update", "dashboard.widgets.replace", "escalationProfile.update"]);
+  expect(flagged).toStrictEqual([
+    "assetTemplate.update",
+    "dashboard.widgets.replace",
+    "escalationProfile.update",
+    "mqttPayloadFormat.update",
+  ]);
 }
