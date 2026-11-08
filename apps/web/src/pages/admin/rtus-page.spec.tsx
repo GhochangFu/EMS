@@ -292,3 +292,13 @@ export async function editingATlsRtuShowsNoTlsLine(): Promise<void> {
   await toSourceStep();
   expect(screen.queryByText(PLAIN_EDIT_LINE)).toBeNull();
 }
+
+/** F4.339 (ADR 0117 decision 8): an inactive RTU names the topic it released; a reactivated one names a topic another RTU holds. */
+export async function aReleasedTopicIsNamedOnTheRow(): Promise<void> {
+  const inactive = rtu({ id: "44444444-4444-4444-8444-444444444444", code: "F4339-T1", active: false, mqttTopic: null, releasedMqttTopic: "f4339/t1" });
+  const held = rtu({ id: "55555555-5555-4555-8555-555555555555", code: "F4339-T2", active: true, mqttTopic: null, releasedMqttTopic: "f4339/t2" });
+  renderPage([inactive, held, ROUTED]);
+  expect(within(await rowOf("F4339-T1")).getByText("Topic released on deactivate: f4339/t1")).toBeTruthy();
+  expect(within(await rowOf("F4339-T2")).getByText("Topic f4339/t2 is held by another RTU; this RTU has no topic")).toBeTruthy();
+  expect(within(await rowOf(ROUTED.code)).queryByText(/^Topic /)).toBeNull();
+}

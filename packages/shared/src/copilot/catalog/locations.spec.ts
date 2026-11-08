@@ -52,6 +52,10 @@ export function theRtuEntriesAreTheControllersRoutes(): void {
   expect(entry("rtu.deactivate").risk).toBe("deactivate");
   expect(entry("rtu.reactivate").risk).toBe("edit");
   expect(entry("rtu.deactivate").target).toEqual({ kind: "rtu", param: "id" });
+  // F4.339 (ADR 0117 decision 8): the card says what happens to the MQTT topic.
+  expect(summary("rtu.deactivate", {})).toBe(
+    'Deactivate the RTU "Lotapata". Its MQTT topic, if any, is released and restored on reactivate when still free.',
+  );
 }
 
 /** The steps are the plan's: Basics, then Place or Source, then Metadata. */
