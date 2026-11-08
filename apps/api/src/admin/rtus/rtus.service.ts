@@ -284,6 +284,9 @@ export class RtusAdminService {
         mqttTopic: emptyTopicAsNull(
           body.mqttTopic !== undefined ? body.mqttTopic : existing.mqttTopic,
         ),
+        // F4.339 (security review M1): a topic the operator sets replaces the one a deactivate released,
+        // so a later reactivate never overwrites it with the old one.
+        ...(body.mqttTopic !== undefined ? { releasedMqttTopic: null } : {}),
         stationCode:
           body.stationCode !== undefined ? body.stationCode : existing.stationCode,
         stationName:
@@ -457,7 +460,9 @@ export class RtusAdminService {
         throw new ConflictException("Cannot deactivate RTU with active assets");
       }
       // F4.339 (ADR 0117 decision 8): the topic is released, so another RTU can take it, and kept in
-      // `released_mqtt_topic` for reactivate. Both from the row's own old values (one SET, race-safe).
+      // `released_mqtt_topic` for reactivate. Both from the row's own old values (one SET, race-safe);
+      // the audited boolean reads the row locked in this transaction (security review L1).
+      const [locked] = await tx.select({ mqttTopic: rtus.mqttTopic }).from(rtus).where(eq(rtus.id, id)).for("update");
       await tx
         .update(rtus)
         .set({ active: false, mqttTopic: null, releasedMqttTopic: sql`coalesce(${rtus.mqttTopic}, ${rtus.releasedMqttTopic})` })
@@ -470,7 +475,7 @@ export class RtusAdminService {
           entityId: id,
           organizationId,
           // Booleans only: the topic itself is not audited.
-          payload: { topicReleased: existing.mqttTopic !== null },
+          payload: { topicReleased: (locked?.mqttTopic ?? null) !== null },
         },
         tx,
       );
@@ -502,7 +507,8 @@ export class RtusAdminService {
       // F4.339 (ADR 0117 decision 8): the released topic comes back only while no RTU holds it. The
       // index is global, so the holder may be another tenant's: read on the fleet pool, as a count, and
       // never named in the response.
-      const free = released !== null && !(await this.topicHeld(released));
+      // Security review M1: only into an empty slot — an RTU that has a topic again keeps it.
+      const free = released !== null && existing.mqttTopic === null && !(await this.topicHeld(released));
       await tx
         .update(rtus)
         .set(free ? { active: true, mqttTopic: released, releasedMqttTopic: null } : { active: true })

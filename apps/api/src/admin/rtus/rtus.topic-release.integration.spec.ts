@@ -106,3 +106,21 @@ export async function assertDeactivateWithoutATopicReleasesNothing(ctx: TopicRel
   expect(await topicsOf(ctx, id)).toEqual({ mqtt_topic: null, released_mqtt_topic: null, active: false });
   expect((await auditPayloads(ctx, id, "master.rtu.deactivate"))[0]?.topicReleased).toBe(false);
 }
+
+/**
+ * TR5 (security review M1) — a topic the operator set after a reactivate that could not restore is
+ * never overwritten by a later reactivate, even once the old topic is free again.
+ */
+export async function assertALaterReactivateNeverOverwritesASetTopic(ctx: TopicReleaseCtx, jwt: JwtPayload): Promise<void> {
+  const old = `${tag()}/t5-old`;
+  const chosen = `${tag()}/t5-new`;
+  const id = await createRtu(ctx, jwt, old);
+  await ctx.svc.deactivate(jwt, id);
+  const holder = await createRtu(ctx, jwt, old);
+  await ctx.svc.reactivate(jwt, id);
+  const patched = await ctx.svc.update(jwt, id, { mqttTopic: chosen });
+  expect([patched.mqttTopic, patched.releasedMqttTopic]).toEqual([chosen, null]);
+  await ctx.svc.deactivate(jwt, holder);
+  const again = await ctx.svc.reactivate(jwt, id);
+  expect([again.mqttTopic, again.releasedMqttTopic]).toEqual([chosen, null]);
+}

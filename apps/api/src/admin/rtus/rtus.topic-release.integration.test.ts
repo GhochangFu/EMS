@@ -10,6 +10,7 @@ import { asRole } from "../../testing/role-urls";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { RtusAdminService } from "./rtus.service";
 import {
+  assertALaterReactivateNeverOverwritesASetTopic,
   assertDeactivateReleasesTheTopic,
   assertDeactivateWithoutATopicReleasesNothing,
   assertReactivateKeepsAHeldTopicReleased,
@@ -107,5 +108,9 @@ describe.skipIf(!connectionString)("F4.339 — deactivating an RTU releases its 
 
   it("TR4 deactivate with no topic releases nothing", async () => {
     await assertDeactivateWithoutATopicReleasesNothing(ctx, jwt);
+  }, 30_000);
+
+  it("TR5 a later reactivate never overwrites a topic the operator set (security review M1)", async () => {
+    await assertALaterReactivateNeverOverwritesASetTopic(ctx, jwt);
   }, 30_000);
 });
