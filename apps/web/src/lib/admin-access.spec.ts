@@ -114,6 +114,8 @@ export function runAssetTemplateTabTests(): void {
         "/admin/location-types",
         // `F4.282` (ADR 0099 Amendment 8 Q17) — Unit Roles, `globalAdminOnly` like Location Types.
         "/admin/unit-roles",
+        // `F4.334` (ADR 0116 decision 5) — Payload Formats, `globalAdminOnly` like Location Types.
+        "/admin/payload-formats",
         "/admin/calc-parameters",
         // Templates & Visuals. `F3.36` Part F (ADR 0049) — ungated, like Asset
         // Groups: authoring is hidden inside the page by `canAuthorTemplates`,
@@ -168,7 +170,8 @@ export function runAssetTemplateTabTests(): void {
     // `F4.300` added Trend Points as `trendPointsAdmin` (admin and organization_admin only):
     // 20 -> 21 and 18 -> 19; `location_admin` stays at 11.
     // `F4.309` added State Labels as `globalAdminOnly`: `admin` alone goes 21 -> 22.
-    const expected = role === "location_admin" ? 11 : role === "admin" ? 22 : 19;
+    // `F4.334` added Payload Formats as `globalAdminOnly`: `admin` alone goes 22 -> 23.
+    const expected = role === "location_admin" ? 11 : role === "admin" ? 23 : 19;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,

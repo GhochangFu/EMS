@@ -148,6 +148,8 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "rtu.update": [RTUS, RTU_SUMMARY],
   "rtu.deactivate": [RTUS, RTU_SUMMARY],
   "rtu.reactivate": [RTUS, RTU_SUMMARY],
+  // `F4.334` (ADR 0099 Amendment 17 decision 4): the RTU list shows the format.
+  "rtu.setPayloadFormat": [RTUS, RTU_SUMMARY],
   "asset.create": [ASSETS, ASSET_SUMMARY],
   // A rename or move also changes the labels the point rows and a group's members join in
   // (`assetCode`, `assetName`, `locationName`; `assetDomain`).
@@ -178,6 +180,10 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   // `F4.309` PR 3 (ADR 0099 Amendment 13): the page's list and `/vocabularies`' `switchingStates` (the legend).
   "pointKeyState.create": [POINT_KEY_STATES, VOCABULARIES],
   "pointKeyState.update": [POINT_KEY_STATES, VOCABULARIES],
+  // `F4.334` (ADR 0099 Amendment 17 decision 1): the Payload Formats page and the drawer's picker.
+  "mqttPayloadFormat.create": [["admin", "mqtt-payload-formats"]],
+  "mqttPayloadFormat.update": [["admin", "mqtt-payload-formats"]],
+  "mqttPayloadFormat.delete": [["admin", "mqtt-payload-formats"]],
   // `F3.24b` (ADR 0103) — a discovery writes only the draft's `_discovery`, so only the session reads go stale.
   "onboarding.discovery": [["onboarding"]],
   // `F3.86` PR 6 — an onboarding commit creates the site, its RTUs, assets, mappings, groups and templates.

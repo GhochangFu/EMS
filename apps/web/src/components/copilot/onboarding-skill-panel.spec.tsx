@@ -102,6 +102,10 @@ function stubFetch(answer: (url: string) => { status: number; json: unknown }): 
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit = {}) => {
+      // F4.334: the drawer's payload format picker reads the catalog; it is not an onboarding write.
+      if (url.endsWith("/admin/mqtt-payload-formats")) {
+        return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       sent.push({ url, method: init.method ?? "GET", headers: new Headers(init.headers), body: String(init.body ?? "") });
       const { status, json } = answer(url);
       return new Response(JSON.stringify(json), { status, headers: { "Content-Type": "application/json" } });

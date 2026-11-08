@@ -244,6 +244,15 @@ export function canManageLocationTypes(role: UserRole): boolean {
 }
 
 /**
+ * `F4.334` (ADR 0116 decision 5, plan T5.2) — the Payload Formats page. Every write and the test
+ * route are the global `admin`'s; its own predicate, the `canManageLocationTypes` rule, so the
+ * page's fail-closed check never moves with another.
+ */
+export function canManagePayloadFormats(role: UserRole): boolean {
+  return role === "admin";
+}
+
+/**
  * Whether the role may draw, save and delete plant mimic layouts
  * (`F3.32c`, ADR 0081 decision 3, plan D8).
  *
@@ -381,6 +390,8 @@ export const masterDataTabs = [
   // `F4.282` (ADR 0099 Amendment 8 Q17): the unit-role vocabulary, gated like Location Types —
   // every `admin/vocabularies/asset-roles` write is the global `admin`'s (`requireGlobalAdmin`).
   { label: "Unit Roles", path: "/admin/unit-roles", globalAdminOnly: true, area: "reference" },
+  // `F4.334` (ADR 0116 decision 5): the MQTT payload format catalog — every write is the global `admin`'s.
+  { label: "Payload Formats", path: "/admin/payload-formats", globalAdminOnly: true, area: "reference" },
   // `E4.1a` (ADR 0070 decision 2). Ungated, like Asset Groups above: the API
   // gates a write by the row's scope, so a `location_admin` writes location
   // and asset scope for its own location and is refused the rest by the

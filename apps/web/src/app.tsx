@@ -55,6 +55,7 @@ import { MimicLayoutEditorPage } from "./pages/admin/mimic-layout-editor-page";
 import { MimicLayoutsPage } from "./pages/admin/mimic-layouts-page";
 import { MimicSymbolLibrariesPage } from "./pages/admin/mimic-symbol-libraries-page";
 import { PointKeysAdminPage } from "./pages/admin/point-keys-page";
+import { PayloadFormatsAdminPage } from "./pages/admin/payload-formats-page";
 import { PointKeyStatesAdminPage } from "./pages/admin/point-key-states-page";
 import { TrendPointsAdminPage } from "./pages/admin/trend-points-page";
 import { RtusAdminPage } from "./pages/admin/rtus-page";
@@ -820,6 +821,19 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <LocationTypesAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/* F4.334 (ADR 0116 decision 5): the MQTT payload format catalog; the page fails closed. */}
+      <Route
+        path="/admin/payload-formats"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <PayloadFormatsAdminPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />
