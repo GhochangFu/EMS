@@ -1,8 +1,10 @@
+import { QueryClient } from "@tanstack/react-query";
 import { expect } from "vitest";
 import { COPILOT_CATALOG, catalogEntry } from "@bms/shared/copilot";
 
 import { CHANGE_VALUE_MAX, type ChangeRow, changeRows, fieldLabel, formatChangeValue, layoutGraphRows } from "./copilot-diff";
-import { INVALIDATED_ENTRIES, invalidationKeysFor, onboardingDraftsKey } from "./copilot-invalidations";
+import { INVALIDATED_ENTRIES, invalidationFiltersFor, invalidationKeysFor, onboardingDraftsKey } from "./copilot-invalidations";
+import { expectOnlySlugAndListReadsRefetched, seedDashboardReads } from "./site-layout-replace.spec";
 import {
   applyFill,
   bodyProblems,
@@ -228,6 +230,30 @@ export function anOnboardingCommitInvalidatesTheDraftList(): void {
   const keys = invalidationKeysFor("onboarding.commit");
   expect(keys).toContainEqual(["admin", "onboarding", "drafts"]);
   expect(onboardingDraftsKey(ORG)).toEqual(["admin", "onboarding", "drafts", ORG]);
+}
+
+/**
+ * `F4.320` follow-up: the two Replace entries rebuild each copy under a NEW dashboard id, so their
+ * filters re-read the dashboards by slug and list but never the deleted id's reads (each a 404).
+ * Every other entry's filters are its keys, one plain prefix each.
+ */
+export async function theReplaceEntriesSkipTheDeletedDashboardsReads(): Promise<void> {
+  for (const id of ["location.siteLayout.replace", "dashboardTemplate.replaceSiteLayouts"]) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const reads = await seedDashboardReads(client);
+    try {
+      await Promise.all(invalidationFiltersFor(id).map((filters) => client.invalidateQueries(filters)));
+      await expectOnlySlugAndListReadsRefetched(reads);
+    } finally {
+      reads.stop();
+      client.clear();
+    }
+    expect(invalidationFiltersFor(id).map((filters) => filters.queryKey), id).toEqual(invalidationKeysFor(id));
+  }
+  for (const id of INVALIDATED_ENTRIES.filter((e) => e !== "location.siteLayout.replace" && e !== "dashboardTemplate.replaceSiteLayouts")) {
+    expect(invalidationFiltersFor(id), id).toEqual(invalidationKeysFor(id).map((queryKey) => ({ queryKey })));
+  }
+  expect(invalidationFiltersFor("nope")).toEqual([]);
 }
 
 /** `F3.87` PR 5: both layout entries re-read the layout library and, under its prefix, each layout. */

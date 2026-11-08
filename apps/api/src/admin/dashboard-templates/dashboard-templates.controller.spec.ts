@@ -115,7 +115,7 @@ function bulkController(): { controller: DashboardTemplatesController; calls: un
       return { made: [], skipped: [] };
     },
   } as unknown as SiteLayoutService;
-  const controller = new DashboardTemplatesController({} as never, {} as never, {} as never, siteLayout);
+  const controller = new DashboardTemplatesController({} as never, {} as never, {} as never, siteLayout, {} as never);
   return { controller, calls };
 }
 
@@ -166,7 +166,7 @@ function instantiateController(): { controller: DashboardTemplatesController; ca
     instantiateSite: record("instantiateSite"),
     instantiateOrganization: record("instantiateOrganization"),
   } as unknown as DashboardTemplatesInstantiateService;
-  const controller = new DashboardTemplatesController({} as never, {} as never, instantiate, {} as never);
+  const controller = new DashboardTemplatesController({} as never, {} as never, instantiate, {} as never, {} as never);
   return { controller, calls };
 }
 

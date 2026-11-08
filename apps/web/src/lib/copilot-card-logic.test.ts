@@ -18,6 +18,7 @@ import {
   longAndStructuredValuesAreShortened,
   theAssetGroupAndPointKeyEntriesInvalidateTheirPages,
   theLayoutEntriesInvalidateTheLayouts,
+  theReplaceEntriesSkipTheDeletedDashboardsReads,
   changeRowsSkipsTheNamedKeys,
   aChangedFormulaShowsTheNowExpression,
   aChangedStructuredValueIsChanged,
@@ -58,6 +59,8 @@ describe("F3.85 PR 8 — Confirm card and wizard logic (ADR 0099 decisions 4, 6)
   it("re-reads the asset-group and point-key pages after their changes (F3.86 PR 3c)", () =>
     theAssetGroupAndPointKeyEntriesInvalidateTheirPages());
   it("F3.87 PR 5: re-reads the layouts after a layout change", () => theLayoutEntriesInvalidateTheLayouts());
+  it("F4.320 follow-up: the Replace entries do not re-read the deleted dashboard's id-keyed reads", () =>
+    theReplaceEntriesSkipTheDeletedDashboardsReads());
   it("F3.87 PR 5: skips the named keys in the card's rows", () => changeRowsSkipsTheNamedKeys());
 });
 

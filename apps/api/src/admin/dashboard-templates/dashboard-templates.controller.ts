@@ -17,6 +17,7 @@ import { ZodError } from "zod";
 import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
+import { SiteLayoutReplaceService } from "../../control-room/site-layout-replace.service";
 import { SiteLayoutService } from "../../control-room/site-layout.service";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema, stockCodeParamSchema } from "../admin.schema";
@@ -55,6 +56,7 @@ export class DashboardTemplatesController {
     private readonly stock: DashboardTemplatesStockService,
     private readonly instantiate: DashboardTemplatesInstantiateService,
     private readonly siteLayout: SiteLayoutService,
+    private readonly siteLayoutReplace: SiteLayoutReplaceService,
   ) {}
 
   @Get()
@@ -227,7 +229,7 @@ export class DashboardTemplatesController {
    */
   @Post(":id/replace-site-layouts")
   async replaceSiteLayouts(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
-    return this.siteLayout.replaceForOrganization(user, idParamSchema.parse(id));
+    return this.siteLayoutReplace.replaceForOrganization(user, idParamSchema.parse(id));
   }
 
   /**
@@ -237,6 +239,6 @@ export class DashboardTemplatesController {
    */
   @Get(":id/replace-site-layouts/preview")
   async previewReplaceSiteLayouts(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
-    return this.siteLayout.previewReplaceForOrganization(user, idParamSchema.parse(id));
+    return this.siteLayoutReplace.previewReplaceForOrganization(user, idParamSchema.parse(id));
   }
 }

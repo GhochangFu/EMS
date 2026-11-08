@@ -6,7 +6,7 @@ import { expect } from "vitest";
 
 import type { JwtPayload } from "@bms/shared";
 
-import type { SiteLayoutService } from "../../control-room/site-layout.service";
+import type { SiteLayoutReplaceService } from "../../control-room/site-layout-replace.service";
 import { repoRoot } from "../../testing/repo-root";
 import { decoratorAt } from "../../testing/source-scan";
 import { DashboardTemplatesController } from "../dashboard-templates/dashboard-templates.controller";
@@ -42,7 +42,7 @@ const ROUTES: ReadonlyArray<{ file: string; decorator: string; handler: string }
   },
 ];
 
-function recorder(): { siteLayout: SiteLayoutService; calls: Array<[string, unknown[]]> } {
+function recorder(): { siteLayout: SiteLayoutReplaceService; calls: Array<[string, unknown[]]> } {
   const calls: Array<[string, unknown[]]> = [];
   const record =
     (name: string) =>
@@ -55,7 +55,7 @@ function recorder(): { siteLayout: SiteLayoutService; calls: Array<[string, unkn
     replaceForOrganization: record("replaceForOrganization"),
     previewReplaceForSite: record("previewReplaceForSite"),
     previewReplaceForOrganization: record("previewReplaceForOrganization"),
-  } as unknown as SiteLayoutService;
+  } as unknown as SiteLayoutReplaceService;
   return { siteLayout, calls };
 }
 
@@ -82,7 +82,7 @@ export function assertTheReplaceRoutesAreDeclared(): void {
 /** Per site: the path id and the parsed Make body reach `replaceForSite`; the preview takes the id. */
 export async function assertThePerSiteRoutesReachTheService(): Promise<void> {
   const { siteLayout, calls } = recorder();
-  const controller = new LocationsAdminController({} as never, {} as never, siteLayout);
+  const controller = new LocationsAdminController({} as never, {} as never, {} as never, siteLayout);
   await controller.replaceSiteLayout(SITE, { templateId: TEMPLATE, tabGroups: { sld: GROUP } }, JWT);
   await controller.replaceSiteLayout(SITE, undefined, JWT);
   await controller.previewSiteLayoutReplace(SITE, JWT);
@@ -96,7 +96,7 @@ export async function assertThePerSiteRoutesReachTheService(): Promise<void> {
 /** The per-site body is the `.strict()` Make body: an unknown key or a bad id is a 400 before the service. */
 export async function assertThePerSiteBodyIsStrict(): Promise<void> {
   const { siteLayout, calls } = recorder();
-  const controller = new LocationsAdminController({} as never, {} as never, siteLayout);
+  const controller = new LocationsAdminController({} as never, {} as never, {} as never, siteLayout);
   expect(await refusal(controller.replaceSiteLayout(SITE, { tabGroup: {} }, JWT))).toBeInstanceOf(BadRequestException);
   expect(await refusal(controller.replaceSiteLayout("not-a-uuid", {}, JWT))).toBeInstanceOf(BadRequestException);
   expect(calls).toEqual([]);
@@ -105,7 +105,7 @@ export async function assertThePerSiteBodyIsStrict(): Promise<void> {
 /** Bulk: the parsed template id reaches `replaceForOrganization` and its preview. */
 export async function assertTheBulkRoutesReachTheService(): Promise<void> {
   const { siteLayout, calls } = recorder();
-  const controller = new DashboardTemplatesController({} as never, {} as never, {} as never, siteLayout);
+  const controller = new DashboardTemplatesController({} as never, {} as never, {} as never, {} as never, siteLayout);
   await controller.replaceSiteLayouts(TEMPLATE, JWT);
   await controller.previewReplaceSiteLayouts(TEMPLATE, JWT);
   expect(calls).toEqual([
