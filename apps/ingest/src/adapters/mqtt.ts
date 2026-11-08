@@ -1,7 +1,15 @@
 import mqtt from "mqtt";
 
 import { mqttConfigSchema, mqttDeviceSchema, parseMqttEnvelope as parsePayload } from "@bms/shared/ingest";
-import type { AdapterHealth, MqttConfig, MqttDevice, SourceSample } from "@bms/shared/ingest";
+import { decodeMqttPayload, MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION } from "@bms/shared/ingest";
+import type {
+  AdapterHealth,
+  MqttConfig,
+  MqttDecodedRecord,
+  MqttDevice,
+  MqttPayloadFormatDefinition,
+  SourceSample,
+} from "@bms/shared/ingest";
 
 import type {
   AdapterContext,
@@ -181,32 +189,23 @@ export function createMqttAdapter(
    * Reads go through `has()`, so nothing outside this closure can mutate it.
    */
   const deviceKeysByTopic = new Map<string, Set<string>>();
+  /**
+   * `topic → the payload format it decodes with` (ADR 0116 decision 6). Only
+   * topics whose bindings name a format are here; any other topic decodes with
+   * the built-in envelope. The host refuses two formats on one topic
+   * (`payload-format-conflict`), so the first binding's is the topic's.
+   */
+  const formatByTopic = new Map<string, { code: string; definition: MqttPayloadFormatDefinition }>();
 
-  function handleMessage(topic: string, payload: Buffer): void {
-    // Rule 8 (§5): nothing is emitted before `subscribe()` resolves or after
-    // `disconnect()` is called.
-    if (emit === null || closed) {
+  /** Routes one decoded record: the binding lookup, the `F1.7` topic check, the samples. */
+  function handleRecord(topic: string, record: MqttDecodedRecord): void {
+    if (emit === null) {
       return;
     }
-    if (payload.length > MAX_PAYLOAD_BYTES) {
-      // Checked before `toString`, so an oversized frame is never materialised
-      // as a string either (§5 rule 6). Size only — never the content.
-      context?.logger.warn("mqtt payload rejected: too large", {
-        bytes: payload.length,
-        limit: MAX_PAYLOAD_BYTES,
-      });
-      return;
-    }
-
-    let parsed: ReturnType<typeof parsePayload>;
-    try {
-      parsed = parsePayload(payload.toString("utf8"));
-    } catch {
-      // A malformed payload is one device misbehaving, not a connection fault.
-      // `index.js` returns silently here; this at least counts it in `detail`.
-      context?.logger.warn("mqtt payload was not valid JSON", { bytes: payload.length });
-      return;
-    }
+    const parsed =
+      record.at === undefined
+        ? { devId: record.deviceKey, values: record.values }
+        : { devId: record.deviceKey, values: record.values, at: record.at };
 
     const binding = bindingByDevice.get(parsed.devId);
     if (binding === undefined) {
@@ -251,6 +250,55 @@ export function createMqttAdapter(
     emit(samples);
   }
 
+  function handleMessage(topic: string, payload: Buffer): void {
+    // Rule 8 (§5): nothing is emitted before `subscribe()` resolves or after
+    // `disconnect()` is called.
+    if (emit === null || closed) {
+      return;
+    }
+    if (payload.length > MAX_PAYLOAD_BYTES) {
+      // Checked before `toString`, so an oversized frame is never materialised
+      // as a string either (§5 rule 6). Size only — never the content.
+      context?.logger.warn("mqtt payload rejected: too large", {
+        bytes: payload.length,
+        limit: MAX_PAYLOAD_BYTES,
+      });
+      return;
+    }
+
+    // ADR 0116 decision 6: decode with the format of the topic the message
+    // arrived on. A topic whose bindings name no format uses the built-in
+    // envelope — `parseMqttEnvelope`, unchanged — so PHE behaves as before.
+    const format = formatByTopic.get(topic);
+    const decoded = decodeMqttPayload(
+      format?.definition ?? MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION,
+      topic,
+      payload.toString("utf8"),
+    );
+    if (!decoded.ok) {
+      if (format === undefined) {
+        // A malformed payload is one device misbehaving, not a connection fault.
+        // `index.js` returns silently here; this at least counts it in `detail`.
+        context?.logger.warn("mqtt payload was not valid JSON", { bytes: payload.length });
+      } else {
+        // The format code and a fixed reason only — never the payload (§9.6).
+        context?.logger.warn("mqtt payload not decoded", {
+          topic,
+          formatCode: format.code,
+          reason: decoded.reason,
+        });
+      }
+      return;
+    }
+    for (const record of decoded.records) {
+      // Rule 8 again: a record may not be emitted after `disconnect()`.
+      if (closed) {
+        return;
+      }
+      handleRecord(topic, record);
+    }
+  }
+
   return {
     mode: "push",
 
@@ -259,11 +307,16 @@ export function createMqttAdapter(
       closed = false;
       bindingByDevice.clear();
       deviceKeysByTopic.clear();
+      formatByTopic.clear();
       for (const binding of ctx.bindings) {
         bindingByDevice.set(binding.deviceKey, {
           rtuCode: binding.rtuCode,
           sourceKeys: binding.sourceKeys,
         });
+        const format = binding.device.payloadFormat;
+        if (format !== undefined && !formatByTopic.has(binding.device.topic)) {
+          formatByTopic.set(binding.device.topic, format);
+        }
         const bound = deviceKeysByTopic.get(binding.device.topic);
         if (bound === undefined) {
           deviceKeysByTopic.set(binding.device.topic, new Set([binding.deviceKey]));
