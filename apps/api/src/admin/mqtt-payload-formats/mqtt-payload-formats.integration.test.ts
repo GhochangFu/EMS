@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
@@ -44,7 +46,8 @@ describe.skipIf(!connectionString)("F4.334 — the payload format catalog servic
   let ctx: MpfFixtures;
   let admin: JwtPayload;
   let tenantAdmin: JwtPayload;
-  const stamp = String(Date.now());
+  // Per run: a concurrent instance of this file never shares a fixture code.
+  const stamp = randomUUID().slice(0, 8);
   const rtuIds: string[] = [];
 
   beforeAll(async () => {
@@ -120,7 +123,10 @@ describe.skipIf(!connectionString)("F4.334 — the payload format catalog servic
       await observer.query("DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])", [ids]);
       await observer.query("DELETE FROM bms.onboarding_sessions WHERE id = ANY($1::uuid[])", [ctx?.sessionIds ?? []]);
       await observer.query("DELETE FROM bms.rtus WHERE id = ANY($1::uuid[])", [rtuIds]);
-      await observer.query("DELETE FROM bms.mqtt_payload_formats WHERE code LIKE $1", [`f4334-${stamp}-%`]);
+      // Exact per-run codes only (tests/integration-fixture-isolation): never a prefix sweep.
+      await observer.query("DELETE FROM bms.mqtt_payload_formats WHERE code = ANY($1::text[])", [
+        ["a", "b", "c", "d"].map((suffix) => `f4334-${stamp}-${suffix}`),
+      ]);
     }
     await Promise.all([observer?.end(), authPool?.end(), tenantPool?.end()]);
   }, 60_000);
