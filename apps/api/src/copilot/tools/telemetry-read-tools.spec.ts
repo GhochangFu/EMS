@@ -427,8 +427,10 @@ export async function assertTheTurnAnswersTheLast24HoursFromATool(): Promise<voi
  * get_location_summary), so the bound is 23,000. The propose registry measured 83,195 (under 84,000).
  * F4.316 PR 7 measured 22,979 (40 tools; list_assets names the label rule, the unruled inventory says labels),
  * under the bound, so it is unchanged.
+ * F4.334 PR 5 (ADR 0099 Amendment 17 decision 2) measured 23,735 (42 tools; list_payload_formats and
+ * decode_payload_sample), so by the release-4 rule the bound is 25,000; the owner confirms it with the PR.
  */
 export function assertTheReadRegistryStaysInItsBudget(): void {
   const { tools } = fakeTelemetryServices();
-  expect(JSON.stringify(tools.registry.definitions).length).toBeLessThan(23_000);
+  expect(JSON.stringify(tools.registry.definitions).length).toBeLessThan(25_000);
 }
