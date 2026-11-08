@@ -7,6 +7,7 @@ import { commitSummary } from "./onboarding-commit-proposal";
 import { looksLikeCredential } from "./onboarding-credential-detect";
 import { assetPointProblems } from "./onboarding-mapping-refs";
 import {
+  discoveredPayloadFormat,
   discoveredRtuSource,
   discoveryScopeProblem,
   dispatchDiscoveryTool,
@@ -547,7 +548,10 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
     }
 
     case "add_rtu": {
-      const rtu = { ...(args as z.infer<typeof rtuArgs>), credentialsSet: false };
+      const added = { ...(args as z.infer<typeof rtuArgs>), credentialsSet: false };
+      // F4.334 (ADR 0116 decision 8): a discovered device's payload format, when the call names none.
+      const format = added.config?.payloadFormat === undefined ? discoveredPayloadFormat(draft, added) : undefined;
+      const rtu = format === undefined ? added : { ...added, config: { ...added.config, payloadFormat: format } };
       // Security review M2 (code review's sibling note): `_secrets` is keyed by
       // RTU code, so re-adding a removed credentialed code would inherit its
       // credential at reconcile, pointed at whatever host this call names.
@@ -564,7 +568,8 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       // F3.24b (accuracy review #3): an RTU for a discovered device on the confirmed broker earns a copy of the
       // source RTU's encrypted credential, applied by code after the turn and checked again there.
       const source = discoveredRtuSource(draft, rtu);
-      const copied = source === null ? "" : ` (credentials of RTU ${source})`;
+      // F4.334 security review L1: a copied format is named, so the user sees it before commit.
+      const copied = `${source === null ? "" : ` (credentials of RTU ${source})`}${format === undefined ? "" : ` (payload format ${format})`}`;
       const outcome = write(
         state,
         { rtus: [...(draft.rtus ?? []), rtu] },

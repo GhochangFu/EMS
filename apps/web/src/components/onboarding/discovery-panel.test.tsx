@@ -7,6 +7,7 @@ import {
   aDiscoveredRowShowsTheBadgeAndTheSampleValue,
   aDoneDiscoveryShowsTheCountsAndTheTruncatedNote,
   aDoneDiscoveryWithNoDeviceShowsTheEmptySentence,
+  aDoneDiscoveryWithSkippedMessagesSaysSo,
   aFailedDiscoveryShowsItsErrorClass,
   aPlaintextRefusalSaysPlainMqttIsNotAllowed,
   aNonMqttDraftRendersNoSection,
@@ -35,6 +36,7 @@ describe("F3.24b discovery panel", () => {
   it("a chat turn in flight renames the button and marks it busy", aChatTurnInFlightRenamesTheButtonAndMarksItBusy);
   it("a draft with no MQTT RTU renders no Discover button", aNonMqttDraftRendersNoSection);
   it("a done discovery with no device shows the empty sentence", aDoneDiscoveryWithNoDeviceShowsTheEmptySentence);
+  it("says how many messages arrived when none decoded (F4.335)", aDoneDiscoveryWithSkippedMessagesSaysSo);
   it("a done discovery shows the counts and the truncated note", aDoneDiscoveryShowsTheCountsAndTheTruncatedNote);
   it("a failed discovery shows its error class", aFailedDiscoveryShowsItsErrorClass);
   it("a plaintext refusal says plain MQTT is not allowed (ADR 0114)", aPlaintextRefusalSaysPlainMqttIsNotAllowed);

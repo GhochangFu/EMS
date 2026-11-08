@@ -29,6 +29,8 @@ function discovery(over: Partial<Discovery> = {}): Discovery {
     finishedAt: "2026-10-19T10:01:00.000Z",
     truncated: false,
     devices: [],
+    messages: 0,
+    skipped: 0,
     ...over,
   };
 }
@@ -116,6 +118,13 @@ export function aNonMqttDraftRendersNoSection(): void {
 export function aDoneDiscoveryWithNoDeviceShowsTheEmptySentence(): void {
   mount(session({ discovery: discovery() }));
   expect(screen.getByText("No device published in the window.")).toBeTruthy();
+}
+
+/** F4.335 — messages that arrived and were not decoded are said, not read as a silent broker. */
+export function aDoneDiscoveryWithSkippedMessagesSaysSo(): void {
+  mount(session({ discovery: discovery({ messages: 0, skipped: 6, skippedReasons: { "no-format": 6 } }) }));
+  expect(screen.getByText("6 messages arrived but none matched a known payload format.")).toBeTruthy();
+  expect(screen.queryByText("No device published in the window.")).toBeNull();
 }
 
 export function aDoneDiscoveryShowsTheCountsAndTheTruncatedNote(): void {

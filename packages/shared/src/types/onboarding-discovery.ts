@@ -16,3 +16,6 @@ export type OnboardingDiscoveryDevice = z.infer<typeof C.onboardingDiscoveryDevi
 export type OnboardingDiscoveryKey = z.infer<typeof C.onboardingDiscoveryKeySchema>;
 export type OnboardingDiscoveryStatus = z.infer<typeof C.onboardingDiscoveryStatusSchema>;
 export type OnboardingDiscoveryErrorClass = z.infer<typeof C.onboardingDiscoveryErrorClassSchema>;
+/** `F4.334` / ADR 0116 decision 8: why the collector dropped a message. */
+export type OnboardingDiscoverySkipReason = z.infer<typeof C.onboardingDiscoverySkipReasonSchema>;
+export type OnboardingDiscoverySkippedReasons = z.infer<typeof C.onboardingDiscoverySkippedReasonsSchema>;

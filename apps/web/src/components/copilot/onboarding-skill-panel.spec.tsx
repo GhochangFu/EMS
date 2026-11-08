@@ -531,6 +531,8 @@ function discovery(over: Partial<DiscoveryDto> = {}): DiscoveryDto {
     finishedAt: null,
     truncated: false,
     devices: [],
+    messages: 0,
+    skipped: 0,
     ...over,
   };
 }

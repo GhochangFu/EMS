@@ -8,7 +8,7 @@ import type { ProcessorContinuation } from "../queue/queue-processor";
 import type { DiscoveryAuditRow, DiscoveryJobStore, StoredDiscovery } from "./discovery-job-store";
 import { DiscoveryJobService, type DiscoveryJobPayload } from "./discovery-job.service";
 import { classifyMqttError, listenForDevices } from "./discovery-listener";
-import { createDiscoveryCollector } from "./discovery-collector";
+import { BUILTIN_DISCOVERY_FORMATS, createDiscoveryCollector } from "./discovery-collector";
 import type { HostResolution } from "./discovery-host-guard";
 import {
   buildConnectOptions,
@@ -82,6 +82,8 @@ export function draftWith(opts: { config?: Record<string, unknown>; discovery?: 
 
 type Probe = {
   readonly writes: { tx: BmsTx; stored: StoredDiscovery }[];
+  /** `F4.334`: the chosen format code each catalog read was asked for (the main harness only). */
+  readonly formatChoices?: (string | undefined)[];
   readonly audits: DiscoveryAuditRow[];
   readonly connects: DiscoveryConnectOptions[];
   readonly subscribes: { filter: string; qos: number }[];
@@ -155,14 +157,21 @@ export function build(opts: {
   /** The first write on the second transaction throws (the whole transaction rolls back); later ones succeed. */
   finishWriteThrowsOnce?: boolean;
   phaseAWriteThrows?: boolean;
+  /** `F4.334`: catalog codes the read reports as failing the schema. */
+  invalidFormats?: string[];
   /** `MQTT_PLAINTEXT_HOSTS`, parsed (ADR 0114). Omitted: the job is built without it — fail closed. */
   plaintextHosts?: ReadonlySet<string>;
 }) {
-  const probe: Probe = { writes: [], audits: [], connects: [], subscribes: [], logs: [], handles: [] };
+  const probe: Probe = { writes: [], audits: [], connects: [], subscribes: [], logs: [], handles: [], formatChoices: [] };
   const resolved: string[] = [];
   let finishThrowsLeft = opts.finishWriteThrowsOnce ? 1 : 0;
   const store = {
     inTenant: async <T>(_org: string, fn: (tx: BmsTx) => Promise<T>) => fn(TX2),
+    // F4.334: the catalog read; records the chosen code and answers the built-in alone.
+    formats: async (_tx: BmsTx, chosen: string | undefined) => {
+      probe.formatChoices?.push(chosen);
+      return { formats: [...BUILTIN_DISCOVERY_FORMATS], invalid: opts.invalidFormats ?? [] };
+    },
     lock: async () =>
       opts.noSession
         ? undefined

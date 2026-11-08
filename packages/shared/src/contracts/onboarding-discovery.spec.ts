@@ -6,6 +6,7 @@ import {
   MQTT_DISCOVERY_SOURCE_KEY_MAX,
   MQTT_DISCOVERY_TOPIC_MAX,
   discoveryDtoOf,
+  discoveryEmptySentence,
   discoveryIsActive,
   onboardingDiscoveryDeviceSchema,
   onboardingDiscoveryResultDtoSchema,
@@ -47,9 +48,11 @@ const DTO = {
   finishedAt: "2026-10-18T00:01:00.000Z",
   truncated: false,
   devices: [DEVICE],
+  messages: 3,
+  skipped: 0,
 };
 
-const STORED = { ...DTO, queuedAt: "2026-10-18T00:00:00.000Z", messages: 3, skipped: 0 };
+const STORED = { ...DTO, queuedAt: "2026-10-18T00:00:00.000Z" };
 
 const SESSION = {
   id: "s",
@@ -186,6 +189,54 @@ export function theMapperDropsTheStoredOnlyKeys(): void {
   const stored = onboardingDiscoveryStoredSchema.parse(STORED);
   expect(onboardingDiscoveryResultDtoSchema.safeParse(discoveryDtoOf(stored)).success).toBe(true);
   expect(Object.keys(discoveryDtoOf(stored))).not.toContain("queuedAt");
+  // F4.335: the counters reach the client.
+  expect(discoveryDtoOf(stored)).toMatchObject({ messages: 3, skipped: 0 });
+}
+
+/**
+ * `F4.334` (plan R11) — a result stored before ADR 0116 (no device
+ * `payloadFormat`, no `skippedReasons`) still parses: the shape the BCPL
+ * LALMATI draft holds today.
+ */
+export function aResultStoredBeforeAdr0116StillParses(): void {
+  const before = {
+    discoveryId: "22222222-2222-4222-8222-222222222222",
+    rtuCode: "12310",
+    topicFilter: "BCPL_LAK_PLANT_03_LAKWA/#",
+    windowSeconds: 60,
+    status: "done",
+    startedAt: "2026-11-08T05:00:00.000Z",
+    finishedAt: "2026-11-08T05:01:00.000Z",
+    truncated: false,
+    devices: [],
+    queuedAt: "2026-11-08T05:00:00.000Z",
+    messages: 0,
+    skipped: 6,
+  };
+  expect(onboardingDiscoveryStoredSchema.safeParse(before).success).toBe(true);
+  const withFormat = {
+    ...before,
+    devices: [{ ...DEVICE, payloadFormat: "thinkiot-register-array" }],
+    skippedReasons: { "no-format": 2 },
+  };
+  expect(onboardingDiscoveryStoredSchema.safeParse(withFormat).success).toBe(true);
+  expect(onboardingDiscoveryStoredSchema.safeParse({ ...before, skippedReasons: { "made-up": 1 } }).success).toBe(false);
+}
+
+/** `F4.335` (plan R11) — the three sentences a discovery with no device says. */
+export function theEmptySentenceSaysWhatArrived(): void {
+  expect(discoveryEmptySentence({ messages: 0, skipped: 0 })).toBe("No device published in the window.");
+  expect(discoveryEmptySentence({ messages: 0, skipped: 6, skippedReasons: { "no-format": 6 } })).toBe(
+    "6 messages arrived but none matched a known payload format.",
+  );
+  expect(discoveryEmptySentence({ messages: 0, skipped: 6, skippedReasons: { "no-format": 4, oversize: 2 } })).toBe(
+    "6 messages arrived and were not decoded.",
+  );
+  // A result stored before ADR 0116 has no reasons: the general sentence.
+  expect(discoveryEmptySentence({ messages: 0, skipped: 6 })).toBe("6 messages arrived and were not decoded.");
+  expect(discoveryEmptySentence({ messages: 0, skipped: 1, skippedReasons: { "no-format": 1 } })).toBe(
+    "1 message arrived but none matched a known payload format.",
+  );
 }
 
 export function anAssetPointAcceptsSourceDiscovery(): void {
