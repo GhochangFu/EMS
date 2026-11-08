@@ -91,6 +91,8 @@ export async function assertAMqttMessageCarriesItsTopicIntoTheConfig(): Promise<
   const rtu = result.draftPatch.rtus?.[0];
   assert(rtu?.config?.topic === "plant/a", `expected topic plant/a, got ${String(rtu?.config?.topic)}`);
   assert(rtu?.ingestEnabled === true, "an MQTT RTU must be ingest-enabled");
+  // F4.339 (ruling Q5): with ingest on, the RTU carries its code as the device key.
+  assert(rtu?.rtuCode === rtu?.code, `the device key is the RTU code, got ${String(rtu?.rtuCode)}`);
 }
 
 /** F3.24a review M1 — a wildcard topic on the add branch answers the F4.215 sentence, not the config refusal, and adds no RTU. */

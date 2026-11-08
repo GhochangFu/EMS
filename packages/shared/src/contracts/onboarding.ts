@@ -202,8 +202,13 @@ export const ONBOARDING_DRAFT_STRING_MAX = {
 
 /**
  * `F4.339` (ADR 0117 decision 10, plan R10) — whether `zone` is an IANA zone
- * name a draft location may carry: `UTC`, or a name the repo's R-6 rule
- * accepts (`isValidTimeZone`: a `/`, segment casing, and ICU constructs it).
+ * name a draft location may carry: a name the repo's R-6 rule accepts
+ * (`isValidTimeZone`: a `/`, segment casing, and ICU constructs it).
+ *
+ * Not bare `UTC` either, as the plan wrote: `bms.locations.timezone` is
+ * governed by ADR 0070's region/city rule (`LocationsService.assertKnownTimezone`
+ * requires a `/`), so a committed `UTC` would refuse every later location
+ * edit. `Etc/UTC` passes.
  *
  * Not `Intl.supportedValuesOf("timeZone").includes(zone)` as the plan wrote:
  * ICU lists `Asia/Calcutta` only, on the `api` container and the host alike
@@ -211,7 +216,7 @@ export const ONBOARDING_DRAFT_STRING_MAX = {
  * `Asia/Kolkata` — the zone this field exists for. The alias passes too.
  */
 export function isIanaTimeZone(zone: string): boolean {
-  return zone === "UTC" || isValidTimeZone(zone);
+  return isValidTimeZone(zone);
 }
 
 /** The fixed message of a refused draft timezone; it never echoes the value (§9.6). */
@@ -222,7 +227,7 @@ export const onboardingTimezoneSchema = z
   .string()
   .max(ONBOARDING_DRAFT_STRING_MAX["location.timezone"])
   .refine(isIanaTimeZone, { message: ONBOARDING_TIMEZONE_MESSAGE })
-  .describe("The site's IANA zone name, such as Asia/Kolkata (or UTC); any other name is refused.");
+  .describe("The site's IANA region/city zone name, such as Asia/Kolkata or Etc/UTC; any other name is refused.");
 
 /**
  * `F4.208` — the longest MQTT topic an onboarding draft may carry: the width of

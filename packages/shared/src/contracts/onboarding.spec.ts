@@ -921,19 +921,20 @@ export function assertLenientDraftFloorAreaAbsent(): void {
  * `supportedValuesOf` test would refuse `Asia/Kolkata` (see `isIanaTimeZone`).
  */
 export function assertTheDraftTimezoneTakesIanaNames(): void {
-  for (const zone of ["Asia/Kolkata", "Asia/Calcutta", "UTC", "America/Argentina/Buenos_Aires"]) {
+  for (const zone of ["Asia/Kolkata", "Asia/Calcutta", "Etc/UTC", "America/Argentina/Buenos_Aires"]) {
     if (!isIanaTimeZone(zone)) throw new Error(`${zone} is an IANA zone`);
     const parsed = onboardingDraftLocationSchema.safeParse({ code: "L", slug: "l", name: "L", latitude: 0, longitude: 0, timezone: zone });
     if (!parsed.success) throw new Error(`${zone} parses: ${JSON.stringify(parsed.error.issues)}`);
   }
-  for (const zone of ["Kolkata", "asia/kolkata", "Mars/Olympus", "x".repeat(65)]) {
+  // Bare UTC is refused: `bms.locations.timezone` follows ADR 0070's region/city rule.
+  for (const zone of ["UTC", "Kolkata", "asia/kolkata", "Mars/Olympus", "x".repeat(65)]) {
     const parsed = onboardingDraftLocationSchema.safeParse({ code: "L", slug: "l", name: "L", latitude: 0, longitude: 0, timezone: zone });
     if (parsed.success) throw new Error(`${zone} is refused`);
     const issue = parsed.error.issues.find((i) => i.path.join(".") === "timezone");
     if (zone.length <= 64 && issue?.message !== "timezone must be an IANA zone name such as Asia/Kolkata") {
       throw new Error(`${zone}: the fixed message, got ${issue?.message}`);
     }
-    if (issue?.message.includes(zone) && zone.length <= 64 && zone !== "Kolkata") throw new Error("the value is not echoed");
+    if (issue?.message.includes(zone) && zone.length <= 64 && zone !== "Kolkata" && zone !== "UTC") throw new Error("the value is not echoed");
   }
   if (ONBOARDING_DRAFT_STRING_MAX["location.timezone"] !== 64) throw new Error("the bound is 64");
 }

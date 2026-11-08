@@ -548,6 +548,10 @@ export async function handleRuleBasedTurn(
       protocol,
       config,
       ingestEnabled: protocol === "mqtt",
+      // F4.339 (ruling Q5): ingest routes by `rtuCode`, and an ingest-enabled MQTT
+      // RTU without one cannot commit. The RTU's code is the device key by the
+      // convention discovery uses; the discovery offer can replace it.
+      ...(protocol === "mqtt" ? { rtuCode } : {}),
     };
     const written = await guidedWrite("add_rtu", rtuArgs, state, deps.tools);
     if (!written.ok) {
