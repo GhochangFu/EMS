@@ -359,12 +359,16 @@ export function assertThePlainDiscoveryReturnsTheDevice(o: PlainOutcome): void {
  * and stores the device with its format and the two readings.
  */
 export async function runBcplWindow(suite: MqttSuite): Promise<Run> {
-  const job = await startJob(suite, "bcpl");
+  // Its own service and connect record, so the suite's "one connect per job"
+  // claim still counts the two jobs of `runWindow` alone; clients are shared,
+  // so `closeMqttSuite` still ends them.
+  const isolated: MqttSuite = { ...openMqttSuite(suite.url.href), prefix: suite.prefix, clients: suite.clients };
+  const job = await startJob(isolated, "bcpl");
   let finished = false;
   const done = job.done.then(() => {
     finished = true;
   });
-  const publisher = await client(suite, `bms-it-bcpl-publisher-${randomUUID()}`);
+  const publisher = await client(isolated, `bms-it-bcpl-publisher-${randomUUID()}`);
   const sample = JSON.stringify([
     { Data: [16294, 26214, 81, 18230, 9202, 113, 17852, -17809, 177, 82], Timestamp: "1794077986", TagName: "BCPL_LAKWA_02" },
   ]);
