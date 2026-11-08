@@ -50,6 +50,9 @@ describe("F4.339 — bms.rtus.released_mqtt_topic (migration 0131)", () => {
     expect(entry?.breakpoints).toBe(true);
     expect(entry?.when as number).toBeGreaterThan(prev?.when as number);
     expect(entry?.when as number).toBeLessThanOrEqual(Date.now());
+    // Migration review L1: newer than every earlier entry, so a rebase over another migration is caught.
+    const earlier = journal.entries.filter((e) => (e.idx as number) < 132).map((e) => e.when as number);
+    expect(entry?.when as number).toBeGreaterThan(Math.max(...earlier));
   });
 
   it("adds the nullable column idempotently, inside SET ROLE bms_owner / RESET ROLE", () => {

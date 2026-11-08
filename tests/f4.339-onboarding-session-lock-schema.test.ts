@@ -81,6 +81,9 @@ describe("F4.339 migration 0132 — bms.onboarding_sessions lock columns (ADR 01
     expect(entry?.breakpoints).toBe(true);
     expect(entry?.when as number).toBeGreaterThan(prev?.when as number);
     expect(entry?.when as number).toBeLessThanOrEqual(Date.now());
+    // Migration review L1: newer than every earlier entry, so a rebase over another migration is caught.
+    const earlier = journal.entries.filter((e) => (e.idx as number) < 133).map((e) => e.when as number);
+    expect(entry?.when as number).toBeGreaterThan(Math.max(...earlier));
   });
 
   it("declares the three Drizzle columns inside onboardingSessions", () => {
