@@ -95,6 +95,8 @@ export class OnboardingChatService {
     imported: { locationName: string; rtuCount: number; assetCount: number },
     orgPointKeyCodes: string[],
     displayNameFixes: string[] = [],
+    /** F4.339 (ADR 0117 decision 4): the point-key catalog, so catalog-only mappings are not asked for keys. */
+    catalog?: ReadonlyMap<string, boolean>,
   ): { assistantMessage: string; suggestedReplies: string[] } {
     // `F4.102`. Everything this method interpolates from the import is sheet
     // text, and a cell may hold 32,767 characters. `quoteCell` is applied at
@@ -162,7 +164,7 @@ export class OnboardingChatService {
       };
     }
 
-    if (draftNeedsPointKeys(draft)) {
+    if (draftNeedsPointKeys(draft, catalog)) {
       if (orgPointKeyCodes.length > 0) {
         // `F4.105` site 5, and the one the owner overruled the plan on (ruling
         // 5). This carried a bare literal `8` twice, closed by a bare `, …`
@@ -333,7 +335,7 @@ export class OnboardingChatService {
         phase,
         // F4.199: a protocol reply adds an RTU only at the RTU step; past it
         // the same text reaches the point-key or asset branch.
-        this.validateService.inferPhase(draft, types.map((t) => t.code), turn.placement) === "rtu"
+        this.validateService.inferPhase(draft, types.map((t) => t.code), turn.placement, turn.templates.pointKeys) === "rtu"
           ? ["MQTT", "Modbus TCP", "View draft"]
           : ["View draft"],
         message,

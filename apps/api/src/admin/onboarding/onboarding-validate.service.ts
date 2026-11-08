@@ -65,10 +65,23 @@ export type ValidateResult = {
  * true, so the length is checked first. F4.195: `inferPhase`, the guided
  * chat's turn and `excelImportFollowUp` ask this one question, so the chat
  * cannot add a key that the phase skipped.
+ *
+ * F4.339 (ADR 0117 decision 4): with the catalog (code → active), a draft
+ * whose mappings all name a declared key or an **active** catalog key needs
+ * none — the BCPL drafts mapped catalog keys and stayed at "Add a point key".
+ * At least one mapping is required, and without the catalog the old rule
+ * stands (fail closed).
  */
-export function draftNeedsPointKeys(draft: OnboardingDraft): boolean {
+export function draftNeedsPointKeys(draft: OnboardingDraft, catalog?: ReadonlyMap<string, boolean>): boolean {
   if ((draft.pointKeys?.length ?? 0) > 0 || draft.onboardingMeta?.useExistingPointKeys) {
     return false;
+  }
+  const mappings = draft.assetPoints ?? [];
+  if (catalog !== undefined && mappings.length > 0) {
+    const declared = new Set((draft.pointKeys ?? []).map((key) => key.code));
+    if (mappings.every((mapping) => declared.has(mapping.pointKey) || catalog.get(mapping.pointKey) === true)) {
+      return false;
+    }
   }
   const assets = draft.assets ?? [];
   return assets.length === 0 || assets.some((asset) => !asset.template);
@@ -151,7 +164,7 @@ export class OnboardingValidateService {
         valid: false,
         errors,
         readyToCommit: false,
-        suggestedPhase: this.inferPhase(draft, activeLocationTypeCodes, placement),
+        suggestedPhase: this.inferPhase(draft, activeLocationTypeCodes, placement, templates.pointKeys),
       };
     }
 
@@ -168,7 +181,7 @@ export class OnboardingValidateService {
     for (const problem of pointKeyDeclarationProblems(d.pointKeys ?? [], templates.pointKeyFields)) {
       errors.push({ path: `pointKeys.${problem.index}.${problem.field}`, message: problem.message });
     }
-    const phase = this.inferPhase(d, activeLocationTypeCodes, placement);
+    const phase = this.inferPhase(d, activeLocationTypeCodes, placement, templates.pointKeys);
     const readyToCommit = errors.length === 0 && phase === "review";
     return {
       valid: errors.length === 0,
@@ -358,7 +371,13 @@ export class OnboardingValidateService {
    * stored parent the commit would refuse (`parentChoiceOpen`), as a retired
    * type does, so the guided step asks again and can repair it.
    */
-  inferPhase(draft: unknown, activeLocationTypeCodes: readonly string[], placement: PlacementContext): OnboardingPhase {
+  inferPhase(
+    draft: unknown,
+    activeLocationTypeCodes: readonly string[],
+    placement: PlacementContext,
+    /** F4.339 (ADR 0117 decision 4): the point-key catalog (code → active); absent keeps the old gate. */
+    catalog?: ReadonlyMap<string, boolean>,
+  ): OnboardingPhase {
     const d =
       typeof draft === "object" && draft !== null ? (draft as OnboardingDraft) : {};
     if (!d.location?.name) {
@@ -380,7 +399,7 @@ export class OnboardingValidateService {
     if (d.rtus.some(needsMqttSetup)) {
       return "rtu";
     }
-    if (draftNeedsPointKeys(d)) {
+    if (draftNeedsPointKeys(d, catalog)) {
       return "point_keys";
     }
     if (!d.assets || d.assets.length === 0) {

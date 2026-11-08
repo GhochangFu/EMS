@@ -250,7 +250,7 @@ export function fallbackTurn(
   turn: TurnVocabulary,
 ): ChatTurnResult {
   const { types } = turn;
-  const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code), turn.placement);
+  const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code), turn.placement, turn.templates.pointKeys);
   const prompt = stepPrompt(derived, draft, types, turn.placement);
   return deps.finalizeTurn(prompt.text, {}, derived, prompt.replies, message, draft, turn);
 }
@@ -272,7 +272,7 @@ export async function handleRuleBasedTurn(
   // works as its button — one space, no trailing `.!?`. The undo phrase in
   // `OnboardingService.chat` stays exact (`isUndoPhrase`); no typed phrase commits.
   const intent = normaliseReply(message);
-  const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code), turn.placement);
+  const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code), turn.placement, turn.templates.pointKeys);
   // F3.27 (ADR 0090 Amendment 2 B4, B5): every draft write below runs through
   // `guidedWrite` against this one working copy, so the caps, the depth bound,
   // the element schemas and the credential and prompt-marker refusals are the
@@ -510,7 +510,7 @@ export async function handleRuleBasedTurn(
     const merged = state.working;
     const rtus = merged.rtus ?? [];
     patch.rtus = rtus;
-    const prompt = stepPrompt(deps.validateService.inferPhase(merged, types.map((t) => t.code), turn.placement), merged, types, turn.placement);
+    const prompt = stepPrompt(deps.validateService.inferPhase(merged, types.map((t) => t.code), turn.placement, turn.templates.pointKeys), merged, types, turn.placement);
     const text = `Topic **${quoteCell(topic)}** set on **${quoteCell(rtus[inHand].displayName)}**. ${prompt.text}`;
     return { ...deps.finalizeTurn(text, patch, "rtu", prompt.replies, message, draft, turn), actionLines: [written.actionLine] };
   }
@@ -576,7 +576,7 @@ export async function handleRuleBasedTurn(
   // templated, or that uses the existing catalog, is not given `kw`. The
   // stored phase stays a second way in: `onboarding-chat-caps.spec.ts`
   // reaches this append on it with a draft at the point-key cap (F4.103).
-  if (phase === "point_keys" || draftNeedsPointKeys(draft)) {
+  if (phase === "point_keys" || draftNeedsPointKeys(draft, turn.templates.pointKeys)) {
     // Q-B: only the offered label writes; any other message changes nothing.
     if (!/^(kw|add point key kw)$/.test(intent)) {
       return unchangedTurn(deps, message, draft, derived, types, turn);
@@ -747,7 +747,7 @@ async function parentTurn(
   }
   const patch: OnboardingDraftInput = { location: state.working.location };
   const placed = parentCode === null ? "a top-level location" : `under **${parentCode}**`;
-  const next = deps.validateService.inferPhase(state.working, turn.types.map((t) => t.code), turn.placement);
+  const next = deps.validateService.inferPhase(state.working, turn.types.map((t) => t.code), turn.placement, turn.templates.pointKeys);
   const prompt = stepPrompt(next, state.working, turn.types, turn.placement);
   const result = deps.finalizeTurn(
     `Got it — **${located.name}** is ${placed}. ${prompt.text}`,
@@ -781,7 +781,7 @@ function unchangedTurn(
  * `point_keys`.
  */
 function addedRtuReplies(deps: RuleBasedTurnDeps, draft: OnboardingDraft, turn: TurnVocabulary): string[] {
-  const next = deps.validateService.inferPhase(draft, turn.types.map((t) => t.code), turn.placement);
+  const next = deps.validateService.inferPhase(draft, turn.types.map((t) => t.code), turn.placement, turn.templates.pointKeys);
   if (next === "rtu") {
     return ["confirm rtu", "View draft", "Add another RTU"];
   }
@@ -804,7 +804,7 @@ export function confirmStepTurn(
   draft: OnboardingDraft,
   turn: TurnVocabulary,
 ): ChatTurnResult {
-  const derived = deps.validateService.inferPhase(draft, turn.types.map((t) => t.code), turn.placement);
+  const derived = deps.validateService.inferPhase(draft, turn.types.map((t) => t.code), turn.placement, turn.templates.pointKeys);
   const position = PHASE_ORDER.indexOf(derived) - PHASE_ORDER.indexOf(step);
   const name = STEP_NAMES[step];
   const lead =
