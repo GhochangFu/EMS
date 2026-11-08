@@ -491,7 +491,18 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
   };
   const endpoints = new Map<string, Accumulator>();
 
-  for (const [rtuId, rtuRows] of byRtu) {
+  // F4.334 security review M1: RTUs whose topic is their own `rtus.mqtt_topic`
+  // (globally unique) are planned before RTUs that borrow a topic through a
+  // stored `config.device.topic`, so every first-wins rule on a shared topic
+  // favours the owner. A stable partition: the order within each half is kept.
+  const borrows = (rows: readonly BindingRow[]): boolean =>
+    typeof asRecord(asRecord(rows[0]?.connection_config).device).topic === "string";
+  const byOwnTopicFirst = [
+    ...[...byRtu].filter(([, rows]) => !borrows(rows)),
+    ...[...byRtu].filter(([, rows]) => borrows(rows)),
+  ];
+
+  for (const [rtuId, rtuRows] of byOwnTopicFirst) {
     const head = rtuRows[0];
 
     // ADR 0115 decisions 2 and 5: an RTU is ingested only when its own box *and*
@@ -822,6 +833,28 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       // group's would ride a connection its own row never asked for.
       skipped.push({ rtuId, rtuCode: deviceKey, reason: "endpoint-config-conflict", detail: endpointKey });
       continue;
+    }
+
+    // ADR 0116 decision 4: one topic, one format. The adapter decodes a message
+    // by the topic it arrived on, so a second RTU on the same topic naming a
+    // different format is skipped by name; the first stays served. "First" is
+    // the topic's owner when it has one (`byOwnTopicFirst` below), so another
+    // tenant borrowing the topic through `config.device.topic` cannot knock the
+    // owner out (F4.334 security review M1). Checked before the credential
+    // merge, so a skipped RTU never supplies the endpoint's credentials (L1).
+    if (protocol === "mqtt") {
+      const topic = String(asRecord(deviceParsed.data).topic);
+      const code = payloadFormat?.code ?? MQTT_BUILTIN_PAYLOAD_FORMAT_CODE;
+      const existing = group.formatByTopic.get(topic);
+      if (existing !== undefined && existing !== code) {
+        skipped.push({ rtuId, rtuCode: deviceKey, reason: "payload-format-conflict", detail: topic });
+        continue;
+      }
+      group.formatByTopic.set(topic, code);
+    }
+
+    if (group.bindings.length === 0) {
+      // The group was created by this RTU, so its credentials are already this RTU's.
     } else if (Object.keys(credentials).length > 0 && Object.keys(group.credentials).length === 0) {
       // First non-empty set wins, rather than the first row outright. This is
       // the `activeMqttConnection` singleton bug from `index.js` narrowed but
@@ -840,20 +873,6 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         reason: "endpoint-credential-conflict",
         detail: endpointKey,
       });
-    }
-
-    // ADR 0116 decision 4: one topic, one format. The adapter decodes a message
-    // by the topic it arrived on, so a second RTU on the same topic naming a
-    // different format is skipped by name; the first stays served.
-    if (protocol === "mqtt") {
-      const topic = String(asRecord(deviceParsed.data).topic);
-      const code = payloadFormat?.code ?? MQTT_BUILTIN_PAYLOAD_FORMAT_CODE;
-      const existing = group.formatByTopic.get(topic);
-      if (existing !== undefined && existing !== code) {
-        skipped.push({ rtuId, rtuCode: deviceKey, reason: "payload-format-conflict", detail: topic });
-        continue;
-      }
-      group.formatByTopic.set(topic, code);
     }
 
     const sourceKeys = [...new Set(pointRows.map((row) => row.source_data_key))];

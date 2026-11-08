@@ -5,6 +5,7 @@ import {
   oneTopicMeansOneFormat,
   theDeviceSliceCarriesTheJoinedFormatOnly,
   theFingerprintFollowsTheDecoder,
+  theTopicOwnerWinsAConflict,
   theQueryJoinsTheCatalog,
   unknownAndInvalidFormatsAreSkipped,
 } from "./bindings-payload-format.spec.js";
@@ -17,4 +18,5 @@ describe("host binding plan — payload formats (ADR 0116 decision 4)", () => {
   it("P4 allows one format per topic", () => oneTopicMeansOneFormat());
   it("P5 plans a PHE RTU exactly as before", () => aPheRtuPlansAsBefore());
   it("P6 fingerprints the decoder, not names or credentials", () => theFingerprintFollowsTheDecoder());
+  it("P7 lets the topic's owner win a conflict, with no borrowed credentials", () => theTopicOwnerWinsAConflict());
 });

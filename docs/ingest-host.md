@@ -340,7 +340,10 @@ code — it never needs the catalog row, so every PHE RTU behaves as before.
 - **Skips.** A code with no catalog row is `payload-format-unknown`; a row whose
   definition fails the schema is `payload-format-invalid`; a second RTU on the
   same endpoint **and topic** naming a different format is
-  `payload-format-conflict` (the first stays served). RTUs on different topics
+  `payload-format-conflict` (the first stays served). RTUs whose topic is
+  their own `rtus.mqtt_topic` are planned before RTUs that borrow a topic
+  through a stored `config.device.topic`, so the topic's owner is always the
+  first; a skipped RTU never supplies the endpoint's credentials. RTUs on different topics
   of one broker may use different formats and share the connection.
 - **Edits reach a running endpoint without a restart.** Each endpoint plan
   carries a `decoderFingerprint` (sha256 over its bindings' topic, format code

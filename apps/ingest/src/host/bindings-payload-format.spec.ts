@@ -186,3 +186,35 @@ export function theFingerprintFollowsTheDecoder(): void {
   });
   expect(otherCreds.endpoints[0]?.decoderFingerprint).toBe(base);
 }
+
+/**
+ * P7 — security review M1 and L1: the topic's owner wins a conflict whatever
+ * the uuid order, and a borrower skipped for it supplies no credentials.
+ */
+export function theTopicOwnerWinsAConflict(): void {
+  // The borrower's id sorts first, and it names the owner's topic through device.topic.
+  const borrower = bcplRow("A-BORROWER", "borrower/own-topic", CODE, undefined, {
+    device: { topic: "Airsprint-1051/Data/RTU-1" },
+  });
+  const owner = row({ rtu_id: "z-owner", rtu_code: "RTU-1", mqtt_topic: "Airsprint-1051/Data/RTU-1" });
+  const result = planEndpoints([borrower, owner], {
+    ...makeOptions(),
+    // The borrower's row has a config, so it would bring credentials if it were bound first.
+    resolveMqttConnection: (configRow) => ({
+      host: "phe.thinkiot.co.in",
+      port: 8883,
+      ...(configRow === null ? {} : { username: "borrower-user", password: "borrower-secret" }),
+      credentialSource: configRow === null ? "env" : "db",
+    }),
+  });
+  expect(result.skipped).toEqual([
+    {
+      rtuId: "id-A-BORROWER",
+      rtuCode: "A-BORROWER",
+      reason: "payload-format-conflict",
+      detail: "Airsprint-1051/Data/RTU-1",
+    },
+  ]);
+  expect(result.endpoints[0]?.bindings.map((b) => b.rtuCode)).toEqual(["RTU-1"]);
+  expect(JSON.stringify(result.endpoints[0]?.credentials)).not.toContain("borrower");
+}
