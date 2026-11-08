@@ -590,6 +590,8 @@ export class OnboardingService {
     await assertPatchLocationTypeIsActive(draft, this.vocabularies);
     const locationTypeCodes = await this.activeLocationTypeCodes();
     const placement = { candidates: await this.inventory.listParentCandidates(session.organizationId) };
+    // F4.339 (ADR 0117 decision 4): the catalog the point-key gate reads.
+    const templates = await this.templateCatalog.context(session.organizationId);
     const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
       // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
       const locked = await lockSession(tx, sessionId);
@@ -613,7 +615,7 @@ export class OnboardingService {
         .update(onboardingSessions)
         .set({
           draft: merged,
-          currentPhase: this.validateService.inferPhase(merged, locationTypeCodes, placement),
+          currentPhase: this.validateService.inferPhase(merged, locationTypeCodes, placement, templates.pointKeys),
           // F3.25 (plan Q3): a write the ring did not checkpoint ends undo
           // history, so a later rollback cannot silently undo this edit.
           checkpoints: null,
@@ -727,7 +729,8 @@ export class OnboardingService {
       parsed.rtuCredentials.length > 0 ? parsed.rtuCredentials : undefined,
     ) as OnboardingDraft;
     const placement = { candidates: await this.inventory.listParentCandidates(session.organizationId) };
-    const phase = this.validateService.inferPhase(mergedDraft, locationTypeCodes, placement);
+    const templates = await this.templateCatalog.context(session.organizationId);
+    const phase = this.validateService.inferPhase(mergedDraft, locationTypeCodes, placement, templates.pointKeys);
 
     const followUp = this.chatService.excelImportFollowUp(
       mergedDraft,
@@ -738,6 +741,7 @@ export class OnboardingService {
       },
       orgPointKeys.map((key) => key.code),
       parsed.displayNameFixes,
+      templates.pointKeys,
     );
     const assistantText = followUp.assistantMessage;
 
@@ -775,12 +779,7 @@ export class OnboardingService {
       .where(eq(organizations.id, session.organizationId))
       .limit(1);
 
-    const validation = this.validateService.validate(
-      mergedDraft,
-      locationTypeCodes,
-      await this.templateCatalog.context(session.organizationId),
-      placement,
-    );
+    const validation = this.validateService.validate(mergedDraft, locationTypeCodes, templates, placement);
 
     return {
       assistantMessage: assistantText,
@@ -939,7 +938,7 @@ export class OnboardingService {
         .update(onboardingSessions)
         .set({
           draft: restored.draft,
-          currentPhase: this.validateService.inferPhase(restored.draft, codes, placement),
+          currentPhase: this.validateService.inferPhase(restored.draft, codes, placement, templateContext.pointKeys),
           messages,
           checkpoints: cutRingBefore(ring, target),
           updatedAt: sql`now()`,

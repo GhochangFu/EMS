@@ -56,6 +56,13 @@ export type ValidateResult = {
   suggestedPhase: OnboardingPhase;
 };
 
+/** `F4.339` (plan R9): the fixed sentence for an MQTT RTU with no broker host. */
+export const MQTT_RTU_HOST_REQUIRED_MESSAGE = "An MQTT RTU needs a broker host";
+
+/** `F4.339` (ruling Q5): the fixed sentence for an ingest-enabled MQTT RTU with no device key. */
+export const MQTT_RTU_CODE_REQUIRED_MESSAGE =
+  "An MQTT RTU with ingest on needs an rtuCode, the device key ingest routes by";
+
 /**
  * Whether the draft still has to declare point keys: it declares none, does not
  * use the existing catalog, and holds a plain asset or no asset at all.
@@ -65,10 +72,23 @@ export type ValidateResult = {
  * true, so the length is checked first. F4.195: `inferPhase`, the guided
  * chat's turn and `excelImportFollowUp` ask this one question, so the chat
  * cannot add a key that the phase skipped.
+ *
+ * F4.339 (ADR 0117 decision 4): with the catalog (code → active), a draft
+ * whose mappings all name a declared key or an **active** catalog key needs
+ * none — the BCPL drafts mapped catalog keys and stayed at "Add a point key".
+ * At least one mapping is required, and without the catalog the old rule
+ * stands (fail closed).
  */
-export function draftNeedsPointKeys(draft: OnboardingDraft): boolean {
+export function draftNeedsPointKeys(draft: OnboardingDraft, catalog?: ReadonlyMap<string, boolean>): boolean {
   if ((draft.pointKeys?.length ?? 0) > 0 || draft.onboardingMeta?.useExistingPointKeys) {
     return false;
+  }
+  const mappings = draft.assetPoints ?? [];
+  if (catalog !== undefined && mappings.length > 0) {
+    const declared = new Set((draft.pointKeys ?? []).map((key) => key.code));
+    if (mappings.every((mapping) => declared.has(mapping.pointKey) || catalog.get(mapping.pointKey) === true)) {
+      return false;
+    }
   }
   const assets = draft.assets ?? [];
   return assets.length === 0 || assets.some((asset) => !asset.template);
@@ -151,7 +171,7 @@ export class OnboardingValidateService {
         valid: false,
         errors,
         readyToCommit: false,
-        suggestedPhase: this.inferPhase(draft, activeLocationTypeCodes, placement),
+        suggestedPhase: this.inferPhase(draft, activeLocationTypeCodes, placement, templates.pointKeys),
       };
     }
 
@@ -168,7 +188,7 @@ export class OnboardingValidateService {
     for (const problem of pointKeyDeclarationProblems(d.pointKeys ?? [], templates.pointKeyFields)) {
       errors.push({ path: `pointKeys.${problem.index}.${problem.field}`, message: problem.message });
     }
-    const phase = this.inferPhase(d, activeLocationTypeCodes, placement);
+    const phase = this.inferPhase(d, activeLocationTypeCodes, placement, templates.pointKeys);
     const readyToCommit = errors.length === 0 && phase === "review";
     return {
       valid: errors.length === 0,
@@ -260,6 +280,19 @@ export class OnboardingValidateService {
             path: `rtus.${i}.config.device.topic`,
             message: "MQTT topic must name one device; # and + are wildcards",
           });
+        }
+        // F4.339 (ADR 0117 decision 10, plan R9): ingest connects to `config.host`,
+        // so an MQTT RTU without one would commit and never connect (F4.327).
+        // Ruling Q5: ingest routes by `rtuCode` and skips an RTU without it
+        // (`missing-rtu-code`), so ingest on with no device key is refused too.
+        if (rtu.protocol === "mqtt") {
+          const host = rtu.config?.host;
+          if (typeof host !== "string" || host.trim() === "") {
+            errors.push({ path: `rtus.${i}.config.host`, message: MQTT_RTU_HOST_REQUIRED_MESSAGE });
+          }
+          if (rtu.ingestEnabled === true && (typeof rtu.rtuCode !== "string" || rtu.rtuCode.trim() === "")) {
+            errors.push({ path: `rtus.${i}.rtuCode`, message: MQTT_RTU_CODE_REQUIRED_MESSAGE });
+          }
         }
         // F4.326 / ADR 0114 decision 5: a literal `tls: false` commits only for a
         // host on `MQTT_PLAINTEXT_HOSTS` — ingest would skip it otherwise. No host
@@ -358,7 +391,13 @@ export class OnboardingValidateService {
    * stored parent the commit would refuse (`parentChoiceOpen`), as a retired
    * type does, so the guided step asks again and can repair it.
    */
-  inferPhase(draft: unknown, activeLocationTypeCodes: readonly string[], placement: PlacementContext): OnboardingPhase {
+  inferPhase(
+    draft: unknown,
+    activeLocationTypeCodes: readonly string[],
+    placement: PlacementContext,
+    /** F4.339 (ADR 0117 decision 4): the point-key catalog (code → active); absent keeps the old gate. */
+    catalog?: ReadonlyMap<string, boolean>,
+  ): OnboardingPhase {
     const d =
       typeof draft === "object" && draft !== null ? (draft as OnboardingDraft) : {};
     if (!d.location?.name) {
@@ -380,7 +419,7 @@ export class OnboardingValidateService {
     if (d.rtus.some(needsMqttSetup)) {
       return "rtu";
     }
-    if (draftNeedsPointKeys(d)) {
+    if (draftNeedsPointKeys(d, catalog)) {
       return "point_keys";
     }
     if (!d.assets || d.assets.length === 0) {

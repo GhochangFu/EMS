@@ -184,6 +184,40 @@ export const MQTT_PLAINTEXT_NOT_ALLOWED_MESSAGE =
  */
 const draftTopic = z.union([z.literal(""), mqttDeviceSchema.shape.topic]);
 
+/** `F4.339` (plan R9): the fixed hints for an unknown MQTT draft config key; none echoes the key or a value. */
+export const MQTT_CONFIG_HOST_HINT = "use host for the broker host";
+export const MQTT_CONFIG_DEVICE_KEY_HINT = "the device key is the RTU's rtuCode, not a config key";
+export const MQTT_CONFIG_UNKNOWN_KEY_HINT = "unknown MQTT config key; the config takes host, port, tls, topic, payloadFormat";
+
+/** The fixed hint for an unknown MQTT draft config key: two known mistakes, then the generic sentence. */
+export function mqttDraftConfigKeyHint(key: string): string {
+  if (["brokerHost", "broker", "hostname", "url"].includes(key)) return MQTT_CONFIG_HOST_HINT;
+  if (["devId", "dev_id", "deviceId", "device_id"].includes(key)) return MQTT_CONFIG_DEVICE_KEY_HINT;
+  return MQTT_CONFIG_UNKNOWN_KEY_HINT;
+}
+
+/** The draft config's fields, declared once: the schema below and {@link MQTT_DRAFT_CONFIG_KEYS} both read it. */
+const mqttDraftConfigShape = {
+  host: mqttConfigSchema.shape.host.optional(),
+  port: mqttConfigSchema.shape.port.optional(),
+  tls: z.boolean().optional(),
+  // ADR 0116 decision 4: the catalog code; whether it names a catalog row is
+  // the validator's check, not this schema's.
+  payloadFormat: mqttConfigSchema.shape.payloadFormat,
+  topic: draftTopic.optional(),
+  mqttTopic: draftTopic.optional(),
+  device: z
+    .object({ topic: mqttDeviceSchema.shape.topic.optional() })
+    .passthrough()
+    .optional(),
+};
+
+/**
+ * `F4.339` (plan R9): the keys an MQTT draft config may carry — the shape's
+ * fields, plus `rejectUnauthorized`, which has its own refusal below.
+ */
+export const MQTT_DRAFT_CONFIG_KEYS: ReadonlySet<string> = new Set([...Object.keys(mqttDraftConfigShape), "rejectUnauthorized"]);
+
 /**
  * The schema the onboarding validator and tools apply to an MQTT RTU's
  * `rtus[].config` (ADR 0093 decision 4).
@@ -194,27 +228,15 @@ const draftTopic = z.union([z.literal(""), mqttDeviceSchema.shape.topic]);
  * config field since ADR 0114 (decision 2): checked as a boolean, so the string
  * `"false"` is a schema issue rather than a silent TLS connect. Whether a
  * `tls: false` draft may commit is the validator's check against
- * `MQTT_PLAINTEXT_HOSTS`, not this schema's. `.passthrough()`: other draft-only
- * keys are kept, not stripped.
+ * `MQTT_PLAINTEXT_HOSTS`, not this schema's. `.passthrough()` keeps the keys,
+ * and since `F4.339` (ADR 0117 decision 10) every key outside
+ * `MQTT_DRAFT_CONFIG_KEYS` is an issue with a fixed hint.
  *
  * Every issue message is fixed text — none echoes the offending value (§9.6),
  * because the validator and the tools forward these messages.
  */
 export const mqttDraftConfigSchema = z
-  .object({
-    host: mqttConfigSchema.shape.host.optional(),
-    port: mqttConfigSchema.shape.port.optional(),
-    tls: z.boolean().optional(),
-    // ADR 0116 decision 4: the catalog code; whether it names a catalog row is
-    // the validator's check, not this schema's.
-    payloadFormat: mqttConfigSchema.shape.payloadFormat,
-    topic: draftTopic.optional(),
-    mqttTopic: draftTopic.optional(),
-    device: z
-      .object({ topic: mqttDeviceSchema.shape.topic.optional() })
-      .passthrough()
-      .optional(),
-  })
+  .object(mqttDraftConfigShape)
   .passthrough()
   .superRefine((config, ctx) => {
     if (Object.prototype.hasOwnProperty.call(config, "rejectUnauthorized")) {
@@ -223,5 +245,13 @@ export const mqttDraftConfigSchema = z
         path: ["rejectUnauthorized"],
         message: MQTT_REJECT_UNAUTHORIZED_DRAFT_MESSAGE,
       });
+    }
+    // F4.339 (ADR 0117 decision 10, plan R9): an unknown key is refused at its
+    // own path with a fixed hint — never the value. The issue's path names the
+    // key; the message does not echo it.
+    for (const key of Object.keys(config)) {
+      if (!MQTT_DRAFT_CONFIG_KEYS.has(key)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: mqttDraftConfigKeyHint(key) });
+      }
     }
   });

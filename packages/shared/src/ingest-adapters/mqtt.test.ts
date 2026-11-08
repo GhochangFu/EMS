@@ -11,6 +11,7 @@ import {
   assertTheDraftSchemaChecksEveryPresentField,
   assertTheDraftSchemaKeepsAnEmptyTopicAndDraftOnlyKeys,
   assertTheDraftSchemaRefusesRejectUnauthorized,
+  assertUnknownDraftKeysAreRefusedWithAHint,
 } from "./mqtt.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -53,5 +54,9 @@ describe("F3.24a — the shared MQTT schemas (ADR 0093 decision 4)", () => {
 
   it("S10 takes payloadFormat as an optional catalog code (F4.334)", () => {
     assertPayloadFormatIsAnOptionalCatalogCode();
+  });
+
+  it("S11 refuses an unknown draft key at its path with a fixed hint (F4.339)", () => {
+    assertUnknownDraftKeysAreRefusedWithAHint();
   });
 });

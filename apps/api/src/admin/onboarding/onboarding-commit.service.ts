@@ -46,6 +46,7 @@ import { translateAssetCodeCollision } from "../asset-templates/asset-templates-
 import { AssetTemplateInstantiationService } from "../asset-templates/asset-templates-instantiate.service";
 import { AssetTemplatesStockService } from "../asset-templates/asset-templates-stock.service";
 import { plaintextRtusOf } from "./onboarding-commit-plaintext";
+import { metaTimezone, unitOf } from "./onboarding-commit-values";
 import { translateCommitUniqueConflict } from "./onboarding-commit-conflict";
 import {
   assertDraftTemplateAccess,
@@ -432,6 +433,8 @@ export class OnboardingCommitService {
           type: locationType,
           province: loc.province ?? null,
           capital: loc.capital ?? null,
+          // F4.339 (ADR 0117 decision 10, plan R10): the field, else a valid `meta.timezone` (drafts before the ADR).
+          timezone: loc.timezone ?? metaTimezone(loc.meta) ?? null,
           latitude: loc.latitude,
           longitude: loc.longitude,
           // F4.304 (ADR 0108 Amendment 5 item 6): the draft keeps the typed
@@ -665,7 +668,8 @@ export class OnboardingCommitService {
             pointKey: ap.pointKey,
             sourceDataKey: ap.sourceDataKey,
             sensorCode: ap.sensorCode ?? null,
-            unit: ap.unit ?? null,
+            // F4.339 (ADR 0117 decision 11): no unit → the draft's own declaration, then the catalog's.
+            unit: ap.unit ?? unitOf(ap.pointKey, draft.pointKeys, templates.pointKeyFields) ?? null,
             active: true,
             rtuId: sourceRtuId,
             sourceKind: sourceRtuId ? "measured" : "unmapped",

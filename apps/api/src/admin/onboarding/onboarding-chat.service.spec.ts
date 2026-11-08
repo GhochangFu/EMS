@@ -513,7 +513,7 @@ export function draftBeforeAssets(locationName: string): OnboardingDraft {
         protocol: "mqtt",
         config: { host: "broker", port: 8883, tls: true, topic: "plant/rtu-1" },
         credentialsSet: true,
-        ingestEnabled: true,
+        ingestEnabled: true, rtuCode: "RTU-1",
       },
     ],
     pointKeys: [{ code: "kw", name: "Active Power", domain: "electrical", unit: "kW" }],

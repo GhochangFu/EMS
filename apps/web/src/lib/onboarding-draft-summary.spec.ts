@@ -160,6 +160,14 @@ export function aLocationLineNamesItsParent(): void {
   expect(formatOnboardingDraftSummary(located("CAMPUS-1")).split("\n")[0]).toBe("Location: Thane (THANE) under CAMPUS-1");
 }
 
+/** F4.339 (ADR 0117 decision 10): a set timezone prints its own line; none prints nothing. */
+export function aLocationTimezoneIsPrinted(): void {
+  const draft = located(null);
+  const zoned = { location: { ...draft.location, timezone: "Asia/Kolkata" } } as unknown as OnboardingDraft;
+  expect(formatOnboardingDraftSummary(zoned).split("\n").slice(0, 2)).toEqual(["Location: Thane (THANE)", "Timezone: Asia/Kolkata"]);
+  expect(formatOnboardingDraftSummary(draft)).not.toContain("Timezone:");
+}
+
 /** W2: a top-level location (`null`) prints the line as before. */
 export function aTopLevelLocationLineIsUnchanged(): void {
   expect(formatOnboardingDraftSummary(located(null)).split("\n")[0]).toBe("Location: Thane (THANE)");

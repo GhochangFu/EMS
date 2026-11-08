@@ -757,6 +757,8 @@ export class OnboardingExcelService {
         },
         credentialsSet: false,
         ingestEnabled: protocol === "mqtt",
+        // F4.339 (ruling Q5): the sheet's `rtu_code` is the device key ingest routes by.
+        ...(protocol === "mqtt" ? { rtuCode } : {}),
       };
     });
     return { rtus, rtuCredentials };

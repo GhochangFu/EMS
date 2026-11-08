@@ -21,6 +21,8 @@ const RECORD = "ONBOARDING_DRAFT_STRING_MAX";
 const DOMAIN_SCHEMA = "assetDomainCodeSchema";
 /** `location.type` likewise (`F4.157`, ADR 0077 decision 5). */
 const LOCATION_TYPE_SCHEMA = "locationTypeCodeSchema";
+/** `location.timezone` likewise (`F4.339`, ADR 0117 decision 10): one shared schema, read by both copies. */
+const TIMEZONE_SCHEMA = "onboardingTimezoneSchema";
 
 /** The nine sub-schemas of a draft, under the name each copy gives them. */
 const SECTIONS = [
@@ -84,6 +86,7 @@ const EXPECTED_BOUNDS: Readonly<Record<string, string>> = {
   "location.province": "location.province",
   "location.capital": "location.capital",
   "location.type": LOCATION_TYPE_SCHEMA,
+  "location.timezone": TIMEZONE_SCHEMA,
   // F4.243 (ADR 0098 Amendment 2, B11).
   "location.parentCode": "location.parentCode",
   "rtus.code": "rtus.code",
@@ -144,7 +147,7 @@ const STRING_FIELD =
 const RECORD_MAX = new RegExp(`\\.\\s*max\\(\\s*${RECORD}\\s*\\[\\s*"([^"]+)"\\s*\\]\\s*\\)`);
 
 const VOCABULARY_FIELD = new RegExp(
-  `\\b(\\w+)\\s*:\\s*(${DOMAIN_SCHEMA}|${LOCATION_TYPE_SCHEMA})\\b`,
+  `\\b(\\w+)\\s*:\\s*(${DOMAIN_SCHEMA}|${LOCATION_TYPE_SCHEMA}|${TIMEZONE_SCHEMA})\\b`,
   "g",
 );
 

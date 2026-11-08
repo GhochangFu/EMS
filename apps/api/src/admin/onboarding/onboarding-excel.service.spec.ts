@@ -871,8 +871,8 @@ export function assertUnknownRtuProtocolIsRefused(): void {
     `an ordinary mqtt row parses unchanged, got ${JSON.stringify(parsed.rtus[0].protocol)}`,
   );
   assert(
-    parsed.rtus[0].ingestEnabled === true,
-    "an mqtt RTU still arrives with ingest enabled",
+    parsed.rtus[0].ingestEnabled === true && parsed.rtus[0].rtuCode === parsed.rtus[0].code,
+    "an mqtt RTU still arrives with ingest enabled, and its rtu_code as the device key (F4.339, ruling Q5)",
   );
   assert(
     parsed.rtus[1].protocol === "modbus_tcp",

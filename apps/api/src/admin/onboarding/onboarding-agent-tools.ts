@@ -161,6 +161,11 @@ export const INVALID_CONFIG_PREFIX = "Invalid config for ";
 /** The tail of an RTU action line for a protocol no ingest adapter serves (ADR 0093 decision 6). */
 const CONFIG_ONLY_TAIL = " (config only, not ingested)";
 
+/** `F4.339` (plan R9): the config with every `null`-valued key removed. */
+function withoutNullKeys(config: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(config).filter(([, value]) => value !== null));
+}
+
 /** The refusal of `config` under `protocol`'s draft schema, or `null` when it passes. */
 function configProblem(protocol: OnboardingProtocol, config: Record<string, unknown> | undefined): string | null {
   const parsed = protocolCatalogEntry(protocol).draftConfigSchema.safeParse(config ?? {});
@@ -318,14 +323,18 @@ const DESCRIPTIONS: Record<ToolName, string> = {
     "`parentCode` is the code of the existing location the new one is under (from find_existing), or null for a top-level location; " +
     "when the user says top level and you omit it, it is written as null. " +
     "`latitude` and `longitude` default to Mumbai when omitted, and the action line says so: ask the user for the real ones. " +
+    "`timezone` is the site's IANA zone name, such as Asia/Kolkata; never put a timezone in `capital` or `meta`. " +
     "`floorArea` is `{ value, unit }` with unit `m2` or `ft2` (default `m2`); the commit stores square metres; `null` clears it.",
   add_rtu:
     "Adds an RTU. Never put a username, password, token or key in `config`: credentials are set on the RTU step only. " +
     "A config that fails the protocol's schema is refused with the field path. " +
-    "For MQTT, `config.payloadFormat` is a payload format code; omit it for the default ThinkIoT envelope.",
+    "For MQTT, `config.payloadFormat` is a payload format code; omit it for the default ThinkIoT envelope. " +
+    "An MQTT config takes only host, port, tls, topic and payloadFormat: the broker host is `config.host`; " +
+    "the device key ingest routes by is the RTU's `rtuCode` (not a config key), and `ingestEnabled: true` needs it.",
   update_rtu:
     "Changes fields of the RTU at `index`. Never put a credential in `config`. " +
-    "A config that fails the protocol's schema is refused with the field path.",
+    "A config that fails the protocol's schema is refused with the field path. " +
+    "`config` merges one level deep; a key set to null is removed (repair a wrong key such as brokerHost with { brokerHost: null, host: \"…\" }).",
   remove_rtu: "Removes the RTU at `index`.",
   add_point_key:
     "Declares a point key in this draft. Refused when the catalog already holds the code with a different unit or domain; " +
@@ -609,7 +618,9 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       }
       // Code review #3: `config` merges one level deep, so "change the topic"
       // keeps host, port and TLS.
-      const config = patch.config ? { ...(stored.config ?? {}), ...patch.config } : stored.config;
+      // F4.339 (plan R9): a `null` value removes that key before the merged
+      // config is checked, so a stray stored key can be repaired in chat.
+      const config = patch.config ? withoutNullKeys({ ...(stored.config ?? {}), ...patch.config }) : stored.config;
       const updated = { ...stored, ...patch, config, credentialsSet: stored.credentialsSet };
       if (stored.credentialsSet) {
         const same = (field: string) => JSON.stringify(config?.[field]) === JSON.stringify(stored.config?.[field]);

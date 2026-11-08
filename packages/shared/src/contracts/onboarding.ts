@@ -15,6 +15,7 @@ import { locationTypeCodeSchema } from "./location-types";
 import { floorAreaUnitSchema } from "./location-writes";
 import { onboardingDiscoveryResultDtoSchema } from "./onboarding-discovery";
 import { assetDomainCodeSchema } from "./operations";
+import { isValidTimeZone } from "./time-zone";
 
 /** Onboarding wizard phase tracked by the AI bot. */
 export const onboardingPhaseSchema = z.enum([
@@ -151,6 +152,8 @@ export const ONBOARDING_DRAFT_STRING_MAX = {
   "location.name": 255,
   "location.province": 64,
   "location.capital": 128,
+  // F4.339 (ADR 0117 decision 10): the width of `bms.locations.timezone`.
+  "location.timezone": 64,
   // F4.157 — `type` is `locationTypeCodeSchema` (`.min(1).max(32)`), the one
   // draft string field besides `assets.domain` that carries a floor as well as
   // a ceiling: an *absent* type is the legitimately-partial state ADR 0011
@@ -198,6 +201,35 @@ export const ONBOARDING_DRAFT_STRING_MAX = {
 } as const;
 
 /**
+ * `F4.339` (ADR 0117 decision 10, plan R10) — whether `zone` is an IANA zone
+ * name a draft location may carry: a name the repo's R-6 rule accepts
+ * (`isValidTimeZone`: a `/`, segment casing, and ICU constructs it).
+ *
+ * Not bare `UTC` either, as the plan wrote: `bms.locations.timezone` is
+ * governed by ADR 0070's region/city rule (`LocationsService.assertKnownTimezone`
+ * requires a `/`), so a committed `UTC` would refuse every later location
+ * edit. `Etc/UTC` passes.
+ *
+ * Not `Intl.supportedValuesOf("timeZone").includes(zone)` as the plan wrote:
+ * ICU lists `Asia/Calcutta` only, on the `api` container and the host alike
+ * (`report-period.ts`, R-6 amended 2026-09-21), so that test refuses
+ * `Asia/Kolkata` — the zone this field exists for. The alias passes too.
+ */
+export function isIanaTimeZone(zone: string): boolean {
+  return isValidTimeZone(zone);
+}
+
+/** The fixed message of a refused draft timezone; it never echoes the value (§9.6). */
+export const ONBOARDING_TIMEZONE_MESSAGE = "timezone must be an IANA zone name such as Asia/Kolkata";
+
+/** A draft location's `timezone`: at most 64 characters, an IANA zone name. */
+export const onboardingTimezoneSchema = z
+  .string()
+  .max(ONBOARDING_DRAFT_STRING_MAX["location.timezone"])
+  .refine(isIanaTimeZone, { message: ONBOARDING_TIMEZONE_MESSAGE })
+  .describe("The site's IANA region/city zone name, such as Asia/Kolkata or Etc/UTC; any other name is refused.");
+
+/**
  * `F4.208` — the longest MQTT topic an onboarding draft may carry: the width of
  * `bms.rtus.mqtt_topic` (`varchar(255)`).
  *
@@ -224,6 +256,8 @@ export const onboardingDraftLocationSchema = z.object({
   longitude: z.number(),
   province: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.province"]).optional(),
   capital: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.capital"]).optional(),
+  // F4.339 (ADR 0117 decision 10): the site's IANA zone, written to `bms.locations.timezone` at commit.
+  timezone: onboardingTimezoneSchema.optional(),
   // F4.243 (ADR 0098 Amendment 2, B2): absent = not chosen yet, `null` = a
   // root by choice, a code = the parent. Resolved to an id only at commit.
   parentCode: z.string().min(1).max(ONBOARDING_DRAFT_STRING_MAX["location.parentCode"]).nullable().optional(),

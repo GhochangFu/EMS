@@ -126,3 +126,19 @@ export function assertPayloadFormatIsAnOptionalCatalogCode(): void {
     expect(issue.message).not.toContain("Bad Code");
   }
 }
+
+/** S11 (F4.339, ADR 0117 decision 10, plan R9) — unknown keys are refused at their path with a fixed hint; the known keys pass. */
+export function assertUnknownDraftKeysAreRefusedWithAHint(): void {
+  const messageAt = (input: unknown, path: string): string | undefined => {
+    const parsed = mqttDraftConfigSchema.safeParse(input);
+    return parsed.success ? undefined : parsed.error.issues.find((issue) => issue.path.join(".") === path)?.message;
+  };
+  expect(messageAt({ brokerHost: "x" }, "brokerHost")).toBe("use host for the broker host");
+  expect(messageAt({ devId: 1 }, "devId")).toBe("the device key is the RTU's rtuCode, not a config key");
+  expect(messageAt({ colour: 1 }, "colour")).toBe("unknown MQTT config key; the config takes host, port, tls, topic, payloadFormat");
+  expect(
+    mqttDraftConfigSchema.safeParse({ host: "h", port: 8883, tls: true, topic: "a/b", payloadFormat: "thinkiot-envelope" }).success,
+  ).toBe(true);
+  expect(mqttDraftConfigSchema.safeParse({ host: "h", device: { topic: "a/b" } }).success).toBe(true);
+  expect(messageAt({ rejectUnauthorized: false }, "rejectUnauthorized")).toBe(MQTT_REJECT_UNAUTHORIZED_DRAFT_MESSAGE);
+}

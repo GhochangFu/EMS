@@ -41,6 +41,10 @@ export function formatOnboardingDraftSummary(draft: OnboardingDraft): string {
     const parent = draft.location.parentCode;
     const under = typeof parent === "string" ? ` under ${parent}` : "";
     lines.push(`Location: ${draft.location.name} (${draft.location.code})${under}`);
+    // F4.339 (ADR 0117 decision 10): the site's IANA zone, when the draft carries one.
+    if (draft.location.timezone) {
+      lines.push(`Timezone: ${draft.location.timezone}`);
+    }
   }
   if (draft.rtus?.length) {
     lines.push("RTUs:");

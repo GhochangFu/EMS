@@ -5,6 +5,7 @@ import {
   aPlainMqttRtuLineDisclosesTlsOff,
   aLocationLineNamesItsParent,
   aTopLevelLocationLineIsUnchanged,
+  aLocationTimezoneIsPrinted,
   anEmptyTopicBesideALegacyKeyPrintsADash,
   theMappingsLineCountsDiscoveredRows,
   theMappingsLineIsUnchangedWithoutDiscoveredRows,
@@ -86,6 +87,9 @@ describe("formatOnboardingDraftSummary: the parent location (F4.243)", () => {
 
   it("W2 prints a top-level location as before", () => {
     aTopLevelLocationLineIsUnchanged();
+  });
+  it("prints the location timezone when set (F4.339)", () => {
+    aLocationTimezoneIsPrinted();
   });
   it("discloses TLS off on a plain MQTT RTU line (F4.326)", () => {
     aPlainMqttRtuLineDisclosesTlsOff();

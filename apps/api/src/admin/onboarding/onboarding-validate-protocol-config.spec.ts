@@ -7,7 +7,7 @@ import {
 
 import { EMPTY_PLACEMENT } from "./onboarding-location-parent";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
-import { OnboardingValidateService } from "./onboarding-validate.service";
+import { MQTT_RTU_CODE_REQUIRED_MESSAGE, MQTT_RTU_HOST_REQUIRED_MESSAGE, OnboardingValidateService } from "./onboarding-validate.service";
 
 /**
  * `F3.24a` (ADR 0093 decisions 5, 6) — `validate` parses each RTU's `config`
@@ -41,7 +41,11 @@ const ACTIVE_TYPES = ["smoc_campus"] as const;
 
 const WILDCARD_MESSAGE = "MQTT topic must name one device; # and + are wildcards";
 
-/** An enabled, credentialed MQTT RTU; only `config` varies. */
+/**
+ * An enabled, credentialed MQTT RTU; only `config` varies. F4.339 (ADR 0117
+ * decision 10, ruling Q5): a broker host and an `rtuCode` are now required, so
+ * the fixture carries both unless the case names `host` itself.
+ */
 function mqttRtu(config: Record<string, unknown>, overrides: Partial<DraftRtu> = {}): DraftRtu {
   return {
     code: "RTU-1",
@@ -49,7 +53,8 @@ function mqttRtu(config: Record<string, unknown>, overrides: Partial<DraftRtu> =
     protocol: "mqtt",
     ingestEnabled: true,
     credentialsSet: true,
-    config,
+    rtuCode: "RTU-1",
+    config: "host" in config ? config : { host: "broker", ...config },
     ...overrides,
   };
 }
@@ -77,12 +82,41 @@ export function assertANumericPortHasNoConfigError(): void {
   assert(errors.length === 0, `no rtus.0.config.* error for a numeric port, got ${JSON.stringify(errors)}`);
 }
 
-/** V2 — an absent host and port pass: the ingest host's env fallback supplies them. */
+/**
+ * V2 — an absent port passes (the ingest host's env fallback supplies it).
+ * F4.339 (ADR 0117 decision 10): an absent host no longer does — it is the one
+ * fixed error at `config.host` (closes F4.327).
+ */
 export function assertAnAbsentHostAndPortStillPass(): void {
-  const errors = errorsOf(mqttRtu({ topic: "a/b" })).filter(
+  const errors = errorsOf(mqttRtu({ host: undefined, topic: "a/b" })).filter(
     (error) => error.path === "rtus.0.config.host" || error.path === "rtus.0.config.port",
   );
-  assert(errors.length === 0, `no host or port error, got ${JSON.stringify(errors)}`);
+  assert(
+    JSON.stringify(errors) === JSON.stringify([{ path: "rtus.0.config.host", message: MQTT_RTU_HOST_REQUIRED_MESSAGE }]),
+    `the host error alone, no port error, got ${JSON.stringify(errors)}`,
+  );
+}
+
+/** F4.339 (plan R9): a stored stray key is an error at its own path with the hint; validate does not rewrite the draft. */
+export function assertAStoredStrayKeyIsReportedAndKept(): void {
+  const rtu = mqttRtu({ brokerHost: "h", topic: "a/b" });
+  const draft: OnboardingDraft = { location: { ...LOCATION }, rtus: [rtu] };
+  const before = JSON.stringify(draft);
+  const errors = new OnboardingValidateService().validate(draft, ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT, EMPTY_PLACEMENT).errors;
+  const stray = errors.filter((error) => error.path === "rtus.0.config.brokerHost");
+  assert(stray.length === 1 && stray[0]!.message === "use host for the broker host", `the hint at its path, got ${JSON.stringify(errors)}`);
+  assert(JSON.stringify(draft) === before, "validate does not rewrite the draft");
+}
+
+/** F4.339 (ruling Q5): an ingest-enabled MQTT RTU with no rtuCode is an error at `rtus.0.rtuCode`. */
+export function assertIngestOnWithoutAnRtuCodeIsAnError(): void {
+  const errors = errorsOf(mqttRtu({ topic: "a/b" }, { rtuCode: undefined }));
+  assert(
+    errors.some((error) => error.path === "rtus.0.rtuCode" && error.message === MQTT_RTU_CODE_REQUIRED_MESSAGE),
+    `the rtuCode error, got ${JSON.stringify(errors)}`,
+  );
+  const off = errorsOf(mqttRtu({ topic: "a/b" }, { rtuCode: undefined, ingestEnabled: false, credentialsSet: false }));
+  assert(!off.some((error) => error.path === "rtus.0.rtuCode"), "ingest off needs no rtuCode");
 }
 
 /** V3 — a nested device wildcard is reported once, with the F4.221 sentence. */
