@@ -8,6 +8,7 @@ import {
   diffEndpoints,
   type EndpointRegistry,
   type ReconcileAction,
+  type RunningEndpoint,
 } from "./reconcile.js";
 import type { Supervisor, SupervisorHealth } from "./supervisor.js";
 
@@ -33,6 +34,7 @@ function plan(endpointKey: string, devices: readonly string[], protocol: IngestP
     credentials: {},
     bindings: devices.map((d) => ({ rtuId: `id-${d}`, rtuCode: d, deviceKey: d, device: {}, sourceKeys: ["flow"] })),
     pointIndex: new Map(devices.map((d) => [d, new Map()])),
+    decoderFingerprint: "fp-0",
   };
 }
 
@@ -40,8 +42,13 @@ function key(endpointKey: string, protocol: IngestProtocol = "mqtt"): string {
   return endpointGroupKey(protocol, endpointKey);
 }
 
-function running(entries: Record<string, readonly string[]>): ReadonlyMap<string, ReadonlySet<string>> {
-  return new Map(Object.entries(entries).map(([k, devices]) => [key(k), new Set(devices)]));
+function running(
+  entries: Record<string, readonly string[]>,
+  fingerprint = "fp-0",
+): ReadonlyMap<string, RunningEndpoint> {
+  return new Map(
+    Object.entries(entries).map(([k, devices]) => [key(k), { devices: new Set(devices), fingerprint }]),
+  );
 }
 
 function kinds(actions: readonly ReconcileAction[]): string {
@@ -108,7 +115,7 @@ export function runDiffOrderingTests(): void {
 export function runDiffPurityTests(): void {
   const before = running({ "a:1": ["R1"] });
   const next = [plan("a:1", ["R1", "R2"]), plan("b:1", ["R3"])];
-  const snapshot = JSON.stringify([...before].map(([k, v]) => [k, [...v]]));
+  const snapshot = JSON.stringify([...before].map(([k, v]) => [k, [...v.devices], v.fingerprint]));
   const nextLength = next.length;
   const realNow = Date.now;
   Date.now = () => {
@@ -122,7 +129,7 @@ export function runDiffPurityTests(): void {
   } finally {
     Date.now = realNow;
   }
-  assert(JSON.stringify([...before].map(([k, v]) => [k, [...v]])) === snapshot, "running must not be mutated");
+  assert(JSON.stringify([...before].map(([k, v]) => [k, [...v.devices], v.fingerprint])) === snapshot, "running must not be mutated");
   assert(next.length === nextLength && next[0].bindings.length === 2, "next must not be mutated");
   assert(kinds(first) === kinds(second), "the same inputs give the same actions");
 }
@@ -503,4 +510,56 @@ export async function runRegistryScannedBacklogTests(): Promise<void> {
   );
   await w.registry.reload([plan("a:1", ["R1"]), plan("off:1", ["R9"])]);
   assert(w.registry.health().stopped.length === 0, "once the key starts it is no longer stopped");
+}
+
+// ---- the decoder fingerprint (ADR 0116 decision 6, F4.334 plan R8) -----------
+
+function withFingerprint(p: EndpointPlan, fingerprint: string): EndpointPlan {
+  return { ...p, decoderFingerprint: fingerprint };
+}
+
+/** Same devices: same fingerprint swaps; a different one replaces with the format reason. */
+export function runDiffFingerprintChangeReplacesTests(): void {
+  const same = diffEndpoints(running({ "a:1": ["R1"] }, "fp-A"), [withFingerprint(plan("a:1", ["R1"]), "fp-A")]);
+  assert(kinds(same) === "swap-index:a:1", `same fingerprint → swap-index: ${kinds(same)}`);
+
+  const moved = diffEndpoints(running({ "a:1": ["R1"] }, "fp-A"), [withFingerprint(plan("a:1", ["R1"]), "fp-B")]);
+  assert(kinds(moved) === "replace:a:1", `a moved fingerprint → replace: ${kinds(moved)}`);
+  const only = moved[0];
+  assert(
+    only.kind === "replace" &&
+      only.reason === "payload-format-changed" &&
+      only.added.length === 0 &&
+      only.removed.length === 0,
+    `the replace carries the format reason and no device change: ${JSON.stringify(only)}`,
+  );
+
+  // A device change keeps its own replace, with no format reason.
+  const devices = diffEndpoints(running({ "a:1": ["R1"] }, "fp-A"), [withFingerprint(plan("a:1", ["R2"]), "fp-B")]);
+  const first = devices[0];
+  assert(first.kind === "replace" && first.reason === undefined, "a device change is not reported as a format change");
+
+  // Ordering: a format replace still closes before any start.
+  const ordered = diffEndpoints(running({ "b:1": ["R1"] }, "fp-A"), [
+    plan("a:1", ["R9"]),
+    withFingerprint(plan("b:1", ["R1"]), "fp-B"),
+  ]);
+  assert(kinds(ordered) === "replace:b:1,start:a:1", `closing before starts: ${kinds(ordered)}`);
+}
+
+/** The registry replaces on a fingerprint change and logs the reason. */
+export async function runRegistryFingerprintReplaceLogsReasonTests(): Promise<void> {
+  const w = world();
+  await w.registry.reload([withFingerprint(plan("a:1", ["R1"]), "fp-A")]);
+  await w.registry.reload([withFingerprint(plan("a:1", ["R1"]), "fp-A")]);
+  assert(w.builds() === 1, "an unchanged fingerprint does not rebuild");
+  await w.registry.reload([withFingerprint(plan("a:1", ["R1"]), "fp-B")]);
+  assert(w.builds() === 2, "a changed fingerprint rebuilds the endpoint");
+  const line = w.logged("endpoint replaced")[0];
+  assert(
+    line?.fields?.reason === "payload-format-changed",
+    `the replace names its reason: ${JSON.stringify(line?.fields)}`,
+  );
+  await w.registry.reload([withFingerprint(plan("a:1", ["R1"]), "fp-B")]);
+  assert(w.builds() === 2, "the new fingerprint is what the registry now compares against");
 }

@@ -1,8 +1,14 @@
+import { createHash } from "node:crypto";
+
 import {
   INGEST_PROTOCOLS,
+  MQTT_BUILTIN_PAYLOAD_FORMAT_CODE,
+  MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION,
+  mqttPayloadFormatDefinitionSchema,
   mqttPlaintextDecision,
   QUALITY_POLICIES,
   type IngestProtocol,
+  type MqttPayloadFormatDefinition,
   type QualityPolicy,
 } from "@bms/shared/ingest";
 
@@ -76,6 +82,14 @@ export type BindingRow = {
    * filtered: `planEndpoints` turns `false` into a named skip.
    */
   readonly organization_ingest_enabled: boolean;
+  /**
+   * `mqtt_payload_formats.code` joined on `config->>'payloadFormat'` (ADR 0116
+   * decision 4). `null` when the config names no format **or** names one with
+   * no catalog row; `planEndpoints` tells the two apart by reading the config.
+   */
+  readonly payload_format_code: string | null;
+  /** `mqtt_payload_formats.definition`, unparsed; `planEndpoints` validates it. */
+  readonly payload_format_definition: unknown;
 };
 
 /**
@@ -125,6 +139,14 @@ export type BindingRow = {
  * **selected, never filtered**: `planEndpoints` skips a switched-off
  * organization's RTUs as `organization-ingest-disabled`, so the health body says
  * why each one is missing. Only the RTU's own box stays in the `WHERE`.
+ *
+ * ## The payload format (ADR 0116 decision 4, `F4.334`)
+ *
+ * `bms.mqtt_payload_formats` is a `LEFT JOIN` on the code the connection config
+ * names, so the host holds the definition with the binding. An RTU whose config
+ * names no format joins nothing and decodes with the built-in envelope in code —
+ * it never needs the `thinkiot-envelope` row to exist. A named code with no row
+ * reads as `null` and is skipped as `payload-format-unknown`.
  */
 export const BINDING_QUERY = `
   SELECT
@@ -148,7 +170,9 @@ export const BINDING_QUERY = `
     c.credentials_iv,
     c.key_version,
     o.code AS organization_code,
-    o.ingest_enabled AS organization_ingest_enabled
+    o.ingest_enabled AS organization_ingest_enabled,
+    f.code AS payload_format_code,
+    f.definition AS payload_format_definition
   FROM bms.rtus r
   INNER JOIN bms.organizations o ON o.id = r.organization_id
   INNER JOIN bms.asset_points ap
@@ -160,6 +184,7 @@ export const BINDING_QUERY = `
          ON tp.template_id = a.template_id
         AND tp.point_key = ap.point_key
   LEFT JOIN bms.rtu_connection_configs c ON c.rtu_id = r.id
+  LEFT JOIN bms.mqtt_payload_formats f ON f.code = c.config->>'payloadFormat'
   WHERE r.ingest_enabled = true
   ORDER BY r.id, ap.point_key
 `;
@@ -197,6 +222,15 @@ export type EndpointPlan = {
   readonly bindings: readonly RtuBinding<unknown>[];
   /** `deviceKey → sourceKey → targets`, the host's own lookup (ADR 0016 §2). */
   readonly pointIndex: PointIndex;
+  /**
+   * sha256 over the sorted `topic, format code, definition` of every binding
+   * (ADR 0116 decision 6, plan R8). A reload whose device set is unchanged but
+   * whose fingerprint differs replaces the endpoint, so a format edit reaches a
+   * running connection without a restart. Built from non-secret fields only:
+   * credentials stay unfingerprinted (ADR 0115 R5). Non-MQTT plans hash an
+   * empty list.
+   */
+  readonly decoderFingerprint: string;
 };
 
 /**
@@ -383,6 +417,49 @@ function splitConfig(raw: unknown): {
   return { connection, device: asRecord(device) };
 }
 
+/** The payload format one MQTT binding decodes with; `undefined` is the built-in. */
+type ResolvedPayloadFormat = { code: string; definition: MqttPayloadFormatDefinition } | undefined;
+
+/**
+ * Resolves the format an MQTT RTU's config names against the catalog join
+ * (ADR 0116 decision 4, plan R4). The skip details are the code — a kebab-case
+ * token the config schema has already checked — never the definition.
+ */
+function resolvePayloadFormat(
+  connection: Record<string, unknown>,
+  head: BindingRow,
+): { format: ResolvedPayloadFormat } | { skip: "payload-format-unknown" | "payload-format-invalid"; code: string } {
+  const code = connection.payloadFormat;
+  if (typeof code !== "string") {
+    return { format: undefined };
+  }
+  if (head.payload_format_code === null) {
+    return { skip: "payload-format-unknown", code };
+  }
+  const parsed = mqttPayloadFormatDefinitionSchema.safeParse(head.payload_format_definition);
+  if (!parsed.success) {
+    return { skip: "payload-format-invalid", code };
+  }
+  return { format: { code: head.payload_format_code, definition: parsed.data } };
+}
+
+/** `decoderFingerprint` for one endpoint's bindings (plan R8). */
+function decoderFingerprint(protocol: IngestProtocol, bindings: readonly RtuBinding<unknown>[]): string {
+  const parts =
+    protocol === "mqtt"
+      ? bindings.map((binding) => {
+          const device = asRecord(binding.device);
+          const format = device.payloadFormat as ResolvedPayloadFormat;
+          return [
+            String(device.topic),
+            format?.code ?? MQTT_BUILTIN_PAYLOAD_FORMAT_CODE,
+            JSON.stringify(format?.definition ?? MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION),
+          ].join("\u0000");
+        })
+      : [];
+  return createHash("sha256").update([...new Set(parts)].sort().join("\n")).digest("hex");
+}
+
 /**
  * Groups rows into one plan per `(protocol, endpointKey)`.
  *
@@ -409,10 +486,23 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
     credentials: Record<string, string>;
     bindings: RtuBinding<unknown>[];
     index: Map<string, Map<string, PointTarget[]>>;
+    /** `topic → format code` on this endpoint, for `payload-format-conflict`. */
+    formatByTopic: Map<string, string>;
   };
   const endpoints = new Map<string, Accumulator>();
 
-  for (const [rtuId, rtuRows] of byRtu) {
+  // F4.334 security review M1: RTUs whose topic is their own `rtus.mqtt_topic`
+  // (globally unique) are planned before RTUs that borrow a topic through a
+  // stored `config.device.topic`, so every first-wins rule on a shared topic
+  // favours the owner. A stable partition: the order within each half is kept.
+  const borrows = (rows: readonly BindingRow[]): boolean =>
+    typeof asRecord(asRecord(rows[0]?.connection_config).device).topic === "string";
+  const byOwnTopicFirst = [
+    ...[...byRtu].filter(([, rows]) => !borrows(rows)),
+    ...[...byRtu].filter(([, rows]) => borrows(rows)),
+  ];
+
+  for (const [rtuId, rtuRows] of byOwnTopicFirst) {
     const head = rtuRows[0];
 
     // ADR 0115 decisions 2 and 5: an RTU is ingested only when its own box *and*
@@ -685,14 +775,30 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       continue;
     }
 
+    // ---- payload format (ADR 0116 decision 4) ----------------------------
+
+    let payloadFormat: ResolvedPayloadFormat;
+    if (protocol === "mqtt") {
+      const resolved = resolvePayloadFormat(connection, head);
+      if ("skip" in resolved) {
+        skipped.push({ rtuId, rtuCode: deviceKey, reason: resolved.skip, detail: resolved.code });
+        continue;
+      }
+      payloadFormat = resolved.format;
+    }
+
     // ---- device slice -----------------------------------------------------
 
     // F1.1 introduces no migration, so `mqtt_topic` is still a column on
     // `bms.rtus`. One compatibility shim, scoped to MQTT only, with a written
     // `device.topic` winning once it exists (§3). Backfilling the column and
     // retiring it is owed follow-up, not F1.1.
+    //
+    // `payloadFormat` is set from the catalog join **last**, so a stored
+    // `config.device.payloadFormat` can never supply its own definition — the
+    // key is always overwritten, with `undefined` when the config names none.
     const deviceSlice =
-      protocol === "mqtt" ? { topic: head.mqtt_topic, ...device } : device;
+      protocol === "mqtt" ? { topic: head.mqtt_topic, ...device, payloadFormat } : device;
 
     const deviceParsed = factory.deviceSchema.safeParse(deviceSlice);
     if (!deviceParsed.success) {
@@ -718,6 +824,7 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         credentials,
         bindings: [],
         index: new Map(),
+        formatByTopic: new Map(),
       };
       endpoints.set(groupKey, group);
     } else if (!sameConnection(group.config, configParsed.data)) {
@@ -726,6 +833,28 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       // group's would ride a connection its own row never asked for.
       skipped.push({ rtuId, rtuCode: deviceKey, reason: "endpoint-config-conflict", detail: endpointKey });
       continue;
+    }
+
+    // ADR 0116 decision 4: one topic, one format. The adapter decodes a message
+    // by the topic it arrived on, so a second RTU on the same topic naming a
+    // different format is skipped by name; the first stays served. "First" is
+    // the topic's owner when it has one (`byOwnTopicFirst` below), so another
+    // tenant borrowing the topic through `config.device.topic` cannot knock the
+    // owner out (F4.334 security review M1). Checked before the credential
+    // merge, so a skipped RTU never supplies the endpoint's credentials (L1).
+    if (protocol === "mqtt") {
+      const topic = String(asRecord(deviceParsed.data).topic);
+      const code = payloadFormat?.code ?? MQTT_BUILTIN_PAYLOAD_FORMAT_CODE;
+      const existing = group.formatByTopic.get(topic);
+      if (existing !== undefined && existing !== code) {
+        skipped.push({ rtuId, rtuCode: deviceKey, reason: "payload-format-conflict", detail: topic });
+        continue;
+      }
+      group.formatByTopic.set(topic, code);
+    }
+
+    if (group.bindings.length === 0) {
+      // The group was created by this RTU, so its credentials are already this RTU's.
     } else if (Object.keys(credentials).length > 0 && Object.keys(group.credentials).length === 0) {
       // First non-empty set wins, rather than the first row outright. This is
       // the `activeMqttConnection` singleton bug from `index.js` narrowed but
@@ -788,6 +917,7 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       credentials: group.credentials,
       bindings: group.bindings,
       pointIndex: group.index,
+      decoderFingerprint: decoderFingerprint(group.protocol, group.bindings),
     })),
     skipped,
     warnings,

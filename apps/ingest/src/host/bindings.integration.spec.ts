@@ -375,3 +375,60 @@ export async function assertTheOrganizationSwitchIsSelectedNotFiltered(pool: pg.
     client.release();
   }
 }
+
+/**
+ * `F4.334` / ADR 0116 decision 4 — the payload format join against the real
+ * schema and the seeded catalog (migration `0130`). Every row carries both
+ * columns; a config naming the seeded BCPL code reads its definition as a JS
+ * object (`pg` parses `jsonb`); one naming no catalog row reads `null`, `null`;
+ * the join never fans out. Inside `BEGIN … ROLLBACK` on one client.
+ */
+export async function assertThePayloadFormatJoin(pool: pg.Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const { rows: candidates } = await client.query<{ rtu_id: string; organization_id: string }>(
+      CONFIGLESS_RTU_QUERY,
+    );
+    expect(candidates.length, "no ingest-bound RTU without a connection config to plant one on").toBe(1);
+    const { rtu_id: rtuId, organization_id: organizationId } = candidates[0];
+
+    const baseline = await bindingRows(client);
+    for (const row of baseline) {
+      expect(Object.prototype.hasOwnProperty.call(row, "payload_format_code")).toBe(true);
+      expect(Object.prototype.hasOwnProperty.call(row, "payload_format_definition")).toBe(true);
+    }
+    // An RTU with no config row names no format, so it joins nothing.
+    const plain = baseline.find((r) => r.rtu_id === rtuId) as BindingRow;
+    expect(plain.payload_format_code).toBeNull();
+
+    const plant = async (config: string): Promise<BindingRow[]> => {
+      await client.query("BEGIN");
+      try {
+        await client.query(
+          `INSERT INTO bms.rtu_connection_configs (organization_id, rtu_id, protocol, config)
+           VALUES ($1, $2, 'mqtt', $3::jsonb)`,
+          [organizationId, rtuId, config],
+        );
+        return await bindingRows(client);
+      } finally {
+        await client.query("ROLLBACK");
+      }
+    };
+
+    const known = await plant('{"payloadFormat":"thinkiot-register-array"}');
+    expect(known.length, "the catalog join may not fan out").toBe(baseline.length);
+    const knownRow = known.find((r) => r.rtu_id === rtuId) as BindingRow;
+    expect(knownRow.payload_format_code).toBe("thinkiot-register-array");
+    expect((knownRow.payload_format_definition as { kind?: unknown }).kind).toBe("declarative");
+
+    const unknown = await plant('{"payloadFormat":"no-such"}');
+    const unknownRow = unknown.find((r) => r.rtu_id === rtuId) as BindingRow;
+    expect(unknownRow.payload_format_code).toBeNull();
+    expect(unknownRow.payload_format_definition).toBeNull();
+
+    const after = (await bindingRows(client)).find((r) => r.rtu_id === rtuId) as BindingRow;
+    expect(after.payload_format_code, "the fixture must leave nothing behind").toBeNull();
+  } finally {
+    client.release();
+  }
+}

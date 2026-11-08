@@ -106,6 +106,9 @@ export function row(overrides: Partial<BindingRow> = {}): BindingRow {
     // On by default, so every existing claim reads an organization that ingests.
     organization_code: "PHEWB",
     organization_ingest_enabled: true,
+    // ADR 0116 decision 4: no format named, so the join is null.
+    payload_format_code: null,
+    payload_format_definition: null,
     ...overrides,
   };
 }

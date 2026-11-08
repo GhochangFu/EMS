@@ -202,6 +202,7 @@ export function makePlan(): EndpointPlan {
       { rtuId: "id-2", rtuCode: "RTU-2", deviceKey: "RTU-2", device: {}, sourceKeys: ["flow", "press"] },
     ],
     pointIndex: new Map(),
+    decoderFingerprint: "fp-0",
   };
 }
 
