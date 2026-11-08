@@ -7,6 +7,17 @@ WORKDIR /app
 
 RUN corepack enable
 
+# `bcrypt@5.1.1` downloads a prebuilt binding from GitHub releases during
+# `pnpm install` and falls back to compiling it with node-gyp. On 2026-11-08
+# that download answered 504 three runs in a row (CI of bf312db9, 707f9885 and
+# the deploy of 69cd9531), and the slim image has no Python or compiler, so the
+# fallback failed and the API image could not be built. With the toolchain in
+# the build stage only, a failed download now compiles the binding instead.
+# The runtime stage stays slim: it copies /app, which holds the built binding.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY packages/db/package.json packages/db/package.json
