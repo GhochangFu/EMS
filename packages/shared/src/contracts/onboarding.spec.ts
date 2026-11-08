@@ -25,6 +25,7 @@ import {
   onboardingDraftSummaryDtoSchema,
   onboardingDraftTemplatePointSchema,
   onboardingSessionDtoSchema,
+  isIanaTimeZone,
 } from "./onboarding";
 import { locationTypeCodeSchema } from "./location-types";
 import { assetDomainCodeSchema } from "./operations";
@@ -244,13 +245,22 @@ const DRAFT_SUB_SCHEMAS: readonly (readonly [string, Record<string, z.ZodTypeAny
  * no schema at all. Repair the walk when this number is what fails; do not
  * adjust the number to match a broken walk.
  */
-const DRAFT_STRING_FIELD_COUNT = 37;
+// F4.339: 38 with `location.timezone`.
+const DRAFT_STRING_FIELD_COUNT = 38;
 
-/** Only the wrappers zod puts *outside* the string: `.optional()`, `.default()`, `.nullable()`. */
+/**
+ * Only the wrappers zod puts *outside* the string: `.optional()`, `.default()`,
+ * `.nullable()`, and — `F4.339`, `location.timezone` — a `.refine()`
+ * (`ZodEffects`, whose inner schema is `_def.schema`).
+ */
 function unwrapSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
   let current = schema;
   for (let depth = 0; depth < 8; depth += 1) {
-    const def: { typeName?: string; innerType?: z.ZodTypeAny } = current._def;
+    const def: { typeName?: string; innerType?: z.ZodTypeAny; schema?: z.ZodTypeAny } = current._def;
+    if (def.typeName === "ZodEffects" && def.schema !== undefined) {
+      current = def.schema;
+      continue;
+    }
     if (
       def.innerType === undefined ||
       (def.typeName !== "ZodOptional" &&
@@ -903,4 +913,27 @@ export function assertLenientDraftFloorAreaNull(): void {
 /** F4.304 C — floorArea absent parses. */
 export function assertLenientDraftFloorAreaAbsent(): void {
   assert(onboardingDraftLocationSchema.safeParse(DRAFT_LOCATION_BASE).success, "absent floorArea must parse");
+}
+
+/**
+ * F4.339 (ADR 0117 decision 10, plan R10) — the draft location's timezone.
+ * `Asia/Calcutta` passes: ICU lists only that spelling, so the plan's
+ * `supportedValuesOf` test would refuse `Asia/Kolkata` (see `isIanaTimeZone`).
+ */
+export function assertTheDraftTimezoneTakesIanaNames(): void {
+  for (const zone of ["Asia/Kolkata", "Asia/Calcutta", "UTC", "America/Argentina/Buenos_Aires"]) {
+    if (!isIanaTimeZone(zone)) throw new Error(`${zone} is an IANA zone`);
+    const parsed = onboardingDraftLocationSchema.safeParse({ code: "L", slug: "l", name: "L", latitude: 0, longitude: 0, timezone: zone });
+    if (!parsed.success) throw new Error(`${zone} parses: ${JSON.stringify(parsed.error.issues)}`);
+  }
+  for (const zone of ["Kolkata", "asia/kolkata", "Mars/Olympus", "x".repeat(65)]) {
+    const parsed = onboardingDraftLocationSchema.safeParse({ code: "L", slug: "l", name: "L", latitude: 0, longitude: 0, timezone: zone });
+    if (parsed.success) throw new Error(`${zone} is refused`);
+    const issue = parsed.error.issues.find((i) => i.path.join(".") === "timezone");
+    if (zone.length <= 64 && issue?.message !== "timezone must be an IANA zone name such as Asia/Kolkata") {
+      throw new Error(`${zone}: the fixed message, got ${issue?.message}`);
+    }
+    if (issue?.message.includes(zone) && zone.length <= 64 && zone !== "Kolkata") throw new Error("the value is not echoed");
+  }
+  if (ONBOARDING_DRAFT_STRING_MAX["location.timezone"] !== 64) throw new Error("the bound is 64");
 }

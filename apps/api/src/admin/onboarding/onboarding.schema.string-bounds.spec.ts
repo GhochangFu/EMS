@@ -66,7 +66,8 @@ const DRAFT_SUB_SCHEMAS: readonly (readonly [string, Record<string, z.ZodTypeAny
  * walk that silently stops finding fields would make this whole function green
  * having read nothing. Repair the walk, not the number.
  */
-const DRAFT_STRING_FIELD_COUNT = 37;
+// F4.339: 38 with `location.timezone`.
+const DRAFT_STRING_FIELD_COUNT = 38;
 
 /**
  * The minimum each string field of **this** copy carries, and it is written out
@@ -87,6 +88,8 @@ const EXPECTED_MIN_LENGTH: Readonly<Record<string, number | null>> = {
   "location.name": 2,
   "location.province": null,
   "location.capital": null,
+  // F4.339 (ADR 0117 decision 10): no floor; the IANA refine refuses an empty string.
+  "location.timezone": null,
   // `locationTypeCodeSchema` (`F4.157`, D1) — `.min(1)`, kept, same as `assets.domain`.
   "location.type": 1,
   // F4.243 (ADR 0098 Amendment 2, B11) — a new field, so not F4.104's "no
@@ -147,6 +150,7 @@ const DRAFT_COLUMNS: Readonly<Record<string, { readonly columnType: string }>> =
   "location.name": locations.name,
   "location.province": locations.province,
   "location.capital": locations.capital,
+  "location.timezone": locations.timezone,
   "location.type": locations.type,
   // F4.243 — the parent's code: it is matched against `bms.locations.code`.
   "location.parentCode": locations.code,
@@ -197,11 +201,19 @@ function columnWidth(column: { readonly columnType: string }): number | undefine
   return "length" in column && typeof column.length === "number" ? column.length : undefined;
 }
 
-/** Only the wrappers zod puts *outside* the string: `.optional()`, `.default()`, `.nullable()`. */
+/**
+ * Only the wrappers zod puts *outside* the string: `.optional()`, `.default()`,
+ * `.nullable()`, and — `F4.339`, `location.timezone` — a `.refine()`
+ * (`ZodEffects`, whose inner schema is `_def.schema`).
+ */
 function unwrapSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
   let current = schema;
   for (let depth = 0; depth < 8; depth += 1) {
-    const def: { typeName?: string; innerType?: z.ZodTypeAny } = current._def;
+    const def: { typeName?: string; innerType?: z.ZodTypeAny; schema?: z.ZodTypeAny } = current._def;
+    if (def.typeName === "ZodEffects" && def.schema !== undefined) {
+      current = def.schema;
+      continue;
+    }
     if (
       def.innerType === undefined ||
       (def.typeName !== "ZodOptional" &&

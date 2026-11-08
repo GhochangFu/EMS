@@ -5,6 +5,8 @@ import {
   CATALOG_CODE_PATTERN,
   // F4.304: the location write body's area object and its m² refine, read by reference.
   floorAreaInputObjectSchema,
+  // F4.339 (ADR 0117 decision 10): the draft location's IANA timezone.
+  onboardingTimezoneSchema,
   // F4.103: the four draft count caps, imported rather than restated. The
   // numbers and their derivation live once, beside the shared contract's copy
   // of this schema (§4.8 — "a vocabulary is declared once and everything else
@@ -77,6 +79,8 @@ export const draftLocationSchema = z
     longitude: z.number().min(-180).max(180),
     province: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.province"]).optional(),
     capital: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.capital"]).optional(),
+    // F4.339 (ADR 0117 decision 10): the same schema as the shared copy.
+    timezone: onboardingTimezoneSchema.optional(),
     // F4.243 (ADR 0098 Amendment 2, B2/B11): same as the shared copy — absent
     // = not chosen, `null` = a root by choice, a code = the parent.
     parentCode: z

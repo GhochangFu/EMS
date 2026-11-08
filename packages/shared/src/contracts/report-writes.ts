@@ -56,23 +56,11 @@ import { reportScheduleParamsSchema } from "./trend-points-report";
  * description lands on the inner node and the document says nothing).
  */
 
-const ZONE_SEGMENT_CASING = /^[A-Z][A-Za-z0-9_+-]*(\/[A-Z][A-Za-z0-9_+-]*)+$/;
+// F4.339: the R-6 rule moved to `time-zone.ts` (no imports), so `onboarding.ts`
+// can use it without the cycle through `copilot.ts`; re-exported unchanged.
+import { isValidTimeZone } from "./time-zone";
 
-/** R-6: contains `/`, constructs without `RangeError`, every segment capitalised. */
-export function isValidTimeZone(zone: string): boolean {
-  if (!zone.includes("/") || !ZONE_SEGMENT_CASING.test(zone)) {
-    return false;
-  }
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: zone });
-    return true;
-  } catch (err) {
-    if (err instanceof RangeError) {
-      return false;
-    }
-    throw err;
-  }
-}
+export { isValidTimeZone };
 
 /**
  * `true` only when `value` names a real calendar day. `Invalid Date`

@@ -318,6 +318,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
     "`parentCode` is the code of the existing location the new one is under (from find_existing), or null for a top-level location; " +
     "when the user says top level and you omit it, it is written as null. " +
     "`latitude` and `longitude` default to Mumbai when omitted, and the action line says so: ask the user for the real ones. " +
+    "`timezone` is the site's IANA zone name, such as Asia/Kolkata; never put a timezone in `capital` or `meta`. " +
     "`floorArea` is `{ value, unit }` with unit `m2` or `ft2` (default `m2`); the commit stores square metres; `null` clears it.",
   add_rtu:
     "Adds an RTU. Never put a username, password, token or key in `config`: credentials are set on the RTU step only. " +

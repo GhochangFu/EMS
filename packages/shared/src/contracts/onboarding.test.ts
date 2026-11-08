@@ -28,6 +28,7 @@ import {
   assertSessionDtoParsesWithAHash,
   assertSessionDtoParsesWithSummariesAndNoHash,
   assertSessionDtoRequiresTheCheckpointFields,
+  assertTheDraftTimezoneTakesIanaNames,
 } from "./onboarding.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -154,5 +155,11 @@ describe("F4.304 — the lenient draft location carries floorArea (ADR 0108 Amen
   });
   it("C — absent parses", () => {
     assertLenientDraftFloorAreaAbsent();
+  });
+});
+
+describe("F4.339 — the draft location timezone (ADR 0117 decision 10)", () => {
+  it("takes IANA names and refuses others with the fixed message", () => {
+    assertTheDraftTimezoneTakesIanaNames();
   });
 });

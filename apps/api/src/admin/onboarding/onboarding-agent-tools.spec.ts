@@ -601,3 +601,15 @@ export async function assertTheRtuToolsKeepAPayloadFormat(): Promise<void> {
   );
   assert(!bad.ok && !bad.content.includes("Bad Code"), `a malformed code is refused without echo: ${bad.content}`);
 }
+
+/** F4.339 (ADR 0117 decision 10): set_location stores `timezone`, never in `capital`; a bad zone is refused with the fixed message. */
+export async function assertSetLocationStoresTheTimezone(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await runTool(call("set_location", { name: "Lalpur", type: "pump_station", timezone: "Asia/Kolkata" }), state, context());
+  assert(out.ok && state.working.location?.timezone === "Asia/Kolkata", `the zone is stored, got ${JSON.stringify(state.working.location)}`);
+  assert(state.working.location?.capital === undefined, "capital is never touched");
+  const bad = await runTool(call("set_location", { name: "Lalpur", timezone: "Kolkata" }), { working: {} }, context());
+  assert(!bad.ok && bad.content.includes("timezone must be an IANA zone name such as Asia/Kolkata"), `refused with the fixed message, got ${bad.content}`);
+  const description = TOOL_DEFINITIONS.find((tool) => tool.name === "set_location")?.description ?? "";
+  assert(description.includes("`timezone` is the site's IANA zone name"), "the description names the field");
+}
