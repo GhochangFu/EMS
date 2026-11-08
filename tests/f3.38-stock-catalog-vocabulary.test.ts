@@ -355,7 +355,11 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     // source. Measured per file with the scan's own regexes: 27/12, 11/11, 16/15.
     // **62 since `F4.317`**: 54 + the organization strip's eight `sustainability.total` tiles
     // (kw, kwh_today, kl_today, the four cost keys, availability_pct_24h). It binds no role.
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(62);
+    // **63, re-measured at `F4.338`.** The floor was already stale: the scan now also reads
+    // `pump-station-standard`. F4.338 lowered the true count by two (the strip's stored
+    // `energy_cost_today` / `energy_cost_this_month` sources left; it keeps six
+    // `sustainability.total` tiles), and the measured count after it is 63.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(63);
     expect(roleCodes.length, `no assetRoleCode found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(38);
     // **Six since `E4.2` PR 2 (U8), and it was five until then.** The five were
     // electrical, water, stp, etp and hvac; `sustainability` held no point
@@ -367,7 +371,7 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     // sustainability template could be parsed as nothing and this stayed green.
     // Measured: electrical 11, sustainability 15, water/stp/etp/hvac 3 each.
     // **Seven since `F3.73`**: the SMOC site layout's 16 are tagged `site`. **Eight since
-    // `F4.317`**: the organization strip's 8 are tagged `organization`.
+    // `F4.317`**: the organization strip's 8 are tagged `organization` (6 since `F4.338`).
     const sections = new Set(pointKeys.map((entry) => entry.section));
     expect(
       sections.size,

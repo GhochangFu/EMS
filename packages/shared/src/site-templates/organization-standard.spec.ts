@@ -26,8 +26,9 @@ const entry: StockDashboardTemplateDto = ORGANIZATION_STANDARD_TEMPLATE;
 export function theEntryIsTheOrganizationTargetStockRow(): void {
   const shape = `${entry.code}|${entry.section}|${entry.target}|${entry.stockVersion}`;
   assert(
-    // `F4.332` (ADR 0112 Amendment 3 item 5) — v2 adds the cost tile and the daily cost chart.
-    shape === "organization-standard|organization|organization|2",
+    // `F4.338` (ADR 0112 Amendment 4) — v3 drops the stored month cost tile and reads today's
+    // energy cost at read time.
+    shape === "organization-standard|organization|organization|3",
     `code|section|target|stockVersion: got ${shape}`,
   );
 }
@@ -44,16 +45,16 @@ export function theContentFitsTheOrganizationTarget(): void {
   assert(message === null, `the organization target rule refused it: ${message}`);
 }
 
-export function itHoldsFifteenTilesAndTheCostChartAndNoTabs(): void {
+export function itHoldsFourteenTilesAndTheCostChartAndNoTabs(): void {
   assert(entry.content.tabs.length === 0, `an organization template holds no tabs, got ${entry.content.tabs.length}`);
   const types = entry.content.widgets.map((widget) => widget.widgetType);
-  // `F4.332` — fifteen tiles and, last, the one daily energy cost chart (ADR 0112 Amendment 3).
-  assert(types.length === 16, `expected 15 tiles and a chart, got ${types.length}`);
+  // `F4.338` — fourteen tiles and, last, the one daily energy cost chart (ADR 0112 Amendment 4).
+  assert(types.length === 15, `expected 14 tiles and a chart, got ${types.length}`);
   assert(
-    types.slice(0, 15).every((type) => type === "value_tile") && types[15] === "chart",
-    `fifteen value tiles then the chart, got ${types.join(",")}`,
+    types.slice(0, 14).every((type) => type === "value_tile") && types[14] === "chart",
+    `fourteen value tiles then the chart, got ${types.join(",")}`,
   );
-  const chart = entry.content.widgets[15];
+  const chart = entry.content.widgets[14];
   assert(chart?.widgetType === "chart" && chart.config.series === "cost_by_day", "the chart is the daily cost kind");
   assert(
     entry.content.widgets.every((widget) => widget.bindings.length === 0),
@@ -86,9 +87,9 @@ const DECISION_6 = [
   "Assets offline → assets.offline.count {}",
   "Asset health → assets.health.score {}",
   "Open work orders → workorders.open.count {}",
-  "Energy cost today → sustainability.total {energy_cost_today,sum}",
+  // `F4.338` — ADR 0112 Amendment 4: read-time, and the stored month tile is gone.
+  "Energy cost today → energy.cost.total {today}",
   "Water cost today → sustainability.total {water_cost_today,sum}",
-  "Energy cost this month → sustainability.total {energy_cost_this_month,sum}",
   "Water cost this month → sustainability.total {water_cost_this_month,sum}",
   "Availability (24 h) → sustainability.total {availability_pct_24h,avg}",
   // `F4.332` — ADR 0112 Amendment 3 item 5.
@@ -142,6 +143,25 @@ export function theWaterTodayTileSumsTheIntakeStageOnly(): void {
   assert(got === want, `Water today sources: got ${got}`);
 }
 
+/**
+ * ADR 0112 Amendment 4 (`F4.338`) — "Energy cost today" reads the read-time cost, priced hour by
+ * hour over every meter, so it equals the last bar of the daily cost chart; no strip tile reads a
+ * stored `energy_cost_*` point any more.
+ */
+export function theEnergyCostTodayTileReadsTheReadTimeCost(): void {
+  const tile = entry.content.widgets.find((widget) => widget.title === "Energy cost today");
+  const got = JSON.stringify({ sources: tile?.sources ?? [], config: tile?.config });
+  const want = JSON.stringify({
+    sources: [{ catalogKey: "energy.cost.total", params: { period: "today" }, sortOrder: 0 }],
+    config: { icon: "bolt" },
+  });
+  assert(got === want, `Energy cost today: got ${got}`);
+  const stored = entry.content.widgets.filter((widget) =>
+    widget.sources.some((source) => String((source.params as { pointKey?: unknown }).pointKey ?? "").startsWith("energy_cost_")),
+  );
+  assert(stored.length === 0, `no tile reads a stored energy_cost_* point, got ${stored.map((widget) => widget.key).join(",")}`);
+}
+
 /** Owner ruling 6 — "vs yesterday" on Total load and Open alarms only. */
 export function exactlyTheLoadAndAlarmTilesCompare(): void {
   const comparing = entry.content.widgets
@@ -159,8 +179,9 @@ export function exactlyTheLoadAndAlarmTilesCompare(): void {
  */
 export function theCostTilesTypeNoUnit(): void {
   const costs = entry.content.widgets.filter((widget) => widget.widgetType === "value_tile" && /cost/i.test(widget.title ?? ""));
-  // `F4.332` — the four stored-point tiles and "Cost this month" (the chart has no unit field).
-  assert(costs.length === 5, `expected five cost tiles, got ${costs.length}`);
+  // `F4.338` — the two stored water cost tiles and the two read-time energy cost tiles (the chart
+  // has no unit field).
+  assert(costs.length === 4, `expected four cost tiles, got ${costs.length}`);
   for (const widget of costs) {
     const unit = widget.widgetType === "value_tile" ? widget.config.unit : undefined;
     assert(unit === undefined, `${widget.key} types the unit "${String(unit)}"`);
