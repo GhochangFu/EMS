@@ -6,6 +6,7 @@ import {
   assertEveryRowCarriesResolvedMetadata,
   assertEveryRowCarriesTheOrganizationSwitch,
   assertKeyVersionArrivesAsAnInteger,
+  assertThePayloadFormatJoin,
   assertTheOrganizationSwitchIsSelectedNotFiltered,
 } from "./bindings.integration.spec.js";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate.js";
@@ -62,5 +63,10 @@ describe.skipIf(!connectionString)("F2.7 — resolved point metadata on the bind
 
   it("selects a switched-off organization's rows rather than filtering them", async () => {
     await assertTheOrganizationSwitchIsSelectedNotFiltered(pool as pg.Pool);
+  });
+
+  // `F4.334` / ADR 0116 decision 4.
+  it("joins the payload format catalog on the config's code, null for an unknown code", async () => {
+    await assertThePayloadFormatJoin(pool as pg.Pool);
   });
 });

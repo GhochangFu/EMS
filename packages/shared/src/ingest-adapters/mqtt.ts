@@ -3,7 +3,7 @@ import { z } from "zod";
 // The leaf module, not `../ingest`: that module re-exports this one, and a
 // runtime import back from it would make the catalog depend on entry order.
 import { mqttTopicHasWildcard } from "../mqtt-topic";
-import { mqttPayloadFormatCodeSchema } from "./mqtt-payload-format";
+import { mqttPayloadFormatCodeSchema, mqttPayloadFormatDefinitionSchema } from "./mqtt-payload-format";
 
 /**
  * The MQTT adapter's config and device schemas (ADR 0016 §6), and the onboarding
@@ -69,6 +69,15 @@ export const mqttDeviceSchema = z.object({
     .refine((topic) => !mqttTopicHasWildcard(topic), {
       message: "a device topic must name one device, not a wildcard subscription",
     }),
+  /**
+   * The payload format this device's topic decodes with (ADR 0116 decision 4).
+   * Set by the ingest host from the catalog join, **never** from stored JSON:
+   * the host overwrites the key on every plan. Absent means the built-in envelope.
+   */
+  payloadFormat: z
+    .object({ code: mqttPayloadFormatCodeSchema, definition: mqttPayloadFormatDefinitionSchema })
+    .strict()
+    .optional(),
 });
 
 export type MqttDevice = z.infer<typeof mqttDeviceSchema>;
