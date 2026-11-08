@@ -689,6 +689,8 @@ export const metricCatalogKeySchema = z.enum([
   "sites.live.count",
   "pue.ratio",
   "alarms.critical.count",
+  "energy.cost_by_day",
+  "energy.cost.total",
 ]);
 
 /**
@@ -793,6 +795,10 @@ export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, Cata
   "sites.live.count": { shape: "metric" },
   "pue.ratio": { shape: "metric" },
   "alarms.critical.count": { shape: "metric" },
+  // `F4.332` / ADR 0112 Amendment 3 item 1 and ADR 0070 Amendment 7 — the read-time cost per
+  // local day, priced hour by hour at the dated rate, and the sum of those days for a period.
+  "energy.cost_by_day": { shape: "dataset", columns: ["day", "kwh", "cost", "currency", "reason"], params: ["days"] },
+  "energy.cost.total": { shape: "metric", params: ["period"] },
 };
 
 /**

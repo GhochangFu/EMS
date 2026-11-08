@@ -901,10 +901,11 @@ export function bothEntriesDeclarePointKeyAndAggregate(): void {
     );
   }
   for (const key of metricCatalogKeySchema.options) {
-    if (key.startsWith("sustainability.") || key === "water.balance") continue;
+    // `F4.332` (ADR 0112 Amendment 3) — the two energy-cost entries take `days` / `period`.
+    if (key.startsWith("sustainability.") || key === "water.balance" || key.startsWith("energy.cost")) continue;
     assert(
       METRIC_CATALOG[key].params === undefined,
-      `${key} declares params; only the sustainability entries and water.balance take fields`,
+      `${key} declares params; only the sustainability, water.balance and energy.cost entries take fields`,
     );
   }
 }

@@ -45,6 +45,11 @@ export const metricCatalogValueDtoSchema = z.discriminatedUnion("shape", [
     unit: z.string().nullable(),
     coverage: rollupCoverageSchema.optional(),
     currency: z.string().nullable().optional(),
+    // `F4.332` / ADR 0112 Amendment 3 item 2 — why `value` is null, for an entry that can say
+    // (`energy.cost.total`: `rate_missing`, `currency_mixed`, `no_energy`). Optional and additive:
+    // every other entry omits it, and a stored reader parses unchanged (§4.8). A plain string, not
+    // `energyCostReasonSchema`, on purpose: the arm is generic over every metric entry.
+    reason: z.string().nullable().optional(),
     // `F4.317` / ADR 0112 decision 8 — the value at the same instant 24 h before the resolve
     // (ADR 0074 decision 5), on the metric's own definition. Optional: a resolve computes it
     // only for a tile that asks (`compareToPrevious`, owner ruling Q5), and `value` is null

@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 
 import type { AssetHealthService } from "../asset-health/asset-health.service";
 import type { BmsTx } from "../database/tenant-context";
+import type { TariffSeriesResolver } from "../telemetry/energy-cost-by-day";
 
 /**
  * What a resolver may reach for beyond the transaction.
@@ -37,6 +38,12 @@ export type ResolverDeps = {
    * after the tenant transaction has committed, never while it holds its connection.
    */
   readonly pool: Pick<Pool, "query">;
+  /**
+   * `F4.332` (ADR 0070 Amendment 7) — the dated `energy_tariff_per_kwh` rows, for the two
+   * `energy.cost*` entries: `CalcParametersService.resolveSeriesForAssets` on the fleet Drizzle.
+   * Read after commit, like `pool`.
+   */
+  readonly tariffs: TariffSeriesResolver;
 };
 
 /**

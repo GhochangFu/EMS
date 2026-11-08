@@ -937,10 +937,10 @@ and `parameterValueAt` picks the row at an instant.
 1. **A new read: the energy cost per local day, computed at read time.** For each
    asset in scope and each hour:
    `cost(asset, hour) = kWh(asset, hour) × rate(asset, hour)`, where
-   - `kWh(asset, hour)` is the hourly energy the existing read already uses: the
-     `_1h` continuous aggregate of point key `kw`, `avgExpr()` × 1 h (ADR 0023;
-     decision 5's time integral; the `perAssetEnergy` statement at level `1h`).
-     An hour with no bucket adds no energy.
+   - `kWh(asset, hour)` is the hourly energy: the mean `kw` over the hour ×
+     1 h (ADR 0023; decision 5's time integral). An hour with no bucket adds no
+     energy. *(Built from the `_5m` aggregate folded into local hours, not from
+     `_1h`: see "Measured at the build" below.)*
    - `rate(asset, hour)` is the `energy_tariff_per_kwh` row **in force at the
      start of that hour**, nearest scope, from `resolveSeriesForAssets` and
      `parameterValueAt`. The rate is applied per hour, so a rate that changes at
@@ -977,13 +977,16 @@ and `parameterValueAt` picks the row at an instant.
    A window total is the sum of the priced days, and it carries how many of the
    window's days were priced (the `coverage` of ADR 0072 ruling 1: `fresh` =
    priced days, `carrying` = days in the window). When no day is priced the total
-   is `null` with the first day's reason. *Drafter choice, for the owner to
+   is `null` with the strongest reason in the window (`currency_mixed`, then
+   `rate_missing`, then `no_energy`; changed from "the first day's reason" at
+   the PR 1 code review, so a month whose meter started on day 3 with no rate
+   reads `rate_missing`). *Drafter choice, for the owner to
    overturn:* a window total does not fail closed on one unpriced day, because a
    month tile that goes blank for one missing hour hides 29 good days; the tile
    shows "27 of 30 days" instead, as every partial roll-up tile already does.
 6. **The window is 1 to 90 days**, counted back from today, today included. 90
-   days × 24 hours is at most 2,160 hourly rows per asset, read from the `_1h`
-   aggregate in one statement, and the rate rows in one more.
+   days × 24 hours is at most 2,160 hourly rows per asset, folded in the
+   database in one statement, and the rate rows in one more.
 7. **Isolation.** The read takes the caller's readable asset ids
    (`AccessControlService.readableAssetIds`, organization-bounded by the catalog
    resolve), as `perAssetEnergy` does; its `$1::uuid[]` scope is the isolation
@@ -1002,9 +1005,41 @@ and `parameterValueAt` picks the row at an instant.
    read is labelled "Energy cost" with no such note. The Energy view's
    "indicative cost" is not changed by this row.
 
+### Measured at the build (PR 1): local hours come from the `_5m` aggregate
+
+Decision 1 said the hourly energy is the `_1h` aggregate. The build found that
+this cannot meet decision 2 for the PHE sites: `_1h` buckets are **UTC** hours,
+and `Asia/Kolkata` is `+05:30`, so the UTC hour 18:00–19:00 is 23:30–00:30 local
+and crosses local midnight. Priced by `_1h`, half an hour of every day would land
+on the day before.
+
+So the read folds the `_5m` aggregate into **local** hours:
+`time_bucket('1 hour', bucket, <asset zone>)` over `telemetry.point_values_5m`,
+with `avgExpr()` (the sample-weighted mean, correct when finer rows fold into a
+coarser bucket). Five minutes divides every zone offset in use, so a local hour,
+and so a local day, is exact. The rate is still taken at the start of each local
+hour, and the hour still running counts only the part that has passed (so
+"today" is the hours so far). `_5m` keeps 735 days (migration `0028`), well
+past the 90-day window. The integration spec holds the Kolkata boundary with a
+1000 kW sentinel in the five minutes before local midnight, and a mutation back
+to UTC hours reddens it.
+
+A local hour is grouped by its wall-clock hour **and its UTC offset**, so on a
+DST fall-back day the repeated hour is two hours and the day has 25 (held by a
+`Europe/London` 2026-10-25 case; PHE has no DST). The read scans up to
+25,920 five-minute rows per asset for a 90-day window and folds them to at most
+2,160 hours in the database; it is uncached, which is worth measuring once the
+chart is on a busy dashboard.
+
+Also at the build (security review): the read filters `bms.assets` on the
+organization as well as on the scope ids, as a second guard on the fleet pool,
+which bypasses RLS. A catalog resolve is already one organization, so through
+this read `currency_mixed` cannot occur; it stays in the fold as the
+fail-closed rule for any future caller that sums across organizations.
+
 ### What does not change
 
-- No migration for this read: it reads the `_1h` aggregate and
+- No migration for this read: it reads the `_5m` aggregate and
   `bms.calc_parameters` as they are. (The catalog keys that expose it to
   dashboards need one CHECK widening; ADR 0112 Amendment 3.)
 - No new dependency. No stored cost history, no backfill job.
