@@ -211,8 +211,12 @@ dark rtu=861736076128245 endpoint=phe.thinkiot.co.in:8883 key=s12_r01 lastSample
 - `skipped` lines name every RTU left out and why (`no-adapter`,
   `unsupported-protocol`, `missing-rtu-code`, `invalid-connection-config`,
   `tls-downgrade-refused`, `plaintext-host-not-allowed`,
-  `endpoint-config-conflict`, `organization-ingest-disabled`, …),
-  so a gateway that never appears is visible without reading the log.
+  `endpoint-config-conflict`, `organization-ingest-disabled`,
+  `payload-format-unknown`, `payload-format-invalid`,
+  `payload-format-conflict`, …), so a gateway that never appears is visible
+  without reading the log. The three `payload-format-*` reasons are ADR 0116's
+  (see *Payload formats* below): `-unknown` and `-invalid` carry the format
+  code as `detail=`, `-conflict` carries the topic.
   `organization-ingest-disabled` (ADR 0115 decision 5) carries the
   organization code as its `detail=` — `skipped rtu=<code>
   reason=organization-ingest-disabled detail=BCPL` — and is decided before any
@@ -280,6 +284,7 @@ re-plans, and reconciles the running endpoints with the plan
 |---|---|---|
 | In the plan, not running | build and start a supervisor | `endpoint started` |
 | Running, device set changed | `stop()` the old supervisor, **then** build and start a new one | `endpoint replaced` with `added`/`removed` device keys |
+| Running, same device set, decoder fingerprint changed (ADR 0116 decision 6) | the same replace | `endpoint replaced` with `reason=payload-format-changed` |
 | Running, not in the plan (no enabled RTU left) | `stop()` it — the broker connection closes and the endpoint leaves the roster | `endpoint stopped` |
 | Running, same device set | swap the point index only | none |
 
@@ -311,6 +316,45 @@ re-plans, and reconciles the running endpoints with the plan
 
 **Time to effect** of the organization switch and of an RTU's *Ingest enabled*
 box: within one `INGEST_RELOAD_MS` plus the reconnect.
+
+### Payload formats (ADR 0116, `F4.334`)
+
+An MQTT message is decoded with a **payload format** from the platform catalog
+`bms.mqtt_payload_formats`. An RTU names one by code in its connection config
+(`rtu_connection_configs.config.payloadFormat`); an RTU that names none uses the
+built-in `thinkiot-envelope`, whose decoder is `parseMqttEnvelope` unchanged, in
+code — it never needs the catalog row, so every PHE RTU behaves as before.
+
+- The binding query `LEFT JOIN`s the catalog on the named code. The host
+  validates the joined definition with the shared schema and writes it onto the
+  binding's device slice; a `payloadFormat` object stored inside
+  `config.device` is always overwritten, so stored JSON can never supply its
+  own definition.
+- **Per topic.** The adapter decodes each message with the format of the topic
+  it arrived on (`decodeMqttPayload`). The `MAX_PAYLOAD_BYTES` check runs
+  first, and every decoded record still goes through the `F1.7` topic check
+  (`device is not bound to this topic`). A message the format cannot decode
+  logs `warn` `mqtt payload not decoded topic=<t> formatCode=<code>
+  reason=<not-json|root-mismatch|no-device-key|too-many-records>` — never the
+  payload. The built-in path keeps `mqtt payload was not valid JSON`.
+- **Skips.** A code with no catalog row is `payload-format-unknown`; a row whose
+  definition fails the schema is `payload-format-invalid`; a second RTU on the
+  same endpoint **and topic** naming a different format is
+  `payload-format-conflict` (the first stays served). RTUs on different topics
+  of one broker may use different formats and share the connection.
+- **Edits reach a running endpoint without a restart.** Each endpoint plan
+  carries a `decoderFingerprint` (sha256 over its bindings' topic, format code
+  and definition — no secret). A reload whose device set is unchanged but whose
+  fingerprint moved replaces the endpoint: `endpoint replaced …
+  reason=payload-format-changed`, within one `INGEST_RELOAD_MS`. Editing a
+  format's name or description does not move it. A binding's topic is part of
+  the fingerprint, so a topic change on an unchanged device set now replaces
+  the endpoint too, under the same reason.
+- **The device key is the RTU code.** A decoded record's device key is matched
+  against `rtus.rtu_code` (ADR 0116 decision 7): for BCPL the RTU code is the
+  `TagName`. A format with no device-key path uses the **topic** as the key, so
+  the RTU code must then equal the topic string — up to the 64-character RTU
+  code limit.
 
 ## The disk buffer
 
