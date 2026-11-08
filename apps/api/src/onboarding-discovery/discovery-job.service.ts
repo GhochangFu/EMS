@@ -59,7 +59,7 @@ type Prepared = {
  * Otherwise it writes `running` and returns the window as a continuation.
  *
  * **Phase B, after that commit** (the broker window must not hold a tenant
- * backend for up to 120 s): connect to the checked address, listen, then a
+ * backend for up to 300 s, F4.339): connect to the checked address, listen, then a
  * second tenant transaction writes `done` or `failed` and one `finish` row —
  * in a `finally`, so a throw anywhere in the window still leaves `failed`
  * and a `finish` row rather than a `running` that only the stale bound ends.

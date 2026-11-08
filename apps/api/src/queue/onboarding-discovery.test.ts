@@ -23,7 +23,7 @@ describe("F3.24b — the onboarding-discovery queue declaration", () => {
     assertCredentialExtraKeyIsRefused();
   });
 
-  it("refuses a window above 120 s", () => {
+  it("refuses a window above 300 s (F4.339)", () => {
     assertWindowAboveMaximumIsRefused();
   });
 
