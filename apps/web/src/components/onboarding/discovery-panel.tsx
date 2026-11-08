@@ -1,8 +1,11 @@
 import { useState } from "react";
-import type { OnboardingDiscoveryErrorClass, OnboardingSessionDto } from "@bms/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { OnboardingDiscoveryErrorClass, OnboardingDiscoverySkipReason, OnboardingSessionDto } from "@bms/shared";
 import { discoveryEmptySentence, discoveryIsActive, MQTT_DISCOVERY_SHARED_USER_WARNING } from "@bms/shared/contracts";
 
-import { fetchOnboardingSession } from "../../api/admin/onboarding";
+import { fetchMqttPayloadFormats, mqttPayloadFormatsQueryKey } from "../../api/admin/mqtt-payload-formats";
+import { fetchOnboardingSession, patchOnboardingDraft } from "../../api/admin/onboarding";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import { StatusPill } from "../status-pill";
 import { OnboardingDiscoveryWizard } from "./onboarding-discovery-wizard";
 
@@ -43,6 +46,37 @@ const FAILED_SENTENCE: Record<OnboardingDiscoveryErrorClass, string> = {
   "plaintext not allowed": "Failed: plain MQTT is not allowed for this broker host.",
 };
 
+/** `F4.334` (ADR 0116 decision 2): the format an RTU with no `payloadFormat` decodes with. */
+export const BUILTIN_PAYLOAD_FORMAT = "thinkiot-envelope";
+
+/** `F4.335`: one fixed phrase per skip reason — counts only, never wire text. */
+const SKIP_REASON_TEXT: Record<OnboardingDiscoverySkipReason, string> = {
+  "no-format": "matched no known payload format",
+  oversize: "were too large",
+  "unusable-topic": "had an unusable topic",
+  "unusable-device-key": "had an unusable device key",
+};
+
+/** "Not decoded: 4 matched no known payload format, 2 were too large." — or null when nothing was skipped. */
+export function skippedReasonsLine(d: NonNullable<OnboardingSessionDto["discovery"]>): string | null {
+  if (d.skipped <= 0) return null;
+  const parts = (Object.keys(SKIP_REASON_TEXT) as OnboardingDiscoverySkipReason[])
+    .filter((reason) => (d.skippedReasons?.[reason] ?? 0) > 0)
+    .map((reason) => `${d.skippedReasons?.[reason] ?? 0} ${SKIP_REASON_TEXT[reason]}`);
+  return parts.length === 0 ? `Not decoded: ${d.skipped}.` : `Not decoded: ${parts.join(", ")}.`;
+}
+
+/** The draft config with `payloadFormat` set, or removed for the built-in (plan T5.3). */
+export function withPayloadFormat(config: Record<string, unknown>, code: string): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...config };
+  if (code === BUILTIN_PAYLOAD_FORMAT) {
+    delete next.payloadFormat;
+  } else {
+    next.payloadFormat = code;
+  }
+  return next;
+}
+
 /** A `running` discovery past its stale bound: the worker stopped or its final write failed. */
 export const DISCOVERY_STALE_SENTENCE = "The discovery did not finish. You can start it again.";
 
@@ -71,6 +105,24 @@ function statusLine(d: NonNullable<OnboardingSessionDto["discovery"]>, active: b
 export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPanelProps) {
   const [wizardFor, setWizardFor] = useState<number | null>(null);
   const [workerDown, setWorkerDown] = useState(false);
+  const [formatError, setFormatError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  // F4.334 (plan T5.3): the catalog for the per-RTU format picker.
+  const formats = useQuery({ queryKey: mqttPayloadFormatsQueryKey, queryFn: fetchMqttPayloadFormats });
+  const formatMutation = useMutation({
+    mutationFn: (vars: { index: number; code: string }) =>
+      patchOnboardingDraft(session.id, {
+        rtus: (session.draft?.rtus ?? []).map((rtu, i) =>
+          i === vars.index ? { ...rtu, config: withPayloadFormat(rtu.config, vars.code) } : rtu,
+        ),
+      }),
+    onSuccess: (updated) => {
+      setFormatError(null);
+      onSessionChange(updated);
+      queryClient.setQueryData(["onboarding", updated.id], updated);
+    },
+    onError: (err: Error) => setFormatError(apiErrorMessage(err)),
+  });
   const rtus = session.draft?.rtus ?? [];
   const mqtt = rtus.map((rtu, index) => ({ rtu, index })).filter(({ rtu }) => rtu.protocol === "mqtt");
   if (mqtt.length === 0) return null;
@@ -116,6 +168,23 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
                 </button>
               </div>
               {reason !== null && <p className="mt-1 text-[11px] text-ink-muted">{reason}</p>}
+              {formats.data !== undefined && (
+                <label className="mt-1 flex items-center gap-2 text-[11px]">
+                  <span>Payload format</span>
+                  <select
+                    className="surface-field px-1 py-0.5 text-[11px]"
+                    value={typeof rtu.config.payloadFormat === "string" ? rtu.config.payloadFormat : BUILTIN_PAYLOAD_FORMAT}
+                    disabled={busy || formatMutation.isPending}
+                    onChange={(event) => formatMutation.mutate({ index, code: event.target.value })}
+                  >
+                    {formats.data.map((format) => (
+                      <option key={format.code} value={format.code}>
+                        {format.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <p className="mt-1 text-[11px] text-ink-muted">{MQTT_DISCOVERY_SHARED_USER_WARNING}</p>
             </li>
           );
@@ -126,7 +195,25 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
           <p>{statusLine(result, active)}</p>
           {/* F4.335: when messages arrived and none decoded, say so (fixed text, counts only). */}
           {result.status === "done" && result.devices.length === 0 && <p>{discoveryEmptySentence(result)}</p>}
+          {result.status === "done" && skippedReasonsLine(result) !== null && (
+            <p className="text-ink-muted">{skippedReasonsLine(result)}</p>
+          )}
         </div>
+      )}
+      {formatError !== null && <p className="mt-1 text-[11px] text-critical-ink">{formatError}</p>}
+      {result !== null && result.status === "done" && result.devices.length > 0 && (
+        <ul aria-label="Discovered devices" className="mt-2 space-y-1 text-[11px]">
+          {result.devices.slice(0, LISTED_ROWS).map((device) => (
+            <li key={`${device.topic}-${device.devId}`} className="flex flex-wrap items-center gap-2">
+              <span className="font-mono">{device.devId}</span>
+              <span className="text-ink-muted">{device.topic}</span>
+              <StatusPill label={device.payloadFormat ?? BUILTIN_PAYLOAD_FORMAT} tone="info" />
+            </li>
+          ))}
+          {result.devices.length > LISTED_ROWS && (
+            <li className="text-ink-muted">{`and ${result.devices.length - LISTED_ROWS} more`}</li>
+          )}
+        </ul>
       )}
       {discovered.length > 0 && (
         <ul aria-label="Discovered mappings" className="mt-2 space-y-1 text-[11px]">
