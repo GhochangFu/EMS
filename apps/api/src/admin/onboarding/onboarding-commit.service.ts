@@ -39,14 +39,13 @@ import {
   treeGuardRefusal,
 } from "../locations/locations-tree-guards";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import { emptyTopicAsNull } from "../rtu-topic";
 import { resolveTelemetrySource, withTelemetrySource, type TelemetrySource } from "../telemetry-source";
 import { AssetTemplatesAdminService } from "../asset-templates/asset-templates.service";
 import { translateAssetCodeCollision } from "../asset-templates/asset-templates-instantiate-guards";
 import { AssetTemplateInstantiationService } from "../asset-templates/asset-templates-instantiate.service";
 import { AssetTemplatesStockService } from "../asset-templates/asset-templates-stock.service";
 import { plaintextRtusOf } from "./onboarding-commit-plaintext";
-import { metaTimezone, unitOf } from "./onboarding-commit-values";
+import { draftRtuMqttTopic, metaTimezone, topicHolderMessage, unitOf } from "./onboarding-commit-values";
 import { translateCommitUniqueConflict } from "./onboarding-commit-conflict";
 import {
   assertDraftTemplateAccess,
@@ -542,6 +541,23 @@ export class OnboardingCommitService {
       // already decides every case. See the helper's docblock
       // (`../telemetry-source.ts`) for why the read still happens unconditionally.
       const telemetrySourceByRtuId = new Map<string, TelemetrySource>();
+      // F4.339 (ADR 0117 decision 8, plan R8): a topic another RTU of this organization holds is named
+      // before any insert. `tx` is the tenant transaction, so RLS shows this organization's rows only; a
+      // holder elsewhere still meets the index's 23505 and its fixed text.
+      const draftTopics = (draft.rtus ?? [])
+        .map((rtu) => ({ code: rtu.code, topic: draftRtuMqttTopic(rtu.config ?? {}) }))
+        .filter((entry): entry is { code: string; topic: string } => entry.topic !== null);
+      if (draftTopics.length > 0) {
+        const [holder] = await tx
+          .select({ code: rtus.code, active: rtus.active, mqttTopic: rtus.mqttTopic })
+          .from(rtus)
+          .where(inArray(rtus.mqttTopic, draftTopics.map((entry) => entry.topic)))
+          .limit(1);
+        if (holder) {
+          const draftCode = draftTopics.find((entry) => entry.topic === holder.mqttTopic)?.code ?? "";
+          throw new BadRequestException(topicHolderMessage(draftCode, holder.code, holder.active));
+        }
+      }
       for (let i = 0; i < (draft.rtus ?? []).length; i++) {
         const rtuDraft = draft.rtus![i];
         const config = rtuDraft.config ?? {};
@@ -552,10 +568,7 @@ export class OnboardingCommitService {
         // `mqttTopic`, and this write must agree with them rather than resurface the
         // legacy key. The required-topic check reads through `rtuTopic` too
         // (F4.234).
-        const mqttTopic = emptyTopicAsNull(
-          (typeof config.topic === "string" ? config.topic : null) ??
-            (typeof config.mqttTopic === "string" ? config.mqttTopic : null),
-        );
+        const mqttTopic = draftRtuMqttTopic(config);
 
         const [rtuRow] = await tx
           .insert(rtus)

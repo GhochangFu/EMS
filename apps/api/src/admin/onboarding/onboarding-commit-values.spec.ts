@@ -1,4 +1,4 @@
-import { metaTimezone, unitOf } from "./onboarding-commit-values";
+import { draftRtuMqttTopic, metaTimezone, topicHolderMessage, unitOf } from "./onboarding-commit-values";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -28,4 +28,17 @@ export function assertUnitOfPrefersTheDeclarationThenTheCatalog(): void {
     "the declaration wins over the catalog",
   );
   assert(unitOf("no_unit", undefined, catalog) === undefined && unitOf("absent", undefined, catalog) === undefined, "no unit anywhere");
+}
+
+/** F4.339 (plan R8): the topic the commit writes, and the sentence naming a same-organization holder. */
+export function assertTheTopicRuleAndTheHolderSentence(): void {
+  assert(draftRtuMqttTopic({ topic: "a/b", mqttTopic: "c/d" }) === "a/b", "topic wins");
+  assert(draftRtuMqttTopic({ mqttTopic: "c/d" }) === "c/d", "the legacy key");
+  assert(draftRtuMqttTopic({ topic: "" }) === null && draftRtuMqttTopic({}) === null, "empty → NULL");
+  assert(
+    topicHolderMessage("BCPL-LAL-02", "BCPL-LAL-01", true) ===
+      "The MQTT topic of draft RTU BCPL-LAL-02 is already used by RTU BCPL-LAL-01 (active) in this organization. Choose a different topic, or clear that RTU's topic.",
+    "the sentence (exact)",
+  );
+  assert(topicHolderMessage("A", "B", false).includes("RTU B (inactive)"), "an inactive holder says so");
 }
