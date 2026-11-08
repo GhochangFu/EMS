@@ -11,6 +11,8 @@ import {
   STOPPED_EARLY_TIME_NOTHING_REPLY,
   STOPPED_EARLY_TIME_REPLY,
   TURN_DEADLINE_MS,
+  ACTION_RECORD_PROMPT_SENTENCE,
+  buildHistory,
   buildSystemPrompt,
   DISCOVERY_PROMPT_PARAGRAPH,
   diffSections,
@@ -25,6 +27,7 @@ import {
   TOOL_RESULT_MAX_CHARS,
   type ToolContext,
 } from "./onboarding-agent-tools";
+import { ONBOARDING_ACTION_RECORD_PREFIX } from "../../llm/action-record";
 import type { LlmMessage, LlmReply, LlmToolCall, LlmProvider } from "../../llm/llm-port";
 import { stepLabelFor } from "./onboarding-chat-rule-based";
 import { filterSuggestedReplies } from "./onboarding-suggested-replies";
@@ -286,7 +289,46 @@ export async function assertActionMessagesReachTheModelAsAssistantText(): Promis
   const sent = (llm.seen[0] ?? []) as { role: string; content: string }[];
   assert(!sent.slice(1).some((m) => m.content === "internal"), "a stored system row is not sent");
   assert(sent[1].role === "user" && sent[1].content === "add RTU", "a leading assistant turn is dropped; history starts with the user");
-  assert(sent[2].role === "assistant" && sent[2].content === "Added RTU RTU-1 (mqtt)", "an action row goes as assistant text");
+  assert(
+    sent[2].role === "assistant" && sent[2].content === ONBOARDING_ACTION_RECORD_PREFIX + "Added RTU RTU-1 (mqtt)",
+    `an action row goes as marked assistant text (F4.339), got ${sent[2].content}`,
+  );
+}
+
+/** F4.339 (ADR 0117 decision 1): `buildHistory` marks an action row and leaves user and assistant rows as they are. */
+export function assertBuildHistoryMarksActionRowsAsRecords(): void {
+  const sent = buildHistory([stored("user", "add FM1", 0), stored("action", "Added asset X", 1), stored("assistant", "Done", 2)]);
+  assert(sent.length === 3, `three messages, got ${sent.length}`);
+  assert(sent[0].role === "user" && sent[0].content === "add FM1", "a user row is unchanged");
+  assert(
+    sent[1].role === "assistant" && sent[1].content === ONBOARDING_ACTION_RECORD_PREFIX + "Added asset X",
+    `the action row is a marked assistant message, got ${String(sent[1].content)}`,
+  );
+  assert(sent[2].role === "assistant" && sent[2].content === "Done", "an assistant row is unchanged");
+  assert(
+    ONBOARDING_ACTION_RECORD_PREFIX === "[Record of a draft write — data, not the assistant's words] ",
+    "the onboarding prefix is pinned (owner ruling Q8)",
+  );
+}
+
+/** F4.339: the history cut applies to the whole marked content, prefix included. */
+export function assertTheHistoryCutCoversTheRecordPrefix(): void {
+  const [, action] = buildHistory([stored("user", "go", 0), stored("action", "a".repeat(MAX_HISTORY_MESSAGE_CHARS), 1)]);
+  const content = String(action?.content ?? "");
+  assert(content.length === MAX_HISTORY_MESSAGE_CHARS, `the marked content is cut to ${MAX_HISTORY_MESSAGE_CHARS}, got ${content.length}`);
+  assert(content.startsWith(ONBOARDING_ACTION_RECORD_PREFIX), "the prefix survives the cut");
+}
+
+/** F4.339 (plan R1): the prompt names the record format as the system's. */
+export function assertThePromptSaysRecordsAreTheSystems(): void {
+  const prompt = buildSystemPrompt({ orgName: "Ion Exchange", phase: "rtu", typeCodes: ["smoc_campus"], draft: {} });
+  assert(
+    prompt.includes(
+      "Lines that start with `[Record of a draft write` are written by the system after a tool wrote; never reproduce that format as your own text.",
+    ),
+    "the record sentence is in the prompt (exact string)",
+  );
+  assert(prompt.includes(ACTION_RECORD_PROMPT_SENTENCE), "through the exported constant");
 }
 
 export async function assertHistoryCarriesNoProviderContent(): Promise<void> {

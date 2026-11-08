@@ -7,6 +7,9 @@ import {
   assertAProviderRejectionDiscardsTheTurn,
   assertAToolErrorGoesBackAsAResultNotAThrow,
   assertActionMessagesReachTheModelAsAssistantText,
+  assertBuildHistoryMarksActionRowsAsRecords,
+  assertTheHistoryCutCoversTheRecordPrefix,
+  assertThePromptSaysRecordsAreTheSystems,
   assertCapsArePinned,
   assertHistoryCarriesNoProviderContent,
   assertHistoryIsTheLastTwentyCutToTwoThousand,
@@ -101,8 +104,20 @@ describe("onboarding agent loop (F3.21, ADR 0090 decisions 2, 3, 7, 9)", () => {
     await assertHistoryIsTheLastTwentyCutToTwoThousand();
   });
 
-  it("sends action rows as assistant text and drops system rows", async () => {
+  it("sends action rows as marked assistant text and drops system rows", async () => {
     await assertActionMessagesReachTheModelAsAssistantText();
+  });
+
+  it("F4.339: buildHistory marks an action row as a draft-write record", () => {
+    assertBuildHistoryMarksActionRowsAsRecords();
+  });
+
+  it("F4.339: the history cut covers the record prefix", () => {
+    assertTheHistoryCutCoversTheRecordPrefix();
+  });
+
+  it("F4.339: the prompt says record lines are written by the system", () => {
+    assertThePromptSaysRecordsAreTheSystems();
   });
 
   it("sends history as plain text", async () => {

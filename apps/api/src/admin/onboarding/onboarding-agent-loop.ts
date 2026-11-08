@@ -19,6 +19,7 @@ import {
   type AgentStopReason,
   type AgentTurnRecord,
 } from "../../llm/agent-loop";
+import { ONBOARDING_ACTION_RECORD_PREFIX } from "../../llm/action-record";
 import type { LlmMessage, LlmProvider } from "../../llm/llm-port";
 import { PROMPT_MARKER_SENTENCE, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import { readStoredDiscovery } from "./onboarding-discovery-state";
@@ -104,6 +105,10 @@ export { diffSections };
  * has an `action` role), each content cut on a whole character, and leading
  * non-user turns dropped (the Messages API wants a conversation to start with
  * the user). Never carries provider content: that lives inside one turn.
+ *
+ * `F4.339` (ADR 0117 decision 1): an `action` row carries
+ * `ONBOARDING_ACTION_RECORD_PREFIX`, so the model reads it as a system record
+ * and not as its own words. The cut applies to the whole marked content.
  */
 export function buildHistory(messages: readonly OnboardingChatMessage[]): LlmMessage[] {
   const recent = messages
@@ -111,7 +116,8 @@ export function buildHistory(messages: readonly OnboardingChatMessage[]): LlmMes
     .slice(-MAX_HISTORY_MESSAGES)
     .map((message): LlmMessage => {
       // A stored row is text; the skill never carries content parts (ADR 0099 Amendment 3 A5).
-      const content = cutToBound(message.content, MAX_HISTORY_MESSAGE_CHARS);
+      const text = message.role === "action" ? `${ONBOARDING_ACTION_RECORD_PREFIX}${message.content}` : message.content;
+      const content = cutToBound(text, MAX_HISTORY_MESSAGE_CHARS);
       return message.role === "user" ? { role: "user", content } : { role: "assistant", content };
     });
   const firstUser = recent.findIndex((message) => message.role === "user");
@@ -142,6 +148,10 @@ function discoveryParagraph(draft: OnboardingDraft): string {
   return credentialed || readStoredDiscovery(draft) !== null ? DISCOVERY_PROMPT_PARAGRAPH : "";
 }
 
+/** `F4.339` (plan R1): the prompt sentence that names the record format as the system's, never the model's. */
+export const ACTION_RECORD_PROMPT_SENTENCE =
+  "Lines that start with `[Record of a draft write` are written by the system after a tool wrote; never reproduce that format as your own text.";
+
 /** The agent's system prompt: role, phase, active type codes, the credential and commit rules, and the bounded draft. */
 export function buildSystemPrompt(input: {
   readonly orgName: string;
@@ -161,6 +171,7 @@ Before you add an RTU on any protocol other than mqtt, call list_protocols and a
 To map source tags on a plain asset: ask the user for the RTU's tag list, or take a pasted list. Match each tag to a point key with list_point_keys. Show the proposed table in text (tag, point key, unit) and offer the replies "Write these mappings" and "Change the table" with suggest_replies. Write only after the user agrees: declare missing keys with add_point_keys, then write the rows with map_points. Say which keys are new to the catalog. Never write a mapping the user has not seen.
 ${discoveryParagraph(input.draft)}You cannot commit. When the draft is ready, use propose_commit; the user then uses Commit in the draft preview, or Confirm on the copilot's commit card.
 When you need the user to choose, ask one question per turn and offer the choices with suggest_replies.
+${ACTION_RECORD_PROMPT_SENTENCE}
 ${PROMPT_MARKER_SENTENCE}
 Draft context (redacted): ${serialiseDraftForPrompt(input.draft)}`;
 }
