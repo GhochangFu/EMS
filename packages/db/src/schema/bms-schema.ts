@@ -763,6 +763,10 @@ export const onboardingSessions = bmsSchema.table("onboarding_sessions", {
   committedAt: timestamp("committed_at", { withTimezone: true }),
   result: jsonb("result"),
   checkpoints: jsonb("checkpoints"),
+  // 0132 (F4.339, ADR 0117 decision 9): a global admin's lock; all three NULL = unlocked. No FK (ruling Q7).
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
+  lockedBy: uuid("locked_by"),
+  lockReason: varchar("lock_reason", { length: 500 }),
 });
 
 /** Per-RTU protocol connection config and encrypted credentials. */
