@@ -234,6 +234,14 @@ import { UsersService } from "./users/users.service";
   // F4.283 — the copilot's telemetry proposals run `TelemetryProposalCheckService` (the routes' own checks, read-only).
   // F4.309 PR 3 — the copilot's `list_point_key_states` calls `PointKeyStatesAdminService.list` (the route's own gate).
   // F4.315 PR A — the copilot's `list_asset_templates` calls `AssetTemplatesAdminService.list` (the route's own gate).
-  exports: [OnboardingService, AuditAdminService, TelemetryProposalCheckService, PointKeyStatesAdminService, AssetTemplatesAdminService],
+  exports: [
+    OnboardingService,
+    AuditAdminService,
+    TelemetryProposalCheckService,
+    PointKeyStatesAdminService,
+    AssetTemplatesAdminService,
+    // `F4.334` PR 5: the copilot's list_payload_formats and decode_payload_sample.
+    MqttPayloadFormatsAdminService,
+  ],
 })
 export class AdminModule {}

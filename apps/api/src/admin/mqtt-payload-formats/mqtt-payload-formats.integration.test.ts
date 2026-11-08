@@ -102,7 +102,7 @@ describe.skipIf(!connectionString)("F4.334 — the payload format catalog servic
     const accessControl = new AccessControlService(createDb(authPool), fleetDb);
     const audit = new MasterDataAuditService(tenantDb, fleetDb);
     ctx = {
-      svc: new MqttPayloadFormatsAdminService(fleetDb, accessControl, audit),
+      svc: new MqttPayloadFormatsAdminService(fleetDb, accessControl, audit, tenantDb),
       rtus: new RtusAdminService(fleetDb, tenantDb, accessControl, audit),
       observer,
       stamp,

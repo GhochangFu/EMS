@@ -61,8 +61,13 @@ import { proposeHarness } from "./copilot-propose-tools.spec";
  *   `propose_dashboardTemplate_replaceSiteLayouts` bring the definitions to 95,058. Over 94,000, so the
  *   bound follows the release-4 rule — rounded up to the next thousand, plus 1,000 — to 97,000; owner
  *   confirmed 2026-11-07 with the PR.
+ * - `F4.334` PR 5 (ADR 0099 Amendment 17, whose Consequences name this measure): the four entries bring
+ *   the definitions to 101,140 over 118 (`propose_mqttPayloadFormat_create` 2,446 and `_update` 2,417 —
+ *   each carries the payload format definition schema — `_delete` 416, `propose_rtu_setPayloadFormat` 577;
+ *   their ids in `fill_step` and `describe_change` the rest). Over 97,000, so the bound follows the
+ *   release-4 rule — rounded up to the next thousand, plus 1,000 — to 103,000; the owner confirms it with the PR.
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();
-  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(97_000);
+  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(103_000);
 }

@@ -183,6 +183,8 @@ export const FIXTURES: Readonly<
   "rtu.update": { body: { displayName: "Renamed" }, params: { id: ROW }, names: TARGET_NAME },
   "rtu.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
   "rtu.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  // `F4.334` (Amendment 17 decision 4): the RTU's payload format.
+  "rtu.setPayloadFormat": { body: { payloadFormat: "thinkiot-register-array" }, params: { id: ROW }, names: TARGET_NAME },
   // `F3.86` PR 3b: assets and asset points.
   "asset.create": {
     body: { code: "PUMP-7", name: "Feed Pump Seven", siteName: "Pune Works", locationId: ROW, domain: "water" },
@@ -333,4 +335,21 @@ export const FIXTURES: Readonly<
   "workOrder.reorder": { body: { items: [{ id: ROW, status: "assigned", sortOrder: 0 }] }, params: {}, names: ORG_NAME },
   "maintenanceSchedule.convert": { body: { notes: "Quarterly check due" }, params: { id: ROW }, names: TARGET_NAME },
   "assetImage.upload": { body: { caption: "Front panel", file: { kind: "attachment", index: 1 } }, params: { assetId: ROW }, names: TARGET_NAME },
+  // `F4.334` (ADR 0099 Amendment 17 decision 1): the MQTT payload format catalog.
+  "mqttPayloadFormat.create": {
+    body: {
+      code: "acme-array",
+      name: "Acme array",
+      definition: {
+        kind: "declarative",
+        root: "array",
+        deviceKey: ["TagName"],
+        readings: [{ key: "flow", register: { path: ["Data"], index: 0, type: "float32" } }],
+      },
+    },
+    params: {},
+    names: "acme-array",
+  },
+  "mqttPayloadFormat.update": { body: { description: "Edited" }, params: { code: "thinkiot-register-array" }, names: TARGET_NAME },
+  "mqttPayloadFormat.delete": { body: {}, params: { code: "thinkiot-register-array" }, names: TARGET_NAME },
 };

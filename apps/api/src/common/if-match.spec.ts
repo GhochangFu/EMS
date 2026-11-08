@@ -102,3 +102,10 @@ export function theAssetTemplateUpdateHandlerTakesIfMatch(): void {
 export function theEscalationProfileUpdateHandlerTakesIfMatch(): void {
   expect(handlerText("apps/api/src/notifications/escalation-profiles.controller.ts", "async update(")).toMatch(WIRED);
 }
+
+/** `F4.334` (Amendment 17 decision 1). Mutation: drop or misspell the decorator on the payload-format `update`. */
+export function thePayloadFormatUpdateHandlerTakesIfMatch(): void {
+  expect(
+    handlerText("apps/api/src/admin/mqtt-payload-formats/mqtt-payload-formats.controller.ts", "async update("),
+  ).toMatch(WIRED);
+}

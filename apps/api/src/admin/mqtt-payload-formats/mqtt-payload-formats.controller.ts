@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -15,6 +16,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
+import { parseIfMatchHeader } from "../../common/if-match";
 import { MqttPayloadFormatsAdminService } from "./mqtt-payload-formats.service";
 
 /**
@@ -51,8 +53,20 @@ export class MqttPayloadFormatsAdminController {
   }
 
   @Put(":code")
-  async update(@Param("code") code: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
-    return this.service.update(user, code, body);
+  async update(
+    @Param("code") code: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+    // `F4.334` (ADR 0099 Amendment 17 decision 1): the copilot's Confirm binds the
+    // edit to the `updatedAt` its card showed; absent, the write is unconditional.
+    @Headers("if-match") ifMatch?: string,
+  ) {
+    return this.service.update(
+      user,
+      code,
+      body,
+      parseIfMatchHeader(ifMatch),
+    );
   }
 
   @Delete(":code")

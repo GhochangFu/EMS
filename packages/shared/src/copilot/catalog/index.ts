@@ -10,6 +10,7 @@ import { DASHBOARD_ENTRIES } from "./dashboards";
 import { FILE_DATA_ENTRIES, FILE_DATA_PENDING } from "./file-data";
 import { KPI_ENTRIES } from "./kpis";
 import { LOCATION_TYPE_ENTRIES, LOCATION_TYPE_PENDING } from "./location-types";
+import { MQTT_PAYLOAD_FORMAT_ENTRIES, MQTT_PAYLOAD_FORMAT_PENDING } from "./mqtt-payload-formats";
 import { LOCATION_ENTRIES, LOCATION_PENDING } from "./locations";
 import { MAINTENANCE_ENTRIES } from "./maintenance";
 import { NOTIFICATION_ENTRIES, NOTIFICATION_PENDING } from "./notifications";
@@ -65,6 +66,8 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...FILE_DATA_ENTRIES,
   // F4.284 (ADR 0106): the alarm and work-order writes.
   ...OPERATIONS_ENTRIES,
+  // `F4.334` (ADR 0099 Amendment 17): the MQTT payload format catalog.
+  ...MQTT_PAYLOAD_FORMAT_ENTRIES,
 ];
 
 /**
@@ -73,27 +76,20 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
  * each with its own red Confirm. `F4.311` PR 3: ADR 0109 decision 6 widens
  * ruling 19 to a third removal (ADR 0099 Amendment 11 G4) — a standalone
  * calculated point, `calcPoint.delete`, whose target refuses a pinned asset,
- * so clearing an override through the same path stays manual. Every other
- * `DELETE` stays manual.
+ * so clearing an override through the same path stays manual. `F4.334`: ADR
+ * 0099 Amendment 17 decision 1 widens it to a fourth — a payload format
+ * (`mqttPayloadFormat.delete`), red, which the route refuses while any RTU or
+ * open draft names it. Every other `DELETE` stays manual.
  */
 export const DELETE_ALLOWANCE: readonly { readonly method: "DELETE"; readonly path: string }[] = [
   { method: "DELETE", path: "/admin/users/:id/grants/:kind/:grantId" },
   { method: "DELETE", path: "/admin/asset-group-members/:id" },
   { method: "DELETE", path: "/admin/assets/:assetId/calc-points/:pointKey" },
+  { method: "DELETE", path: "/admin/mqtt-payload-formats/:code" },
 ];
 
 const NO_DELETE = "a hard DELETE is never in the catalog (decision 3)";
 const COPILOT_OWN = "the copilot's own route: a proposal must never change the copilot itself";
-const AMENDMENT_17 = "copilot entry in ADR 0099 Amendment 17";
-
-/** `F4.334` — the routes Amendment 17 turns into entries at its build. */
-const MQTT_PAYLOAD_FORMAT_PENDING: readonly ExcludedRoute[] = [
-  { method: "POST", path: "/admin/mqtt-payload-formats", reason: AMENDMENT_17 },
-  { method: "PUT", path: "/admin/mqtt-payload-formats/:code", reason: AMENDMENT_17 },
-  { method: "DELETE", path: "/admin/mqtt-payload-formats/:code", reason: AMENDMENT_17 },
-  { method: "POST", path: "/admin/mqtt-payload-formats/test", reason: AMENDMENT_17 },
-  { method: "PUT", path: "/admin/rtus/:id/payload-format", reason: AMENDMENT_17 },
-];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */
 export const COPILOT_API_PREFIX = "/api/v1";
@@ -320,8 +316,7 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   // F4.281 (Amendment 8) excluded the maintenance convert; F4.284 (ADR 0106 Q6) made it an entry.
   // F4.283 (Amendment 8): the import preview runs inside the propose step; the image DELETE stays manual.
   ...FILE_DATA_PENDING,
-  // `F4.334` (ADR 0099 Amendment 17 decision 5): until that amendment's build (plan PR 5) moves
-  // them into catalog entries, the payload-format writes and the RTU format route are excluded.
+  // `F4.334` (ADR 0099 Amendment 17): only the test route stays out; the writes are entries.
   ...MQTT_PAYLOAD_FORMAT_PENDING,
 ];
 

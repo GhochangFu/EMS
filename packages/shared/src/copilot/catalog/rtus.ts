@@ -1,3 +1,4 @@
+import { setRtuPayloadFormatBodySchema } from "../../contracts/mqtt-payload-formats";
 import { createRtuBodySchema, updateRtuBodySchema } from "../../contracts/rtu-writes";
 import { emptyBody, fieldList, quoted, text, uuidParam } from "./summary-text";
 import type { CatalogEntry, ExcludedRoute } from "./types";
@@ -87,6 +88,31 @@ export const RTU_ENTRIES: readonly CatalogEntry[] = [
     formulas: [],
     steps: [],
     summary: ({ targetName }) => `Reactivate the RTU ${quoted(targetName)}.`,
+  },
+  {
+    // `F4.334` / ADR 0099 Amendment 17 decision 4: one step, since the RTU form holds no
+    // payload format field. One card per RTU, as for every per-row entry.
+    id: "rtu.setPayloadFormat",
+    title: "Set an RTU's payload format",
+    method: "PUT",
+    path: "/admin/rtus/:id/payload-format",
+    params: { id: uuidParam },
+    body: setRtuPayloadFormatBodySchema,
+    bodyName: "setRtuPayloadFormatBodySchema",
+    clientOnly: [],
+    risk: "edit",
+    target: RTU,
+    refs: [],
+    formulas: [],
+    steps: [{ id: "format", title: "Payload format", fields: ["payloadFormat"] }],
+    summary: ({ body, targetName, payloadFormat }) => {
+      const to = typeof body.payloadFormat === "string" ? body.payloadFormat : "the built-in ThinkIoT envelope";
+      const from = typeof payloadFormat === "string" ? payloadFormat : "the built-in ThinkIoT envelope";
+      return (
+        `Set the payload format of the RTU ${quoted(targetName)} from ${quoted(from)} to ${quoted(to)}. ` +
+        "Ingest decodes its messages with the new format from its next reload."
+      );
+    },
   },
 ];
 

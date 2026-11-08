@@ -67,7 +67,7 @@ describe("F3.85 PR 8 — the copilot action catalog (ADR 0099 decisions 2, 3, 6)
   it("parses every fixture body and path parameter", () => everyFixtureBodyAndPathParses());
   it("names the target in every summary", () => everySummaryNamesItsTarget());
   it("has unique ids and provider-safe tool names", () => idsAndToolNamesAreUniqueAndProviderSafe());
-  it("allows a DELETE only for the three removals", () => theOnlyDeleteEntriesAreTheThreeRemovals());
+  it("allows a DELETE only for the four removals", () => theOnlyDeleteEntriesAreTheThreeRemovals());
   it("declares one schema per path parameter", () => pathParamsAndTheirSchemasAgree());
   it("puts every body field in exactly one step", () => everyBodyFieldIsInExactlyOneStep());
   it("names body fields in refs and formulas", () => refsAndFormulasNameBodyFields());
@@ -132,7 +132,7 @@ describe("F3.87 PR 6 — the library, symbol and role entries (ADR 0099 Amendmen
 });
 
 describe("F4.247 — the If-Match precondition (ADR 0099 Amendment 5 C1)", () => {
-  it("flags exactly dashboard.widgets.replace, assetTemplate.update and escalationProfile.update", () =>
+  it("flags exactly dashboard.widgets.replace, assetTemplate.update, escalationProfile.update and mqttPayloadFormat.update", () =>
     exactlyTheThreeListWritesTakeAPrecondition());
 });
 

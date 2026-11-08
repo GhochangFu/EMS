@@ -17,6 +17,7 @@ import {
   type HierarchySelection,
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { RtuPayloadFormatWizard } from "../../components/admin/rtu-payload-format-wizard";
 import { RtuStatusWizard, RtuWizard } from "../../components/admin/rtu-wizards";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
@@ -46,6 +47,8 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
   const [error, setError] = useState<string | null>(null);
   /** `F3.86` PR 3a — the RTU whose deactivate or reactivate wizard is open. */
   const [statusTarget, setStatusTarget] = useState<AdminRtuDto | null>(null);
+  /** `F4.334` (plan T5.4) — the MQTT RTU whose payload format wizard is open. */
+  const [formatTarget, setFormatTarget] = useState<AdminRtuDto | null>(null);
 
   const locationSummaryQ = useQuery({
     queryKey: ["admin", "location-summary", locationId],
@@ -171,6 +174,10 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                     />
                     {/* F4.326 (ADR 0114 decision 6): `null` (no connection row) is not plain. */}
                     {item.tls === false ? <StatusPill label="Plain MQTT" tone="warning" /> : null}
+                    {/* F4.334: an MQTT row (`tls` not null) shows the format it decodes with. */}
+                    {item.tls !== null ? (
+                      <StatusPill label={`Payload format: ${item.payloadFormat ?? "thinkiot-envelope"}`} tone="info" />
+                    ) : null}
                   </div>
                 </td>
                 <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
@@ -193,6 +200,15 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                     >
                       {item.active ? "Deactivate" : "Reactivate"}
                     </button>
+                    {item.tls !== null ? (
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-ink-muted"
+                        onClick={() => setFormatTarget(item)}
+                      >
+                        Payload format
+                      </button>
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -213,6 +229,8 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
           onCancel={() => setModalOpen(false)}
         />
       ) : null}
+
+      {formatTarget ? <RtuPayloadFormatWizard rtu={formatTarget} onDone={() => setFormatTarget(null)} /> : null}
 
       {statusTarget ? (
         <RtuStatusWizard

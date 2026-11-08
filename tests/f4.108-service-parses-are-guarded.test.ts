@@ -148,6 +148,8 @@ const COPILOT_TOOL_FILES = {
   copilotListPointKeyStates: `${COPILOT_TOOLS}/list-point-key-states.tool.ts`,
   // `F4.315` PR A (ADR 0099 Amendment 14 decision 1): the asset template read tool, one parse.
   copilotListAssetTemplates: `${COPILOT_TOOLS}/list-asset-templates.tool.ts`,
+  // `F4.334` PR 5 (ADR 0099 Amendment 17 decision 2): the payload format read tool, one parse.
+  copilotListPayloadFormats: `${COPILOT_TOOLS}/list-payload-formats.tool.ts`,
 } as const;
 const HELPER = "apps/api/src/common/parse-stored-contract.ts";
 
@@ -627,7 +629,7 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         "inventory read tools, the site summary and the unruled read; F4.303 two in " +
         "report-render.service.ts, the stored template and params; F4.315 PR A one more, the " +
         "asset template read tool; F4.317 PR 4 one more, the organization template content in " +
-        "organization-layout.service.ts. " +
+        "organization-layout.service.ts; F4.334 PR 5 one more, the payload format read tool. " +
         "A site reverted to " +
         "a bare .parse() answers 400 under the filter, which is ruling 2's failure mode " +
         "exactly.",
@@ -677,8 +679,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       // site point inventory read tool; `F4.296`: + the site summary and the unruled rules read;
       // `F4.303`: + the render's stored template and params; `F4.309` PR 3: + the state-label read tool;
       // `F4.315` PR A: + the asset template read tool; `F4.317` PR 4: + the organization template
-      // content the organization-layout copy reads back.
-    ).toBe(56);
+      // content the organization-layout copy reads back; `F4.334` PR 5: + the payload format read tool.
+    ).toBe(57);
 
     const callSites = [
       STOCK_SERVICE,

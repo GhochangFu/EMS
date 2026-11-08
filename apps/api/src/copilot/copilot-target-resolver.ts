@@ -44,6 +44,7 @@ import { APPEND_CHART_ENTRY_ID, appendChartTabRefusal } from "./copilot-append-c
 import { findConfigurationAsset, readAssetGroupMemberTarget, readAssetTarget } from "./copilot-asset-targets";
 import { assetKindAdmits, findCalcPointBatch, mayWriteCalcPointBatch } from "./copilot-calc-point-targets";
 import { findRuleBatch } from "./copilot-rule-targets";
+import { readPayloadFormatTarget, readRtuPayloadFormat } from "./copilot-payload-format-targets";
 import { pointKeyStateName, readPointKeyState, seededAtPropose, seededPointKeyStateRefusal } from "./copilot-point-key-state-targets";
 import { lifecycleStatusOf, refKindOf } from "./copilot-target-kinds";
 import { CopilotTargetRefusal, mayWriteTelemetry, telemetryRowRefusal } from "./copilot-telemetry-targets";
@@ -64,8 +65,10 @@ export type ResolvedTarget = {
   readonly currentContent?: Readonly<Record<string, unknown>>;
   /** `F3.86` PR 4, `userGrantAdd` and `userGrant`: the grant target's name, for the summary. */
   readonly refName?: string;
-  /** `F4.282`: `vocabulary` targets of `locationType` — how many locations in the turn's organizations use the type. */
+  /** `F4.282`: `vocabulary` targets of `locationType` (locations) and `mqttPayloadFormat` (RTUs) — the turn's count. */
   readonly usageCount?: number;
+  /** `F4.334` (Amendment 17 decision 4): an `rtu` target's payload format now, `null` for the built-in. */
+  readonly payloadFormat?: string | null;
   /** Template targets: the version's lifecycle status, for the propose tool's lifecycle mirror (`F4.246`). */
   readonly status?: TemplateLifecycleStatus;
   /**
@@ -153,6 +156,7 @@ type Found = {
   status?: TemplateLifecycleStatus;
   updatedAt?: string;
   usageCount?: number;
+  payloadFormat?: string | null;
   lifecycle?: string;
   /** `F4.280`: `reportSchedule` — the locations the schedule is stamped with (the verdict's input). */
   locationIds?: readonly string[];
@@ -349,6 +353,7 @@ export class CopilotTargetResolver implements CopilotTargets {
       ...(found.status !== undefined ? { status: found.status } : {}),
       ...(found.updatedAt !== undefined ? { updatedAt: found.updatedAt } : {}),
       ...(found.usageCount !== undefined ? { usageCount: found.usageCount } : {}),
+      ...(found.payloadFormat !== undefined ? { payloadFormat: found.payloadFormat } : {}),
       ...(found.lifecycle !== undefined ? { lifecycle: found.lifecycle } : {}),
       ...(found.alarm ? { alarm: found.alarm } : {}),
       ...(found.workOrder ? { workOrder: found.workOrder } : {}),
@@ -436,11 +441,13 @@ export class CopilotTargetResolver implements CopilotTargets {
    * the organization it counted (`locationType.deactivate`'s summary).
    */
   private async vocabularyRow(
-    of: "locationType" | "assetRole",
+    of: "locationType" | "assetRole" | "mqttPayloadFormat",
     code: string,
     allowedOrganizationIds: readonly string[],
     organizationId: string,
   ): Promise<Found | null> {
+    // F4.334 (Amendment 17): a payload format, with its edit stamp and the RTU count in scope.
+    if (of === "mqttPayloadFormat") return readPayloadFormatTarget(this.tenantDb, code, allowedOrganizationIds, organizationId);
     if (of === "assetRole") {
       const [role] = await this.tenantDb.select({ label: assetRoles.label }).from(assetRoles).where(eq(assetRoles.code, code)).limit(1);
       return role ? { organizationId, name: role.label } : null;
@@ -527,7 +534,8 @@ export class CopilotTargetResolver implements CopilotTargets {
           .from(rtus)
           .where(and(eq(rtus.id, id), eq(rtus.organizationId, organizationId)))
           .limit(1);
-        return row ? { organizationId, name: row.name, locationId: row.locationId } : null;
+        // F4.334 (Amendment 17 decision 4): the format now, for `rtu.setPayloadFormat`'s card.
+        return row ? { organizationId, name: row.name, locationId: row.locationId, payloadFormat: await readRtuPayloadFormat(tx, id) } : null;
       }
       case "assetGroup": {
         const [row] = await tx

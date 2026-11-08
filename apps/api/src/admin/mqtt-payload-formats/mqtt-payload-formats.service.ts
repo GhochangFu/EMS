@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { ZodError } from "zod";
 
 import { mqttPayloadFormats } from "@bms/db";
@@ -19,6 +19,7 @@ import {
 } from "@bms/shared";
 import type {
   DeleteMqttPayloadFormatConflict,
+  IfMatch,
   JwtPayload,
   MqttPayloadFormatDefinition,
   MqttPayloadFormatDto,
@@ -27,7 +28,9 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { FLEET_DRIZZLE } from "../../database/database.tokens";
+import { noRowWritten, updatedAtMatches } from "../../common/if-match";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { translateConstraintErrors } from "../../database/translate-constraint-errors";
 import { MasterDataAuditService } from "../master-data-audit.service";
 
@@ -63,6 +66,8 @@ export class MqttPayloadFormatsAdminService {
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    // `F4.334` PR 5: the tenant pool, for the copilot's RTU counts (`rtu_connection_configs` is FORCE RLS).
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
   ) {}
 
   /** Every format, built-in first, then by code. */
@@ -116,7 +121,8 @@ export class MqttPayloadFormatsAdminService {
     return mapRow(created);
   }
 
-  async update(jwt: JwtPayload, code: string, input: unknown): Promise<MqttPayloadFormatDto> {
+  /** `ifMatch` (Amendment 17 decision 1): the row's `updatedAt` the copilot card showed; a mismatch is 412. */
+  async update(jwt: JwtPayload, code: string, input: unknown, ifMatch?: IfMatch): Promise<MqttPayloadFormatDto> {
     const userId = await this.requireGlobalAdmin(jwt);
     const key = parseCode(code);
     const body = parseBody(updateMqttPayloadFormatBodySchema.safeParse(input));
@@ -132,10 +138,15 @@ export class MqttPayloadFormatsAdminService {
       const [row] = await tx
         .update(mqttPayloadFormats)
         .set({ ...body, updatedAt: new Date(), updatedBy: userId })
-        .where(sql`${mqttPayloadFormats.code} = ${key} AND ${mqttPayloadFormats.builtin} = false`)
+        .where(
+          and(
+            sql`${mqttPayloadFormats.code} = ${key} AND ${mqttPayloadFormats.builtin} = false`,
+            updatedAtMatches(mqttPayloadFormats.updatedAt, ifMatch),
+          ),
+        )
         .returning();
       if (!row) {
-        throw new NotFoundException("Payload format not found");
+        throw noRowWritten(ifMatch, "Payload format not found");
       }
       await this.audit.write(
         {
@@ -197,6 +208,38 @@ export class MqttPayloadFormatsAdminService {
     await this.requireGlobalAdmin(jwt);
     const body = parseBody(testMqttPayloadFormatBodySchema.safeParse(input));
     return testResponse(decodeMqttPayload(body.definition, body.topic, body.sample));
+  }
+
+  /**
+   * `F4.334` PR 5 (ADR 0099 Amendment 17 decision 2) — how many RTUs name each format, counted
+   * **only** inside `organizationIds`: one `withTenant` read per organization on the tenant pool,
+   * so Row Level Security bounds each count and no fleet-wide read is made. Global admin only.
+   * Reads `config->>'payloadFormat'` alone — never a credential column. Returns the counts by
+   * code (a code no RTU names is absent) and the organizations counted.
+   */
+  async rtuCountsInOrganizations(
+    jwt: JwtPayload,
+    organizationIds: readonly string[],
+  ): Promise<{ counts: Record<string, number>; organizationIds: string[] }> {
+    await this.requireGlobalAdmin(jwt);
+    // A Map, not an object: a code such as `constructor` must not meet the prototype.
+    const counts = new Map<string, number>();
+    const counted: string[] = [];
+    for (const organizationId of organizationIds) {
+      const result = await withTenant(this.tenantDb, organizationId, (tx) =>
+        tx.execute(sql`
+          SELECT c.config->>'payloadFormat' AS code, count(*)::int AS rtus
+            FROM bms.rtu_connection_configs c
+           WHERE c.organization_id = ${organizationId}
+             AND c.config->>'payloadFormat' IS NOT NULL
+           GROUP BY 1`),
+      );
+      for (const row of rowsOf<{ code: string; rtus: number }>(result)) {
+        counts.set(row.code, (counts.get(row.code) ?? 0) + Number(row.rtus));
+      }
+      counted.push(organizationId);
+    }
+    return { counts: Object.fromEntries(counts), organizationIds: counted };
   }
 
   /** The RTUs and open drafts that name `code`, on the fleet pool (it reads every organization). */
