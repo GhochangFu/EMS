@@ -325,6 +325,9 @@ export type WidgetConfigRow = {
   // mimic — `F3.74` (OQ9). `config.compact`: labels, switches and pills only. The preset arm's
   // field alone (the layout arm's schema has none). Absent is false and is written back absent.
   mimicCompact?: boolean;
+  // mimic — `F4.344` (ADR 0120 decision 5). `config.motion`, the glyph motion switch, on both arms.
+  // Absent and `true` are on; only `false` is stored (plan R7).
+  mimicMotion?: boolean;
   // active_alarms_rail — `F3.73` (plan D9). Optional, the mimic idiom above, because
   // `template-dashboard-form.ts` builds this row as a literal and a template can never hold a site
   // widget. Absent `railRows` reads as the contract's default (8) and absent `railShowSummary` as true;
@@ -730,6 +733,7 @@ export function buildMimicConfig(config: WidgetConfigRow): MimicConfig {
       source: "layout",
       layoutId: config.mimicLayoutId,
       ...(config.mimicTabKey !== undefined ? { tabKey: config.mimicTabKey } : {}),
+      ...(config.mimicMotion === false ? { motion: false } : {}),
     };
   }
   if (config.mimicPreset === undefined) {
@@ -740,6 +744,7 @@ export function buildMimicConfig(config: WidgetConfigRow): MimicConfig {
     preset: config.mimicPreset,
     ...(config.mimicTabKey !== undefined ? { tabKey: config.mimicTabKey } : {}),
     ...(config.mimicCompact === true ? { compact: true } : {}),
+    ...(config.mimicMotion === false ? { motion: false } : {}),
   };
 }
 

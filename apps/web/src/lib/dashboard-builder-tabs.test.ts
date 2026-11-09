@@ -19,6 +19,7 @@ import {
   runMimicOfferedOnAGroupTabTests,
   runMimicResolvesThroughItsTabKeyTests,
   runMimicTabKeyAndCompactRoundTripTests,
+  runMimicMotionRoundTripTests,
   runMimicTabKeyIsDroppedOnAGroupTabTests,
   runNewMimicDefaultsItsTabKeyTests,
 } from "./dashboard-builder-tabs.spec";
@@ -91,6 +92,9 @@ describe("F3.73 D11 dashboard builder tabs", () => {
 
   it("a mimic's tabKey and compact round-trip through the payload and the DTO (F3.74)", () => {
     runMimicTabKeyAndCompactRoundTripTests();
+  });
+  it("F4.344 the glyph motion switch round-trips: only false is stored, on both arms", () => {
+    runMimicMotionRoundTripTests();
   });
 
   it("a mimic on a group-bound tab saves no stale tabKey (F3.74 review 7b)", () => {

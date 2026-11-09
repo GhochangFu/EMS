@@ -414,3 +414,40 @@ export function runRemovingATabRemovesItsWidgetsTests(): void {
   const stray = removeBuilderTab({ tabs: [tabWrite("overview", 0)], rows: [onTab("gone")] }, 0);
   assert(stray.rows.length === 1 && !("tabKey" in stray.rows[0]!), "with no tab left, no widget keeps a tabKey");
 }
+
+/**
+ * `F4.344` (ADR 0120 decision 5, plan R7) — the glyph motion switch round-trips: a row with
+ * `mimicMotion: false` writes `motion: false` on both arms; `true` and absent write nothing; a
+ * stored `motion: false` reads back as `mimicMotion: false`, and a stored widget without it reads
+ * `undefined`. Mutation: drop the layout arm's spread => red.
+ */
+export function runMimicMotionRoundTripTests(): void {
+  const configOf = (row: ReturnType<typeof mimicOnOverview>): Record<string, unknown> =>
+    buildPutWidgetsPayload([row], []).widgets[0]!.config as Record<string, unknown>;
+  const preset = mimicOnOverview("electrical");
+  preset.config.mimicMotion = false;
+  assert(configOf(preset).motion === false, `the preset arm writes motion false — got ${JSON.stringify(configOf(preset))}`);
+  const layout = mimicOnOverview("electrical");
+  layout.config.mimicSource = "layout";
+  layout.config.mimicLayoutId = "77777777-7777-4777-8777-777777777777";
+  layout.config.mimicMotion = false;
+  assert(configOf(layout).motion === false, `the layout arm writes motion false — got ${JSON.stringify(configOf(layout))}`);
+  for (const value of [true, undefined]) {
+    for (const row of [mimicOnOverview("electrical"), layout]) {
+      row.config.mimicMotion = value;
+      assert(!("motion" in configOf(row)), `motion ${String(value)} is written absent — got ${JSON.stringify(configOf(row))}`);
+    }
+  }
+
+  const dtoWith = (config: Record<string, unknown>) =>
+    ({
+      tabs: [{ id: "t1", key: "overview", label: "Overview", sortOrder: 0, assetGroupId: null }],
+      widgets: [
+        { id: "w1", tabId: "t1", widgetType: "mimic", title: null, gridX: 0, gridY: 0, gridW: 12, gridH: 6, points: [], sources: [], config },
+      ],
+    }) as unknown as Parameters<typeof dashboardRowsFromDto>[0];
+  const off = dashboardRowsFromDto(dtoWith({ source: "layout", layoutId: "77777777-7777-4777-8777-777777777777", motion: false }))[0]!;
+  assert(off.config.mimicMotion === false, `a stored motion false reads back — got ${JSON.stringify(off.config)}`);
+  const on = dashboardRowsFromDto(dtoWith({ source: "preset", preset: "lv_single_line" }))[0]!;
+  assert(on.config.mimicMotion === undefined, `a stored widget without motion reads undefined — got ${JSON.stringify(on.config)}`);
+}
