@@ -11,6 +11,7 @@ import {
   type ToolOutcome,
 } from "../../llm/tool-result";
 import { exceedsDepth } from "../stack-safe-json";
+import type { CredentialCopyProposal } from "./onboarding-credential-copy-state";
 import { draftCountProblem } from "./onboarding-draft-caps";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { DRAFT_TOO_DEEP_MESSAGE, MAX_ONBOARDING_DRAFT_DEPTH, type OnboardingDraftInput } from "./onboarding.schema";
@@ -27,7 +28,7 @@ import { DRAFT_TOO_DEEP_MESSAGE, MAX_ONBOARDING_DRAFT_DEPTH, type OnboardingDraf
  * stays unchanged.
  */
 export { fail, issuesOf, succeed, toolResultContent, TOOL_LIST_MAX_ITEMS, TOOL_RESULT_CUT_TAIL, TOOL_RESULT_MAX_CHARS };
-export type { ToolOutcome };
+export type { CredentialCopyProposal, ToolOutcome };
 
 /**
  * `F4.135` (ADR 0090 Amendment 4): the prefix of a refused draft write's
@@ -73,6 +74,8 @@ export type ToolState = {
   suggestedReplies?: string[];
   /** F3.24b: the last `propose_discovery` of the turn; a later write drops it, as it drops `pendingProposal`. */
   pendingDiscovery?: DiscoveryProposal;
+  /** F4.339 PR 9 (ADR 0099 Amendment 18): the last `propose_credential_copy` of the turn; a later write drops it too. */
+  pendingCredentialCopy?: CredentialCopyProposal;
   /**
    * F3.24b (security review H2): set once `get_discovery_results` returned
    * wire data in this turn. From then on only the scoped writes run
@@ -107,6 +110,7 @@ export function write(state: ToolState, patch: OnboardingDraftInput, actionLine:
   state.working = next;
   state.pendingProposal = undefined;
   state.pendingDiscovery = undefined;
+  state.pendingCredentialCopy = undefined;
   return succeed(result, actionLine);
 }
 

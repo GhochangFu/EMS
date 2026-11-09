@@ -20,7 +20,7 @@
  */
 
 /** The code-written action-line shapes, matched at the start of a line (bullets and `**` stripped). */
-const LINE_CLAIM = /^(?:Added|Mapped|Updated|Removed|Set location|Proposed (?:commit|discovery)|Imported|Cleared|Declared|Point keys:)(?![A-Za-z0-9])/;
+const LINE_CLAIM = /^(?:Added|Mapped|Updated|Removed|Set location|Proposed (?:commit|discovery|credential copy)|Imported|Cleared|Declared|Point keys:)(?![A-Za-z0-9])/;
 
 /**
  * Claims in prose, matched per sentence. Code review of PR 1: the perfect tense
@@ -100,6 +100,7 @@ const TOOL_HINTS: ReadonlyArray<readonly [RegExp, string]> = [
   [/^Set location\b/, "set_location"],
   [/^Proposed commit\b/, "propose_commit"],
   [/^Proposed discovery\b/, "propose_discovery"],
+  [/^Proposed credential copy\b/, "propose_credential_copy"],
 ];
 
 function hintedTool(reply: string): string {

@@ -18,12 +18,14 @@ import { z, type ZodTypeAny } from "zod";
 
 import { checkPort, isBlockedHostname } from "../../onboarding-discovery/discovery-host-guard";
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
+import { attachCredentialCopyProposal } from "./onboarding-credential-copy-state";
 import { attachDiscoveryProposal, discoveryIsBusy, readStoredDiscovery } from "./onboarding-discovery-state";
 import { copyEncryptedCredentials, readEncryptedCredentials, rtuSecretKey } from "./onboarding-redaction";
 import {
   fail,
   succeed,
   TOOL_LIST_MAX_ITEMS,
+  type CredentialCopyProposal,
   type DiscoveryProposal,
   type DiscoverySecretCopy,
   type ToolOutcome,
@@ -421,13 +423,17 @@ function paged<T>(items: readonly T[], name: "devices" | "keys", offset: number)
 /**
  * `F3.24b` — what a finished agent turn hands `OnboardingService.chat` for the
  * draft it stores: the proposal, stamped with the time, and the credential
- * copies. Each copy is **checked again** against `draft` (the merged draft
+ * copies (and, since `F4.339` PR 9, the credential-copy proposal). Each copy is **checked again** against `draft` (the merged draft
  * about to be stored), so a copy applies only while the target still is a
  * discovered device on the source broker and has no credential of its own.
  */
 export function applyDiscoveryTurn<T>(
   draft: T,
-  turn: { readonly discoveryProposal?: DiscoveryProposal; readonly secretCopies?: readonly DiscoverySecretCopy[] },
+  turn: {
+    readonly discoveryProposal?: DiscoveryProposal;
+    readonly secretCopies?: readonly DiscoverySecretCopy[];
+    readonly credentialCopyProposal?: CredentialCopyProposal;
+  },
   nowIso: string,
 ): T {
   let next: unknown = draft;
@@ -442,6 +448,10 @@ export function applyDiscoveryTurn<T>(
   }
   if (turn.discoveryProposal && typeof next === "object" && next !== null) {
     next = attachDiscoveryProposal(next, { ...turn.discoveryProposal, proposedAt: nowIso });
+  }
+  // F4.339 PR 9 (ADR 0099 Amendment 18): the credential-copy proposal, stored the same way.
+  if (turn.credentialCopyProposal && typeof next === "object" && next !== null) {
+    next = attachCredentialCopyProposal(next, { ...turn.credentialCopyProposal, proposedAt: nowIso });
   }
   return next as T;
 }

@@ -1,6 +1,7 @@
 import type { OnboardingDraft } from "@bms/shared";
 
 import { cloneJson, rebuildDeep } from "../stack-safe-json";
+import { CREDENTIAL_COPY_PROPOSAL_KEY } from "./onboarding-credential-copy-state";
 import { DISCOVERY_KEY, DISCOVERY_PROPOSAL_KEY } from "./onboarding-discovery-state";
 import { brokerOf, isMqttBroker, sameBroker, type MqttBroker } from "./onboarding-mqtt-broker";
 
@@ -297,6 +298,8 @@ export function redactDraftForClient(draft: unknown): OnboardingDraft {
   // discovery proposal is server state as the commit proposal is.
   delete (copy as Record<string, unknown>)[DISCOVERY_KEY];
   delete (copy as Record<string, unknown>)[DISCOVERY_PROPOSAL_KEY];
+  // F4.339 PR 9 (ADR 0099 Amendment 18): the credential-copy proposal is server state too.
+  delete (copy as Record<string, unknown>)[CREDENTIAL_COPY_PROPOSAL_KEY];
   if (copy.location) {
     copy.location = scrubMeta(copy.location);
   }
