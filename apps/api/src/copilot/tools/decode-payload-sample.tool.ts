@@ -1,4 +1,8 @@
-import { mqttPayloadFormatDefinitionSchema } from "@bms/shared";
+import {
+  MQTT_PAYLOAD_FORMAT_SAMPLE_ENCODINGS,
+  hexToBytes,
+  mqttPayloadFormatDefinitionSchema,
+} from "@bms/shared";
 import type { TestMqttPayloadFormatResponse } from "@bms/shared";
 import { z, type ZodError, type ZodIssue } from "zod";
 
@@ -9,6 +13,9 @@ import { COPILOT_PAYLOAD_FORMATS_ROLE_REFUSAL } from "./list-payload-formats.too
 
 /** ADR 0099 Amendment 17 decision 3 (ruling Q3): the largest sample the tool takes, 16 KiB. */
 export const DECODE_PAYLOAD_SAMPLE_MAX = 16_384;
+
+/** `F4.343` (ADR 0119 decision 5): a hex sample that is not hex; it names no byte of it. */
+export const DECODE_PAYLOAD_SAMPLE_NOT_HEX = "The sample is not hex.";
 
 /** The most schema issues one answer carries. */
 const ISSUES_MAX = 20;
@@ -28,21 +35,27 @@ const ISSUES_MAX = 20;
  * decoded; the answer is `decoded` with the device keys, times and readings, or the decoder's
  * fixed `reason`. The records are fitted to the tool-result budget (`truncated`). No tenant data
  * is read, so it names no organization.
+ *
+ * `F4.343` (ADR 0119 decision 5): `encoding: "hex"` reads the sample as hex bytes for a `binary`
+ * format, the test route's twin; a sample that is not hex is refused with a fixed sentence before
+ * any decode. Absent, the sample is text, as before.
  */
 export const decodePayloadSampleTool = defineReadTool({
   name: "decode_payload_sample",
   description:
-    "Decode a pasted MQTT sample with a payload format definition; stores nothing. Answers the readings or the definition's issues. Global admin only.",
+    "Decode a pasted MQTT sample with a payload format definition; stores nothing. The sample is text (JSON) or, with encoding \"hex\", hex bytes (binary formats). Answers the readings or the definition's issues. Global admin only.",
   schema: z
     .object({
       definition: z.record(z.unknown()),
       sample: z.string().max(DECODE_PAYLOAD_SAMPLE_MAX),
       topic: z.string().max(255).optional(),
+      encoding: z.enum(MQTT_PAYLOAD_FORMAT_SAMPLE_ENCODINGS).optional(),
     })
     .strict(),
   async run({ mqttPayloadFormats }, args, ctx) {
     if (ctx.identity.role !== "admin") return { ok: false, error: COPILOT_PAYLOAD_FORMATS_ROLE_REFUSAL };
     if (args.sample.length > DECODE_PAYLOAD_SAMPLE_MAX) return { ok: false, error: "The sample is longer than 16 KiB." };
+    if (args.encoding === "hex" && hexToBytes(args.sample) === null) return { ok: false, error: DECODE_PAYLOAD_SAMPLE_NOT_HEX };
     const parsed = mqttPayloadFormatDefinitionSchema.safeParse(args.definition);
     if (!parsed.success) {
       return { ok: true, result: { valid: false, issues: fixedIssues(parsed.error) }, organizationIds: [] };
@@ -51,6 +64,7 @@ export const decodePayloadSampleTool = defineReadTool({
       definition: parsed.data,
       topic: args.topic ?? "",
       sample: args.sample,
+      ...(args.encoding === undefined ? {} : { encoding: args.encoding }),
     });
     return fitDecode(response);
   },
