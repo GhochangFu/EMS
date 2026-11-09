@@ -1,11 +1,53 @@
+import plugin from "tailwindcss/plugin";
+
+/*
+ * `F4.341` (ADR 0118 decision 3, plan `docs/plans/f4.341-selectable-design-systems.md` D1/D8) —
+ * the type, weight, case and spacing utilities emit design tokens instead of literals. The token
+ * values live in `src/index.css`'s `html`-keyed design blocks; the `nexus-soft` base equals
+ * Tailwind's defaults (and today's weight and case), so the emitted CSS computes to the same
+ * pixels. `tests/f4.341-design-tokens.test.ts` DT1–DT3 and DT5 hold the remap and the equality.
+ */
+
+/** The text steps that carry a line height; `3xs` and `2xs` set the size only, as the arbitrary sizes they replace did. */
+const TEXT_STEPS = ["xs", "sm", "base", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl"];
+
+/** Spacing steps 1…8 read `--space-N`; the half steps are the midpoints of their neighbours. */
+const SPACE_TOKENS = {
+  0.5: "calc(var(--space-1) / 2)",
+  1: "var(--space-1)",
+  1.5: "calc((var(--space-1) + var(--space-2)) / 2)",
+  2: "var(--space-2)",
+  2.5: "calc((var(--space-2) + var(--space-3)) / 2)",
+  3: "var(--space-3)",
+  4: "var(--space-4)",
+  5: "var(--space-5)",
+  6: "var(--space-6)",
+  7: "var(--space-7)",
+  8: "var(--space-8)",
+};
+
+/** `padding`, `gap` and `space-*` start from the stock spacing scale; margins and sizes keep it as is. */
+const tokenSpacing = ({ theme }) => ({ ...theme("spacing"), ...SPACE_TOKENS });
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  // D8: the core `uppercase` utility is replaced by a token-driven one (the plugin below), so a
+  // design system decides whether a label is in capitals. The other three keep their values.
+  corePlugins: { textTransform: false },
   // `docs/plans/f3.65a-colour-tokens.md` §3 D5 (plan OQ8): a selector-driven dark mode, never
   // `prefers-color-scheme`, so a stray `dark:` class can never follow the OS setting — the gate
   // in `tests/f3.65-colour-roles-gate.test.ts` forbids the class itself (0 today).
   darkMode: ["selector", '[data-theme="dark"]'],
   theme: {
+    fontSize: {
+      "3xs": "var(--text-3xs)",
+      "2xs": "var(--text-2xs)",
+      ...Object.fromEntries(TEXT_STEPS.map((k) => [k, [`var(--text-${k})`, { lineHeight: `var(--leading-${k})` }]])),
+    },
+    padding: tokenSpacing,
+    gap: tokenSpacing,
+    space: tokenSpacing,
     // `F3.65c` (plan `docs/plans/f3.65c-charts-schematics-switch.md` D9): `colors` *replaces*
     // Tailwind's palette rather than extending it, so no stock family (`gray-200`, `white` …) and
     // no `bms-*` shade emits a class — the only colours are the roles and three CSS keywords.
@@ -104,6 +146,14 @@ export default {
       "series-8": "rgb(var(--series-8) / <alpha-value>)",
     },
     extend: {
+      fontWeight: {
+        bold: "var(--weight-bold)",
+        semibold: "var(--weight-semibold)",
+      },
+      letterSpacing: {
+        wide: "var(--caps-tracking-wide)",
+        wider: "var(--caps-tracking-wider)",
+      },
       // F3.65b review: preflight's `border-color` on every element and the `--tw-ring-offset-color`
       // default were stock literals (`#E5E7EB`, `#fff`), so a bare `border` / `divide-y` /
       // `ring-offset-*` stayed light in dark. They now read `line` and `surface` — light values
@@ -134,5 +184,14 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    plugin(({ addUtilities }) => {
+      addUtilities({
+        ".uppercase": { "text-transform": "var(--caps-transform)" },
+        ".lowercase": { "text-transform": "lowercase" },
+        ".capitalize": { "text-transform": "capitalize" },
+        ".normal-case": { "text-transform": "none" },
+      });
+    }),
+  ],
 };
