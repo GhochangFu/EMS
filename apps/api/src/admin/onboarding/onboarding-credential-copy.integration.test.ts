@@ -164,7 +164,7 @@ describe.skipIf(!connectionString)("F4.339 — the onboarding credential copy (r
       committedRtu: async (own: boolean) => {
         n += 1;
         const loc = await fleetPool.query<{ id: string; organization_id: string }>(
-          `SELECT id, organization_id FROM bms.locations WHERE ${own ? "organization_id = $1" : "organization_id <> $1"} LIMIT 1`,
+          `SELECT id, organization_id FROM bms.locations WHERE ${own ? "organization_id = $1" : "organization_id <> $1"} AND active = true ORDER BY created_at, code LIMIT 1`,
           [organizationId],
         );
         if (!loc.rows[0]) throw new Error("F4.339: the seed has no location for this case — run pnpm db:seed.");
