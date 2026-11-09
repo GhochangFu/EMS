@@ -7,6 +7,7 @@ import {
   startOnboardingDiscoveryResponseDtoSchema,
 } from "@bms/shared/contracts";
 import type {
+  CopyOnboardingCredentialsBody,
   OnboardingChatResponseDto,
   OnboardingCommitResponseDto,
   OnboardingDraftListDto,
@@ -94,6 +95,21 @@ export async function rollbackOnboardingSession(
  * server refuses a turn that looks like it carries one, because the transcript
  * is persisted and previously reached the LLM.
  */
+/**
+ * `F4.339` (ADR 0117 decision 7): copies one RTU's stored credential to draft RTUs
+ * on the same broker. No secret in the body or the answer (ADR 0022).
+ */
+export async function copyOnboardingCredentials(
+  sessionId: string,
+  body: CopyOnboardingCredentialsBody,
+): Promise<OnboardingSessionDto> {
+  return adminFetch(`/admin/onboarding/sessions/${sessionId}/credentials/copy`, onboardingSessionDtoSchema, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export async function setOnboardingCredentials(
   sessionId: string,
   rtuIndex: number,

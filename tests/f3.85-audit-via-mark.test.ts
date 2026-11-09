@@ -161,6 +161,12 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     route: { method: "POST", path: "/admin/onboarding/sessions/:id/unlock" },
     auditMethods: ["unlock"],
   },
+  // `F4.339` (ADR 0117 decision 7): the credential copy — a credential route, excluded until Amendment 18.
+  {
+    file: "apps/api/src/admin/onboarding/onboarding-credential-copy.service.ts",
+    route: { method: "POST", path: "/admin/onboarding/sessions/:id/credentials/copy" },
+    auditMethods: ["copy"],
+  },
 ];
 
 /** Directories whose write routes the release-1 catalog covers; no file in them may insert into the audit log itself. */
