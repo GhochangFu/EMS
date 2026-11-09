@@ -33,6 +33,7 @@ function item(over: Partial<OnboardingDraftSummaryDto>): OnboardingDraftSummaryD
     createdAt: "2026-10-13T00:00:00.000Z",
     updatedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
     createdBy: { id: ME, displayName: "Me" },
+    locked: false,
     ...over,
   };
 }

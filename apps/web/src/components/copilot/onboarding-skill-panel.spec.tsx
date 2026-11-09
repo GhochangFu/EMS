@@ -53,6 +53,7 @@ function session(overrides: Partial<OnboardingSessionDto> = {}): OnboardingSessi
     checkpoints: [],
     draftHash: HASH,
     discovery: null,
+    lock: null,
     ...overrides,
   };
 }

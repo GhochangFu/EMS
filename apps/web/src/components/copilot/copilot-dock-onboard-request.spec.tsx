@@ -52,6 +52,7 @@ function skillState(): CopilotSkillStateDto {
       checkpoints: [],
       draftHash: "a".repeat(64),
       discovery: null,
+      lock: null,
     },
     suggestedReplies: [],
     validationErrors: [],
@@ -269,6 +270,7 @@ const ONE_DRAFT: OnboardingDraftListDto = {
       createdAt: "2026-10-13T00:00:00.000Z",
       updatedAt: "2026-10-13T00:00:00.000Z",
       createdBy: { id: "u1", displayName: "organization_admin" },
+      locked: false,
     },
   ],
 };

@@ -44,6 +44,7 @@ function sessionDto(status: OnboardingSessionDto["status"], messages: Onboarding
     checkpoints: [],
     draftHash: null,
     discovery: null,
+    lock: null,
   };
 }
 

@@ -66,6 +66,7 @@ function session(messages: OnboardingChatMessage[]): OnboardingSessionDto {
     checkpoints: [],
     draftHash: HASH,
     discovery: null,
+    lock: null,
   };
 }
 

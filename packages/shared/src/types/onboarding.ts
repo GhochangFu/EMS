@@ -9,4 +9,7 @@ import type { z } from "zod";
 import type * as C from "../contracts/onboarding";
 
 export type OnboardingDraftSummaryDto = z.infer<typeof C.onboardingDraftSummaryDtoSchema>;
+/** `F4.339` (ADR 0117 decision 9). */
+export type LockOnboardingSessionBody = z.infer<typeof C.lockOnboardingSessionBodySchema>;
+export type OnboardingSessionLockDto = NonNullable<z.infer<typeof C.onboardingSessionDtoSchema>["lock"]>;
 export type OnboardingDraftListDto = z.infer<typeof C.onboardingDraftListDtoSchema>;
