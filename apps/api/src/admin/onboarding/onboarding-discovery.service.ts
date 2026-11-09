@@ -31,7 +31,7 @@ import { MQTT_PLAINTEXT_ALLOWLIST } from "../../security/mqtt-plaintext-hosts";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { discoveryIsBusy, readStoredDiscovery } from "./onboarding-discovery-state";
 import { OnboardingDiscoveryStore } from "./onboarding-discovery-store";
-import { SESSION_NO_LONGER_DRAFT } from "./onboarding-locked-writes";
+import { assertSessionUnlocked, SESSION_NO_LONGER_DRAFT } from "./onboarding-locked-writes";
 import { readEncryptedCredentials, rtuSecretKey } from "./onboarding-redaction";
 import { OnboardingService } from "./onboarding.service";
 
@@ -115,6 +115,8 @@ export class OnboardingDiscoveryService {
     if (session.status !== "draft") {
       throw new ForbiddenException("Session is not editable");
     }
+    // F4.339 (ADR 0117 decision 9, R12): a locked draft starts no discovery; one already running may finish.
+    assertSessionUnlocked(session);
     if (!parsed.success) {
       if (parsed.error.issues.some((issue) => issue.path[0] === "topicPrefix")) {
         await this.store.inTenant(session.organizationId, async (tx) => {

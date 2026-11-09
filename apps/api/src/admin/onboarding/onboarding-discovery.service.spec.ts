@@ -22,7 +22,7 @@ import {
   DISCOVERY_TARGET_CHANGED,
   OnboardingDiscoveryService,
 } from "./onboarding-discovery.service";
-import { SESSION_NO_LONGER_DRAFT } from "./onboarding-locked-writes";
+import { lockedSessionMessage, SESSION_NO_LONGER_DRAFT } from "./onboarding-locked-writes";
 
 /**
  * `F3.24b` U3 (ADR 0103 decisions 2, 5, 7 and 9; the security review's H3,
@@ -95,6 +95,8 @@ export type Options = {
   draft?: Record<string, unknown>;
   status?: string;
   lockedStatus?: string;
+  /** F4.339: the loaded session's lock reason (null = unlocked). */
+  lockReason?: string | null;
   elsewhere?: unknown[];
   queue?: "configured" | "unconfigured" | "throws";
   notFound?: boolean;
@@ -115,7 +117,7 @@ export function harness(options: Options = {}): Harness {
       state.loaded += 1;
       events.push("load");
       if (options.notFound) throw new NotFoundException("Onboarding session not found");
-      return { id: SESSION_ID, organizationId: ORG, status: options.status ?? "draft", draft: currentDraft };
+      return { id: SESSION_ID, organizationId: ORG, status: options.status ?? "draft", draft: currentDraft, lockReason: options.lockReason ?? null };
     },
   };
   const store = {
@@ -323,6 +325,15 @@ export async function aCommittedSessionIsA403WithNoAudit(): Promise<void> {
   expect(h.audits).toEqual([]);
 }
 
+/** F4.339 (ADR 0117 decision 9, R12): a locked draft starts no discovery — the one 409 sentence, no audit row, no job. */
+export async function aLockedDraftStartsNoDiscovery(): Promise<void> {
+  const h = harness({ lockReason: "F4.327 evidence" });
+  const err = await rejection(start(h));
+  expect(err).toEqual(new ConflictException(lockedSessionMessage("F4.327 evidence")));
+  expect(h.audits).toEqual([]);
+  expect(h.jobs).toEqual([]);
+}
+
 export async function aSessionCommittedBeforeTheLockIsA409(): Promise<void> {
   const h = harness({ lockedStatus: "committed" });
   const err = await rejection(start(h));
@@ -510,7 +521,7 @@ export async function aCredentialShapedHostIsLeftOutOfTheRow(): Promise<void> {
 export async function theRouteHandsTheParsedBodyToTheService(): Promise<void> {
   const calls: unknown[][] = [];
   const discovery = { start: async (...args: unknown[]) => (calls.push(args), { discoveryId: SESSION_ID }) };
-  const controller = new OnboardingController({} as never, discovery as never);
+  const controller = new OnboardingController({} as never, discovery as never, {} as never);
   await controller.startDiscovery(SESSION_ID, BODY, JWT);
   expect(calls).toEqual([[JWT, SESSION_ID, startOnboardingDiscoveryBodySchema.safeParse(BODY)]]);
 }
@@ -518,7 +529,7 @@ export async function theRouteHandsTheParsedBodyToTheService(): Promise<void> {
 export async function theRouteRefusesABadIdBeforeTheService(): Promise<void> {
   const calls: unknown[][] = [];
   const discovery = { start: async (...args: unknown[]) => (calls.push(args), { discoveryId: SESSION_ID }) };
-  const controller = new OnboardingController({} as never, discovery as never);
+  const controller = new OnboardingController({} as never, discovery as never, {} as never);
   await expect(controller.startDiscovery("not-a-uuid", BODY, JWT)).rejects.toBeInstanceOf(BadRequestException);
   expect(calls).toEqual([]);
 }
