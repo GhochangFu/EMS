@@ -192,6 +192,8 @@ export const MQTT_DECODE_FAILURES = [
   "root-mismatch",
   "no-device-key",
   "too-many-records",
+  // ADR 0119: a binary message whose length is not the format's `length`.
+  "binary-length-mismatch",
 ] as const;
 export type MqttDecodeFailure = (typeof MQTT_DECODE_FAILURES)[number];
 
