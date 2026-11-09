@@ -357,3 +357,39 @@ recommended.
   axis of Plex Sans.
 - Out of scope, added: glass, gradient or translucent grounds; accent fills on
   tiles; decorative borders in `accent`.
+
+## Amendment 2 — the plan rulings (2026-11-09)
+
+**Status: Proposed — 2026-11-09. The merge of the PR that carries this
+amendment and the plan `docs/plans/f4.341-selectable-design-systems.md` is its
+acceptance.** The owner ruled seven plan questions in chat, one at a time
+(plan §0, P1–P7). Two of them change this record; the others refine
+*(drafter)* lines and live in the plan.
+
+1. **P1/P7 — A6 is grandfathered for `nexus-soft` (amends A6's "for every
+   design system").** `nexus-soft` keeps today's type: sizes under 12px,
+   weight 700, uppercase and tracked labels, the uppercase breadcrumb. The A6
+   rules are hard gates for the four other design systems. A4 and A5 still
+   apply to every design system and profile, `nexus-soft` included: its first
+   chart series moves off `accent`, and its primary button has no shadow.
+   Because class strings are shared by every design system, the weight, the
+   label case and the letter-spacing become design tokens (plan D8):
+   `nexus-soft` keeps today's values, and the four others set A6's values. The
+   A6 gates read the token blocks, not the class strings.
+2. **P4 — the wall minimum is 16px in every design system**, `nexus-soft`
+   included. It is a readability floor of the wall surface, not a style rule:
+   on a wall every step under 16px is raised to it.
+3. **P6 — `ink-faint` is raised (light) in every profile** until `ink-faint`
+   on `canvas` passes 4.5:1 as text. This is a contrast fix in the values PR
+   and applies to `nexus-soft` too.
+4. **P5 — decision 10's alias.** The old route
+   `PUT /admin/organizations/:id/colour-profile` and the `colourProfile` field
+   of `GET /auth/me` are removed after the next release tag, by the follow-up
+   row `F4.342`, not inside `F4.341`.
+5. **D5 — two migrations (refines decision 9).** The nine-name CHECK on
+   `bms.organizations.colour_profile` lands with the profile values (`0133`),
+   before the appearance storage (`0134`).
+
+The other rulings (P2 a Tailwind theme remap for the tokens, P3 the
+`@fontsource` packages for the fonts) are plan choices within decisions 3 and
+5.
