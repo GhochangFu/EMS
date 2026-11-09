@@ -492,3 +492,64 @@ departed from or read the plan, the reading is recorded here:
 sweep of AGENTS.md, and the AGENTS §4.6 Docker, DB and browser checks, which
 the cloud session could not run. `F4.342` removes the old colour-profile route
 and field after the next release tag.
+
+## Amendment 3 — shells after the AWS check, and four more profiles (2026-11-09)
+
+**Status: Proposed — 2026-11-09. The merge of the PR that carries this
+amendment and the plan `docs/plans/f4.346-shells-and-four-profiles.md` is its
+acceptance.** After `F4.341` closed, the owner checked the live portal
+(`bms.demosites.co.in`, deploy of `1d1efc26`) and found the Swiss Grid and
+Bento Ops top menu unusable. A DOM check of every design system on 15 pages at
+1440, 1024, 768 and 390 px measured the defects below (no console errors). The
+owner approved the shell changes and asked for more colour profiles from
+research; the drafts were shown in the preview artifact (version 3) and the
+owner chose all four.
+
+**Measured on AWS:**
+
+| Shell | Defect |
+|---|---|
+| `topbar` (`swiss-grid`, `bento-ops`) | The module strip is 2,382 px wide at a 1440 px viewport; 8 of 19 items are off screen and reachable only by sideways scroll, with no cue. Three stacked bars put the page top at 142 px (the sidebar shell: 88 px). |
+| `rail` (`control-room-dark`) | A fixed 176 px rail with no collapse and no narrow mode: at 390 px the page is 199 px wide and overflows by 252 px. |
+| every shell, the Appearance panel | The preview sets `data-design` only; `AppShell` reads the store, so the shell changes only after Save. Swiss Grid previews on the sidebar shell. |
+
+1. **Two shells, not three (amends decision 6).** `swiss-grid` and
+   `bento-ops` render the `sidebar` shell. The `topbar` shell is removed;
+   `SHELL_OF_DESIGN` maps four design systems to `sidebar` and
+   `control-room-dark` to `rail`. The sidebar keeps one behaviour in every
+   design system (the collapse button, the stored choice, the F4.318 64 px rail
+   and overlay at ≤ `SHELL_RAIL_MAX_WIDTH`); each design system skins it with
+   tokens only: `swiss-grid` square items on `surface`, a 3px ink rule, the
+   selected item in ink; `bento-ops` pill items on the page ground, the
+   selected item in ink. The skins obey A5 (the selected navigation item is on
+   the accent allow-list but these two use ink, which A5 permits).
+2. **The rail collapses (refines decision 6 and A6's rail rule).** The `rail`
+   shell gets the sidebar's collapse button and narrow-viewport overlay. It
+   opens **expanded with text labels** by default and on a wall (A6: a wall has
+   no hover); collapsed, each item shows its `collapsedLabel` code with the full
+   label as its accessible name, as the sidebar does.
+3. **The preview changes the shell (amends decision 11).** `previewDesign`
+   sets a preview value in the theme store as well as the attribute, and
+   `AppShell` selects the shell from `preview ?? design`. Cancel, Save and
+   leaving the panel clear the preview.
+4. **Thirteen profiles (amends Q6 and Amendment 1 A3).** Four profiles join
+   the closed list, each with a reason, not only a hue:
+
+   | Name | Label | Reason | Accent light / dark (draft) |
+   |---|---|---|---|
+   | `hmi-grey` | HMI grey | ISA-101 high-performance HMI practice: a grey ground and muted chrome, so only alarm colours stand out | `#405A5C` / `#A8C4CC` |
+   | `moss` | Moss | an olive green for water, environment and sustainability sites; no shipped profile is yellow-green | `#4F6B3A` / `#B5CF95` |
+   | `colour-safe` | Colour-safe | chart series from the Okabe-Ito and Paul Tol palettes, distinct under red-green colour blindness, without their orange and vermillion members (near the alarm roles); a neutral ink accent | `#1F2937` / `#E5E7EB` |
+   | `night-shift` | Night shift | a warm, dim, low-blue theme for 24-hour control rooms; a sage accent | `#3E6458` / `#94C2B0` |
+
+   Every value meets A4 and the 4.5:1 text pairs; the draft script found 0
+   failures. The full 27-role tables are drafted in the build PR, and **merging
+   that PR approves the value table** (AGENTS §10). Copper, amber, plum and
+   sky-blue accents were tested and rejected: each falls within ΔE 20 of a
+   critical or warning role or within ΔE 12 of an info role.
+5. **Storage.** A forward migration widens the three `colour_profile` CHECK
+   constraints (`bms.organizations`, `bms.portal_settings`, `bms.users`) to the
+   thirteen names. No data changes.
+
+**Not in this amendment:** the chrome header overflows by 122 px at 390 px in
+every shell, `nexus-soft` included. It predates `F4.341` and is row `F4.347`.
