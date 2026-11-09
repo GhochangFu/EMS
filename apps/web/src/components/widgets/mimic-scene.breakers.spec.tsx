@@ -44,7 +44,7 @@ function assetId(n: number): string {
 }
 
 /** A member asset with one headline point (`current_a`), so a value row would draw if allowed. */
-function asset(n: number, code: string): GeneratedSiteAssetDto {
+export function asset(n: number, code: string): GeneratedSiteAssetDto {
   return {
     id: assetId(n),
     code,
@@ -59,11 +59,11 @@ function asset(n: number, code: string): GeneratedSiteAssetDto {
 }
 
 /** A state point whose DTO `latest` is `dtoValue` — the socket stub may answer otherwise. */
-function statePoint(pointKey: string, dtoValue: number): GeneratedSitePointDto {
+export function statePoint(pointKey: string, dtoValue: number): GeneratedSitePointDto {
   return { pointKey, name: pointKey, unit: "", headlineRank: 10, latest: { value: dtoValue, time: "t" } };
 }
 
-const CRITICAL: MimicNodeAlarmDto = {
+export const CRITICAL: MimicNodeAlarmDto = {
   severity: "critical",
   tone: "critical",
   label: "Critical",
@@ -88,7 +88,7 @@ function memberDto(m: Member): MimicNodeDto["members"][number] {
 }
 
 /** A non-fan-out node: one asset, its own state points and alarm, `members` empty. */
-function singleNode(key: string, roleCode: string, m: Member): MimicNodeDto {
+export function singleNode(key: string, roleCode: string, m: Member): MimicNodeDto {
   return {
     key,
     label: key,
@@ -103,7 +103,7 @@ function singleNode(key: string, roleCode: string, m: Member): MimicNodeDto {
 }
 
 /** A fan-out node as the resolver answers it (plan D4): `asset` is the first member's. */
-function fanOutNode(key: string, roleCode: string, members: readonly Member[], memberCount = members.length): MimicNodeDto {
+export function fanOutNode(key: string, roleCode: string, members: readonly Member[], memberCount = members.length): MimicNodeDto {
   const first = members[0];
   return {
     key,
@@ -119,7 +119,7 @@ function fanOutNode(key: string, roleCode: string, members: readonly Member[], m
 }
 
 /** The socket overlay stub: `values` by `assetId|pointKey`; an asset in `stale` was last seen a minute ago. */
-function readingsOf(values: Readonly<Record<string, number>>, stale: ReadonlySet<string> = new Set()): SiteLiveReadings {
+export function readingsOf(values: Readonly<Record<string, number>>, stale: ReadonlySet<string> = new Set()): SiteLiveReadings {
   return {
     nowMs: NOW,
     pointLatest: (id, point) => {

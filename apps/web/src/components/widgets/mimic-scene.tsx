@@ -39,6 +39,7 @@ import {
   mimicAriaLabel,
   mimicBadge,
   mimicCalloutText,
+  mimicGlyphMotion,
   mimicLevelFraction,
   mimicLevelPoint,
   mimicNodeFlows,
@@ -72,6 +73,12 @@ export type MimicSceneProps = {
   compact?: boolean;
   /** Drawn inside the `<svg>`, after the drawing — the editor's hit rects and handles (U6). */
   children?: ReactNode;
+  /**
+   * `F4.344` (ADR 0120 decision 6, plan R4) — animate each unit's glyph by its state. Off by
+   * default: only the live widget turns it on, so the editor, its previews (live "Preview with
+   * site" included) and the static builder tile stay still by construction.
+   */
+  motion?: boolean;
 };
 
 /**
@@ -133,6 +140,13 @@ const CALLOUT_TEXT_PAD_R = 6;
  * **Colours are ADR 0078 role classes only** — no hex, no palette class, no named colour, no
  * `dark:` (`tests/f3.65-colour-roles-gate.test.ts`). Marker and clip ids come from `useId`, so
  * two mimics on one dashboard do not share one.
+ *
+ * **Motion (`F4.344`, ADR 0120).** With `motion`, each roled unit's glyph — or the switch drawn in
+ * its place — moves by `mimicGlyphMotion` over its status, its top alarm's raw tone and every
+ * breaker state it carries (on a fan-out unit, every member): tripped blinks, a critical alarm pulses
+ * fast, any other alarm pulses, live breathes, the rest stay still. Only that one glyph moves —
+ * never a passive unit, a fan-out member's switch, the alert icon, the pump or the sink — and the
+ * motion class sits behind `motion-safe:`, so reduced motion always wins.
  */
 export function MimicScene({
   title,
@@ -142,6 +156,7 @@ export function MimicScene({
   stateMaps = NO_STATE_MAPS,
   compact = false,
   children,
+  motion = false,
 }: MimicSceneProps) {
   const uid = useId().replace(/:/g, "");
   const markerId = `mimic-arrow-${uid}`;
@@ -293,6 +308,14 @@ export function MimicScene({
     const drawValues = !compact && !fanOut;
     const glyphX = (w - GLYPH_SIZE) / 2;
     const glyphY = MIMIC_PIPE_Y - GLYPH_SIZE / 2;
+    // `F4.344` (ADR 0120 decision 2): one motion for the unit's glyph (or the switch in its place).
+    const glyphMotion = motion
+      ? mimicGlyphMotion(
+          nodeStatus,
+          topAlarm?.tone ?? null,
+          (breakersOf.get(unit.key) ?? []).map((m) => m.state),
+        )
+      : "none";
     return (
       <g
         key={unit.key}
@@ -358,6 +381,7 @@ export function MimicScene({
             className={glyphClass}
             level={level}
             orgSymbol={orgSymbolOf.get(unit.symbol) ?? null}
+            motion={glyphMotion}
           />
         ) : (
           <>
@@ -370,6 +394,7 @@ export function MimicScene({
               size={GLYPH_SIZE}
               plainClass={glyphClass}
               orgSymbol={orgSymbolOf.get(unit.symbol) ?? null}
+              motion={glyphMotion}
             />
             <text
               data-testid="mimic-breaker-pill"
