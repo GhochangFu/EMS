@@ -459,3 +459,36 @@ metadata's `license.type`):
   `--font-head` and `--font-num`.
 - An `@font-face` downloads only when a rule uses its family, so a design system loads only its own
   faces (decision 5).
+
+## As built (`F4.341` closed, 2026-11-09)
+
+**Status: recorded with PR 13.** The 13 PRs of the plan merged in order
+(the PR list is in `docs/BACKLOG.md`, row `F4.341`). Where the build
+departed from or read the plan, the reading is recorded here:
+
+- **Migration 0134 grants column privileges on `bms.users`.** The plan said
+  "no GRANT". `bms.users` holds column-level grants only, so the two new
+  columns (`design_system`, `colour_profile`) are readable by no pool role
+  until granted: `SELECT` to `bms_tenant`, `bms_fleet` and `bms_auth`, and
+  `UPDATE` to `bms_fleet` (the user's own write). The role-grant matrix spec
+  records both.
+- **The text-size sweep (PRs 1b and 1c) moved a few sizes to the nearest
+  step,** not pixel for pixel: 13px → `text-xs` (12px), 10.5px → `text-2xs`
+  (11px), and the two non-SVG 9px sites → `text-3xs` (10px). SVG `<text>`
+  sizes kept their pixels through the `fontSize` attribute (decision 15).
+- **`control-room-dark` sets no heading width.** The plan's "Plex Sans heads at
+  `font-stretch: 87.5%`" was not built: the type tokens carry families, not
+  widths. Headings that already use `font-condensed` render at 85%.
+- **Tabular figures and the font count** are recorded under *Dependencies, as
+  built* (the digit-advance proof; `--font-mono` is not counted).
+- **The portal appearance screen is a tab, not a card of its own.** The plan
+  said "a card on the Master Data Hub". The hub draws one card per area, and
+  the repo gates require every `/admin` route to belong to an area, so
+  `/admin/portal-appearance` is a `globalAdminOnly` tab ("Portal Appearance")
+  of Reference Data, listed in that card and rendered in the master-data
+  layout.
+
+**Still owed** (unchanged from *Owed after the build*): the `chore(agents):`
+sweep of AGENTS.md, and the AGENTS §4.6 Docker, DB and browser checks, which
+the cloud session could not run. `F4.342` removes the old colour-profile route
+and field after the next release tag.
