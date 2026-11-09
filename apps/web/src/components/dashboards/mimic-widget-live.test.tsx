@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, it, vi } from "vitest";
 
 import {
+  anIsoWidgetDrawsIsoUnitsAndTheTankLevel,
+  aWidgetWithoutAGlyphSetDrawsCoreUnits,
   aCompactConfigReachesTheScene,
   theLiveTileMovesByDefault,
   aMotionFalseConfigDrawsStill,
@@ -90,5 +92,11 @@ describe("F3.32 U4 — MimicWidgetLive", () => {
   });
   it("LV-M2 a motion false config draws still (F4.344)", async () => {
     await aMotionFalseConfigDrawsStill();
+  });
+  it("LV-B3 an iso widget draws isometric units and the tank level (F4.345)", async () => {
+    await anIsoWidgetDrawsIsoUnitsAndTheTankLevel();
+  });
+  it("LV-B3b a widget without a glyph set draws core units (F4.345)", async () => {
+    await aWidgetWithoutAGlyphSetDrawsCoreUnits();
   });
 });

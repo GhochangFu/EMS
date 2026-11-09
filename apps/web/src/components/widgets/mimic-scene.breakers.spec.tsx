@@ -938,3 +938,23 @@ export function anUnsourcedLayoutDrawsAsBefore(): void {
   expect(cls(flowOn("single", "board"))).toContain("stroke-ok");
   expect(cls(flowOn("board", "tail"))).toContain("stroke-ok");
 }
+
+/**
+ * S8 — `F4.345` (ADR 0121 decision 5): under the `iso` glyph set a switching unit whose state is
+ * unknown draws its plain glyph as the isometric twin (`iso:breaker`), and the alarm callout's
+ * glyph stays `alert`. Positive twin: the same drawing with no glyph set draws `breaker`.
+ */
+export function anIsoBoardDrawsTheIsoBreakerAndKeepsTheAlert(): void {
+  const single = asset(2, "CR-Q2");
+  const node = singleNode("single", "main-breaker", { asset: single, statePoints: [statePoint("breaker_main", 1)], activeAlarms: 1, topAlarm: CRITICAL });
+  const iso = render(<MimicScene title="SLD" geometry={BOARD()} nodes={[node]} readings={readingsOf({})} stateMaps={STATE_MAPS} glyphSet="iso" />);
+  const unit = unitEl("single");
+  expect(unit.getAttribute("data-breaker-state")).toBe("unknown");
+  const glyphs = within(unit).getAllByTestId("mimic-glyph").map((g) => g.getAttribute("data-glyph"));
+  expect(glyphs).toContain("iso:breaker");
+  expect(glyphs).not.toContain("breaker");
+  expect(screen.getAllByTestId("mimic-glyph").map((g) => g.getAttribute("data-glyph"))).toContain("alert");
+  iso.unmount();
+  render(<MimicScene title="SLD" geometry={BOARD()} nodes={[node]} readings={readingsOf({})} stateMaps={STATE_MAPS} />);
+  expect(within(unitEl("single")).getAllByTestId("mimic-glyph").map((g) => g.getAttribute("data-glyph"))).toContain("breaker");
+}

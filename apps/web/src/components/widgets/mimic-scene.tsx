@@ -7,6 +7,7 @@ import {
   type MimicNodeDto,
   type PointKeyStateMapDto,
 } from "@bms/shared";
+import type { MimicGlyphSet } from "@bms/shared/contracts";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import {
@@ -79,6 +80,12 @@ export type MimicSceneProps = {
    * site" included) and the static builder tile stay still by construction.
    */
   motion?: boolean;
+  /**
+   * `F4.345` (ADR 0121 decision 5, plan R6) — the widget's glyph set: with `iso` each unit draws
+   * its core glyph's isometric twin. The 24-px water-train markers and the alarm callout stay core.
+   * Only the live and the static widget pass it; the editor and its previews draw core.
+   */
+  glyphSet?: MimicGlyphSet;
 };
 
 /**
@@ -157,6 +164,7 @@ export function MimicScene({
   compact = false,
   children,
   motion = false,
+  glyphSet,
 }: MimicSceneProps) {
   const uid = useId().replace(/:/g, "");
   const markerId = `mimic-arrow-${uid}`;
@@ -265,6 +273,7 @@ export function MimicScene({
           size={GLYPH_SIZE}
           className={MIMIC_PANEL_CLASSES[unit.tone].glyph}
           orgSymbol={orgSymbolOf.get(unit.symbol) ?? null}
+          glyphSet={glyphSet}
         />
       </g>
     );
@@ -382,6 +391,7 @@ export function MimicScene({
             level={level}
             orgSymbol={orgSymbolOf.get(unit.symbol) ?? null}
             motion={glyphMotion}
+            glyphSet={glyphSet}
           />
         ) : (
           <>
@@ -395,6 +405,7 @@ export function MimicScene({
               plainClass={glyphClass}
               orgSymbol={orgSymbolOf.get(unit.symbol) ?? null}
               motion={glyphMotion}
+              glyphSet={glyphSet}
             />
             <text
               data-testid="mimic-breaker-pill"

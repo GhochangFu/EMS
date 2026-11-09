@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, vi, type Mock } from "vitest";
 
 import {
@@ -569,4 +569,45 @@ export async function aMotionFalseConfigDrawsStill(): Promise<void> {
   expect(feederPills()).toHaveLength(2);
   expect(screen.getAllByTestId("mimic-glyph").length).toBeGreaterThan(0);
   expect(document.querySelectorAll("[data-motion]")).toHaveLength(0);
+}
+
+/**
+ * LV-B3 — `F4.345` (ADR 0121 decisions 5 and 6, end to end): a preset `water_train` widget with
+ * `glyphSet: "iso"` draws every unit glyph as an isometric twin, and the storage tank keeps its live
+ * level (64 %). Positive twin: LV-B3b, the same widget without `glyphSet`, draws bare core keys.
+ */
+export async function anIsoWidgetDrawsIsoUnitsAndTheTankLevel(): Promise<void> {
+  const storage: GeneratedSiteAssetDto = {
+    ...wtp(1_000),
+    id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    code: "WTR-STO-01",
+    name: "Storage tank",
+    points: [{ pointKey: "level", name: "Level", unit: "%", headlineRank: 1, latest: { value: 64, time: isoAgo(1_000) } }],
+  };
+  const answer = response([WIDGET_A]);
+  const nodesWithStorage = answer.widgets[0]!.nodes.map((n) =>
+    n.key === "water_storage" ? { ...n, asset: storage, memberCount: 1 } : n,
+  );
+  const withStorage: DashboardMimicNodesResponseDto = { ...answer, widgets: [{ ...answer.widgets[0]!, nodes: nodesWithStorage }] };
+  const widget = mimicWidget(WIDGET_A, "Train A");
+  renderWidget(() => Promise.resolve(withStorage), { ...widget, config: { source: "preset", preset: "water_train", glyphSet: "iso" } });
+  await screen.findByText("WTR-STO-01");
+  const unitGlyphs = (): string[] =>
+    [...document.querySelectorAll("[data-testid=mimic-node] [data-testid=mimic-glyph]")].map((g) => g.getAttribute("data-glyph") ?? "");
+  await waitFor(() => expect(document.querySelector("[data-testid=mimic-node] [data-glyph-loading]")).toBeNull());
+  expect(unitGlyphs().length).toBeGreaterThanOrEqual(8);
+  expect(unitGlyphs().filter((k) => !k.startsWith("iso:"))).toEqual([]);
+  const tank = [...document.querySelectorAll("[data-testid=mimic-node]")].find((n) => n.getAttribute("data-node-key") === "water_storage");
+  const level = tank?.querySelector("[data-glyph='iso:tank'] [data-testid=mimic-tank-level]");
+  expect(level, "the isometric storage tank draws its level").not.toBeNull();
+  expect(level?.getAttribute("data-level")).toBe("64");
+}
+
+/** LV-B3b — the positive twin: no `glyphSet` draws bare core keys (ruling 3). */
+export async function aWidgetWithoutAGlyphSetDrawsCoreUnits(): Promise<void> {
+  renderWidget(() => Promise.resolve(response([WIDGET_A])));
+  await screen.findByText("WTR-WTP-01");
+  const keys = [...document.querySelectorAll("[data-testid=mimic-node] [data-testid=mimic-glyph]")].map((g) => g.getAttribute("data-glyph") ?? "");
+  expect(keys.length).toBeGreaterThanOrEqual(8);
+  expect(keys.filter((k) => k.startsWith("iso:"))).toEqual([]);
 }

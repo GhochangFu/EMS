@@ -35,9 +35,16 @@ export type BreakerRoleCode = (typeof BREAKER_ROLE_CODES)[number];
  * The symbols that switch (D1b, owner ruling N1) — the core `breaker` glyph and the two library
  * breakers. This is the symbol half of ADR 0101 d4: a layout unit switches when its `is_switching`
  * flag is set or its symbol is one of these; a preset node switches through its `breaker` glyph
- * alone, in the web's `MIMIC_NODE_GLYPHS`.
+ * alone, in the web's `MIMIC_NODE_GLYPHS`. `F4.345` (owner ruling 2026-11-09) adds the isometric
+ * breaker and isolator (ADR 0121).
  */
-export const MIMIC_SWITCHING_SYMBOLS = ["breaker", "wmpid:breaker", "drawio:circuit-breaker"] as const;
+export const MIMIC_SWITCHING_SYMBOLS = [
+  "breaker",
+  "wmpid:breaker",
+  "drawio:circuit-breaker",
+  "iso:breaker",
+  "iso:isolator",
+] as const;
 
 const SWITCHING = new Set<string>(MIMIC_SWITCHING_SYMBOLS);
 
