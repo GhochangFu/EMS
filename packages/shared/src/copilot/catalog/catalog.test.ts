@@ -58,6 +58,7 @@ import {
   aMalformedReleaseThreeEntryIsRefused,
   aCardOnlyKeyInTheBodyIsRefused,
   theLockRoutesAreExcludedAsAHumanAct,
+  theCredentialCopyIsExcludedAsACredentialRoute,
 } from "./catalog.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -96,6 +97,7 @@ describe("F3.86 PR 3c — asset groups and point keys (ADR 0099 decision 3, ruli
 
 describe("F4.339 — the draft lock routes (ADR 0117 decision 9)", () => {
   it("excludes lock and unlock as a human act", () => theLockRoutesAreExcludedAsAHumanAct());
+  it("excludes the credential copy as a credential route (F4.339)", () => theCredentialCopyIsExcludedAsACredentialRoute());
 });
 
 describe("F3.86 PR 6 — the onboarding commit (ADR 0099 decision 7)", () => {

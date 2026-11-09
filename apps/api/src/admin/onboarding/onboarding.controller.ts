@@ -20,6 +20,7 @@ import { ZodError } from "zod";
 
 import {
   commitOnboardingBodySchema,
+  copyOnboardingCredentialsBodySchema,
   lockOnboardingSessionBodySchema,
   startOnboardingDiscoveryBodySchema,
   type JwtPayload,
@@ -36,6 +37,7 @@ import {
   setCredentialsBodySchema,
 } from "./onboarding.schema";
 import { OnboardingDiscoveryService } from "./onboarding-discovery.service";
+import { OnboardingCredentialCopyService } from "./onboarding-credential-copy.service";
 import { OnboardingSessionLockService } from "./onboarding-session-lock.service";
 import { OnboardingSessionUnlockService } from "./onboarding-session-unlock.service";
 import { OnboardingService } from "./onboarding.service";
@@ -48,7 +50,26 @@ export class OnboardingController {
     private readonly discovery: OnboardingDiscoveryService,
     private readonly locks: OnboardingSessionLockService,
     private readonly unlocks: OnboardingSessionUnlockService,
+    private readonly credentialCopies: OnboardingCredentialCopyService,
   ) {}
+
+  /**
+   * `F4.339` (ADR 0117 decision 7): copies one RTU's stored credential to other
+   * MQTT RTUs of the draft on the same broker. No plaintext in the body or the
+   * answer (ADR 0022); the answer is the redacted session.
+   */
+  @Post("sessions/:id/credentials/copy")
+  @HttpCode(HttpStatus.OK)
+  async copyCredentials(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    try {
+      return await this.credentialCopies.copy(user, idParamSchema.parse(id), copyOnboardingCredentialsBodySchema.parse(body));
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
 
   /** `F4.339` (ADR 0117 decision 9): a global administrator locks a draft; every write is then refused (409). */
   @Post("sessions/:id/lock")

@@ -96,6 +96,20 @@ export class CredentialCryptoService {
   }
 
   /**
+   * `F4.339` (plan R7): true when a blob stored at `version` can be decrypted
+   * now — the current version or, in an open window, the previous one. A copy
+   * refuses any other version, because `keyForVersion` would throw at ingest.
+   */
+  static canReadVersion(version: number): boolean {
+    try {
+      keyForVersion(CredentialCryptoService.load(), version);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * The version the current key writes (decision 3). Answers even when no key
    * is configured — `onboarding-commit.service.ts` labels a credential-less row
    * with it — and propagates a `CredentialKeyConfigError` on a dead window.

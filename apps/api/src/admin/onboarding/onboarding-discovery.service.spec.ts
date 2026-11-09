@@ -531,7 +531,7 @@ export async function aCredentialShapedHostIsLeftOutOfTheRow(): Promise<void> {
 export async function theRouteHandsTheParsedBodyToTheService(): Promise<void> {
   const calls: unknown[][] = [];
   const discovery = { start: async (...args: unknown[]) => (calls.push(args), { discoveryId: SESSION_ID }) };
-  const controller = new OnboardingController({} as never, discovery as never, {} as never, {} as never);
+  const controller = new OnboardingController({} as never, discovery as never, {} as never, {} as never, {} as never);
   await controller.startDiscovery(SESSION_ID, BODY, JWT);
   expect(calls).toEqual([[JWT, SESSION_ID, startOnboardingDiscoveryBodySchema.safeParse(BODY)]]);
 }
@@ -539,7 +539,7 @@ export async function theRouteHandsTheParsedBodyToTheService(): Promise<void> {
 export async function theRouteRefusesABadIdBeforeTheService(): Promise<void> {
   const calls: unknown[][] = [];
   const discovery = { start: async (...args: unknown[]) => (calls.push(args), { discoveryId: SESSION_ID }) };
-  const controller = new OnboardingController({} as never, discovery as never, {} as never, {} as never);
+  const controller = new OnboardingController({} as never, discovery as never, {} as never, {} as never, {} as never);
   await expect(controller.startDiscovery("not-a-uuid", BODY, JWT)).rejects.toBeInstanceOf(BadRequestException);
   expect(calls).toEqual([]);
 }

@@ -852,3 +852,10 @@ export function theLockRoutesAreExcludedAsAHumanAct(): void {
     expect(COPILOT_CATALOG.some((e) => e.path === path), `${path} is not an entry`).toBe(false);
   }
 }
+
+/** `F4.339` (ADR 0117 decision 7): the credential copy is a credential route, excluded until ADR 0099 Amendment 18 (plan PR 9). */
+export function theCredentialCopyIsExcludedAsACredentialRoute(): void {
+  const path = "/admin/onboarding/sessions/:id/credentials/copy";
+  expect(EXCLUDED_ROUTES.find((r) => r.method === "POST" && r.path === path)?.reason).toBe("a credential route (ADR 0022)");
+  expect(COPILOT_CATALOG.some((e) => e.path === path)).toBe(false);
+}
