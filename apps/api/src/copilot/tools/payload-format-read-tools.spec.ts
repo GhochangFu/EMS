@@ -10,7 +10,7 @@ import type { ResolvedIdentity } from "../../auth/identity-resolver";
 import type { CopilotToolContext } from "../copilot-read-tools";
 import type { CopilotReadServices } from "./copilot-read-tool";
 import { createCopilotReadTools } from "./copilot-read-tool-set";
-import { DECODE_PAYLOAD_SAMPLE_MAX } from "./decode-payload-sample.tool";
+import { DECODE_PAYLOAD_SAMPLE_MAX, DECODE_PAYLOAD_SAMPLE_NOT_HEX } from "./decode-payload-sample.tool";
 import { COPILOT_PAYLOAD_FORMATS_ROLE_REFUSAL } from "./list-payload-formats.tool";
 
 /**
@@ -229,7 +229,8 @@ export function theSchemaBoundsTheSampleAndTakesNoCredential(): void {
   expect(schema.safeParse({ definition: BCPL_DEFINITION, sample: "{}", topic: "t".repeat(256) }).success).toBe(false);
   expect(schema.safeParse({ definition: BCPL_DEFINITION, sample: "{}", password: "p" }).success).toBe(false);
   const definition = fake([]).tools.registry.definitions.find((d) => d.name === "decode_payload_sample");
-  expect(Object.keys((definition?.parameters as { properties: Record<string, unknown> }).properties).sort()).toEqual(["definition", "sample", "topic"]);
+  expect(Object.keys((definition?.parameters as { properties: Record<string, unknown> }).properties).sort()).toEqual(["definition", "encoding", "sample", "topic"]);
+  expect(schema.safeParse({ definition: BCPL_DEFINITION, sample: "00", encoding: "base64" }).success).toBe(false);
 }
 
 /** `list_payload_formats` takes only an optional `code` (strict). */
@@ -316,4 +317,41 @@ export async function theServiceCountsPerOrganizationOnTheTenantPool(): Promise<
   transactions.length = 0;
   expect(await svc.rtuCountsInOrganizations({} as JwtPayload, [])).toEqual({ counts: {}, organizationIds: [] });
   expect(transactions).toEqual([]);
+}
+
+/** `F4.343` — the WBLDC definition (ADR 0119 decision 6) and its GOAT frame of 2026-11-09 (hex only). */
+const WBLDC_DEFINITION = {
+  kind: "binary",
+  length: 100,
+  byteOrder: "little",
+  time: { fields: { year: 4, month: 6, day: 8, hour: 10, minute: 12, second: 14 }, utcOffsetMinutes: 330 },
+  readings: Array.from({ length: 16 }, (_, i) => ({
+    key: `temp_ch${i}`,
+    byte: 16 + i * 2,
+    type: "int16",
+    scale: 0.1,
+    sentinels: [-32767, -32766],
+  })),
+};
+const GOAT_HEX = "f2f01051ea070b0009000f0024000000" + "0f010301acff2a00" + "00".repeat(76);
+
+/** A hex sample decodes a binary format; bad hex is a fixed refusal before any decode; a non-admin first. */
+export async function aHexSampleDecodesABinaryFormat(): Promise<void> {
+  const { tools, calls } = fake([]);
+  const args = { definition: WBLDC_DEFINITION, sample: GOAT_HEX, encoding: "hex", topic: "Haringhata_GOAT" };
+  const out = await tools.dispatch("decode_payload_sample", args, ADMIN);
+  if (!out.ok) throw new Error(out.error);
+  expect(out.result.decoded).toBe(true);
+  const records = out.result.records as Array<{ deviceKey: string; at: string | null; values: Record<string, number | null> }>;
+  expect(records[0]?.deviceKey).toBe("Haringhata_GOAT");
+  expect(records[0]?.at).toBe("2026-11-09T10:06:00.000Z");
+  expect(records[0]?.values.temp_ch0).toBe(27.1);
+  expect(calls).toEqual(["test"]);
+
+  const bad = await tools.dispatch("decode_payload_sample", { ...args, sample: "f2f" }, ADMIN);
+  expect(bad).toEqual({ ok: false, error: DECODE_PAYLOAD_SAMPLE_NOT_HEX });
+  expect(calls).toEqual(["test"]);
+
+  const refused = await tools.dispatch("decode_payload_sample", { ...args, sample: "f2f" }, ctx("organization_admin"));
+  expect(refused).toEqual({ ok: false, error: COPILOT_PAYLOAD_FORMATS_ROLE_REFUSAL });
 }

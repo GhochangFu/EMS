@@ -12,6 +12,7 @@ import {
   theSchemaBoundsTheSampleAndTakesNoCredential,
   theServiceCountsPerOrganizationOnTheTenantPool,
   theServicesRowsAreParsed,
+  aHexSampleDecodesABinaryFormat,
 } from "./payload-format-read-tools.spec";
 
 /** `F4.334` PR 5 — Vitest entry point; assertions live in the sibling `.spec` (§4.6). */
@@ -29,4 +30,5 @@ describe("F4.334 PR 5 — list_payload_formats and decode_payload_sample (ADR 00
   it("logs no sample", () => aDecodeLogsNoSample());
   it("counts per allowed organization on the tenant pool, global admin only", () =>
     theServiceCountsPerOrganizationOnTheTenantPool());
+  it("F4.343 decodes a hex sample with a binary format and refuses bad hex first", () => aHexSampleDecodesABinaryFormat());
 });

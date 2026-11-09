@@ -7,6 +7,7 @@ import {
   anInUseDeleteListsTheRtus,
   invalidJsonIsRefused,
   theBuiltinRowHasNoControl,
+  theTestBoxDecodesAHexSample,
   theTestBoxDecodesTheSample,
 } from "./payload-formats-page.spec";
 
@@ -22,4 +23,5 @@ describe("F4.334 — the Payload Formats page (plan T5.2)", () => {
   it("P3 refuses a definition that is not JSON", invalidJsonIsRefused);
   it("P4 decodes a sample in the test box", theTestBoxDecodesTheSample);
   it("P5 lists the RTUs of an in-use delete", anInUseDeleteListsTheRtus);
+  it("P6 decodes a hex sample and refuses bad hex (F4.343)", theTestBoxDecodesAHexSample);
 });
