@@ -3,6 +3,7 @@ import { expect } from "vitest";
 import { MIMIC_HEADLINE_POINTS, mimicCoreSymbolSchema, mimicPresetSchema } from "@bms/shared/contracts";
 import {
   BREAKER_ROLE_CODES,
+  type BreakerState,
   MIMIC_PRESETS,
   type GeneratedSiteAssetDto,
   type GeneratedSitePointDto,
@@ -14,6 +15,7 @@ import {
 
 import {
   MIMIC_GLYPH_FILL_CLASS,
+  MIMIC_GLYPH_MOTION_CLASS,
   MIMIC_LAYOUTS,
   MIMIC_NODE_GLYPHS,
   MIMIC_NODE_SIZE,
@@ -24,6 +26,7 @@ import {
   mimicAriaLabel,
   mimicBadge,
   mimicCalloutText,
+  mimicGlyphMotion,
   mimicLevelFraction,
   mimicLevelPoint,
   mimicPanelBox,
@@ -526,4 +529,61 @@ export function pumpStationPresetsDrawCoreSymbolsAndNoBreaker(): void {
     }
   }
   expect(seen).toBe(15);
+}
+
+/**
+ * `F4.344` (ADR 0120 decision 2) — MG-T1: every row of the motion table. `live` breathes; an
+ * `alarm` pulses, fast only when the raw vocabulary tone is `critical` (`null`, `ok` and `offline`
+ * pulse at the normal rate); `stale`, `none` and `unassigned` stay still.
+ */
+export function motionFollowsTheTable(): void {
+  expect(mimicGlyphMotion("live", null, [])).toBe("breathe");
+  expect(mimicGlyphMotion("alarm", "warning", [])).toBe("pulse");
+  expect(mimicGlyphMotion("alarm", "critical", [])).toBe("pulse-fast");
+  expect(mimicGlyphMotion("alarm", null, [])).toBe("pulse");
+  expect(mimicGlyphMotion("alarm", "ok", [])).toBe("pulse");
+  expect(mimicGlyphMotion("alarm", "offline", [])).toBe("pulse");
+  for (const still of ["stale", "none", "unassigned"] as const) {
+    expect(mimicGlyphMotion(still, null, [])).toBe("none");
+  }
+}
+
+/**
+ * `F4.344` (ADR 0120 decision 2) — MG-T2: a `tripped` breaker blinks over every alarm and over
+ * live; a fan-out unit blinks when any member is tripped. A stale unit cannot derive `tripped`
+ * (stale reads `offline`), but the function is total.
+ */
+export function trippedBeatsEveryAlarmAndLive(): void {
+  expect(mimicGlyphMotion("alarm", "critical", ["tripped"])).toBe("blink");
+  expect(mimicGlyphMotion("live", null, ["closed", "tripped"])).toBe("blink");
+  expect(mimicGlyphMotion("stale", null, ["tripped"])).toBe("blink");
+}
+
+/** `F4.344` (ADR 0120 decision 2) — MG-T3: every other breaker state adds no motion of its own. */
+export function otherBreakerStatesAddNoMotion(): void {
+  const others: readonly BreakerState[] = ["offline", "shut", "open", "flowing", "closed", "unknown"];
+  for (const s of others) {
+    expect(mimicGlyphMotion("live", null, [s])).toBe("breathe");
+    expect(mimicGlyphMotion("alarm", "critical", [s])).toBe("pulse-fast");
+    expect(mimicGlyphMotion("stale", null, [s])).toBe("none");
+  }
+}
+
+/**
+ * `F4.344` (ADR 0120 decisions 3–4) — MG-T4: four literal classes, each behind `motion-safe:`;
+ * only the pulses (which scale) carry the centre origin and `transform-box: fill-box`.
+ */
+export function motionClassesAreMotionSafeLiterals(): void {
+  expect(Object.keys(MIMIC_GLYPH_MOTION_CLASS).sort()).toEqual(["blink", "breathe", "pulse", "pulse-fast"]);
+  for (const value of Object.values(MIMIC_GLYPH_MOTION_CLASS)) {
+    expect(value.startsWith("motion-safe:animate-mimic-")).toBe(true);
+  }
+  for (const key of ["pulse", "pulse-fast"] as const) {
+    expect(MIMIC_GLYPH_MOTION_CLASS[key]).toContain("origin-center");
+    expect(MIMIC_GLYPH_MOTION_CLASS[key]).toContain("[transform-box:fill-box]");
+  }
+  for (const key of ["blink", "breathe"] as const) {
+    expect(MIMIC_GLYPH_MOTION_CLASS[key]).not.toContain("origin-center");
+    expect(MIMIC_GLYPH_MOTION_CLASS[key]).not.toContain("[transform-box:fill-box]");
+  }
 }

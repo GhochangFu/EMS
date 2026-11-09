@@ -1,5 +1,6 @@
 import { MIMIC_HEADLINE_POINTS } from "@bms/shared/contracts";
 import type {
+  BreakerState,
   GeneratedSiteAssetDto,
   GeneratedSitePointDto,
   GeneratedSiteViewDto,
@@ -396,6 +397,27 @@ export const MIMIC_GLYPH_FILL_CLASS: Readonly<Record<string, string>> = {
   "stroke-line-strong": "fill-line-strong",
 };
 
+/**
+ * `F4.344` (ADR 0120 decision 2) — how a unit's whole glyph moves: `blink` (a tripped breaker),
+ * `pulse-fast` (a critical alarm), `pulse` (any other alarm), `breathe` (live) or `none` (still).
+ */
+export type MimicGlyphMotion = "blink" | "pulse-fast" | "pulse" | "breathe" | "none";
+
+/**
+ * `F4.344` (ADR 0120 decisions 3, 4 and 7) — the class each motion draws with. Every animation sits
+ * behind `motion-safe:`, so a viewer who asks for reduced motion sees a still glyph at full opacity.
+ * Only the pulses scale, about the glyph's own centre (`origin-center` + `transform-box: fill-box`);
+ * those two are harmless without the animation, so they carry no variant. Literal strings, not a
+ * template, so Tailwind's class scanner emits every one (the `MIMIC_GLYPH_FILL_CLASS` precedent);
+ * `tests/f4.344-mimic-motion-gate.test.ts` MG3 compiles them and holds the media query.
+ */
+export const MIMIC_GLYPH_MOTION_CLASS: Readonly<Record<Exclude<MimicGlyphMotion, "none">, string>> = {
+  blink: "motion-safe:animate-mimic-blink",
+  "pulse-fast": "motion-safe:animate-mimic-pulse-fast origin-center [transform-box:fill-box]",
+  pulse: "motion-safe:animate-mimic-pulse origin-center [transform-box:fill-box]",
+  breathe: "motion-safe:animate-mimic-breathe",
+};
+
 /** Room round a panel's nodes: the side and bottom padding, and the title band above them. */
 const PANEL_PAD = 16;
 const PANEL_TITLE = 34;
@@ -701,6 +723,27 @@ export function mimicNodeFlows(status: MimicNodeStatus, lastSeenMs: number | nul
     return true;
   }
   return status === "alarm" && assetStatus(lastSeenMs, nowMs) === "live";
+}
+
+/**
+ * `F4.344` (ADR 0120 decision 2) — a unit's one glyph motion, by priority: any `tripped` breaker
+ * (a fan-out unit: any member) → `blink`; `alarm` whose top alarm's vocabulary tone is `critical`
+ * → `pulse-fast`; any other `alarm` (no top alarm included) → `pulse`; `live` → `breathe`; anything
+ * else → `none`. It reads the RAW tone (`topAlarm.tone`), so no severity code and no colour mapping
+ * plays a part.
+ */
+export function mimicGlyphMotion(
+  status: MimicNodeStatus,
+  topAlarmTone: string | null,
+  breakerStates: readonly BreakerState[],
+): MimicGlyphMotion {
+  if (breakerStates.includes("tripped")) {
+    return "blink";
+  }
+  if (status === "alarm") {
+    return topAlarmTone === "critical" ? "pulse-fast" : "pulse";
+  }
+  return status === "live" ? "breathe" : "none";
 }
 
 /**
