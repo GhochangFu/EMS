@@ -107,6 +107,17 @@ export function OnboardingSkillPanel({
   const [dismissedReason, setDismissedReason] = useState<OnboardingAutoOpenReason | null>(null);
   const [undoChoice, setUndoChoice] = useState("");
   const [committing, setCommitting] = useState(false);
+  // F4.339 (ADR 0117 decision 11, plan T8.3): the wizard opens on the session as it is now, not as this
+  // panel last saw it, so its draft hash is the stored one.
+  const freshForCommit = useMutation({
+    mutationFn: () => fetchOnboardingSession(session.id),
+    onSuccess: (fresh) => {
+      withSession(fresh);
+      onError(null);
+      setCommitting(true);
+    },
+    onError: (err: Error) => onError(apiErrorMessage(err)),
+  });
   const threadRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -341,11 +352,12 @@ export function OnboardingSkillPanel({
         commit={
           <button
             type="button"
-            onClick={() => setCommitting(true)}
+            onClick={() => freshForCommit.mutate()}
             className="flex-1 rounded bg-accent py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
-            disabled={!draft}
+            disabled={!draft || freshForCommit.isPending}
+            aria-busy={freshForCommit.isPending}
           >
-            Commit
+            {freshForCommit.isPending ? "Reading the draft…" : "Commit"}
           </button>
         }
       />

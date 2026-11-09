@@ -41,6 +41,8 @@ import {
   aGlobalAdminUnlocksTheDraft,
   aGlobalAdminLocksWithAReason,
   aCredentialedDraftWithHistoryCanUndo,
+  theCommitWizardOpensOnTheStoredHash,
+  aFailedCommitReadOpensNothing,
 } from "./onboarding-skill-panel.spec";
 
 afterEach(() => {
@@ -104,4 +106,9 @@ describe("F4.339 — a locked draft in the dock", () => {
 
 describe("F4.339 — Undo on a credentialed draft (plan T8.2)", () => {
   it("is enabled with history and no turn running", aCredentialedDraftWithHistoryCanUndo);
+});
+
+describe("F4.339 — the commit wizard opens on the stored session (plan T8.3)", () => {
+  it("reads the session once and carries the stored hash", theCommitWizardOpensOnTheStoredHash);
+  it("shows a failed read and opens nothing", aFailedCommitReadOpensNothing);
 });
