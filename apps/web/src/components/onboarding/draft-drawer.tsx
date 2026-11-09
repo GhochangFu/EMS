@@ -13,6 +13,7 @@ import {
 } from "../../lib/onboarding-draft-summary";
 import { StatusPill } from "../status-pill";
 import { DiscoveryPanel } from "./discovery-panel";
+import { SameCredentialsCopy } from "./same-credentials-copy";
 
 /**
  * The config a Save topic writes (`F4.236`, owner ruling): the typed topic, and
@@ -201,6 +202,19 @@ export function DraftDrawer({
                         </button>
                       )}
                     </div>
+                    {/* F4.339 (ADR 0117 decision 7): copy a stored credential from an RTU on the same broker. */}
+                    {session && credRtuIndex !== index && (
+                      <SameCredentialsCopy
+                        session={session}
+                        index={index}
+                        disabled={busy || credentialsMutation.isPending || topicMutation.isPending}
+                        onCopied={(updated) => {
+                          onSessionChange(updated);
+                          queryClient.setQueryData(["onboarding", updated.id], updated);
+                        }}
+                        onError={setCredError}
+                      />
+                    )}
                     {rtu.protocol === "mqtt" && (
                       <form
                         className="mt-2 flex gap-1"
