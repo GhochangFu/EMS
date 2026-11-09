@@ -293,6 +293,17 @@ export type CatalogSummaryInput = {
   readonly alarm?: { readonly message: string; readonly severity: string; readonly assetName: string; readonly raisedAt: string };
   /** `F4.284`: a `workOrder` target's title, status now and asset. */
   readonly workOrder?: { readonly title: string; readonly status: string; readonly assetName: string };
+  /**
+   * `F4.339` PR 9 (ADR 0099 Amendment 18): `onboarding.credentials.copy` only — the RTU codes and the
+   * broker of the stored proposal, for the card's words. Display data: the body carries indexes only.
+   */
+  readonly credentialCopy?: {
+    readonly fromCode: string;
+    readonly toCodes: readonly string[];
+    readonly host: string | null;
+    readonly port: number | null;
+    readonly tls: boolean;
+  };
 };
 
 export interface CatalogEntry {

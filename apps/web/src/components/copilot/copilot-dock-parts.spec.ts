@@ -10,6 +10,12 @@ export function aDiscoveryCardDropsTheCachedCommitCard(): void {
   expect(merged.map((c) => c.id)).toEqual(["p1", "d1"]);
 }
 
+/** F4.339 PR 9 (ADR 0099 Amendment 18): a returned credential-copy card is server-made, so it drops the cached discovery card. */
+export function aCopyCardDropsTheCachedDiscoveryCard(): void {
+  const merged = mergePendingChanges([card("d1", "onboarding.discovery")], [card("k1", "onboarding.credentials.copy")]);
+  expect(merged.map((c) => c.id)).toEqual(["k1"]);
+}
+
 /** A turn that returns no server-made card leaves the cached ones; a returned card replaces its own copy. */
 export function aTurnWithoutAServerCardKeepsTheCachedOnes(): void {
   expect(mergePendingChanges([card("c1", "onboarding.commit")], []).map((c) => c.id)).toEqual(["c1"]);

@@ -70,8 +70,9 @@ const ORG: ValidateTemplateContext = {
 };
 
 /** T21 (with the FORBIDDEN walk in `onboarding-agent-tools.spec.ts`, which covers every tool) */
-export async function assertToolsAre31(): Promise<void> {
-  assert(TOOL_DEFINITIONS.length === 31, `there are 31 tools, got ${TOOL_DEFINITIONS.length}`);
+export async function assertToolsAre32(): Promise<void> {
+  // F4.339 PR 9 (ADR 0099 Amendment 18): + propose_credential_copy.
+  assert(TOOL_DEFINITIONS.length === 32, `there are 32 tools, got ${TOOL_DEFINITIONS.length}`);
   for (const name of [
     "list_templates",
     "get_template",

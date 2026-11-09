@@ -1,10 +1,10 @@
-import { ConflictException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { expect } from "vitest";
 import type pg from "pg";
 
 import type { JwtPayload } from "@bms/shared";
 
-import type { OnboardingCredentialCopyService } from "./onboarding-credential-copy.service";
+import { COPY_PROPOSED_DRAFT_CHANGED, type OnboardingCredentialCopyService } from "./onboarding-credential-copy.service";
 import type { OnboardingService } from "./onboarding.service";
 
 /**
@@ -134,4 +134,28 @@ export async function assertAHostEditDropsACopiedCredential(ctx: CopyCtx): Promi
   const dto = await ctx.service.patchDraft(ctx.jwt, id, { rtus } as never);
   expect(dto.draft.rtus?.map((r) => r.credentialsSet)).toEqual([true, false, false]);
   expect(Object.keys(await secretsOf(ctx, id))).toEqual([codes[0]]);
+}
+
+/**
+ * CC7 (`F4.339` PR 9, ADR 0099 Amendment 18 Q3) — a copilot card's copy names
+ * the draft hash it was made for: a stale hash answers 400 and writes nothing
+ * (no blob, no audit row); the stored draft's own hash copies.
+ */
+export async function assertAStaleDraftHashWritesNothing(ctx: CopyCtx): Promise<void> {
+  const { id, codes } = await ctx.seed();
+  await ctx.service.setCredentials(ctx.jwt, id, { rtuIndex: 0, credentials: TEST_SECRET });
+  const before = await secretsOf(ctx, id);
+  const stale = "0".repeat(64);
+  const err = await rejection(ctx.copies.copy(ctx.jwt, id, { from: { rtuIndex: 0 }, toRtuIndexes: [1], draftHash: stale }));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect((err as Error).message).toBe(COPY_PROPOSED_DRAFT_CHANGED);
+  expect(await secretsOf(ctx, id)).toEqual(before);
+  expect(await audits(ctx, id)).toEqual([]);
+
+  const hash = (await ctx.service.getSession(ctx.jwt, id)).draftHash;
+  expect(hash).toMatch(/^[0-9a-f]{64}$/);
+  const dto = await ctx.copies.copy(ctx.jwt, id, { from: { rtuIndex: 0 }, toRtuIndexes: [1], draftHash: hash as string });
+  expect(dto.draft.rtus?.map((r) => r.credentialsSet)).toEqual([true, true, false]);
+  expect(Object.keys(await secretsOf(ctx, id)).sort()).toEqual([codes[0], codes[1]].sort());
+  expect(await audits(ctx, id)).toHaveLength(1);
 }

@@ -182,5 +182,8 @@ export async function assertListProtocolsReturnsTheCatalogWithFields(): Promise<
 
 /** T9 — no new tool. */
 export function assertTheToolCountStaysTwentyNine(): void {
-  assert(TOOL_DEFINITIONS.length === 31, `31 tools (F3.24b added the two discovery tools), got ${TOOL_DEFINITIONS.length}`);
+  assert(
+    TOOL_DEFINITIONS.length === 32,
+    `32 tools (F3.24b added the two discovery tools, F4.339 PR 9 propose_credential_copy), got ${TOOL_DEFINITIONS.length}`,
+  );
 }

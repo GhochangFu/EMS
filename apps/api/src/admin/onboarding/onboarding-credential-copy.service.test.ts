@@ -23,4 +23,7 @@ describe("F4.339 — the credential copy's early refusals", () => {
   it("answers 409 for a key version this API cannot read (R7)", () => S.anUnreadableKeyVersionIsA409());
   it("answers 409 for a target on another broker", () => S.aTargetOnAnotherBrokerIsA409());
   it("answers 409 for a bound source its RTU no longer serves", () => S.aStaleBoundSourceIsA409());
+  it("answers 400 for a draftHash that is not the stored draft's (Amendment 18 Q3)", () => S.aStaleDraftHashIsA400());
+  it("passes the bind with the stored draft's own hash", () => S.theStoredDraftsHashPassesTheBind());
+  it("answers the card's own 400 when the draft moved before the row lock (review 4)", () => S.aDraftMovedBeforeTheLockIsTheCardsOwn400());
 });

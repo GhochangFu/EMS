@@ -176,4 +176,8 @@ export const GUIDED_TOOL_COVERAGE: Readonly<Record<ToolName, GuidedToolCoverage>
   get_asset_points: { mode: "agent_only", reason: MAPPINGS_AGENT_ONLY },
   propose_discovery: { mode: "agent_only", reason: DISCOVERY_AGENT_ONLY },
   get_discovery_results: { mode: "agent_only", reason: DISCOVERY_AGENT_ONLY },
+  propose_credential_copy: {
+    mode: "agent_only",
+    reason: "F4.339 PR 9 / ADR 0099 Amendment 18: the guided mode has the drawer's Same credentials as… select",
+  },
 };

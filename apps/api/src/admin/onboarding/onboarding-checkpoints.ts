@@ -6,6 +6,7 @@ import { z } from "zod";
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { cloneJson } from "../stack-safe-json";
 import { COMMIT_PROPOSAL_KEY } from "./onboarding-commit-proposal";
+import { CREDENTIAL_COPY_PROPOSAL_KEY } from "./onboarding-credential-copy-state";
 import { DISCOVERY_PROPOSAL_KEY } from "./onboarding-discovery-state";
 import { cutToBound } from "./onboarding-draft-caps";
 import { DRAFT_SECTIONS } from "./onboarding-draft-merge";
@@ -271,6 +272,8 @@ export function restoreSections(
   delete draft[COMMIT_PROPOSAL_KEY];
   // F3.24b (accuracy review #8): an undo must not bring an old discovery card back.
   delete draft[DISCOVERY_PROPOSAL_KEY];
+  // F4.339 PR 9: nor an old credential-copy card.
+  delete draft[CREDENTIAL_COPY_PROPOSAL_KEY];
   for (const section of DRAFT_SECTIONS) {
     const value = cp.sections[section];
     if (value === undefined) {

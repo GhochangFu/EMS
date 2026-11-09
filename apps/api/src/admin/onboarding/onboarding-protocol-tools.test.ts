@@ -66,7 +66,7 @@ describe("the RTU tools and the protocol catalog (F3.24a, ADR 0093 decisions 5, 
     await assertListProtocolsReturnsTheCatalogWithFields();
   });
 
-  it("the tool count is 31 (F3.24b)", () => {
+  it("the tool count is 32 (F3.24b, F4.339 PR 9)", () => {
     assertTheToolCountStaysTwentyNine();
   });
 });

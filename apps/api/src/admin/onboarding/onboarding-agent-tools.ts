@@ -16,6 +16,12 @@ import {
   isDiscoveryToolName,
   stampDiscovered,
 } from "./onboarding-discovery-tools";
+import {
+  CREDENTIAL_COPY_TOOL_DESCRIPTIONS,
+  CREDENTIAL_COPY_TOOL_SCHEMAS,
+  dispatchCredentialCopyTool,
+  isCredentialCopyToolName,
+} from "./onboarding-credential-copy-tool";
 import { dispatchMappingTool, isMappingToolName, MAPPING_TOOL_DESCRIPTIONS, MAPPING_TOOL_SCHEMAS } from "./onboarding-mapping-tools";
 import { cutToBound, draftCountProblem, pointKeyQuotaProblem, type PointKeyQuota } from "./onboarding-draft-caps";
 import type { LlmToolCall, LlmToolDefinition } from "../../llm/llm-port";
@@ -299,6 +305,7 @@ const TOOL_SCHEMAS = {
   ...TEMPLATE_TOOL_SCHEMAS,
   ...MAPPING_TOOL_SCHEMAS,
   ...DISCOVERY_TOOL_SCHEMAS,
+  ...CREDENTIAL_COPY_TOOL_SCHEMAS,
 } as const satisfies Record<string, ZodTypeAny>;
 
 export type ToolName = keyof typeof TOOL_SCHEMAS;
@@ -307,6 +314,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   ...TEMPLATE_TOOL_DESCRIPTIONS,
   ...MAPPING_TOOL_DESCRIPTIONS,
   ...DISCOVERY_TOOL_DESCRIPTIONS,
+  ...CREDENTIAL_COPY_TOOL_DESCRIPTIONS,
   get_draft: "Returns the current onboarding draft (credentials redacted).",
   list_point_keys: "Lists catalog point keys (code, name, unit, domain, inUse). Optional `search` filters code and name; `domain` and `unit` match exactly, case-insensitive. Keys this organization already maps come first.",
   find_existing:
@@ -359,7 +367,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
 /** `F3.85` (ADR 0099): the name → schema map and its definitions, built by the generic registry in `llm/`. */
 const TOOL_REGISTRY = defineToolRegistry(TOOL_SCHEMAS, DESCRIPTIONS);
 
-/** The 31 tools as the model sees them, in a fixed order. */
+/** The 32 tools as the model sees them, in a fixed order. */
 export const TOOL_DEFINITIONS: readonly LlmToolDefinition[] = TOOL_REGISTRY.definitions;
 
 /**
@@ -453,6 +461,8 @@ export const NON_DRAFT_WRITE_TOOLS: ReadonlySet<ToolName> = new Set<ToolName>([
   "get_asset_points",
   "propose_discovery",
   "get_discovery_results",
+  // F4.339 PR 9 (ADR 0099 Amendment 18): a proposal; the route writes at Confirm.
+  "propose_credential_copy",
 ]);
 
 /**
@@ -480,6 +490,9 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
   }
   if (isDiscoveryToolName(name)) {
     return dispatchDiscoveryTool(name, args, state);
+  }
+  if (isCredentialCopyToolName(name)) {
+    return dispatchCredentialCopyTool(name, args, state);
   }
   if (isTemplateToolName(name)) {
     return dispatchTemplateTool(name, args, state, ctx);

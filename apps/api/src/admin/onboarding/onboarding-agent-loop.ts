@@ -26,7 +26,7 @@ import type { LlmMessage, LlmProvider, LlmToolCall } from "../../llm/llm-port";
 import { PROMPT_MARKER_SENTENCE, serialiseDraftForPrompt } from "./onboarding-prompt-budget";
 import { readStoredDiscovery } from "./onboarding-discovery-state";
 import { isTopLevelPhrase } from "./onboarding-location-parent";
-import type { DiscoveryProposal, DiscoverySecretCopy } from "./onboarding-tool-outcome";
+import type { CredentialCopyProposal, DiscoveryProposal, DiscoverySecretCopy } from "./onboarding-tool-outcome";
 import type { OnboardingDraftInput, OnboardingPhase } from "./onboarding.schema";
 import { claimsAWrite, withoutWriteClaims, writeClaimRetryFor } from "./onboarding-write-claim";
 
@@ -105,6 +105,8 @@ export type AgentTurnResult = {
   readonly commitProposal?: { readonly summary: string };
   /** F3.24b (ADR 0103 decision 2): the last `propose_discovery` of the turn, when no write followed it. */
   readonly discoveryProposal?: DiscoveryProposal;
+  /** F4.339 PR 9 (ADR 0099 Amendment 18): the last `propose_credential_copy` of the turn, when no write followed it. */
+  readonly credentialCopyProposal?: CredentialCopyProposal;
   /** F3.24b: the RTU-per-device credential copies the turn earned; `applyDiscoveryTurn` checks each again. */
   readonly secretCopies?: readonly DiscoverySecretCopy[];
   /** F3.25 (ADR 0094 decision 9): the replies the model offered, unfiltered; `[]` on a provider error. */
@@ -117,11 +119,13 @@ export type AgentTurnResult = {
 
 /**
  * `F4.339` (plan R2): whether the turn wrote so far — a changed draft section,
- * a commit proposal or a discovery proposal. A draft too deep to diff counts as
+ * a commit proposal, a discovery proposal or (PR 9) a credential-copy proposal. A draft too deep to diff counts as
  * written, so the guard never retries on it and `correctFinal` never throws.
  */
 function wroteSoFar(before: OnboardingDraft, state: ToolState, wroteLine: boolean): boolean {
-  if (wroteLine || state.pendingProposal !== undefined || state.pendingDiscovery !== undefined) return true;
+  if (wroteLine || state.pendingProposal !== undefined || state.pendingDiscovery !== undefined || state.pendingCredentialCopy !== undefined) {
+    return true;
+  }
   try {
     return Object.keys(diffSections(before, state.working)).length > 0;
   } catch {
@@ -180,9 +184,18 @@ export const DISCOVERY_PROMPT_PARAGRAPH =
   "For discovered keys the rule to write only after the user agrees does not apply: the draft preview marks them Discovered and is the review. " +
   "After get_discovery_results, only those writes run in that turn. Say in your reply when the result was truncated or empty.\n";
 
+/**
+ * `F4.339` PR 9 (ADR 0099 Amendment 18 decision 2): the one sentence on the
+ * credential copy, sent with the Discovery paragraph only while an MQTT RTU
+ * holds a credential — the only time a copy can be proposed.
+ */
+export const CREDENTIAL_COPY_PROMPT_SENTENCE =
+  "When the user wants one MQTT RTU's stored credentials on other RTUs of the same broker, call propose_credential_copy; the user confirms on the copilot's card.\n";
+
 function discoveryParagraph(draft: OnboardingDraft): string {
   const credentialed = (draft.rtus ?? []).some((rtu) => rtu.protocol === "mqtt" && rtu.credentialsSet === true);
-  return credentialed || readStoredDiscovery(draft) !== null ? DISCOVERY_PROMPT_PARAGRAPH : "";
+  const discovery = credentialed || readStoredDiscovery(draft) !== null ? DISCOVERY_PROMPT_PARAGRAPH : "";
+  return credentialed ? `${discovery}${CREDENTIAL_COPY_PROMPT_SENTENCE}` : discovery;
 }
 
 /** `F4.339` (plan R1): the prompt sentence that names the record format as the system's, never the model's. */
@@ -231,7 +244,11 @@ export function stopReply(
   state: ToolState,
   actionLines: readonly string[] = [],
 ): string {
-  const wrote = Object.keys(draftPatch).length > 0 || state.pendingProposal !== undefined || state.pendingDiscovery !== undefined;
+  const wrote =
+    Object.keys(draftPatch).length > 0 ||
+    state.pendingProposal !== undefined ||
+    state.pendingDiscovery !== undefined ||
+    state.pendingCredentialCopy !== undefined;
   const stored = actionLines.filter((line) => !line.startsWith(NOT_APPLIED_PREFIX));
   const fixed =
     stopReason === "cap_calls"
@@ -340,6 +357,7 @@ export async function runAgentTurn(
     Object.keys(draftPatch).length === 0 &&
     state.pendingProposal === undefined &&
     state.pendingDiscovery === undefined &&
+    state.pendingCredentialCopy === undefined &&
     claimsAWrite(reply);
   return {
     reply: stopReason === "final" ? (claimReplaced ? withoutWriteClaims(reply) : reply) : stopReply(stopReason, draftPatch, state, actionLines),
@@ -347,6 +365,7 @@ export async function runAgentTurn(
     actionLines,
     ...(state.pendingProposal ? { commitProposal: state.pendingProposal } : {}),
     ...(state.pendingDiscovery ? { discoveryProposal: state.pendingDiscovery } : {}),
+    ...(state.pendingCredentialCopy ? { credentialCopyProposal: state.pendingCredentialCopy } : {}),
     ...(state.secretCopies && state.secretCopies.length > 0 ? { secretCopies: [...state.secretCopies] } : {}),
     suggestedReplies: state.suggestedReplies ?? [],
     stopReason,

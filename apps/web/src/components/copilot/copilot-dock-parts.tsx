@@ -60,8 +60,10 @@ export const EMPTY_THREAD_SENTENCE =
 const ONBOARDING_COMMIT = "onboarding.commit";
 /** `F3.24b`: the server-made discovery card's id, the commit card's twin (one open per conversation). */
 export const ONBOARDING_DISCOVERY = "onboarding.discovery";
+/** `F4.339` PR 9 (ADR 0099 Amendment 18): the server-made credential-copy card's id. */
+export const ONBOARDING_CREDENTIAL_COPY = "onboarding.credentials.copy";
 export const isServerMadeCard = (catalogId: string): boolean =>
-  catalogId === ONBOARDING_COMMIT || catalogId === ONBOARDING_DISCOVERY;
+  catalogId === ONBOARDING_COMMIT || catalogId === ONBOARDING_DISCOVERY || catalogId === ONBOARDING_CREDENTIAL_COPY;
 
 /**
  * The thread's open cards after a turn: a returned card replaces its cached copy, and a returned

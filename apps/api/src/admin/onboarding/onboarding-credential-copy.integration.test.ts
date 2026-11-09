@@ -20,6 +20,7 @@ import {
   assertACommittedSourceCopiesItsBytes,
   assertAnotherOrganizationsRtuIsNotFound,
   assertASameDraftCopy,
+  assertAStaleDraftHashWritesNothing,
   assertReplaceDecides,
   type CopyCtx,
   PORT,
@@ -221,5 +222,9 @@ describe.skipIf(!connectionString)("F4.339 — the onboarding credential copy (r
 
   it("CC6 a host edit after a copy drops the copied credential (review H1)", async () => {
     await assertAHostEditDropsACopiedCredential(ctx);
+  }, 30_000);
+
+  it("CC7 a stale draftHash writes nothing; the stored draft's hash copies (Amendment 18 Q3)", async () => {
+    await assertAStaleDraftHashWritesNothing(ctx);
   }, 30_000);
 });

@@ -754,6 +754,16 @@ export const copyOnboardingCredentialsBodySchema = z
       .refine((indexes) => new Set(indexes).size === indexes.length, { message: "toRtuIndexes must be distinct" })
       .describe("1 to 100 distinct draft RTU indexes."),
     replace: z.boolean().optional(),
+    /**
+     * `F4.339` PR 9 (ADR 0099 Amendment 18 Q3): the hash of the draft a copilot
+     * card was made for, as `onboarding.commit` binds it. Optional: the drawer
+     * sends none. A draft changed since answers 400 and nothing is copied.
+     */
+    draftHash: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .describe("The SHA-256 hex of the draft the copy was proposed for; the drawer omits it.")
+      .optional(),
   })
   .strict();
 

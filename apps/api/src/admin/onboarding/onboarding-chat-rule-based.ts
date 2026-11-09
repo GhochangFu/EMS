@@ -52,7 +52,7 @@ import {
 } from "./onboarding-chat-summaries";
 import { guidedWrite } from "./onboarding-guided-writes";
 import type { ValidateTemplateContext } from "./onboarding-template-refs";
-import type { DiscoveryProposal, DiscoverySecretCopy } from "./onboarding-tool-outcome";
+import type { CredentialCopyProposal, DiscoveryProposal, DiscoverySecretCopy } from "./onboarding-tool-outcome";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { draftNeedsPointKeys, type OnboardingValidateService } from "./onboarding-validate.service";
 import type { PointKeyQuota } from "./onboarding-draft-caps";
@@ -72,6 +72,8 @@ export type ChatTurnResult = {
   commitProposal?: { summary: string };
   /** F3.24b (ADR 0103 decision 2): the agent proposed a discovery; `chat` stores it for the server-made card. */
   discoveryProposal?: DiscoveryProposal;
+  /** F4.339 PR 9 (ADR 0099 Amendment 18): the agent proposed a credential copy; `chat` stores it for the server-made card. */
+  credentialCopyProposal?: CredentialCopyProposal;
   /** F3.24b: the RTU-per-device credential copies, applied (and checked again) by `applyDiscoveryTurn`. */
   secretCopies?: readonly DiscoverySecretCopy[];
   // No `credentialsToEncrypt` here by design (ADR 0022 decision 2): a chat turn

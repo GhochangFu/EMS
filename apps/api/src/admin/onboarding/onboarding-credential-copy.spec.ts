@@ -86,3 +86,13 @@ export function theBodyTakesOneSourceAndDistinctTargets(): void {
   expect(ok({ from: { rtuIndex: 0 }, toRtuIndexes: [] })).toBe(false);
   expect(ok({ from: { rtuIndex: 0 }, toRtuIndexes: [1], credentials: {} })).toBe(false);
 }
+
+/** `F4.339` PR 9 (ADR 0099 Amendment 18 Q3): an optional `draftHash`, 64 lowercase hex, binds a copilot card's copy. */
+export function theBodyTakesAnOptionalDraftHash(): void {
+  const ok = (body: unknown) => copyOnboardingCredentialsBodySchema.safeParse(body).success;
+  expect(ok({ from: { rtuIndex: 0 }, toRtuIndexes: [1], draftHash: "a".repeat(64) })).toBe(true);
+  expect(ok({ from: { rtuIndex: 0 }, toRtuIndexes: [1] })).toBe(true);
+  expect(ok({ from: { rtuIndex: 0 }, toRtuIndexes: [1], draftHash: "A".repeat(64) })).toBe(false);
+  expect(ok({ from: { rtuIndex: 0 }, toRtuIndexes: [1], draftHash: "a".repeat(63) })).toBe(false);
+  expect(ok({ from: { rtuIndex: 0 }, toRtuIndexes: [1], draftHash: null })).toBe(false);
+}

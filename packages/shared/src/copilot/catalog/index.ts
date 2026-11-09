@@ -136,6 +136,7 @@ export function hashExcludedKeysOf(entry: Pick<CatalogEntry, "clientOnly" | "car
  * `tests/f3.85-stepper-coverage` takes each from the editor page instead of a
  * `WizardShell`. `F4.284` (owner ruling DC2, 2026-10-24): the work-order reorder,
  * whose form is the Kanban board's drag. `F4.324`: the chart append, whose form is the Pin dialog.
+ * `F4.339` PR 9: the onboarding credential copy, whose form is the drawer's select.
  */
 export const CANVAS_ENTRY_IDS = [
   "mimicLayout.create",
@@ -143,6 +144,9 @@ export const CANVAS_ENTRY_IDS = [
   "workOrder.reorder",
   // `F4.324` (ADR 0099 Amendment 16): the chart append's human form is the Pin dialog.
   "dashboard.widgets.appendChart",
+  // `F4.339` PR 9 (ADR 0099 Amendment 18): the credential copy's human form is the drawer's
+  // "Same credentials as…" select, a plain form, not a stepper.
+  "onboarding.credentials.copy",
 ] as const;
 
 /** The two canvas entries whose canvas is the mimic layout editor (`CANVAS_ENTRY_IDS` less the work-order board). */

@@ -186,6 +186,8 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "mqttPayloadFormat.delete": [["admin", "mqtt-payload-formats"]],
   // `F3.24b` (ADR 0103) — a discovery writes only the draft's `_discovery`, so only the session reads go stale.
   "onboarding.discovery": [["onboarding"]],
+  // `F4.339` PR 9 (ADR 0099 Amendment 18): a credential copy writes only the draft's `_secrets`.
+  "onboarding.credentials.copy": [["onboarding"]],
   // `F3.86` PR 6 — an onboarding commit creates the site, its RTUs, assets, mappings, groups and templates.
   "onboarding.commit": [
     LOCATIONS,

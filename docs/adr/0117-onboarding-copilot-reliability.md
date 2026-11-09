@@ -10,6 +10,18 @@ owner gave nine rulings in chat on 2026-11-08, one at a time, before this
 record was written (listed under *Rulings*). Lines marked *(drafter)* are
 drafter calls that the `F4.339` plan may refine; the others are rulings.
 
+**Built — 2026-11-09** by `F4.339` PRs 1–9:
+[#1159](https://github.com/GhochangFu/EMS/pull/1159) (true replies),
+[#1160](https://github.com/GhochangFu/EMS/pull/1160) (draft contracts),
+[#1161](https://github.com/GhochangFu/EMS/pull/1161) (discovery),
+[#1162](https://github.com/GhochangFu/EMS/pull/1162) (migrations `0131`, `0132`),
+[#1163](https://github.com/GhochangFu/EMS/pull/1163) (topic release),
+[#1164](https://github.com/GhochangFu/EMS/pull/1164) (locked drafts),
+[#1166](https://github.com/GhochangFu/EMS/pull/1166) (credential copy),
+[#1168](https://github.com/GhochangFu/EMS/pull/1168) (web fixes) and PR 9, the
+change that carries this line (the copilot's credential-copy card, ADR 0099
+Amendment 18). The AWS checks the plan lists are owed to the owner.
+
 It is a scope change because it adds a migration (a draft lock and an RTU
 topic record), a credential route and new copilot behaviour. It promotes
 nothing out of AGENTS.md §6 and adds no dependency (§9.4).
