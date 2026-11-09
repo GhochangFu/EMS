@@ -2496,7 +2496,12 @@ amendment is accepted. The merge of this amendment approves it. A line marked
    `ONBOARDING_PENDING`:
    - `POST /admin/onboarding/sessions/:id/credentials/copy`, body the PR 7
      schema, `proposer: "server"`, risk `edit`, target
-     `{ kind: "onboardingSession", param: "id" }`, one step **Copy**.
+     `{ kind: "onboardingSession", param: "id" }`. **Built as a canvas
+     entry with no steps** (finding at the build, 2026-11-09): the stepper
+     gate (`tests/f3.85-stepper-coverage.test.ts`) checks every catalog entry,
+     and the drawer's **Same credentials as…** control is a plain form, so the
+     entry is in `CANVAS_ENTRY_IDS` with the drawer's call as its row, as the
+     Pin dialog is (Amendment 16).
    - Summary: `Copy the stored credentials of RTU "A" to RTUs "B", "C" (same
      broker host:port, TLS on|off). No credential value is shown or sent.`
    - **Draft sources only** *(drafter)*: the card's `from` is `{ rtuIndex }`.
@@ -2535,8 +2540,7 @@ amendment is accepted. The merge of this amendment approves it. A line marked
 - Plan PR 9 adds the entry with its fixture in `catalog.fixtures.ts` and specs,
   the agent tool with its refusal specs, the server-made card, the claim-guard
   phrase, and (Q3 yes) the optional `draftHash` on the PR 7 body. The stepper
-  gate does not apply: the drawer control is a plain form, not a
-  `<WizardShell`.
+  gate covers every entry, so the entry is a canvas entry (decision 1).
 - The propose budget (`copilot-propose-budget.spec.ts`) is measured at the
   build; over its bound, the bound rises by release 4's rule and the owner is
   asked, as in Amendment 13.
