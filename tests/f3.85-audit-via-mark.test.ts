@@ -150,6 +150,17 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     route: { method: "POST", path: "/admin/asset-templates/:id/default-dashboards" },
     auditMethods: ["backfill"],
   },
+  // `F4.339` (ADR 0117 decision 9): the global-admin lock and unlock — a human act, never a catalog entry.
+  {
+    file: "apps/api/src/admin/onboarding/onboarding-session-lock.service.ts",
+    route: { method: "POST", path: "/admin/onboarding/sessions/:id/lock" },
+    auditMethods: ["lock"],
+  },
+  {
+    file: "apps/api/src/admin/onboarding/onboarding-session-unlock.service.ts",
+    route: { method: "POST", path: "/admin/onboarding/sessions/:id/unlock" },
+    auditMethods: ["unlock"],
+  },
 ];
 
 /** Directories whose write routes the release-1 catalog covers; no file in them may insert into the audit log itself. */

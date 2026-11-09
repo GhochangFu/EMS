@@ -23,6 +23,7 @@ import {
   type LockCtx,
 } from "./onboarding-lock.integration.spec";
 import { OnboardingSessionLockService } from "./onboarding-session-lock.service";
+import { OnboardingSessionUnlockService } from "./onboarding-session-unlock.service";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import { OnboardingService } from "./onboarding.service";
@@ -134,6 +135,7 @@ describe.skipIf(!connectionString)("F4.339 — the onboarding draft lock (real P
       pool: fleetPool,
       service,
       locks: new OnboardingSessionLockService(fleetDb, tenantDb, accessControl, audit, service),
+      unlocks: new OnboardingSessionUnlockService(tenantDb, accessControl, audit, service),
       commit: (jwt: Parameters<OnboardingCommitService["commit"]>[0], id: string) => commit.commit(jwt, id),
       adminJwt: jwtFor("admin@bms.local", "admin"),
       orgAdminJwt: jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin"),

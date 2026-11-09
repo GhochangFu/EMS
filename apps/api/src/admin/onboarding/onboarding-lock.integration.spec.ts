@@ -6,6 +6,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { lockedSessionMessage } from "./onboarding-locked-writes";
 import type { OnboardingSessionLockService } from "./onboarding-session-lock.service";
+import type { OnboardingSessionUnlockService } from "./onboarding-session-unlock.service";
 import type { OnboardingService } from "./onboarding.service";
 
 /**
@@ -18,6 +19,7 @@ export type LockCtx = {
   readonly pool: pg.Pool;
   readonly service: OnboardingService;
   readonly locks: OnboardingSessionLockService;
+  readonly unlocks: OnboardingSessionUnlockService;
   readonly commit: (jwt: JwtPayload, sessionId: string) => Promise<unknown>;
   readonly adminJwt: JwtPayload;
   readonly orgAdminJwt: JwtPayload;
@@ -101,11 +103,11 @@ export async function assertUnlockIsIdempotent(ctx: LockCtx): Promise<void> {
   const id = await ctx.seed();
   await ctx.locks.lock(ctx.adminJwt, id, { reason: REASON });
   expect(await rejection(ctx.locks.lock(ctx.adminJwt, id, { reason: REASON }))).toBeInstanceOf(ConflictException);
-  const dto = await ctx.locks.unlock(ctx.adminJwt, id);
+  const dto = await ctx.unlocks.unlock(ctx.adminJwt, id);
   expect(dto.lock).toBeNull();
   const row = await columns(ctx, id);
   expect([row.locked_at, row.locked_by, row.lock_reason]).toEqual([null, null, null]);
-  await ctx.locks.unlock(ctx.adminJwt, id);
+  await ctx.unlocks.unlock(ctx.adminJwt, id);
   expect(await auditCount(ctx, id, "onboarding.session.unlock")).toBe(1);
   await ctx.service.patchDraft(ctx.orgAdminJwt, id, { pointKeys: [] });
 }

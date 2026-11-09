@@ -37,6 +37,7 @@ import {
 } from "./onboarding.schema";
 import { OnboardingDiscoveryService } from "./onboarding-discovery.service";
 import { OnboardingSessionLockService } from "./onboarding-session-lock.service";
+import { OnboardingSessionUnlockService } from "./onboarding-session-unlock.service";
 import { OnboardingService } from "./onboarding.service";
 
 @Controller("admin/onboarding")
@@ -46,6 +47,7 @@ export class OnboardingController {
     private readonly service: OnboardingService,
     private readonly discovery: OnboardingDiscoveryService,
     private readonly locks: OnboardingSessionLockService,
+    private readonly unlocks: OnboardingSessionUnlockService,
   ) {}
 
   /** `F4.339` (ADR 0117 decision 9): a global administrator locks a draft; every write is then refused (409). */
@@ -67,7 +69,7 @@ export class OnboardingController {
   @HttpCode(HttpStatus.OK)
   async unlock(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
     try {
-      return await this.locks.unlock(user, idParamSchema.parse(id));
+      return await this.unlocks.unlock(user, idParamSchema.parse(id));
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

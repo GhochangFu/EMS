@@ -27,7 +27,9 @@ export const LOCK_REASON_LOOKS_LIKE_A_SECRET = "The lock reason looks like it co
  * administrator's lock on an onboarding draft. A locked draft refuses every
  * write with one 409 sentence (`assertSessionStillDraft`) and stays readable.
  * The write runs under the row lock, so a turn in flight either commits first
- * or sees the lock. Kept out of `OnboardingService`, which is at the line cap.
+ * or sees the lock. Kept out of `OnboardingService`, which is at the line cap;
+ * the unlock is its own class (`OnboardingSessionUnlockService`) so each audit
+ * write has one route (the `F3.85` two-list ledger).
  */
 @Injectable()
 export class OnboardingSessionLockService {
@@ -72,38 +74,14 @@ export class OnboardingSessionLockService {
     return this.sessions.getSession(jwt, sessionId);
   }
 
-  /** Unlocks a draft: 403 unless a global admin; idempotent — an unlocked draft answers 200 and writes nothing. */
-  async unlock(jwt: JwtPayload, sessionId: string): Promise<OnboardingSessionDto> {
-    await this.assertGlobalAdmin(jwt);
-    const session = await this.sessions.loadSession(jwt, sessionId);
-    await withTenant(this.tenantDb, session.organizationId, async (tx) => {
-      const [row] = await tx
-        .select({ lockReason: onboardingSessions.lockReason })
-        .from(onboardingSessions)
-        .where(eq(onboardingSessions.id, sessionId))
-        .for("update");
-      if (!row || row.lockReason === null) return;
-      await tx
-        .update(onboardingSessions)
-        .set({ lockedAt: null, lockedBy: null, lockReason: null })
-        .where(eq(onboardingSessions.id, sessionId));
-      await this.audit.write(
-        {
-          actor: jwt,
-          action: "onboarding.session.unlock",
-          entityType: "onboarding_session",
-          entityId: sessionId,
-          organizationId: session.organizationId,
-        },
-        tx,
-      );
-    });
-    return this.sessions.getSession(jwt, sessionId);
+  private assertGlobalAdmin(jwt: JwtPayload): Promise<void> {
+    return assertLockerIsGlobalAdmin(this.accessControl, jwt);
   }
+}
 
-  private async assertGlobalAdmin(jwt: JwtPayload): Promise<void> {
-    if (!(await this.accessControl.isGlobalAdmin(jwt))) {
-      throw new ForbiddenException(LOCK_NEEDS_GLOBAL_ADMIN);
-    }
+/** `F4.339`: the 403 unless a global administrator — shared with {@link OnboardingSessionUnlockService}. */
+export async function assertLockerIsGlobalAdmin(accessControl: AccessControlService, jwt: JwtPayload): Promise<void> {
+  if (!(await accessControl.isGlobalAdmin(jwt))) {
+    throw new ForbiddenException(LOCK_NEEDS_GLOBAL_ADMIN);
   }
 }
