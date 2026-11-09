@@ -10,7 +10,7 @@ import {
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.32f attributions entries", () => {
-  it("A1 lists the seven libraries in order", () => {
+  it("A1 lists the eight libraries in order", () => {
     listsTheEightLibrariesInOrder();
   });
   it("A2 core has no source, notice or credits", () => {

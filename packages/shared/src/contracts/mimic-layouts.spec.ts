@@ -173,6 +173,7 @@ export function everyLibraryKeyNamesItsLibraryAndFitsSixtyFour(): void {
     qet: QET_SYMBOL_KEYS,
     wmpid: WMPID_SYMBOL_KEYS,
     drawio: DRAWIO_SYMBOL_KEYS,
+    iso: ISO_SYMBOL_KEYS,
   };
   for (const [code, keys] of Object.entries(byLibrary)) {
     if (floors.has(code)) assert(keys.length >= 100, `${code} has ${keys.length} keys`);

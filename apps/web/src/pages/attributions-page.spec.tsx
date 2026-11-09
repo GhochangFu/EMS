@@ -45,7 +45,7 @@ async function renderPage(): Promise<void> {
       </QueryClientProvider>
     </MemoryRouter>,
   );
-  // The first load transforms the three lazy shape modules (about 240 KB of source).
+  // The first load transforms the four lazy shape modules (about 1.3 MB of source since F4.345).
   await screen.findAllByTestId("attribution-entry", {}, { timeout: 5000 });
 }
 

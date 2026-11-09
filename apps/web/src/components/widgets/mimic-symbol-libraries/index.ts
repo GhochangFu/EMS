@@ -14,7 +14,8 @@ import { TABLER_LICENCE_NOTICE, TABLER_SHAPES } from "./tabler.generated";
  *
  * `F3.32h` (ADR 0086 slice-2 ruling R12) — the three third-party libraries (`qet`, `wmpid`,
  * `drawio`) and their per-file credits are loaded on first use, not in the main chunk: they added
- * 77 KB gzip to it. Tabler, Lucide and MDI stay static. `ensureLibraryShapes` loads a library's
+ * 77 KB gzip to it. `F4.345` (ADR 0121) adds the isometric set (`iso`, about 305 KB gzip) the same
+ * way. Tabler, Lucide and MDI stay static. `ensureLibraryShapes` loads a library's
  * module once into `SHAPES`; `subscribeLibraryShapes` / `libraryShapesVersion` let a component
  * redraw when a load lands. `librarySymbolShapes` stays synchronous and answers `null` for a key
  * whose library is still loading — `lazyLibraryState` tells that apart from a stale key.

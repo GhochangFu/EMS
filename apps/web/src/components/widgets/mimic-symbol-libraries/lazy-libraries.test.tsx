@@ -15,7 +15,7 @@ import {
 } from "./lazy-libraries.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014); jsdom opts in here (ADR 0042). */
-describe("F3.32h the qet, wmpid and drawio libraries load on first use", () => {
+describe("F3.32h, F4.345 the qet, wmpid, drawio and iso libraries load on first use", () => {
   afterEach(() => {
     cleanup();
     vi.doUnmock("./qet.generated");
