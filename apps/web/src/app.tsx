@@ -46,6 +46,7 @@ import { EscalationProfilesPage } from "./pages/admin/escalation-profiles-page";
 import { NotificationChannelsPage } from "./pages/admin/notification-channels-page";
 import { NotificationDeliveriesPage } from "./pages/admin/notification-deliveries-page";
 import { AiAssistantPage } from "./pages/admin/ai-assistant-page";
+import { PortalAppearancePage } from "./pages/admin/portal-appearance-page";
 import { AssetGroupsAdminPage } from "./pages/admin/asset-groups-page";
 import { UsersAdminPage } from "./pages/admin/users-page";
 import { CalcParametersAdminPage } from "./pages/admin/calc-parameters-page";
@@ -474,6 +475,19 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <AdminHubPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/* F4.341 PR 12 (ADR 0118 decision 11): the portal default appearance, global admin only. */}
+      <Route
+        path="/admin/portal-appearance"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <PortalAppearancePage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
+
+import { MyAppearanceDialog } from "../../components/appearance/appearance-dialogs";
 
 import { isMasterDataAdmin } from "../../lib/admin-access";
 import { roleLabel } from "../../lib/role-label";
@@ -38,6 +41,7 @@ export function ShellHeader({
         </div>
         <ThemeSwitch />
         <SurfaceSwitch />
+        <AppearanceButton />
         <button
           type="button"
           className="rounded border border-on-dark/20 px-3 py-1.5 text-xs font-semibold text-on-dark/85 transition hover:border-on-dark/40 hover:bg-on-dark/10 hover:text-on-dark"
@@ -47,6 +51,25 @@ export function ShellHeader({
         </button>
       </div>
     </header>
+  );
+}
+
+/**
+ * `F4.341` PR 12 (ADR 0118 decision 11) — the user's own Appearance chooser, in every shell's header.
+ */
+export function AppearanceButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className="rounded border border-on-dark/20 px-3 py-1.5 text-xs font-semibold text-on-dark/85 transition hover:border-on-dark/40 hover:bg-on-dark/10 hover:text-on-dark"
+        onClick={() => setOpen(true)}
+      >
+        Appearance
+      </button>
+      {open ? <MyAppearanceDialog onClose={() => setOpen(false)} /> : null}
+    </>
   );
 }
 

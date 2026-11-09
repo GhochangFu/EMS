@@ -61,8 +61,8 @@ const ACCENT_FILL = /(?<![\w/-])(?:[a-z-]+:)*(?:bg-accent(?:-strong)?|from-accen
 
 /** Today's opaque accent fills per file: every one a primary button or a selection. Exact. */
 const ACCENT_FILL_FILES: Record<string, number> = {
-  "apps/web/src/components/admin/colour-profile-dialog.tsx": 2,
   "apps/web/src/components/admin/location-move-dialog.tsx": 1,
+  "apps/web/src/components/appearance/appearance-panel.tsx": 2,
   "apps/web/src/components/asset-history/range-picker.tsx": 1,
   "apps/web/src/components/asset-templates/alarms-tab.tsx": 1,
   "apps/web/src/components/asset-templates/calculations-tab.tsx": 1,

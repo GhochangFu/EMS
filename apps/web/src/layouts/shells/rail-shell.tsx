@@ -10,6 +10,7 @@ import { ThemeSwitch } from "../../components/theme-switch";
 import { Wordmark } from "../../components/wordmark";
 import { shellGroups, topNav, useShellModel } from "./navigation-model";
 import { ShellMain } from "./shell-footer";
+import { AppearanceButton } from "./shell-header";
 import type { AppShellProps } from "./shell-props";
 
 /**
@@ -44,6 +45,7 @@ export function RailShell({ user, children, kpiRibbon }: AppShellProps) {
           </span>
           <ThemeSwitch />
           <SurfaceSwitch />
+          <AppearanceButton />
           <button
             type="button"
             className="rounded border border-on-dark/20 px-3 py-1 text-xs font-semibold text-on-dark/85 transition hover:border-on-dark/40 hover:bg-on-dark/10 hover:text-on-dark"

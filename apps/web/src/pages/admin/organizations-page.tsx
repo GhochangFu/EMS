@@ -14,7 +14,8 @@ import {
 } from "../../api/admin/organizations";
 import { fetchCopilotStatus } from "../../api/copilot";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
-import { COLOUR_PROFILE_LABELS, ColourProfileDialog } from "../../components/admin/colour-profile-dialog";
+import { OrganizationAppearanceDialog } from "../../components/appearance/appearance-dialogs";
+import { COLOUR_PROFILE_LABELS } from "../../components/appearance/labels";
 import { CopilotOrgSwitch } from "../../components/admin/copilot-org-switch";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
@@ -302,7 +303,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                               className="text-xs font-semibold text-accent-strong"
                               onClick={() => setProfileFor(item)}
                             >
-                              Colour profile
+                              Appearance
                             </button>
                           ) : null}
                           {canWrite ? (
@@ -335,7 +336,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
           )}
         </SectionCard>
 
-      {profileFor ? <ColourProfileDialog organization={profileFor} onClose={() => setProfileFor(null)} /> : null}
+      {profileFor ? <OrganizationAppearanceDialog organization={profileFor} onClose={() => setProfileFor(null)} /> : null}
 
       {ingestFor ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
