@@ -28,7 +28,8 @@ export type FakeBroker = {
   subscriptions: string[];
   ended: number;
   fireConnect(): void;
-  fireMessage(topic: string, payload: string): void;
+  /** A string is sent as its UTF-8 bytes; a `Buffer` as is (binary formats, ADR 0119). */
+  fireMessage(topic: string, payload: string | Buffer): void;
   fireError(error: Error): void;
   failNextConnect(): void;
 };
@@ -79,7 +80,7 @@ export function makeFakeBroker(): FakeBroker {
       for (const handler of handlers.connect) handler();
     },
     fireMessage(topic, payload) {
-      for (const handler of handlers.message) handler(topic, Buffer.from(payload, "utf8"));
+      for (const handler of handlers.message) handler(topic, Buffer.isBuffer(payload) ? payload : Buffer.from(payload, "utf8"));
     },
     fireError(error) {
       for (const handler of handlers.error) handler(error);

@@ -42,8 +42,8 @@ const BCPL_SAMPLE = JSON.stringify([record("BCPL_LAKWA_02")]);
 const AT = new Date("2026-11-07T18:59:46.000Z");
 const BOTH_KEYS = ["treated_water_flow_klh", "outlet_flow_totalizer_kl"];
 
-type Captured = { message: string; fields: Record<string, unknown> };
-type Binding = AdapterContext<MqttConfig, MqttDevice>["bindings"][number];
+export type Captured = { message: string; fields: Record<string, unknown> };
+export type Binding = AdapterContext<MqttConfig, MqttDevice>["bindings"][number];
 
 function bcplBinding(tag: string, sourceKeys = BOTH_KEYS, topic = BCPL_TOPIC): Binding {
   return {
@@ -55,7 +55,7 @@ function bcplBinding(tag: string, sourceKeys = BOTH_KEYS, topic = BCPL_TOPIC): B
   };
 }
 
-async function connected(bindings: readonly Binding[]) {
+export async function connected(bindings: readonly Binding[]) {
   const broker = makeFakeBroker();
   const adapter = createMqttAdapter(broker.transport);
   const warnings: Captured[] = [];
