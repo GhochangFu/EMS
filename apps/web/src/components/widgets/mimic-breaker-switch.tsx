@@ -1,7 +1,8 @@
 import type { BreakerState, MimicOrgSymbolDto, MimicSymbol } from "@bms/shared";
 
+import type { MimicGlyphMotion } from "../../lib/mimic";
 import { BREAKER_LOOK_CLASSES, type BreakerLook } from "../../lib/mimic-breaker";
-import { MimicGlyph } from "./mimic-glyphs";
+import { MimicGlyph, motionWrap } from "./mimic-glyphs";
 
 /** The contact, in the glyphs' 24-unit box: the two terminals, and the blade per state. */
 const TERMINALS = "M12 2.5v4.5M12 17v4.5";
@@ -20,6 +21,11 @@ type BreakerSwitchProps = {
   /** The class an `unknown` state's plain glyph draws in (the unit's panel tint). */
   readonly plainClass: string;
   readonly orgSymbol?: MimicOrgSymbolDto | null;
+  /**
+   * `F4.344` (ADR 0120, plan R5): the unit's state motion. The contact (or, for `unknown`, the plain
+   * glyph) moves as the unit's glyph would; absent is still. Fan-out member rows never pass one.
+   */
+  readonly motion?: MimicGlyphMotion;
 };
 
 /**
@@ -32,12 +38,26 @@ type BreakerSwitchProps = {
  * blade.
  *
  * Colours are ADR 0078 role classes from `BREAKER_LOOK_CLASSES` only.
+ *
+ * `F4.344` (ADR 0120) — the contact stands in the unit glyph's place, so it carries the unit's
+ * motion: a TRIPPED switch blinks. The motion wraps the contact's paths (`motionWrap`) inside the
+ * positioned `<g>`, never on it.
  */
-export function BreakerSwitch({ state, look, symbol, x, y, size, plainClass, orgSymbol = null }: BreakerSwitchProps) {
+export function BreakerSwitch({
+  state,
+  look,
+  symbol,
+  x,
+  y,
+  size,
+  plainClass,
+  orgSymbol = null,
+  motion = "none",
+}: BreakerSwitchProps) {
   if (state === "unknown") {
     return (
       <g data-testid="mimic-breaker-switch" data-breaker-state={state}>
-        <MimicGlyph kind={symbol} x={x} y={y} size={size} className={plainClass} orgSymbol={orgSymbol} />
+        <MimicGlyph kind={symbol} x={x} y={y} size={size} className={plainClass} orgSymbol={orgSymbol} motion={motion} />
       </g>
     );
   }
@@ -53,9 +73,14 @@ export function BreakerSwitch({ state, look, symbol, x, y, size, plainClass, org
       strokeLinecap="round"
       className={BREAKER_LOOK_CLASSES[look].ink}
     >
-      <path d={TERMINALS} />
-      <path d={blade} strokeDasharray={state === "offline" ? "2 2" : undefined} />
-      {state === "tripped" ? <path d={TRIP_CROSS} /> : null}
+      {motionWrap(
+        motion,
+        <>
+          <path d={TERMINALS} />
+          <path d={blade} strokeDasharray={state === "offline" ? "2 2" : undefined} />
+          {state === "tripped" ? <path d={TRIP_CROSS} /> : null}
+        </>,
+      )}
     </g>
   );
 }

@@ -3,6 +3,7 @@ import { expect } from "vitest";
 
 import type { MimicOrgSymbolDto, MimicShape } from "@bms/shared";
 
+import type { MimicGlyphKind } from "../../lib/mimic";
 import { MimicGlyph } from "./mimic-glyphs";
 import glyphSource from "./mimic-glyphs.tsx?raw";
 
@@ -130,4 +131,75 @@ export function noCreateElementCallSpreadsAStoredObject(): void {
   expect(text).toContain("createElement(");
   expect(spreadsInCreateElementCalls("createElement(tag, { ...attrs })")).toHaveLength(1);
   expect(spreadsInCreateElementCalls(text)).toEqual([]);
+}
+
+/** Draws one glyph with a motion, returns the outer positioned `mimic-glyph` `<g>`. */
+function drawMoving(props: Partial<Parameters<typeof MimicGlyph>[0]>): HTMLElement {
+  render(
+    <svg>
+      <MimicGlyph kind="tank" x={0} y={0} size={24} className="stroke-info" {...props} />
+    </svg>,
+  );
+  return screen.getByTestId("mimic-glyph");
+}
+
+/**
+ * GM1 — `F4.344` (ADR 0120, plan R2): a moving glyph keeps its positioned outer `<g>` as it was and
+ * wraps its content in one inner `<g data-testid="mimic-glyph-motion">` that carries the motion and
+ * its class and has NO `transform` attribute (a CSS `scale()` keyframe would override one).
+ */
+export function aMovingGlyphWrapsItsContentInAnUnpositionedInnerG(): void {
+  const glyph = drawMoving({ motion: "breathe", level: 0.5 });
+  expect(glyph.getAttribute("transform")).toBe("translate(0 0) scale(1)");
+  expect(glyph.getAttribute("data-motion")).toBeNull();
+  expect(glyph.children).toHaveLength(1);
+  const inner = glyph.children[0]!;
+  expect(inner.tagName.toLowerCase()).toBe("g");
+  expect(inner.getAttribute("data-testid")).toBe("mimic-glyph-motion");
+  expect(inner.getAttribute("data-motion")).toBe("breathe");
+  expect(inner.getAttribute("class")).toContain("motion-safe:animate-mimic-breathe");
+  expect(inner.hasAttribute("transform")).toBe(false);
+  expect(inner.querySelector("[data-testid=mimic-tank-level]")).not.toBeNull();
+  expect(inner.querySelectorAll("path").length).toBeGreaterThan(1);
+}
+
+/** GM2 — the still twin: no motion and `motion="none"` add no wrapper; the level and tank shapes are the glyph's own children. */
+export function aStillGlyphGetsNoWrapper(): void {
+  for (const motion of [undefined, "none"] as const) {
+    const glyph = drawMoving({ motion, level: 0.5 });
+    expect(glyph.querySelector("[data-motion]")).toBeNull();
+    expect(glyph.querySelector("[data-testid=mimic-glyph-motion]")).toBeNull();
+    expect(Array.from(glyph.children).map((el) => el.tagName.toLowerCase())).toEqual(["path", "path", "ellipse"]);
+    cleanup();
+  }
+}
+
+/**
+ * GM3 — every draw path wraps: a stroke library, a fill library (the wrapper sits inside the fill
+ * `<g>`, which keeps its fill role class), an organization symbol and the fallback.
+ */
+export function everyDrawPathWrapsItsContent(): void {
+  const cases: { kind: MimicGlyphKind; org?: MimicOrgSymbolDto; check?: (g: HTMLElement) => void }[] = [
+    { kind: "tabler:bolt" },
+    {
+      kind: "mdi:heat-pump",
+      check: (g) => {
+        expect(g.getAttribute("data-glyph-style")).toBe("fill");
+        expect(g.getAttribute("class")).toBe("fill-info");
+      },
+    },
+    { kind: ORG_KEY, org: symbol() },
+    { kind: "nope:missing" as MimicGlyphKind, check: (g) => expect(g.getAttribute("data-glyph-fallback")).toBe("true") },
+  ];
+  for (const { kind, org, check } of cases) {
+    const glyph = drawMoving({ kind, motion: "pulse", orgSymbol: org ?? null });
+    const inner = glyph.querySelector("[data-motion]");
+    expect(inner, kind).not.toBeNull();
+    expect(inner?.parentElement).toBe(glyph);
+    expect(inner?.getAttribute("data-motion")).toBe("pulse");
+    expect(inner?.getAttribute("class")).toContain("origin-center");
+    expect(inner?.hasAttribute("transform")).toBe(false);
+    check?.(glyph);
+    cleanup();
+  }
 }

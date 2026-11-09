@@ -107,6 +107,7 @@ function renderMimic(
   status: WidgetStatus = "ready",
   wtpAlarm: MimicNodeDto["topAlarm"] = WTP_ALARM,
   readings: SiteLiveReadings = READINGS,
+  motion = false,
 ): void {
   render(
     <MimicWidget
@@ -115,6 +116,7 @@ function renderMimic(
       geometry={presetGeometry("water_train")}
       nodes={nodes(wtpAlarm)}
       readings={readings}
+      motion={motion}
     />,
   );
 }
@@ -348,7 +350,8 @@ function renderExpandable({
   status = "ready",
   expandable = true,
   compact = false,
-}: { status?: WidgetStatus; expandable?: boolean; compact?: boolean } = {}): void {
+  motion = false,
+}: { status?: WidgetStatus; expandable?: boolean; compact?: boolean; motion?: boolean } = {}): void {
   render(
     <MimicWidget
       title="Demo water plant"
@@ -358,6 +361,7 @@ function renderExpandable({
       readings={READINGS}
       compact={compact}
       expandable={expandable}
+      motion={motion}
     />,
   );
 }
@@ -486,4 +490,36 @@ export function theTwoDrawingsShareNoMarkerId(): void {
   const ids = Array.from(document.querySelectorAll("marker")).map((m) => m.id);
   expect(ids).toHaveLength(2);
   expect(new Set(ids).size).toBe(2);
+}
+
+/** A unit's glyph motion in `root`, or `null` when it is still. */
+function motionIn(root: HTMLElement, key: string): string | null {
+  const el = within(root).getAllByTestId("mimic-node").find((n) => n.getAttribute("data-node-key") === key);
+  expect(el, `no mimic-node ${key}`).toBeDefined();
+  return el?.querySelector("[data-motion]")?.getAttribute("data-motion") ?? null;
+}
+
+/**
+ * WM1 — `F4.344` (ADR 0120): with `motion` the tile's units move by state — RO (live) breathes,
+ * WTP (alarm, tone `warning`) pulses, STP (never seen: none) is still — and each class sits behind
+ * `motion-safe:`. jsdom evaluates no media query; `tests/f4.344-mimic-motion-gate.test.ts` MG3
+ * holds that the compiled rule lives only under `prefers-reduced-motion: no-preference`.
+ */
+export function withMotionTheTileMovesByState(): void {
+  renderMimic("ready", WTP_ALARM, READINGS, true);
+  const tile = document.body;
+  expect(motionIn(tile, "ro")).toBe("breathe");
+  expect(motionIn(tile, "wtp")).toBe("pulse");
+  expect(motionIn(tile, "stp")).toBeNull();
+  for (const el of Array.from(document.querySelectorAll("[data-motion]"))) {
+    expect(el.getAttribute("class") ?? "").toContain("motion-safe:animate-mimic-");
+  }
+}
+
+/** WM2 — `F4.344`: the Expand dialog's drawing moves too when the tile does. */
+export function theExpandDialogMovesWithTheTile(): void {
+  renderExpandable({ motion: true });
+  const dialog = openDialog();
+  expect(motionIn(dialog, "ro")).toBe("breathe");
+  expect(motionIn(dialog, "wtp")).toBe("pulse");
 }

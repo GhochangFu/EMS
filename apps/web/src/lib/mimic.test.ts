@@ -26,6 +26,10 @@ import {
   crossRowPipeLandsOnTheTopCentre,
   freshNodeIsLive,
   glyphFillClassMapKeepsTheSameRolePerEntry,
+  motionClassesAreMotionSafeLiterals,
+  motionFollowsTheTable,
+  otherBreakerStatesAddNoMotion,
+  trippedBeatsEveryAlarmAndLive,
   layoutKeysMatchPresetKeys,
   noWidgetIsNoView,
   nodesFitAndDoNotOverlap,
@@ -157,5 +161,17 @@ describe("F3.32 U4 — the plant mimic's pure half", () => {
   });
   it("M16 the glyph fill class map keeps the same role per entry", () => {
     glyphFillClassMapKeepsTheSameRolePerEntry();
+  });
+  it("MG-T1 the glyph motion follows ADR 0120's table (F4.344)", () => {
+    motionFollowsTheTable();
+  });
+  it("MG-T2 a tripped breaker blinks over every alarm and over live (F4.344)", () => {
+    trippedBeatsEveryAlarmAndLive();
+  });
+  it("MG-T3 every other breaker state adds no motion (F4.344)", () => {
+    otherBreakerStatesAddNoMotion();
+  });
+  it("MG-T4 the motion classes are motion-safe literals; only the pulses scale (F4.344)", () => {
+    motionClassesAreMotionSafeLiterals();
   });
 });

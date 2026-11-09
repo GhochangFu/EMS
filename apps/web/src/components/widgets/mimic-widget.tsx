@@ -26,6 +26,11 @@ type MimicWidgetProps = {
    * widget (`MimicWidgetLive`) passes it; the static `DashboardWidget` branch does not.
    */
   expandable?: boolean;
+  /**
+   * `F4.344` (ADR 0120 decision 6) — animate each unit's glyph by its state, on the tile and in the
+   * Expand dialog alike. Off by default; only `MimicWidgetLive` turns it on.
+   */
+  motion?: boolean;
 };
 
 /**
@@ -70,6 +75,7 @@ export function MimicWidget({
   stateMaps,
   compact,
   expandable = false,
+  motion = false,
 }: MimicWidgetProps) {
   const [open, setOpen] = useState(false);
   const expandRef = useRef<HTMLButtonElement>(null);
@@ -113,13 +119,21 @@ export function MimicWidget({
             readings={readings}
             stateMaps={stateMaps}
             compact={compact}
+            motion={motion}
           />
         </div>
       </div>
       {canExpand && open ? (
         // Owner Q1 (2026-11-07): the full view draws the value rows even for a `compact` tile.
         <MimicExpandDialog title={title} onClose={close}>
-          <MimicScene title={title} geometry={geometry} nodes={nodes} readings={readings} stateMaps={stateMaps} />
+          <MimicScene
+            title={title}
+            geometry={geometry}
+            nodes={nodes}
+            readings={readings}
+            stateMaps={stateMaps}
+            motion={motion}
+          />
         </MimicExpandDialog>
       ) : null}
     </WidgetFrame>

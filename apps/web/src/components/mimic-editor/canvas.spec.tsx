@@ -166,3 +166,13 @@ export function drawsThroughMimicScene(): void {
   const discharge = view.container.querySelector('[data-testid="mimic-node"][data-node-key="discharge"]');
   expect(discharge?.getAttribute("data-status")).toBe("passive");
 }
+
+/**
+ * C-M1 — `F4.344` (ADR 0120 decision 6): the layout editor's drawing draws its glyphs and none of
+ * them moves — `MimicScene`'s `motion` defaults off and the canvas never turns it on.
+ */
+export function theEditorDrawingNeverMoves(): void {
+  renderCanvas(presetState());
+  expect(screen.getAllByTestId("mimic-glyph").length).toBeGreaterThan(0);
+  expect(document.querySelectorAll("[data-motion]")).toHaveLength(0);
+}

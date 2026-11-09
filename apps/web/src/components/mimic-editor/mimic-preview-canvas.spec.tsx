@@ -315,3 +315,17 @@ export function theFocusRingKeepsItsScreenWidthAtAnyCanvasScale(): void {
     expect(r).toHaveAttribute("vector-effect", "non-scaling-stroke");
   }
 }
+
+/**
+ * P-M1 — `F4.344` (ADR 0120 decision 6, plan R4): "Preview with site" has LIVE nodes — a resolved
+ * unit draws its asset and reads a moving status — yet nothing moves, because the preview never
+ * turns `MimicScene`'s `motion` on.
+ */
+export function thePreviewWithSiteNeverMoves(): void {
+  renderCanvas();
+  expect(screen.getAllByText("WTR-WTP-01").length).toBeGreaterThan(0);
+  const statuses = screen.getAllByTestId("mimic-node").map((n) => n.getAttribute("data-status"));
+  expect(statuses.some((s) => s === "live" || s === "alarm")).toBe(true);
+  expect(screen.getAllByTestId("mimic-glyph").length).toBeGreaterThan(0);
+  expect(document.querySelectorAll("[data-motion]")).toHaveLength(0);
+}
