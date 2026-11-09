@@ -1,6 +1,8 @@
-// Runs each built SVG through the real upload parser (apps/api svg-symbol-parser.ts, bundled on
-// the fly with esbuild so the shared schema is the current source) and reports PASS or FAIL.
-// Run from the repo root: node iso-glyphs/validate.mjs
+// Runs each built SVG (out/fill/*.svg) through the real upload parser (apps/api
+// svg-symbol-parser.ts, bundled on the fly with esbuild so the shared schema is the current
+// source) and reports PASS or FAIL. Run from the repo root, after build.mjs:
+//
+//   node scripts/mimic-symbols/sources/iso/validate.mjs
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -8,8 +10,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(HERE, "..");
-const require = createRequire(join(ROOT, "node_modules", ".pnpm", "esbuild@0.25.12", "node_modules", "esbuild", "package.json"));
+const ROOT = join(HERE, "..", "..", "..", "..");
+// esbuild as the root dev dependency tsx resolves it, not a pinned pnpm store path.
+const require = createRequire(createRequire(join(ROOT, "package.json")).resolve("tsx/package.json"));
 const esbuild = require("esbuild");
 const outfile = join(mkdtempSync(join(tmpdir(), "iso-glyph-parser-")), "parser.mjs");
 await esbuild.build({
@@ -23,9 +26,10 @@ await esbuild.build({
 const { parseSvgSymbol } = await import(pathToFileURL(outfile).href);
 
 let failed = 0;
-const files = ["out", join("out", "fill")].flatMap((dir) =>
-  readdirSync(join(HERE, dir)).filter((f) => f.endsWith(".svg")).map((f) => join(dir, f)),
-);
+const dir = join("out", "fill");
+const files = readdirSync(join(HERE, dir))
+  .filter((f) => f.endsWith(".svg"))
+  .map((f) => join(dir, f));
 for (const file of files) {
   try {
     const result = parseSvgSymbol(readFileSync(join(HERE, file)));

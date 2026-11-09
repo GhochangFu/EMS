@@ -6,6 +6,8 @@ export const name = "Storage tank (isometric)";
 
 const PLINTH = { r: 17, h: 3 };
 const SHELL = { r: 14, z0: 0, z1: 34 };
+/** The shell's inner volume, for the live level fill (ADR 0121 decision 6; build.mjs projects it). */
+export const level = { r: SHELL.r, z0: SHELL.z0, z1: SHELL.z1 };
 const SEAMS = [8.5, 17, 25.5];
 const GAUGE = { angle: -Math.PI / 5, r: SHELL.r + 2.5, z0: 4, z1: 30 };
 const ROOF = { rise: 7 };
