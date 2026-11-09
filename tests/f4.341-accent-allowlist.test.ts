@@ -44,6 +44,7 @@ const ALLOWED_RULES: Record<string, string> = {
   ':where([data-surface="flat"]) .surface-nav-item-selected': "the active navigation item (flat)",
   ".surface-segment-item-selected": "a selected segment",
   ':where([data-surface="flat"]) .surface-segment-item-selected': "a selected segment (flat)",
+  ':where(html[data-design="enterprise-flat"]) .surface-nav-item-selected': "enterprise-flat's active navigation item (a 12% wash)",
 };
 
 function accentRules(css: string): string[] {

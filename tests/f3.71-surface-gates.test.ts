@@ -188,13 +188,20 @@ function withoutRoleColours(value: string): string {
 }
 
 describe("F3.71 the shadow tokens", () => {
-  it("T1 exactly the light and the dark shadow block exist", () => {
-    expect(shadowBlocks(INDEX_CSS).map((b) => b.selector)).toEqual([LIGHT_SHADOW_SELECTOR, DARK_SHADOW_SELECTOR]);
+  // `F4.341` PR 8+: the base pair, then one pair per design system (plan D2), each the light block
+  // and its dark twin. Every block declares the same six names.
+  it("T1 exactly the base pair and one light/dark pair per design system exist", () => {
+    const designs = [...INDEX_CSS.matchAll(/html\[data-design="([a-z-]+)"\]\s*\{/g)].map((m) => m[1]);
+    expect(shadowBlocks(INDEX_CSS).map((b) => b.selector)).toEqual([
+      LIGHT_SHADOW_SELECTOR,
+      DARK_SHADOW_SELECTOR,
+      ...designs.flatMap((d) => [`html[data-design="${d}"]:not([data-surface="flat"])`, `html[data-design="${d}"][data-theme="dark"]:not([data-surface="flat"])`]),
+    ]);
   });
 
-  it("T1 both shadow blocks declare the same --shadow-* names", () => {
-    const [light, dark] = shadowBlocks(INDEX_CSS).map((b) => [...declarations(b.body).keys()].sort());
-    expect(dark).toEqual(light);
+  it("T1 every shadow block declares the same --shadow-* names", () => {
+    const [first, ...rest] = shadowBlocks(INDEX_CSS).map((b) => [...declarations(b.body).keys()].sort());
+    for (const names of rest) expect(names).toEqual(first);
   });
 
   it("T1 the shadow blocks declare only --shadow-* names", () => {
