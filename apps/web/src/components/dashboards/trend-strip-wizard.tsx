@@ -387,7 +387,7 @@ export function TrendStripWizard({ dashboard, mode, onClose }: TrendStripWizardP
                         </label>
                         {on ? (
                           <span className="inline-flex items-center gap-1">
-                            <span aria-hidden="true" className={`inline-block h-3 w-3 rounded-full ${role === undefined ? "bg-accent" : SWATCH[role]}`} />
+                            <span aria-hidden="true" className={`inline-block h-3 w-3 rounded-full ${role === undefined ? "bg-series-1" : SWATCH[role]}`} />
                             <select
                               aria-label={`Colour of ${point.name}`}
                               className="surface-field px-2 py-1 text-xs"

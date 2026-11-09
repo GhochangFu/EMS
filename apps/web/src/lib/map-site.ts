@@ -133,6 +133,7 @@ export const MAP_PIN_ROLES: Readonly<Record<MapSiteDto["live"]["status"], RoleNa
   warning: "warning",
   critical: "critical",
   offline: "ink-faint",
-  nominal: "accent-strong",
+  // F4.341 A5: off `accent`, which paints only selection, links and the primary button.
+  nominal: "neutral-ink",
   unknown: "ink-muted",
 };

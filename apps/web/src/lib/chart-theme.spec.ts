@@ -44,8 +44,10 @@ export function c3GaugeDetailIsInk(name: ThemeName): void {
   expect(themeOf(name).gauge.detail.color).toBe(rolesOf(name).ink);
 }
 
+/** `F4.341` A5c (ADR 0118 Amendment 1 A5): the first series is `series-1`, never `accent`. */
 export function c4TheFirstSeriesColourIsAccent(name: ThemeName): void {
-  expect(themeOf(name).color[0]).toBe(rolesOf(name).accent);
+  expect(themeOf(name).color[0]).toBe(rolesOf(name)["series-1"]);
+  expect(themeOf(name).color).not.toContain(rolesOf(name).accent);
 }
 
 export function c4TheThemePaletteIsTheSeriesPalette(name: ThemeName): void {

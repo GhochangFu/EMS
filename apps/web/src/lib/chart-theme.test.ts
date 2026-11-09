@@ -27,7 +27,7 @@ describe.each<ThemeName>(["light", "dark"])("F3.65c ECharts theme (%s)", (name) 
     c3GaugeDetailIsInk(name);
   });
 
-  it("C4 color[0] is accent", () => {
+  it("C4 color[0] is series-1, and no series is accent (F4.341 A5c)", () => {
     c4TheFirstSeriesColourIsAccent(name);
   });
 

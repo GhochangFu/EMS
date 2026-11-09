@@ -145,7 +145,7 @@ export function BotIcon({ size }: { size: number }) {
 export function DockTitle({ scopeLabel }: { scopeLabel: string }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <span className="grid h-7 w-7 shrink-0 place-items-center rounded bg-accent text-on-accent">
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded bg-chrome text-on-dark">
         <BotIcon size={16} />
       </span>
       <div className="min-w-0">

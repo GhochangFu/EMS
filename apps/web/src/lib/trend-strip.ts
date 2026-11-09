@@ -153,7 +153,8 @@ export function strokeRoleFor(
   domain: string,
   code: string,
 ): RoleName {
-  return colors?.[`${domain}:${code}`] ?? "accent";
+  // F4.341 A5c (ADR 0118 Amendment 1 A5): the default stroke is the first series hue, not `accent`.
+  return colors?.[`${domain}:${code}`] ?? "series-1";
 }
 
 /** `F4.323` PR 3 — the style a point draws in when the strip names none: today's line. */

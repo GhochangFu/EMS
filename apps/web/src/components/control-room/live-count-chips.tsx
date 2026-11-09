@@ -21,7 +21,7 @@ export function LiveCountChips({ live, notLive }: LiveCountChipsProps) {
           data-testid="live-chip"
           className="inline-flex items-center gap-1.5 rounded-full bg-ok-wash px-2.5 py-1 text-xs font-bold text-ok-ink"
         >
-          <span aria-hidden className="inline-flex h-2 w-2 rounded-full bg-accent" />
+          <span aria-hidden className="inline-flex h-2 w-2 rounded-full bg-ok" />
           {`${live} live`}
         </span>
         <span
@@ -33,7 +33,7 @@ export function LiveCountChips({ live, notLive }: LiveCountChipsProps) {
         </span>
       </span>
       <span aria-hidden className="mt-2 block h-1.5 w-full overflow-hidden rounded-full bg-warning/30">
-        <span data-testid="live-share-bar" className="block h-full rounded-full bg-accent" style={{ width: `${share}%` }} />
+        <span data-testid="live-share-bar" className="block h-full rounded-full bg-ok" style={{ width: `${share}%` }} />
       </span>
     </span>
   );

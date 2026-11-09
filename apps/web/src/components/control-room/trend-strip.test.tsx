@@ -177,11 +177,11 @@ describe("F4.306 U9 TrendStripBody selection", () => {
     await aColoredPointStrokesWithItsRole();
   });
 
-  it("keeps accent on a point with no colour", async () => {
+  it("keeps series-1 on a point with no colour", async () => {
     await anUncoloredPointKeepsAccent();
   });
 
-  it("strokes every polyline accent with no selection", async () => {
+  it("strokes every polyline series-1 with no selection", async () => {
     await noSelectionStrokesEveryPolylineAccent();
   });
 

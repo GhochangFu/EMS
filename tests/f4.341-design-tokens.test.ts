@@ -126,7 +126,7 @@ describe("F4.341 DT3 nexus-soft is today's look (the no-pixel proof)", () => {
       "--radius-pill": "9999px",
       "--card-ground": "rgb(var(--canvas))",
       "--page-ground": "rgb(var(--canvas))",
-      "--button-edge": "rgb(var(--line))",
+      "--button-edge": "rgb(var(--ink-faint))",
     });
   });
 
@@ -140,7 +140,7 @@ describe("F4.341 DT3 nexus-soft is today's look (the no-pixel proof)", () => {
       "--radius-pill": "0",
       "--card-ground": "rgb(var(--surface))",
       "--page-ground": "rgb(var(--canvas))",
-      "--button-edge": "rgb(var(--line))",
+      "--button-edge": "rgb(var(--ink-faint))",
     });
   });
 

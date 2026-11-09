@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import { fetchAdminAssetSummary } from "../../api/admin/assets";
 import { fetchAdminLocationSummary } from "../../api/admin/locations";
 import { fetchAdminOrganizationSummary } from "../../api/admin/organizations";
 import { fetchAdminRtuSummary } from "../../api/admin/rtus";
 import type { AuthUser } from "../../stores/auth-store";
+import { Breadcrumb } from "../breadcrumb";
 
 type AdminBreadcrumbProps = {
   user: AuthUser;
@@ -80,24 +81,6 @@ export function AdminBreadcrumb({ user: _user }: AdminBreadcrumbProps) {
     });
   }
 
-  if (crumbs.length <= 1) {
-    return null;
-  }
-
-  return (
-    <div className="flex flex-wrap items-center gap-1 text-xs text-ink-muted">
-      {crumbs.map((crumb, index) => (
-        <span key={`${crumb.label}-${index}`} className="flex items-center gap-1">
-          {index > 0 ? <span>/</span> : null}
-          {crumb.to && index < crumbs.length - 1 ? (
-            <Link to={crumb.to} className="font-semibold text-accent-strong hover:underline">
-              {crumb.label}
-            </Link>
-          ) : (
-            <span className="font-semibold text-ink">{crumb.label}</span>
-          )}
-        </span>
-      ))}
-    </div>
-  );
+  // F4.341 (ADR 0118 Amendment 1 A6): the one breadcrumb component.
+  return <Breadcrumb steps={crumbs} />;
 }

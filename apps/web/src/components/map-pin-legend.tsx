@@ -22,7 +22,7 @@ const SWATCH: Partial<Record<RoleName, string>> = {
   critical: "bg-critical",
   "ink-faint": "bg-ink-faint",
   "ink-muted": "bg-ink-muted",
-  "accent-strong": "bg-accent-strong",
+  "neutral-ink": "bg-neutral-ink",
 };
 
 /**

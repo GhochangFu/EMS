@@ -278,7 +278,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                   <div className="min-w-0">
                     <div className="h-2 rounded-full surface-pressed-sm">
                     <div
-                      className="h-2 rounded-full bg-accent"
+                      className="h-2 rounded-full bg-neutral-ink"
                       style={{ width: `${pct}%` }}
                     />
                     </div>

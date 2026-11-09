@@ -104,17 +104,17 @@ export function aColorsHitReturnsItsRole(): void {
 
 /** A point with no entry draws `accent`, the `F4.305` stroke. */
 export function aColorsMissReturnsAccent(): void {
-  expect(strokeRoleFor(COLORS, "seg-one", "kwh")).toBe("accent");
+  expect(strokeRoleFor(COLORS, "seg-one", "kwh")).toBe("series-1");
 }
 
 /** No `colors` at all draws `accent`. */
 export function undefinedColorsReturnAccent(): void {
-  expect(strokeRoleFor(undefined, "seg-one", "kw")).toBe("accent");
+  expect(strokeRoleFor(undefined, "seg-one", "kw")).toBe("series-1");
 }
 
 /** The key is the segment's own: the same code in another segment draws `accent`. */
 export function anotherSegmentsKeyReturnsAccent(): void {
-  expect(strokeRoleFor(COLORS, "seg-two", "kw")).toBe("accent");
+  expect(strokeRoleFor(COLORS, "seg-two", "kw")).toBe("series-1");
 }
 
 /** No selection is exactly `range=24h`: the bytes every stored `F4.305` widget sends. */

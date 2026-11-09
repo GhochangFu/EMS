@@ -38,15 +38,15 @@ describe("F3.65c the charts follow the theme", () => {
     });
   }
 
-  it("F2 LoadTrendChart color[0] is accent", () => {
+  it("F2 LoadTrendChart color[0] is series-1 (F4.341 A5c)", () => {
     f2LoadTrendLineIsAccent();
   });
 
-  it("F2 LoadTrendChart areaStyle.color is accent at 0.12 (dark)", () => {
+  it("F2 LoadTrendChart areaStyle.color is series-1 at 0.12 (dark)", () => {
     f2LoadTrendAreaIsAccentAtTwelvePercent();
   });
 
-  it("F3 EnergySourceStackChart color is [ink-faint, warning, accent]", () => {
+  it("F3 EnergySourceStackChart color is [ink-faint, warning, series-1]", () => {
     f3StackColoursAreGridDgSolar();
   });
 
@@ -58,7 +58,7 @@ describe("F3.65c the charts follow the theme", () => {
     f5DonutSlicesAreTheOq4BandsCycling();
   });
 
-  it("F6 a theme toggle re-renders LoadTrendChart with the dark accent", () => {
+  it("F6 a theme toggle re-renders LoadTrendChart with the dark series-1", () => {
     f6AThemeToggleReRendersWithTheDarkAccent();
   });
 
