@@ -4,6 +4,12 @@ import { catalogEntry, type CatalogEntry, catalogPath, type OnboardingCommitDraf
 import { DISCOVERY_PROPOSED_LEAD } from "../admin/onboarding/onboarding-discovery-tools";
 import { bodyHash } from "./body-hash";
 import {
+  COMMIT_CARD_WITHDRAWN_FOR_COPY_SENTENCE,
+  CREDENTIAL_COPY_CARD_BLOCKED_SENTENCE,
+  onboardingCredentialCopyCards,
+  turnProposedCredentialCopy,
+} from "./copilot-onboarding-credential-copy";
+import {
   type CopilotOnboardingCommitReader,
   ONBOARDING_COMMIT_ID,
   ONBOARDING_DISCOVERY_ID,
@@ -136,9 +142,10 @@ export const COMMIT_CARD_WITHDRAWN_SENTENCE = "The earlier commit card was withd
 
 /**
  * `F3.86` PR 6 / `F3.24b` — the server-made cards of one skill turn, moved out
- * of `skillTurn` by `F4.339`. The commit card first: at most one of the two is
- * made, since a write drops both proposals. `note` is the fixed text the reply
- * gains (`F4.339`, plan R4), or `""`.
+ * of `skillTurn` by `F4.339`. The commit card first, then discovery, then
+ * (`F4.339` PR 9) the credential copy: one open onboarding card at a time, so
+ * the first that is made or blocked answers. `note` is the fixed text the
+ * reply gains (`F4.339`, plan R4), or `""`.
  */
 export async function onboardingSkillCards(
   deps: { reader: CopilotOnboardingCommitReader; pending: PendingStore },
@@ -156,11 +163,19 @@ export async function onboardingSkillCards(
   const commitCards = await onboardingCommitCards(deps, turn);
   if (commitCards.length > 0) return { pendingChanges: commitCards, note: "", cardBlocked: false, commitWithdrawn: false };
   const discovery = await onboardingDiscoveryCards(deps, { ...turn, proposed: turnProposedDiscovery(actions) });
-  const note = [
-    discovery.withdrewCommit ? COMMIT_CARD_WITHDRAWN_SENTENCE : "",
-    discovery.blocked ? DISCOVERY_CARD_BLOCKED_SENTENCE : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return { pendingChanges: discovery.cards, note, cardBlocked: discovery.blocked, commitWithdrawn: discovery.withdrewCommit };
+  if (discovery.cards.length > 0 || discovery.blocked) {
+    return cardsAnswer(discovery, COMMIT_CARD_WITHDRAWN_SENTENCE, DISCOVERY_CARD_BLOCKED_SENTENCE);
+  }
+  const copy = await onboardingCredentialCopyCards(deps, { ...turn, proposed: turnProposedCredentialCopy(actions) });
+  return cardsAnswer(copy, COMMIT_CARD_WITHDRAWN_FOR_COPY_SENTENCE, CREDENTIAL_COPY_CARD_BLOCKED_SENTENCE);
+}
+
+/** The skill turn's answer from one card kind's result and that kind's two fixed sentences. */
+function cardsAnswer(
+  result: DiscoveryCardsResult,
+  withdrawnSentence: string,
+  blockedSentence: string,
+): { pendingChanges: CopilotPendingChangeDto[]; note: string; cardBlocked: boolean; commitWithdrawn: boolean } {
+  const note = [result.withdrewCommit ? withdrawnSentence : "", result.blocked ? blockedSentence : ""].filter(Boolean).join(" ");
+  return { pendingChanges: result.cards, note, cardBlocked: result.blocked, commitWithdrawn: result.withdrewCommit };
 }

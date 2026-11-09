@@ -55,6 +55,7 @@ import {
   limitSentence,
   NOT_CONFIGURED_SENTENCE,
   ONBOARD_PICK_SENTENCE,
+  ONBOARDING_CREDENTIAL_COPY,
   ONBOARDING_DISCOVERY,
   OrganizationPicker,
   SCOPE_OFF_SENTENCE,
@@ -351,7 +352,9 @@ function DockPanel({
   function applied(change: CopilotPendingChangeDto): void {
     awaitFollowUp(change, "applied");
     // `F3.24b`: a confirmed discovery is queued; reading the session starts the skill panel's status poll at once.
-    if (change.catalogId === ONBOARDING_DISCOVERY && skill !== null && conversationId !== null) {
+    // `F4.339` PR 9: a confirmed credential copy changed the targets' `credentialsSet`; the panel reads it too.
+    const refreshes = change.catalogId === ONBOARDING_DISCOVERY || change.catalogId === ONBOARDING_CREDENTIAL_COPY;
+    if (refreshes && skill !== null && conversationId !== null) {
       const id = conversationId;
       void fetchOnboardingSession(skill.session.id).then((fresh) => setSkill(id, { ...skill, session: fresh }), () => undefined);
     }

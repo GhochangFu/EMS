@@ -13,6 +13,10 @@ import {
 } from "@bms/shared/copilot";
 
 import { type CommitProposal, readCommitProposal } from "../admin/onboarding/onboarding-commit-proposal";
+import {
+  readCredentialCopyProposal,
+  type StoredCredentialCopyProposal,
+} from "../admin/onboarding/onboarding-credential-copy-state";
 import { readDiscoveryProposal, type StoredDiscoveryProposal } from "../admin/onboarding/onboarding-discovery-state";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
@@ -25,8 +29,15 @@ export const ONBOARDING_COMMIT_ID = "onboarding.commit";
 /** The catalog id of the server-made discovery start (`F3.24b`, ADR 0103 decision 2). */
 export const ONBOARDING_DISCOVERY_ID = "onboarding.discovery";
 
+/** The catalog id of the server-made credential copy (`F4.339` PR 9, ADR 0099 Amendment 18). */
+export const ONBOARDING_CREDENTIAL_COPY_ID = "onboarding.credentials.copy";
+
 /** `F3.24b`: the server-made cards of the onboarding skill; each is dead once no draft skill runs behind it. */
-export const ONBOARDING_SERVER_CARD_IDS: ReadonlySet<string> = new Set([ONBOARDING_COMMIT_ID, ONBOARDING_DISCOVERY_ID]);
+export const ONBOARDING_SERVER_CARD_IDS: ReadonlySet<string> = new Set([
+  ONBOARDING_COMMIT_ID,
+  ONBOARDING_DISCOVERY_ID,
+  ONBOARDING_CREDENTIAL_COPY_ID,
+]);
 
 /** The entry, or a build defect: the catalog ships it (`catalog/onboarding.ts`). */
 function onboardingCommitEntry(): CatalogEntry {
@@ -59,6 +70,12 @@ export class CopilotOnboardingCommitReader {
     return draft === undefined ? null : readDiscoveryProposal(draft);
   }
 
+  /** `F4.339` PR 9: the stored `_credentialCopyProposal` of a draft session, parsed fail-closed by the onboarding's own reader. */
+  async storedCredentialCopyProposal(organizationId: string, sessionId: string): Promise<StoredCredentialCopyProposal | null> {
+    const draft = await this.storedDraft(organizationId, sessionId);
+    return draft === undefined ? null : readCredentialCopyProposal(draft);
+  }
+
   /** The stored draft of a `draft` session in the organization, or `undefined`. */
   private async storedDraft(organizationId: string, sessionId: string): Promise<unknown> {
     const rows = await withTenant(this.tenantDb, organizationId, (tx) =>
@@ -86,7 +103,7 @@ type PendingStore = Pick<CopilotPendingChangesService, "propose" | "listOpen" | 
 
 /**
  * The open server-made onboarding cards (`onboarding.commit` and, since
- * `F3.24b`, `onboarding.discovery`) that are dead: all of them once the skill
+ * `F3.24b`, `onboarding.discovery`; since `F4.339` PR 9, `onboarding.credentials.copy`) that are dead: all of them once the skill
  * no longer runs on a draft.
  */
 export function deadOnboardingCommitCards(
