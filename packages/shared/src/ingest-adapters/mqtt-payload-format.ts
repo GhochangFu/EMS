@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import { parseMqttEnvelope } from "./mqtt-envelope";
+import { decodeBinary, mqttBinaryPayloadFormatSchema } from "./mqtt-payload-format-binary";
+import { MQTT_FORBIDDEN_SEGMENTS, mqttPayloadReadingKeySchema } from "./mqtt-payload-keys";
 
 /**
  * MQTT payload formats (ADR 0116 decisions 2 and 3, `F4.334`).
@@ -14,6 +16,11 @@ import { parseMqttEnvelope } from "./mqtt-envelope";
  * - `builtin` — the ThinkIoT envelope. Its decoder **is** `parseMqttEnvelope`,
  *   unchanged, so every RTU without a `payloadFormat` behaves as before.
  * - `declarative` — named JSON fields and numeric register arrays.
+ * - `binary` — a fixed-length binary record (ADR 0119; `mqtt-payload-format-binary.ts`).
+ *
+ * The decoder takes the message's **bytes** (ADR 0119 decision 2): `builtin`
+ * and `declarative` read them as UTF-8 exactly as `Buffer.toString("utf8")`
+ * did, and `binary` reads them with a `DataView`.
  */
 
 /** `bms.mqtt_payload_formats.code`: kebab-case, at most 64 characters. */
@@ -43,16 +50,13 @@ export const mqttPayloadFormatCodeSchema = z
   .max(MQTT_PAYLOAD_FORMAT_CODE_MAX, "a payload format code is at most 64 characters")
   .regex(MQTT_PAYLOAD_FORMAT_CODE, "a payload format code is lower-case words joined by hyphens");
 
-/** Names that would walk into an object's prototype rather than its own data. */
-const FORBIDDEN_SEGMENTS: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
-
 /** One path segment: an own property name, or an array index. */
 const pathSegmentSchema = z.union([
   z
     .string()
     .min(1)
     .max(64)
-    .refine((segment) => !FORBIDDEN_SEGMENTS.has(segment), {
+    .refine((segment) => !MQTT_FORBIDDEN_SEGMENTS.has(segment), {
       message: "a path segment may not name a prototype property",
     }),
   z.number().int().nonnegative(),
@@ -79,15 +83,6 @@ const WORDS: Record<MqttRegisterType, number> = {
   float64: 4,
 };
 
-/** A reading's key is the `asset_points.source_data_key` it feeds (`varchar(128)`). */
-const readingKeySchema = z
-  .string()
-  .min(1)
-  .max(128)
-  .refine((key) => !FORBIDDEN_SEGMENTS.has(key), {
-    message: "a reading key may not name a prototype property",
-  });
-
 const affine = {
   /** Multiplier applied before the point's own `scale_multiplier`. */
   scale: z.number().finite().optional(),
@@ -97,13 +92,13 @@ const affine = {
 
 /** A reading taken from one JSON field (a number or a numeric string). */
 const fieldReadingSchema = z
-  .object({ key: readingKeySchema, field: mqttPayloadFieldPathSchema, ...affine })
+  .object({ key: mqttPayloadReadingKeySchema, field: mqttPayloadFieldPathSchema, ...affine })
   .strict();
 
 /** A reading taken from a numeric array of 16-bit registers, starting at `index`. */
 const registerReadingSchema = z
   .object({
-    key: readingKeySchema,
+    key: mqttPayloadReadingKeySchema,
     register: z
       .object({
         path: mqttPayloadFieldPathSchema,
@@ -163,6 +158,13 @@ export const mqttDeclarativePayloadFormatSchema = z
 export const mqttPayloadFormatDefinitionSchema = z.union([
   builtinDefinitionSchema,
   mqttDeclarativePayloadFormatSchema,
+  mqttBinaryPayloadFormatSchema,
+]);
+
+/** What an admin may create or edit (`POST`/`PUT`): never `builtin` (ruling 16). */
+export const mqttEditablePayloadFormatSchema = z.union([
+  mqttDeclarativePayloadFormatSchema,
+  mqttBinaryPayloadFormatSchema,
 ]);
 
 export type MqttPayloadFormatDefinition = z.infer<typeof mqttPayloadFormatDefinitionSchema>;
@@ -387,8 +389,13 @@ function decodeDeclarative(
 }
 
 /**
- * Decodes one MQTT message with one format (ADR 0116 decision 3). Pure and
- * total: it never throws, and it never echoes the payload in a reason.
+ * Decodes one MQTT message with one format (ADR 0116 decision 3; ADR 0119
+ * decision 2 — the message is bytes). Pure and total: it never throws, and it
+ * never echoes the payload in a reason.
+ *
+ * `builtin` and `declarative` decode the bytes as UTF-8 with a non-fatal
+ * `TextDecoder`, so invalid bytes become U+FFFD and `JSON.parse` fails as
+ * `not-json` — exactly what `Buffer.toString("utf8")` gave before.
  *
  * The built-in kind is `parseMqttEnvelope` wrapped as one record, byte for
  * byte — including a missing `dev_id`, which stays the empty string the ingest
@@ -397,11 +404,15 @@ function decodeDeclarative(
 export function decodeMqttPayload(
   definition: MqttPayloadFormatDefinition,
   topic: string,
-  raw: string,
+  raw: Uint8Array,
 ): MqttDecodeResult {
+  if (definition.kind === "binary") {
+    return decodeBinary(definition, topic, raw);
+  }
+  const text = new TextDecoder().decode(raw);
   if (definition.kind === "builtin") {
     try {
-      const parsed = parseMqttEnvelope(raw);
+      const parsed = parseMqttEnvelope(text);
       const record: MqttDecodedRecord =
         parsed.at === undefined
           ? { deviceKey: parsed.devId, values: parsed.values }
@@ -412,7 +423,7 @@ export function decodeMqttPayload(
     }
   }
   try {
-    return decodeDeclarative(definition, topic, raw);
+    return decodeDeclarative(definition, topic, text);
   } catch {
     // Unreachable by construction; kept so a decoder bug is a drop, not a crash.
     return { ok: false, reason: "not-json" };

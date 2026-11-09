@@ -48,6 +48,8 @@ export * from "./ingest-adapters/mqtt";
 export * from "./ingest-adapters/mqtt-envelope";
 // `F4.334` (ADR 0116): the payload format catalog's definition schema and decoder.
 export * from "./ingest-adapters/mqtt-payload-format";
+// `F4.343` (ADR 0119): the binary kind's schema, decoder and the hex sample parser.
+export * from "./ingest-adapters/mqtt-payload-format-binary";
 // `F3.24a` (ADR 0093 decisions 2, 3): the code-defined protocol catalog.
 export * from "./protocol-catalog";
 

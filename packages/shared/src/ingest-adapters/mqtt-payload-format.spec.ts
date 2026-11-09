@@ -7,6 +7,7 @@ import {
   decodeMqttPayload,
   mqttPayloadFormatDefinitionSchema,
 } from "./mqtt-payload-format";
+import { WBLDC_DEFINITION_INPUT, WBLDC_GOAT_HEX, bytesOf } from "./mqtt-payload-format-binary.spec";
 
 /**
  * `F4.334` / ADR 0116 decision 3 — the payload format schema and the decoder.
@@ -42,8 +43,11 @@ const bcpl = (): MqttPayloadFormatDefinition =>
 
 const parses = (input: unknown): boolean => mqttPayloadFormatDefinitionSchema.safeParse(input).success;
 
+/** The decoder takes bytes (ADR 0119 decision 2); the JSON fixtures stay text. */
+const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
+
 function records(definition: MqttPayloadFormatDefinition, raw: string, topic = "t/1") {
-  const result = decodeMqttPayload(definition, topic, raw);
+  const result = decodeMqttPayload(definition, topic, utf8(raw));
   if (!result.ok) {
     throw new Error(`expected a decode, got ${result.reason}`);
   }
@@ -165,11 +169,11 @@ export function thePheGoldenSampleMatchesTheEnvelopeParse(): void {
   expect(decoded[0]).toEqual({ deviceKey: "PHE-1", values: { a: 1, rssi: -70 }, at: new Date(1700000000000) });
   // A missing dev_id stays "" (routed nowhere, as before), and bad JSON is not-json.
   expect(records(MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION, "{}")[0]?.deviceKey).toBe("");
-  expect(decodeMqttPayload(MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION, "t", "{")).toEqual({
+  expect(decodeMqttPayload(MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION, "t", utf8("{"))).toEqual({
     ok: false,
     reason: "not-json",
   });
-  expect(decodeMqttPayload(MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION, "t", "null")).toEqual({
+  expect(decodeMqttPayload(MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION, "t", utf8("null"))).toEqual({
     ok: false,
     reason: "not-json",
   });
@@ -246,11 +250,11 @@ export function theTopicIsTheKeyWhenNoPathIsSet(): void {
     readings: [{ key: "a", field: ["a"] }],
   });
   expect(records(def, JSON.stringify({ a: 1 }), "site/meter-1")[0]?.deviceKey).toBe("site/meter-1");
-  expect(decodeMqttPayload(bcpl(), "t", JSON.stringify([{ TagName: "" }]))).toEqual({
+  expect(decodeMqttPayload(bcpl(), "t", utf8(JSON.stringify([{ TagName: "" }])))).toEqual({
     ok: false,
     reason: "no-device-key",
   });
-  expect(decodeMqttPayload(bcpl(), "t", JSON.stringify([{ TagName: { x: 1 } }]))).toEqual({
+  expect(decodeMqttPayload(bcpl(), "t", utf8(JSON.stringify([{ TagName: { x: 1 } }])))).toEqual({
     ok: false,
     reason: "no-device-key",
   });
@@ -259,18 +263,18 @@ export function theTopicIsTheKeyWhenNoPathIsSet(): void {
 
 /** 8 — root checks, caps, bad JSON, and the decoder never throws. */
 export function rootCapsAndTotality(): void {
-  expect(decodeMqttPayload(bcpl(), "t", JSON.stringify({ TagName: "X" }))).toEqual({
+  expect(decodeMqttPayload(bcpl(), "t", utf8(JSON.stringify({ TagName: "X" })))).toEqual({
     ok: false,
     reason: "root-mismatch",
   });
-  expect(decodeMqttPayload(bcpl(), "t", JSON.stringify([1]))).toEqual({ ok: false, reason: "root-mismatch" });
+  expect(decodeMqttPayload(bcpl(), "t", utf8(JSON.stringify([1])))).toEqual({ ok: false, reason: "root-mismatch" });
   const many = (n: number) => JSON.stringify(Array.from({ length: n }, (_, i) => ({ TagName: `D${i}` })));
-  expect(decodeMqttPayload(bcpl(), "t", many(64)).ok).toBe(true);
-  expect(decodeMqttPayload(bcpl(), "t", many(65))).toEqual({ ok: false, reason: "too-many-records" });
-  expect(decodeMqttPayload(bcpl(), "t", "not json")).toEqual({ ok: false, reason: "not-json" });
+  expect(decodeMqttPayload(bcpl(), "t", utf8(many(64))).ok).toBe(true);
+  expect(decodeMqttPayload(bcpl(), "t", utf8(many(65)))).toEqual({ ok: false, reason: "too-many-records" });
+  expect(decodeMqttPayload(bcpl(), "t", utf8("not json"))).toEqual({ ok: false, reason: "not-json" });
   expect(records(bcpl(), "[]")).toEqual([]);
   const objectRoot = mqttPayloadFormatDefinitionSchema.parse({ ...BCPL_DEFINITION_INPUT, root: "object" });
-  expect(decodeMqttPayload(objectRoot, "t", "[]")).toEqual({ ok: false, reason: "root-mismatch" });
+  expect(decodeMqttPayload(objectRoot, "t", utf8("[]"))).toEqual({ ok: false, reason: "root-mismatch" });
   const fuzz = [
     "",
     "{",
@@ -295,11 +299,11 @@ export function rootCapsAndTotality(): void {
   ];
   for (const raw of fuzz) {
     for (const definition of [bcpl(), objectRoot, MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION]) {
-      expect(() => decodeMqttPayload(definition, "t", raw), raw).not.toThrow();
+      expect(() => decodeMqttPayload(definition, "t", utf8(raw)), raw).not.toThrow();
     }
   }
   // A prototype-named key in the payload is never walked into.
-  expect(decodeMqttPayload(bcpl(), "t", '[{"__proto__":{"TagName":"Y"}}]')).toEqual({
+  expect(decodeMqttPayload(bcpl(), "t", utf8('[{"__proto__":{"TagName":"Y"}}]'))).toEqual({
     ok: false,
     reason: "no-device-key",
   });
@@ -312,4 +316,29 @@ export function scaleAndOffsetApply(): void {
   ]);
   const value = records(def, BCPL_SAMPLE)[0]?.values.f as number;
   expect(Math.abs(value - (1.2999999523162842 * 0.001 + 5))).toBeLessThan(1e-9);
+}
+
+// --- F4.343 T1.3: the decoder takes bytes (ADR 0119 decision 2) ---------------
+
+/** 10 — binary bytes reach a JSON kind as `not-json`; the binary kind dispatches. */
+export function theDecoderTakesBytesForEveryKind(): void {
+  const goat = bytesOf(WBLDC_GOAT_HEX);
+  for (const definition of [MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION, bcpl()]) {
+    expect(decodeMqttPayload(definition, "t", goat)).toEqual({ ok: false, reason: "not-json" });
+  }
+  const wbldc: MqttPayloadFormatDefinition = mqttPayloadFormatDefinitionSchema.parse(WBLDC_DEFINITION_INPUT);
+  expect(wbldc.kind).toBe("binary");
+  const decoded = decodeMqttPayload(wbldc, "Haringhata_GOAT", goat);
+  expect(decoded.ok && decoded.records[0]?.values.temp_ch0).toBe(27.1);
+  // A JSON message is not a binary record, whatever its length.
+  expect(decodeMqttPayload(wbldc, "t", utf8(BCPL_SAMPLE))).toEqual({ ok: false, reason: "binary-length-mismatch" });
+}
+
+/** 11 — a JSON frame inside a pooled buffer (`byteOffset` ≠ 0) decodes as its own bytes. */
+export function aJsonFrameInsideALargerBufferDecodes(): void {
+  const pool = utf8(`xxxx${BCPL_SAMPLE}yyyy`);
+  const frame = pool.subarray(4, pool.length - 4);
+  expect(frame.byteOffset).toBeGreaterThan(0);
+  expect(decodeMqttPayload(bcpl(), "t", frame)).toEqual(decodeMqttPayload(bcpl(), "t", utf8(BCPL_SAMPLE)));
+  expect(new TextDecoder().decode(frame)).toBe(BCPL_SAMPLE);
 }
