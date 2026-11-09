@@ -389,7 +389,7 @@ function SourcePill({
       </div>
       <div className="mt-2 h-1.5 surface-pressed-sm">
         <div
-          className="h-1.5 rounded bg-accent"
+          className="h-1.5 rounded bg-neutral-ink"
           style={{ width: `${Math.min(100, pct)}%` }}
         />
       </div>

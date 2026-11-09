@@ -103,20 +103,20 @@ export function f1ThemeIsTheRolesTheme(chart: ChartName): void {
 
 export function f2LoadTrendLineIsAccent(): void {
   CHARTS.LoadTrendChart();
-  expect(last().option.color?.[0]).toBe(currentRoles().accent);
+  expect(last().option.color?.[0]).toBe(currentRoles()["series-1"]);
 }
 
-/** In dark, where a kept literal (the light accent at 0.12) cannot pass by coincidence. */
+/** In dark, where a kept literal (the light series-1 at 0.12) cannot pass by coincidence. */
 export function f2LoadTrendAreaIsAccentAtTwelvePercent(): void {
   useThemeStore.getState().setTheme("dark");
   CHARTS.LoadTrendChart();
-  expect(last().option.series[0].areaStyle?.color).toBe(withAlpha(currentRoles().accent, 0.12));
+  expect(last().option.series[0].areaStyle?.color).toBe(withAlpha(currentRoles()["series-1"], 0.12));
 }
 
 export function f3StackColoursAreGridDgSolar(): void {
   CHARTS.EnergySourceStackChart();
   const roles = currentRoles();
-  expect(last().option.color).toEqual([roles["ink-faint"], roles.warning, roles.accent]);
+  expect(last().option.color).toEqual([roles["ink-faint"], roles.warning, roles["series-1"]]);
 }
 
 export function f4BarColourIsInfo(): void {
@@ -141,7 +141,7 @@ export function f5DonutSlicesAreTheOq4BandsCycling(): void {
 export function f6AThemeToggleReRendersWithTheDarkAccent(): void {
   CHARTS.LoadTrendChart();
   act(() => useThemeStore.getState().setTheme("dark"));
-  expect(last().option.color?.[0]).toBe("rgb(61, 205, 88)");
+  expect(last().option.color?.[0]).toBe("rgb(129, 140, 248)"); // dark `series-1`, #818CF8 (F4.341)
 }
 
 export function f6AThemeToggleReRendersWithTheDarkTheme(): void {
@@ -204,12 +204,13 @@ export const TOGGLED_CHART_NAMES = Object.keys(TOGGLED) as ToggledChartName[];
 
 /** The one option colour each chart claims, read off the recorded option. */
 const OPTION_COLOUR: Record<ToggledChartName, { role: RoleName; read: (p: RecordedProps) => unknown }> = {
-  // Grid, the first of [ink-faint, warning, accent]; `warning` would be vacuous.
+  // Grid, the first of [ink-faint, warning, series-1]; `warning` would be vacuous.
   EnergySourceStackChart: { role: "ink-faint", read: (p) => p.option.color?.[0] },
   // The Excellent slice.
   HealthSummaryDonut: { role: "accent", read: (p) => p.option.series[0].data[0].itemStyle?.color },
   // The first series, `seriesPalette(roles)[0]`.
-  ChartWidget: { role: "accent", read: (p) => p.option.color?.[0] },
+  // F4.341 A5c: the first series is `series-1`, never `accent`.
+  ChartWidget: { role: "series-1", read: (p) => p.option.color?.[0] },
   // No thresholds: the whole arc is one `ok` stop, `accent`.
   RadialGaugeWidget: { role: "accent", read: (p) => p.option.series[0].axisLine?.lineStyle?.color?.[0]?.[1] },
 };

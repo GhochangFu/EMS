@@ -183,7 +183,7 @@ function SiteGroup({ testId, title, live, sites }: SiteGroupProps) {
       >
         <span
           aria-hidden
-          className={`inline-flex h-2.5 w-2.5 rounded-full ${live ? "bg-accent" : "border-2 border-warning"}`}
+          className={`inline-flex h-2.5 w-2.5 rounded-full ${live ? "bg-ok" : "border-2 border-warning"}`}
         />
         {`${title} (${sites.length})`}
       </h2>

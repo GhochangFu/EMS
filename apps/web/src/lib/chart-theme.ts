@@ -19,8 +19,9 @@ import { withAlpha, type RoleName, type Roles } from "./theme";
  * system's font and type scale, from `chartType()`, rather than ECharts' default `sans-serif`.
  */
 
-/** The generic series palette, in order: the four status roles, then two quiet hues. */
-const SERIES_PALETTE: readonly RoleName[] = ["accent", "info", "warning", "critical", "ink-faint", "simulated-ink"];
+/** The generic series palette, in order: the first series hue, three status roles, then two quiet hues. */
+// `F4.341` A5c (ADR 0118 Amendment 1 A5): no chart series is drawn in `accent`; the first is `series-1`.
+const SERIES_PALETTE: readonly RoleName[] = ["series-1", "info", "warning", "critical", "ink-faint", "simulated-ink"];
 
 /** The series colours a multi-series chart cycles through, resolved for the current theme. */
 export function seriesPalette(roles: Roles): string[] {

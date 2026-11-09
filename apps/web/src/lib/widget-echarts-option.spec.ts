@@ -543,7 +543,7 @@ export function chartHeatmapDrawsDaysAcrossAndHoursDown(): void {
   ]);
   expect(option.visualMap.min).toBe(2);
   expect(option.visualMap.max).toBe(8);
-  expect(option.visualMap.inRange.color.at(-1), "one hue, the accent").toBe(roles.accent);
+  expect(option.visualMap.inRange.color.at(-1), "one hue, series-1 (F4.341 A5c)").toBe(roles["series-1"]);
 }
 
 /**
@@ -721,7 +721,7 @@ export function chartMatrixDrawsPointsDownAndHoursAcross(): void {
   ]);
   expect(option.visualMap.min).toBe(0.25);
   expect(option.visualMap.max).toBe(1);
-  expect(option.visualMap.inRange.color.at(-1), "one hue, the accent by default").toBe(roles.accent);
+  expect(option.visualMap.inRange.color.at(-1), "one hue, series-1 by default (F4.341 A5c)").toBe(roles["series-1"]);
   const coloured = buildChartOption(
     { series: "matrix", aggregate: "avg", colors: ["series-5"] },
     series,

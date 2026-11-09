@@ -24,7 +24,7 @@ export function LoadTrendChart({ points, status, stale }: LoadTrendChartProps) {
   const option = useMemo<EChartsOption>(() => {
     const data = points.map((p) => [p.t, p.totalKw] as [string, number]);
     return {
-      color: [roles.accent],
+      color: [roles["series-1"]],
       grid: { left: 52, right: 20, top: 28, bottom: 36 },
       tooltip: {
         trigger: "axis",
@@ -46,7 +46,7 @@ export function LoadTrendChart({ points, status, stale }: LoadTrendChartProps) {
           showSymbol: false,
           smooth: true,
           areaStyle: {
-            color: withAlpha(roles.accent, 0.12),
+            color: withAlpha(roles["series-1"], 0.12),
           },
           lineStyle: { width: 2 },
           data,

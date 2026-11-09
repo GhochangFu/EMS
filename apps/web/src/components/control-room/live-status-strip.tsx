@@ -53,7 +53,7 @@ function StatusTile({ live, label, count, countTestId, detail }: StatusTileProps
       <span
         aria-hidden
         className={`inline-flex h-3 w-3 shrink-0 rounded-full ${
-          live ? "bg-accent" : "border-2 border-warning"
+          live ? "bg-ok" : "border-2 border-warning"
         }`}
       />
       <span

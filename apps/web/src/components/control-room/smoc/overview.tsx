@@ -847,7 +847,7 @@ function RackLoadRow({
         </span>
       </div>
       <div className="mt-2 h-2 surface-pressed-sm">
-        <div className="h-2 rounded bg-accent" style={{ width: `${pct}%` }} />
+        <div className="h-2 rounded bg-neutral-ink" style={{ width: `${pct}%` }} />
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-ink-muted">
         <span>{n(load, 2)} kW / {rated.toFixed(1)} kW</span>

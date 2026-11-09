@@ -57,7 +57,7 @@ export function SystemStatusIndicator() {
 
   return (
     <span className="flex items-center gap-2" title={titleLine(data)}>
-      <Dot className={data.status === "operational" ? "bg-accent" : "bg-warning-on-dark"} />
+      <Dot className={data.status === "operational" ? "bg-ok" : "bg-warning-on-dark"} />
       <span>{summaryLine(data)}</span>
       <span>
         {percent === null ? "Data quality —" : `Data quality ${percent.toFixed(1)} %`}

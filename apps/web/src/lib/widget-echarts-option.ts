@@ -404,7 +404,7 @@ function heatmapOption(
   const min = values.length > 0 ? Math.min(...values) : 0;
   const max = values.length > 0 ? Math.max(...values) : 0;
   const format = valueFormatter(config);
-  const hue = config.colors?.[0] ? roles[config.colors[0]] : roles.accent;
+  const hue = config.colors?.[0] ? roles[config.colors[0]] : roles["series-1"];
   return {
     grid: { left: 44, right: 12, top: 8, bottom: 56 },
     tooltip: {
@@ -520,7 +520,7 @@ function matrixOption(
   const min = values.length > 0 ? Math.min(...values) : 0;
   const max = values.length > 0 ? Math.max(...values) : 0;
   const format = valueFormatter(config);
-  const hue = config.colors?.[0] ? roles[config.colors[0]] : roles.accent;
+  const hue = config.colors?.[0] ? roles[config.colors[0]] : roles["series-1"];
   const names = ordered.map((series) => series.name);
   return {
     grid: { left: 8, right: 12, top: 8, bottom: 56, containLabel: true },

@@ -28,7 +28,7 @@ export function EnergySourceStackChart({ points, status, compareTotal = null, sp
     () => [
       { name: "Grid", colour: roles["ink-faint"], data: points.map((p): [string, number] => [p.t, p.gridKw]) },
       { name: "DG (nominal)", colour: roles.warning, data: points.map((p): [string, number] => [p.t, p.dgKw]) },
-      { name: "Solar", colour: roles.accent, data: points.map((p): [string, number] => [p.t, p.solarKw]) },
+      { name: "Solar", colour: roles["series-1"], data: points.map((p): [string, number] => [p.t, p.solarKw]) },
     ],
     [points, roles],
   );
