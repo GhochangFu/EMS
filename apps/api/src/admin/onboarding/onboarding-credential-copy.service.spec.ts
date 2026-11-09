@@ -64,3 +64,10 @@ export async function aTargetOnAnotherBrokerIsA409(): Promise<void> {
   const err = await fail(svc.copy(JWT, SESSION_ID, { from: { rtuIndex: 0 }, toRtuIndexes: [1, 2] }));
   expect(err).toEqual(new ConflictException(copyTargetNotSameBroker("C")));
 }
+
+/** A draft source whose bound blob its RTU no longer serves is no credential to copy (review H1 follow-up). */
+export async function aStaleBoundSourceIsA409(): Promise<void> {
+  const stale = { c: "eA==", iv: "eA==", b: { host: "elsewhere.test", port: 8883, tls: true } };
+  const err = await fail(service({ A: stale }).copy(JWT, SESSION_ID, { from: { rtuIndex: 0 }, toRtuIndexes: [1] }));
+  expect(err).toEqual(new ConflictException(copySourceHasNoCredential("A")));
+}

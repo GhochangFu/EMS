@@ -21,7 +21,7 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { brokerOf, copyBlobToTargets, sameBroker, type MqttBroker } from "./onboarding-credential-copy";
 import { draftHash } from "./onboarding-commit-proposal";
 import { assertSessionUnlocked, assertTurnStillBound, lockSession } from "./onboarding-locked-writes";
-import { ownBlobAt, rtuSecretKey, type EncryptedBlob } from "./onboarding-redaction";
+import { blobBoundTo, ownBlobAt, rtuSecretKey, type EncryptedBlob } from "./onboarding-redaction";
 import { OnboardingService } from "./onboarding.service";
 
 /** `F4.339`: the 503 when no key is loaded — the `setCredentials` rule, so a copy never reports a success it cannot serve. */
@@ -133,7 +133,8 @@ export class OnboardingCredentialCopyService {
       if (code === null) throw new BadRequestException(copyTargetHasNoCode([from.rtuIndex]));
       if (rtu.protocol !== "mqtt") throw new ConflictException(copySourceNotMqtt(code));
       const blob = ownBlobAt(draft, from.rtuIndex);
-      if (blob === null) throw new ConflictException(copySourceHasNoCredential(code));
+      // A bound blob its RTU no longer serves is no credential to copy (review H1 follow-up).
+      if (blob === null || !blobBoundTo(blob, rtu)) throw new ConflictException(copySourceHasNoCredential(code));
       return { blob, broker: brokerOf(rtu.config), draftCode: code, audit: { rtuCode: code } };
     }
     // RLS (the tenant transaction) shows this organization's rows only: another organization's RTU is a 404.

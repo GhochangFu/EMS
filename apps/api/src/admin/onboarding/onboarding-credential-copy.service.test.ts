@@ -22,4 +22,5 @@ describe("F4.339 — the credential copy's early refusals", () => {
   it("answers 409 for a source with no stored credential", () => S.aSourceWithNoCredentialIsA409());
   it("answers 409 for a key version this API cannot read (R7)", () => S.anUnreadableKeyVersionIsA409());
   it("answers 409 for a target on another broker", () => S.aTargetOnAnotherBrokerIsA409());
+  it("answers 409 for a bound source its RTU no longer serves", () => S.aStaleBoundSourceIsA409());
 });
