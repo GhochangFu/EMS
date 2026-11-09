@@ -40,7 +40,7 @@ const read = (rel: string): string => {
  */
 
 const APP_TSX = "apps/web/src/app.tsx";
-const APP_SHELL = "apps/web/src/layouts/app-shell.tsx";
+const APP_SHELL = "apps/web/src/layouts/shells/navigation-model.ts"; // F4.341 PR 5: the nav model moved out of app-shell.tsx
 const ENTRY_PAGE = "apps/web/src/pages/sustainability-entry-page.tsx";
 
 /**

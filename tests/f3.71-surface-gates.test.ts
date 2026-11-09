@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import vm from "node:vm";
 
@@ -31,7 +31,13 @@ import { repoRoot } from "./support/source-scan";
 const INDEX_HTML = readFileSync(join(repoRoot, "apps/web/index.html"), "utf8");
 const INDEX_CSS_PATH = join(repoRoot, "apps/web/src/index.css");
 const INDEX_CSS = readFileSync(INDEX_CSS_PATH, "utf8");
-const APP_SHELL = "apps/web/src/layouts/app-shell.tsx";
+// `F4.341` PR 5: the chrome is in the three shells and their shared header and footer.
+const SHELL_FILES = [
+  "apps/web/src/layouts/app-shell.tsx",
+  ...readdirSync(join(repoRoot, "apps/web/src/layouts/shells"))
+    .filter((f) => f.endsWith(".tsx") && !/\.(spec|test)\.tsx$/.test(f))
+    .map((f) => `apps/web/src/layouts/shells/${f}`),
+];
 
 const rel = (full: string): string => relative(repoRoot, full).split("\\").join("/");
 const cssWithoutComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, (s) => s.replace(/[^\n]/g, " "));
@@ -416,16 +422,21 @@ describe("F3.71 the surface vocabulary", () => {
     expect(flatLeaks(rules)).toEqual([".surface-x border-radius"]);
   });
 
-  it("V6 the chrome — the shell's header, nav and footer — carries no surface-* class", () => {
-    const text = blankComments(readFileSync(join(repoRoot, APP_SHELL), "utf8"));
-    const chrome = [...text.matchAll(/<(header|nav|footer)\b[^>]*?className=(?:"([^"]*)"|\{`([^`]*)`\})/g)]
-      .filter((m) => /\bsurface-/.test(m[2] ?? m[3] ?? ""))
-      .map((m) => m[1]);
+  it("V6 the chrome — every shell's header, nav and footer — carries no surface-* class", () => {
+    const chrome = SHELL_FILES.flatMap((file) => {
+      const text = blankComments(readFileSync(join(repoRoot, file), "utf8"));
+      return [...text.matchAll(/<(header|nav|footer)\b[^>]*?className=(?:"([^"]*)"|\{`([^`]*)`\})/g)]
+        .filter((m) => /\bsurface-/.test(m[2] ?? m[3] ?? ""))
+        .map((m) => `${file} <${m[1]}>`);
+    });
     expect(chrome).toEqual([]);
   });
 
-  it("V6 the chrome scan is live: it finds the shell's header", () => {
-    const text = blankComments(readFileSync(join(repoRoot, APP_SHELL), "utf8"));
-    expect(/<header\b[^>]*?className=/.test(text)).toBe(true);
+  it("V6 the chrome scan is live: it finds a header in the shells, and reads all three shells", () => {
+    const texts = SHELL_FILES.map((file) => blankComments(readFileSync(join(repoRoot, file), "utf8")));
+    expect(texts.some((text) => /<header\b[^>]*?className=/.test(text))).toBe(true);
+    for (const shell of ["sidebar-shell.tsx", "topbar-shell.tsx", "rail-shell.tsx"]) {
+      expect(SHELL_FILES.some((f) => f.endsWith(shell)), shell).toBe(true);
+    }
   });
 });

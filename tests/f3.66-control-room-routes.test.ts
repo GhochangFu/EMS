@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const appPath = join(repoRoot, "apps/web/src/app.tsx");
-const appShellPath = join(repoRoot, "apps/web/src/layouts/app-shell.tsx");
+const appShellPath = join(repoRoot, "apps/web/src/layouts/shells/navigation-model.ts") // F4.341 PR 5: the nav model moved out of app-shell.tsx;
 
 /**
  * `F3.66` U5 — the three `/control-room*` routes are wrapped in
