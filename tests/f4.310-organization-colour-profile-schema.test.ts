@@ -57,12 +57,15 @@ describe("F4.310 — bms.organizations.colour_profile (migration 0125)", () => {
     );
   });
 
-  it("the CHECK lists exactly the six names of colourProfileSchema, in order", () => {
+  // `F4.341`: frozen at the six names 0125 shipped. The live list (nine names) is migration 0133's,
+  // held to `colourProfileSchema` by `tests/f4.341-colour-profiles-nine-schema.test.ts`.
+  it("the CHECK lists exactly the six names migration 0125 shipped, in order (frozen)", () => {
     const migration = sqlOnly(read(MIGRATION_REL));
     const m = /CHECK \(colour_profile IN \(([^)]*)\)\)/.exec(migration);
     expect(m, "a CHECK on colour_profile").not.toBeNull();
     const names = (m?.[1] ?? "").split(",").map((s) => s.trim().replace(/^'|'$/g, ""));
-    expect(names).toEqual([...COLOUR_PROFILES]);
+    expect(names).toEqual(["nexus", "ocean", "lagoon", "indigo", "graphite", "high-contrast"]);
+    expect(COLOUR_PROFILES.slice(0, 6)).toEqual(names);
   });
 
   it("drops the named CHECK before it adds it, so a re-run is safe", () => {

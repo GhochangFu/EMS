@@ -34,7 +34,9 @@ import {
  * not excluded: `F3.65b` declares that pair when its migration meets one. §2.4's wash ratios for
  * this role are "for the record", not declared.
  *
- * **`ink-faint` on `canvas` (4.32 light) is deliberately absent as a text pair** — its 12 uses sat
+ * **`ink-faint` on `canvas` is a text pair since `F4.341` (T-ink, ADR 0118 Amendment 2 P6):** the
+ * light `ink-faint` of every profile was raised until it passes 4.5:1 on its canvas, because every
+ * `nexus-soft` card paints `canvas`. The history: it was deliberately absent as a text pair — its 12 uses sat
  * inside cards; `F3.71` (plan OQ2) moves them to `ink-muted` because its neumorphic cards paint
  * `canvas`, and declares `ink-faint` on `canvas` as a UI pair only (the form field's edge). Before
  * `F3.71` its 12 uses sat inside cards,
@@ -101,6 +103,8 @@ const TEXT_PAIRS: Pair[] = [
   { fg: "ink-muted", bg: "well-deep" },
   { fg: "ink-faint", bg: "surface" },
   { fg: "ink-faint", bg: "well" },
+  // F4.341 T-ink (ADR 0118 Amendment 2 P6): meta text on a neumorphic card, which paints `canvas`.
+  { fg: "ink-faint", bg: "canvas" },
   // F3.65b §2.5: the `bg-gray-200 text-gray-600` pills (`breaker-table.tsx`, `smoc/overview.tsx`) → `bg-line text-ink-muted`.
   { fg: "ink-muted", bg: "line" },
   { fg: "neutral-ink", bg: "well-deep" },
@@ -609,17 +613,49 @@ function everyProfile(check: (name: string, theme: Theme, tokens: ReturnType<typ
   return out;
 }
 
+/**
+ * `F4.341` A4 (ADR 0118 Amendment 1 A4, superseding Q4's narrower OQ3 check): the whole accent
+ * family against **every** alarm role and every info role, in both themes, for every profile.
+ * The role lists are read from the token file by prefix, so a new `critical-*` role is covered.
+ */
+const ACCENT_FAMILY = ["accent", "accent-strong", "accent-on-chrome"] as const;
+
+function rolesOf(theme: Theme, tokens: ReturnType<typeof loadTokens>): string[] {
+  return [...(theme === "light" ? tokens.light : tokens.dark).keys()];
+}
+
+function alarmFamily(theme: Theme, tokens: ReturnType<typeof loadTokens>): string[] {
+  return rolesOf(theme, tokens).filter((r) => /^(?:critical|warning)(?:-|$)/.test(r));
+}
+
+function infoFamily(theme: Theme, tokens: ReturnType<typeof loadTokens>): string[] {
+  return [...rolesOf(theme, tokens).filter((r) => /^info(?:-|$)/.test(r)), "simulated-ink"];
+}
+
 function accentOffenders(theme: Theme, tokens: ReturnType<typeof loadTokens>): string[] {
   const out: string[] = [];
-  for (const role of ["accent", "accent-strong"]) {
-    for (const alarm of ALARM_ROLES) {
+  for (const role of ACCENT_FAMILY) {
+    for (const alarm of alarmFamily(theme, tokens)) {
       const d = deltaE2000(hexOf(role, theme, tokens), hexOf(alarm, theme, tokens));
       if (!(d >= MIN_ALARM_DELTA_E)) out.push(`${role} vs ${alarm} (${theme}): ΔE2000 ${d.toFixed(2)} < ${MIN_ALARM_DELTA_E}`);
     }
+    for (const state of infoFamily(theme, tokens)) {
+      const d = deltaE2000(hexOf(role, theme, tokens), hexOf(state, theme, tokens));
+      if (!(d >= MIN_ACCENT_STATE_DELTA_E)) out.push(`${role} vs ${state} (${theme}): ΔE2000 ${d.toFixed(2)} < ${MIN_ACCENT_STATE_DELTA_E}`);
+    }
   }
-  for (const state of ["info", "simulated-ink"]) {
-    const d = deltaE2000(hexOf("accent", theme, tokens), hexOf(state, theme, tokens));
-    if (!(d >= MIN_ACCENT_STATE_DELTA_E)) out.push(`accent vs ${state} (${theme}): ΔE2000 ${d.toFixed(2)} < ${MIN_ACCENT_STATE_DELTA_E}`);
+  return out;
+}
+
+/** A4b: no series role equals `accent`, and each is ≥ 12 from `info` (S1 already holds ≥ 20 from the alarms). */
+function seriesAccentOffenders(theme: Theme, tokens: ReturnType<typeof loadTokens>): string[] {
+  const out: string[] = [];
+  const accent = hexOf("accent", theme, tokens).toLowerCase();
+  for (const role of seriesRolesOf(theme, tokens)) {
+    const hex = hexOf(role, theme, tokens).toLowerCase();
+    if (hex === accent) out.push(`${role} equals accent (${theme}) ${hex}`);
+    const d = deltaE2000(hex, hexOf("info", theme, tokens));
+    if (!(d >= MIN_ACCENT_STATE_DELTA_E)) out.push(`${role} vs info (${theme}): ΔE2000 ${d.toFixed(2)} < ${MIN_ACCENT_STATE_DELTA_E}`);
   }
   return out;
 }
@@ -652,7 +688,33 @@ describe("F4.310: every colour profile holds the default's rules on its own valu
     expect(everyProfile((_name, theme, tokens) => [...alarmOffenders(theme, tokens), ...pairOffenders(theme, tokens)])).toEqual([]);
   });
 
-  it("Q4 every profile's accent is ΔE2000 ≥ 20 from the alarm colours and ≥ 12 from info and simulated-ink (OQ3)", () => {
+  it("A4a every profile's accent, accent-strong and accent-on-chrome are ΔE2000 ≥ 20 from every critical* and warning* role and ≥ 12 from every info* role and simulated-ink", () => {
     expect(everyProfile((_name, theme, tokens) => accentOffenders(theme, tokens))).toEqual([]);
+  });
+
+  it("A4a the role families are read from the token file (the gate is not vacuous)", () => {
+    const tokens = loadTokens();
+    expect(alarmFamily("light", tokens).length).toBeGreaterThanOrEqual(15);
+    expect(infoFamily("dark", tokens)).toEqual(["info", "info-ink", "info-wash", "info-line", "simulated-ink"]);
+  });
+
+  it("A4b no profile's series role equals its accent, and every series role is ≥ 12 from info", () => {
+    expect(everyProfile((_name, theme, tokens) => seriesAccentOffenders(theme, tokens))).toEqual([]);
+  });
+
+  it("A4b the scan is live: a series equal to the accent is caught", () => {
+    const tokens = loadTokens();
+    const forged = { light: new Map(tokens.light), dark: new Map(tokens.dark) };
+    forged.light.set("series-3", tokens.light.get("accent")!);
+    expect(seriesAccentOffenders("light", forged).some((o) => o.startsWith("series-3 equals accent"))).toBe(true);
+  });
+
+  it("A4c every profile, the default included, sets series-1 … series-8 in both themes", () => {
+    expect(
+      everyProfile((_name, theme, tokens) => {
+        const got = seriesRolesOf(theme, tokens).sort();
+        return got.join() === SERIES_EXPECTED.join() ? [] : [`${theme}: ${got.join(",")}`];
+      }),
+    ).toEqual([]);
   });
 });

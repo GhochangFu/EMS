@@ -85,7 +85,8 @@ export const SHADE_ROLES: ShadeRoleRow[] = [
   { shade: "sky-200", hex: "#BAE6FD", role: "info-line", kind: "exact" },
   { shade: "bms-canvas", hex: "#F2F4F7", role: "canvas", kind: "exact" },
   { shade: "amber-500", hex: "#F59E0B", role: "warning", kind: "exact" },
-  { shade: "slate-500", hex: "#64748B", role: "ink-faint", kind: "exact" },
+  // F4.341 P6 (ADR 0118 Amendment 2): `ink-faint` light was raised to #5F6F85 (4.65:1 on canvas), so slate-500 is merged now.
+  { shade: "slate-500", hex: "#64748B", role: "ink-faint", kind: "merged", deltaE: 2.03 },
   { shade: "sky-50", hex: "#F0F9FF", role: "info-wash", kind: "exact" },
   { shade: "red-300", hex: "#FCA5A5", role: "critical-line-strong", kind: "exact" },
   { shade: "bms-green-dark", hex: "#007C3C", role: "accent-strong", kind: "exact", altRoles: ["chrome-nav"] },
@@ -93,7 +94,7 @@ export const SHADE_ROLES: ShadeRoleRow[] = [
   { shade: "gray-600", hex: "#4B5563", role: "ink-muted", kind: "merged", deltaE: 1.1 },
   { shade: "amber-700", hex: "#B45309", role: "warning-ink", kind: "merged", deltaE: 15.21 },
   { shade: "emerald-100", hex: "#D1FAE5", role: "ok-wash", kind: "merged", deltaE: 8.6 },
-  { shade: "gray-500", hex: "#6B7280", role: "ink-faint", kind: "merged", deltaE: 4.14 },
+  { shade: "gray-500", hex: "#6B7280", role: "ink-faint", kind: "merged", deltaE: 4.25 },
   { shade: "sky-900", hex: "#0C4A6E", role: "info-ink", kind: "merged", deltaE: 5.24 },
   { shade: "amber-800", hex: "#92400E", role: "warning-ink", kind: "merged", deltaE: 6.15 },
   { shade: "amber-400", hex: "#FBBF24", role: "warning-on-dark", kind: "exact", altRoles: ["warning"] },

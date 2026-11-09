@@ -31,7 +31,7 @@
   --line-strong: 209 213 219; /* #D1D5DB */
   --ink: 26 34 48; /* #1A2230 */
   --ink-muted: 74 84 100; /* #4A5464 */
-  --ink-faint: 100 116 139; /* #64748B */
+  --ink-faint: 95 111 133; /* #5F6F85 */
   --ink-hint: 156 163 175; /* #9CA3AF */
   --neutral-ink: 55 65 81; /* #374151 */
   --accent: 0 166 81; /* #00A651 */
@@ -121,7 +121,7 @@
   --info-wash: 21 45 55; /* #152D37 */
   --info-line: 46 88 107; /* #2E586B */
   --simulated-ink: 166 125 232; /* #A67DE8 */
-  --series-1: 96 165 250; /* #60A5FA */
+  --series-1: 129 140 248; /* #818CF8 */
   --series-2: 45 212 191; /* #2DD4BF */
   --series-3: 192 132 252; /* #C084FC */
   --series-4: 245 208 254; /* #F5D0FE */
@@ -136,7 +136,7 @@
 
 
 /*
- * F4.310 — the five colour profiles beside the default (ADR 0110 decisions 1–5, Amendment 1). Each
+ * F4.310 — five colour profiles beside the default (ADR 0110 decisions 1–5, Amendment 1). Each
  * profile sets every changeable role (`PROFILE_ROLES` in `src/lib/theme.ts`) and no fixed one; its
  * light block applies only when the theme is not dark, so the two blocks never compete. The default
  * profile, nexus, is the two base blocks above and has no block here. The values and their measured
@@ -153,7 +153,7 @@
   --line-strong: 203 213 225; /* #CBD5E1 */
   --ink: 15 23 42; /* #0F172A */
   --ink-muted: 71 85 105; /* #475569 */
-  --ink-faint: 100 116 139; /* #64748B */
+  --ink-faint: 96 112 134; /* #607086 */
   --ink-hint: 148 163 184; /* #94A3B8 */
   --neutral-ink: 51 65 85; /* #334155 */
   --accent: 29 78 216; /* #1D4ED8 */
@@ -162,7 +162,7 @@
   --chrome-nav: 30 64 175; /* #1E40AF */
   --on-accent: 255 255 255; /* #FFFFFF */
   --focus: 29 78 216; /* #1D4ED8 */
-  --series-1: 29 78 216; /* #1D4ED8 */
+  --series-1: 21 94 117; /* #155E75 */
   --series-2: 15 118 110; /* #0F766E */
   --series-3: 107 33 168; /* #6B21A8 */
   --series-4: 192 38 211; /* #C026D3 */
@@ -170,7 +170,7 @@
   --series-6: 77 124 15; /* #4D7C0F */
   --series-7: 71 85 105; /* #475569 */
   --series-8: 49 46 129; /* #312E81 */
-  --accent-on-chrome: 96 165 250; /* #60A5FA */
+  --accent-on-chrome: 165 180 252; /* #A5B4FC */
 }
 
 :root[data-profile="ocean"][data-theme="dark"] {
@@ -191,7 +191,7 @@
   --chrome-nav: 30 64 175; /* #1E40AF */
   --on-accent: 10 18 32; /* #0A1220 */
   --focus: 140 158 255; /* #8C9EFF */
-  --series-1: 96 165 250; /* #60A5FA */
+  --series-1: 165 243 252; /* #A5F3FC */
   --series-2: 45 212 191; /* #2DD4BF */
   --series-3: 192 132 252; /* #C084FC */
   --series-4: 245 208 254; /* #F5D0FE */
@@ -221,7 +221,7 @@
   --on-accent: 255 255 255; /* #FFFFFF */
   --focus: 15 118 110; /* #0F766E */
   --series-1: 29 78 216; /* #1D4ED8 */
-  --series-2: 15 118 110; /* #0F766E */
+  --series-2: 21 94 117; /* #155E75 */
   --series-3: 107 33 168; /* #6B21A8 */
   --series-4: 192 38 211; /* #C026D3 */
   --series-5: 3 105 161; /* #0369A1 */
@@ -249,8 +249,8 @@
   --chrome-nav: 17 94 89; /* #115E59 */
   --on-accent: 10 19 20; /* #0A1314 */
   --focus: 45 212 191; /* #2DD4BF */
-  --series-1: 96 165 250; /* #60A5FA */
-  --series-2: 45 212 191; /* #2DD4BF */
+  --series-1: 129 140 248; /* #818CF8 */
+  --series-2: 249 168 212; /* #F9A8D4 */
   --series-3: 192 132 252; /* #C084FC */
   --series-4: 245 208 254; /* #F5D0FE */
   --series-5: 125 211 252; /* #7DD3FC */
@@ -307,7 +307,7 @@
   --chrome-nav: 30 58 138; /* #1E3A8A */
   --on-accent: 14 14 24; /* #0E0E18 */
   --focus: 157 178 255; /* #9DB2FF */
-  --series-1: 96 165 250; /* #60A5FA */
+  --series-1: 165 243 252; /* #A5F3FC */
   --series-2: 45 212 191; /* #2DD4BF */
   --series-3: 192 132 252; /* #C084FC */
   --series-4: 245 208 254; /* #F5D0FE */
@@ -327,11 +327,11 @@
   --line-strong: 212 212 216; /* #D4D4D8 */
   --ink: 24 24 27; /* #18181B */
   --ink-muted: 82 82 91; /* #52525B */
-  --ink-faint: 113 113 122; /* #71717A */
+  --ink-faint: 109 109 118; /* #6D6D76 */
   --ink-hint: 161 161 170; /* #A1A1AA */
   --neutral-ink: 63 63 70; /* #3F3F46 */
-  --accent: 71 85 105; /* #475569 */
-  --accent-strong: 51 65 85; /* #334155 */
+  --accent: 51 65 85; /* #334155 */
+  --accent-strong: 30 41 59; /* #1E293B */
   --chrome: 31 32 35; /* #1F2023 */
   --chrome-nav: 63 63 70; /* #3F3F46 */
   --on-accent: 255 255 255; /* #FFFFFF */
@@ -344,7 +344,7 @@
   --series-6: 77 124 15; /* #4D7C0F */
   --series-7: 71 85 105; /* #475569 */
   --series-8: 49 46 129; /* #312E81 */
-  --accent-on-chrome: 203 213 225; /* #CBD5E1 */
+  --accent-on-chrome: 161 161 170; /* #A1A1AA */
 }
 
 :root[data-profile="graphite"][data-theme="dark"] {
@@ -365,7 +365,7 @@
   --chrome-nav: 63 63 70; /* #3F3F46 */
   --on-accent: 14 14 16; /* #0E0E10 */
   --focus: 161 161 170; /* #A1A1AA */
-  --series-1: 96 165 250; /* #60A5FA */
+  --series-1: 129 140 248; /* #818CF8 */
   --series-2: 45 212 191; /* #2DD4BF */
   --series-3: 192 132 252; /* #C084FC */
   --series-4: 245 208 254; /* #F5D0FE */
@@ -423,7 +423,7 @@
   --chrome-nav: 0 92 44; /* #005C2C */
   --on-accent: 0 0 0; /* #000000 */
   --focus: 134 239 172; /* #86EFAC */
-  --series-1: 96 165 250; /* #60A5FA */
+  --series-1: 129 140 248; /* #818CF8 */
   --series-2: 45 212 191; /* #2DD4BF */
   --series-3: 192 132 252; /* #C084FC */
   --series-4: 245 208 254; /* #F5D0FE */
@@ -433,6 +433,188 @@
   --series-8: 199 210 254; /* #C7D2FE */
   --accent-on-chrome: 74 222 128; /* #4ADE80 */
 }
+
+
+/*
+ * F4.341 — three more colour profiles (ADR 0118 decision 13, Amendment 1 A3/A4): forest, sand and
+ * navy-pop. Each sets every changeable role and no fixed one, like the five above, and passes the
+ * same gates (Q1–Q3, A4a–c, T-ink). The values and their measured ratios are in the PR that added
+ * them and ADR 0118's "values, as built" note; merging that PR approved them (AGENTS §10).
+ */
+:root[data-profile="forest"]:not([data-theme="dark"]) {
+  --canvas: 241 237 227; /* #F1EDE3 */
+  --surface: 251 249 244; /* #FBF9F4 */
+  --well: 246 242 234; /* #F6F2EA */
+  --well-deep: 236 231 219; /* #ECE7DB */
+  --line: 226 220 205; /* #E2DCCD */
+  --line-strong: 207 198 178; /* #CFC6B2 */
+  --ink: 23 37 29; /* #17251D */
+  --ink-muted: 74 90 79; /* #4A5A4F */
+  --ink-faint: 90 106 95; /* #5A6A5F */
+  --ink-hint: 139 151 141; /* #8B978D */
+  --neutral-ink: 52 69 58; /* #34453A */
+  --accent: 31 94 70; /* #1F5E46 */
+  --accent-strong: 23 72 58; /* #17483A */
+  --chrome: 14 28 20; /* #0E1C14 */
+  --chrome-nav: 31 74 50; /* #1F4A32 */
+  --on-accent: 255 255 255; /* #FFFFFF */
+  --focus: 31 94 70; /* #1F5E46 */
+  --series-1: 29 78 216; /* #1D4ED8 */
+  --series-2: 15 118 110; /* #0F766E */
+  --series-3: 157 23 77; /* #9D174D */
+  --series-4: 192 38 211; /* #C026D3 */
+  --series-5: 3 105 161; /* #0369A1 */
+  --series-6: 77 124 15; /* #4D7C0F */
+  --series-7: 71 85 105; /* #475569 */
+  --series-8: 49 46 129; /* #312E81 */
+  --accent-on-chrome: 125 211 176; /* #7DD3B0 */
+}
+
+:root[data-profile="forest"][data-theme="dark"] {
+  --canvas: 16 24 19; /* #101813 */
+  --surface: 22 33 26; /* #16211A */
+  --well: 28 42 33; /* #1C2A21 */
+  --well-deep: 34 50 40; /* #223228 */
+  --line: 42 59 48; /* #2A3B30 */
+  --line-strong: 58 78 64; /* #3A4E40 */
+  --ink: 233 238 232; /* #E9EEE8 */
+  --ink-muted: 170 184 173; /* #AAB8AD */
+  --ink-faint: 138 154 142; /* #8A9A8E */
+  --ink-hint: 111 128 116; /* #6F8074 */
+  --neutral-ink: 152 168 156; /* #98A89C */
+  --accent: 125 211 176; /* #7DD3B0 */
+  --accent-strong: 167 230 204; /* #A7E6CC */
+  --chrome: 10 18 13; /* #0A120D */
+  --chrome-nav: 31 74 50; /* #1F4A32 */
+  --on-accent: 10 18 13; /* #0A120D */
+  --focus: 125 211 176; /* #7DD3B0 */
+  --series-1: 129 140 248; /* #818CF8 */
+  --series-2: 45 212 191; /* #2DD4BF */
+  --series-3: 253 164 175; /* #FDA4AF */
+  --series-4: 245 208 254; /* #F5D0FE */
+  --series-5: 125 211 252; /* #7DD3FC */
+  --series-6: 163 230 53; /* #A3E635 */
+  --series-7: 203 213 225; /* #CBD5E1 */
+  --series-8: 199 210 254; /* #C7D2FE */
+  --accent-on-chrome: 125 211 176; /* #7DD3B0 */
+}
+
+:root[data-profile="sand"]:not([data-theme="dark"]) {
+  --canvas: 239 235 227; /* #EFEBE3 */
+  --surface: 251 250 247; /* #FBFAF7 */
+  --well: 245 242 236; /* #F5F2EC */
+  --well-deep: 235 230 220; /* #EBE6DC */
+  --line: 225 220 210; /* #E1DCD2 */
+  --line-strong: 203 196 183; /* #CBC4B7 */
+  --ink: 30 31 34; /* #1E1F22 */
+  --ink-muted: 78 79 85; /* #4E4F55 */
+  --ink-faint: 98 99 105; /* #626369 */
+  --ink-hint: 151 147 138; /* #97938A */
+  --neutral-ink: 58 59 64; /* #3A3B40 */
+  --accent: 32 80 224; /* #2050E0 */
+  --accent-strong: 26 63 176; /* #1A3FB0 */
+  --chrome: 38 39 43; /* #26272B */
+  --chrome-nav: 58 59 64; /* #3A3B40 */
+  --on-accent: 255 255 255; /* #FFFFFF */
+  --focus: 32 80 224; /* #2050E0 */
+  --series-1: 21 94 117; /* #155E75 */
+  --series-2: 15 118 110; /* #0F766E */
+  --series-3: 107 33 168; /* #6B21A8 */
+  --series-4: 192 38 211; /* #C026D3 */
+  --series-5: 3 105 161; /* #0369A1 */
+  --series-6: 77 124 15; /* #4D7C0F */
+  --series-7: 71 85 105; /* #475569 */
+  --series-8: 49 46 129; /* #312E81 */
+  --accent-on-chrome: 127 162 255; /* #7FA2FF */
+}
+
+:root[data-profile="sand"][data-theme="dark"] {
+  --canvas: 24 24 26; /* #18181A */
+  --surface: 33 33 36; /* #212124 */
+  --well: 41 41 45; /* #29292D */
+  --well-deep: 47 47 51; /* #2F2F33 */
+  --line: 55 55 60; /* #37373C */
+  --line-strong: 74 74 80; /* #4A4A50 */
+  --ink: 241 239 234; /* #F1EFEA */
+  --ink-muted: 189 185 176; /* #BDB9B0 */
+  --ink-faint: 154 150 142; /* #9A968E */
+  --ink-hint: 122 119 111; /* #7A776F */
+  --neutral-ink: 168 164 156; /* #A8A49C */
+  --accent: 127 162 255; /* #7FA2FF */
+  --accent-strong: 169 192 255; /* #A9C0FF */
+  --chrome: 15 15 17; /* #0F0F11 */
+  --chrome-nav: 58 59 64; /* #3A3B40 */
+  --on-accent: 15 15 17; /* #0F0F11 */
+  --focus: 127 162 255; /* #7FA2FF */
+  --series-1: 165 243 252; /* #A5F3FC */
+  --series-2: 45 212 191; /* #2DD4BF */
+  --series-3: 192 132 252; /* #C084FC */
+  --series-4: 245 208 254; /* #F5D0FE */
+  --series-5: 125 211 252; /* #7DD3FC */
+  --series-6: 163 230 53; /* #A3E635 */
+  --series-7: 203 213 225; /* #CBD5E1 */
+  --series-8: 199 210 254; /* #C7D2FE */
+  --accent-on-chrome: 127 162 255; /* #7FA2FF */
+}
+
+:root[data-profile="navy-pop"]:not([data-theme="dark"]) {
+  --canvas: 243 245 249; /* #F3F5F9 */
+  --surface: 255 255 255; /* #FFFFFF */
+  --well: 248 249 252; /* #F8F9FC */
+  --well-deep: 238 241 247; /* #EEF1F7 */
+  --line: 225 229 238; /* #E1E5EE */
+  --line-strong: 199 206 220; /* #C7CEDC */
+  --ink: 14 26 51; /* #0E1A33 */
+  --ink-muted: 70 83 107; /* #46536B */
+  --ink-faint: 98 112 137; /* #627089 */
+  --ink-hint: 152 162 182; /* #98A2B6 */
+  --neutral-ink: 46 59 85; /* #2E3B55 */
+  --accent: 163 24 106; /* #A3186A */
+  --accent-strong: 142 26 110; /* #8E1A6E */
+  --chrome: 14 26 51; /* #0E1A33 */
+  --chrome-nav: 27 44 82; /* #1B2C52 */
+  --on-accent: 255 255 255; /* #FFFFFF */
+  --focus: 163 24 106; /* #A3186A */
+  --series-1: 29 78 216; /* #1D4ED8 */
+  --series-2: 15 118 110; /* #0F766E */
+  --series-3: 107 33 168; /* #6B21A8 */
+  --series-4: 87 83 78; /* #57534E */
+  --series-5: 3 105 161; /* #0369A1 */
+  --series-6: 77 124 15; /* #4D7C0F */
+  --series-7: 71 85 105; /* #475569 */
+  --series-8: 49 46 129; /* #312E81 */
+  --accent-on-chrome: 233 166 240; /* #E9A6F0 */
+}
+
+:root[data-profile="navy-pop"][data-theme="dark"] {
+  --canvas: 11 18 34; /* #0B1222 */
+  --surface: 17 27 48; /* #111B30 */
+  --well: 23 35 60; /* #17233C */
+  --well-deep: 29 42 69; /* #1D2A45 */
+  --line: 38 52 79; /* #26344F */
+  --line-strong: 54 71 102; /* #364766 */
+  --ink: 232 237 247; /* #E8EDF7 */
+  --ink-muted: 166 178 200; /* #A6B2C8 */
+  --ink-faint: 133 146 171; /* #8592AB */
+  --ink-hint: 110 122 147; /* #6E7A93 */
+  --neutral-ink: 149 161 184; /* #95A1B8 */
+  --accent: 233 166 240; /* #E9A6F0 */
+  --accent-strong: 249 198 230; /* #F9C6E6 */
+  --chrome: 7 13 26; /* #070D1A */
+  --chrome-nav: 27 44 82; /* #1B2C52 */
+  --on-accent: 7 13 26; /* #070D1A */
+  --focus: 233 166 240; /* #E9A6F0 */
+  --series-1: 165 243 252; /* #A5F3FC */
+  --series-2: 45 212 191; /* #2DD4BF */
+  --series-3: 192 132 252; /* #C084FC */
+  --series-4: 153 246 228; /* #99F6E4 */
+  --series-5: 125 211 252; /* #7DD3FC */
+  --series-6: 163 230 53; /* #A3E635 */
+  --series-7: 203 213 225; /* #CBD5E1 */
+  --series-8: 199 210 254; /* #C7D2FE */
+  --accent-on-chrome: 233 166 240; /* #E9A6F0 */
+}
+
 
 /*
  * F4.341 — the design tokens (ADR 0118 decisions 2–4, plan `docs/plans/f4.341-selectable-design-systems.md`
@@ -654,7 +836,7 @@ html[data-theme="dark"]:not([data-surface="flat"]) {
   }
 
   /*
-   * An input, select or text area. Pressed, with a 1px `ink-faint` edge: 4.32:1 light and 5.46:1
+   * An input, select or text area. Pressed, with a 1px `ink-faint` edge: 4.65:1 light (F4.341 P6) and 5.46:1
    * dark on `canvas`, so the control's boundary meets WCAG 1.4.11 (ADR 0085 decision 4).
    */
   .surface-field {
