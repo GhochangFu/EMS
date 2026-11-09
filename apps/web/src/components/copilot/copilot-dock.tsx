@@ -17,7 +17,7 @@ import {
   MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES,
 } from "@bms/shared/contracts";
 
-import { fetchOnboardingSession } from "../../api/admin/onboarding";
+import { fetchOnboardingDrafts, fetchOnboardingSession } from "../../api/admin/onboarding";
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import {
   copilotLimitOf,
@@ -571,8 +571,17 @@ function DockPanel({
     setOnboardFor(null);
     // The copilot is off there (ruling Q4): the dock's off sentence shows; a bound skill is never started twice.
     if (scope.available === false || thread.data?.skill != null || startSkill.isPending) return;
-    startSkill.mutate(undefined);
-  }, [onboardFor, organizationId, isGlobalAdmin, scope, scopedStatus.isError, conversationId, thread.data, thread.isError, startSkill]);
+    // F4.339 (ADR 0117 decision 11): with open drafts the draft picker (below) is the answer, not a new draft.
+    // A failed read starts as before, so the button never does nothing.
+    const org = onboardFor;
+    void queryClient
+      .fetchQuery({ queryKey: onboardingDraftsKey(org), queryFn: () => fetchOnboardingDrafts(org), staleTime: 0 })
+      .then(
+        (list) => list.items.length === 0,
+        () => true,
+      )
+      .then((start) => start && startSkill.mutate(undefined));
+  }, [onboardFor, organizationId, isGlobalAdmin, scope, scopedStatus.isError, conversationId, thread.data, thread.isError, startSkill, queryClient]);
 
   // The button shows only while closed or floating: opened into another shape the focus goes to the
   // panel, and Close gives it back to the button, so a keyboard user is never left on the page body.

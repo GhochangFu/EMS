@@ -17,6 +17,7 @@ import {
   aScopedAdminWithNoConversationListsItsHome,
   aRequestAfterAPurgedConversationStillStartsTheSkill,
   aRequestDoesNotStartASecondSkill,
+  aRequestWithDraftsOpensThePicker,
   aRequestFiledAfterTheMountStartsTheSkillOnce,
   aStartMakesTheDraftListStale,
   aSwitchedOffOrganizationStartsNothing,
@@ -44,6 +45,7 @@ describe("F3.86 PR 7 copilot dock — the onboarding request", () => {
   it("one request leads to exactly one start call, after a re-render and under StrictMode", oneRequestStartsTheSkillExactlyOnce);
   it("a request filed after the mount starts the skill once", aRequestFiledAfterTheMountStartsTheSkillOnce);
   it("a request does not start a second skill when one is bound", aRequestDoesNotStartASecondSkill);
+  it("F4.339: a request with drafts opens the picker and starts nothing; Resume starts that draft", aRequestWithDraftsOpensThePicker);
   it("F4.244: a request after a purged stored conversation still starts the skill", aRequestAfterAPurgedConversationStillStartsTheSkill);
   it("with the organization's switch off, nothing starts and the off sentence shows", aSwitchedOffOrganizationStartsNothing);
   it("the global admin's request picks that organization", theGlobalAdminsRequestPicksThatOrganization);
