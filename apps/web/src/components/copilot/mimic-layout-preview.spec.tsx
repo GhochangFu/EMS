@@ -28,3 +28,11 @@ export function thePreviewKeepsTheCanvasRatio(): void {
   expect(within(preview).getByRole("img").getAttribute("aria-label") ?? "").toContain("RSMOC-WC HT/LT network preview");
   expect(within(preview).getAllByTestId("mimic-node")).toHaveLength(14);
 }
+
+/** `F4.344` (ADR 0120 decision 6): the copilot layout card draws its glyphs, still. */
+export function theCopilotPreviewNeverMoves(): void {
+  render(<MimicLayoutPreview body={FLOW_WRITE_BODY} orgSymbols={[]} />);
+  const preview = screen.getByTestId("copilot-layout-preview");
+  expect(within(preview).getAllByTestId("mimic-glyph").length).toBeGreaterThan(0);
+  expect(preview.querySelectorAll("[data-motion]")).toHaveLength(0);
+}

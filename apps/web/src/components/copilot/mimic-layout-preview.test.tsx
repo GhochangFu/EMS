@@ -2,7 +2,11 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it } from "vitest";
 
-import { theFlowFixtureDrawsEachUnitAndPipe, thePreviewKeepsTheCanvasRatio } from "./mimic-layout-preview.spec";
+import {
+  theCopilotPreviewNeverMoves,
+  theFlowFixtureDrawsEachUnitAndPipe,
+  thePreviewKeepsTheCanvasRatio,
+} from "./mimic-layout-preview.spec";
 
 afterEach(() => {
   cleanup();
@@ -12,4 +16,5 @@ afterEach(() => {
 describe("F3.87 PR 5 — MimicLayoutPreview", () => {
   it("draws each unit and pipe of the F3.80 flow fixture", () => theFlowFixtureDrawsEachUnitAndPipe());
   it("keeps the canvas ratio and names the drawing", () => thePreviewKeepsTheCanvasRatio());
+  it("draws its glyphs and none moves (F4.344)", () => theCopilotPreviewNeverMoves());
 });

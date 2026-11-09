@@ -416,3 +416,10 @@ export async function aSearchOmitsARetiredGlobalSymbol(): Promise<void> {
   expect(screen.getByRole("button", { name: "Add Pump unit" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Add Water pump unit from Material Design Icons" })).toBeNull();
 }
+
+/** P-M1 — `F4.344` (ADR 0120 decision 6): the palette's glyph buttons draw their glyphs, still. */
+export function thePaletteGlyphsNeverMove(): void {
+  renderPalette();
+  expect(screen.getAllByTestId("mimic-glyph").length).toBeGreaterThan(0);
+  expect(document.querySelectorAll("[data-motion]")).toHaveLength(0);
+}
