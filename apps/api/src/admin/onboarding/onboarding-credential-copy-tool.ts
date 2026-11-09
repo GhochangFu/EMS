@@ -37,6 +37,9 @@ export const CREDENTIAL_COPY_TOOL_OTHER_BROKER =
   "A target RTU is not on the source's broker (host, port and TLS). Only RTUs on the same broker share a credential.";
 export const CREDENTIAL_COPY_TOOL_HELD =
   "A target RTU already holds a credential, and this copy never replaces one. Tell the user to change it on the RTU step.";
+/** Review finding 2: one server-made card per turn, so a copy after a commit or discovery proposal would get none. */
+export const CREDENTIAL_COPY_TOOL_ONE_CARD =
+  "This turn already proposed a commit or a discovery, and a turn shows one card. Propose the copy on the next turn.";
 export const CREDENTIAL_COPY_TOOL_UNSHOWABLE = "This copy cannot be shown on a card. Tell the user to use Same credentials as… on the RTU step.";
 
 export const CREDENTIAL_COPY_TOOL_SCHEMAS = {
@@ -76,7 +79,12 @@ export function dispatchCredentialCopyTool(
 }
 
 /** The proposal, or the fixed refusal. Every check is the route's, run early so the card is not made to fail. */
-function checkedProposal(draft: OnboardingDraft, fromIndex: number, toIndexes: readonly number[]): CredentialCopyProposal | string {
+function checkedProposal(
+  draft: OnboardingDraft,
+  fromIndex: number,
+  toIndexes: readonly number[],
+  earned: ReadonlySet<string>,
+): CredentialCopyProposal | string {
   const rtus = draft.rtus ?? [];
   const source = rtus[fromIndex];
   const fromCode = rtuSecretKey(draft, fromIndex);
@@ -94,7 +102,8 @@ function checkedProposal(draft: OnboardingDraft, fromIndex: number, toIndexes: r
     if (target.protocol !== "mqtt") return CREDENTIAL_COPY_TOOL_NOT_MQTT;
     if (!sameBroker(broker, brokerOf(target.config))) return CREDENTIAL_COPY_TOOL_OTHER_BROKER;
     // Ruling Q2: the card never sends `replace`, so a held target would only answer 409 at Confirm.
-    if (ownBlobAt(draft, index) !== null) return CREDENTIAL_COPY_TOOL_HELD;
+    // Review finding 1: a discovered device's copy earned earlier this turn lands after the turn; it counts as held.
+    if (ownBlobAt(draft, index) !== null || earned.has(code)) return CREDENTIAL_COPY_TOOL_HELD;
     toCodes.push(code);
   }
   return { fromIndex, toIndexes: [...toIndexes], fromCode, toCodes, host: broker.host, port: broker.port, tls: broker.tls };
@@ -104,7 +113,11 @@ function proposeCredentialCopy(
   args: z.infer<(typeof CREDENTIAL_COPY_TOOL_SCHEMAS)["propose_credential_copy"]>,
   state: ToolState,
 ): ToolOutcome {
-  const proposal = checkedProposal(state.working, args.fromIndex, args.toIndexes);
+  if (state.pendingProposal !== undefined || state.pendingDiscovery !== undefined) {
+    return fail(CREDENTIAL_COPY_TOOL_ONE_CARD);
+  }
+  const earned = new Set((state.secretCopies ?? []).map((copy) => copy.to));
+  const proposal = checkedProposal(state.working, args.fromIndex, args.toIndexes, earned);
   if (typeof proposal === "string") {
     return fail(proposal);
   }

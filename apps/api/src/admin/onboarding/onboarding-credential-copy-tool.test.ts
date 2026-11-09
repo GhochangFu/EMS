@@ -12,4 +12,6 @@ describe("F4.339 PR 9 — propose_credential_copy (ADR 0099 Amendment 18 decisio
   it("P6 the arguments are strict: 1-100 distinct targets, no replace", S.theArgumentsAreStrict);
   it("P7 a later write in the turn drops the proposal", S.aLaterWriteDropsTheProposal);
   it("P8 the finished turn stores the proposal, read back fail-closed", S.theTurnStoresTheProposal);
+  it("P9 a target with a copy earned this turn counts as held", S.aTargetWithAnEarnedCopyIsHeld);
+  it("P10 a copy after a commit or discovery proposal is refused (one card per turn)", S.aSecondCardInOneTurnIsRefused);
 });

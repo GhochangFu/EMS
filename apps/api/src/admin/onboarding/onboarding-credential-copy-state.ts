@@ -4,8 +4,11 @@ import { z } from "zod";
 /**
  * `F4.339` PR 9 (ADR 0099 Amendment 18 decision 2) — the draft key a
  * `propose_credential_copy` turn writes, beside `_discoveryProposal`: server
- * state, outside the commit hash, cleared by every draft write and by a
- * restore, never sent to the client or the model. Its own leaf module, so the
+ * state, outside the commit hash, cleared by every merged draft write (a chat
+ * turn, a patch, an upload) and by a restore, never sent to the client or the
+ * model. The copy route's own write leaves it; that is harmless, because a card
+ * is made only for the turn whose action line carries the proposal. Its own
+ * leaf module, so the
  * hash, the redaction and the checkpoints read the key without the tool.
  */
 export const CREDENTIAL_COPY_PROPOSAL_KEY = "_credentialCopyProposal";

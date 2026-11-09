@@ -9,6 +9,7 @@ import {
   CREDENTIAL_COPY_TOOL_NO_CODE,
   CREDENTIAL_COPY_TOOL_NO_CREDENTIAL,
   CREDENTIAL_COPY_TOOL_NOT_MQTT,
+  CREDENTIAL_COPY_TOOL_ONE_CARD,
   CREDENTIAL_COPY_TOOL_OTHER_BROKER,
   CREDENTIAL_COPY_TOOL_SELF,
 } from "./onboarding-credential-copy-tool";
@@ -65,8 +66,8 @@ function draft(secrets: Record<string, unknown> = { A: { c: CIPHERTEXT, iv: "aXY
   } as unknown as OnboardingDraft;
 }
 
-async function propose(working: OnboardingDraft, args: unknown) {
-  const state: ToolState = { working };
+async function propose(working: OnboardingDraft, args: unknown, extra: Partial<ToolState> = {}) {
+  const state: ToolState = { working, ...extra };
   const outcome = await runTool({ id: "c1", name: "propose_credential_copy", arguments: JSON.stringify(args) }, state, context());
   return { state, outcome };
 }
@@ -156,4 +157,22 @@ export function theTurnStoresTheProposal(): void {
   const stored = applyDiscoveryTurn(draft(), { credentialCopyProposal: proposal }, "2026-11-09T00:00:00.000Z");
   expect(readCredentialCopyProposal(stored)).toEqual({ ...proposal, proposedAt: "2026-11-09T00:00:00.000Z" });
   expect(readCredentialCopyProposal(applyDiscoveryTurn(draft(), {}, "2026-11-09T00:00:00.000Z"))).toBeNull();
+}
+
+/** P9 (review finding 1) — a target that earned a discovery copy earlier this turn counts as held. */
+export async function aTargetWithAnEarnedCopyIsHeld(): Promise<void> {
+  const { state, outcome } = await propose(draft(), { fromIndex: 0, toIndexes: [1] }, { secretCopies: [{ from: "A", to: "B" }] });
+  expect(outcome.ok).toBe(false);
+  expect(outcome.content).toContain(CREDENTIAL_COPY_TOOL_HELD);
+  expect(state.pendingCredentialCopy).toBeUndefined();
+}
+
+/** P10 (review finding 2) — after a commit or discovery proposal this turn, the copy is refused: one card per turn. */
+export async function aSecondCardInOneTurnIsRefused(): Promise<void> {
+  for (const extra of [{ pendingProposal: { summary: "x" } }, { pendingDiscovery: { rtuCode: "A" } as never }]) {
+    const { state, outcome } = await propose(draft(), { fromIndex: 0, toIndexes: [1] }, extra);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.content).toContain(CREDENTIAL_COPY_TOOL_ONE_CARD);
+    expect(state.pendingCredentialCopy).toBeUndefined();
+  }
 }

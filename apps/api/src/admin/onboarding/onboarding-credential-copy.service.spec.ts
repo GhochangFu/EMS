@@ -24,7 +24,11 @@ const JWT = { sub: "u1", role: "organization_admin" } as unknown as JwtPayload;
 const SESSION_ID = "44444444-4444-4444-8444-444444444444";
 export const TEST_KEY = Buffer.alloc(32, 0x03).toString("base64");
 
-function service(secrets: Record<string, unknown>, thirdConfig: Record<string, unknown> = { host: "broker.test", port: 8883 }) {
+function service(
+  secrets: Record<string, unknown>,
+  thirdConfig: Record<string, unknown> = { host: "broker.test", port: 8883 },
+  tenantDb: unknown = {},
+) {
   const draft = {
     rtus: [
       { code: "A", displayName: "A", protocol: "mqtt", config: { host: "broker.test", port: 8883 } },
@@ -37,8 +41,8 @@ function service(secrets: Record<string, unknown>, thirdConfig: Record<string, u
   const sessions = {
     loadSession: async () => ({ id: SESSION_ID, organizationId: "o1", status: "draft", draft, lockReason: null }),
   };
-  // No database: every case below refuses before the write transaction.
-  return new OnboardingCredentialCopyService({} as never, {} as never, {} as never, sessions as never);
+  // No database by default: those cases refuse before the write transaction.
+  return new OnboardingCredentialCopyService(tenantDb as never, {} as never, {} as never, sessions as never);
 }
 
 /** The draft the last {@link service} loads, so a case can hash it. */
@@ -93,4 +97,23 @@ export async function theStoredDraftsHashPassesTheBind(): Promise<void> {
   if (hash === null) throw new Error("the fixture draft hashes");
   const err = await fail(svc.copy(JWT, SESSION_ID, { from: { rtuIndex: 0 }, toRtuIndexes: [1], draftHash: hash }));
   expect(err).toEqual(new ConflictException(copySourceHasNoCredential("A")));
+}
+
+/**
+ * Review finding 4: a draft that moved between the load and the row lock answers the card's own
+ * 400, not the turn's 409. The transaction is faked: the locked row is the moved draft.
+ */
+export async function aDraftMovedBeforeTheLockIsTheCardsOwn400(): Promise<void> {
+  const secrets = { A: { c: "eA==", iv: "eA==" } };
+  let locked: unknown = null;
+  const tx = {
+    execute: async () => undefined,
+    select: () => ({ from: () => ({ where: () => ({ for: () => ({ then: (f: (rows: unknown[]) => unknown) => Promise.resolve(f([locked])) }) }) }) }),
+  };
+  const tenantDb = { transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) };
+  const svc = service(secrets, undefined, tenantDb);
+  const hash = draftHash(lastDraft)!;
+  locked = { status: "draft", lockReason: null, draft: { ...(lastDraft as object), rtus: [] }, messages: [], checkpoints: null };
+  const err = await fail(svc.copy(JWT, SESSION_ID, { from: { rtuIndex: 0 }, toRtuIndexes: [1], draftHash: hash }));
+  expect(err).toEqual(new BadRequestException(COPY_PROPOSED_DRAFT_CHANGED));
 }
