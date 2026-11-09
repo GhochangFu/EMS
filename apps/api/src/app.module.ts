@@ -3,6 +3,7 @@ import { LoggerModule } from "nestjs-pino";
 
 import { AlarmKbModule } from "./alarm-kb/alarm-kb.module";
 import { AlarmsModule } from "./alarms/alarms.module";
+import { PortalSettingsModule } from "./admin/portal-settings/portal-settings.module";
 import { AdminModule } from "./admin/admin.module";
 import { AssetsModule } from "./assets/assets.module";
 import { AuthModule } from "./auth/auth.module";
@@ -42,6 +43,8 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     SystemStatusModule,
     AuthModule,
     AdminModule,
+    // `F4.341` / ADR 0118 — the portal and user appearance routes, and the public sign-in read.
+    PortalSettingsModule,
     AssetsModule,
     TelemetryModule,
     DashboardModule,

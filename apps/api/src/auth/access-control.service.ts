@@ -6,20 +6,20 @@ import {
   assetGroups,
   assets,
   locations,
-  organizations,
   userAssetGroupAccess,
   userLocationAccess,
   users,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { colourProfileOrDefault } from "@bms/shared";
 import type {
   AccessibleScope,
-  ColourProfile,
   CurrentUserResponse,
+  EffectiveAppearance,
   JwtPayload,
   UserRole,
 } from "@bms/shared";
+
+import { readEffectiveAppearance } from "./appearance-resolution";
 
 import { AUTH_DRIZZLE, FLEET_DRIZZLE } from "../database/database.tokens";
 import { type ReadScopeSource, isMasterDataRole } from "./access-scope";
@@ -97,6 +97,9 @@ export class AccessControlService {
   async currentUser(jwt: JwtPayload): Promise<CurrentUserResponse> {
     const user = await this.resolveDbUser(jwt);
     const scope = await this.scopeForUser(user);
+    // `resolveIdentity` is memoized per token, so for a provisioned subject this costs no query.
+    const provisioned = (await resolveIdentity(this.authDb, jwt)) !== null;
+    const appearance = await this.effectiveAppearance(user, provisioned);
     return {
       user: {
         id: user.id,
@@ -105,27 +108,16 @@ export class AccessControlService {
         role: user.role,
       },
       scope,
-      colourProfile: await this.homeColourProfile(user.organizationId),
+      // Deprecated (ADR 0118 Amendment 2 P5): the effective profile, for a deployed web that still
+      // reads this field. `F4.342` removes it after the next release tag.
+      colourProfile: appearance.colourProfile.value,
+      appearance,
     };
   }
 
-  /**
-   * `F4.310` (ADR 0110 Q3, decision 4) — the colour profile of the user's home organization;
-   * `nexus` (the default) when there is none, when the row is gone, or when the stored value is
-   * not one of the six (a CHECK forbids it; fail to the default, never to a 500 on `/auth/me`).
-   * `fleetDb`: `bms_auth` holds no grant on `organizations`, and the id comes from the user's own
-   * row, the pre-tenant scope-resolution shape (ADR 0043 Amendment 2/3).
-   */
-  private async homeColourProfile(organizationId: string | null): Promise<ColourProfile> {
-    if (organizationId === null) {
-      return "nexus";
-    }
-    const [row] = await this.fleetDb
-      .select({ colourProfile: organizations.colourProfile })
-      .from(organizations)
-      .where(eq(organizations.id, organizationId))
-      .limit(1);
-    return colourProfileOrDefault(row?.colourProfile);
+  /** `F4.341` (ADR 0118 decision 8): user > home organization > portal; see `readEffectiveAppearance`. */
+  private effectiveAppearance(user: DbUser, provisioned: boolean): Promise<EffectiveAppearance> {
+    return readEffectiveAppearance(this.authDb, this.fleetDb, provisioned ? user.id : null, user.organizationId);
   }
 
   /** Returns asset ids readable by the user; `null` means unrestricted admin. */
@@ -830,6 +822,15 @@ export class AccessControlService {
       return [...new Set(rows.map((row) => row.id))];
     }
     return [];
+  }
+
+  /** `F4.341` (ADR 0118 decision 10): the caller's own provisioned `bms.users` id (any role), else a 403. */
+  async requireProvisionedUserId(jwt: JwtPayload): Promise<string> {
+    const row = await resolveIdentity(this.authDb, jwt);
+    if (!row) {
+      throw new ForbiddenException("This account is not provisioned, so it has no appearance to set");
+    }
+    return row.id;
   }
 
   /** Resolves the DB user and enforces master-data role in one step. */

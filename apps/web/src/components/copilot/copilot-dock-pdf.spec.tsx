@@ -110,8 +110,8 @@ export async function dropsARenderInFlightOnAPickOfAnotherOrganization(): Promis
   const stubs = stub(READY_WITH_FILES);
   stubs.organizations.mockResolvedValue({
     items: [
-      { id: ORG_ID, code: "PHE", name: "PHE Water", active: true, currency: "INR", timezone: "Asia/Kolkata", colourProfile: "nexus", ingestEnabled: true, meta: null },
-      { id: ORG_2, code: "ION", name: "Ion Plant", active: true, currency: "INR", timezone: "Asia/Kolkata", colourProfile: "nexus", ingestEnabled: true, meta: null },
+      { id: ORG_ID, code: "PHE", name: "PHE Water", active: true, currency: "INR", timezone: "Asia/Kolkata", colourProfile: "nexus", designSystem: null, ingestEnabled: true, meta: null },
+      { id: ORG_2, code: "ION", name: "Ion Plant", active: true, currency: "INR", timezone: "Asia/Kolkata", colourProfile: "nexus", designSystem: null, ingestEnabled: true, meta: null },
     ],
   } as never);
   let release = (): void => undefined;

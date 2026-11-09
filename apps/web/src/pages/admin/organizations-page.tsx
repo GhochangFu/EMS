@@ -251,7 +251,10 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                       <td className="px-2 py-2 font-semibold text-accent-strong">{item.name}</td>
                       <td className="px-2 py-2 font-mono text-xs">{item.currency}</td>
                       <td className="px-2 py-2 font-mono text-xs">{item.timezone}</td>
-                      <td className="px-2 py-2 text-xs">{COLOUR_PROFILE_LABELS[item.colourProfile].label}</td>
+                      <td className="px-2 py-2 text-xs">
+                        {/* F4.341 (ADR 0118 decision 9): NULL inherits the portal default. */}
+                        {item.colourProfile === null ? "Inherit" : COLOUR_PROFILE_LABELS[item.colourProfile].label}
+                      </td>
                       <td className="px-2 py-2">
                         <div className="flex flex-wrap gap-1">
                           <StatusPill

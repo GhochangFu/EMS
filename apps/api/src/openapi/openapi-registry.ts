@@ -61,6 +61,9 @@ import {
   // `F4.312` (ADR 0109 Amendment 1): the adoption body, shared by preview and apply.
   adoptAssetsBodySchema,
   setOrganizationColourProfileBodySchema,
+  setOrganizationAppearanceBodySchema,
+  setPortalAppearanceBodySchema,
+  setMyAppearanceBodySchema,
   // `F4.309` (ADR 0088 Amendment 3): the state-label write bodies.
   createPointKeyStateBodySchema,
   updatePointKeyStateBodySchema,
@@ -368,6 +371,12 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   OrganizationsAdminController_update: updateOrganizationBodySchema,
   // `F4.310` (ADR 0110 decision 7) — the colour-profile body, `.strict()`.
   OrganizationsAdminController_setColourProfile: setOrganizationColourProfileBodySchema,
+  // `F4.341` (ADR 0118 decision 10) — the three appearance bodies, `.strict()`, each nullable
+  // where the level may inherit. `PortalSettingsController_getAppearance` and
+  // `PublicAppearanceController_getAppearance` take no body and no query.
+  OrganizationsAdminController_setAppearance: setOrganizationAppearanceBodySchema,
+  PortalSettingsController_setAppearance: setPortalAppearanceBodySchema,
+  MeController_setAppearance: setMyAppearanceBodySchema,
   // `F4.300` (ADR 0108 decision 3.7). `_forOrganization` and `SiteTrendPointsController_forSite`
   // are absent: path parameters only, no body, no query.
   OrgTrendPointsAdminController_putSegment: putOrgTrendPointsBodySchema,

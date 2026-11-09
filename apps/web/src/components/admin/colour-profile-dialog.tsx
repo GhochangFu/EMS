@@ -35,7 +35,9 @@ type Props = { organization: AdminOrganizationDto; onClose: () => void };
 export function ColourProfileDialog({ organization, onClose }: Props) {
   const queryClient = useQueryClient();
   const accessToken = useAuthStore((s) => s.accessToken);
-  const [chosen, setChosen] = useState<ColourProfile>(organization.colourProfile);
+  // F4.341: an organization that inherits (NULL) opens on the default; PR 12's Appearance panel
+  // replaces this dialog and offers "Inherit" itself.
+  const [chosen, setChosen] = useState<ColourProfile>(organization.colourProfile ?? "nexus");
 
   useEffect(() => () => previewProfile(null), []);
 

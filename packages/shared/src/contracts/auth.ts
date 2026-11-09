@@ -6,6 +6,7 @@
  */
 import { z } from "zod";
 
+import { effectiveAppearanceSchema } from "./appearance";
 import { colourProfileSchema } from "./colour-profile";
 import { locationTypeCodeSchema } from "./location-types";
 
@@ -98,10 +99,14 @@ export const currentUserResponseSchema = z.object({
   user: sessionUserSchema,
   scope: accessibleScopeSchema,
   /**
-   * `F4.310` (ADR 0110 Q3, decision 4) — the colour profile of the user's home organization, or
-   * `nexus` for a user with no home organization (a global admin). The web sets `data-profile` from it.
+   * `F4.310` (ADR 0110 Q3, decision 4) — the effective colour profile; since `F4.341` it equals
+   * `appearance.colourProfile.value` (user > organization > portal). **Deprecated:** kept so a
+   * deployed web that reads it keeps working; removed by `F4.342` after the next release tag
+   * (ADR 0118 Amendment 2 P5).
    */
   colourProfile: colourProfileSchema,
+  /** `F4.341` (ADR 0118 decision 8) — the effective design system and colour profile, each with its level. */
+  appearance: effectiveAppearanceSchema,
 });
 
 /**

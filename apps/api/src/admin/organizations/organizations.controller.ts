@@ -14,7 +14,11 @@ import {
 } from "@nestjs/common";
 import { ZodError } from "zod";
 
-import { setOrganizationColourProfileBodySchema, setOrganizationIngestBodySchema } from "@bms/shared";
+import {
+  setOrganizationAppearanceBodySchema,
+  setOrganizationColourProfileBodySchema,
+  setOrganizationIngestBodySchema,
+} from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
@@ -74,7 +78,28 @@ export class OrganizationsAdminController {
   }
 
   /**
-   * `F4.310` (ADR 0110 decision 7) — the organization's colour profile. Its own route, not a
+   * `F4.341` (ADR 0118 decision 10) — the organization's design system and colour profile, each
+   * nullable (`null` inherits the portal default). Its own route, not a `PATCH` field: an
+   * `organization_admin` may make this write for their own organization and no other organization
+   * write. A body other than the strict two-key shape is a 400.
+   */
+  @Put(":id/appearance")
+  async setAppearance(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    try {
+      const parsed = setOrganizationAppearanceBodySchema.parse(body);
+      return await this.service.setAppearance(user, idParamSchema.parse(id), parsed);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F4.310` (ADR 0110 decision 7) — the organization's colour profile. Since `F4.341` an alias of
+   * `PUT :id/appearance` for the profile alone; `F4.342` removes it after the next release tag
+   * (ADR 0118 Amendment 2 P5). Its own route, not a
    * `PATCH` field: an `organization_admin` may make this one write and no other organization
    * write (`PATCH`'s strict body refuses `colourProfile`).
    */

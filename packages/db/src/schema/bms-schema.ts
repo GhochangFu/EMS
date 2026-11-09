@@ -51,10 +51,15 @@ export const organizations = bmsSchema.table("organizations", {
   // calendar date keys the copilot daily turn counters. Validated on write
   // against the runtime zone list; UTC unless an administrator sets it.
   timezone: varchar("timezone", { length: 64 }).notNull().default("UTC"),
-  // F4.310 / ADR 0110 decision 6 (migration 0125): one of the six
-  // `colourProfileSchema` names, held by a CHECK; `nexus` (today's colours) by
-  // default. The API's colour-profile route is the only writer.
-  colourProfile: varchar("colour_profile", { length: 32 }).notNull().default("nexus"),
+  // F4.310 / ADR 0110 decision 6 (migration 0125): one of the
+  // `colourProfileSchema` names, held by a CHECK (nine since 0133). F4.341 /
+  // ADR 0118 decision 9 (migration 0134): nullable with no default; NULL means
+  // "use the portal default". The appearance route (and its colour-profile
+  // alias) is the only writer.
+  colourProfile: varchar("colour_profile", { length: 32 }),
+  // F4.341 / ADR 0118 decision 9 (migration 0134): one of the
+  // `designSystemSchema` names, held by a CHECK; NULL = the portal default.
+  designSystem: varchar("design_system", { length: 32 }),
   // F4.330 / ADR 0115 decision 1 (migration 0128): the organization's ingest
   // switch. `true` by default; `PUT .../organizations/:id/ingest` (global admin
   // only) is the only writer, and the ingest host skips every RTU of an
@@ -89,6 +94,27 @@ export const users = bmsSchema.table("users", {
   // F3.78 / ADR 0089 decision 8 (migration 0098): set when the user is
   // deactivated; every request from a user with a non-NULL value is refused.
   disabledAt: timestamp("disabled_at", { withTimezone: true }),
+  // F4.341 / ADR 0118 decision 9 (migration 0134): the user's own design
+  // system and colour profile, each held by a CHECK; NULL = the home
+  // organization's value (else the portal's). `PUT /me/appearance` is the only
+  // writer, for the caller's own row.
+  designSystem: varchar("design_system", { length: 32 }),
+  colourProfile: varchar("colour_profile", { length: 32 }),
+});
+
+/**
+ * `F4.341` (ADR 0118 decision 9, migration 0134) — the portal's default appearance. One row
+ * (`id = 1`, a CHECK), seeded by the migration, never inserted or deleted by a request path:
+ * `bms_tenant` holds SELECT only and `bms_fleet` SELECT and UPDATE. Global — no
+ * `organizationId`, no RLS (the `location_types` shape). Read by `/auth/me` and the public
+ * sign-in route; written only by the global admin.
+ */
+export const portalSettings = bmsSchema.table("portal_settings", {
+  id: smallint("id").primaryKey(),
+  designSystem: varchar("design_system", { length: 32 }).notNull().default("nexus-soft"),
+  colourProfile: varchar("colour_profile", { length: 32 }).notNull().default("nexus"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
 });
 
 /**

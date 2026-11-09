@@ -9,8 +9,15 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { locations, organizations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { colourProfileOrDefault } from "@bms/shared";
-import type { AdminOrganizationDto, AdminOrganizationSummaryDto, ColourProfile, JwtPayload } from "@bms/shared";
+import { colourProfileSchema, designSystemSchema } from "@bms/shared";
+import type {
+  AdminOrganizationDto,
+  AdminOrganizationSummaryDto,
+  ColourProfile,
+  DesignSystem,
+  JwtPayload,
+  SetOrganizationAppearanceBody,
+} from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
@@ -182,24 +189,45 @@ export class OrganizationsAdminService {
   }
 
   /**
-   * `F4.310` (ADR 0110 decision 7, plan OQ4) — sets the organization's colour profile. The global
-   * `admin` may set any organization; an `organization_admin` only one they hold a **direct**
-   * organization grant on (`isOrganizationLevelAdmin`, the gate a location move uses). Every other
-   * role, and an `organization_admin` without that grant, is a 403 before any read.
+   * `F4.341` (ADR 0118 decision 10) — sets the organization's design system and colour profile;
+   * `null` clears a value, so the organization inherits the portal default. The `F4.310` gate (ADR
+   * 0110 decision 7, plan OQ4): the global `admin` may set any organization; an
+   * `organization_admin` only one they hold a **direct** organization grant on
+   * (`isOrganizationLevelAdmin`, the gate a location move uses). Every other role, and an
+   * `organization_admin` without that grant, is a 403 before any read.
    *
-   * Unlike the lifecycle writes above, this is the organization's own setting, so the write and
-   * its audit row run in one `withTenant` transaction and the audit row carries the organization
-   * id (the `locations.service.ts` shape): its own admins see it in their audit view.
+   * This is the organization's own setting, so the write and its audit row run in one `withTenant`
+   * transaction and the audit row carries the organization id (the `locations.service.ts` shape):
+   * its own admins see it in their audit view. The row carries the old and the new values.
+   */
+  async setAppearance(jwt: JwtPayload, id: string, body: SetOrganizationAppearanceBody): Promise<AdminOrganizationDto> {
+    return this.writeAppearance(jwt, id, body, "master.organization.appearance.update");
+  }
+
+  /**
+   * `F4.310` (ADR 0110 decision 7) — `PUT …/colour-profile`, kept as an alias of
+   * {@link setAppearance} until `F4.342` removes it (ADR 0118 Amendment 2 P5). It writes the
+   * profile only (the design system is left as it is) and keeps its own audit action, so an audit
+   * reader of the old route sees no change.
    */
   async setColourProfile(jwt: JwtPayload, id: string, colourProfile: ColourProfile): Promise<AdminOrganizationDto> {
+    return this.writeAppearance(jwt, id, { colourProfile }, "master.organization.colour_profile.update");
+  }
+
+  private async writeAppearance(
+    jwt: JwtPayload,
+    id: string,
+    patch: { designSystem?: DesignSystem | null; colourProfile?: ColourProfile | null },
+    action: "master.organization.appearance.update" | "master.organization.colour_profile.update",
+  ): Promise<AdminOrganizationDto> {
     await this.accessControl.requireMasterDataUser(jwt);
     if (!(await this.accessControl.isOrganizationLevelAdmin(jwt, id))) {
-      throw new ForbiddenException("Only an administrator of this organization can change its colour profile");
+      throw new ForbiddenException("Only an administrator of this organization can change its appearance");
     }
 
     return withTenant(this.tenantDb, id, async (tx) => {
       const [existing] = await tx
-        .select({ colourProfile: organizations.colourProfile })
+        .select({ designSystem: organizations.designSystem, colourProfile: organizations.colourProfile })
         .from(organizations)
         .where(eq(organizations.id, id))
         .limit(1);
@@ -207,21 +235,17 @@ export class OrganizationsAdminService {
         throw new NotFoundException("Organization not found");
       }
 
-      const [updated] = await tx
-        .update(organizations)
-        .set({ colourProfile })
-        .where(eq(organizations.id, id))
-        .returning();
+      const [updated] = await tx.update(organizations).set(patch).where(eq(organizations.id, id)).returning();
 
+      const payload =
+        action === "master.organization.colour_profile.update"
+          ? { from: existing.colourProfile, to: patch.colourProfile ?? null }
+          : {
+              from: { designSystem: existing.designSystem, colourProfile: existing.colourProfile },
+              to: { designSystem: updated.designSystem, colourProfile: updated.colourProfile },
+            };
       await this.audit.write(
-        {
-          actor: jwt,
-          action: "master.organization.colour_profile.update",
-          entityType: "organization",
-          entityId: id,
-          organizationId: id,
-          payload: { from: existing.colourProfile, to: colourProfile },
-        },
+        { actor: jwt, action, entityType: "organization", entityId: id, organizationId: id, payload },
         tx,
       );
 
@@ -355,7 +379,10 @@ export class OrganizationsAdminService {
       active: row.active,
       currency: row.currency,
       timezone: row.timezone,
-      colourProfile: colourProfileOrDefault(row.colourProfile),
+      // F4.341: NULL (inherit the portal) stays null; an out-of-list value (a CHECK forbids it) reads
+      // as null too, never as a 500 on the list (the F4.108 rule).
+      colourProfile: colourProfileSchema.safeParse(row.colourProfile).data ?? null,
+      designSystem: designSystemSchema.safeParse(row.designSystem).data ?? null,
       ingestEnabled: row.ingestEnabled,
       meta: (row.meta as Record<string, unknown> | null) ?? null,
       createdAt: row.createdAt.toISOString(),

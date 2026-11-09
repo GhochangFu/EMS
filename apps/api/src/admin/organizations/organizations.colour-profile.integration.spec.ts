@@ -32,17 +32,21 @@ export type ColourProfileCtx = {
   ownOrgId: string;
 };
 
-async function readProfile(ctx: ColourProfileCtx, id: string): Promise<string | undefined> {
-  const { rows } = await ctx.fleetPool.query<{ colour_profile: string }>(
+async function readProfile(ctx: ColourProfileCtx, id: string): Promise<string | null | undefined> {
+  const { rows } = await ctx.fleetPool.query<{ colour_profile: string | null }>(
     "SELECT colour_profile FROM bms.organizations WHERE id = $1",
     [id],
   );
   return rows[0]?.colour_profile;
 }
 
-/** C0 — a new organization starts on `nexus` (the column default). */
+/**
+ * C0 — a new organization starts empty: since `F4.341` (migration 0134) the column has no default,
+ * so it inherits the portal default (ADR 0118 decision 9). Organizations that existed before keep
+ * their stored value.
+ */
 export async function aNewOrganizationStartsOnNexus(ctx: ColourProfileCtx): Promise<void> {
-  expect(await readProfile(ctx, ctx.fixtureId)).toBe("nexus");
+  expect(await readProfile(ctx, ctx.fixtureId)).toBeNull();
 }
 
 /** C1 — the global admin sets any organization: the DTO, the row and one audit row agree. */
@@ -57,7 +61,7 @@ export async function theGlobalAdminSetsAnyOrganization(ctx: ColourProfileCtx): 
     [ctx.fixtureId],
   );
   expect(rows[0]?.organization_id, "the audit row carries the organization").toBe(ctx.fixtureId);
-  expect(rows[0]?.payload).toMatchObject({ from: "nexus", to: "ocean" });
+  expect(rows[0]?.payload).toMatchObject({ from: null, to: "ocean" });
 }
 
 /** C2 — an organization admin with no grant on the organization is a 403; the row is unchanged. */
@@ -78,7 +82,8 @@ export async function aLocationAdminIs403(ctx: ColourProfileCtx): Promise<void> 
 
 /**
  * C4 — the organization admin sets its own organization, and `/auth/me` then names that profile
- * for it; the global admin's `/auth/me` stays `nexus` (no home organization).
+ * for it (unless the user chose their own); the global admin's `/auth/me` follows the portal row
+ * (no home organization), whatever a sibling suite has set it to.
  */
 export async function theOrganizationAdminSetsItsOwnAndMeFollows(ctx: ColourProfileCtx): Promise<void> {
   const original = (await readProfile(ctx, ctx.ownOrgId)) as ColourProfile;
@@ -87,9 +92,13 @@ export async function theOrganizationAdminSetsItsOwnAndMeFollows(ctx: ColourProf
     const dto = await ctx.svc.setColourProfile(ctx.organizationAdmin, ctx.ownOrgId, target);
     expect(dto.colourProfile).toBe(target);
     const me = currentUserResponseSchema.parse(await ctx.access.currentUser(ctx.organizationAdmin));
-    expect(me.colourProfile).toBe(target);
+    if (me.appearance.colourProfile.from !== "user") {
+      expect(me.colourProfile).toBe(target);
+      expect(me.appearance.colourProfile).toEqual({ value: target, from: "organization" });
+    }
     const admin = currentUserResponseSchema.parse(await ctx.access.currentUser(ctx.globalAdmin));
-    expect(admin.colourProfile).toBe("nexus");
+    expect(admin.colourProfile).toBe(admin.appearance.colourProfile.value);
+    expect(admin.appearance.colourProfile.from).not.toBe("organization");
   } finally {
     await ctx.fleetPool.query("UPDATE bms.organizations SET colour_profile = $2 WHERE id = $1", [
       ctx.ownOrgId,
@@ -98,7 +107,7 @@ export async function theOrganizationAdminSetsItsOwnAndMeFollows(ctx: ColourProf
   }
 }
 
-/** C5 — the CHECK refuses a name outside the six (Postgres, not only the API). */
+/** C5 — the CHECK refuses a name outside the nine (Postgres, not only the API). */
 export async function theCheckRefusesAnUnknownName(ctx: ColourProfileCtx): Promise<void> {
   await expect(
     ctx.fleetPool.query("UPDATE bms.organizations SET colour_profile = 'teal' WHERE id = $1", [ctx.fixtureId]),
