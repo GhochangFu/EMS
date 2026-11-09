@@ -144,6 +144,8 @@ export function runBindingsTests(): void {
     );
     assert(sql.includes("ap.active = true"), "inactive points must not be bound");
     assert(sql.includes("r.ingest_enabled = true"), "ingest_enabled remains the on/off switch");
+    // F4.339 (ADR 0117 decision 8): a deactivated RTU released its topic and is never planned.
+    assert(sql.includes("WHERE r.ingest_enabled = true AND r.active = true"), "an inactive RTU is filtered out");
     // ADR 0115 decision 5: the organization is joined and *selected*, never
     // filtered — a switched-off organization's RTUs must reach planEndpoints so
     // each one is reported as skipped rather than silently absent.

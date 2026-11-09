@@ -71,7 +71,9 @@ export const RTU_ENTRIES: readonly CatalogEntry[] = [
     refs: [],
     formulas: [],
     steps: [],
-    summary: ({ targetName }) => `Deactivate the RTU ${quoted(targetName)}.`,
+    // F4.339 (ADR 0117 decision 8): the card says what happens to the topic.
+    summary: ({ targetName }) =>
+      `Deactivate the RTU ${quoted(targetName)}. Its MQTT topic, if any, is released and restored on reactivate when still free.`,
   },
   {
     id: "rtu.reactivate",

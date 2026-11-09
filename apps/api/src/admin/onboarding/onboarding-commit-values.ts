@@ -1,5 +1,6 @@
 import { isIanaTimeZone, type OnboardingDraft } from "@bms/shared";
 
+import { emptyTopicAsNull } from "../rtu-topic";
 import type { CatalogPointKeyFields } from "./onboarding-point-key-conflict";
 
 /**
@@ -31,4 +32,28 @@ export function unitOf(
   if (typeof own === "string" && own !== "") return own;
   const fromCatalog = catalog.get(pointKey)?.unit;
   return typeof fromCatalog === "string" && fromCatalog !== "" ? fromCatalog : undefined;
+}
+
+/**
+ * The `mqtt_topic` the commit writes for a draft RTU's config (F4.228 / F4.234):
+ * `topic`, else the legacy `mqttTopic`, with an empty result stored as NULL.
+ * Moved here by `F4.339` so the pre-check below and the insert read one rule.
+ */
+export function draftRtuMqttTopic(config: Readonly<Record<string, unknown>>): string | null {
+  return emptyTopicAsNull(
+    (typeof config.topic === "string" ? config.topic : null) ?? (typeof config.mqttTopic === "string" ? config.mqttTopic : null),
+  );
+}
+
+/**
+ * `F4.339` (ADR 0117 decision 8, plan R8): the commit's sentence when an RTU of
+ * the same organization already holds a draft RTU's topic. Both codes are the
+ * caller's own organization's data (RLS shows only them); a holder in another
+ * organization is never read here and keeps the index's fixed text.
+ */
+export function topicHolderMessage(draftCode: string, holderCode: string, holderActive: boolean): string {
+  return (
+    `The MQTT topic of draft RTU ${draftCode} is already used by RTU ${holderCode} (${holderActive ? "active" : "inactive"}) ` +
+    "in this organization. Choose a different topic, or clear that RTU's topic."
+  );
 }

@@ -13,6 +13,7 @@ import {
   editingAPlainRtuShowsAReadOnlyTlsLine,
   editingATlsRtuShowsNoTlsLine,
   onlyAPlainRtuShowsThePlainMqttPill,
+  aReleasedTopicIsNamedOnTheRow,
 } from "./rtus-page.spec";
 
 /** `F3.86` PR 3a: the form is a wizard, and a walk through its steps takes seconds under jsdom. */
@@ -67,5 +68,9 @@ describe("F4.182 RTUs admin page — device ID (rtu_code)", () => {
 
   it("R9b shows no TLS line when editing a TLS RTU (F4.326)", async () => {
     await editingATlsRtuShowsNoTlsLine();
+  });
+
+  it("F4.339 names a released topic on the row", async () => {
+    await aReleasedTopicIsNamedOnTheRow();
   });
 }, WIZARD_WALK_MS);

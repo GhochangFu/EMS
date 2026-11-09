@@ -284,6 +284,9 @@ export class RtusAdminService {
         mqttTopic: emptyTopicAsNull(
           body.mqttTopic !== undefined ? body.mqttTopic : existing.mqttTopic,
         ),
+        // F4.339 (security review M1): a topic the operator sets replaces the one a deactivate released,
+        // so a later reactivate never overwrites it with the old one.
+        ...(body.mqttTopic !== undefined ? { releasedMqttTopic: null } : {}),
         stationCode:
           body.stationCode !== undefined ? body.stationCode : existing.stationCode,
         stationName:
@@ -456,7 +459,14 @@ export class RtusAdminService {
       if ((activeAsset?.count ?? 0) > 0) {
         throw new ConflictException("Cannot deactivate RTU with active assets");
       }
-      await tx.update(rtus).set({ active: false }).where(eq(rtus.id, id));
+      // F4.339 (ADR 0117 decision 8): the topic is released, so another RTU can take it, and kept in
+      // `released_mqtt_topic` for reactivate. Both from the row's own old values (one SET, race-safe);
+      // the audited boolean reads the row locked in this transaction (security review L1).
+      const [locked] = await tx.select({ mqttTopic: rtus.mqttTopic }).from(rtus).where(eq(rtus.id, id)).for("update");
+      await tx
+        .update(rtus)
+        .set({ active: false, mqttTopic: null, releasedMqttTopic: sql`coalesce(${rtus.mqttTopic}, ${rtus.releasedMqttTopic})` })
+        .where(eq(rtus.id, id));
       await this.audit.write(
         {
           actor: jwt,
@@ -464,6 +474,8 @@ export class RtusAdminService {
           entityType: "rtu",
           entityId: id,
           organizationId,
+          // Booleans only: the topic itself is not audited.
+          payload: { topicReleased: (locked?.mqttTopic ?? null) !== null },
         },
         tx,
       );
@@ -491,7 +503,20 @@ export class RtusAdminService {
     await withTenant(this.tenantDb, organizationId, async (tx) => {
       // F2.10 / ADR 0098 ruling 15 — an RTU is not restored onto an inactive location.
       await assertLocationActive(tx, existing.locationId);
-      await tx.update(rtus).set({ active: true }).where(eq(rtus.id, id));
+      const released = existing.releasedMqttTopic;
+      // F4.339 (ADR 0117 decision 8): the released topic comes back only while no RTU holds it. The
+      // index is global, so the holder may be another tenant's: read on the fleet pool, as a count, and
+      // never named in the response.
+      // Security review M1: only into an empty slot — an RTU that has a topic again keeps it.
+      const free = released !== null && existing.mqttTopic === null && !(await this.topicHeld(released));
+      await tx
+        .update(rtus)
+        .set(free ? { active: true, mqttTopic: released, releasedMqttTopic: null } : { active: true })
+        .where(eq(rtus.id, id))
+        .catch((err: unknown) => {
+          // A topic taken between the check and the write is the index's 409, as an update's is.
+          throw translateRtuUniqueConflict(err);
+        });
       await this.audit.write(
         {
           actor: jwt,
@@ -499,6 +524,7 @@ export class RtusAdminService {
           entityType: "rtu",
           entityId: id,
           organizationId,
+          payload: { topicRestored: free },
         },
         tx,
       );
@@ -658,6 +684,12 @@ export class RtusAdminService {
     return this.mapRow(row);
   }
 
+  /** F4.339: whether any RTU, of any organization, holds `topic` (the global `rtus_mqtt_topic_idx`). A boolean, never a row. */
+  private async topicHeld(topic: string): Promise<boolean> {
+    const [hit] = await this.fleetDb.select({ id: rtus.id }).from(rtus).where(eq(rtus.mqttTopic, topic)).limit(1);
+    return hit !== undefined;
+  }
+
   private mapRow(row: {
     rtu: typeof rtus.$inferSelect;
     locationName: string;
@@ -679,6 +711,7 @@ export class RtusAdminService {
       externalRtuId: rtu.externalRtuId,
       rtuCode: rtu.rtuCode,
       mqttTopic: rtu.mqttTopic,
+      releasedMqttTopic: rtu.releasedMqttTopic,
       stationCode: rtu.stationCode,
       stationName: rtu.stationName,
       ingestEnabled: rtu.ingestEnabled,

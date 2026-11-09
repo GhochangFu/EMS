@@ -35,6 +35,17 @@ type RtusAdminPageProps = { user: AuthUser };
  * wizards (ruling Q9); all four live in `components/admin/rtu-wizards.tsx`.
  * This page sends what Review parsed, with no `X-Copilot-Change` header.
  */
+/**
+ * `F4.339` (ADR 0117 decision 8) — what the row says about a released MQTT topic: the topic an
+ * inactive RTU gave up, or, after a reactivate that could not restore it, that another RTU holds it.
+ */
+function releasedTopicLine(item: AdminRtuDto): string | null {
+  const released = item.releasedMqttTopic;
+  if (released === null) return null;
+  if (!item.active) return `Topic released on deactivate: ${released}`;
+  return item.mqttTopic === null ? `Topic ${released} is held by another RTU; this RTU has no topic` : null;
+}
+
 export function RtusAdminPage({ user }: RtusAdminPageProps) {
   const { locationId } = useParams();
   const navigate = useNavigate();
@@ -179,6 +190,9 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                       <StatusPill label={`Payload format: ${item.payloadFormat ?? "thinkiot-envelope"}`} tone="info" />
                     ) : null}
                   </div>
+                  {releasedTopicLine(item) !== null ? (
+                    <p className="mt-1 text-[11px] text-ink-muted">{releasedTopicLine(item)}</p>
+                  ) : null}
                 </td>
                 <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
                   <div className="flex gap-2">

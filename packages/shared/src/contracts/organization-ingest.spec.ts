@@ -55,6 +55,7 @@ export function runTheResponsesRequireTheSwitch(): void {
     externalRtuId: null,
     rtuCode: null,
     mqttTopic: null,
+    releasedMqttTopic: null,
     stationCode: null,
     stationName: null,
     ingestEnabled: true,

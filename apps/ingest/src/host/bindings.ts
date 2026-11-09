@@ -147,6 +147,9 @@ export type BindingRow = {
  * names no format joins nothing and decodes with the built-in envelope in code —
  * it never needs the `thinkiot-envelope` row to exist. A named code with no row
  * reads as `null` and is skipped as `payload-format-unknown`.
+ *
+ * `F4.339` (ADR 0117 decision 8): `r.active = true` — an inactive RTU released
+ * its MQTT topic, so it is not planned at all and has no skip reason.
  */
 export const BINDING_QUERY = `
   SELECT
@@ -186,6 +189,7 @@ export const BINDING_QUERY = `
   LEFT JOIN bms.rtu_connection_configs c ON c.rtu_id = r.id
   LEFT JOIN bms.mqtt_payload_formats f ON f.code = c.config->>'payloadFormat'
   WHERE r.ingest_enabled = true
+    AND r.active = true
   ORDER BY r.id, ap.point_key
 `;
 
