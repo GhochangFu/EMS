@@ -97,12 +97,23 @@ function detail(skill: CopilotSkillStateDto | null, pendingChanges: CopilotPendi
 
 type Sent = { url: string; method: string; headers: Headers; body: string };
 
-/** Stubs `fetch`; each request is recorded, and `answer` replies per URL. */
-function stubFetch(answer: (url: string) => { status: number; json: unknown }): Sent[] {
-  const sent: Sent[] = [];
+/**
+ * Stubs `fetch`; each request is recorded, and `answer` replies per URL. `F4.339` (plan T8.3): the
+ * drawer's Commit reads the session before the wizard opens; `openRead` answers that first GET of
+ * the session (not recorded in the list, counted in `openReads`), so a case's `answer` keeps its meaning.
+ */
+function stubFetch(
+  answer: (url: string) => { status: number; json: unknown },
+  options: { openRead?: { status: number; json: unknown } } = {},
+): Sent[] & { openReads: number } {
+  const sent = Object.assign([] as Sent[], { openReads: 0 });
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit = {}) => {
+      if (options.openRead !== undefined && sent.openReads === 0 && (init.method ?? "GET") === "GET" && SESSION_URL.test(url)) {
+        sent.openReads += 1;
+        return new Response(JSON.stringify(options.openRead.json), { status: options.openRead.status, headers: { "Content-Type": "application/json" } });
+      }
       // F4.334: the drawer's payload format picker reads the catalog; it is not an onboarding write.
       if (url.endsWith("/admin/mqtt-payload-formats")) {
         return new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
@@ -224,7 +235,7 @@ export async function aChangedDraftShowsTheRoutesSentence(): Promise<void> {
  */
 export async function theDrawerCommitIsTheWizardWithoutTheHeader(): Promise<void> {
   await openSkill();
-  const sent = stubFetch(() => ({ status: 201, json: COMMITTED }));
+  const sent = stubFetch(() => ({ status: 201, json: COMMITTED }), { openRead: { status: 200, json: session() } });
   fireEvent.click(screen.getByRole("button", { name: /^Preview/ }));
   fireEvent.click(await screen.findByRole("button", { name: "Commit" }));
   const wizard = await screen.findByRole("dialog");
@@ -234,6 +245,7 @@ export async function theDrawerCommitIsTheWizardWithoutTheHeader(): Promise<void
   expect(sent[0]!.url).toMatch(new RegExp(`/api/v1/admin/onboarding/sessions/${SESSION}/commit$`));
   expect(JSON.parse(sent[0]!.body)).toEqual({ draftHash: HASH });
   expect(sent[0]!.headers.has(COPILOT_CHANGE_HEADER)).toBe(false);
+  expect(sent.openReads).toBe(1);
   expect(await screen.findByText(/The site is committed/)).toBeInTheDocument();
 }
 
@@ -362,7 +374,7 @@ export async function aRefusedWizardSubmitRetriesWithTheNewHash(): Promise<void>
         : { status: 201, json: COMMITTED };
     }
     return { status: 200, json: session({ draftHash: fresh }) };
-  });
+  }, { openRead: { status: 200, json: session() } });
   const wizard = await submitTheWizard();
   expect(await within(wizard).findByText(ONBOARDING_COMMIT_DRAFT_CHANGED)).toBeInTheDocument();
   expect(screen.queryByText(DRAFT_CHANGED)).not.toBeInTheDocument();
@@ -394,7 +406,7 @@ export async function aSessionCommittedElsewhereSaysSoAndDropsTheCard(): Promise
       return { status: 400, json: { statusCode: 400, message: DRAFT_CHANGED, error: "Bad Request" } };
     }
     return { status: 200, json: session({ status: "committed", draftHash: "e".repeat(64), committedAt: "2026-10-12T00:05:00.000Z" }) };
-  });
+  }, { openRead: { status: 200, json: session() } });
   const wizard = await submitTheWizard();
   expect(await within(wizard).findByText(ONBOARDING_COMMIT_NOT_A_DRAFT)).toBeInTheDocument();
   expect(within(wizard).queryByText(ONBOARDING_COMMIT_DRAFT_CHANGED)).not.toBeInTheDocument();
@@ -408,10 +420,12 @@ export async function aSessionCommittedElsewhereSaysSoAndDropsTheCard(): Promise
 /** `F3.86` PR 6 review — a 400 whose fresh read fails shows the route's own sentence, and nothing is refreshed. */
 export async function aFailedFreshReadShowsTheRoutesSentence(): Promise<void> {
   await openSkill();
-  const sent = stubFetch((url) =>
-    url.endsWith("/commit")
-      ? { status: 400, json: { statusCode: 400, message: DRAFT_CHANGED, error: "Bad Request" } }
-      : { status: 500, json: { statusCode: 500, message: "boom", error: "Internal Server Error" } },
+  const sent = stubFetch(
+    (url) =>
+      url.endsWith("/commit")
+        ? { status: 400, json: { statusCode: 400, message: DRAFT_CHANGED, error: "Bad Request" } }
+        : { status: 500, json: { statusCode: 500, message: "boom", error: "Internal Server Error" } },
+    { openRead: { status: 200, json: session() } },
   );
   const wizard = await submitTheWizard();
   expect(await within(wizard).findByText(DRAFT_CHANGED)).toBeInTheDocument();
@@ -426,7 +440,7 @@ export async function aWizardCommitDropsTheCommitCard(): Promise<void> {
   // Every read still carries the card, so only the client's own drop can remove it.
   stubs.load.mockResolvedValue(detail(skillState(), [COMMIT_CARD]));
   expect(await screen.findByText(COMMIT_CARD.summary)).toBeInTheDocument();
-  stubFetch(() => ({ status: 201, json: COMMITTED }));
+  stubFetch(() => ({ status: 201, json: COMMITTED }), { openRead: { status: 200, json: session() } });
   await submitTheWizard();
   expect(await screen.findByText(/The site is committed/)).toBeInTheDocument();
   expect(screen.queryByText(COMMIT_CARD.summary)).not.toBeInTheDocument();
@@ -459,7 +473,7 @@ export async function anEndDropsAKeptCommitCard(): Promise<void> {
 export async function aWizardCommitDoesNotReopenThePreview(): Promise<void> {
   await openSkill({ skill: skillState({ autoOpenPreview: true, autoOpenReason: "ready_to_commit" }) });
   expect(await screen.findByRole("button", { name: "Preview ◀" })).toBeInTheDocument();
-  stubFetch(() => ({ status: 201, json: COMMITTED }));
+  stubFetch(() => ({ status: 201, json: COMMITTED }), { openRead: { status: 200, json: session() } });
   await submitTheWizard();
   expect(await screen.findByText(/The site is committed/)).toBeInTheDocument();
   await settle();
@@ -728,4 +742,46 @@ export async function aGlobalAdminLocksWithAReason(): Promise<void> {
   expect(sent[0]!.url).toMatch(new RegExp(`/api/v1/admin/onboarding/sessions/${SESSION}/lock$`));
   expect(JSON.parse(sent[0]!.body)).toEqual({ reason: "Under site review" });
   expect(await screen.findByText("Under site review")).toBeInTheDocument();
+}
+
+/**
+ * `F4.339` (plan T8.2), the measurement: a draft shaped like the one the report named — a
+ * credentialed MQTT RTU, three checkpoints, a draft hash — has Undo enabled while no turn runs.
+ * So the session's shape does not disable Undo; a turn in flight does, and now says so.
+ */
+export async function aCredentialedDraftWithHistoryCanUndo(): Promise<void> {
+  const shaped = skillState({
+    session: session({
+      draft: { rtus: [{ code: "RTU-1", displayName: "RTU 1", protocol: "mqtt", config: { host: "b", port: 8883 }, credentialsSet: true }] } as never,
+      checkpoints: [1, 2, 3].map((seq) => ({ id: `cp${seq}`, seq, label: `Step ${seq}`, takenAt: "2026-11-09T00:00:00.000Z" })),
+    }),
+  });
+  await openSkill({ skill: shaped });
+  expect(screen.getByTestId("undo-button")).toBeEnabled();
+  expect(screen.queryByTestId("undo-reason")).not.toBeInTheDocument();
+}
+
+/** `F4.339` (plan T8.3): Commit reads the session once before the wizard opens; the wizard carries the stored hash. */
+export async function theCommitWizardOpensOnTheStoredHash(): Promise<void> {
+  await openSkill();
+  const stored = "f".repeat(64);
+  const sent = stubFetch(() => ({ status: 201, json: COMMITTED }), { openRead: { status: 200, json: session({ draftHash: stored }) } });
+  await submitTheWizard();
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent.openReads).toBe(1);
+  expect(JSON.parse(sent[0]!.body)).toEqual({ draftHash: stored });
+}
+
+/** `F4.339` (plan T8.3): a failed read shows its error and opens nothing. */
+export async function aFailedCommitReadOpensNothing(): Promise<void> {
+  await openSkill();
+  const sent = stubFetch(() => ({ status: 201, json: COMMITTED }), {
+    openRead: { status: 500, json: { statusCode: 500, message: "The session could not be read.", error: "Internal Server Error" } },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /^Preview/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "Commit" }));
+  expect(await screen.findByText("The session could not be read.")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(sent.openReads).toBe(1);
+  expect(sent).toHaveLength(0);
 }

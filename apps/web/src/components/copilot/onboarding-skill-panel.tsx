@@ -22,7 +22,7 @@ import { DraftDrawer } from "../onboarding/draft-drawer";
 import { ExcelActions } from "../onboarding/excel-actions";
 import { OnboardingCommitWizard } from "../onboarding/onboarding-commit-wizard";
 import { ReplyChips } from "../onboarding/reply-chips";
-import { UndoPicker } from "../onboarding/undo-picker";
+import { UNDO_NO_HASH, UndoPicker } from "../onboarding/undo-picker";
 import { StatusPill } from "../status-pill";
 import { AssistantText } from "./assistant-text";
 import { DraftLockControl } from "./draft-lock-control";
@@ -107,6 +107,17 @@ export function OnboardingSkillPanel({
   const [dismissedReason, setDismissedReason] = useState<OnboardingAutoOpenReason | null>(null);
   const [undoChoice, setUndoChoice] = useState("");
   const [committing, setCommitting] = useState(false);
+  // F4.339 (ADR 0117 decision 11, plan T8.3): the wizard opens on the session as it is now, not as this
+  // panel last saw it, so its draft hash is the stored one.
+  const freshForCommit = useMutation({
+    mutationFn: () => fetchOnboardingSession(session.id),
+    onSuccess: (fresh) => {
+      withSession(fresh);
+      onError(null);
+      setCommitting(true);
+    },
+    onError: (err: Error) => onError(apiErrorMessage(err)),
+  });
   const threadRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -185,7 +196,12 @@ export function OnboardingSkillPanel({
 
   // F3.25: bound to the checkpoint and the draft hash on screen; a 409 means the draft changed elsewhere.
   const undoM = useMutation({
-    mutationFn: (checkpointId: string) => rollbackOnboardingSession(session.id, checkpointId, session.draftHash!),
+    // F4.339 (plan T8.2): never a rollback bound to no hash; the picker already says why Undo is off.
+    mutationFn: (checkpointId: string) => {
+      const hash = session.draftHash;
+      if (hash === null) return Promise.reject(new Error(UNDO_NO_HASH));
+      return rollbackOnboardingSession(session.id, checkpointId, hash);
+    },
     onSuccess: (data) => {
       onSkillChange(stateOf(skill, data));
       setUndoChoice("");
@@ -336,11 +352,12 @@ export function OnboardingSkillPanel({
         commit={
           <button
             type="button"
-            onClick={() => setCommitting(true)}
+            onClick={() => freshForCommit.mutate()}
             className="flex-1 rounded bg-accent py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
-            disabled={!draft}
+            disabled={!draft || freshForCommit.isPending}
+            aria-busy={freshForCommit.isPending}
           >
-            Commit
+            {freshForCommit.isPending ? "Reading the draft…" : "Commit"}
           </button>
         }
       />

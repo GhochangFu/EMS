@@ -1,5 +1,16 @@
 import type { OnboardingSessionDto } from "@bms/shared";
 
+/** `F4.339` (ADR 0117 decision 11, plan T8.2): the sentence beside a disabled Undo. */
+export const UNDO_WAIT_FOR_TURN = "Wait for the current turn to finish.";
+export const UNDO_NO_HASH = "Undo is unavailable: the draft cannot be hashed.";
+
+/** Why Undo is disabled, or `null` when it is not (an undo in flight reads "Undoing…" on the button itself). */
+export function undoDisabledReason(blocked: boolean, canUndo: boolean): string | null {
+  if (blocked) return UNDO_WAIT_FOR_TURN;
+  if (!canUndo) return UNDO_NO_HASH;
+  return null;
+}
+
 type UndoPickerProps = {
   /** The session's checkpoints, newest first; the select's default is the newest. */
   checkpoints: readonly OnboardingSessionDto["checkpoints"][number][];
@@ -22,6 +33,7 @@ type UndoPickerProps = {
  * unchanged.
  */
 export function UndoPicker({ checkpoints, value, onChange, onUndo, undoing, blocked, canUndo }: UndoPickerProps) {
+  const reason = undoing ? null : undoDisabledReason(blocked, canUndo);
   return (
     <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 pt-3">
       <select
@@ -50,6 +62,11 @@ export function UndoPicker({ checkpoints, value, onChange, onUndo, undoing, bloc
       >
         {undoing ? "Undoing…" : "Undo"}
       </button>
+      {reason !== null && (
+        <span data-testid="undo-reason" className="text-xs text-ink-muted">
+          {reason}
+        </span>
+      )}
     </div>
   );
 }

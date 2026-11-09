@@ -521,3 +521,32 @@ export async function aPendingResumeDoesNotRelabelTheStart(): Promise<void> {
   expect(screen.getByRole("button", { name: "Start new" })).toBeDisabled();
   expect(screen.queryByRole("button", { name: "Starting…" })).not.toBeInTheDocument();
 }
+
+const TWO_DRAFTS: OnboardingDraftListDto = {
+  items: [
+    { id: SESSION, organizationId: ORG, currentPhase: "rtu", locationName: "Lalmati", createdAt: "2026-11-08T00:00:00.000Z", updatedAt: "2026-11-08T00:00:00.000Z", createdBy: null, locked: false },
+    { id: "44444444-4444-4444-8444-444444444444", organizationId: ORG, currentPhase: "location", locationName: "Pune", createdAt: "2026-11-08T00:00:00.000Z", updatedAt: "2026-11-08T00:00:00.000Z", createdBy: null, locked: false },
+  ],
+};
+
+/**
+ * `F4.339` (ADR 0117 decision 11, plan T8.1): with drafts in the organization, "Onboard with AI"
+ * starts nothing; the dock opens on the draft picker, and Resume starts the skill with that id.
+ */
+export async function aRequestWithDraftsOpensThePicker(): Promise<void> {
+  const { start, drafts } = stubs();
+  drafts.mockResolvedValue(TWO_DRAFTS);
+  renderStrict("organization_admin");
+  await screen.findByRole("button", { name: "Open the copilot" });
+
+  await fileRequest();
+
+  const list = await screen.findByRole("list", { name: "Onboarding drafts" });
+  expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+  await settleABit();
+  expect(drafts).toHaveBeenCalledWith(ORG);
+  expect(start).not.toHaveBeenCalled();
+
+  fireEvent.click(within(list).getAllByRole("button", { name: "Resume" })[0]!);
+  await waitFor(() => expect(start).toHaveBeenCalledWith(CONVERSATION_ID, ORG, SESSION));
+}
