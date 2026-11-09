@@ -182,6 +182,10 @@ describe("F4.341 DT4 the design-block parser", () => {
     expect(blocks.designs.size).toBeGreaterThan(0);
   });
 
+  it("DS1 every design system of the contract has both blocks (PR 11: all five ship)", () => {
+    expect([...blocks.designs.keys()].sort()).toEqual(DESIGN_SYSTEMS.filter((d) => d !== "nexus-soft").sort());
+  });
+
   it("DT4 the shadow tokens stay out of the design blocks", () => {
     for (const t of SHADOW_TOKENS) expect(blocks.base.neumorphic.has(t)).toBe(false);
   });

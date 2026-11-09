@@ -22,6 +22,7 @@ import {
 import { groupByOrganization, splitByLiveTelemetry } from "../../lib/location-kpi-groups";
 import { organizationNodes } from "../../lib/map-site";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
+import { useBoard } from "../../lib/board-spans";
 
 type ControlRoomOrganizationPageProps = {
   user: AuthUser;
@@ -122,6 +123,8 @@ type OrganizationOverviewProps = {
 function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationOverviewProps) {
   // `F2.10` (ADR 0098 B12) — the site map's parent filter offers this organization's nodes.
   const scopeLocations = useAuthStore((s) => s.scope)?.locations ?? [];
+  // F4.341 PR 11: the fixed arrangement a design system gives this page (`lib/board-spans.ts`).
+  const board = useBoard("organization-overview", "xl:grid-cols-[minmax(0,1fr)_320px]");
   // Sorted by name, as `/` sorts a section (`groupByOrganization`).
   const sites = groupByOrganization(
     items.filter((item) => item.organization.id === organizationId),
@@ -145,8 +148,8 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
         nodes={organizationNodes(scopeLocations, items, organizationId)}
         syncedAt={syncedAt}
       />
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div data-testid="control-room-sites" className="min-w-0 space-y-4">
+      <div className={`grid gap-4 ${board.grid}`}>
+        <div data-testid="control-room-sites" data-tile="sites" className={`min-w-0 space-y-4 ${board.span("sites")}`}>
           {live.length > 0 ? (
             <SiteGroup testId="control-room-sites-live" title="Live sites" live sites={live} />
           ) : null}
@@ -154,7 +157,9 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
             <SiteGroup testId="control-room-sites-not-live" title="Not live" live={false} sites={notLive} />
           ) : null}
         </div>
-        <ActiveAlarmsRail organizationId={organizationId} />
+        <div data-tile="active-alarms" className={`min-w-0 ${board.span("active-alarms")}`}>
+          <ActiveAlarmsRail organizationId={organizationId} />
+        </div>
       </div>
       {/* `F4.337` — the strip's daily cost chart, between the alarms and Asset health. */}
       <OrganizationStripCharts key={`strip-charts-${organizationId}`} organizationId={organizationId} />
