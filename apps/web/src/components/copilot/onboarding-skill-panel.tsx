@@ -16,13 +16,16 @@ import { apiErrorMessage } from "../../lib/api-error-message";
 import { invalidationKeysFor } from "../../lib/copilot-invalidations";
 import { offeredReplies } from "../../lib/onboarding-offered-replies";
 import { shouldAutoOpenPreview } from "../../lib/onboarding-preview-auto-open";
+import { isGlobalAdmin } from "../../lib/admin-access";
 import type { AuthUser } from "../../stores/auth-store";
 import { DraftDrawer } from "../onboarding/draft-drawer";
 import { ExcelActions } from "../onboarding/excel-actions";
 import { OnboardingCommitWizard } from "../onboarding/onboarding-commit-wizard";
 import { ReplyChips } from "../onboarding/reply-chips";
 import { UndoPicker } from "../onboarding/undo-picker";
+import { StatusPill } from "../status-pill";
 import { AssistantText } from "./assistant-text";
+import { DraftLockControl } from "./draft-lock-control";
 
 /** A skill state from an onboarding answer that is not a turn (an upload, an undo). */
 function stateOf(skill: CopilotSkillStateDto, data: OnboardingChatResponseDto): CopilotSkillStateDto {
@@ -220,7 +223,9 @@ export function OnboardingSkillPanel({
 
   const replies = [...offeredReplies(skill.suggestedReplies), ...(mapOffered ? [DISCOVERY_MAP_CHIP] : [])];
   const undoCheckpoints = [...session.checkpoints].reverse();
-  const draft = session.status === "draft";
+  // F4.339 (ADR 0117 decision 9): a locked draft is read-only here — no Excel, Undo, chips or commit.
+  const lock = session.lock ?? null;
+  const draft = session.status === "draft" && lock === null;
   const undoTarget = undoCheckpoints.some((c) => c.id === undoChoice) ? undoChoice : (undoCheckpoints[0]?.id ?? "");
   const locationId = session.result?.locationId;
 
@@ -228,6 +233,15 @@ export function OnboardingSkillPanel({
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2 text-xs">
         <span className="font-semibold text-ink">Onboarding · {session.organizationName}</span>
+        {lock !== null && (
+          <>
+            <StatusPill label="Locked" tone="warning" />
+            <span className="text-ink-muted">{lock.reason}</span>
+          </>
+        )}
+        {session.status === "draft" && isGlobalAdmin(user.role) && (
+          <DraftLockControl sessionId={session.id} locked={lock !== null} onChanged={withSession} />
+        )}
         {draft && (
           <ExcelActions
             sessionId={session.id}
@@ -316,7 +330,7 @@ export function OnboardingSkillPanel({
         validationErrors={skill.validationErrors ?? []}
         onClose={closePreview}
         onSessionChange={withSession}
-        busy={sending}
+        busy={sending || lock !== null}
         onValidate={() => validateM.mutate()}
         validating={validateM.isPending}
         commit={

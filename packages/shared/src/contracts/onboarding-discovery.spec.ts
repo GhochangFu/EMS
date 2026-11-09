@@ -70,6 +70,7 @@ const SESSION = {
   checkpoints: [],
   draftHash: null,
   discovery: null,
+  lock: null,
 };
 
 export function theBodyAcceptsAPrefixAndNoWindow(): void {

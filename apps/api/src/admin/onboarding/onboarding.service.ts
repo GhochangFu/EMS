@@ -38,7 +38,7 @@ import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { OnboardingExcelService } from "./onboarding-excel.service";
 import { OnboardingInventoryService } from "./onboarding-inventory.service";
-import { looksLikeCredential, scrubMessages } from "./onboarding-credential-detect";
+import { looksLikeCredential } from "./onboarding-credential-detect";
 import {
   attachCommitProposal,
   draftHash,
@@ -46,7 +46,6 @@ import {
 import {
   NOTHING_TO_UNDO_REPLY,
   checkpointLabel,
-  checkpointSummary,
   cutRingBefore,
   isUndoPhrase,
   nextSeq,
@@ -59,19 +58,21 @@ import {
   type Checkpoint,
 } from "./onboarding-checkpoints";
 import { draftCountProblem, draftRecordProblem } from "./onboarding-draft-caps";
-import { readDiscovery, withDiscoveryOf } from "./onboarding-discovery-state";
+import { withDiscoveryOf } from "./onboarding-discovery-state";
 import { applyDiscoveryTurn } from "./onboarding-discovery-tools";
 import { diffSections } from "./onboarding-draft-merge";
 import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
 import type { RollbackBody, SetCredentialsBody } from "./onboarding.schema";
 import { keepRedactedValues, redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
+import { lockedByNameOf, mapSessionRow } from "./onboarding-session-dto";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import {
   DRAFT_CHANGED_SINCE_LOAD,
   DRAFT_TOO_DEEP_FOR_TURN,
   SESSION_NO_LONGER_DRAFT,
   assertSessionStillDraft,
+  assertSessionUnlocked,
   assertTurnStillBound,
   lockSession,
 } from "./onboarding-locked-writes";
@@ -217,6 +218,7 @@ export class OnboardingService {
         locationName: sql<string | null>`${onboardingSessions.draft}->'location'->>'name'`,
         createdById: users.id,
         createdByName: users.displayName,
+        lockReason: onboardingSessions.lockReason,
       })
       .from(onboardingSessions)
       .leftJoin(users, eq(users.id, onboardingSessions.createdBy))
@@ -235,6 +237,7 @@ export class OnboardingService {
           createdAt: row.createdAt.toISOString(),
           updatedAt: row.updatedAt.toISOString(),
           createdBy: row.createdById ? { id: row.createdById, displayName: row.createdByName } : null,
+          locked: row.lockReason != null,
         })),
       },
       "onboarding.list_drafts.dto",
@@ -250,7 +253,7 @@ export class OnboardingService {
       .from(organizations)
       .where(eq(organizations.id, session.organizationId))
       .limit(1);
-    return this.mapSession(session, org?.code ?? "", org?.name ?? "");
+    return mapSessionRow(session, org?.code ?? "", org?.name ?? "", await lockedByNameOf(this.fleetDb, session));
   }
 
   /**
@@ -359,6 +362,7 @@ export class OnboardingService {
     if (session.status !== "draft") {
       throw new ForbiddenException("Session is not editable");
     }
+    assertSessionUnlocked(session); // F4.339: before the credential nudge, so a locked draft stores nothing.
     // F4.227: taken before any collaborator runs, so nothing downstream can
     // touch the object it hashes. The write re-checks it under `FOR UPDATE`.
     const expectedHash = draftHash(session.draft);
@@ -650,6 +654,7 @@ export class OnboardingService {
     if (session.status !== "draft") {
       throw new ForbiddenException("Session is not editable");
     }
+    assertSessionUnlocked(session);
     if (draftHash(session.draft) !== body.draftHash) {
       throw new ConflictException(DRAFT_CHANGED_SINCE_LOAD);
     }
@@ -915,6 +920,7 @@ export class OnboardingService {
       if (!locked || locked.status !== "draft") {
         throw new ForbiddenException("Session is not editable");
       }
+      assertSessionUnlocked(locked);
       // F4.230: two over-deep drafts both hash to `null`, so the comparison
       // below would pass. Reachable by the chat `undo` only: the route's
       // `draftHash` is 64 hex, never `null`.
@@ -967,32 +973,7 @@ export class OnboardingService {
     return this.mapSession(row, org?.code ?? "", org?.name ?? "");
   }
 
-  private mapSession(
-    row: typeof onboardingSessions.$inferSelect,
-    organizationCode: string,
-    organizationName: string,
-  ): OnboardingSessionDto {
-    return {
-      id: row.id,
-      organizationId: row.organizationId,
-      organizationCode,
-      organizationName,
-      status: row.status as OnboardingSessionDto["status"],
-      currentPhase: row.currentPhase as OnboardingPhase,
-      draft: redactDraftForClient(row.draft),
-      // ADR 0022 decision 4 — defence in depth. Decision 2 is what keeps
-      // secrets out of storage; this bounds the damage if it ever fails.
-      messages: scrubMessages(row.messages),
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-      committedAt: row.committedAt?.toISOString() ?? null,
-      result: (row.result as Record<string, unknown>) ?? null,
-      // F3.25 (ADR 0094 decision 7): summaries only — never the sections — and
-      // the hash a rollback binds to.
-      checkpoints: readCheckpoints(row.checkpoints).map(checkpointSummary),
-      draftHash: draftHash(row.draft),
-      // F3.24b (ADR 0103): the worker's result; `redactDraftForClient` removes the raw key.
-      discovery: readDiscovery(row.draft),
-    };
+  private mapSession(row: typeof onboardingSessions.$inferSelect, organizationCode: string, organizationName: string): OnboardingSessionDto {
+    return mapSessionRow(row, organizationCode, organizationName);
   }
 }

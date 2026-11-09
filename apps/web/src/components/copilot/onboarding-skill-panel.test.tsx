@@ -36,6 +36,10 @@ import {
   aStaleRunningDiscoveryIsNotPolled,
   aFreshRunningDiscoveryIsPolled,
   aPollStartedBeforeATurnEndedIsDropped,
+  aLockedDraftIsReadOnly,
+  anOrgAdminGetsNoLockButton,
+  aGlobalAdminUnlocksTheDraft,
+  aGlobalAdminLocksWithAReason,
 } from "./onboarding-skill-panel.spec";
 
 afterEach(() => {
@@ -88,4 +92,11 @@ describe("F3.24b review — the discovery poll", () => {
   it("does not poll a running discovery past its stale bound", aStaleRunningDiscoveryIsNotPolled);
   it("polls a fresh running discovery", aFreshRunningDiscoveryIsPolled);
   it("drops a poll that started before a turn ended", aPollStartedBeforeATurnEndedIsDropped);
+});
+
+describe("F4.339 — a locked draft in the dock", () => {
+  it("is read-only: the pill and reason, no Undo, chips or send box", aLockedDraftIsReadOnly);
+  it("offers an organization admin no lock button", anOrgAdminGetsNoLockButton);
+  it("lets a global administrator unlock it", aGlobalAdminUnlocksTheDraft);
+  it("locks only with a reason, posted trimmed", aGlobalAdminLocksWithAReason);
 });

@@ -178,6 +178,7 @@ export function assertSessionDtoCarriesTheCaps(): void {
     checkpoints: [],
     draftHash: null,
     discovery: null,
+    lock: null,
   });
 
   assert(
@@ -546,6 +547,7 @@ export function assertSessionDtoCarriesTheStringBounds(): void {
     checkpoints: [],
     draftHash: null,
     discovery: null,
+    lock: null,
   });
 
   assert(
@@ -785,6 +787,7 @@ function sessionWith(extra: Record<string, unknown>): Record<string, unknown> {
     committedAt: null,
     result: null,
     discovery: null,
+    lock: null,
     ...extra,
   };
 }
@@ -858,6 +861,7 @@ const DRAFT_SUMMARY = {
   createdAt: "2026-10-13T00:00:00.000Z",
   updatedAt: "2026-10-13T00:05:00.000Z",
   createdBy: { id: "33333333-3333-4333-8333-333333333333", displayName: "Asha" },
+  locked: false,
 };
 
 /** The sample summary parses and keeps its location name and starter. */

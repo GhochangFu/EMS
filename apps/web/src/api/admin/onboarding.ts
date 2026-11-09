@@ -57,6 +57,20 @@ export async function fetchOnboardingSession(
   return adminFetch(`/admin/onboarding/sessions/${sessionId}`, onboardingSessionDtoSchema);
 }
 
+/** `F4.339` (ADR 0117 decision 9): a global administrator locks a draft; every write is then refused. */
+export async function lockOnboardingSession(sessionId: string, reason: string): Promise<OnboardingSessionDto> {
+  return adminFetch(`/admin/onboarding/sessions/${sessionId}/lock`, onboardingSessionDtoSchema, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+/** `F4.339`: a global administrator unlocks a draft (idempotent). */
+export async function unlockOnboardingSession(sessionId: string): Promise<OnboardingSessionDto> {
+  return adminFetch(`/admin/onboarding/sessions/${sessionId}/unlock`, onboardingSessionDtoSchema, { method: "POST" });
+}
+
 /**
  * F3.25 (ADR 0094 decision 6): rolls the draft back to a checkpoint. Bound to the
  * checkpoint id and the draft hash this client last saw; a stale hash is a 409.

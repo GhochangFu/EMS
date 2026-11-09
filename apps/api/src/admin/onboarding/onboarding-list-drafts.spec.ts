@@ -45,6 +45,7 @@ type DraftRow = {
   locationName: string | null;
   createdById: string | null;
   createdByName: string | null;
+  lockReason: string | null;
 };
 
 const ROW: DraftRow = {
@@ -56,6 +57,7 @@ const ROW: DraftRow = {
   locationName: "Berhampur",
   createdById: "33333333-3333-4333-8333-333333333333",
   createdByName: "Asha",
+  lockReason: null,
 };
 
 function serviceAs(role: Role, options: { canManage?: boolean; orgExists?: boolean; rows?: DraftRow[] } = {}) {
@@ -259,6 +261,8 @@ export async function eachProjectedColumnIsTheIntendedOne(): Promise<void> {
     locationName: "(sql)",
     createdById: "users.id",
     createdByName: "users.display_name",
+    // F4.339 (ADR 0117 decision 9): the lock is read to answer `locked`, never shown.
+    lockReason: "onboarding_sessions.lock_reason",
   });
 }
 
@@ -302,6 +306,7 @@ export async function theListAnswersTheSummary(): Promise<void> {
         createdAt: "2026-10-13T00:00:00.000Z",
         updatedAt: "2026-10-13T00:05:00.000Z",
         createdBy: { id: ROW.createdById, displayName: "Asha" },
+        locked: false,
       },
     ],
   });

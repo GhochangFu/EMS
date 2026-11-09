@@ -119,6 +119,7 @@ export const ONBOARDING_ENTRIES: readonly CatalogEntry[] = [
 
 const DRAFT = "a draft step writes no master data (decision 7)";
 const CREDENTIAL = "a credential route (ADR 0022)";
+const LOCK = "a global-admin lock is a human act (ADR 0117 decision 9)";
 
 /** The area's write routes that are not entries, excluded for good (with the reason). */
 export const ONBOARDING_PENDING: readonly ExcludedRoute[] = [
@@ -128,4 +129,7 @@ export const ONBOARDING_PENDING: readonly ExcludedRoute[] = [
   { method: "POST", path: "/admin/onboarding/sessions/:id/credentials", reason: CREDENTIAL },
   { method: "POST", path: "/admin/onboarding/sessions/:id/rollback", reason: DRAFT },
   { method: "POST", path: "/admin/onboarding/sessions/:id/validate", reason: DRAFT },
+  // F4.339 (ADR 0117 decision 9): never a copilot card.
+  { method: "POST", path: "/admin/onboarding/sessions/:id/lock", reason: LOCK },
+  { method: "POST", path: "/admin/onboarding/sessions/:id/unlock", reason: LOCK },
 ];

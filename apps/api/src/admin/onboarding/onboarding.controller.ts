@@ -18,7 +18,12 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { ZodError } from "zod";
 
-import { commitOnboardingBodySchema, startOnboardingDiscoveryBodySchema, type JwtPayload } from "@bms/shared";
+import {
+  commitOnboardingBodySchema,
+  lockOnboardingSessionBodySchema,
+  startOnboardingDiscoveryBodySchema,
+  type JwtPayload,
+} from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
@@ -31,6 +36,8 @@ import {
   setCredentialsBodySchema,
 } from "./onboarding.schema";
 import { OnboardingDiscoveryService } from "./onboarding-discovery.service";
+import { OnboardingSessionLockService } from "./onboarding-session-lock.service";
+import { OnboardingSessionUnlockService } from "./onboarding-session-unlock.service";
 import { OnboardingService } from "./onboarding.service";
 
 @Controller("admin/onboarding")
@@ -39,7 +46,37 @@ export class OnboardingController {
   constructor(
     private readonly service: OnboardingService,
     private readonly discovery: OnboardingDiscoveryService,
+    private readonly locks: OnboardingSessionLockService,
+    private readonly unlocks: OnboardingSessionUnlockService,
   ) {}
+
+  /** `F4.339` (ADR 0117 decision 9): a global administrator locks a draft; every write is then refused (409). */
+  @Post("sessions/:id/lock")
+  @HttpCode(HttpStatus.OK)
+  async lock(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    try {
+      return await this.locks.lock(user, idParamSchema.parse(id), lockOnboardingSessionBodySchema.parse(body));
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /** `F4.339`: a global administrator unlocks a draft; idempotent. */
+  @Post("sessions/:id/unlock")
+  @HttpCode(HttpStatus.OK)
+  async unlock(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    try {
+      return await this.unlocks.unlock(user, idParamSchema.parse(id));
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
 
   @Get("template.xlsx")
   async downloadTemplate(@CurrentUser() user: JwtPayload, @Res() res: Response) {

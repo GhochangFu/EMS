@@ -843,3 +843,12 @@ export function exactlyTheThreeListWritesTakeAPrecondition(): void {
     "mqttPayloadFormat.update",
   ]);
 }
+
+/** F4.339 (ADR 0117 decision 9): the lock and unlock routes are excluded for good, with the human-act reason. */
+export function theLockRoutesAreExcludedAsAHumanAct(): void {
+  const reason = "a global-admin lock is a human act (ADR 0117 decision 9)";
+  for (const path of ["/admin/onboarding/sessions/:id/lock", "/admin/onboarding/sessions/:id/unlock"]) {
+    expect(EXCLUDED_ROUTES.find((r) => r.method === "POST" && r.path === path)?.reason, path).toBe(reason);
+    expect(COPILOT_CATALOG.some((e) => e.path === path), `${path} is not an entry`).toBe(false);
+  }
+}

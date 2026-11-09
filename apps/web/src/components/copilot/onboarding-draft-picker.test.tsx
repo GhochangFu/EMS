@@ -16,6 +16,9 @@ import {
   withNoOrganizationNothingIsRead,
   theHomeListIsReadWithNoOrganization,
   eachResumeIsDescribedByItsRow,
+  aLockedRowCarriesTheLockedPill,
+  aGlobalAdminGetsTheLockPairPerRow,
+  anyoneElseGetsNoLockButton,
 } from "./onboarding-draft-picker.spec";
 
 /**
@@ -41,4 +44,10 @@ describe("F4.255 PR 3 — the dock's onboarding draft list", () => {
   it("with no organization yet nothing is read and the start button shows", withNoOrganizationNothingIsRead);
   it("the home list is read once, naming no organization", theHomeListIsReadWithNoOrganization);
   it("each Resume is described by its own row's label", eachResumeIsDescribedByItsRow);
+});
+
+describe("F4.339 — the draft list shows a lock", () => {
+  it("a locked row carries the Locked pill and still resumes", aLockedRowCarriesTheLockedPill);
+  it("a global administrator gets Lock / Unlock per row", aGlobalAdminGetsTheLockPairPerRow);
+  it("anyone else gets no lock button", anyoneElseGetsNoLockButton);
 });

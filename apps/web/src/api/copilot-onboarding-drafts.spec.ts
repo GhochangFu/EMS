@@ -65,6 +65,7 @@ const SUMMARY = {
   createdAt: "2026-10-13T00:00:00.000Z",
   updatedAt: "2026-10-13T00:00:00.000Z",
   createdBy: null,
+  locked: false,
 };
 
 /**

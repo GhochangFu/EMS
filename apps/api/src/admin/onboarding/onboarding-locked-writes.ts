@@ -21,11 +21,33 @@ export const DRAFT_TOO_DEEP_FOR_TURN =
   `The stored draft nests deeper than ${MAX_ONBOARDING_DRAFT_DEPTH} levels, so this turn could not be bound to it and was not saved. ` +
   "Repair the draft with the draft editor (PATCH sessions/:id/draft) and send the turn again.";
 
-/** The status re-check of a write under `FOR UPDATE`: a commit that landed in between answers 409 (`F4.233`). */
+/** `F4.339` (ADR 0117 decision 9, plan R12): the fixed start of every refused write on a locked draft. */
+export const SESSION_LOCKED_PREFIX = "This draft is locked: ";
+
+/** `F4.339`: the 409 sentence of a write on a locked draft. The reason is the global administrator's own text. */
+export function lockedSessionMessage(reason: string): string {
+  return `${SESSION_LOCKED_PREFIX}${reason}. A global administrator can unlock it.`;
+}
+
+/** `F4.339`: a locked draft refuses every write (409) and stays readable. */
+export function assertSessionUnlocked(session: { readonly lockReason?: string | null }): void {
+  // `!= null`: a row read without the column (a fake, an older select) is unlocked.
+  if (session.lockReason != null) {
+    throw new ConflictException(lockedSessionMessage(session.lockReason));
+  }
+}
+
+/**
+ * The status re-check of a write under `FOR UPDATE`: a commit that landed in
+ * between answers 409 (`F4.233`). `F4.339`: so does a lock that landed in
+ * between — every in-draft writer locks the row through here, so a lock is
+ * either seen or lands after the write commits.
+ */
 export function assertSessionStillDraft(locked: LockedSession): asserts locked is NonNullable<LockedSession> {
   if (!locked || locked.status !== "draft") {
     throw new ConflictException(SESSION_NO_LONGER_DRAFT);
   }
+  assertSessionUnlocked(locked);
 }
 
 /**
@@ -59,6 +81,8 @@ export function lockSession(tx: Parameters<Parameters<typeof withTenant>[2]>[0],
       status: onboardingSessions.status,
       messages: onboardingSessions.messages,
       checkpoints: onboardingSessions.checkpoints,
+      // F4.339 (ADR 0117 decision 9): a lock refuses the write under the row lock.
+      lockReason: onboardingSessions.lockReason,
     })
     .from(onboardingSessions)
     .where(eq(onboardingSessions.id, sessionId))

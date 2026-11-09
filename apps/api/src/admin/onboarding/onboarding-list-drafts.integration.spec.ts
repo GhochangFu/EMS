@@ -47,8 +47,8 @@ export function theStarterIsJoinedFromUsers(ctx: ListDraftsCtx): void {
 /** No item carries the draft (it holds `_secrets`); the adjacent positive: each carries the summary keys. */
 export function noItemCarriesTheDraft(ctx: ListDraftsCtx): void {
   expect(ctx.list.items.map((item) => Object.keys(item).sort())).toEqual([
-    ["createdAt", "createdBy", "currentPhase", "id", "locationName", "organizationId", "updatedAt"],
-    ["createdAt", "createdBy", "currentPhase", "id", "locationName", "organizationId", "updatedAt"],
+    ["createdAt", "createdBy", "currentPhase", "id", "locationName", "locked", "organizationId", "updatedAt"],
+    ["createdAt", "createdBy", "currentPhase", "id", "locationName", "locked", "organizationId", "updatedAt"],
   ]);
 }
 

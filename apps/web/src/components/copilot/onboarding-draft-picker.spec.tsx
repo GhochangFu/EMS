@@ -33,6 +33,7 @@ function item(over: Partial<OnboardingDraftSummaryDto>): OnboardingDraftSummaryD
     createdAt: "2026-10-13T00:00:00.000Z",
     updatedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
     createdBy: { id: ME, displayName: "Me" },
+    locked: false,
     ...over,
   };
 }
@@ -56,6 +57,7 @@ function renderPicker(
     draftsOf?: OnboardingDraftsOf;
     starting?: boolean;
     resuming?: string | null;
+    canLock?: boolean;
   } = {},
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -70,6 +72,7 @@ function renderPicker(
         resuming={over.resuming ?? null}
         onStartNew={over.onStartNew ?? (() => {})}
         onResume={over.onResume ?? (() => {})}
+        canLock={over.canLock ?? false}
       />
     </QueryClientProvider>,
   );
@@ -211,4 +214,31 @@ export async function eachResumeIsDescribedByItsRow(): Promise<void> {
   const second = within(rows[1] as HTMLElement).getByRole("button", { name: "Resume" });
   expect(first).toHaveAccessibleDescription(/^Lotapata\s*· phase: location · .* · by you$/);
   expect(second).toHaveAccessibleDescription(/^Pune WTP\s*· phase: rtu · .* · by Priya$/);
+}
+
+/** `F4.339` (ADR 0117 decision 9): a locked row carries the Locked pill; Resume stays. */
+export async function aLockedRowCarriesTheLockedPill() {
+  stubDrafts({ items: [item({ locked: true })] });
+  renderPicker();
+  const row = within(await list()).getByRole("listitem");
+  expect(within(row).getByText("Locked")).toBeTruthy();
+  expect(within(row).getByRole("button", { name: "Resume" })).toBeTruthy();
+}
+
+/** `F4.339` (ruling Q6): a global administrator gets Lock / Unlock per row. */
+export async function aGlobalAdminGetsTheLockPairPerRow() {
+  stubDrafts({ items: [item({}), item({ id: THEIRS, locked: true })] });
+  renderPicker({ canLock: true });
+  const rows = within(await list()).getAllByRole("listitem");
+  expect(within(rows[0]!).getByRole("button", { name: "Lock draft" })).toBeTruthy();
+  expect(within(rows[1]!).getByRole("button", { name: "Unlock draft" })).toBeTruthy();
+}
+
+/** `F4.339`: anyone else sees no lock button. */
+export async function anyoneElseGetsNoLockButton() {
+  stubDrafts({ items: [item({}), item({ id: THEIRS, locked: true })] });
+  renderPicker();
+  await list();
+  expect(screen.queryByRole("button", { name: "Lock draft" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Unlock draft" })).toBeNull();
 }

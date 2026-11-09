@@ -62,6 +62,7 @@ import {
 } from "./onboarding-point-key-conflict";
 import { readEncryptedCredentials } from "./onboarding-redaction";
 import { draftHash } from "./onboarding-commit-proposal";
+import { assertSessionUnlocked } from "./onboarding-locked-writes";
 import { OnboardingInventoryService } from "./onboarding-inventory.service";
 import { canonicalParentCode } from "./onboarding-location-parent";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
@@ -198,6 +199,8 @@ export class OnboardingCommitService {
     if (session.status === "committed") {
       throw new BadRequestException("Session already committed");
     }
+    // F4.339 (ADR 0117 decision 9): a locked draft does not commit; the proposed path re-checks under the lock.
+    assertSessionUnlocked(session);
 
     const draft = session.draft as OnboardingDraft;
     if (expectedDraftHash !== null && draftHash(session.draft) !== expectedDraftHash) {
@@ -346,13 +349,14 @@ export class OnboardingCommitService {
     return withTenant(this.tenantDb, session.organizationId, async (tx) => {
       if (expectedDraftHash !== null) {
         const [locked] = await tx
-          .select({ draft: onboardingSessions.draft, status: onboardingSessions.status })
+          .select({ draft: onboardingSessions.draft, status: onboardingSessions.status, lockReason: onboardingSessions.lockReason })
           .from(onboardingSessions)
           .where(eq(onboardingSessions.id, session.id))
           .for("update");
         if (!locked || locked.status !== "draft" || draftHash(locked.draft) !== expectedDraftHash) {
           throw new BadRequestException(PROPOSED_DRAFT_CHANGED);
         }
+        assertSessionUnlocked(locked);
       }
 
       // `F4.111` (ADR 0104 decision 4) — the growth quota's authority. The

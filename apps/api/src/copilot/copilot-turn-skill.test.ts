@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   aClosedSessionAnswersAFixedReply,
+  aLockedDraftAnswersTheLockSentence,
   aFollowUpOnASkillConversationStoresTheOutcomeOnly,
   aPlainConversationNeverReachesTheSkill,
   aSkillTurnAnswersWithNoKey,
@@ -28,6 +29,7 @@ describe("F3.86 PR 5 — a turn of the onboarding skill (ADR 0099 decision 7, ru
   it("stores the user message, this turn's action lines and the reply", () => aSkillTurnStoresItsOwnRows());
   it("takes no action line it cannot own", () => aSkillTurnDropsActionLinesItCannotOwn());
   it("answers a fixed reply, uncounted, for a closed session", () => aClosedSessionAnswersAFixedReply());
+  it("answers the lock sentence, uncounted, for a locked draft (F4.339)", () => aLockedDraftAnswersTheLockSentence());
   it("refuses a credential before the skill", () => theCredentialRefusalComesBeforeTheSkill());
   it("stores only the outcome line for a follow-up", () => aFollowUpOnASkillConversationStoresTheOutcomeOnly());
   it("never reaches the skill on a plain conversation", () => aPlainConversationNeverReachesTheSkill());

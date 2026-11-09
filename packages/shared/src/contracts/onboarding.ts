@@ -720,7 +720,20 @@ export const onboardingSessionDtoSchema = z.object({
   // F3.24b (ADR 0103): the latest MQTT discovery, mapped from `draft._discovery`
   // (which `redactDraftForClient` removes). Added in place: a flat object.
   discovery: onboardingDiscoveryResultDtoSchema.nullable(),
+  // F4.339 (ADR 0117 decision 9): a global administrator's lock, or null. A locked draft refuses every
+  // write and stays readable. Added in place: a flat object. `lockedBy` joins `users` at read (no FK).
+  lock: z
+    .object({
+      lockedAt: z.string(),
+      lockedBy: z.object({ id: z.string(), displayName: z.string().nullable() }).strict().nullable(),
+      reason: z.string(),
+    })
+    .strict()
+    .nullable(),
 });
+
+/** `F4.339` (ADR 0117 decision 9): `POST …/sessions/:id/lock`. The reason is shown on every refused write. */
+export const lockOnboardingSessionBodySchema = z.object({ reason: z.string().trim().min(1).max(500) }).strict();
 
 /** `F4.255` (ADR 0099 Amendment 2 A1): the draft list answers at most this many drafts, newest update first. */
 export const ONBOARDING_DRAFT_LIST_LIMIT = 50;
@@ -741,6 +754,8 @@ export const onboardingDraftSummaryDtoSchema = z
     updatedAt: z.string(),
     /** `created_by` joined to `users`; null on rows from before `F4.255`. */
     createdBy: z.object({ id: z.string(), displayName: z.string().nullable() }).strict().nullable(),
+    /** `F4.339` (ADR 0117 decision 9): whether a global administrator locked the draft. */
+    locked: z.boolean(),
   })
   .strict();
 
