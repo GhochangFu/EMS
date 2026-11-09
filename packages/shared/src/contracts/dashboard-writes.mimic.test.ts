@@ -8,6 +8,8 @@ import {
   refusesALayoutArmWithoutALayoutId,
   refusesAnUnknownSource,
   runDashboardsSchemaMimicSourceShapeTests,
+  theStrictArmsAcceptMotion,
+  theStrictArmsRefuseANonBooleanMotion,
 } from "./dashboard-writes.mimic.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -41,5 +43,14 @@ describe("F3.32c — the mimic config's layout arm", () => {
 
   it("refuses a source neither arm declares", () => {
     refusesAnUnknownSource();
+  });
+});
+
+describe("F4.344 — the strict mimic arms carry the glyph motion switch", () => {
+  it("accept motion false on the preset and layout arms", () => {
+    theStrictArmsAcceptMotion();
+  });
+  it("refuse a non-boolean motion at config.motion on both arms", () => {
+    theStrictArmsRefuseANonBooleanMotion();
   });
 });

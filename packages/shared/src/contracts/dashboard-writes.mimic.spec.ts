@@ -122,3 +122,36 @@ export function refusesAnUnknownSource(): void {
     "a mimic config whose source is neither preset nor layout must be refused",
   );
 }
+
+// ---------------------------------------------------------------- F4.344 — the glyph motion switch
+
+/**
+ * `F4.344` (ADR 0120 decision 5) — the strict arms accept `motion: false`. The write surface
+ * rebuilds each arm from the shared `.shape`, so the field needs no edit there; remove it from a
+ * shared arm and `.strict()` refuses it as an unrecognized key.
+ */
+export function theStrictArmsAcceptMotion(): void {
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validMimicWidget, config: { ...validMimicWidget.config, motion: false } }] },
+    "a preset mimic with motion false must parse",
+  );
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...layoutMimicWidget, config: { ...layoutMimicWidget.config, motion: false } }] },
+    "a layout mimic with motion false must parse",
+  );
+}
+
+/** `F4.344` — a non-boolean `motion` is refused at its own path on both arms. */
+export function theStrictArmsRefuseANonBooleanMotion(): void {
+  for (const widget of [validMimicWidget, layoutMimicWidget]) {
+    expectRejectsAt(
+      putDashboardWidgetsBodySchema,
+      { widgets: [{ ...widget, config: { ...widget.config, motion: "off" } }] },
+      ["widgets", 0, "config", "motion"],
+      ["boolean"],
+      `a ${widget.config.source} mimic with motion "off" must be refused at config.motion`,
+    );
+  }
+}
