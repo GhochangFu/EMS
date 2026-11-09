@@ -31,6 +31,8 @@ import {
   aCompactTilesDialogDrawsTheValueRows,
   theTwoDrawingsShareNoMarkerId,
   aLostDrawingDoesNotReopenTheDialog,
+  theExpandDialogMovesWithTheTile,
+  withMotionTheTileMovesByState,
 } from "./mimic-widget.spec";
 
 /**
@@ -139,5 +141,11 @@ describe("F4.321 — MimicWidget, Expand to a full view", () => {
   });
   it("E8 a drawing lost to a refetch does not reopen the dialog by itself", () => {
     aLostDrawingDoesNotReopenTheDialog();
+  });
+  it("WM1 with motion the tile's units move by state, behind motion-safe (F4.344)", () => {
+    withMotionTheTileMovesByState();
+  });
+  it("WM2 the Expand dialog's drawing moves with the tile (F4.344)", () => {
+    theExpandDialogMovesWithTheTile();
   });
 });

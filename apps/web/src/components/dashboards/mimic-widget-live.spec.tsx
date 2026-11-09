@@ -543,3 +543,14 @@ export async function aCompactConfigReachesTheScene(): Promise<void> {
   expect(screen.queryAllByTestId("mimic-point")).toHaveLength(0);
   expect(feederPills()).toHaveLength(2);
 }
+
+/**
+ * LV-M1 — `F4.344` (ADR 0120 decision 5): through the real overlay the live tile's glyphs move —
+ * the plumbing is on when the widget does not switch it off.
+ */
+export async function theLiveTileMovesByDefault(): Promise<void> {
+  renderWidget(() => Promise.resolve(sldResponse(WIDGET_A)), sldWidget(false));
+  await screen.findByText("TX-1");
+  expect(screen.getAllByTestId("mimic-glyph").length).toBeGreaterThan(0);
+  expect(document.querySelectorAll("[data-motion]").length).toBeGreaterThanOrEqual(1);
+}

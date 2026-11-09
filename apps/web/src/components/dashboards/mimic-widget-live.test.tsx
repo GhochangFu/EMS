@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 
 import {
   aCompactConfigReachesTheScene,
+  theLiveTileMovesByDefault,
   aFanOutMemberIsTrackedAndFlipsOnTheSocket,
   aFailedReadShowsTheErrorLine,
   aFailedRefetchKeepsTheLastDrawing,
@@ -82,5 +83,8 @@ describe("F3.32 U4 — MimicWidgetLive", () => {
   });
   it("LV-B2 a preset config's compact reaches the scene", async () => {
     await aCompactConfigReachesTheScene();
+  });
+  it("LV-M1 the live tile's glyphs move by default (F4.344)", async () => {
+    await theLiveTileMovesByDefault();
   });
 });
