@@ -4,6 +4,9 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aFillOrgSymbolDrawsWithTheFillClass,
+  aMovingGlyphWrapsItsContentInAnUnpositionedInnerG,
+  aStillGlyphGetsNoWrapper,
+  everyDrawPathWrapsItsContent,
   anExtraStoredKeyNeverReachesTheDom,
   anOrgKindWithNoSymbolDrawsTheFallback,
   anOrgSymbolDrawsOneElementPerShape,
@@ -41,5 +44,14 @@ describe("F3.32f slice 3 — MimicGlyph draws an organization symbol", () => {
   });
   it("G7 no createElement call spreads an object", () => {
     noCreateElementCallSpreadsAStoredObject();
+  });
+  it("GM1 a moving glyph wraps its content in an unpositioned inner g carrying the motion (F4.344)", () => {
+    aMovingGlyphWrapsItsContentInAnUnpositionedInnerG();
+  });
+  it("GM2 a still glyph gets no wrapper (F4.344)", () => {
+    aStillGlyphGetsNoWrapper();
+  });
+  it("GM3 every draw path wraps its content: stroke, fill, org, fallback (F4.344)", () => {
+    everyDrawPathWrapsItsContent();
   });
 });

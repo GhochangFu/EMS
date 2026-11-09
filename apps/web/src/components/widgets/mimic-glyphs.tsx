@@ -1,7 +1,7 @@
 import { MIMIC_SHAPE_ATTRS, libraryOfSymbol, type MimicCoreSymbol, type MimicOrgSymbolDto, type MimicShape } from "@bms/shared";
 import { createElement, type ReactNode } from "react";
 
-import { MIMIC_GLYPH_FILL_CLASS, type MimicGlyphKind } from "../../lib/mimic";
+import { MIMIC_GLYPH_FILL_CLASS, MIMIC_GLYPH_MOTION_CLASS, type MimicGlyphKind, type MimicGlyphMotion } from "../../lib/mimic";
 import { lazyLibraryState, librarySymbolShapes } from "./mimic-symbol-libraries";
 import { useLazyLibraries } from "./mimic-symbol-libraries/use-lazy-libraries";
 
@@ -309,6 +309,22 @@ function strokeShapes(shapes: readonly MimicShape[], baseWidth: number): ReactNo
   });
 }
 
+/**
+ * `F4.344` (ADR 0120 decisions 1 and 3, plan R2) — a glyph's content, wrapped in the inner
+ * `<g data-testid="mimic-glyph-motion">` that carries its motion, or returned as it is when the
+ * glyph is still. The wrapper has no `transform` attribute on purpose: a CSS `scale()` keyframe
+ * overrides an SVG `transform` attribute, so the motion class on the positioned outer `<g>` would
+ * throw the glyph to the drawing's origin. A still glyph's DOM is unchanged.
+ */
+export function motionWrap(motion: MimicGlyphMotion, children: ReactNode): ReactNode {
+  if (motion === "none") return children;
+  return (
+    <g data-testid="mimic-glyph-motion" data-motion={motion} className={MIMIC_GLYPH_MOTION_CLASS[motion]}>
+      {children}
+    </g>
+  );
+}
+
 type MimicGlyphProps = {
   kind: MimicGlyphKind;
   /** Top-left corner and edge length of the square the symbol fills, in viewBox units. */
@@ -326,10 +342,12 @@ type MimicGlyphProps = {
    * `shapeProps`, inside a wrapper scaled and centred by the symbol's own `viewBox`.
    */
   orgSymbol?: MimicOrgSymbolDto | null;
+  /** `F4.344` (ADR 0120): the unit's state motion (`mimicGlyphMotion`); absent or `"none"` is still. */
+  motion?: MimicGlyphMotion;
 };
 
 /** One illustrated unit symbol, scaled into a `size` square at (`x`, `y`) in viewBox units. */
-export function MimicGlyph({ kind, x, y, size, className, level = null, orgSymbol = null }: MimicGlyphProps) {
+export function MimicGlyph({ kind, x, y, size, className, level = null, orgSymbol = null, motion = "none" }: MimicGlyphProps) {
   // `F3.32h`: a `qet`, `wmpid` or `drawio` key loads its library on first draw and redraws here.
   useLazyLibraries([libraryOfSymbol(kind)]);
   const transform = `translate(${x} ${y}) scale(${size / 24})`;
@@ -347,16 +365,21 @@ export function MimicGlyph({ kind, x, y, size, className, level = null, orgSymbo
         strokeLinejoin="round"
         className={className}
       >
-        {kind === "tank" && level !== null ? (
-          <path
-            data-testid="mimic-tank-level"
-            data-level={Math.round(level * 100)}
-            d={tankFillPath(level)}
-            stroke="none"
-            className="fill-info/30"
-          />
-        ) : null}
-        {PATHS[kind as keyof typeof PATHS]}
+        {motionWrap(
+          motion,
+          <>
+            {kind === "tank" && level !== null ? (
+              <path
+                data-testid="mimic-tank-level"
+                data-level={Math.round(level * 100)}
+                d={tankFillPath(level)}
+                stroke="none"
+                className="fill-info/30"
+              />
+            ) : null}
+            {PATHS[kind as keyof typeof PATHS]}
+          </>,
+        )}
       </g>
     );
   }
@@ -382,7 +405,7 @@ export function MimicGlyph({ kind, x, y, size, className, level = null, orgSymbo
         strokeLinejoin="round"
         className={loading ? `${className} animate-pulse` : className}
       >
-        {PATHS.unit}
+        {motionWrap(motion, PATHS.unit)}
       </g>
     );
   }
@@ -411,7 +434,7 @@ export function MimicGlyph({ kind, x, y, size, className, level = null, orgSymbo
         strokeLinejoin="round"
         className={className}
       >
-        {strokeShapes(library.shapes, strokeWidth)}
+        {motionWrap(motion, strokeShapes(library.shapes, strokeWidth))}
       </g>
     );
   }
@@ -429,7 +452,7 @@ export function MimicGlyph({ kind, x, y, size, className, level = null, orgSymbo
       stroke="none"
       className={MIMIC_GLYPH_FILL_CLASS[className] ?? "fill-ink-muted"}
     >
-      {shapes}
+      {motionWrap(motion, shapes)}
     </g>
   );
 }
