@@ -15,7 +15,7 @@ import { repoRoot } from "./support/source-scan";
  *
  *  - **MG1** `theme.extend.animation` is exactly the four `mimic-*` utilities; each is
  *    `<keyframe> <N>s <timing> infinite`, at 1 / 1.6 / 0.8 / 3.2 s, every cycle ≥ 0.8 s (decision 8,
- *    WCAG 2.3.1), and names a keyframe that exists.
+ *    WCAG 2.3.1), and names its own keyframe, which exists.
  *  - **MG2** every keyframe step sets only `opacity` and/or `transform` — colour never moves
  *    (decision 3).
  *  - **MG3** the class literals in `MIMIC_GLYPH_MOTION_CLASS` compile to rules that sit only inside
@@ -37,6 +37,14 @@ const EXPECTED_SECONDS: Record<string, number> = {
   "mimic-pulse": 1.6,
   "mimic-pulse-fast": 0.8,
   "mimic-breathe": 3.2,
+};
+
+/** The keyframe each utility must name (`pulse` and `pulse-fast` share one, plan R6). */
+const EXPECTED_KEYFRAME: Record<string, string> = {
+  "mimic-blink": "mimic-blink",
+  "mimic-pulse": "mimic-pulse",
+  "mimic-pulse-fast": "mimic-pulse",
+  "mimic-breathe": "mimic-breathe",
 };
 
 /** The four class literals inside `MIMIC_GLYPH_MOTION_CLASS = { … }` in `lib/mimic.ts`. */
@@ -82,6 +90,7 @@ describe("F4.344 MG1 the motion utilities are slow enough", () => {
       const seconds = Number(match![2]);
       expect(seconds, name).toBe(EXPECTED_SECONDS[name]);
       expect(seconds, `${name} cycles faster than 0.8 s`).toBeGreaterThanOrEqual(0.8);
+      expect(match![1], `${name} names the wrong keyframe`).toBe(EXPECTED_KEYFRAME[name]);
       expect(Object.keys(keyframes), name).toContain(match![1]);
     }
   });

@@ -570,13 +570,15 @@ export function otherBreakerStatesAddNoMotion(): void {
 }
 
 /**
- * `F4.344` (ADR 0120 decisions 3–4) — MG-T4: four literal classes, each behind `motion-safe:`;
+ * `F4.344` (ADR 0120 decisions 3–4) — MG-T4: four literal classes, each its own motion's utility
+ * behind `motion-safe:`;
  * only the pulses (which scale) carry the centre origin and `transform-box: fill-box`.
  */
 export function motionClassesAreMotionSafeLiterals(): void {
   expect(Object.keys(MIMIC_GLYPH_MOTION_CLASS).sort()).toEqual(["blink", "breathe", "pulse", "pulse-fast"]);
-  for (const value of Object.values(MIMIC_GLYPH_MOTION_CLASS)) {
-    expect(value.startsWith("motion-safe:animate-mimic-")).toBe(true);
+  // Each motion draws its OWN utility: a swap of `pulse` and `pulse-fast` would invert ruling 3.
+  for (const [key, value] of Object.entries(MIMIC_GLYPH_MOTION_CLASS)) {
+    expect(value.split(" ")[0], key).toBe(`motion-safe:animate-mimic-${key}`);
   }
   for (const key of ["pulse", "pulse-fast"] as const) {
     expect(MIMIC_GLYPH_MOTION_CLASS[key]).toContain("origin-center");
