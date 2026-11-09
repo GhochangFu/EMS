@@ -4,6 +4,7 @@ import { energyCostDayRowSchema, type EnergyCostDayRow, type EnergyCostReason } 
 
 import { formatMoney } from "./money";
 import type { Roles } from "./theme";
+import { chartType } from "./design";
 
 /**
  * `F4.332` (ADR 0047 Amendment 9) — the pure half of the daily energy cost chart: the rows, the
@@ -97,11 +98,11 @@ export function buildCostByDayOption(rows: readonly EnergyCostDayRow[], roles: R
         return `${dayLabel(row.day)}<br/>${value}`;
       },
     },
-    xAxis: { type: "category", data: rows.map((row) => dayLabel(row.day)), axisLabel: { fontSize: 10 } },
+    xAxis: { type: "category", data: rows.map((row) => dayLabel(row.day)), axisLabel: { fontSize: chartType()["3xs"] } },
     yAxis: {
       type: "value",
       axisLabel: {
-        fontSize: 10,
+        fontSize: chartType()["3xs"],
         formatter: (value: number) => formatMoney(value, currency, 0) ?? String(value),
       },
     },

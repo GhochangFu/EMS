@@ -10,6 +10,7 @@ import {
   runAStreamedBodyWithNoNewSessionRecordsTheReason,
   runAStoreChangedToTheRequestTokenRecordsTheReason,
   runAMeAnswerAppliesTheColourProfile,
+  runAMeAnswerAppliesTheDesignSystem,
   runRefreshScopeReplacesTheStoredScope,
   runTheRequestCarriesTheTokenItWasGiven,
 } from "./login.spec";
@@ -73,5 +74,9 @@ describe("F2.10 refreshScope", () => {
 describe("F4.310 the colour profile from /auth/me", () => {
   it("CP-M1 a /me answer sets data-profile; the default removes it", async () => {
     await runAMeAnswerAppliesTheColourProfile();
+  });
+
+  it("DS-M1 a /me answer sets data-design and bms.design; the default removes both", async () => {
+    await runAMeAnswerAppliesTheDesignSystem();
   });
 });

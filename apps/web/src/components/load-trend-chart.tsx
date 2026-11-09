@@ -6,6 +6,7 @@ import type { LoadTrendPoint } from "@bms/shared";
 
 import { useChartTheme } from "../lib/chart-theme";
 import { withAlpha } from "../lib/theme";
+import { chartType } from "../lib/design";
 
 type LoadTrendChartProps = {
   points: LoadTrendPoint[];
@@ -31,13 +32,13 @@ export function LoadTrendChart({ points, status, stale }: LoadTrendChartProps) {
       },
       xAxis: {
         type: "time",
-        axisLabel: { fontSize: 10 },
+        axisLabel: { fontSize: chartType()["3xs"] },
       },
       yAxis: {
         type: "value",
         name: "kW",
-        nameTextStyle: { fontSize: 10 },
-        axisLabel: { fontSize: 10 },
+        nameTextStyle: { fontSize: chartType()["3xs"] },
+        axisLabel: { fontSize: chartType()["3xs"] },
       },
       series: [
         {

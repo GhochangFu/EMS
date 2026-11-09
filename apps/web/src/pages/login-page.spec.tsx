@@ -14,9 +14,10 @@ import { LoginPage } from "./login-page";
  * replaces the logo image, the hero headline is the client's descriptor plus the old tail, and the
  * card, the role pill and the footer carry the new name.
  *
- * Assertions live here; `login-page.test.tsx` is the Vitest entry point (ADR 0014). The page
- * makes no request on mount, and `fetch` is stubbed to fail loudly so a spec never reaches a real
- * API on `:4000` (`F4.160`). Local auth mode is forced so the pill row renders.
+ * Assertions live here; `login-page.test.tsx` is the Vitest entry point (ADR 0014). The page's one
+ * request on mount is `F4.341`'s `GET /public/appearance`, whose failure it swallows; `fetch` is
+ * stubbed to fail loudly so a spec never reaches a real API on `:4000` (`F4.160`). Local auth mode
+ * is forced so the pill row renders.
  */
 
 function renderLogin(): void {
@@ -287,4 +288,38 @@ export async function aRawEnvelopeReadsAsItsSentence(): Promise<void> {
   fireEvent.click(screen.getByRole("button", { name: "Sign in securely" }));
   const alert = await screen.findByText("Invalid email or password");
   expect(alert.textContent).not.toContain('{"');
+}
+
+/**
+ * `F4.341` (ADR 0118 decision 12, Q5) — the sign-in page paints the portal default from
+ * `GET /public/appearance` (no token), caches it as `bms.portal-appearance`, and writes neither
+ * user cache: the portal value is never taken for the user's own.
+ */
+export async function paintsThePortalAppearance(): Promise<void> {
+  vi.spyOn(oidcApi, "isOidcEnabled").mockReturnValue(false);
+  const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+    Promise.resolve(
+      new Response(JSON.stringify({ designSystem: "swiss-grid", colourProfile: "forest" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/login"]}>
+        <LoginPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(document.documentElement.getAttribute("data-design")).toBe("swiss-grid"));
+  expect(document.documentElement.getAttribute("data-profile")).toBe("forest");
+  const [url, init] = fetchMock.mock.calls[0] ?? [];
+  expect(String(url).endsWith("/api/v1/public/appearance")).toBe(true);
+  expect(new Headers(init?.headers).get("Authorization")).toBeNull();
+  expect(JSON.parse(localStorage.getItem("bms.portal-appearance") ?? "null")).toEqual({ designSystem: "swiss-grid", colourProfile: "forest" });
+  expect(localStorage.getItem("bms.design")).toBeNull();
+  expect(localStorage.getItem("bms.profile")).toBeNull();
 }

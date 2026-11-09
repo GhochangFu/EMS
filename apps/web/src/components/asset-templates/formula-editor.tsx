@@ -105,7 +105,7 @@ export type FormulaEditorProps = FormulaEditorRules & {
  */
 export const CALC_THEME_SPEC = {
   "&": {
-    fontSize: "13px",
+    fontSize: "var(--text-xs)",
     border: "1px solid rgb(var(--line))",
     borderRadius: "0.25rem",
     backgroundColor: "rgb(var(--surface))",
@@ -114,7 +114,7 @@ export const CALC_THEME_SPEC = {
   "&.cm-focused": { outline: "2px solid rgb(var(--focus))", outlineOffset: "-1px" },
   ".cm-content": {
     fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-    padding: "0.5rem 0.75rem",
+    padding: "var(--space-2) var(--space-3)",
   },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "rgb(var(--ink))" },
   ".cm-selectionBackground": { background: "rgb(var(--info) / 0.15)" },

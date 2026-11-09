@@ -7,6 +7,7 @@ import { SURFACE_STORAGE_KEY } from "../apps/web/src/lib/surface";
 import { PROFILE_STORAGE_KEY, ROLE_NAMES, THEME_STORAGE_KEY } from "../apps/web/src/lib/theme";
 import { parseTokenBlocks } from "./support/colour-tokens";
 import { blankComments } from "./support/pending-button-scan";
+import { DESIGN_STORAGE_KEY, PORTAL_APPEARANCE_STORAGE_KEY } from "../apps/web/src/lib/design";
 import { repoRoot, walk } from "./support/source-scan";
 
 /**
@@ -19,8 +20,9 @@ import { repoRoot, walk } from "./support/source-scan";
  *  - **G2** `THEME_STORAGE_KEY` is a key the boot script in `apps/web/index.html` reads — the
  *    single-source check `F3.65a` D7 deferred to the row that adds a writer. `F3.71` (ADR 0085)
  *    added the surface key: G2b holds it. `F4.310` (ADR 0110 decision 4) added the colour profile
- *    and the persisted session it checks (`bms-auth`): G2d holds them, G2c that the script reads
- *    exactly those four.
+ *    and the persisted session it checks (`bms-auth`): G2d holds them. `F4.341` (ADR 0118
+ *    decision 12) added the design system and the cached portal default: G2e holds them, G2c that
+ *    the script reads exactly those six.
  *  - **G3** one resolver: no file under `apps/web/src` other than `lib/theme.ts` calls
  *    `getComputedStyle(document.documentElement)`. Comments are blanked first, so prose that names
  *    the call is not a call.
@@ -67,8 +69,14 @@ describe("F3.65c theme gates", () => {
     expect(bootScriptKeys()).toContain("bms-auth");
   });
 
-  it("G2c the boot script reads exactly four keys", () => {
-    expect(bootScriptKeys()).toHaveLength(4);
+  it("G2e DESIGN_STORAGE_KEY and PORTAL_APPEARANCE_STORAGE_KEY are keys the boot script reads", () => {
+    expect(bootScriptKeys()).toContain(DESIGN_STORAGE_KEY);
+    expect(bootScriptKeys()).toContain(PORTAL_APPEARANCE_STORAGE_KEY);
+  });
+
+  it("G2c the boot script reads exactly six keys", () => {
+    expect([...new Set(bootScriptKeys())]).toHaveLength(6);
+    expect(bootScriptKeys()).toHaveLength(6);
   });
 
   it("G3 only lib/theme.ts reads getComputedStyle(document.documentElement)", () => {

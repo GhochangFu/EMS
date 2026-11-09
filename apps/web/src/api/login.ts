@@ -2,7 +2,7 @@ import {
   currentUserResponseSchema,
   loginResponseSchema,
 } from "@bms/shared/contracts";
-import { colourProfileOrDefault } from "@bms/shared";
+import { colourProfileOrDefault, designSystemOrDefault } from "@bms/shared";
 import type { CurrentUserResponse, LoginResponse } from "@bms/shared";
 
 import { recordAuthFailureReason } from "./http";
@@ -70,10 +70,13 @@ export async function fetchCurrentUser(
     throw new Error(`Current user failed (${res.status})`);
   }
   const current = checkResponse(currentUserResponseSchema, await res.json(), "auth/me");
-  // F4.310 (ADR 0110 decision 4): every /me answer names the home organization's colour profile,
-  // and every reader of /me comes through here, so the page follows it from one place. An answer
-  // without the field (an older API in production, where drift only logs) reads as the default.
-  useThemeStore.getState().setProfile(colourProfileOrDefault(current.colourProfile));
+  // F4.310 (ADR 0110 decision 4) / F4.341 (ADR 0118 decision 8): every /me answer names the
+  // effective colour profile and design system, and every reader of /me comes through here, so the
+  // page follows them from one place. An answer without `appearance` (an older API in production,
+  // where drift only logs) reads as `colourProfile` and the default design system.
+  const appearance = (current as Partial<CurrentUserResponse>).appearance;
+  useThemeStore.getState().setProfile(colourProfileOrDefault(appearance?.colourProfile.value ?? current.colourProfile));
+  useThemeStore.getState().setDesign(designSystemOrDefault(appearance?.designSystem.value));
   return current;
 }
 

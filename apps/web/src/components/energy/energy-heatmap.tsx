@@ -8,6 +8,7 @@ import { useChartTheme } from "../../lib/chart-theme";
 import { colourMax, heatmapGrid } from "../../lib/energy-organization-views";
 import { withAlpha, type Roles } from "../../lib/theme";
 import type { EnergySectionStatus } from "./energy-stack-chart";
+import { chartType } from "../../lib/design";
 
 type Props = {
   cells: readonly EnergyHeatmapCell[];
@@ -36,8 +37,8 @@ function heatmapOption(cells: readonly EnergyHeatmapCell[], roles: Roles): EChar
         return `${grid.days[value[0]]} ${hourLabel(value[1])} · ${value[2].toFixed(1)} kWh`;
       },
     },
-    xAxis: { type: "category", data: grid.days, splitArea: { show: false }, axisLabel: { fontSize: 10 } },
-    yAxis: { type: "category", data: grid.hours.map(hourLabel), axisLabel: { fontSize: 10 } },
+    xAxis: { type: "category", data: grid.days, splitArea: { show: false }, axisLabel: { fontSize: chartType()["3xs"] } },
+    yAxis: { type: "category", data: grid.hours.map(hourLabel), axisLabel: { fontSize: chartType()["3xs"] } },
     visualMap: {
       type: "continuous",
       min: 0,

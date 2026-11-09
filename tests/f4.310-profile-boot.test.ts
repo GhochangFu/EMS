@@ -57,10 +57,13 @@ describe("F4.310: the boot script applies the cached colour profile (ADR 0110 de
     }
   });
 
-  it("PB2 no stored session (the sign-in page) sets nothing", () => {
+  // `F4.341` (ADR 0118 decision 12): with no session the script paints the cached *portal* default
+  // (`tests/f4.341-design-boot.test.ts` DB2), never `bms.profile`, the last user's.
+  it("PB2 no stored session (the sign-in page) never reads bms.profile", () => {
     expect(run({ "bms.profile": "ocean" })).toBeUndefined();
     expect(run({ "bms.profile": "ocean", "bms-auth": NO_TOKEN })).toBeUndefined();
     expect(run({ "bms.profile": "ocean", "bms-auth": "{not json" })).toBeUndefined();
+    expect(run({ "bms.profile": "ocean", "bms.portal-appearance": JSON.stringify({ designSystem: "nexus-soft", colourProfile: "sand" }) })).toBe("sand");
   });
 
   it("PB3 the default, an unknown name or no key sets nothing", () => {

@@ -1,7 +1,8 @@
 import { create } from "zustand";
 
-import type { ColourProfile } from "@bms/shared";
+import type { ColourProfile, DesignSystem } from "@bms/shared";
 
+import { DESIGN_STORAGE_KEY, readDocumentDesign } from "../lib/design";
 import {
   PROFILE_STORAGE_KEY,
   THEME_STORAGE_KEY,
@@ -31,9 +32,12 @@ type ThemeState = {
   /** `F4.310` — the home organization's colour profile (ADR 0110 decision 4); `nexus` by default. */
   profile: ColourProfile;
   setProfile: (profile: ColourProfile) => void;
+  /** `F4.341` — the effective design system (ADR 0118 decision 8); `nexus-soft` by default. */
+  design: DesignSystem;
+  setDesign: (design: DesignSystem) => void;
 };
 
-let cache: { theme: Theme; profile: ColourProfile; roles: Roles } | null = null;
+let cache: { theme: Theme; profile: ColourProfile; design: DesignSystem; roles: Roles } | null = null;
 
 /**
  * The roles of the theme `<html>` carries now, resolved once per theme. Throws when there is no
@@ -44,8 +48,11 @@ export function currentRoles(): Roles {
   if (typeof document === "undefined") throw new Error("theme roles need a document; there is none");
   const theme = readDocumentTheme();
   const profile = readDocumentProfile();
-  if (cache === null || cache.theme !== theme || cache.profile !== profile) {
-    cache = { theme, profile, roles: resolveRoles(readRoleFromDocument) };
+  // `F4.341` (ADR 0118 decision 4): keyed on the design system too. A design system sets no colour
+  // role, but a chart that re-reads its roles on a design change also re-reads its type tokens.
+  const design = readDocumentDesign();
+  if (cache === null || cache.theme !== theme || cache.profile !== profile || cache.design !== design) {
+    cache = { theme, profile, design, roles: resolveRoles(readRoleFromDocument) };
   }
   return cache.roles;
 }
@@ -81,7 +88,50 @@ export const useThemeStore = create<ThemeState>()((set) => ({
     }
     set({ profile });
   },
+  design: typeof document === "undefined" ? "nexus-soft" : readDocumentDesign(),
+  setDesign: (design) => {
+    // As `setProfile`: the attribute first, the default carries none, and no document moves the state only.
+    if (typeof document === "undefined") {
+      set({ design });
+      return;
+    }
+    applyDesignAttribute(design);
+    try {
+      if (design === "nexus-soft") localStorage.removeItem(DESIGN_STORAGE_KEY);
+      else localStorage.setItem(DESIGN_STORAGE_KEY, design);
+    } catch {
+      // The design holds for this page; the next `/auth/me` read sets it again.
+    }
+    set({ design });
+  },
 }));
+
+function applyDesignAttribute(design: DesignSystem): void {
+  if (design === "nexus-soft") document.documentElement.removeAttribute("data-design");
+  else document.documentElement.setAttribute("data-design", design);
+}
+
+/**
+ * `F4.341` (ADR 0118 decision 11) — the Appearance panel's live preview: paints the page in
+ * `design` without storing it; `null` puts the viewer's own design system back.
+ */
+export function previewDesign(design: DesignSystem | null): void {
+  if (typeof document === "undefined") return;
+  applyDesignAttribute(design ?? useThemeStore.getState().design);
+}
+
+/**
+ * `F4.341` (ADR 0118 decision 12) — sign-out: back to the default design system and no cached
+ * `bms.design`, so a shared control-room PC never keeps the last user's look.
+ */
+export function clearDesign(): void {
+  useThemeStore.getState().setDesign("nexus-soft");
+}
+
+/** `F4.341` — the effective design system; a component re-renders when it changes. */
+export function useDesignSystem(): DesignSystem {
+  return useThemeStore((s) => s.design);
+}
 
 /**
  * `F4.310` (ADR 0110 decision 8) — the chooser's live preview: paints the page in `profile` without
@@ -113,5 +163,6 @@ export function useTheme(): Theme {
 export function useThemeRoles(): Roles {
   useThemeStore((s) => s.theme);
   useThemeStore((s) => s.profile);
+  useThemeStore((s) => s.design);
   return currentRoles();
 }

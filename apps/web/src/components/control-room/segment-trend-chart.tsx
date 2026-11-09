@@ -8,6 +8,7 @@ import { assetLabelOf, type SegmentViewPeriodDto, type SegmentViewRankingEntryDt
 import { seriesPalette, useChartTheme } from "../../lib/chart-theme";
 import { compareSpanMs, historyHrefFor, segmentChartSeries } from "../../lib/site-trends";
 import { CHART_SERIES } from "../../lib/widget-catalog";
+import { chartType } from "../../lib/design";
 
 type Props = {
   ranking: readonly SegmentViewRankingEntryDto[];
@@ -45,8 +46,8 @@ export function SegmentTrendChart({ ranking, current, compare, unit, pointCode }
       legend: { show: false },
       grid: { left: 52, right: 20, top: 28, bottom: 28 },
       tooltip: { trigger: "axis" },
-      xAxis: { type: "time", axisLabel: { fontSize: 10 } },
-      yAxis: { type: "value", name: unit ?? "", nameTextStyle: { fontSize: 10 }, axisLabel: { fontSize: 10 } },
+      xAxis: { type: "time", axisLabel: { fontSize: chartType()["3xs"] } },
+      yAxis: { type: "value", name: unit ?? "", nameTextStyle: { fontSize: chartType()["3xs"] }, axisLabel: { fontSize: chartType()["3xs"] } },
       series,
     };
   }, [drawn, current, compare, unit, roles]);

@@ -8,6 +8,8 @@ import {
   c4TheThemePaletteIsTheSeriesPalette,
   c5EveryLeafIsARoleOrARoleWithAlpha,
   c5TheThemeHasStringLeavesToCheck,
+  c9TheTextIsInTheTypeTokens,
+  c10TheTypeTokensResolve,
   type ThemeName,
 } from "./chart-theme.spec";
 
@@ -39,5 +41,15 @@ describe.each<ThemeName>(["light", "dark"])("F3.65c ECharts theme (%s)", (name) 
 
   it("C5 the theme has string leaves to check (the scan is live)", () => {
     c5TheThemeHasStringLeavesToCheck(name);
+  });
+
+  it("C9 the theme's text is in the type tokens' font and size", () => {
+    c9TheTextIsInTheTypeTokens(name);
+  });
+});
+
+describe("F4.341 the chart type tokens", () => {
+  it("C10 resolveTypeTokens reads px and rem, prefers --font-body, and fails closed", () => {
+    c10TheTypeTokensResolve();
   });
 });
