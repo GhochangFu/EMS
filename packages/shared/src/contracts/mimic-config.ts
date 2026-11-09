@@ -80,6 +80,9 @@ export const mimicPresetConfigSchema = z.object({
   preset: mimicPresetSchema,
   tabKey: mimicTabKeySchema.optional(),
   compact: z.boolean().optional(),
+  // `F4.344` (ADR 0120 decision 5): the per-widget glyph motion switch. Absent or `true` is on,
+  // `false` is off; no migration — every stored widget reads as on.
+  motion: z.boolean().optional(),
 });
 
 /**
@@ -100,6 +103,8 @@ export const mimicLayoutConfigSchema = z.object({
   source: z.literal("layout"),
   layoutId: z.string().uuid().regex(/^[0-9a-f-]+$/, MIMIC_LAYOUT_ID_CASE_MESSAGE),
   tabKey: mimicTabKeySchema.optional(),
+  // `F4.344` (ADR 0120 decision 5): as on the preset arm — absent or `true` is on, `false` off.
+  motion: z.boolean().optional(),
 });
 
 /**

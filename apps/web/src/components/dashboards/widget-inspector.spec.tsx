@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 
@@ -477,6 +477,40 @@ export function theLayoutSourceHasNoCompactCheckbox(): void {
   row.config.mimicSource = "layout";
   renderInspector(row);
   expect(screen.queryByRole("checkbox", { name: /Compact/ })).toBeNull();
+}
+
+/** A mimic row on the layout arm. */
+function layoutMimicRow(): DashboardWidgetRow {
+  const row = blankDashboardWidgetRow("mimic");
+  row.config.mimicSource = "layout";
+  return row;
+}
+
+const GLYPH_MOTION = { name: /Glyph motion/ } as const;
+
+/** `F4.344` (ADR 0120 decision 5) — "Glyph motion" shows on both arms and is ticked by default. */
+export function theGlyphMotionCheckboxIsOnByDefaultOnBothArms(): void {
+  renderInspector(blankDashboardWidgetRow("mimic"));
+  expect((screen.getByRole("checkbox", GLYPH_MOTION) as HTMLInputElement).checked).toBe(true);
+  cleanup();
+  renderInspector(layoutMimicRow());
+  expect((screen.getByRole("checkbox", GLYPH_MOTION) as HTMLInputElement).checked).toBe(true);
+}
+
+/** `F4.344` — unticking "Glyph motion" writes `mimicMotion: false` into the config. */
+export async function untickingGlyphMotionWritesFalse(): Promise<void> {
+  const onChange = vi.fn();
+  renderInspector(blankDashboardWidgetRow("mimic"), { onChange });
+  await userEvent.click(screen.getByRole("checkbox", GLYPH_MOTION));
+  expect(onChange).toHaveBeenLastCalledWith({ config: expect.objectContaining({ mimicMotion: false }) });
+}
+
+/** `F4.344` — a stored `false` shows the box unticked. */
+export function aStoredFalseShowsUnticked(): void {
+  const row = layoutMimicRow();
+  row.config.mimicMotion = false;
+  renderInspector(row);
+  expect((screen.getByRole("checkbox", GLYPH_MOTION) as HTMLInputElement).checked).toBe(false);
 }
 
 /**

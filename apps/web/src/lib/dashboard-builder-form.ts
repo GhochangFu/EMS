@@ -325,13 +325,12 @@ export function configRowFromDto(widget: DashboardWidgetSpec): WidgetConfigRow {
         row.mimicSource = "preset";
         row.mimicPreset = widget.config.preset;
         // `F3.74` — `compact` is the preset arm's only; stored `false` and absent both read as unset.
-        if (widget.config.compact === true) {
-          row.mimicCompact = true;
-        }
+        if (widget.config.compact === true) row.mimicCompact = true;
       }
       if (widget.config.tabKey !== undefined) {
         row.mimicTabKey = widget.config.tabKey;
       }
+      if (widget.config.motion === false) row.mimicMotion = false; // F4.344: only a stored `false` is off.
       break;
     case "active_alarms_rail":
       // `F3.73` — the same edit-and-resave reason as the arms above: a field `buildActiveAlarmsRailConfig`

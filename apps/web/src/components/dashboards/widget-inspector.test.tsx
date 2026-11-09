@@ -32,6 +32,9 @@ import {
   aValueTileHasNoMimicTabSelect,
   choosingAMimicTabWritesItToTheConfig,
   theLayoutSourceHasNoCompactCheckbox,
+  theGlyphMotionCheckboxIsOnByDefaultOnBothArms,
+  untickingGlyphMotionWritesFalse,
+  aStoredFalseShowsUnticked,
   theMimicTabSelectListsOnlyGroupBoundTabs,
   tickingCompactWritesItToTheConfig,
   aModuleCardOnADashboardWithNoTabsIsDisabledWithAHint,
@@ -270,6 +273,15 @@ describe("F3.73 widget inspector — the site widgets", () => {
 
   it("F3.74: the layout source has no Compact checkbox", () => {
     theLayoutSourceHasNoCompactCheckbox();
+  });
+  it("F4.344 Glyph motion is on by default on both arms", () => {
+    theGlyphMotionCheckboxIsOnByDefaultOnBothArms();
+  });
+  it("F4.344 unticking Glyph motion writes mimicMotion false", async () => {
+    await untickingGlyphMotionWritesFalse();
+  });
+  it("F4.344 a stored false shows Glyph motion unticked", () => {
+    aStoredFalseShowsUnticked();
   });
 
   it("F4.305: a trend strip offers Whole site and each group-bound tab under Scope", () => {

@@ -94,3 +94,32 @@ export function mimicPresetVocabularyIsTheSevenDomainPresets(): void {
     `the preset vocabulary is ADR 0082's seven plus F3.74's lv_single_line and F4.319's three, water_train first, got ${JSON.stringify(mimicPresetSchema.options)}`,
   );
 }
+
+/**
+ * `F4.344` (ADR 0120 decision 5) — `motion` parses on both arms: `false`, `true` and absent all
+ * succeed and keep their value (absent or `true` is on; only `false` is off; no migration).
+ */
+export function motionParsesOnBothArms(): void {
+  const arms = [
+    { source: "preset", preset: "water_train" },
+    { source: "layout", layoutId: LAYOUT_ID },
+  ] as const;
+  for (const arm of arms) {
+    for (const motion of [false, true, undefined]) {
+      const input = motion === undefined ? { ...arm } : { ...arm, motion };
+      const result = mimicConfigSchema.safeParse(input);
+      assert(result.success, `${arm.source} with motion ${String(motion)} must parse, got ${issuesOf(result)}`);
+      const parsed = result.success ? (result.data as { motion?: boolean }) : {};
+      assert(parsed.motion === motion, `${arm.source}: motion ${String(motion)} must be kept, got ${String(parsed.motion)}`);
+    }
+  }
+}
+
+/** `F4.344` — `motion` is a boolean on both arms: `"off"` is refused at `["motion"]`. */
+export function motionRefusesANonBoolean(): void {
+  for (const arm of [{ source: "preset", preset: "water_train" }, { source: "layout", layoutId: LAYOUT_ID }]) {
+    const result = mimicConfigSchema.safeParse({ ...arm, motion: "off" });
+    const paths = result.success ? [] : result.error.issues.map((i) => JSON.stringify(i.path));
+    assert(!result.success && paths.includes(JSON.stringify(["motion"])), `${arm.source}: motion "off" must be refused at ["motion"], got ${issuesOf(result)}`);
+  }
+}

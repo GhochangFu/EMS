@@ -387,6 +387,18 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
         </label>
       ) : null}
 
+      {/* F4.344 (ADR 0120 decision 5): both arms; absent and `true` are on, so unset reads ticked. */}
+      {row.widgetType === "mimic" ? (
+        <label className="flex items-center gap-2 text-xs text-ink">
+          <input
+            type="checkbox"
+            checked={row.config.mimicMotion ?? true}
+            onChange={(event) => updateConfig({ mimicMotion: event.target.checked })}
+          />
+          Glyph motion — animate units by state
+        </label>
+      ) : null}
+
       {row.widgetType === "active_alarms_rail" ? (
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Rows" error={problemFor("railRows")}>
