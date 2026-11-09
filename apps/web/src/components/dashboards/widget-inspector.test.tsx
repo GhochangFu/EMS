@@ -35,6 +35,9 @@ import {
   theGlyphMotionCheckboxIsOnByDefaultOnBothArms,
   untickingGlyphMotionWritesFalse,
   aStoredFalseShowsUnticked,
+  theGlyphSetSelectIsCoreByDefaultOnBothArms,
+  choosingIsometricWritesIso,
+  aNonMimicRowHasNoGlyphSet,
   theMimicTabSelectListsOnlyGroupBoundTabs,
   tickingCompactWritesItToTheConfig,
   aModuleCardOnADashboardWithNoTabsIsDisabledWithAHint,
@@ -282,6 +285,15 @@ describe("F3.73 widget inspector — the site widgets", () => {
   });
   it("F4.344 a stored false shows Glyph motion unticked", () => {
     aStoredFalseShowsUnticked();
+  });
+  it("F4.345 Glyph set offers Core and Isometric on both arms, Core by default", () => {
+    theGlyphSetSelectIsCoreByDefaultOnBothArms();
+  });
+  it("F4.345 choosing Isometric writes iso, choosing Core writes it unset", async () => {
+    await choosingIsometricWritesIso();
+  });
+  it("F4.345 a non-mimic row has no Glyph set select", () => {
+    aNonMimicRowHasNoGlyphSet();
   });
 
   it("F4.305: a trend strip offers Whole site and each group-bound tab under Scope", () => {

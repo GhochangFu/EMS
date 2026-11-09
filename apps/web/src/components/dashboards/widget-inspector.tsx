@@ -399,6 +399,21 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
         </label>
       ) : null}
 
+      {/* F4.345 (ADR 0121 decision 5): both arms; Core writes the field absent (ruling 3). */}
+      {row.widgetType === "mimic" ? (
+        <Field label="Glyph set">
+          <select
+            aria-label="Glyph set"
+            value={row.config.mimicGlyphSet ?? "core"}
+            onChange={(event) => updateConfig({ mimicGlyphSet: event.target.value === "iso" ? "iso" : undefined })}
+            className="surface-field w-full px-2 py-1.5 text-xs"
+          >
+            <option value="core">Core</option>
+            <option value="iso">Isometric</option>
+          </select>
+        </Field>
+      ) : null}
+
       {row.widgetType === "active_alarms_rail" ? (
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Rows" error={problemFor("railRows")}>
