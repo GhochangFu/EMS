@@ -190,7 +190,7 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
 
       <div className="flex flex-wrap gap-4">
         <div className="w-48 shrink-0 space-y-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+          <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
             Views
           </span>
           {rows.length === 0 ? (
@@ -278,7 +278,7 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
           >
             {saveM.isPending ? "Saving…" : "Save dashboards"}
           </button>
-          <span className="text-[11px] text-ink-muted">
+          <span className="text-2xs text-ink-muted">
             {blockedKeys.length > 0
               ? "Blocked by unwritable content."
               : problems.length > 0

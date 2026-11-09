@@ -167,7 +167,7 @@ export function InstantiateWizard({
     return (
       <>
         {patternsWithVariables.length > 0 ? (
-          <p className="text-[11px] text-ink-muted">
+          <p className="text-2xs text-ink-muted">
             Pattern{patternsWithVariables.length > 1 ? "s" : ""} {patternsWithVariables.join(", ")} carry a variable —
             fill one value per asset below.
           </p>
@@ -239,7 +239,7 @@ export function InstantiateWizard({
           </>
         ) : (
           <>
-            <p className="text-[11px] text-ink-muted">
+            <p className="text-2xs text-ink-muted">
               Each asset is built with all {template.points.length} of this template&apos;s points. The whole batch
               succeeds or none of it does.
             </p>

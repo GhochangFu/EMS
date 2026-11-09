@@ -52,7 +52,7 @@ const GROUP_ORDER: readonly Group[] = ["operator", "reference", "function", "sco
 export function FormulaHelp({ dialect, disabled, onInsert }: Props) {
   const entries = formulaHelpEntries(dialect);
   return (
-    <details className="mt-1 text-[11px] text-ink-muted sm:col-span-2">
+    <details className="mt-1 text-2xs text-ink-muted sm:col-span-2">
       <summary className="cursor-pointer select-none font-semibold">Formula help</summary>
       {GROUP_ORDER.map((group) => {
         const inGroup = entries.filter((entry) => entry.group === group);

@@ -198,11 +198,11 @@ function CompressorCell({
       <text
         x={bx + 24}
         y={by + 10}
-        className={`font-mono text-[10px] font-bold ${toneTextClass}`}
+        className={`font-mono text-3xs font-bold ${toneTextClass}`}
       >
         {label}
       </text>
-      <text x={bx + 24} y={by + 24} className={`font-mono text-[9px] ${toneTextClass}`}>
+      <text fontSize={9} x={bx + 24} y={by + 24} className={`font-mono ${toneTextClass}`}>
         {mode}
       </text>
     </g>
@@ -254,7 +254,7 @@ function ZoneTile({
         x={x + 50}
         y={372}
         textAnchor="middle"
-        className={`font-mono text-[10px] font-bold ${toneTextClass}`}
+        className={`font-mono text-3xs font-bold ${toneTextClass}`}
       >
         {zoneLabel}
       </text>
@@ -350,7 +350,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           x={160}
           y={148}
           textAnchor="middle"
-          className="font-mono text-[10px] font-semibold fill-info-ink"
+          className="font-mono text-3xs font-semibold fill-info-ink"
         >
           RET AIR · {cToF(primary.slice.returnAirTempC).replace("°F", "F")}
         </text>
@@ -364,10 +364,11 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           strokeWidth={1}
         />
         <text
+          fontSize={9}
           x={160}
           y={184}
           textAnchor="middle"
-          className="font-mono text-[9px] fill-warning-ink"
+          className="font-mono fill-warning-ink"
         >
           FILTERS · MERV 13
         </text>
@@ -384,15 +385,16 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           x={160}
           y={220}
           textAnchor="middle"
-          className="font-mono text-[10px] font-semibold fill-info-ink"
+          className="font-mono text-3xs font-semibold fill-info-ink"
         >
           COOLING COIL
         </text>
         <text
+          fontSize={9}
           x={160}
           y={234}
           textAnchor="middle"
-          className="font-mono text-[9px] fill-info-ink"
+          className="font-mono fill-info-ink"
         >
           {chwSupF.replace("°F", "F")} supply
         </text>
@@ -417,7 +419,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           x={160}
           y={362}
           textAnchor="middle"
-          className="fill-ink font-mono text-[10px] font-semibold"
+          className="fill-ink font-mono text-3xs font-semibold"
         >
           EC FAN ·{" "}
           {primary.slice.fanSpeedPct != null
@@ -438,7 +440,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           x={160}
           y={386}
           textAnchor="middle"
-          className={`font-mono text-[10px] font-semibold ${pTextTone}`}
+          className={`font-mono text-3xs font-semibold ${pTextTone}`}
         >
           SUP AIR · {cToF(primary.slice.supplyAirTempC).replace("°F", "F")}
         </text>
@@ -457,7 +459,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={325}
         y={143}
         textAnchor="middle"
-        className="fill-ink font-mono text-[10px] font-bold"
+        className="fill-ink font-mono text-3xs font-bold"
       >
         COMPRESSOR BANK
       </text>
@@ -478,7 +480,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           } as CSSProperties
         }
       />
-      <text x={380} y={222} className="font-mono text-[10px] fill-info-ink">
+      <text x={380} y={222} className="font-mono text-3xs fill-info-ink">
         CHILLED {cToF(plant.avgChwSupC).replace("°F", "F")} · {flowGpm} →
       </text>
 
@@ -494,7 +496,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           } as CSSProperties
         }
       />
-      <text x={380} y={262} className="font-mono text-[10px] fill-warning-ink">
+      <text x={380} y={262} className="font-mono text-3xs fill-warning-ink">
         ← RETURN {cToF(plant.avgChwRetC).replace("°F", "F")}
       </text>
 
@@ -512,15 +514,16 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={760}
         y={142}
         textAnchor="middle"
-        className="fill-info-ink font-condensed text-[13px] font-bold"
+        className="fill-info-ink font-condensed text-xs font-bold"
       >
         CHILLER CHL-01
       </text>
       <text
+        fontSize={9}
         x={760}
         y={158}
         textAnchor="middle"
-        className="font-mono text-[9px] fill-info-ink"
+        className="font-mono fill-info-ink"
       >
         800 kW · plant avg
       </text>
@@ -529,7 +532,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={760}
         y={186}
         textAnchor="middle"
-        className="font-mono text-[10px] font-semibold fill-ok-strong"
+        className="font-mono text-3xs font-semibold fill-ok-strong"
       >
         Load {chillerLoadPct ?? "—"}% · {plant.avgCoolingKw != null ? `${plant.avgCoolingKw.toFixed(0)} kW` : "—"}{" "}
         · COP 5.8
@@ -539,7 +542,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={930}
         y={142}
         textAnchor="middle"
-        className="fill-ink font-condensed text-[11px] font-bold"
+        className="fill-ink font-condensed text-2xs font-bold"
       >
         PRIMARY PUMPS
       </text>
@@ -568,15 +571,16 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={905}
         y={215}
         textAnchor="middle"
-        className="font-mono text-[10px] font-bold fill-ok"
+        className="font-mono text-3xs font-bold fill-ok"
       >
         PMP-A1
       </text>
       <text
+        fontSize={9}
         x={905}
         y={227}
         textAnchor="middle"
-        className="font-mono text-[9px] fill-ok"
+        className="font-mono fill-ok"
       >
         {pumpRun ? "ON" : "—"} · {plant.avgFlowLps != null ? `${Math.round((plant.avgFlowLps / 5.5) * 100)}%` : "—"}
       </text>
@@ -594,15 +598,16 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={970}
         y={215}
         textAnchor="middle"
-        className="font-mono text-[10px] font-bold fill-ink-muted"
+        className="font-mono text-3xs font-bold fill-ink-muted"
       >
         PMP-A2
       </text>
       <text
+        fontSize={9}
         x={970}
         y={227}
         textAnchor="middle"
-        className="font-mono text-[9px] fill-ink-muted"
+        className="font-mono fill-ink-muted"
       >
         STBY
       </text>
@@ -642,10 +647,11 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         />
       </g>
       <text
+        fontSize={9}
         x={760}
         y={313}
         textAnchor="middle"
-        className="font-mono text-[9px] fill-info-ink"
+        className="font-mono fill-info-ink"
       >
         CT-01 · {cToF(plant.avgChwRetC != null ? plant.avgChwRetC + 18 : null).replace("°F", "F")}{" "}
         inlet

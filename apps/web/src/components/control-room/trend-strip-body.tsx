@@ -97,7 +97,7 @@ function PointRow({
       <div className="flex items-baseline gap-2">
         <span className="text-xs font-semibold text-ink">{point.name}</span>
         {point.unit !== null ? (
-          <span data-role="point-unit" className="text-[11px] text-ink-muted">
+          <span data-role="point-unit" className="text-2xs text-ink-muted">
             {point.unit}
           </span>
         ) : null}
@@ -122,7 +122,7 @@ function PointRow({
               >
                 <Sparkline buckets={asset.buckets} label={`${label} ${point.name}`} stroke={stroke} drawStyle={drawStyle} />
               </Link>
-              <span className="flex justify-between gap-2 text-[11px]">
+              <span className="flex justify-between gap-2 text-2xs">
                 <span data-role="asset-label" className="min-w-0 break-words font-semibold text-ink-muted">
                   {code}
                   {where === null ? null : <span className="font-normal">{`${ASSET_LABEL_SEPARATOR}${where}`}</span>}
@@ -272,7 +272,7 @@ export function TrendStripBody({
       ) : (
         <>
           {query.isError ? (
-            <p role="alert" className="text-[11px] text-critical">
+            <p role="alert" className="text-2xs text-critical">
               Could not refresh the trend strip; showing the last read.
             </p>
           ) : null}
@@ -291,9 +291,9 @@ export function TrendStripBody({
             ))
           )}
           {strip.trimmed ? (
-            <p className="text-[11px] text-ink-muted">{trimLine(strip)}</p>
+            <p className="text-2xs text-ink-muted">{trimLine(strip)}</p>
           ) : null}
-          <p className="text-[11px] text-ink-muted">
+          <p className="text-2xs text-ink-muted">
             {`Window: ${stripWindowLabel(strip.from, strip.to, strip.bucketSeconds, strip.timeZone)}`}
           </p>
         </>

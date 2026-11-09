@@ -191,7 +191,7 @@ export function DuplicateDashboardDialog({
     >
       <h2 className="text-sm font-semibold text-ink">Duplicate dashboard</h2>
 
-      <p className="rounded border border-warning-line bg-warning-wash p-2 text-[11px] text-warning-ink">
+      <p className="rounded border border-warning-line bg-warning-wash p-2 text-2xs text-warning-ink">
         This copy keeps every point binding from the source dashboard. If you place it in a
         different location, retarget each binding manually afterwards — duplicating does not move
         or re-map them.
@@ -238,7 +238,7 @@ export function DuplicateDashboardDialog({
           />
 
           {droppedMimics > 0 ? (
-            <p role="status" className="rounded border border-warning-line bg-warning-wash p-2 text-[11px] text-warning-ink">
+            <p role="status" className="rounded border border-warning-line bg-warning-wash p-2 text-2xs text-warning-ink">
               {droppedMimics} mimic widget{droppedMimics === 1 ? "" : "s"} dropped: their tab&rsquo;s
               asset group belongs to the source location, so the copy keeps that tab as a plain canvas.
             </p>

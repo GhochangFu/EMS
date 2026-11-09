@@ -86,7 +86,7 @@ export function PointPicker({ role, organizationId, onAdd }: PointPickerProps) {
 
   if (organizationId === "") {
     return (
-      <p className="text-[11px] text-ink-muted">Choose the dashboard's scope before binding points.</p>
+      <p className="text-2xs text-ink-muted">Choose the dashboard's scope before binding points.</p>
     );
   }
 

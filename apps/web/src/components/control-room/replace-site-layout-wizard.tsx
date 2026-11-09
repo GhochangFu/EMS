@@ -155,7 +155,7 @@ export function ReplaceSiteLayoutWizard({ locationId, siteName }: ReplaceSiteLay
           Template: {templateId === null ? `the newest published version, ${target}` : target}.
         </p>
         {ambiguous === null ? (
-          <p className="text-[11px] text-ink-muted">
+          <p className="text-2xs text-ink-muted">
             Each tab keeps the asset group the copy bound. A new tab is matched to the site&apos;s asset groups; if more
             than one fits, you choose here after Submit.
           </p>

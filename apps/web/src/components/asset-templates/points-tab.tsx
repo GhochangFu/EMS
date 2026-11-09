@@ -146,7 +146,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
 
       <div className="surface-table overflow-x-auto">
         <table className="w-full min-w-[64rem] text-left text-xs">
-          <thead className="text-[11px] uppercase tracking-wide text-ink-muted">
+          <thead className="text-2xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th className="py-1 pr-2">Point key</th>
               <th className="py-1 pr-2">Label</th>
@@ -478,7 +478,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
           >
             {saveM.isPending ? "Saving…" : "Save points"}
           </button>
-          <span className="text-[11px] text-ink-muted">
+          <span className="text-2xs text-ink-muted">
             {problems.length > 0
               ? "Fix the problems above to save."
               : changed

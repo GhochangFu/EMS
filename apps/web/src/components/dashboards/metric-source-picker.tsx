@@ -74,7 +74,7 @@ export function MetricSourcePicker({ widgetType, bound, onAdd }: MetricSourcePic
           </option>
         ))}
       </select>
-      <p className="text-[11px] leading-snug text-ink-muted">
+      <p className="text-2xs leading-snug text-ink-muted">
         A named metric is counted across this dashboard&rsquo;s own scope, not the whole
         organization.
       </p>

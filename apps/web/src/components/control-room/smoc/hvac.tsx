@@ -344,7 +344,7 @@ function HvacUnitCard({
           </h2>
           <p className="text-xs text-ink-muted">{running == null ? STALE_VALUE : running ? "cooling" : "idle"} · {unit.code}</p>
         </div>
-        <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
+        <span className={`surface-pill rounded-full border px-2 py-0.5 text-2xs font-semibold ${statusPillClass(unit.state.status)}`}>
           {statusLabel(unit.state.status)}
         </span>
       </div>
@@ -410,25 +410,25 @@ function HvacDiagram({
         </marker>
       </defs>
       <rect x="40" y="60" width="200" height="80" rx="8" className={unitBoxClass(status)} />
-      <text x="140" y="86" textAnchor="middle" className="fill-ink font-condensed text-[13px] font-bold">INDOOR UNIT</text>
-      <text x="140" y="102" textAnchor="middle" className="fill-ink-muted font-mono text-[10px]">{label} · 4 TR</text>
+      <text x="140" y="86" textAnchor="middle" className="fill-ink font-condensed text-xs font-bold">INDOOR UNIT</text>
+      <text x="140" y="102" textAnchor="middle" className="fill-ink-muted font-mono text-3xs">{label} · 4 TR</text>
       <circle cx="100" cy="120" r="14" fill="none" className={airStrokeClass} strokeWidth="1.6" />
       <line x1="86" y1="120" x2="114" y2="120" className={airStrokeClass} strokeWidth="1.6" />
       <line x1="100" y1="106" x2="100" y2="134" className={airStrokeClass} strokeWidth="1.6" />
-      <text x="100" y="160" textAnchor="middle" className="fill-ink-muted font-mono text-[9px]">FAN {n(freshValue(slice.fanSpeedPct, status === "offline"), 0)}%</text>
+      <text fontSize={9} x="100" y="160" textAnchor="middle" className="fill-ink-muted font-mono ">FAN {n(freshValue(slice.fanSpeedPct, status === "offline"), 0)}%</text>
       <rect x="160" y="106" width="60" height="28" rx="4" className={status === "offline" ? "fill-line stroke-ink-hint" : slice.compressorOk === 0 ? "fill-critical-wash-strong stroke-critical" : "fill-ok-wash stroke-ok"} />
-      <text x="190" y="124" textAnchor="middle" className="fill-ok font-mono text-[10px] font-bold">COMP</text>
+      <text x="190" y="124" textAnchor="middle" className="fill-ok font-mono text-3xs font-bold">COMP</text>
       <line x1="240" y1="80" x2="320" y2="80" className="stroke-warning" strokeWidth="3" markerEnd={`url(#airArrow-${label})`} strokeDasharray={running ? "0" : "4 3"} />
-      <text x="280" y="74" textAnchor="middle" className="fill-warning font-mono text-[9px]">RETURN {n(freshValue(slice.returnAirTempC, status === "offline"), 1)}C</text>
+      <text fontSize={9} x="280" y="74" textAnchor="middle" className="fill-warning font-mono ">RETURN {n(freshValue(slice.returnAirTempC, status === "offline"), 1)}C</text>
       <line x1="320" y1="120" x2="240" y2="120" className={airStrokeClass} strokeWidth="3" markerEnd={`url(#airArrow-${label})`} strokeDasharray={running ? "0" : "4 3"} />
-      <text x="280" y="138" textAnchor="middle" className="fill-info font-mono text-[9px]">SUPPLY {n(freshValue(slice.supplyAirTempC, status === "offline"), 1)}C</text>
+      <text fontSize={9} x="280" y="138" textAnchor="middle" className="fill-info font-mono ">SUPPLY {n(freshValue(slice.supplyAirTempC, status === "offline"), 1)}C</text>
       <rect x="320" y="60" width="240" height="80" rx="8" className="fill-well stroke-line-strong" strokeDasharray="4 3" strokeWidth="1.4" />
-      <text x="440" y="92" textAnchor="middle" className="fill-ink font-condensed text-[14px] font-bold">CONTROL ROOM</text>
+      <text x="440" y="92" textAnchor="middle" className="fill-ink font-condensed text-sm font-bold">CONTROL ROOM</text>
       {/* The same setpoint as the `Setpoint` metric below, inside the diagram.
           Found on the deployed page — a census that reads component props
           misses literals sitting in SVG text nodes. */}
-      <text x="440" y="110" textAnchor="middle" className="fill-ink-muted font-mono text-[10px]"><StaticTspan kind="configuration">setpoint 22.0C</StaticTspan></text>
-      <text x="440" y="124" textAnchor="middle" className="fill-ink-muted font-mono text-[10px]">racks + operators</text>
+      <text x="440" y="110" textAnchor="middle" className="fill-ink-muted font-mono text-3xs"><StaticTspan kind="configuration">setpoint 22.0C</StaticTspan></text>
+      <text x="440" y="124" textAnchor="middle" className="fill-ink-muted font-mono text-3xs">racks + operators</text>
     </svg>
   );
 }
@@ -457,7 +457,7 @@ function Metric({
     tone === "critical" ? "text-critical-ink" : tone === "warning" ? "text-warning-ink" : "text-ink";
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">{label}</div>
+      <div className="text-3xs font-semibold uppercase tracking-wide text-ink-muted">{label}</div>
       <div className={`font-condensed text-2xl font-bold ${color}`}>
         {value}
         <span className="ml-1 text-sm font-normal text-ink-muted">{unit}</span>

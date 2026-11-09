@@ -428,7 +428,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             </div>
 
             <label className="mt-3 block space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+              <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                 Grammar
               </span>
               <select
@@ -471,7 +471,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             />
 
             <label className="mt-3 block space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+              <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                 Expression
               </span>
               <FormulaEditorLazy
@@ -490,13 +490,13 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
 
             {/* Decision 9: no error under an unvalidated expression. */}
             {validated && live.state === "error" ? (
-              <p className="mt-1 text-[11px] text-critical-ink">{live.diagnostics[0].message}</p>
+              <p className="mt-1 text-2xs text-critical-ink">{live.diagnostics[0].message}</p>
             ) : null}
             {problemFor("expression") ? (
-              <p className="mt-1 text-[11px] text-critical-ink">{problemFor("expression")}</p>
+              <p className="mt-1 text-2xs text-critical-ink">{problemFor("expression")}</p>
             ) : null}
             {validationErrors[index] ? (
-              <p className="mt-1 text-[11px] text-critical-ink">{validationErrors[index]}</p>
+              <p className="mt-1 text-2xs text-critical-ink">{validationErrors[index]}</p>
             ) : null}
             {/* Decision 9 again: an unvalidated expression shows no preview —
                 it is free text the parser has never met, and the panel would
@@ -508,7 +508,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             ) : null}
 
             <div className="mt-2 flex flex-wrap items-center gap-3">
-              <span className="text-[11px] text-ink-muted">
+              <span className="text-2xs text-ink-muted">
                 {validated
                   ? `Checked · reads ${keys.join(", ") || "nothing"}`
                   : "Not checked — this expression is stored as written."}
@@ -573,7 +573,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
                 </select>
               </Field>
             ) : problemFor("pointKeys") ? (
-              <p className="mt-1 text-[11px] text-critical-ink">{problemFor("pointKeys")}</p>
+              <p className="mt-1 text-2xs text-critical-ink">{problemFor("pointKeys")}</p>
             ) : null}
           </section>
         );
@@ -598,7 +598,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
           >
             {saveM.isPending ? "Saving…" : "Save KPIs"}
           </button>
-          <span className="text-[11px] text-ink-muted">
+          <span className="text-2xs text-ink-muted">
             {blockedKeys.length > 0
               ? "Blocked by unwritable content."
               : problems.length > 0

@@ -55,10 +55,10 @@ export function TableColumnPicker({ catalogKey, chosen, onChange }: TableColumnP
 
   return (
     <div className="space-y-1.5 rounded border border-dashed border-line-strong p-2">
-      <p className="text-[11px] font-medium text-ink-muted">Columns</p>
+      <p className="text-2xs font-medium text-ink-muted">Columns</p>
 
       {chosen.length === 0 ? (
-        <p className="text-[11px] leading-snug text-ink-muted">
+        <p className="text-2xs leading-snug text-ink-muted">
           Showing every column. Tick one or more to narrow the card.
         </p>
       ) : (

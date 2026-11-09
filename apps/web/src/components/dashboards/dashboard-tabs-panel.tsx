@@ -212,7 +212,7 @@ function TabKeyField({ n, value, onCommit }: { n: number; value: string; onCommi
         className="surface-field w-full px-2 py-1.5 font-mono"
       />
       {taken !== null ? (
-        <span className="block text-[11px] text-critical-ink">Another tab already uses the key "{taken}".</span>
+        <span className="block text-2xs text-critical-ink">Another tab already uses the key "{taken}".</span>
       ) : null}
     </div>
   );

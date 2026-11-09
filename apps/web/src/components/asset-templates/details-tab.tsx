@@ -239,7 +239,7 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
           >
             {saveM.isPending ? "Saving…" : "Save details"}
           </button>
-          <span className="text-[11px] text-ink-muted">
+          <span className="text-2xs text-ink-muted">
             {blocked
               ? "Fix the fields above to save."
               : patch

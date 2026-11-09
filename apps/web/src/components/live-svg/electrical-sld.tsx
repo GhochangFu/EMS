@@ -126,7 +126,7 @@ function TxPole({
         x={labelX}
         y={30}
         textAnchor="middle"
-        className="fill-ink font-condensed text-[13px] font-bold"
+        className="fill-ink font-condensed text-xs font-bold"
       >
         UTILITY 11kV
       </text>
@@ -156,15 +156,16 @@ function TxPole({
         x={labelX}
         y={138}
         textAnchor="middle"
-        className="font-mono text-[10px] fill-ink"
+        className="font-mono text-3xs fill-ink"
       >
         {labelLine1}
       </text>
       <text
+        fontSize={9}
         x={labelX}
         y={150}
         textAnchor="middle"
-        className={`font-mono text-[9px] ${FILL_LABEL_MUTED}`}
+        className={`font-mono ${FILL_LABEL_MUTED}`}
       >
         11kV/415V · {loadPct}% load
       </text>
@@ -294,15 +295,16 @@ function FeederBranch({
         x={x}
         y={368}
         textAnchor="middle"
-        className={`font-mono text-[10px] font-bold ${fillClass}`}
+        className={`font-mono text-3xs font-bold ${fillClass}`}
       >
         {feederCode}
       </text>
       <text
+        fontSize={9}
         x={x}
         y={382}
         textAnchor="middle"
-        className={`font-mono text-[9px] ${fillClass}`}
+        className={`font-mono ${fillClass}`}
       >
         {loadLabel}
       </text>
@@ -310,7 +312,7 @@ function FeederBranch({
         x={x}
         y={397}
         textAnchor="middle"
-        className={`font-condensed text-[11px] font-bold ${fillClass}`}
+        className={`font-condensed text-2xs font-bold ${fillClass}`}
       >
         {fmtKw(slice.kw)}
       </text>
@@ -380,7 +382,7 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
         x={450}
         y={192}
         textAnchor="middle"
-        className="fill-ok-strong font-condensed text-[13px] font-bold"
+        className="fill-ok-strong font-condensed text-xs font-bold"
       >
         MAIN LV BUS · 415 V · {busMw} MW{staleNote}
       </text>
@@ -408,15 +410,16 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
           x={470}
           y={170}
           textAnchor="middle"
-          className={`font-mono text-[10px] font-bold ${FILL_LABEL_MUTED}`}
+          className={`font-mono text-3xs font-bold ${FILL_LABEL_MUTED}`}
         >
           DG-01/02
         </text>
         <text
+          fontSize={9}
           x={470}
           y={183}
           textAnchor="middle"
-          className={`font-mono text-[9px] ${FILL_LABEL_MUTED}`}
+          className={`font-mono ${FILL_LABEL_MUTED}`}
         >
           2x1.5MVA STBY
         </text>
@@ -463,15 +466,16 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
           x={290}
           y={170}
           textAnchor="middle"
-          className="font-mono text-[10px] font-bold fill-ok-strong"
+          className="font-mono text-3xs font-bold fill-ok-strong"
         >
           UPS-500 BANK
         </text>
         <text
+          fontSize={9}
           x={290}
           y={183}
           textAnchor="middle"
-          className="font-mono text-[9px] fill-ok-strong"
+          className="font-mono fill-ok-strong"
         >
           2,100 kVA · {upsLoadPct(ups.slice.kw)}%
         </text>
@@ -495,10 +499,10 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
 
       <g transform="translate(20 430)">
         <rect width={860} height={40} className="fill-well stroke-line-strong" rx={4} />
-        <text x={20} y={18} className={`font-mono text-[10px] ${FILL_LABEL_MUTED}`}>
+        <text x={20} y={18} className={`font-mono text-3xs ${FILL_LABEL_MUTED}`}>
           Total feeders from live telemetry · Main bus {busMw} MW{staleNote} · PUE indicative 1.42 · N+1
         </text>
-        <text x={20} y={32} className="font-mono text-[9px] fill-ink-faint">
+        <text fontSize={9} x={20} y={32} className="font-mono fill-ink-faint">
           Animated dashes show power flow; grey indicates stale or offline points (stop sim to
           verify).
         </text>

@@ -364,7 +364,7 @@ export function ControlRoomEnvContent() {
             <div key={zone.code} className={`rounded border p-3 ${tileClass(zone.state.status)}`}>
               <div className="flex items-start justify-between gap-2">
                 <h3 className="font-semibold text-ink">{zone.zone}</h3>
-                <span className={`surface-pill rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusPillClass(zone.state.status)}`}>
+                <span className={`surface-pill rounded-full border px-2 py-0.5 text-3xs font-semibold ${statusPillClass(zone.state.status)}`}>
                   {statusLabel(zone.state.status)}
                 </span>
               </div>
@@ -434,7 +434,7 @@ export function ControlRoomEnvContent() {
 function Metric({ label, value, unit }: { label: string; value: string; unit: string }) {
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+      <div className="text-3xs font-semibold uppercase tracking-wide text-ink-muted">
         {label}
       </div>
       <div className="font-condensed text-2xl font-bold text-ink">
@@ -472,7 +472,7 @@ function SensorTable({
                 <td className="px-4 py-3 font-semibold text-ink">{row.id}</td>
                 <td className="px-4 py-3">{row.location}</td>
                 <td className="px-4 py-3">
-                  <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(row.status)}`}>
+                  <span className={`surface-pill rounded-full border px-2 py-0.5 text-2xs font-semibold ${statusPillClass(row.status)}`}>
                     {row.state}
                   </span>
                 </td>
@@ -498,19 +498,19 @@ function FloorPlan({
     <svg className="h-auto w-full" viewBox="0 0 700 320">
       <rect x="20" y="20" width="660" height="280" rx="6" className="fill-surface stroke-neutral-ink" strokeWidth="1.6" />
       <rect x="60" y="50" width="220" height="120" rx="4" className="fill-info-wash stroke-info" />
-      <text x="170" y="76" textAnchor="middle" className="fill-info-ink font-condensed text-[13px] font-semibold">OPERATOR CONSOLE</text>
+      <text x="170" y="76" textAnchor="middle" className="fill-info-ink font-condensed text-xs font-semibold">OPERATOR CONSOLE</text>
       <rect x="300" y="50" width="180" height="60" rx="4" className="fill-warning-wash-strong stroke-warning" />
-      <text x="390" y="84" textAnchor="middle" className="fill-warning-ink font-condensed text-[13px] font-semibold">VIDEOWALL</text>
+      <text x="390" y="84" textAnchor="middle" className="fill-warning-ink font-condensed text-xs font-semibold">VIDEOWALL</text>
       <rect x="500" y="50" width="160" height="220" rx="4" className="fill-info-wash stroke-info" />
-      <text x="580" y="76" textAnchor="middle" className="fill-info-ink font-condensed text-[13px] font-semibold">RACK BAY</text>
+      <text x="580" y="76" textAnchor="middle" className="fill-info-ink font-condensed text-xs font-semibold">RACK BAY</text>
       <rect x="60" y="200" width="180" height="80" rx="4" className="fill-critical-wash stroke-critical" />
-      <text x="150" y="228" textAnchor="middle" className="fill-critical-ink-strong font-condensed text-[13px] font-semibold">BATTERY ROOM</text>
+      <text x="150" y="228" textAnchor="middle" className="fill-critical-ink-strong font-condensed text-xs font-semibold">BATTERY ROOM</text>
       <rect x="260" y="200" width="200" height="80" rx="4" className="fill-well-deep stroke-ink-faint" />
-      <text x="360" y="228" textAnchor="middle" className="fill-ink font-condensed text-[13px] font-semibold">UPS ROOM</text>
+      <text x="360" y="228" textAnchor="middle" className="fill-ink font-condensed text-xs font-semibold">UPS ROOM</text>
       {zones.map((zone) => (
         <g key={zone.code}>
           <circle cx={zone.x} cy={zone.y} r="9" className={`${markerFill(zone.state.status)} stroke-surface`} strokeWidth="1.5" />
-          <text x={zone.x} y={zone.y + 3} textAnchor="middle" className="fill-on-dark font-mono text-[9px] font-bold">T</text>
+          <text fontSize={9} x={zone.x} y={zone.y + 3} textAnchor="middle" className="fill-on-dark font-mono font-bold">T</text>
         </g>
       ))}
       {smoke.map((sensor, index) => {
@@ -523,7 +523,7 @@ function FloorPlan({
         return (
           <g key={sensor.code}>
             <rect x={coords[0] - 7} y={coords[1] - 7} width="14" height="14" rx="2" className={`${markerFill(sensor.state.status)} stroke-surface`} strokeWidth="1.5" />
-            <text x={coords[0]} y={coords[1] + 3} textAnchor="middle" className="fill-on-dark font-mono text-[9px] font-bold">S</text>
+            <text fontSize={9} x={coords[0]} y={coords[1] + 3} textAnchor="middle" className="fill-on-dark font-mono font-bold">S</text>
           </g>
         );
       })}

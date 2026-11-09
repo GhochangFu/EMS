@@ -213,12 +213,12 @@ export function CalculationsTab({
               <span className="text-xs font-semibold text-ink">
                 {row.pointKey || "(no point key)"}
               </span>
-              {row.label ? <span className="text-[11px] text-ink-muted">{row.label}</span> : null}
-              {row.unit ? <span className="text-[11px] text-ink-muted">· {row.unit}</span> : null}
+              {row.label ? <span className="text-2xs text-ink-muted">{row.label}</span> : null}
+              {row.unit ? <span className="text-2xs text-ink-muted">· {row.unit}</span> : null}
             </header>
 
             <label className="block space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+              <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                 Grammar
               </span>
               <select
@@ -283,7 +283,7 @@ export function CalculationsTab({
             />
 
             <label className="mt-3 block space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+              <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                 Formula
               </span>
               <FormulaEditorLazy
@@ -326,17 +326,17 @@ export function CalculationsTab({
               />
             </label>
             {validation.state === "error" ? (
-              <p className="mt-1 text-[11px] text-critical-ink">{validation.diagnostics[0].message}</p>
+              <p className="mt-1 text-2xs text-critical-ink">{validation.diagnostics[0].message}</p>
             ) : null}
             {problemFor("formula") ? (
-              <p className="mt-1 text-[11px] text-critical-ink">{problemFor("formula")}</p>
+              <p className="mt-1 text-2xs text-critical-ink">{problemFor("formula")}</p>
             ) : null}
             {readsCalendarWindow ? (
               // A hint, never a `PointGridProblem` (`E4.1b` plan design
               // decision 15): the template does not know its sites, so the
               // validator warns and cannot refuse. Muted, not red — the formula
               // is valid; the sweep skips per asset and counts the skip.
-              <p className="mt-1 text-[11px] text-ink-muted">{CALENDAR_WINDOW_WARNING}</p>
+              <p className="mt-1 text-2xs text-ink-muted">{CALENDAR_WINDOW_WARNING}</p>
             ) : null}
             {/* ADR 0038 decision 5. Unconditional here, where the KPIs tab
                 gates on a checked dialect (decision 9): a derived formula is
@@ -347,7 +347,7 @@ export function CalculationsTab({
 
             <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               <label className="block space-y-1">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                   Runs
                 </span>
                 <select
@@ -386,10 +386,10 @@ export function CalculationsTab({
                   <option value="scheduled">on a schedule</option>
                 </select>
                 {problemFor("calcTrigger") ? (
-                  <span className="block text-[11px] text-critical-ink">{problemFor("calcTrigger")}</span>
+                  <span className="block text-2xs text-critical-ink">{problemFor("calcTrigger")}</span>
                 ) : null}
                 {isV2 ? (
-                  <span className="block text-[11px] text-ink-muted">
+                  <span className="block text-2xs text-ink-muted">
                     {isV3 ? V3_TRIGGER_LATENCY_HINT : V2_TRIGGER_LATENCY_HINT}
                   </span>
                 ) : null}
@@ -399,7 +399,7 @@ export function CalculationsTab({
                   would show a control the schema forbids a value in. */}
               {row.calcTrigger === "scheduled" ? (
                 <label className="block space-y-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                  <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                     Every (seconds)
                   </span>
                   <input
@@ -416,7 +416,7 @@ export function CalculationsTab({
                     className={fieldClass(!editable, problemFor("calcIntervalSeconds"))}
                   />
                   {problemFor("calcIntervalSeconds") ? (
-                    <span className="block text-[11px] text-critical-ink">
+                    <span className="block text-2xs text-critical-ink">
                       {problemFor("calcIntervalSeconds")}
                     </span>
                   ) : null}
@@ -424,7 +424,7 @@ export function CalculationsTab({
               ) : null}
 
               <label className="block space-y-1">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                   Ignore inputs older than
                 </span>
                 <input
@@ -444,7 +444,7 @@ export function CalculationsTab({
                   className={fieldClass(!editable, problemFor("maxInputAgeSeconds"))}
                 />
                 {problemFor("maxInputAgeSeconds") ? (
-                  <span className="block text-[11px] text-critical-ink">
+                  <span className="block text-2xs text-critical-ink">
                     {problemFor("maxInputAgeSeconds")}
                   </span>
                 ) : null}
@@ -456,7 +456,7 @@ export function CalculationsTab({
                   way to `v1`, so the field and its value leave together. */}
               {isV2 ? (
                 <label className="block space-y-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                  <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                     Minimum coverage
                   </span>
                   <input
@@ -476,11 +476,11 @@ export function CalculationsTab({
                     className={fieldClass(!editable, problemFor("minCoverageRatio"))}
                   />
                   {problemFor("minCoverageRatio") ? (
-                    <span className="block text-[11px] text-critical-ink">
+                    <span className="block text-2xs text-critical-ink">
                       {problemFor("minCoverageRatio")}
                     </span>
                   ) : null}
-                  <span className="block text-[11px] text-ink-muted">{COVERAGE_RATIO_HINT}</span>
+                  <span className="block text-2xs text-ink-muted">{COVERAGE_RATIO_HINT}</span>
                 </label>
               ) : null}
             </div>
@@ -499,7 +499,7 @@ export function CalculationsTab({
           >
             {saveM.isPending ? "Saving…" : "Save calculations"}
           </button>
-          <span className="text-[11px] text-ink-muted">
+          <span className="text-2xs text-ink-muted">
             {blocked
               ? "Fix the problems above to save."
               : changed

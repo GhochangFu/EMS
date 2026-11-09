@@ -114,7 +114,7 @@ export function BreakerTable({ rows }: { rows: readonly BreakerTableRow[] }) {
               <td className="px-3 py-2 text-ink-muted">{row.position}</td>
               <td className="px-3 py-2">{row.rating}</td>
               <td className="px-3 py-2">
-                <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${breakerStatusClass(row.status)}`}>
+                <span className={`surface-pill rounded-full border px-2 py-0.5 text-2xs font-semibold ${breakerStatusClass(row.status)}`}>
                   {breakerStatusLabel(row.status)}
                 </span>
               </td>

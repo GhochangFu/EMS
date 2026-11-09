@@ -34,7 +34,7 @@ export function OrganizationCardGrid({ items }: OrganizationCardGridProps) {
             <div className="font-condensed text-base font-bold text-ink">
               {card.organization.name}
             </div>
-            <span className="rounded bg-canvas px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-neutral-ink">
+            <span className="rounded bg-canvas px-2 py-0.5 text-3xs font-bold uppercase tracking-wide text-neutral-ink">
               {card.organization.code}
             </span>
           </div>

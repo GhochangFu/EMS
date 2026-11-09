@@ -160,7 +160,7 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
       {/* An instruction, not a disclaimer — `alarms-tab.tsx`'s reasoning, and
           the misreading is more consequential here: a plan that looks booked
           and is not is an inspection nobody attends. */}
-      <p className="rounded border border-warning-line bg-warning-wash p-3 text-[11px] text-warning-ink">
+      <p className="rounded border border-warning-line bg-warning-wash p-3 text-2xs text-warning-ink">
         These are the maintenance plans this asset class ships with. They are stored on the template
         as a standard — <strong>nothing here schedules work</strong>. A plan becomes a schedule only
         once an asset of this class exists, through the Maintenance surface for that asset. Saving
@@ -190,7 +190,7 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
         return (
           <section key={index} className="surface-raised-sm p-3">
             <div className="mb-3 flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+              <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                 Plan {index + 1}
               </span>
               {/* Rendered from the row, so it shows on a read-only version too.
@@ -198,7 +198,7 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
                   the catalog's plans are safety critical and a reader skimming
                   a long card must not have to open a field to find out. */}
               {plan.safetyCritical ? (
-                <span className="rounded border border-critical-line bg-critical-wash-strong px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-critical-ink-strong">
+                <span className="rounded border border-critical-line bg-critical-wash-strong px-2 py-0.5 text-3xs font-semibold uppercase tracking-wide text-critical-ink-strong">
                   Safety critical
                 </span>
               ) : null}
@@ -400,7 +400,7 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
           >
             {saveM.isPending ? "Saving…" : "Save maintenance"}
           </button>
-          <span className="text-[11px] text-ink-muted">
+          <span className="text-2xs text-ink-muted">
             {blockedKeys.length > 0
               ? "Blocked by unwritable content."
               : problems.length > 0

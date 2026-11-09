@@ -102,12 +102,12 @@ export function TrendStripSelectionSummary({
 
   const staleTail = (name: string, onRemove: () => void) => (
     <>
-      <span className="text-[11px] text-critical-ink">{TREND_STRIP_STALE_MARKER}</span>
+      <span className="text-2xs text-critical-ink">{TREND_STRIP_STALE_MARKER}</span>
       <button
         type="button"
         aria-label={`Remove ${name}`}
         onClick={onRemove}
-        className="surface-button px-2 py-0.5 text-[11px]"
+        className="surface-button px-2 py-0.5 text-2xs"
       >
         Remove
       </button>
@@ -123,7 +123,7 @@ export function TrendStripSelectionSummary({
           onClick={() =>
             onChange({ stripSegments: undefined, stripPoints: undefined, stripColors: undefined, stripStyles: undefined })
           }
-          className="surface-button px-2 py-1 text-[11px]"
+          className="surface-button px-2 py-1 text-2xs"
         >
           Clear selection
         </button>

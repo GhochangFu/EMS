@@ -55,7 +55,7 @@ export function GeneratedSiteAssetCard({
         <div className="min-w-0">
           <p className="font-condensed text-sm font-bold text-ink">{asset.code}</p>
           <AssetWhere code={asset.code} rtuName={asset.assetRtuName} locationName={asset.assetLocationName} />
-          <p className="truncate text-[11px] text-ink-muted">{asset.name}</p>
+          <p className="truncate text-2xs text-ink-muted">{asset.name}</p>
           <AssetHistoryLink assetId={asset.id} code={asset.code} />
         </div>
         <span data-testid="asset-status">
@@ -64,7 +64,7 @@ export function GeneratedSiteAssetCard({
       </div>
 
       {asset.points.length === 0 ? (
-        <p className="mt-2 text-[11px] text-ink-muted">No registered points.</p>
+        <p className="mt-2 text-2xs text-ink-muted">No registered points.</p>
       ) : (
         <table aria-label={`${asset.code} points`} className="mt-2 w-full text-xs">
           <tbody>
@@ -82,7 +82,7 @@ export function GeneratedSiteAssetCard({
                   >
                     {formatPointValue(latest?.value ?? null)}
                   </td>
-                  <td className="py-1 pl-1 text-left text-[11px] text-ink-muted">
+                  <td className="py-1 pl-1 text-left text-2xs text-ink-muted">
                     {latest === null ? "" : (point.unit ?? "")}
                   </td>
                 </tr>
@@ -96,7 +96,7 @@ export function GeneratedSiteAssetCard({
         <button
           type="button"
           aria-expanded={expanded}
-          className="mt-2 text-[11px] font-semibold text-accent-strong"
+          className="mt-2 text-2xs font-semibold text-accent-strong"
           onClick={() => setExpanded((open) => !open)}
         >
           {expanded ? "Fewer points" : "All points"}
