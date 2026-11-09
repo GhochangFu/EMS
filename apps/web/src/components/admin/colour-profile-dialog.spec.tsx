@@ -53,7 +53,17 @@ export async function d1TheSixProfilesAreOfferedWithTheCurrentOneChosen(): Promi
   signedIn();
   renderDialog({ ...ORG, colourProfile: "lagoon" });
   const radios = screen.getAllByRole("radio");
-  expect(radios.map((r) => r.getAttribute("value"))).toEqual(["nexus", "ocean", "lagoon", "indigo", "graphite", "high-contrast"]);
+  expect(radios.map((r) => r.getAttribute("value"))).toEqual([
+    "nexus",
+    "ocean",
+    "lagoon",
+    "indigo",
+    "graphite",
+    "high-contrast",
+    "forest",
+    "sand",
+    "navy-pop",
+  ]);
   expect(screen.getByRole("radio", { name: /Lagoon/ })).toBeChecked();
   expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 }

@@ -10,9 +10,19 @@ import { COLOUR_PROFILES, colourProfileSchema, setOrganizationColourProfileBodyS
  * the `it()`s (ADR 0014).
  */
 
-/** P1 — the six names, in the order the chooser shows them; `nexus` first, the default. */
-export function runTheSixProfilesInOrder(): void {
-  expect(COLOUR_PROFILES).toEqual(["nexus", "ocean", "lagoon", "indigo", "graphite", "high-contrast"]);
+/** P1 — the nine names (`F4.341` added the last three), in the order the chooser shows them; `nexus` first, the default. */
+export function runTheProfilesInOrder(): void {
+  expect(COLOUR_PROFILES).toEqual([
+    "nexus",
+    "ocean",
+    "lagoon",
+    "indigo",
+    "graphite",
+    "high-contrast",
+    "forest",
+    "sand",
+    "navy-pop",
+  ]);
   expect(colourProfileSchema.options).toEqual(COLOUR_PROFILES);
 }
 

@@ -18,6 +18,9 @@ export const COLOUR_PROFILE_LABELS: Readonly<Record<ColourProfile, { label: stri
   indigo: { label: "Indigo", description: "A deep indigo-navy accent on cool neutrals." },
   graphite: { label: "Graphite", description: "A slate-grey accent: the least colour, for a quiet screen." },
   "high-contrast": { label: "High contrast", description: "Darker inks, stronger lines and focus: for control rooms and walls." },
+  forest: { label: "Forest", description: "A pine accent on warm beige neutrals." },
+  sand: { label: "Sand", description: "A blue accent on charcoal and sand neutrals." },
+  "navy-pop": { label: "Navy pop", description: "A magenta accent on navy and white." },
 };
 
 type Props = { organization: AdminOrganizationDto; onClose: () => void };

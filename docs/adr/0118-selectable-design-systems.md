@@ -393,3 +393,39 @@ acceptance.** The owner ruled seven plan questions in chat, one at a time
 The other rulings (P2 a Tailwind theme remap for the tokens, P3 the
 `@fontsource` packages for the fonts) are plan choices within decisions 3 and
 5.
+
+## Values, as built (PR 2 of `F4.341`, 2026-11-09)
+
+**Status: recorded with PR 2. Merging that PR approved the values (AGENTS §10).** The repository
+gates measured every value below: `tests/f3.65a-colour-contrast.test.ts` Q0–Q3, A4a–c, T-ink and
+C1–C8, for nine profiles in both themes. The PR body holds the full table of changeable roles.
+
+**Changed shipped values** (A4, P6):
+
+| Profile · theme | Role | Before | After | Why |
+|---|---|---|---|---|
+| nexus (base) · light | `ink-faint` | `#64748B` | `#5F6F85` | P6: 4.32 → 4.65:1 on `canvas` |
+| nexus (base) · dark | `series-1` | `#60A5FA` | `#818CF8` | A4b: ΔE2000 8.6 → 19.5 from `info` |
+| ocean · light | `ink-faint` | `#64748B` | `#607086` | P6: 4.34 → 4.61:1 |
+| ocean · light | `series-1` | `#1D4ED8` | `#155E75` | A4b: it equalled `accent` |
+| ocean · light | `accent-on-chrome` | `#60A5FA` | `#A5B4FC` | A4a: ΔE2000 8.6 from `info` |
+| ocean · dark | `series-1` | `#60A5FA` | `#A5F3FC` | A4b (and kept off ocean's blue-violet `accent`) |
+| lagoon · light | `series-2` | `#0F766E` | `#155E75` | A4b: it equalled `accent` |
+| lagoon · dark | `series-1` / `series-2` | `#60A5FA` / `#2DD4BF` | `#818CF8` / `#F9A8D4` | A4b: `info`; `series-2` equalled `accent` |
+| indigo · dark | `series-1` | `#60A5FA` | `#A5F3FC` | A4b (and kept off indigo's `accent`) |
+| graphite · light | `ink-faint` | `#71717A` | `#6D6D76` | P6: 4.40 → 4.66:1 |
+| graphite · light | `accent` / `accent-strong` | `#475569` / `#334155` | `#334155` / `#1E293B` | A4a: `accent` was ΔE2000 10.5 from `info-ink` |
+| graphite · light | `accent-on-chrome` | `#CBD5E1` | `#A1A1AA` | A4a: ΔE2000 8.3–16.8 from the `critical`, `warning` and `info` wash and line roles |
+| graphite · dark | `series-1` | `#60A5FA` | `#818CF8` | A4b |
+| high-contrast · dark | `series-1` | `#60A5FA` | `#818CF8` | A4b |
+
+**The three new profiles** start from the preview's tuned values (Amendment 1), with
+`series-4…8` from the `nexus` sets and these changes made while measuring: `forest` light
+`chrome` `#163323` → `#0E1C14` (`ok` and `critical` on the chrome were 4.29:1 and 2.84:1),
+`forest` `series-3` light `#9D174D` / dark `#FDA4AF` (A3: not amber, brown or violet; the draft
+`#334155` / `#CBD5E1` sat on `series-7`), `forest` dark `series-1` `#818CF8`, `sand`
+`series-1` light `#155E75` / dark `#A5F3FC` (the drafts equalled `series-7`), `navy-pop`
+`series-4` light `#57534E` / dark `#99F6E4`, and `navy-pop` dark `series-1` `#A5F3FC`. Every
+draft `accent` passed A4 unchanged, `navy-pop`'s magenta included (light ΔE2000 20.9 from
+`critical-line`, dark 21.3 from `critical-ink-strong`, the nearest alarm roles), so no profile
+needed the amendment path.

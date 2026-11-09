@@ -124,7 +124,8 @@ const ROLE_HEX: Record<string, { light: string; dark: string }> = {
   "line-strong": { light: "#D1D5DB", dark: "#3D4A5B" },
   ink: { light: "#1A2230", dark: "#E8ECF1" },
   "ink-muted": { light: "#4A5464", dark: "#A7B2C0" },
-  "ink-faint": { light: "#64748B", dark: "#8791A5" },
+  // F4.341 P6: raised from #64748B to pass 4.5:1 as text on canvas.
+  "ink-faint": { light: "#5F6F85", dark: "#8791A5" },
   "ink-hint": { light: "#9CA3AF", dark: "#78849A" },
   "neutral-ink": { light: "#374151", dark: "#8E9CB2" },
   accent: { light: "#00A651", dark: "#3DCD58" },
@@ -165,7 +166,8 @@ const ROLE_HEX: Record<string, { light: string; dark: string }> = {
   // Roles 42–49 (ADR 0078 Amendment 4, F4.306): the trend strip's per-point series colours. The
   // sixteen values and their ratios on `surface` are recorded in the amendment; the contrast and
   // distance rules are `tests/f3.65a-colour-contrast.test.ts` C3/C4 and S1–S3.
-  "series-1": { light: "#1D4ED8", dark: "#60A5FA" },
+  // F4.341 A4b: dark moved off #60A5FA, which was ΔE2000 8.6 from info.
+  "series-1": { light: "#1D4ED8", dark: "#818CF8" },
   "series-2": { light: "#0F766E", dark: "#2DD4BF" },
   "series-3": { light: "#6B21A8", dark: "#C084FC" },
   "series-4": { light: "#C026D3", dark: "#F5D0FE" },

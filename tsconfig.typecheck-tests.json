@@ -181,6 +181,7 @@
     "tests/f3.71-surface-card-ratchet.test.ts",
     "tests/f4.341-design-tokens.test.ts",
     "tests/f4.341-type-spacing-gate.test.ts",
+    "tests/f4.341-colour-profiles-nine-schema.test.ts",
     "tests/f3.32f-carried-fixes.test.ts",
     "tests/f3.32f-carried-fixes.integration.test.ts",
     "tests/f4.258-committed-secrets-strip.test.ts",
