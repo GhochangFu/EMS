@@ -3,6 +3,7 @@ import { expect } from "vitest";
 
 import type { MimicOrgSymbolDto, MimicShape } from "@bms/shared";
 
+import type { MimicGlyphKind } from "../../lib/mimic";
 import { MimicGlyph } from "./mimic-glyphs";
 import glyphSource from "./mimic-glyphs.tsx?raw";
 
@@ -178,7 +179,7 @@ export function aStillGlyphGetsNoWrapper(): void {
  * `<g>`, which keeps its fill role class), an organization symbol and the fallback.
  */
 export function everyDrawPathWrapsItsContent(): void {
-  const cases: { kind: Parameters<typeof MimicGlyph>[0]["kind"]; org?: MimicOrgSymbolDto; check?: (g: HTMLElement) => void }[] = [
+  const cases: { kind: MimicGlyphKind; org?: MimicOrgSymbolDto; check?: (g: HTMLElement) => void }[] = [
     { kind: "tabler:bolt" },
     {
       kind: "mdi:heat-pump",
@@ -188,7 +189,7 @@ export function everyDrawPathWrapsItsContent(): void {
       },
     },
     { kind: ORG_KEY, org: symbol() },
-    { kind: "nope:missing", check: (g) => expect(g.getAttribute("data-glyph-fallback")).toBe("true") },
+    { kind: "nope:missing" as MimicGlyphKind, check: (g) => expect(g.getAttribute("data-glyph-fallback")).toBe("true") },
   ];
   for (const { kind, org, check } of cases) {
     const glyph = drawMoving({ kind, motion: "pulse", orgSymbol: org ?? null });

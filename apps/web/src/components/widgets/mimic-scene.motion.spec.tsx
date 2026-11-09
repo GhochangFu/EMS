@@ -54,7 +54,7 @@ function tankNode(over: Partial<MimicNodeDto> = {}): MimicNodeDto {
   };
 }
 
-function alarm(tone: string): MimicNodeAlarmDto {
+function alarm(tone: MimicNodeAlarmDto["tone"]): MimicNodeAlarmDto {
   return { severity: tone, tone, label: tone, message: "High level", raisedAt: "2026-11-09T09:59:00.000Z" };
 }
 
