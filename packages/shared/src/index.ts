@@ -86,7 +86,6 @@ export * from "./facility-point-keys";
  * cap. The three guards read a three-file list with a per-file floor.
  */
 export * from "./sustainability-point-keys";
-
 /** The schemas themselves. See the note above on why they are re-exported. */
 export * from "./contracts";
 export type * from "./types/asset-kpis";
@@ -94,6 +93,7 @@ export type * from "./types/alarm-stats";
 export type * from "./types/point-stats";
 export type * from "./types/energy-view";
 export type * from "./types/telemetry-history";
+export type * from "./types/appearance";
 export * from "./location-tree";
 export type * from "./types/locations";
 

@@ -40,7 +40,10 @@ export function runTheBodyIsStrict(): void {
   expect(setOrganizationColourProfileBodySchema.safeParse({}).success).toBe(false);
 }
 
-/** P4 — the organization DTO requires `colourProfile`, one of the six. */
+/**
+ * P4 — the organization DTO requires the `colourProfile` key, one of the nine or (since `F4.341`,
+ * ADR 0118 decision 9) `null` for "inherit the portal", and the `designSystem` key likewise.
+ */
 export function runTheOrganizationDtoRequiresAProfile(): void {
   const dto = {
     id: "o1",
@@ -52,18 +55,24 @@ export function runTheOrganizationDtoRequiresAProfile(): void {
     ingestEnabled: true,
     meta: null,
     createdAt: "2026-11-05T00:00:00.000Z",
+    designSystem: null,
   };
   expect(adminOrganizationDtoSchema.safeParse(dto).success).toBe(false);
   expect(adminOrganizationDtoSchema.safeParse({ ...dto, colourProfile: "lagoon" }).success).toBe(true);
+  expect(adminOrganizationDtoSchema.safeParse({ ...dto, colourProfile: null }).success).toBe(true);
   expect(adminOrganizationDtoSchema.safeParse({ ...dto, colourProfile: "teal" }).success).toBe(false);
+  const { designSystem: _omitted, ...withoutDesign } = { ...dto, colourProfile: "lagoon" };
+  expect(adminOrganizationDtoSchema.safeParse(withoutDesign).success).toBe(false);
 }
 
-/** P5 — `/auth/me` requires `colourProfile`, the home organization's profile. */
+/** P5 — `/auth/me` requires `colourProfile` (deprecated until `F4.342`) and, since `F4.341`, `appearance`. */
 export function runTheCurrentUserCarriesAProfile(): void {
   const me = {
     user: { id: "u1", email: "a@b.c", displayName: "A", role: "viewer" },
     scope: { kind: "none", locations: [], assetGroups: [], assetIds: [] },
   };
+  const appearance = { designSystem: { value: "nexus-soft", from: "portal" }, colourProfile: { value: "nexus", from: "portal" } };
   expect(currentUserResponseSchema.safeParse(me).success).toBe(false);
-  expect(currentUserResponseSchema.safeParse({ ...me, colourProfile: "nexus" }).success).toBe(true);
+  expect(currentUserResponseSchema.safeParse({ ...me, colourProfile: "nexus" }).success).toBe(false);
+  expect(currentUserResponseSchema.safeParse({ ...me, colourProfile: "nexus", appearance }).success).toBe(true);
 }

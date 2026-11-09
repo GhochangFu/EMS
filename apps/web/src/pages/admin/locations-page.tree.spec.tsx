@@ -94,6 +94,7 @@ function stubApi(): ReturnType<typeof vi.fn> {
               user: { id: "u1", email: "admin@bms.local", displayName: "Admin", role: "admin" },
               scope: FRESH_SCOPE,
               colourProfile: "nexus",
+              appearance: { designSystem: { value: "nexus-soft", from: "portal" }, colourProfile: { value: "nexus", from: "portal" } },
             }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),

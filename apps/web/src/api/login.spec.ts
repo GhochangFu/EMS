@@ -308,6 +308,7 @@ export async function runRefreshScopeReplacesTheStoredScope(): Promise<void> {
           user: { id: "id-tok-r", email: "r@example.test", displayName: "r", role: "location_admin" },
           scope: fresh,
           colourProfile: "nexus",
+          appearance: { designSystem: { value: "nexus-soft", from: "portal" }, colourProfile: { value: "nexus", from: "portal" } },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
@@ -338,6 +339,7 @@ export async function runAMeAnswerAppliesTheColourProfile(): Promise<void> {
         user: { id: "id-tok-cp", email: "cp@example.test", displayName: "cp", role: "viewer" },
         scope: { kind: "none", locations: [], assetGroups: [], assetIds: [] },
         colourProfile,
+        appearance: { designSystem: { value: "nexus-soft", from: "portal" }, colourProfile: { value: colourProfile, from: "organization" } },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );

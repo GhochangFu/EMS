@@ -37,7 +37,7 @@ function organization(overrides: Partial<AdminOrganizationDto>): AdminOrganizati
     name: "Spec organization",
     active: true,
     currency: "ZAR",
-    timezone: "UTC", colourProfile: "nexus" as const, ingestEnabled: true,
+    timezone: "UTC", colourProfile: "nexus" as const, designSystem: null, ingestEnabled: true,
     meta: null,
     createdAt: new Date(0).toISOString(),
     ...overrides,
@@ -549,6 +549,19 @@ export async function theColourProfileColumnAndActionFollowTheRole(): Promise<vo
   renderPageAs("location_admin");
   const other = (await screen.findByText("Rupee organization")).closest("tr")!;
   expect(within(other).queryByRole("button", { name: "Colour profile" })).toBeNull();
+}
+
+/** `F4.341` (ADR 0118 decision 9) — a row whose colour profile is NULL inherits the portal: it reads "Inherit". */
+export async function anInheritingRowReadsInherit(): Promise<void> {
+  stubApi();
+  vi.mocked(api.fetchAdminOrganizations).mockResolvedValue({
+    items: [ORGANIZATIONS.items[0]!, { ...ORGANIZATIONS.items[1]!, colourProfile: null }],
+  });
+  renderPageAs("admin");
+  const inheriting = (await screen.findByText("Rupee organization")).closest("tr")!;
+  expect(within(inheriting).getByText("Inherit")).toBeInTheDocument();
+  const chosen = screen.getByText("Rand organization").closest("tr")!;
+  expect(within(chosen).getByText("Nexus (default)")).toBeInTheDocument();
 }
 
 const INGEST_SENTENCE =

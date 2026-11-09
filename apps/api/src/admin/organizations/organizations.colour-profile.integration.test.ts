@@ -118,7 +118,7 @@ describe.skipIf(!connectionString)("F4.310 — organization colour profile (ADR 
     await Promise.all([fleetPool?.end(), authPool?.end(), tenantPool?.end()]);
   });
 
-  it("C0 a new organization starts on nexus", async () => {
+  it("C0 a new organization starts empty (it inherits the portal default)", async () => {
     await aNewOrganizationStartsOnNexus(ctx);
   });
 
@@ -138,7 +138,7 @@ describe.skipIf(!connectionString)("F4.310 — organization colour profile (ADR 
     await theOrganizationAdminSetsItsOwnAndMeFollows(ctx);
   });
 
-  it("C5 the CHECK refuses a name outside the six", async () => {
+  it("C5 the CHECK refuses a name outside the nine", async () => {
     await theCheckRefusesAnUnknownName(ctx);
   });
 

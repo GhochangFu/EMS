@@ -28,6 +28,7 @@ import {
   theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin,
   theGlobalAdminSwitchesARowsCopilotOn,
   theColourProfileColumnAndActionFollowTheRole,
+  anInheritingRowReadsInherit,
   anOffRowShowsTheIngestOffPill,
   theRowButtonFollowsTheState,
   stopIngestConfirmsBeforeCallingAndRefetches,
@@ -142,6 +143,10 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("F4.310 the list shows the colour profile and the action follows the role", async () => {
     await theColourProfileColumnAndActionFollowTheRole();
+  });
+
+  it("F4.341 a row that inherits the portal profile reads Inherit", async () => {
+    await anInheritingRowReadsInherit();
   });
 
   it("F4.330 an off row shows the Ingest off pill and an on row none", async () => {

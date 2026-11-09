@@ -32,6 +32,7 @@ export function runTheResponsesRequireTheSwitch(): void {
     currency: "INR",
     timezone: "UTC",
     colourProfile: "nexus",
+    designSystem: null,
     meta: null,
     createdAt: "2026-11-07T00:00:00.000Z",
   };

@@ -27,6 +27,7 @@ const ORG: AdminOrganizationDto = {
   currency: "INR",
   timezone: "Asia/Kolkata",
   colourProfile: "nexus",
+  designSystem: null,
   ingestEnabled: true,
   meta: null,
   createdAt: new Date(0).toISOString(),
@@ -86,7 +87,7 @@ export async function d3SaveSendsThePutReReadsMeAndRefreshesTheList(): Promise<v
     .mockResolvedValue({ ...ORG, colourProfile: "graphite" });
   const me = vi.spyOn(loginApi, "fetchCurrentUser").mockImplementation(async () => {
     useThemeStore.getState().setProfile("graphite");
-    return { user: { id: "u", email: "a@b.c", displayName: "A", role: "organization_admin" }, scope: { kind: "none", locations: [], assetGroups: [], assetIds: [] }, colourProfile: "graphite" };
+    return { user: { id: "u", email: "a@b.c", displayName: "A", role: "organization_admin" }, scope: { kind: "none", locations: [], assetGroups: [], assetIds: [] }, colourProfile: "graphite", appearance: { designSystem: { value: "nexus-soft", from: "portal" }, colourProfile: { value: "graphite", from: "organization" } } };
   });
   const { onClose, invalidate } = renderDialog();
   await userEvent.click(screen.getByRole("radio", { name: /Graphite/ }));

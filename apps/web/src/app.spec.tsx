@@ -26,6 +26,12 @@ import * as copilotApi from "./api/copilot";
  * the id token, and this spec pins that the effect passes the stored one.
  */
 
+/** `F4.341`: `/auth/me`'s appearance when nothing is chosen (ADR 0118 decision 8). */
+const NEXUS_APPEARANCE = {
+  designSystem: { value: "nexus-soft" as const, from: "portal" as const },
+  colourProfile: { value: "nexus" as const, from: "portal" as const },
+};
+
 const USER: AuthUser = {
   id: "11111111-1111-4111-8111-111111111111",
   email: "admin@bms.local",
@@ -58,7 +64,7 @@ export async function theMeEffectKeepsTheStoredIdToken(): Promise<void> {
   const accessToken = unexpiredAccessToken();
   const fetchCurrentUser = vi
     .spyOn(loginApi, "fetchCurrentUser")
-    .mockResolvedValue({ user: USER, scope: SCOPE, colourProfile: "nexus" });
+    .mockResolvedValue({ user: USER, scope: SCOPE, colourProfile: "nexus", appearance: NEXUS_APPEARANCE });
   useAuthStore.setState({ accessToken, oidcIdToken: ID_TOKEN, user: USER, scope: null });
 
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
@@ -90,7 +96,7 @@ export async function aViewerReachesTheAttributionsPage(): Promise<void> {
     role: "viewer",
   };
   const accessToken = unexpiredAccessToken();
-  const fetchCurrentUser = vi.spyOn(loginApi, "fetchCurrentUser").mockResolvedValue({ user: viewer, scope: SCOPE, colourProfile: "nexus" });
+  const fetchCurrentUser = vi.spyOn(loginApi, "fetchCurrentUser").mockResolvedValue({ user: viewer, scope: SCOPE, colourProfile: "nexus", appearance: NEXUS_APPEARANCE });
   // AppShell's status indicator fetches; an unstubbed fetch would reach the real API on :4000.
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 200 })));
   useAuthStore.setState({ accessToken, oidcIdToken: ID_TOKEN, user: viewer, scope: null });
@@ -269,7 +275,7 @@ export async function aStoredScopeIsReplacedOnLoad(): Promise<void> {
   const accessToken = unexpiredAccessToken();
   const fetchCurrentUser = vi
     .spyOn(loginApi, "fetchCurrentUser")
-    .mockResolvedValue({ user: USER, scope: FRESH_SCOPE, colourProfile: "nexus" });
+    .mockResolvedValue({ user: USER, scope: FRESH_SCOPE, colourProfile: "nexus", appearance: NEXUS_APPEARANCE });
   useAuthStore.setState({ accessToken, oidcIdToken: ID_TOKEN, user: USER, scope: STALE_SCOPE });
 
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
@@ -297,7 +303,7 @@ export async function aStoredScopeIsReplacedOnLoad(): Promise<void> {
  */
 export async function aLateLoadAnswerDoesNotReplaceANewerScope(): Promise<void> {
   const accessToken = unexpiredAccessToken();
-  let resolve: (value: { user: AuthUser; scope: AccessibleScope; colourProfile: "nexus" }) => void = () => undefined;
+  let resolve: (value: { user: AuthUser; scope: AccessibleScope; colourProfile: "nexus"; appearance: typeof NEXUS_APPEARANCE }) => void = () => undefined;
   const fetchCurrentUser = vi.spyOn(loginApi, "fetchCurrentUser").mockReturnValue(
     new Promise((r) => {
       resolve = r;
@@ -319,7 +325,7 @@ export async function aLateLoadAnswerDoesNotReplaceANewerScope(): Promise<void> 
   });
   const newer: AccessibleScope = { ...FRESH_SCOPE };
   useAuthStore.setState({ scope: newer });
-  resolve({ user: USER, scope: STALE_SCOPE, colourProfile: "nexus" });
+  resolve({ user: USER, scope: STALE_SCOPE, colourProfile: "nexus", appearance: NEXUS_APPEARANCE });
   await new Promise((r) => setTimeout(r, 50));
   expect(useAuthStore.getState().scope).toBe(newer);
 }

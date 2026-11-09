@@ -76,9 +76,9 @@ describe("F4.310 — bms.organizations.colour_profile (migration 0125)", () => {
     expect(add).toBeGreaterThan(drop);
   });
 
+  // `F4.341` (migration 0134) made the column nullable with no default; the live declaration is
+  // held by `tests/f4.341-portal-appearance-schema.test.ts`.
   it("declares the Drizzle column", () => {
-    expect(read("packages/db/src/schema/bms-schema.ts")).toContain(
-      'colourProfile: varchar("colour_profile", { length: 32 }).notNull().default("nexus")',
-    );
+    expect(read("packages/db/src/schema/bms-schema.ts")).toContain('colourProfile: varchar("colour_profile", { length: 32 }),');
   });
 });

@@ -24,7 +24,7 @@ import { ReportFileSaveWizard } from "./report-file-save-wizard";
 const ORGANIZATION_SENTENCE = "Choose an organization to file the report under.";
 const RANGE = { startDate: "2026-09-01", endDate: "2026-09-05" };
 
-const ESKOM = { id: "5c2c1b0e-2222-4a5b-8c4d-000000000010", code: "ESKOM", name: "Eskom SMOC", active: true, currency: "ZAR", timezone: "UTC", colourProfile: "nexus" as const, ingestEnabled: true, meta: null, createdAt: "2026-01-01T00:00:00.000Z" };
+const ESKOM = { id: "5c2c1b0e-2222-4a5b-8c4d-000000000010", code: "ESKOM", name: "Eskom SMOC", active: true, currency: "ZAR", timezone: "UTC", colourProfile: "nexus" as const, designSystem: null, ingestEnabled: true, meta: null, createdAt: "2026-01-01T00:00:00.000Z" };
 
 const SAVED: ReportFileDto = {
   id: "0f0a4a1e-1111-4a5b-8c4d-000000000001",

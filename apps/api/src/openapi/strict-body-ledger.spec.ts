@@ -49,6 +49,10 @@ import {
   putOrgTrendPointsBodySchema,
   adoptAssetsBodySchema,
   setOrganizationColourProfileBodySchema,
+  // `F4.341` (ADR 0118 decision 10): the three appearance write bodies.
+  setPortalAppearanceBodySchema,
+  setOrganizationAppearanceBodySchema,
+  setMyAppearanceBodySchema,
   // `F4.309` (ADR 0088 Amendment 3): the state-label write bodies.
   createPointKeyStateBodySchema,
   updatePointKeyStateBodySchema,
@@ -345,6 +349,10 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   updateOrganizationBodySchema,
   // `F4.310` (ADR 0110 decision 7): `.strict()`, so a stray field is a 400.
   setOrganizationColourProfileBodySchema,
+  // `F4.341` (ADR 0118 decision 10): `.strict()`, so a stray field (another row's id) is a 400.
+  setPortalAppearanceBodySchema,
+  setOrganizationAppearanceBodySchema,
+  setMyAppearanceBodySchema,
   updatePointKeyBodySchema,
   updatePointKeyStateBodySchema,
   updateRtuBodySchema,

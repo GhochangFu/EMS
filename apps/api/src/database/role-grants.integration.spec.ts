@@ -176,10 +176,13 @@ export async function assertTenantAndFleetHoldTheColumnInsert(pool: pg.Pool): Pr
  * cannot be satisfied by an empty grant.
  */
 export async function assertTenantAndFleetCannotUpdateEmailOrSubject(pool: pg.Pool): Promise<void> {
+  // `F4.341` (migration 0134): `bms_fleet` also updates the caller's own `design_system` and
+  // `colour_profile` (`PUT /me/appearance`); `bms_tenant` does not.
+  const extra: Record<string, string[]> = { bms_tenant: [], bms_fleet: ["colour_profile", "design_system"] };
   for (const role of ["bms_tenant", "bms_fleet"]) {
-    expect(await userColumns(pool, role, "UPDATE"), `${role}'s UPDATE columns on bms.users`).toEqual([
-      ...POOL_USER_UPDATE_COLUMNS,
-    ]);
+    expect(await userColumns(pool, role, "UPDATE"), `${role}'s UPDATE columns on bms.users`).toEqual(
+      [...POOL_USER_UPDATE_COLUMNS, ...extra[role]].sort(),
+    );
   }
 }
 

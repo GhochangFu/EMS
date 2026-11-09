@@ -8,6 +8,7 @@
 import { z } from "zod";
 
 import { colourProfileSchema } from "./colour-profile";
+import { designSystemSchema } from "./design-system";
 import { locationTypeCodeSchema } from "./location-types";
 import { assetRoleCodeSchema } from "./operations";
 import { pointMetadataFieldsSchema, pointMetadataShape } from "./point-metadata";
@@ -23,8 +24,14 @@ export const adminOrganizationDtoSchema = z.object({
   currency: z.string(),
   /** F3.85 (ADR 0099 A2): an IANA zone name or "UTC"; governs the copilot's usage-day boundary. */
   timezone: z.string(),
-  /** F4.310 (ADR 0110 decision 6): the organization's colour profile; `nexus` unless an admin chose one. */
-  colourProfile: colourProfileSchema,
+  /**
+   * F4.310 (ADR 0110 decision 6): the organization's colour profile. Since `F4.341` (ADR 0118
+   * decision 9) `null` means "inherit the portal default"; organizations that existed before keep
+   * their stored value.
+   */
+  colourProfile: colourProfileSchema.nullable(),
+  /** F4.341 (ADR 0118 decision 9): the organization's design system; `null` inherits the portal default. */
+  designSystem: designSystemSchema.nullable(),
   /** F4.330 (ADR 0115 decision 1): the organization's ingest switch; `false` = the host skips all its RTUs. */
   ingestEnabled: z.boolean(),
   meta: z.record(z.unknown()).nullable(),
