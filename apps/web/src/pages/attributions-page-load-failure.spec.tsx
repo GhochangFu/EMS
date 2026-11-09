@@ -40,7 +40,7 @@ export async function aFailedCreditsLoadShowsTheAlert(): Promise<void> {
   expect((await screen.findByRole("alert", {}, { timeout: 5000 })).textContent).toBe(
     "Some library notices or credits did not load. Reload the page to try again.",
   );
-  // Positive control: the seven libraries still render, with no per-file credits.
-  expect(screen.getAllByTestId("attribution-entry")).toHaveLength(7);
+  // Positive control: the eight libraries still render, with no per-file credits.
+  expect(screen.getAllByTestId("attribution-entry")).toHaveLength(8);
   expect(screen.queryByText(/Per-file credits/)).toBeNull();
 }

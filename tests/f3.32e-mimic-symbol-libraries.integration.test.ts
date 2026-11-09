@@ -349,4 +349,57 @@ describe.skipIf(!has)("F3.32e — migration 0090 against a live database", () =>
       expect(rows.rows, `no applied migration has hash ${hash}`).toHaveLength(1);
     });
   });
+
+  // F4.345 / ADR 0121 — migration 0136, the isometric library; nested here to reuse inTx, probe and
+  // INSERT_UNIT. The static twin is tests/f4.345-iso-symbol-library.test.ts.
+  describe("F4.345 — migration 0136: the isometric library", () => {
+    const EIGHT = ["core", "tabler", "lucide", "mdi", "qet", "wmpid", "drawio", "iso"] as const;
+
+    // Named codes, not a count of every row (F4.157): a later library must not redden this.
+    it("the tenant reads the eight libraries, in sort order, iso last with the fill style", async () => {
+      await inTx(async (run) => {
+        expect((await run("SELECT current_user AS u")).rows[0]?.u).toBe("bms_tenant");
+        const rows = await run(
+          `SELECT code, style, sort_order FROM bms.mimic_symbol_libraries WHERE code = ANY($1::text[]) ORDER BY sort_order`,
+          [[...EIGHT]],
+        );
+        expect(rows.rows.map((r) => r.code)).toEqual([...EIGHT]);
+        expect(rows.rows.at(-1)).toEqual({ code: "iso", style: "fill", sort_order: 80 });
+      });
+    });
+
+    it("the tenant reads 50 iso symbols, the tank, pump, damper and RTU among them", async () => {
+      await inTx(async (run) => {
+        const count = await run(`SELECT count(*)::int AS n FROM bms.mimic_symbols WHERE library_code = 'iso'`);
+        expect(count.rows[0]?.n).toBe(50);
+        const named = await run(
+          `SELECT key FROM bms.mimic_symbols WHERE key = ANY($1::text[]) ORDER BY key`,
+          [["iso:tank", "iso:pump", "iso:damper", "iso:rtu"]],
+        );
+        expect(named.rows.map((r) => r.key)).toEqual(["iso:damper", "iso:pump", "iso:rtu", "iso:tank"]);
+      });
+    });
+
+    it("a unit with iso:pump is written (23503 would mean a missing row)", async () => {
+      await inTx(async (run, org, layout) => {
+        const { code, message } = await probe(run, INSERT_UNIT, [org, layout, "u", "iso:pump", "iso:pump"]);
+        expect(message, `insert of 'iso:pump' (code ${code})`).toBe("");
+      });
+    });
+
+    it("symbol_libraries = '{core,iso}' is accepted", async () => {
+      await inTx(async (run, _org, layout) => {
+        await run(`UPDATE bms.mimic_layouts SET symbol_libraries = '{core,iso}' WHERE id = $1`, [layout]);
+        const rows = await run(`SELECT symbol_libraries::text[] AS libs FROM bms.mimic_layouts WHERE id = $1`, [layout]);
+        expect(rows.rows).toEqual([{ libs: ["core", "iso"] }]);
+      });
+    });
+
+    it("drizzle.__drizzle_migrations holds 0136 by the sha256 of the file's bytes (superuser read)", async () => {
+      const file = join(repoRoot, "packages/db/drizzle/0136_mimic_iso_symbol_library.sql");
+      const hash = createHash("sha256").update(readFileSync(file).toString()).digest("hex");
+      const rows = await client.query("SELECT hash FROM drizzle.__drizzle_migrations WHERE hash = $1", [hash]);
+      expect(rows.rows, `no applied migration has hash ${hash}`).toHaveLength(1);
+    });
+  });
 });

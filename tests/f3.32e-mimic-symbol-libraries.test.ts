@@ -437,18 +437,18 @@ describe("F3.32e — migration 0090: the symbol libraries", () => {
   });
 
   describe("the rows", () => {
-    // F3.32f / ADR 0086 decision 9: the contract names seven codes; 0090 holds the first four and
-    // migration 0092 the other three.
+    // F3.32f / ADR 0086 decision 9: 0090 holds the first four codes and migration 0092 the next
+    // three; F4.345's 0136 holds the eighth (tests/f4.345-iso-symbol-library.test.ts).
     it("inserts the first four library codes of mimicSymbolLibraryCodeSchema, in order", () => {
       const codes = listMembersFromSource(read(CONTRACT_REL), "export const mimicSymbolLibraryCodeSchema = z.enum([");
-      expect(codes).toEqual(["core", "tabler", "lucide", "mdi", "qet", "wmpid", "drawio"]);
+      expect(codes).toEqual(["core", "tabler", "lucide", "mdi", "qet", "wmpid", "drawio", "iso"]);
       expect(libraryRows(migration()).map((r) => r.code)).toEqual(codes.slice(0, 4));
     });
 
     it("the library rows, with 0091's licence UPDATEs applied, equal the registry's first four entries", () => {
       const registry = registryEntries();
-      // Seven parsed entries, so an entry whose fields the expression misses is loud, not skipped.
-      expect(registry).toHaveLength(7);
+      // Eight parsed entries (F4.345 added iso), so an entry whose fields the expression misses is loud.
+      expect(registry).toHaveLength(8);
       expect(effectiveLibraryRows()).toEqual(registry.slice(0, 4));
     });
 
@@ -797,8 +797,8 @@ describe("F3.32f slice 2 — migration 0092: the third-party libraries", () => {
 
     it("equal the registry's entries 5 to 7", () => {
       const registry = registryEntries();
-      // Seven parsed entries, so an entry whose fields the expression misses is loud, not skipped.
-      expect(registry).toHaveLength(7);
+      // Eight parsed entries (F4.345 added iso), so an entry whose fields the expression misses is loud.
+      expect(registry).toHaveLength(8);
       expect(libraryRows(migration0092())).toEqual(registry.slice(4, 7));
     });
   });

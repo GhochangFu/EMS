@@ -2,7 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   coreHasNoSourceNoticeOrCredits,
-  listsTheSevenLibrariesInOrder,
+  listsTheEightLibrariesInOrder,
   lucideCarriesItsLicenceVersionAndSource,
   nameAndVersionAreTheRegistrys,
   noticesComeFromTheParameter,
@@ -11,7 +11,7 @@ import {
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.32f attributions entries", () => {
   it("A1 lists the seven libraries in order", () => {
-    listsTheSevenLibrariesInOrder();
+    listsTheEightLibrariesInOrder();
   });
   it("A2 core has no source, notice or credits", () => {
     coreHasNoSourceNoticeOrCredits();

@@ -43,6 +43,8 @@ const LAZY_LOADERS = {
     import("./wmpid.generated").then((m): LazyLibraryModule => ({ shapes: m.WMPID_SHAPES, notice: m.WMPID_LICENCE_NOTICE })),
   drawio: () =>
     import("./drawio.generated").then((m): LazyLibraryModule => ({ shapes: m.DRAWIO_SHAPES, notice: m.DRAWIO_LICENCE_NOTICE })),
+  // F4.345 / ADR 0121 decision 4: the isometric set is about 1 MB of path data, so it loads lazily too.
+  iso: () => import("./iso.generated").then((m): LazyLibraryModule => ({ shapes: m.ISO_SHAPES, notice: m.ISO_LICENCE_NOTICE })),
 } as const satisfies Partial<Record<MimicSymbolLibraryCode, () => Promise<LazyLibraryModule>>>;
 
 /** A library code whose shapes and notice load on first use. */

@@ -8,6 +8,7 @@ import {
   aLazyKeyHasShapesOnlyAfterItsLoad,
   aLazyNoticeArrivesWithItsLoad,
   aLoadReadsOnlyTheLibrariesAskedFor,
+  anIsoKeyHasFillShapesOnlyAfterItsLoad,
   aStaleLazyKeyDrawsTheFallbackAfterTheLoad,
   aStaticKeyNeedsNoLoad,
   everyNonCoreLibraryHasANoticeAfterTheLoad,
@@ -22,6 +23,9 @@ describe("F3.32h the qet, wmpid and drawio libraries load on first use", () => {
 
   it("L1 a lazy key has shapes only after its load", async () => {
     await aLazyKeyHasShapesOnlyAfterItsLoad();
+  });
+  it("L1b an iso key has fill shapes only after its load", async () => {
+    await anIsoKeyHasFillShapesOnlyAfterItsLoad();
   });
   it("L2 a load reads only the libraries asked for", async () => {
     await aLoadReadsOnlyTheLibrariesAskedFor();

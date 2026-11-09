@@ -1,4 +1,5 @@
 import { DRAWIO_SYMBOL_KEYS } from "../mimic-symbol-libraries/drawio.generated";
+import { ISO_SYMBOL_KEYS } from "../mimic-symbol-libraries/iso.generated";
 import { LUCIDE_SYMBOL_KEYS } from "../mimic-symbol-libraries/lucide.generated";
 import { MDI_SYMBOL_KEYS } from "../mimic-symbol-libraries/mdi.generated";
 import { QET_SYMBOL_KEYS } from "../mimic-symbol-libraries/qet.generated";
@@ -134,10 +135,21 @@ export function mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder(): void {
     ...QET_SYMBOL_KEYS,
     ...WMPID_SYMBOL_KEYS,
     ...DRAWIO_SYMBOL_KEYS,
+    ...ISO_SYMBOL_KEYS,
   ];
   assert(expected.length >= 29 + 300, `only ${expected.length} symbols`);
   assert(JSON.stringify(mimicStaticSymbolSchema.options) === JSON.stringify(expected), "the static symbol list is out of order");
   assert(new Set(expected).size === expected.length, "a symbol key repeats");
+}
+
+/** `F4.345` / ADR 0121 decision 1 — the isometric library's 50 keys close the static list, the
+ * tank's twin among them. Mutation: drop `...ISO_SYMBOL_KEYS` from `mimicStaticSymbolSchema` →
+ * this claim reddens. */
+export function mimicSymbolSchemaEndsWithTheFiftyIsoKeys(): void {
+  const last = mimicStaticSymbolSchema.options.slice(-50);
+  assert(last.length === 50 && last.every((key) => key.startsWith("iso:")), `last 50: ${JSON.stringify(last.slice(0, 3))}…`);
+  assert((last as readonly string[]).includes("iso:tank"), "iso:tank is not a static symbol");
+  assert(mimicSymbolSchema.safeParse("iso:pump").success, "iso:pump does not parse as a symbol");
 }
 
 /** A refused symbol answers one short message, not the 438-option list (security review L3). */
@@ -174,11 +186,12 @@ export function everyLibraryKeyNamesItsLibraryAndFitsSixtyFour(): void {
   }
 }
 
-/** The four libraries of ADR 0084 decision 4, then the three of ADR 0086 decision 9, in palette
- * order. Mutation: drop "drawio" from `mimicSymbolLibraryCodeSchema` → this claim reddens. */
-export function libraryCodesAreTheSevenInPaletteOrder(): void {
+/** The four libraries of ADR 0084 decision 4, the three of ADR 0086 decision 9, then the isometric
+ * library of ADR 0121, in palette order. Mutation: drop "drawio" or "iso" from
+ * `mimicSymbolLibraryCodeSchema` → this claim reddens. */
+export function libraryCodesAreTheEightInPaletteOrder(): void {
   const codes = mimicSymbolLibraryCodeSchema.options;
-  const expected = ["core", "tabler", "lucide", "mdi", "qet", "wmpid", "drawio"];
+  const expected = ["core", "tabler", "lucide", "mdi", "qet", "wmpid", "drawio", "iso"];
   assert(JSON.stringify(codes) === JSON.stringify(expected), `codes: ${JSON.stringify(codes)}`);
 }
 

@@ -7,7 +7,7 @@ import {
   groupCodesAreTheEight,
   layoutDtoParsesOrgSymbols,
   layoutDtoRefusesAnAbsentOrgSymbols,
-  libraryCodesAreTheSevenInPaletteOrder,
+  libraryCodesAreTheEightInPaletteOrder,
   mimicCoreSymbolsAreTheTwentyNineInOrder,
   mimicLayoutCellIsTen,
   mimicLayoutDtoParsesSymbolLibraries,
@@ -17,6 +17,7 @@ import {
   mimicSymbolRefusalIsShort,
   mimicSymbolSchemaAcceptsAnOrgKey,
   mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder,
+  mimicSymbolSchemaEndsWithTheFiftyIsoKeys,
   mimicSymbolSchemaRefusesOrgPlantWithNoName,
   mimicWidgetNodesParsesTheLayoutArm,
   mimicWidgetNodesParsesThePresetArm,
@@ -42,8 +43,12 @@ describe("F3.32c — the mimic layout contracts (ADR 0081)", () => {
     everyLibraryKeyNamesItsLibraryAndFitsSixtyFour();
   });
 
-  it("declares the seven symbol libraries in palette order (F3.32e, F3.32f)", () => {
-    libraryCodesAreTheSevenInPaletteOrder();
+  it("ends the static symbol list with the fifty isometric keys (F4.345)", () => {
+    mimicSymbolSchemaEndsWithTheFiftyIsoKeys();
+  });
+
+  it("declares the eight symbol libraries in palette order (F3.32e, F3.32f, F4.345)", () => {
+    libraryCodesAreTheEightInPaletteOrder();
   });
 
   it("declares the eight palette groups (F3.32e)", () => {
