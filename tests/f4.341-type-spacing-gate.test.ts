@@ -18,9 +18,8 @@ import { repoRoot } from "./support/source-scan";
  *  - **Z1** no arbitrary `text-[<size>]` utility (a hard zero since PR 1c; PR 1a measured 417
  *    and PRs 1b/1c swept them to the named steps, 7–9px SVG text to the `fontSize` attribute).
  *  - **Z2** arbitrary padding, gap, `space-*` and `leading-*` utilities: zero.
- *  - **Z3** inline `fontSize:` / `padding:` / `gap:` literals (ECharts options, CodeMirror's
- *    theme), per file, held to an exact `Z3_FLOOR` until PR 4 makes the chart text read the type
- *    tokens. An SVG `<text fontSize={…}>` attribute is drawing geometry (decision 15) and is not
+ *  - **Z3** no inline `fontSize:` / `padding:` / `gap:` literal (ECharts options, CodeMirror's
+ *    theme): since PR 4 chart text reads `chartType()` and CodeMirror's theme `var(--…)`. An SVG `<text fontSize={…}>` attribute is drawing geometry (decision 15) and is not
  *    counted; `Z3_EXEMPT` names the two non-type sites with their reason.
  *  - **Z4** the `surface-*` rules of `index.css` hold no `font-size`, `padding`, `gap`,
  *    `border-radius` or `min-height` literal: each reads a design token.
@@ -31,19 +30,8 @@ const rel = (full: string): string => relative(repoRoot, full).split("\\").join(
 
 const ARBITRARY_TEXT_SIZE = /\btext-\[(?:\d|\.\d|length:|calc\(|var\(|clamp\()/g;
 const ARBITRARY_SPACING = /(?<![\w-])-?(?:p[xytblrse]?|gap(?:-[xy])?|space-[xy]|leading)-\[/g;
-const INLINE_LITERAL = /\b(?:fontSize|padding|gap)\s*:\s*[-\d"'`\[]/g;
-
-/** Today's inline type and spacing literals per file (31 sites). Exact. PR 4 empties it. */
-const Z3_FLOOR: Record<string, number> = {
-  "apps/web/src/components/asset-templates/formula-editor.tsx": 2,
-  "apps/web/src/components/control-room/segment-trend-chart.tsx": 3,
-  "apps/web/src/components/energy-top-bar-chart.tsx": 3,
-  "apps/web/src/components/energy/energy-heatmap.tsx": 2,
-  "apps/web/src/components/load-trend-chart.tsx": 3,
-  "apps/web/src/lib/cost-by-day-chart.ts": 2,
-  "apps/web/src/lib/energy-stack-option.ts": 4,
-  "apps/web/src/lib/widget-echarts-option.ts": 12,
-};
+/** A number, an array, or a string that does not read a token (`"var(--…)"` is a token read). */
+const INLINE_LITERAL = /\b(?:fontSize|padding|gap)\s*:\s*(?:[-\d[]|["'`](?!var\(--))/g;
 
 /** Inline literals that are not type or spacing of the page, with the reason. Exact. */
 const Z3_EXEMPT: Record<string, { count: number; reason: string }> = {
@@ -93,13 +81,13 @@ describe("F4.341 the type and spacing zero gate", () => {
     expect([..."p-[3px] px-[1rem] gap-x-[5px] space-y-[2px] leading-[1.1] -mt-[2px] inset-[2px]".matchAll(ARBITRARY_SPACING)].length).toBe(5);
   });
 
-  it("Z3 inline fontSize / padding / gap literals per file equal Z3_FLOOR plus Z3_EXEMPT exactly", () => {
-    const expected = { ...Z3_FLOOR, ...Object.fromEntries(Object.entries(Z3_EXEMPT).map(([f, e]) => [f, e.count])) };
+  it("Z3 no inline fontSize / padding / gap literal but the Z3_EXEMPT sites (a hard zero since PR 4)", () => {
+    const expected = Object.fromEntries(Object.entries(Z3_EXEMPT).map(([f, e]) => [f, e.count]));
     expect(sorted(countsBy(INLINE_LITERAL))).toEqual(sorted(expected));
   });
 
   it("Z3 the scan is live: it counts an option literal and not an SVG attribute or a token read", () => {
-    const sample = 'axisLabel: { fontSize: 10 }, padding: "4px", <text fontSize={12}>, fontSize: type.xs';
+    const sample = 'axisLabel: { fontSize: 10 }, padding: "4px", <text fontSize={12}>, fontSize: type.xs, padding: "var(--space-2)"';
     expect([...sample.matchAll(INLINE_LITERAL)].length).toBe(2);
   });
 });

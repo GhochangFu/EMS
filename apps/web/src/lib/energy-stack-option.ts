@@ -6,6 +6,7 @@ import { shiftCompareBuckets } from "./asset-history-range";
 import { seriesPalette } from "./chart-theme";
 import type { Roles } from "./theme";
 import { CHART_SERIES } from "./widget-catalog";
+import { chartType } from "./design";
 
 /** Every stacked series carries this id, so ECharts piles them by data index. */
 export const STACK_ID = "total";
@@ -64,11 +65,11 @@ export function buildEnergyStackOption(args: {
 
   return {
     color: stacks.map((stack, i) => stack.colour ?? palette[i % palette.length]),
-    legend: { bottom: 0, textStyle: { fontSize: 11 } },
+    legend: { bottom: 0, textStyle: { fontSize: chartType()["2xs"] } },
     grid: { left: 52, right: 20, top: 28, bottom: 56 },
     tooltip: { trigger: "axis", valueFormatter: (v) => `${Number(v).toFixed(1)} kW` },
-    xAxis: { type: "time", axisLabel: { fontSize: 10 } },
-    yAxis: { type: "value", name: "kW", nameTextStyle: { fontSize: 10 }, axisLabel: { fontSize: 10 } },
+    xAxis: { type: "time", axisLabel: { fontSize: chartType()["3xs"] } },
+    yAxis: { type: "value", name: "kW", nameTextStyle: { fontSize: chartType()["3xs"] }, axisLabel: { fontSize: chartType()["3xs"] } },
     series: [...stacked, ...compare],
   };
 }

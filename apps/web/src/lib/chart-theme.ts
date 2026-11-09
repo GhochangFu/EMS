@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 import { useThemeRoles } from "../stores/theme-store";
+import { chartType, type ChartType } from "./design";
 import { withAlpha, type RoleName, type Roles } from "./theme";
 
 /**
@@ -13,7 +14,9 @@ import { withAlpha, type RoleName, type Roles } from "./theme";
  * re-inits the chart when `theme` changes (deep-equal), so a toggle repaints every default at once.
  * An option still carries its own series colours from the same roles.
  *
- * Every string in the object is a role or a role with alpha (`chart-theme.spec.ts` C5).
+ * Every string in the object is a role or a role with alpha (`chart-theme.spec.ts` C5), except
+ * `textStyle.fontFamily`: since `F4.341` (ADR 0118 decision 4) chart text is set in the design
+ * system's font and type scale, from `chartType()`, rather than ECharts' default `sans-serif`.
  */
 
 /** The generic series palette, in order: the four status roles, then two quiet hues. */
@@ -34,11 +37,11 @@ function axis(roles: Roles) {
   };
 }
 
-/** The ECharts theme object for `roles` — pass it as `<ReactECharts theme>`. */
-export function echartsTheme(roles: Roles) {
+/** The ECharts theme object for `roles` and `type` — pass it as `<ReactECharts theme>`. */
+export function echartsTheme(roles: Roles, type: ChartType = chartType()) {
   return {
     color: seriesPalette(roles),
-    textStyle: { color: roles["ink-muted"] },
+    textStyle: { color: roles["ink-muted"], fontFamily: type.fontFamily, fontSize: type.xs },
     title: { textStyle: { color: roles.ink } },
     legend: { textStyle: { color: roles["ink-muted"] }, inactiveColor: roles["ink-hint"] },
     tooltip: {
@@ -67,11 +70,14 @@ export function echartsTheme(roles: Roles) {
 export type EChartsTheme = ReturnType<typeof echartsTheme>;
 
 /**
- * The current roles and the theme object built from them. Both change identity only when the
- * theme changes (`currentRoles()` caches per theme), so a chart re-inits on a toggle and never on
- * an ordinary re-render.
+ * The current roles, the type tokens and the theme object built from them. All change identity
+ * only when the theme, the profile or the design system changes (`currentRoles()` caches on all
+ * three), so a chart re-inits on a switch and never on an ordinary re-render.
  */
-export function useChartTheme(): { roles: Roles; theme: EChartsTheme } {
+export function useChartTheme(): { roles: Roles; theme: EChartsTheme; type: ChartType } {
   const roles = useThemeRoles();
-  return useMemo(() => ({ roles, theme: echartsTheme(roles) }), [roles]);
+  return useMemo(() => {
+    const type = chartType();
+    return { roles, theme: echartsTheme(roles, type), type };
+  }, [roles]);
 }

@@ -51,14 +51,33 @@
         }
         document.documentElement.setAttribute("data-surface", surface);
         var profiles = ["ocean", "lagoon", "indigo", "graphite", "high-contrast", "forest", "sand", "navy-pop"];
+        var designs = ["enterprise-flat", "swiss-grid", "bento-ops", "control-room-dark"];
         try {
-          var cachedProfile = window.localStorage.getItem("bms.profile");
+          // F4.341 (ADR 0118 decision 12): a session paints the user's cached values (bms.design,
+          // bms.profile); no session (the sign-in page) paints the cached portal default
+          // (bms.portal-appearance), never the last user's. The defaults carry no attribute.
+          var cachedProfile = null;
+          var cachedDesign = null;
           var auth = JSON.parse(window.localStorage.getItem("bms-auth") || "null");
-          if (auth && auth.state && auth.state.accessToken && profiles.indexOf(cachedProfile) !== -1) {
+          if (auth && auth.state && auth.state.accessToken) {
+            cachedProfile = window.localStorage.getItem("bms.profile");
+            cachedDesign = window.localStorage.getItem("bms.design");
+          } else {
+            var portal = JSON.parse(window.localStorage.getItem("bms.portal-appearance") || "null");
+            if (portal) {
+              cachedProfile = portal.colourProfile;
+              cachedDesign = portal.designSystem;
+            }
+          }
+          if (profiles.indexOf(cachedProfile) !== -1) {
             document.documentElement.setAttribute("data-profile", cachedProfile);
           }
+          if (designs.indexOf(cachedDesign) !== -1) {
+            document.documentElement.setAttribute("data-design", cachedDesign);
+          }
         } catch (e) {
-          // No profile: the page is the default until /auth/me answers.
+          // No profile or design: the page is the default until /auth/me (or the sign-in page's
+          // portal read) answers.
         }
       })();
     </script>

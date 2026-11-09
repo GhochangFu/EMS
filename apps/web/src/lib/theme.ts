@@ -156,9 +156,17 @@ export function withAlpha(rgb: string, alpha: number): string {
   return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${alpha})`;
 }
 
+/**
+ * `<html>`'s computed style — the one reader of it (`f3.65c-theme-gates` G3). `F4.341`'s chart type
+ * tokens (`lib/design.ts` `chartType()`) read through it too, so the rule stays one call site.
+ */
+export function rootComputedStyle(): CSSStyleDeclaration {
+  return getComputedStyle(document.documentElement);
+}
+
 /** One role's custom property on `<html>`, as the browser computes it for the current theme. */
 export function readRoleFromDocument(role: RoleName): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(`--${role}`);
+  return rootComputedStyle().getPropertyValue(`--${role}`);
 }
 
 /**

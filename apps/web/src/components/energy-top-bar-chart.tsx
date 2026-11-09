@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { assetLabel, type EnergyTopConsumer } from "@bms/shared";
 
 import { useChartTheme } from "../lib/chart-theme";
+import { chartType } from "../lib/design";
 
 type Props = {
   consumers: EnergyTopConsumer[];
@@ -37,13 +38,13 @@ export function EnergyTopBarChart({ consumers, status }: Props) {
       xAxis: {
         type: "value",
         name: "kWh (est.)",
-        nameTextStyle: { fontSize: 10 },
-        axisLabel: { fontSize: 10 },
+        nameTextStyle: { fontSize: chartType()["3xs"] },
+        axisLabel: { fontSize: chartType()["3xs"] },
       },
       yAxis: {
         type: "category",
         data: labels,
-        axisLabel: { fontSize: 10, width: 220, overflow: "break" },
+        axisLabel: { fontSize: chartType()["3xs"], width: 220, overflow: "break" },
       },
       series: [
         {

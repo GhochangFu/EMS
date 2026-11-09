@@ -1,9 +1,10 @@
 import { useMutation } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { fetchCurrentUser, loginRequest } from "../api/login";
 import { isOidcEnabled, startOidcLogin } from "../api/oidc";
+import { applyPortalAppearance, fetchPublicAppearance } from "../api/public-appearance";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { peekReturnPath, takeReturnPath } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
@@ -21,6 +22,20 @@ export function LoginPage() {
   const [formError, setFormError] = useState<string | null>(null);
   // `F3.77` (plan D10, OQ6) — read once: a wall session ended on a 401 and its URL is kept.
   const [sessionEnded] = useState(() => peekReturnPath() !== null);
+
+  // F4.341 (ADR 0118 decision 12, Q5): the sign-in page shows the portal default, never an
+  // organization's or a user's. A failed read leaves the page on the cached or the default look.
+  useEffect(() => {
+    let live = true;
+    fetchPublicAppearance()
+      .then((appearance) => {
+        if (live) applyPortalAppearance(appearance);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const mutation = useMutation({
     mutationFn: () => loginRequest(email, password),

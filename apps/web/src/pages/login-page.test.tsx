@@ -26,6 +26,7 @@ import {
   readsTheHeroHeadline,
   readsTheRolePills,
   showsTheWordmark,
+  paintsThePortalAppearance,
 } from "./login-page.spec";
 import { useAuthStore } from "../stores/auth-store";
 
@@ -149,5 +150,17 @@ describe("F4.203 the login page after a deactivated 401", () => {
 
   it("L22 a raw error envelope reads as its sentence", async () => {
     await aRawEnvelopeReadsAsItsSentence();
+  });
+});
+
+describe("F4.341 the sign-in page shows the portal default (ADR 0118 decision 12)", () => {
+  afterEach(() => {
+    localStorage.clear();
+    document.documentElement.removeAttribute("data-design");
+    document.documentElement.removeAttribute("data-profile");
+  });
+
+  it("LA1 paints and caches GET /public/appearance, and writes no user cache", async () => {
+    await paintsThePortalAppearance();
   });
 });

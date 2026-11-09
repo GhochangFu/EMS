@@ -350,3 +350,45 @@ export async function runAMeAnswerAppliesTheColourProfile(): Promise<void> {
   await fetchCurrentUser("tok-cp");
   assert(!document.documentElement.hasAttribute("data-profile"), "expected no data-profile for nexus");
 }
+
+/**
+ * `F4.341` (ADR 0118 decision 8) — every `/auth/me` answer applies its effective design system to
+ * `<html>` (and `bms.design`); the default removes both. An answer from an older API without
+ * `appearance` falls back to `colourProfile` and the default design system.
+ */
+export async function runAMeAnswerAppliesTheDesignSystem(): Promise<void> {
+  signInAs("tok-ds", "ds@example.test");
+  const answer = (appearance: unknown) =>
+    new Response(
+      JSON.stringify({
+        user: { id: "id-tok-ds", email: "ds@example.test", displayName: "ds", role: "viewer" },
+        scope: { kind: "none", locations: [], assetGroups: [], assetIds: [] },
+        colourProfile: "sand",
+        ...(appearance === undefined ? {} : { appearance }),
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      Promise.resolve(
+        answer({ designSystem: { value: "bento-ops", from: "user" }, colourProfile: { value: "sand", from: "organization" } }),
+      ),
+    ),
+  );
+  await fetchCurrentUser("tok-ds");
+  assert(document.documentElement.getAttribute("data-design") === "bento-ops", "expected data-design=bento-ops");
+  assert(localStorage.getItem("bms.design") === "bento-ops", "expected bms.design=bento-ops");
+  assert(document.documentElement.getAttribute("data-profile") === "sand", "expected data-profile=sand");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      Promise.resolve(
+        answer({ designSystem: { value: "nexus-soft", from: "portal" }, colourProfile: { value: "sand", from: "portal" } }),
+      ),
+    ),
+  );
+  await fetchCurrentUser("tok-ds");
+  assert(!document.documentElement.hasAttribute("data-design"), "expected no data-design for nexus-soft");
+  assert(localStorage.getItem("bms.design") === null, "expected no bms.design for nexus-soft");
+}

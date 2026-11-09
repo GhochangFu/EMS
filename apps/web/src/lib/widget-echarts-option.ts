@@ -12,6 +12,7 @@ import {
   type WidgetSeries,
 } from "./widget-catalog";
 import { formatWidgetValue } from "./widget-value";
+import { chartType } from "./design";
 
 function clamp(value: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, value));
@@ -91,14 +92,14 @@ export function buildRadialGaugeOption(config: RadialGaugeConfig, value: number,
         // the gauge, below the arc's ends.
         detail: {
           formatter: (v) => formatWidgetValue(v, { unit: config.unit, decimals: config.decimals }),
-          fontSize: 16,
+          fontSize: chartType()["base"],
           offsetCenter: [0, "72%"],
         },
         // The default `splitNumber: 10` prints eleven tick labels. On a 6..12
         // range that is "6.6 7.2 7.8 8.4 9 9.6 …", which collides with itself
         // at this size and with the needle. Four splits give five labels.
         splitNumber: 4,
-        axisLabel: { fontSize: 9, distance: 12 },
+        axisLabel: { fontSize: chartType()["3xs"], distance: 12 },
         // A reading above `max` (or below `min`) must not send the needle
         // outside the widget box — clamped the same way the value driving
         // the axis colours already is.
@@ -206,7 +207,7 @@ export function buildChartOption(
             bottom: 0,
             itemWidth: 12,
             itemHeight: 8,
-            textStyle: { fontSize: 10 },
+            textStyle: { fontSize: chartType()["3xs"] },
             data: ordered.map((s) => s.name),
           },
           grid: { top: 16, left: 8, right: 16, bottom: 28, containLabel: true },
@@ -250,7 +251,7 @@ function compareOption(
       type: "category",
       inverse: true,
       data: ordered.map((s) => s.name),
-      axisLabel: { fontSize: 10 },
+      axisLabel: { fontSize: chartType()["3xs"] },
     },
     series: [
       {
@@ -294,7 +295,7 @@ function donutOption(
       bottom: 0,
       itemWidth: 12,
       itemHeight: 8,
-      textStyle: { fontSize: 10 },
+      textStyle: { fontSize: chartType()["3xs"] },
     },
     series: [
       {
@@ -302,7 +303,7 @@ function donutOption(
         radius: ["50%", "75%"],
         center: ["50%", "45%"],
         avoidLabelOverlap: true,
-        label: { formatter: "{d}%", fontSize: 10 },
+        label: { formatter: "{d}%", fontSize: chartType()["3xs"] },
         // Each slice's colour is its point's place in `ordered`, set before the filter, so a point
         // that gains or loses its share never shifts the others' colours, and a point keeps the
         // colour a compare chart gives it.
@@ -413,8 +414,8 @@ function heatmapOption(
         return value ? `${days[value[0]]} ${hourLabel(value[1])} · ${format(value[2])}` : "";
       },
     },
-    xAxis: { type: "category", data: days, axisLabel: { fontSize: 10 } },
-    yAxis: { type: "category", data: Array.from({ length: 24 }, (_, hour) => hourLabel(hour)), axisLabel: { fontSize: 9 } },
+    xAxis: { type: "category", data: days, axisLabel: { fontSize: chartType()["3xs"] } },
+    yAxis: { type: "category", data: Array.from({ length: 24 }, (_, hour) => hourLabel(hour)), axisLabel: { fontSize: chartType()["3xs"] } },
     visualMap: {
       type: "continuous",
       min,
@@ -424,7 +425,7 @@ function heatmapOption(
       left: "center",
       bottom: 0,
       itemHeight: 80,
-      textStyle: { fontSize: 10 },
+      textStyle: { fontSize: chartType()["3xs"] },
       // `F4.325` — the scale's hue is the first point's chosen colour, else the accent.
       inRange: { color: [withAlpha(hue, 0.08), hue] },
     },
@@ -532,8 +533,8 @@ function matrixOption(
         return value && hour ? `${names[value[1]]} · ${hour.day} ${hour.label} · ${format(value[2])}` : "";
       },
     },
-    xAxis: { type: "category", data: hours.map((hour) => hour.label), axisLabel: { fontSize: 9 } },
-    yAxis: { type: "category", inverse: true, data: names, axisLabel: { fontSize: 9 } },
+    xAxis: { type: "category", data: hours.map((hour) => hour.label), axisLabel: { fontSize: chartType()["3xs"] } },
+    yAxis: { type: "category", inverse: true, data: names, axisLabel: { fontSize: chartType()["3xs"] } },
     visualMap: {
       type: "continuous",
       min,
@@ -543,7 +544,7 @@ function matrixOption(
       left: "center",
       bottom: 0,
       itemHeight: 80,
-      textStyle: { fontSize: 10 },
+      textStyle: { fontSize: chartType()["3xs"] },
       inRange: { color: [withAlpha(hue, 0.08), hue] },
     },
     series: [{ type: shape.type, data }],

@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 
 import type { AccessibleScope, AuthFailureCode, UserRole } from "@bms/shared";
 
-import { clearProfile } from "./theme-store";
+import { clearDesign, clearProfile } from "./theme-store";
 
 export type AuthUser = {
   id: string;
@@ -62,6 +62,8 @@ export const useAuthStore = create<AuthState>()(
       clearSession: () => {
         // F4.310 (ADR 0110 Q6): the sign-in page, and the next user of a shared PC, see the default.
         clearProfile();
+        // F4.341 (ADR 0118 decision 12): and the design system, for the same reason.
+        clearDesign();
         set({ accessToken: null, oidcIdToken: null, user: null, scope: null });
       },
       rememberAuthFailure: (code) =>
