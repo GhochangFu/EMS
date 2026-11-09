@@ -848,6 +848,119 @@ html[data-design="enterprise-flat"][data-surface="flat"] {
 
 
 /*
+ * F4.341 PR 9 — `control-room-dark` (ADR 0118 decision 2, Amendment 1 A5/A6): control-room walls,
+ * SMOC and night shifts. IBM Plex Sans for text and headings, IBM Plex Mono for figures (tabular as
+ * drawn); radii 4px; a dense spacing scale, still on the 4px grid; A6's weights, sentence case and
+ * 12px floor. No corner brackets and no glow (A5). The rail shell (`SHELL_OF_DESIGN`), whose thin
+ * header carries the live status strip. Designed for dark, and it passes both themes: it sets no
+ * colour, so every profile's light and dark values apply.
+ */
+html[data-design="control-room-dark"] {
+  --font-body: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, sans-serif;
+  --font-head: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --text-3xs: 12px;
+  --text-2xs: 12px;
+  --text-xs: 0.75rem;
+  --leading-xs: 1rem;
+  --text-sm: 0.875rem;
+  --leading-sm: 1.25rem;
+  --text-base: 1rem;
+  --leading-base: 1.5rem;
+  --text-lg: 1.125rem;
+  --leading-lg: 1.75rem;
+  --text-xl: 1.25rem;
+  --leading-xl: 1.75rem;
+  --text-2xl: 1.5rem;
+  --leading-2xl: 2rem;
+  --text-3xl: 1.875rem;
+  --leading-3xl: 2.25rem;
+  --text-4xl: 2.25rem;
+  --leading-4xl: 2.5rem;
+  --text-5xl: 3rem;
+  --leading-5xl: 1;
+  --text-6xl: 3.75rem;
+  --leading-6xl: 1;
+  --text-wall-min: 16px;
+  --weight-bold: 600;
+  --weight-semibold: 600;
+  --caps-transform: none;
+  --caps-tracking-wide: 0;
+  --caps-tracking-wider: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.5rem;
+  --space-4: 0.75rem;
+  --space-5: 1rem;
+  --space-6: 1.25rem;
+  --space-7: 1.5rem;
+  --space-8: 1.75rem;
+  --radius-card: 4px;
+  --radius-card-sm: 4px;
+  --radius-well: 4px;
+  --radius-control: 4px;
+  --radius-button: 4px;
+  --radius-pill: 9999px;
+  --card-ground: rgb(var(--surface));
+  --page-ground: rgb(var(--canvas));
+  --button-edge: rgb(var(--ink-faint));
+}
+
+html[data-design="control-room-dark"][data-surface="flat"] {
+  --font-body: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, sans-serif;
+  --font-head: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --text-3xs: 12px;
+  --text-2xs: 12px;
+  --text-xs: 0.75rem;
+  --leading-xs: 1rem;
+  --text-sm: 0.875rem;
+  --leading-sm: 1.25rem;
+  --text-base: 1rem;
+  --leading-base: 1.5rem;
+  --text-lg: 1.125rem;
+  --leading-lg: 1.75rem;
+  --text-xl: 1.25rem;
+  --leading-xl: 1.75rem;
+  --text-2xl: 1.5rem;
+  --leading-2xl: 2rem;
+  --text-3xl: 1.875rem;
+  --leading-3xl: 2.25rem;
+  --text-4xl: 2.25rem;
+  --leading-4xl: 2.5rem;
+  --text-5xl: 3rem;
+  --leading-5xl: 1;
+  --text-6xl: 3.75rem;
+  --leading-6xl: 1;
+  --text-wall-min: 16px;
+  --weight-bold: 600;
+  --weight-semibold: 600;
+  --caps-transform: none;
+  --caps-tracking-wide: 0;
+  --caps-tracking-wider: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.5rem;
+  --space-4: 0.75rem;
+  --space-5: 1rem;
+  --space-6: 1.25rem;
+  --space-7: 1.5rem;
+  --space-8: 1.75rem;
+  --radius-card: 4px;
+  --radius-card-sm: 4px;
+  --radius-well: 4px;
+  --radius-control: 4px;
+  --radius-button: 4px;
+  --radius-pill: 0;
+  --card-ground: rgb(var(--surface));
+  --page-ground: rgb(var(--canvas));
+  --button-edge: rgb(var(--ink-faint));
+}
+
+
+/*
  * F4.341 P4 (ADR 0118 Amendment 2) — the wall's type floor. On a wall surface (`[data-wall-root]`,
  * `components/control-room/wall-frame.tsx`) every text step under 16px is raised to
  * `--text-wall-min`, in every design system (`nexus-soft` included): a wall is read from across a
@@ -918,6 +1031,26 @@ html[data-design="enterprise-flat"][data-theme="dark"]:not([data-surface="flat"]
   --shadow-pressed-sm: inset 0 1px 1px rgb(var(--scrim) / 0.4);
   --shadow-pill: 0 0 0 0 rgb(var(--scrim) / 0);
   --shadow-ribbon: 0 1px 0 rgb(var(--line) / 1);
+}
+
+/* F4.341 PR 9 — `control-room-dark`'s shadows: a flat card with a 1px `line-strong` edge (as an inset
+ * shadow, so no border rule is needed) and a hairline well. */
+html[data-design="control-room-dark"]:not([data-surface="flat"]) {
+  --shadow-raised: inset 0 0 0 1px rgb(var(--line-strong) / 0.6);
+  --shadow-raised-sm: inset 0 0 0 1px rgb(var(--line-strong) / 0.6);
+  --shadow-pressed: inset 0 1px 2px rgb(var(--ink) / 0.08);
+  --shadow-pressed-sm: inset 0 1px 1px rgb(var(--ink) / 0.08);
+  --shadow-pill: 0 0 0 0 rgb(var(--ink) / 0);
+  --shadow-ribbon: 0 1px 0 rgb(var(--line-strong) / 1);
+}
+
+html[data-design="control-room-dark"][data-theme="dark"]:not([data-surface="flat"]) {
+  --shadow-raised: inset 0 0 0 1px rgb(var(--line-strong) / 0.8);
+  --shadow-raised-sm: inset 0 0 0 1px rgb(var(--line-strong) / 0.8);
+  --shadow-pressed: inset 0 1px 2px rgb(var(--scrim) / 0.5);
+  --shadow-pressed-sm: inset 0 1px 1px rgb(var(--scrim) / 0.5);
+  --shadow-pill: 0 0 0 0 rgb(var(--scrim) / 0);
+  --shadow-ribbon: 0 1px 0 rgb(var(--line-strong) / 1);
 }
 
 /*

@@ -668,9 +668,14 @@ function seriesAccentOffenders(theme: Theme, tokens: ReturnType<typeof loadToken
 const DS_TEXT_PAIRS: Record<string, Pair[]> = {
   // PR 8: the sidebar's active item, `accent-strong` text on an `accent` 12% wash over `surface`.
   "enterprise-flat": [{ fg: "accent-strong", bg: "surface", wash: { tint: "accent", alpha: 0.12 } }],
+  // PR 9: the rail's labels (`ink-muted`, `ink`) on the rail's `canvas` and the cards' `surface` are
+  // base pairs already; its one new ground is none.
+  "control-room-dark": [],
 };
 const DS_UI_PAIRS: Record<string, Pair[]> = {
   "enterprise-flat": [],
+  // PR 9: paints no ground beyond the base vocabulary (cards on `surface`, the page on `canvas`).
+  "control-room-dark": [],
 };
 
 describe("F4.341: every design system's own grounds hold in every profile and theme (ADR 0118 decision 14)", () => {
