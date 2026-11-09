@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 
 import { onboardingSessions } from "@bms/db";
@@ -9,6 +9,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { resolveActorId } from "../../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import { looksLikeCredential } from "../../security/credential-detect";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { OnboardingService } from "./onboarding.service";
 
@@ -18,6 +19,8 @@ export const LOCK_NEEDS_GLOBAL_ADMIN = "Only a global administrator can lock or 
 export const LOCK_NEEDS_DRAFT = "Only a draft can be locked.";
 /** `F4.339`: the 409 of a lock on a draft that is already locked. */
 export const ALREADY_LOCKED = "This draft is already locked; unlock it first.";
+/** `F4.339` review L2: the 400 of a reason that looks like a secret — it is copied into every refusal and the audit. */
+export const LOCK_REASON_LOOKS_LIKE_A_SECRET = "The lock reason looks like it contains a credential; describe the reason without it.";
 
 /**
  * `F4.339` (ADR 0117 decision 9, plan R12, ruling Q7) — a global
@@ -39,6 +42,7 @@ export class OnboardingSessionLockService {
   /** Locks a draft: 403 unless a global admin, 409 on a non-draft or an already locked draft. */
   async lock(jwt: JwtPayload, sessionId: string, body: LockOnboardingSessionBody): Promise<OnboardingSessionDto> {
     await this.assertGlobalAdmin(jwt);
+    if (looksLikeCredential(body.reason)) throw new BadRequestException(LOCK_REASON_LOOKS_LIKE_A_SECRET);
     const session = await this.sessions.loadSession(jwt, sessionId);
     const actorId = await resolveActorId(this.fleetDb, jwt);
     await withTenant(this.tenantDb, session.organizationId, async (tx) => {

@@ -23,6 +23,7 @@ describe("F3.24b U3 — the session gate runs before any refuse row (M5)", () =>
 describe("F3.24b U3 — refusals with no audit row", () => {
   it("a committed session is a 403", () => S.aCommittedSessionIsA403WithNoAudit());
   it("a locked draft starts no discovery (F4.339)", () => S.aLockedDraftStartsNoDiscovery());
+  it("a lock landing before the row lock starts no discovery (F4.339 review M1)", () => S.aLockLandingBeforeTheRowLockStartsNoDiscovery());
   it("a session committed before the lock is a 409", () => S.aSessionCommittedBeforeTheLockIsA409());
   it("an unknown RTU is a 400", () => S.anUnknownRtuIsA400());
   it("a non-MQTT RTU is a 400", () => S.aNonMqttRtuIsA400());

@@ -161,6 +161,8 @@ export class OnboardingDiscoveryService {
     if (!locked || locked.status !== "draft") {
       return { kind: "refuse", error: new ConflictException(SESSION_NO_LONGER_DRAFT) };
     }
+    // F4.339 (R12): re-checked under the row lock, so a lock that landed after the load still refuses.
+    assertSessionUnlocked(locked);
     const orgId = locked.organizationId;
     const draft = locked.draft as Record<string, unknown>;
     const rtus = Array.isArray(draft.rtus) ? (draft.rtus as unknown[]) : [];

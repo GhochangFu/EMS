@@ -97,6 +97,8 @@ export type Options = {
   lockedStatus?: string;
   /** F4.339: the loaded session's lock reason (null = unlocked). */
   lockReason?: string | null;
+  /** F4.339: the lock reason on the row read FOR UPDATE (a lock that landed after the load). */
+  lockedLockReason?: string | null;
   elsewhere?: unknown[];
   queue?: "configured" | "unconfigured" | "throws";
   notFound?: boolean;
@@ -130,7 +132,7 @@ export function harness(options: Options = {}): Harness {
     },
     lock: async () => {
       events.push("lock");
-      return { organizationId: LOCKED_ORG, status: options.lockedStatus ?? "draft", draft: currentDraft, messages: [], checkpoints: null };
+      return { organizationId: LOCKED_ORG, status: options.lockedStatus ?? "draft", draft: currentDraft, messages: [], checkpoints: null, lockReason: options.lockedLockReason ?? null };
     },
     activeDiscoveriesElsewhere: async () => options.elsewhere ?? [],
     writeDiscovery: async (_tx: unknown, _sessionId: string, value: Record<string, unknown>) => {
@@ -332,6 +334,14 @@ export async function aLockedDraftStartsNoDiscovery(): Promise<void> {
   expect(err).toEqual(new ConflictException(lockedSessionMessage("F4.327 evidence")));
   expect(h.audits).toEqual([]);
   expect(h.jobs).toEqual([]);
+}
+
+/** F4.339 review M1: a lock that lands between the load and the row lock still refuses the start. */
+export async function aLockLandingBeforeTheRowLockStartsNoDiscovery(): Promise<void> {
+  const h = harness({ lockedLockReason: "F4.327 evidence" });
+  const err = await rejection(start(h));
+  expect(err).toEqual(new ConflictException(lockedSessionMessage("F4.327 evidence")));
+  expect({ audits: h.audits, writes: h.writes, jobs: h.jobs }).toEqual({ audits: [], writes: [], jobs: [] });
 }
 
 export async function aSessionCommittedBeforeTheLockIsA409(): Promise<void> {
