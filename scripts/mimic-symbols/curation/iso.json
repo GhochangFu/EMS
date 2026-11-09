@@ -1,0 +1,68 @@
+{
+  "water": [
+    { "name": "tank", "label": "Storage tank" },
+    { "name": "clarifier", "label": "Clarifier" },
+    { "name": "membrane", "label": "Membrane skid" },
+    { "name": "vessel", "label": "Pressure vessel" },
+    { "name": "tower", "label": "Cooling tower" },
+    { "name": "aeration", "label": "Aeration basin" },
+    { "name": "dosing", "label": "Dosing skid" },
+    { "name": "pump", "label": "Centrifugal pump" },
+    { "name": "discharge", "label": "Discharge outfall" },
+    { "name": "valve", "label": "Gate valve" },
+    { "name": "filter", "label": "Pressure filter" },
+    { "name": "flowmeter", "label": "Flow meter" },
+    { "name": "butterfly-valve", "label": "Butterfly valve" },
+    { "name": "check-valve", "label": "Check valve" },
+    { "name": "strainer", "label": "Y-strainer" },
+    { "name": "submersible-pump", "label": "Submersible pump" },
+    { "name": "bar-screen", "label": "Bar screen" },
+    { "name": "filter-press", "label": "Filter press" },
+    { "name": "horizontal-tank", "label": "Horizontal tank" }
+  ],
+  "electrical": [
+    { "name": "transformer", "label": "Transformer" },
+    { "name": "breaker", "label": "Circuit breaker" },
+    { "name": "switchboard", "label": "Switchboard" },
+    { "name": "generator", "label": "Generator set" },
+    { "name": "meter", "label": "Energy meter" },
+    { "name": "solar-panel", "label": "Solar PV array" },
+    { "name": "wind-turbine", "label": "Wind turbine" },
+    { "name": "ev-charger", "label": "EV charger" },
+    { "name": "capacitor-bank", "label": "Capacitor bank" },
+    { "name": "isolator", "label": "Isolator" },
+    { "name": "vfd", "label": "Variable frequency drive" }
+  ],
+  "it_ups": [
+    { "name": "ups", "label": "UPS" },
+    { "name": "battery", "label": "Battery string" },
+    { "name": "rack", "label": "Equipment rack" },
+    { "name": "rtu", "label": "RTU panel" }
+  ],
+  "hvac": [
+    { "name": "chiller", "label": "Chiller" },
+    { "name": "ahu", "label": "Air handling unit" },
+    { "name": "fan", "label": "Axial fan" },
+    { "name": "damper", "label": "Air damper" },
+    { "name": "heat-exchanger", "label": "Plate heat exchanger" },
+    { "name": "condensing-unit", "label": "Condensing unit" }
+  ],
+  "mechanical": [
+    { "name": "motor", "label": "Electric motor" },
+    { "name": "compressor", "label": "Air compressor" },
+    { "name": "boiler", "label": "Boiler" },
+    { "name": "blower", "label": "Centrifugal blower" }
+  ],
+  "environment": [
+    { "name": "sensor", "label": "Sensor / transmitter" },
+    { "name": "smoke-detector", "label": "Smoke detector" },
+    { "name": "pressure-gauge", "label": "Pressure gauge" }
+  ],
+  "facility": [
+    { "name": "lamp", "label": "Light fitting" },
+    { "name": "lift", "label": "Lift" }
+  ],
+  "general": [
+    { "name": "unit", "label": "Package unit" }
+  ]
+}
