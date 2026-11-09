@@ -554,3 +554,19 @@ export async function theLiveTileMovesByDefault(): Promise<void> {
   expect(screen.getAllByTestId("mimic-glyph").length).toBeGreaterThan(0);
   expect(document.querySelectorAll("[data-motion]").length).toBeGreaterThanOrEqual(1);
 }
+
+/**
+ * LV-M2 — `F4.344` (ADR 0120 decision 5): a widget whose config says `motion: false` draws still —
+ * the drawing and its member pills are all there, nothing moves. LV-M1 is the twin.
+ */
+export async function aMotionFalseConfigDrawsStill(): Promise<void> {
+  const widget = sldWidget(false);
+  renderWidget(() => Promise.resolve(sldResponse(WIDGET_A)), {
+    ...widget,
+    config: { source: "preset", preset: "lv_single_line", motion: false },
+  });
+  await screen.findByText("TX-1");
+  expect(feederPills()).toHaveLength(2);
+  expect(screen.getAllByTestId("mimic-glyph").length).toBeGreaterThan(0);
+  expect(document.querySelectorAll("[data-motion]")).toHaveLength(0);
+}

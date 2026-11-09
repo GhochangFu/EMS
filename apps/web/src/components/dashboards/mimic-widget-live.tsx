@@ -73,9 +73,9 @@ export function MimicWidgetLive({ widget, dashboardId }: MimicWidgetLiveProps) {
       stateMaps={query.data?.stateMaps ?? NO_STATE_MAPS}
       compact={widget.config.source === "preset" && widget.config.compact === true}
       expandable
-      // F4.344 (ADR 0120): the live tile is the one place the glyphs move. PR 2 reads the
-      // widget's `motion` switch here; until then it is always on.
-      motion
+      // F4.344 (ADR 0120 decision 5): the live tile is the one place the glyphs move; the
+      // widget's switch turns them off. Absent or `true` is on, only `false` is off.
+      motion={widget.config.motion !== false}
     />
   );
 }
