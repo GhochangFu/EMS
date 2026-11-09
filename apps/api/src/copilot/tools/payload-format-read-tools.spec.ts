@@ -217,7 +217,7 @@ export async function aBadDefinitionAnswersIssuesWithoutEchoingValues(): Promise
   // A kind that is neither shape is one issue at `kind`.
   const kind = await tools.dispatch("decode_payload_sample", { definition: { kind: "SECRET_KIND" }, sample: "{}" }, ADMIN);
   if (!kind.ok) throw new Error(kind.error);
-  expect(kind.result.issues).toEqual([{ path: "kind", message: 'must be one of "builtin", "declarative"' }]);
+  expect(kind.result.issues).toEqual([{ path: "kind", message: 'must be one of "builtin", "declarative", "binary"' }]);
 }
 
 /** The input is strict: a definition, a sample of at most 16 KiB and a topic of at most 255 — no credential field. */

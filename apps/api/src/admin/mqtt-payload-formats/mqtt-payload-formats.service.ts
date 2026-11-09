@@ -11,8 +11,10 @@ import type { ZodError } from "zod";
 import { mqttPayloadFormats } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import {
+  MQTT_PAYLOAD_FORMAT_HEX_MESSAGE,
   createMqttPayloadFormatBodySchema,
   decodeMqttPayload,
+  hexToBytes,
   mqttPayloadFormatCodeSchema,
   testMqttPayloadFormatBodySchema,
   updateMqttPayloadFormatBodySchema,
@@ -203,11 +205,18 @@ export class MqttPayloadFormatsAdminService {
    * Decodes a pasted sample against a definition and stores nothing (ADR 0116
    * decision 5). No audit row and no log line: the sample is telemetry the
    * admin pasted, and it goes back only in the response.
+   *
+   * ADR 0119 decision 5: the sample is UTF-8 text (absent `encoding`) or hex
+   * bytes for a binary format. Bad hex is a fixed 400 that names no byte of it.
    */
   async test(jwt: JwtPayload, input: unknown): Promise<TestMqttPayloadFormatResponse> {
     await this.requireGlobalAdmin(jwt);
     const body = parseBody(testMqttPayloadFormatBodySchema.safeParse(input));
-    return testResponse(decodeMqttPayload(body.definition, body.topic, body.sample));
+    const bytes = body.encoding === "hex" ? hexToBytes(body.sample) : new TextEncoder().encode(body.sample);
+    if (bytes === null) {
+      throw new BadRequestException(MQTT_PAYLOAD_FORMAT_HEX_MESSAGE);
+    }
+    return testResponse(decodeMqttPayload(body.definition, body.topic, bytes));
   }
 
   /**
