@@ -210,6 +210,12 @@ export const FIXTURES: Readonly<
     params: { id: ROW },
     names: TARGET_NAME,
   },
+  // `F4.339` PR 9 (ADR 0099 Amendment 18) — the server-made credential copy, bound to the draft's hash.
+  "onboarding.credentials.copy": {
+    body: { from: { rtuIndex: 0 }, toRtuIndexes: [1, 2], draftHash: "a".repeat(64) },
+    params: { id: ROW },
+    names: "the RTU at index 0",
+  },
   // `F3.87` PR 5 — the canvas entries (owner ruling Q1): two units and one pipe; the replace at version 1.
   "mimicLayout.create": { body: { organizationId: ORG, ...LAYOUT_GRAPH }, params: {}, names: "Raw water" },
   "mimicLayout.replace": { body: { version: 1, ...LAYOUT_GRAPH }, params: { id: ROW }, names: TARGET_NAME },

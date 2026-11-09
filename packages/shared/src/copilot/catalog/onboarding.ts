@@ -1,4 +1,4 @@
-import { commitOnboardingBodySchema } from "../../contracts/onboarding";
+import { commitOnboardingBodySchema, copyOnboardingCredentialsBodySchema } from "../../contracts/onboarding";
 import {
   MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS,
   MQTT_DISCOVERY_SHARED_USER_WARNING,
@@ -6,7 +6,7 @@ import {
   startOnboardingDiscoveryBodySchema,
 } from "../../contracts/onboarding-discovery";
 import { plural, quoted, uuidParam } from "./summary-text";
-import type { CatalogEntry, ExcludedRoute } from "./types";
+import type { CatalogEntry, CatalogSummaryInput, ExcludedRoute } from "./types";
 
 /** The draft sections the commit summary reads (a subset of the onboarding draft). */
 export type OnboardingCommitDraft = {
@@ -31,6 +31,32 @@ export function onboardingCommitCounts(draft: OnboardingCommitDraft): string {
   return (
     `It creates ${plural(draft.rtus?.length ?? 0, "RTU")}, ${plural(draft.assets?.length ?? 0, "asset")} ` +
     `and ${plural(draft.assetPoints?.length ?? 0, "mapping")}.`
+  );
+}
+
+/** The copy's summary is the same with or without the "No credential value" tail; the tail is ADR 0022 decision 2. */
+const NO_VALUE_SENTENCE = "No credential value is shown or sent.";
+
+/**
+ * `F4.339` PR 9 (ADR 0099 Amendment 18 decision 1) — the copy card's words:
+ * codes and the broker from the stored proposal the server passes
+ * (`credentialCopy`), never a credential. Without that data (a fixture) the
+ * body's indexes stand in.
+ */
+function credentialCopySummary({ body, credentialCopy }: CatalogSummaryInput): string {
+  if (credentialCopy) {
+    const to = credentialCopy.toCodes.map(quoted).join(", ");
+    const broker = `${credentialCopy.host ?? "(default host)"}:${credentialCopy.port ?? "(default port)"}`;
+    return (
+      `Copy the stored credentials of RTU ${quoted(credentialCopy.fromCode)} to ${credentialCopy.toCodes.length === 1 ? "RTU" : "RTUs"} ${to} ` +
+      `(same broker ${broker}, TLS ${credentialCopy.tls ? "on" : "off"}). ${NO_VALUE_SENTENCE}`
+    );
+  }
+  const b = body as { from?: { rtuIndex?: unknown }; toRtuIndexes?: unknown };
+  const to = Array.isArray(b.toRtuIndexes) ? b.toRtuIndexes.map(String) : [];
+  return (
+    `Copy the stored credentials of the RTU at index ${String(b.from?.rtuIndex ?? "")} to the ${to.length === 1 ? "RTU" : "RTUs"} ` +
+    `at index ${to.join(", ")} (same broker). ${NO_VALUE_SENTENCE}`
   );
 }
 
@@ -115,6 +141,36 @@ export const ONBOARDING_ENTRIES: readonly CatalogEntry[] = [
       );
     },
   },
+  /**
+   * `F4.339` PR 9 (ADR 0099 Amendment 18 decisions 1–3) — copies one draft
+   * RTU's stored, encrypted credential to other MQTT RTUs of the draft on the
+   * same broker. Made by the **server** after a turn whose onboarding agent
+   * proposed it (`propose_credential_copy`). The card's body is
+   * `{ from: { rtuIndex }, toRtuIndexes, draftHash }`: a draft source only
+   * (Q1), never `replace` (Q2), bound to the draft hash (Q3), so a draft
+   * changed since answers 400 and copies nothing. The drawer's select sends
+   * the same route without the header or the hash. `edit` (Q4): it changes a
+   * draft RTU's credential and creates no row.
+   */
+  {
+    id: "onboarding.credentials.copy",
+    title: "Copy an RTU's stored credentials to other RTUs",
+    method: "POST",
+    path: "/admin/onboarding/sessions/:id/credentials/copy",
+    params: { id: uuidParam },
+    body: copyOnboardingCredentialsBodySchema,
+    bodyName: "copyOnboardingCredentialsBodySchema",
+    clientOnly: [],
+    proposer: "server",
+    risk: "edit",
+    target: { kind: "onboardingSession", param: "id" },
+    refs: [],
+    formulas: [],
+    // A canvas entry (`CANVAS_ENTRY_IDS`): its human form is the drawer's "Same credentials as…"
+    // select, a plain form and no stepper (Amendment 18 consequences), so it has no steps.
+    steps: [],
+    summary: credentialCopySummary,
+  },
 ];
 
 const DRAFT = "a draft step writes no master data (decision 7)";
@@ -127,8 +183,6 @@ export const ONBOARDING_PENDING: readonly ExcludedRoute[] = [
   { method: "POST", path: "/admin/onboarding/sessions/:id/upload", reason: DRAFT },
   { method: "PATCH", path: "/admin/onboarding/sessions/:id/draft", reason: DRAFT },
   { method: "POST", path: "/admin/onboarding/sessions/:id/credentials", reason: CREDENTIAL },
-  // F4.339 (ADR 0117 decision 7): a catalog entry only after ADR 0099 Amendment 18 (plan PR 9).
-  { method: "POST", path: "/admin/onboarding/sessions/:id/credentials/copy", reason: CREDENTIAL },
   { method: "POST", path: "/admin/onboarding/sessions/:id/rollback", reason: DRAFT },
   { method: "POST", path: "/admin/onboarding/sessions/:id/validate", reason: DRAFT },
   // F4.339 (ADR 0117 decision 9): never a copilot card.

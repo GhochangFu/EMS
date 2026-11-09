@@ -853,9 +853,50 @@ export function theLockRoutesAreExcludedAsAHumanAct(): void {
   }
 }
 
-/** `F4.339` (ADR 0117 decision 7): the credential copy is a credential route, excluded until ADR 0099 Amendment 18 (plan PR 9). */
-export function theCredentialCopyIsExcludedAsACredentialRoute(): void {
+/**
+ * `F4.339` PR 9 (ADR 0099 Amendment 18 decision 1) — the credential copy is a
+ * server-made `edit` entry, out of the exclusion list; the plain credential
+ * route stays excluded. The summary names codes and the broker only, from the
+ * display data the server passes, and says no credential value is shown.
+ */
+export function theCredentialCopyIsAServerMadeEditEntry(): void {
   const path = "/admin/onboarding/sessions/:id/credentials/copy";
-  expect(EXCLUDED_ROUTES.find((r) => r.method === "POST" && r.path === path)?.reason).toBe("a credential route (ADR 0022)");
-  expect(COPILOT_CATALOG.some((e) => e.path === path)).toBe(false);
+  const entry = catalogEntry("onboarding.credentials.copy");
+  if (!entry) throw new Error("onboarding.credentials.copy");
+  expect({
+    method: entry.method,
+    path: entry.path,
+    proposer: entry.proposer,
+    risk: entry.risk,
+    target: entry.target,
+    steps: entry.steps,
+    bodyName: entry.bodyName,
+  }).toEqual({
+    method: "POST",
+    path,
+    proposer: "server",
+    risk: "edit",
+    target: { kind: "onboardingSession", param: "id" },
+    // The drawer's select is its form, not a stepper: a canvas entry (CANVAS_ENTRY_IDS), so no steps.
+    steps: [],
+    bodyName: "copyOnboardingCredentialsBodySchema",
+  });
+  expect(entry.body).toBe(contracts.copyOnboardingCredentialsBodySchema);
+  expect((CANVAS_ENTRY_IDS as readonly string[]).includes(entry.id)).toBe(true);
+  expect(EXCLUDED_ROUTES.some((r) => r.path === path)).toBe(false);
+  expect(EXCLUDED_ROUTES.find((r) => r.path === "/admin/onboarding/sessions/:id/credentials")?.reason).toBe(
+    "a credential route (ADR 0022)",
+  );
+  const base = { body: { from: { rtuIndex: 0 }, toRtuIndexes: [1, 2] }, params: { id: ROW }, targetName: TARGET_NAME, organizationName: ORG_NAME };
+  const broker = { host: "broker.test", port: 8883, tls: true };
+  expect(entry.summary({ ...base, credentialCopy: { fromCode: "A", toCodes: ["B", "C"], ...broker } })).toBe(
+    'Copy the stored credentials of RTU "A" to RTUs "B", "C" (same broker broker.test:8883, TLS on). No credential value is shown or sent.',
+  );
+  expect(entry.summary({ ...base, credentialCopy: { fromCode: "A", toCodes: ["B"], ...broker, tls: false } })).toBe(
+    'Copy the stored credentials of RTU "A" to RTU "B" (same broker broker.test:8883, TLS off). No credential value is shown or sent.',
+  );
+  // With no display data the indexes stand in; still no value.
+  expect(entry.summary(base)).toBe(
+    "Copy the stored credentials of the RTU at index 0 to the RTUs at index 1, 2 (same broker). No credential value is shown or sent.",
+  );
 }

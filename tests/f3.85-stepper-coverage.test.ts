@@ -124,6 +124,8 @@ const CANVAS_ENTRIES: readonly { id: string; page: string; write: string }[] = [
   { id: "workOrder.reorder", page: "apps/web/src/pages/work-orders-page.tsx", write: "reorderWorkOrders(" },
   // `F4.324` (ADR 0099 Amendment 16): the chart append's form is the Pin dialog.
   { id: "dashboard.widgets.appendChart", page: "apps/web/src/components/view-actions/pin-dialog.tsx", write: "appendChartWidget(" },
+  // `F4.339` PR 9 (ADR 0099 Amendment 18): the credential copy's form is the drawer's "Same credentials as…" select.
+  { id: "onboarding.credentials.copy", page: "apps/web/src/components/onboarding/same-credentials-copy.tsx", write: "copyOnboardingCredentials(" },
 ];
 
 /** The row's page holds the row's write call on a non-comment line; `false` when the page does not exist. */
@@ -194,12 +196,13 @@ describe("F3.85 stepper coverage — every catalog entry has a WizardShell (plan
     expect(CANVAS_ENTRIES.map((row) => row.id).sort()).toEqual([...CANVAS_ENTRY_IDS].sort());
   });
 
-  it("F3.87 PR 5 positive control: every canvas row resolves against its real page (F4.284: + the work-order board)", () => {
+  it("F3.87 PR 5 positive control: every canvas row resolves against its real page (F4.284: + the work-order board; F4.339: + the drawer's copy)", () => {
     expect(CANVAS_ENTRIES.map((row) => [row.id, canvasRowResolves(row)])).toEqual([
       ["mimicLayout.create", true],
       ["mimicLayout.replace", true],
       ["workOrder.reorder", true],
       ["dashboard.widgets.appendChart", true],
+      ["onboarding.credentials.copy", true],
     ]);
   });
 

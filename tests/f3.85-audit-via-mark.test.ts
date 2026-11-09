@@ -81,6 +81,8 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/onboarding/onboarding-commit.service.ts",
   // `F3.24b` (ADR 0103): the `onboarding.discovery` handler audits start and refuse rows here.
   "apps/api/src/admin/onboarding/onboarding-discovery.service.ts",
+  // `F4.339` PR 9 (ADR 0099 Amendment 18): the `onboarding.credentials.copy` handler audits its copy row here.
+  "apps/api/src/admin/onboarding/onboarding-credential-copy.service.ts",
   "apps/api/src/control-room/site-control-room-view.service.ts",
   // `F3.87` PR 2 (plan §4.7): every service a release-3 entry's handler reaches.
   "apps/api/src/mimic-layouts/mimic-layouts.service.ts",
@@ -160,12 +162,6 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     file: "apps/api/src/admin/onboarding/onboarding-session-unlock.service.ts",
     route: { method: "POST", path: "/admin/onboarding/sessions/:id/unlock" },
     auditMethods: ["unlock"],
-  },
-  // `F4.339` (ADR 0117 decision 7): the credential copy — a credential route, excluded until Amendment 18.
-  {
-    file: "apps/api/src/admin/onboarding/onboarding-credential-copy.service.ts",
-    route: { method: "POST", path: "/admin/onboarding/sessions/:id/credentials/copy" },
-    auditMethods: ["copy"],
   },
 ];
 

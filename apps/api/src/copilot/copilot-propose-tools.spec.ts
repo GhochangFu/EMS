@@ -484,11 +484,13 @@ export function noToolDefinitionCarriesALargeBody(): void {
 export function everyEntryHasOneSlimProposeTool(): void {
   const h = proposeHarness();
   const names = h.tools.registry.definitions.map((d) => d.name);
-  // `F3.86` PR 6: a server-made entry (the onboarding commit and, since `F3.24b`, the discovery) has no propose tool.
+  // `F3.86` PR 6: a server-made entry (the onboarding commit and, since `F3.24b`, the discovery; since `F4.339`
+  // PR 9, the credential copy) has no propose tool.
   const modelEntries = COPILOT_CATALOG.filter((entry) => entry.proposer !== "server");
-  expect(modelEntries.length).toBe(COPILOT_CATALOG.length - 2);
+  expect(modelEntries.length).toBe(COPILOT_CATALOG.length - 3);
   expect(names).toEqual([...modelEntries.map(proposeToolName), FILL_STEP_TOOL, DESCRIBE_CHANGE_TOOL]);
-  expect(names.filter((n) => n === "propose_onboarding_commit" || n === "propose_onboarding_discovery")).toEqual([]);
+  const serverMade = ["propose_onboarding_commit", "propose_onboarding_discovery", "propose_onboarding_credentials_copy"];
+  expect(names.filter((n) => serverMade.includes(n))).toEqual([]);
   const widgets = h.tools.registry.definitions.find((d) => d.name === "propose_dashboard_widgets_replace");
   expect(JSON.stringify(widgets)).toContain("describe_change");
   // The guide names each widget type and the one path that reads it (a live follow-up hit the call cap without it).
