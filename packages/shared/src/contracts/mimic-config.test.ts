@@ -8,6 +8,8 @@ import {
   mimicConfigRefusesAPresetSourceCarryingALayoutId,
   mimicConfigRefusesAnUppercaseLayoutId,
   mimicPresetVocabularyIsTheSevenDomainPresets,
+  glyphSetParsesOnBothArms,
+  glyphSetRefusesAnUnknownSet,
   motionParsesOnBothArms,
   motionRefusesANonBoolean,
 } from "./mimic-config.spec";
@@ -49,5 +51,14 @@ describe("F4.344 — the per-widget glyph motion switch (ADR 0120 decision 5)", 
   });
   it("refuses a non-boolean motion on both arms", () => {
     motionRefusesANonBoolean();
+  });
+});
+
+describe("F4.345 — the per-widget glyph set (ADR 0121 decision 5)", () => {
+  it("parses glyphSet iso, core and absent on both arms", () => {
+    glyphSetParsesOnBothArms();
+  });
+  it("refuses an unknown glyphSet on both arms", () => {
+    glyphSetRefusesAnUnknownSet();
   });
 });

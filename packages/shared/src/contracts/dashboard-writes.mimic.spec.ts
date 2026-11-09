@@ -155,3 +155,36 @@ export function theStrictArmsRefuseANonBooleanMotion(): void {
     );
   }
 }
+
+// ---------------------------------------------------------------- F4.345 — the glyph set
+
+/**
+ * `F4.345` (ADR 0121 decision 5) — the strict arms accept `glyphSet: "iso"`. The write surface
+ * rebuilds each arm from the shared `.shape`; remove the field from a shared arm and `.strict()`
+ * refuses it as an unrecognized key, so this claim reddens.
+ */
+export function theStrictArmsAcceptGlyphSet(): void {
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validMimicWidget, config: { ...validMimicWidget.config, glyphSet: "iso" } }] },
+    "a preset mimic with glyphSet iso must parse",
+  );
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...layoutMimicWidget, config: { ...layoutMimicWidget.config, glyphSet: "iso" } }] },
+    "a layout mimic with glyphSet iso must parse",
+  );
+}
+
+/** `F4.345` — an unknown `glyphSet` is refused at its own path on both arms. */
+export function theStrictArmsRefuseAnUnknownGlyphSet(): void {
+  for (const widget of [validMimicWidget, layoutMimicWidget]) {
+    expectRejectsAt(
+      putDashboardWidgetsBodySchema,
+      { widgets: [{ ...widget, config: { ...widget.config, glyphSet: "neo" } }] },
+      ["widgets", 0, "config", "glyphSet"],
+      ["iso"],
+      `a ${widget.config.source} mimic with glyphSet "neo" must be refused at config.glyphSet`,
+    );
+  }
+}
