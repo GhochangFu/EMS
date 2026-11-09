@@ -539,6 +539,40 @@ export function copyEncryptedCredentials(draft: unknown, fromIndex: number, toIn
   return next;
 }
 
+/** `F4.339`: the stored blob of the RTU at `rtuIndex`, as stored (`{ c, iv, v? }`), or `null`. */
+export function ownBlobAt(draft: unknown, rtuIndex: number): EncryptedBlob | null {
+  const code = rtuCodeAt(draft, rtuIndex);
+  return code === null ? null : ownBlob((draft as DraftWithSecrets)._secrets, code);
+}
+
+/**
+ * `F4.339` (ADR 0117 decision 7) — stores one blob, as given, under each target
+ * RTU's code and marks each `credentialsSet`. `null` when a target names no
+ * distinct code. The store is rebuilt through `ownBlob` and `setBlob`, as
+ * `copyEncryptedCredentials` does, so every kept blob keeps its `v`.
+ */
+export function storeBlobAt(draft: unknown, blob: EncryptedBlob, toIndexes: readonly number[]): DraftWithSecrets | null {
+  const codes = toIndexes.map((index) => rtuCodeAt(draft, index));
+  if (codes.some((code) => code === null)) {
+    return null;
+  }
+  const next = cloneJson(draft) as DraftWithSecrets;
+  const store: Record<string, EncryptedBlob> = {};
+  for (const existing of Object.keys(next._secrets ?? {})) {
+    const kept = ownBlob(next._secrets, existing);
+    if (kept) {
+      setBlob(store, existing, kept);
+    }
+  }
+  for (const code of codes as string[]) {
+    setBlob(store, code, { ...blob });
+  }
+  next._secrets = store;
+  const targets = new Set(toIndexes);
+  next.rtus = next.rtus!.map((rtu, i) => (targets.has(i) ? { ...rtu, credentialsSet: true } : rtu));
+  return next;
+}
+
 /**
  * Reads encrypted credential blobs from draft internal store.
  *

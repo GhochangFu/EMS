@@ -735,6 +735,30 @@ export const onboardingSessionDtoSchema = z.object({
 /** `F4.339` (ADR 0117 decision 9): `POST …/sessions/:id/lock`. The reason is shown on every refused write. */
 export const lockOnboardingSessionBodySchema = z.object({ reason: z.string().trim().min(1).max(500) }).strict();
 
+/**
+ * `F4.339` (ADR 0117 decision 7, plan R7): `POST …/sessions/:id/credentials/copy`.
+ * The source is a draft RTU (`rtuIndex`) or a committed RTU of the session's
+ * organization (`rtuId`); the encrypted blob is copied as stored, never decrypted.
+ * A union of two strict objects, so a body naming both is refused.
+ */
+export const copyOnboardingCredentialsBodySchema = z
+  .object({
+    from: z.union([
+      z.object({ rtuIndex: z.number().int().min(0) }).strict(),
+      z.object({ rtuId: z.string().uuid() }).strict(),
+    ]),
+    toRtuIndexes: z
+      .array(z.number().int().min(0))
+      .min(1)
+      .max(100)
+      .refine((indexes) => new Set(indexes).size === indexes.length, { message: "toRtuIndexes must be distinct" })
+      .describe("1 to 100 distinct draft RTU indexes."),
+    replace: z.boolean().optional(),
+  })
+  .strict();
+
+export type CopyOnboardingCredentialsBody = z.infer<typeof copyOnboardingCredentialsBodySchema>;
+
 /** `F4.255` (ADR 0099 Amendment 2 A1): the draft list answers at most this many drafts, newest update first. */
 export const ONBOARDING_DRAFT_LIST_LIMIT = 50;
 
