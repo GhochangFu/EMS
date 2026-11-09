@@ -676,6 +676,9 @@ const DS_TEXT_PAIRS: Record<string, Pair[]> = {
     { fg: "ink-faint", bg: "surface" },
     { fg: "ink-muted", bg: "surface" },
   ],
+  // PR 11: tiles on `surface` and the page on `canvas`, the base grounds; the large alarms tile is
+  // neutral (A5), so it adds none.
+  "bento-ops": [],
 };
 const DS_UI_PAIRS: Record<string, Pair[]> = {
   "enterprise-flat": [],
@@ -686,6 +689,7 @@ const DS_UI_PAIRS: Record<string, Pair[]> = {
     { fg: "ink", bg: "surface" },
     { fg: "ink-faint", bg: "surface" },
   ],
+  "bento-ops": [],
 };
 
 describe("F4.341: every design system's own grounds hold in every profile and theme (ADR 0118 decision 14)", () => {

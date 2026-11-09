@@ -7,6 +7,7 @@ import { KpiTile, type KpiTileStatus } from "../kpi-tile";
 import { SectionCard } from "../section-card";
 import { GeneratedSiteAssetCard } from "./generated-site-asset-card";
 import { TrendStrip } from "./trend-strip";
+import { useBoard } from "../../lib/board-spans";
 
 /**
  * `F3.68` U6 — the generated site view (ADR 0076 decision 7).
@@ -45,6 +46,8 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
   const location = kpiQuery.data;
   const kpiStatus: KpiTileStatus = kpiQuery.isLoading ? "loading" : kpiQuery.isError ? "error" : "ready";
   const view = viewQuery.data;
+  // F4.341 PR 11: the fixed arrangement a design system gives this page (`lib/board-spans.ts`).
+  const board = useBoard("site-overview", "");
 
   return (
     <div className="space-y-4">
@@ -54,44 +57,56 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
         </p>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <KpiTile
-          label="Total load"
-          status={kpiStatus}
-          value={location ? location.totalKw.toFixed(1) : null}
-          unit="kW"
-          hint={location?.scopeLabel === "partial" ? "Limited asset group" : "All assets"}
-        />
-        <KpiTile
-          label="Assets fresh"
-          status={kpiStatus}
-          value={location ? `${location.freshAssetCount} / ${location.assetCount}` : null}
-          hint="Telemetry freshness window"
-        />
-        <KpiTile
-          label="Open alarms"
-          status={kpiStatus}
-          value={location ? String(location.openAlarms) : null}
-          hint="Unacknowledged rows"
-        />
-        <KpiTile
-          label="Critical alarms"
-          status={kpiStatus}
-          value={location ? String(location.criticalAlarms) : null}
-          tone={location && location.criticalAlarms > 0 ? "critical" : "default"}
-          hint="Open critical rows"
-        />
-        <KpiTile
-          label="Open work orders"
-          status={kpiStatus}
-          value={location ? String(location.workOrdersOpen) : null}
-          hint="Non-closed work orders"
-        />
-        <KpiTile
-          label="RTUs"
-          status={kpiStatus}
-          value={location ? String(location.rtuCount) : null}
-          hint="Gateways and domain simulators"
-        />
+        <div data-tile="total-load" className={board.span("total-load")}>
+          <KpiTile
+            label="Total load"
+            status={kpiStatus}
+            value={location ? location.totalKw.toFixed(1) : null}
+            unit="kW"
+            hint={location?.scopeLabel === "partial" ? "Limited asset group" : "All assets"}
+          />
+        </div>
+        <div data-tile="assets-fresh" className={board.span("assets-fresh")}>
+          <KpiTile
+            label="Assets fresh"
+            status={kpiStatus}
+            value={location ? `${location.freshAssetCount} / ${location.assetCount}` : null}
+            hint="Telemetry freshness window"
+          />
+        </div>
+        <div data-tile="open-alarms" className={board.span("open-alarms")}>
+          <KpiTile
+            label="Open alarms"
+            status={kpiStatus}
+            value={location ? String(location.openAlarms) : null}
+            hint="Unacknowledged rows"
+          />
+        </div>
+        <div data-tile="critical-alarms" className={board.span("critical-alarms")}>
+          <KpiTile
+            label="Critical alarms"
+            status={kpiStatus}
+            value={location ? String(location.criticalAlarms) : null}
+            tone={location && location.criticalAlarms > 0 ? "critical" : "default"}
+            hint="Open critical rows"
+          />
+        </div>
+        <div data-tile="open-work-orders" className={board.span("open-work-orders")}>
+          <KpiTile
+            label="Open work orders"
+            status={kpiStatus}
+            value={location ? String(location.workOrdersOpen) : null}
+            hint="Non-closed work orders"
+          />
+        </div>
+        <div data-tile="rtus" className={board.span("rtus")}>
+          <KpiTile
+            label="RTUs"
+            status={kpiStatus}
+            value={location ? String(location.rtuCount) : null}
+            hint="Gateways and domain simulators"
+          />
+        </div>
       </div>
       {location?.scopeLabel === "partial" ? (
         <p className="text-2xs text-ink-muted">
