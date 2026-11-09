@@ -27,6 +27,10 @@ export const LEADING_STEPS = ["xs", "sm", "base", "lg", "xl", "2xl", "3xl", "4xl
 export const SPACE_STEPS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
 export const DESIGN_TOKENS = [
+  "--font-body",
+  "--font-head",
+  "--font-num",
+  "--font-mono",
   ...TEXT_STEPS.map((k) => `--text-${k}`),
   ...LEADING_STEPS.map((k) => `--leading-${k}`),
   "--text-wall-min",

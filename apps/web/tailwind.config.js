@@ -168,19 +168,14 @@ export default {
       ringOffsetColor: {
         DEFAULT: "rgb(var(--surface))",
       },
+      // F4.341 PR 6 (ADR 0118 decision 5, Amendment 1 A2): the families come from the design
+      // tokens, so a design system names its own. `font-condensed` is not a family any more: it is
+      // the body family at `font-stretch: 85%` (Plex Sans's `wdth` axis); `font-num` sets the
+      // number family with tabular figures. Both are in the plugin below.
       fontFamily: {
-        sans: [
-          '"IBM Plex Sans"',
-          "system-ui",
-          "sans-serif",
-        ],
-        condensed: [
-          '"IBM Plex Sans Condensed"',
-          '"IBM Plex Sans"',
-          "system-ui",
-          "sans-serif",
-        ],
-        mono: ['"IBM Plex Mono"', "ui-monospace", "monospace"],
+        sans: ["var(--font-body)"],
+        head: ["var(--font-head)"],
+        mono: ["var(--font-mono)"],
       },
     },
   },
@@ -191,6 +186,10 @@ export default {
         ".lowercase": { "text-transform": "lowercase" },
         ".capitalize": { "text-transform": "capitalize" },
         ".normal-case": { "text-transform": "none" },
+        ".font-condensed": { "font-family": "var(--font-body)", "font-stretch": "85%" },
+        // `--font-num` with tabular figures always on: a face whose digits are proportional by
+        // default (Archivo) offers `tnum`, and this turns it on (`f4.341-fonts` F6).
+        ".font-num": { "font-family": "var(--font-num)", "font-variant-numeric": "tabular-nums" },
       });
     }),
   ],

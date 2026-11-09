@@ -3,6 +3,16 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
+// F4.341 (ADR 0118 decision 5, Amendment 1 A2, plan P3): every face is self-hosted from the
+// bundle; there is no Google Fonts call at run time. Plex Sans is the variable font with the
+// `wght` and `wdth` axes (`standard.css`), so `font-condensed` is Plex Sans at `font-stretch: 85%`.
+// A face downloads only when a design system's tokens name it (`@font-face` is lazy).
+import "@fontsource-variable/ibm-plex-sans/standard.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
+import "@fontsource-variable/archivo";
+import "@fontsource-variable/bricolage-grotesque";
 import { App } from "./app";
 import "./index.css";
 import { bindSessionStores } from "./lib/query-cache-session";

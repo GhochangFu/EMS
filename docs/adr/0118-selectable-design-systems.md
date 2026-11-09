@@ -429,3 +429,33 @@ C1–C8, for nine profiles in both themes. The PR body holds the full table of c
 draft `accent` passed A4 unchanged, `navy-pop`'s magenta included (light ΔE2000 20.9 from
 `critical-line`, dark 21.3 from `critical-ink-strong`, the nearest alarm roles), so no profile
 needed the amendment path.
+## Dependencies, as built (PR 6 of `F4.341`, 2026-11-09)
+
+**Status: recorded with PR 6.** Decision 5 and Amendment 1 A2 engage AGENTS §9.4; this is the
+record. The plan's P3 chose the `@fontsource` packages. Four runtime dependencies of `apps/web`,
+each pinned to its exact version and each under the SIL Open Font License 1.1 (the package
+metadata's `license.type`):
+
+| Package | Version | Faces imported in `apps/web/src/main.tsx` | Family name |
+|---|---|---|---|
+| `@fontsource-variable/ibm-plex-sans` | 5.3.0 | `standard.css` (`wght` 100–700 and `wdth` 75–100) | `IBM Plex Sans Variable` |
+| `@fontsource/ibm-plex-mono` | 5.3.0 | 400, 500, 600 | `IBM Plex Mono` |
+| `@fontsource-variable/archivo` | 5.3.0 | the default (`wght`) | `Archivo Variable` |
+| `@fontsource-variable/bricolage-grotesque` | 5.3.0 | the default (`wght`) | `Bricolage Grotesque Variable` |
+
+- **A2's `wdth` confirmation.** The Plex Sans package lists `wdth` 75–100
+  (`tests/f4.341-fonts.test.ts` F2), so the separate IBM Plex Sans Condensed family is not shipped:
+  `font-condensed` is Plex Sans at `font-stretch: 85%`. The Google Fonts `<link>` left
+  `index.html`; no request goes to a Google host at run time (F1).
+- **A6's tabular figures, as proved.** IBM Plex Sans and IBM Plex Mono carry **no `tnum` GSUB
+  feature**: their default digits are already tabular (all ten share an advance of 600 units).
+  Archivo and Bricolage Grotesque draw proportional digits by default and offer `tnum`. F6 therefore
+  proves tabular figures from each WOFF2 as "the ten default digits share one advance width, or
+  GSUB offers `tnum`", and the `font-num` utility sets `font-variant-numeric: tabular-nums` with
+  `--font-num`, so a `tnum` face is tabular wherever numbers are set. The plan's "from the GSUB
+  table" alone would have failed the two faces that are tabular as drawn.
+- **F4's count.** `--font-mono` (IBM Plex Mono, the code face) is the same in every design system
+  and is not one a design system chooses, so "at most two families" counts `--font-body`,
+  `--font-head` and `--font-num`.
+- An `@font-face` downloads only when a rule uses its family, so a design system loads only its own
+  faces (decision 5).
