@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it } from "vitest";
 
 import {
+  anIsoTileExpandsIntoAnIsoDialogAndKeepsTheMarkersCore,
   alarmedNodeDrawsOneCallout,
   alarmNodeIsAlarm,
   everyNodeDrawsItsSymbol,
@@ -147,5 +148,8 @@ describe("F4.321 — MimicWidget, Expand to a full view", () => {
   });
   it("WM2 the Expand dialog's drawing moves with the tile (F4.344)", () => {
     theExpandDialogMovesWithTheTile();
+  });
+  it("E-ISO an iso tile expands into an iso dialog; the markers stay core (F4.345)", () => {
+    anIsoTileExpandsIntoAnIsoDialogAndKeepsTheMarkersCore();
   });
 });

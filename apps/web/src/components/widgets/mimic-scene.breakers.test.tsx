@@ -4,6 +4,7 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   anIsoBoardDrawsTheIsoBreakerAndKeepsTheAlert,
+  aStoredIsoTankKeepsItsLiveLevel,
   aBreakerGlyphWithNoStatePointsAddsNothingToTheName,
   aBreakerGlyphWithNoStatePointsDrawsAsBefore,
   aBreakerWithNoStatePointsMakesThePipesAfterItUnknown,
@@ -176,5 +177,8 @@ describe("F3.74 Task 3.2 — MimicScene energy colour beside the freshness dash"
   });
   it("S8 an iso board draws the isometric breaker and keeps the alert glyph (F4.345)", () => {
     anIsoBoardDrawsTheIsoBreakerAndKeepsTheAlert();
+  });
+  it("S9 a layout unit stored as iso:tank keeps its live level (F4.345)", async () => {
+    await aStoredIsoTankKeepsItsLiveLevel();
   });
 });

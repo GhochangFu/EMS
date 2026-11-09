@@ -16,7 +16,7 @@ import {
   widgetToneSchema,
   widgetTypeSchema,
 } from "@bms/shared";
-import { SERIES_ROLE_NAMES } from "@bms/shared/contracts";
+import { SERIES_ROLE_NAMES, type MimicGlyphSet } from "@bms/shared/contracts";
 import {
   CHART_SERIES,
   WIDGET_CATALOG,
@@ -330,7 +330,7 @@ export type WidgetConfigRow = {
   mimicMotion?: boolean;
   // mimic — `F4.345` (ADR 0121 decision 5). `config.glyphSet`, on both arms. Only `iso` is stored;
   // `core` and absent write nothing, so a core widget's edit-and-resave stays byte-identical (plan R7).
-  mimicGlyphSet?: "core" | "iso";
+  mimicGlyphSet?: MimicGlyphSet;
   // active_alarms_rail — `F3.73` (plan D9). Optional, the mimic idiom above, because
   // `template-dashboard-form.ts` builds this row as a literal and a template can never hold a site
   // widget. Absent `railRows` reads as the contract's default (8) and absent `railShowSummary` as true;

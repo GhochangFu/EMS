@@ -298,7 +298,8 @@ export function MimicScene({
     const { fanOut, single, rows: memberRows } = drawingOf.get(unit.key) ?? { fanOut: false, single: null, rows: [] };
     const badge = asset === null || fanOut ? null : mimicBadge(node?.memberCount ?? 0);
     const statusLabel = noAsset ? MIMIC_NO_ASSET_LABEL : MIMIC_STATUS_LABEL[nodeStatus];
-    const levelPoint = asset === null || unit.symbol !== "tank" ? null : mimicLevelPoint(asset);
+    // `F4.345` (ADR 0121 decision 6): a unit stored as the isometric tank keeps the live level too.
+    const levelPoint = asset === null || (unit.symbol !== "tank" && unit.symbol !== "iso:tank") ? null : mimicLevelPoint(asset);
     const level =
       asset === null || levelPoint === null
         ? null

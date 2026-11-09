@@ -494,3 +494,12 @@ export async function aTrendStripDispatchedWithoutItsReadDrawsItsFrameAndReadsNo
   expect(fetchSpy).not.toHaveBeenCalled();
   vi.unstubAllGlobals();
 }
+
+/** `F4.345` (ADR 0121 decision 5) — the static builder tile honours the widget's glyph set. */
+export function aStaticIsoMimicDrawsIsoUnits(): void {
+  const widget = sampleWidget("mimic");
+  render(<DashboardWidget widget={{ ...widget, config: { source: "preset", preset: "water_train", glyphSet: "iso" } } as DashboardWidgetDto} data={READY_AT_750} />);
+  const keys = [...document.querySelectorAll("[data-testid=mimic-node] [data-testid=mimic-glyph]")].map((g) => g.getAttribute("data-glyph") ?? "");
+  expect(keys).toHaveLength(8);
+  expect(keys.filter((k) => !k.startsWith("iso:"))).toEqual([]);
+}

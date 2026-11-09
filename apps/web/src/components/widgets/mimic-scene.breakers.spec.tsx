@@ -14,6 +14,7 @@ import type {
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import { layoutGeometry, presetGeometry, type MimicGeometry } from "../../lib/mimic-geometry";
 import { MimicScene } from "./mimic-scene";
+import { ensureLibraryShapes } from "./mimic-symbol-libraries";
 
 /**
  * `F3.74` Task 3.1 (ADR 0088 decisions 4–5, plan D6) — the breaker drawing in `MimicScene`: the
@@ -954,7 +955,40 @@ export function anIsoBoardDrawsTheIsoBreakerAndKeepsTheAlert(): void {
   expect(glyphs).toContain("iso:breaker");
   expect(glyphs).not.toContain("breaker");
   expect(screen.getAllByTestId("mimic-glyph").map((g) => g.getAttribute("data-glyph"))).toContain("alert");
+  // A passive unit (no role) draws its twin too: the board's `bus` is a `switchboard`.
+  expect(within(unitEl("bus")).getByTestId("mimic-glyph").getAttribute("data-glyph")).toBe("iso:switchboard");
   iso.unmount();
   render(<MimicScene title="SLD" geometry={BOARD()} nodes={[node]} readings={readingsOf({})} stateMaps={STATE_MAPS} />);
   expect(within(unitEl("single")).getAllByTestId("mimic-glyph").map((g) => g.getAttribute("data-glyph"))).toContain("breaker");
+}
+
+/**
+ * S9 — `F4.345` (ADR 0121 decision 6): a layout unit STORED as `iso:tank` (placed from the Isometric
+ * palette tab) keeps its live level, as a core `tank` does. Positive twin: the same unit stored as
+ * `pump` draws no level.
+ */
+export async function aStoredIsoTankKeepsItsLiveLevel(): Promise<void> {
+  await ensureLibraryShapes(["iso"]);
+  const tankAsset: GeneratedSiteAssetDto = {
+    ...asset(9, "TK-1"),
+    points: [{ pointKey: "level", name: "Level", unit: "%", headlineRank: 1, latest: { value: 64, time: "t" } }],
+  };
+  const layoutWith = (symbol: string): MimicLayoutGeometryDto => ({
+    name: "Tank",
+    canvasW: 40,
+    canvasH: 40,
+    nodes: [layoutNode("store", 0, 0, { symbol: symbol as MimicLayoutNodeDto["symbol"], roleCode: "storage-tank" })],
+    pipes: [],
+    orgSymbols: [],
+  });
+  const node = singleNode("store", "storage-tank", { asset: tankAsset });
+  const iso = render(
+    <MimicScene title="Tank" geometry={layoutGeometry(layoutWith("iso:tank"))} nodes={[node]} readings={readingsOf({ [`${tankAsset.id}|level`]: 64 })} stateMaps={STATE_MAPS} />,
+  );
+  const level = within(unitEl("store")).queryByTestId("mimic-tank-level");
+  expect(level, "a stored iso:tank draws its level").not.toBeNull();
+  expect(level?.getAttribute("data-level")).toBe("64");
+  iso.unmount();
+  render(<MimicScene title="Tank" geometry={layoutGeometry(layoutWith("pump"))} nodes={[node]} readings={readingsOf({ [`${tankAsset.id}|level`]: 64 })} stateMaps={STATE_MAPS} />);
+  expect(within(unitEl("store")).queryByTestId("mimic-tank-level")).toBeNull();
 }

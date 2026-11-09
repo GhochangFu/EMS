@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aStaticIsoMimicDrawsIsoUnits,
   aFailedValueTileShowsTheTilesOwnFailureLine,
   aFreshReadyWidgetShowsNoOfflineBadge,
   aLiveTankWithNoReadingSaysSoInsideTheVessel,
@@ -120,5 +121,8 @@ describe("E4.2 — roll-up coverage on a value tile", () => {
 
   it("F3.73: a health-score value tile shows a percentage", () => {
     aHealthScoreTileShowsAPercentage();
+  });
+  it("F4.345 a static iso mimic draws isometric units", () => {
+    aStaticIsoMimicDrawsIsoUnits();
   });
 });

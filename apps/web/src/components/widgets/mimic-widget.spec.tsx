@@ -351,7 +351,8 @@ function renderExpandable({
   expandable = true,
   compact = false,
   motion = false,
-}: { status?: WidgetStatus; expandable?: boolean; compact?: boolean; motion?: boolean } = {}): void {
+  glyphSet,
+}: { status?: WidgetStatus; expandable?: boolean; compact?: boolean; motion?: boolean; glyphSet?: "core" | "iso" } = {}): void {
   render(
     <MimicWidget
       title="Demo water plant"
@@ -362,6 +363,7 @@ function renderExpandable({
       compact={compact}
       expandable={expandable}
       motion={motion}
+      glyphSet={glyphSet}
     />,
   );
 }
@@ -522,4 +524,24 @@ export function theExpandDialogMovesWithTheTile(): void {
   const dialog = openDialog();
   expect(motionIn(dialog, "ro")).toBe("breathe");
   expect(motionIn(dialog, "wtp")).toBe("pulse");
+}
+
+/**
+ * E-ISO — `F4.345` (ADR 0121 decision 5): an iso tile's Expand dialog draws the isometric units too,
+ * and the 24-px water-train markers (pump, discharge) and the alarm callout stay core (plan R6).
+ */
+export function anIsoTileExpandsIntoAnIsoDialogAndKeepsTheMarkersCore(): void {
+  renderExpandable({ glyphSet: "iso" });
+  const dialog = openDialog();
+  const unitGlyphs = [...dialog.querySelectorAll("[data-testid=mimic-node] [data-testid=mimic-glyph]")]
+    .map((g) => g.getAttribute("data-glyph") ?? "")
+    .filter((k) => k !== "alert"); // the alarm callout's icon stays core (plan R6)
+  expect(unitGlyphs.length).toBeGreaterThanOrEqual(8);
+  expect(unitGlyphs.filter((k) => !k.startsWith("iso:"))).toEqual([]);
+  const others = [...dialog.querySelectorAll("[data-testid=mimic-glyph]")]
+    .filter((g) => g.closest("[data-testid=mimic-node]") === null)
+    .map((g) => g.getAttribute("data-glyph") ?? "");
+  // Positive control: the markers are drawn, and none is an isometric twin.
+  expect(others).toEqual(expect.arrayContaining(["pump", "discharge"]));
+  expect(others.filter((k) => k.startsWith("iso:"))).toEqual([]);
 }
