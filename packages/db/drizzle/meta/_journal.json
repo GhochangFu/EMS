@@ -911,6 +911,20 @@
       "when": 1794119871850,
       "tag": "0130_mqtt_payload_formats",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1794176200000,
+      "tag": "0131_rtu_released_mqtt_topic",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1794176210000,
+      "tag": "0132_onboarding_session_lock",
+      "breakpoints": true
     }
   ]
 }

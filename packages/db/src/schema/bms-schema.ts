@@ -176,6 +176,8 @@ export const rtus = bmsSchema.table("rtus", {
   externalRtuId: integer("external_rtu_id"),
   rtuCode: varchar("rtu_code", { length: 64 }),
   mqttTopic: varchar("mqtt_topic", { length: 255 }),
+  // 0131 (F4.339, ADR 0117 decision 8): the topic a deactivate released; restored on reactivate when free.
+  releasedMqttTopic: varchar("released_mqtt_topic", { length: 255 }),
   stationCode: varchar("station_code", { length: 64 }),
   stationName: varchar("station_name", { length: 255 }),
   ingestEnabled: boolean("ingest_enabled").notNull().default(false),
@@ -761,6 +763,10 @@ export const onboardingSessions = bmsSchema.table("onboarding_sessions", {
   committedAt: timestamp("committed_at", { withTimezone: true }),
   result: jsonb("result"),
   checkpoints: jsonb("checkpoints"),
+  // 0132 (F4.339, ADR 0117 decision 9): a global admin's lock; all three NULL = unlocked. No FK (ruling Q7).
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
+  lockedBy: uuid("locked_by"),
+  lockReason: varchar("lock_reason", { length: 500 }),
 });
 
 /** Per-RTU protocol connection config and encrypted credentials. */
