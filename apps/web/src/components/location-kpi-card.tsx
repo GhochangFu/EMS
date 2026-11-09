@@ -92,8 +92,8 @@ function LiveBadge({ live }: { live: boolean }) {
     >
       {live ? (
         <span aria-hidden className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full rounded-full bg-accent opacity-75 motion-safe:animate-ping" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+          <span className="absolute inline-flex h-full w-full rounded-full bg-ok opacity-75 motion-safe:animate-ping" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-ok" />
         </span>
       ) : (
         <span aria-hidden className="inline-flex h-2 w-2 rounded-full border-2 border-warning" />

@@ -27,7 +27,7 @@ export function Sparkline({
   width = 120,
   height = 36,
   label,
-  stroke = "accent",
+  stroke = "series-1", // F4.341 A5c: a chart series is never drawn in `accent`.
   drawStyle = DEFAULT_POINT_STYLE,
 }: {
   buckets: readonly SparklineBucket[];

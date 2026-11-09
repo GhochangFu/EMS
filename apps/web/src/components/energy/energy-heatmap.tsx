@@ -48,7 +48,7 @@ function heatmapOption(cells: readonly EnergyHeatmapCell[], roles: Roles): EChar
       left: "center",
       bottom: 0,
       text: ["kWh", ""],
-      inRange: { color: [withAlpha(roles.accent, 0.08), roles.accent] },
+      inRange: { color: [withAlpha(roles["series-1"], 0.08), roles["series-1"]] },
     },
     series: [
       {

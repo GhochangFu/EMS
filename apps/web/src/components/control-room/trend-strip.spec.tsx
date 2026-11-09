@@ -497,27 +497,27 @@ export async function aColoredPointStrokesWithItsRole(): Promise<void> {
 
   await screen.findByRole("heading", { name: "Segment One Label" });
   const roles = currentRoles();
-  expect(roles["series-2"]).not.toBe(roles.accent);
+  expect(roles["series-2"]).not.toBe(roles["series-1"]);
   expect(new Set(strokesOf("Active power"))).toEqual(new Set([roles["series-2"]]));
 }
 
-/** The adjacent positive: a point with no entry keeps `accent`. */
+/** The adjacent positive: a point with no entry keeps the default, `series-1` (F4.341 A5c). */
 export async function anUncoloredPointKeepsAccent(): Promise<void> {
   fetchStrip.mockResolvedValue(strip());
   renderBodies([{ colors: { "seg-one:kw": "series-2" } }]);
 
   await screen.findByRole("heading", { name: "Segment One Label" });
-  expect(new Set(strokesOf("Temperature"))).toEqual(new Set([currentRoles().accent]));
+  expect(new Set(strokesOf("Temperature"))).toEqual(new Set([currentRoles()["series-1"]]));
 }
 
-/** No selection: every polyline is `accent` (the `F4.305` golden). */
+/** No selection: every polyline is the default, `series-1` (the `F4.305` golden; F4.341 A5c). */
 export async function noSelectionStrokesEveryPolylineAccent(): Promise<void> {
   fetchStrip.mockResolvedValue(strip());
   renderBodies([undefined]);
 
   await screen.findByRole("heading", { name: "Segment One Label" });
   const all = [...strokesOf("Active power"), ...strokesOf("Temperature")];
-  expect(new Set(all)).toEqual(new Set([currentRoles().accent]));
+  expect(new Set(all)).toEqual(new Set([currentRoles()["series-1"]]));
 }
 
 /** The read carries the selection's `segments` and `points`. */

@@ -680,7 +680,7 @@ html {
   --radius-pill: 9999px;
   --card-ground: rgb(var(--canvas));
   --page-ground: rgb(var(--canvas));
-  --button-edge: rgb(var(--line));
+  --button-edge: rgb(var(--ink-faint));
 }
 
 html:not([data-design])[data-surface="flat"] {
@@ -732,7 +732,24 @@ html:not([data-design])[data-surface="flat"] {
   --radius-pill: 0;
   --card-ground: rgb(var(--surface));
   --page-ground: rgb(var(--canvas));
-  --button-edge: rgb(var(--line));
+  --button-edge: rgb(var(--ink-faint));
+}
+
+/*
+ * F4.341 P4 (ADR 0118 Amendment 2) — the wall's type floor. On a wall surface (`[data-wall-root]`,
+ * `components/control-room/wall-frame.tsx`) every text step under 16px is raised to
+ * `--text-wall-min`, in every design system (`nexus-soft` included): a wall is read from across a
+ * room, and it has no hover. `--text-base` and up are at least 16px in every design block
+ * (`tests/f4.341-type-rules-gate.test.ts` R5). The steps inherit from `html`'s design block, so a
+ * design system's own values apply above the floor.
+ */
+[data-wall-root] {
+  --text-3xs: var(--text-wall-min);
+  --text-2xs: var(--text-wall-min);
+  --text-xs: var(--text-wall-min);
+  --text-sm: var(--text-wall-min);
+  --leading-xs: 1.5rem;
+  --leading-sm: 1.5rem;
 }
 
 /*
@@ -865,7 +882,8 @@ html[data-theme="dark"]:not([data-surface="flat"]) {
     justify-content: center;
     gap: calc((var(--space-1) + var(--space-2)) / 2);
     min-height: var(--space-8);
-    border-width: 0;
+    /* F4.341 A5 (ADR 0118 Amendment 1): a secondary button edge ≥ 3:1 against its ground. */
+    border: 1px solid var(--button-edge);
     border-radius: var(--radius-button);
     background-color: rgb(var(--canvas));
     box-shadow: var(--shadow-raised-sm);
@@ -889,13 +907,12 @@ html[data-theme="dark"]:not([data-surface="flat"]) {
     @apply text-ink;
   }
 
-  /* A primary button: the call site keeps its `bg-accent` fill and `text-on-accent` ink. */
+  /*
+   * A primary button: the call site keeps its `bg-accent` fill and `text-on-accent` ink. F4.341 A5
+   * (ADR 0118 Amendment 1): no primary button carries a shadow, in any design system.
+   */
   .surface-button-primary {
     border-radius: var(--radius-button);
-    box-shadow: var(--shadow-raised-sm);
-  }
-  .surface-button-primary:where(:active) {
-    box-shadow: var(--shadow-pressed-sm);
   }
   :where([data-surface="flat"]) .surface-button-primary {
     border-radius: var(--radius-button);

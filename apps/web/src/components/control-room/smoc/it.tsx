@@ -313,7 +313,7 @@ function RackCard({
           <span className="font-mono font-semibold text-ink">{n(freshValue(rack.rackKw, rackSelf.stale), 2)} kW</span>
         </div>
         <div className="mt-2 h-2 surface-pressed-sm">
-          <div className="h-2 rounded bg-accent" style={{ width: `${pct}%` }} />
+          <div className="h-2 rounded bg-neutral-ink" style={{ width: `${pct}%` }} />
         </div>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">

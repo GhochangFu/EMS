@@ -122,9 +122,9 @@ function kpiToneStyle(tone?: KanbanColumn["kpiTone"]): string {
     case "info":
       return "after:bg-info";
     case "success":
-      return "after:bg-accent";
+      return "after:bg-ok";
     default:
-      return "after:bg-accent";
+      return "after:bg-ok";
   }
 }
 

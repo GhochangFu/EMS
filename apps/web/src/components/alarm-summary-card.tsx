@@ -40,7 +40,7 @@ export function AlarmSummaryCard({
           ? "after:bg-warning"
           : tone === "info"
             ? "after:bg-info"
-            : "after:bg-accent";
+            : "after:bg-ok";
   const icon =
     tone === "offline"
       ? "?"

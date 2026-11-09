@@ -42,7 +42,7 @@ export function KpiTile({
       ? "after:bg-critical"
       : tone === "warning"
         ? "after:bg-warning"
-        : "after:bg-accent";
+        : "after:bg-ok";
   const staleRing = stale ? "ring-2 ring-warning/70 ring-offset-2" : "";
 
   return (
