@@ -439,10 +439,10 @@ describe("F3.71 the surface vocabulary", () => {
     expect(chrome).toEqual([]);
   });
 
-  it("V6 the chrome scan is live: it finds a header in the shells, and reads all three shells", () => {
+  it("V6 the chrome scan is live: it finds a header in the shells, and reads both shells (F4.346)", () => {
     const texts = SHELL_FILES.map((file) => blankComments(readFileSync(join(repoRoot, file), "utf8")));
     expect(texts.some((text) => /<header\b[^>]*?className=/.test(text))).toBe(true);
-    for (const shell of ["sidebar-shell.tsx", "topbar-shell.tsx", "rail-shell.tsx"]) {
+    for (const shell of ["sidebar-shell.tsx", "rail-shell.tsx"]) {
       expect(SHELL_FILES.some((f) => f.endsWith(shell)), shell).toBe(true);
     }
   });

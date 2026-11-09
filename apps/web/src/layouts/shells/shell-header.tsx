@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
+import { create } from "zustand";
 
 import { MyAppearanceDialog } from "../../components/appearance/appearance-dialogs";
 
@@ -55,22 +55,36 @@ export function ShellHeader({
 }
 
 /**
+ * `F4.346` (ADR 0118 Amendment 3 decision 3) — whether the user's own Appearance dialog is open. It
+ * is held outside the shells: a preview that changes the shell swaps the shell component, and a
+ * dialog inside the old shell would unmount and end the preview it started.
+ */
+const useMyAppearanceDialog = create<{ open: boolean; setOpen: (open: boolean) => void }>()((set) => ({
+  open: false,
+  setOpen: (open) => set({ open }),
+}));
+
+/**
  * `F4.341` PR 12 (ADR 0118 decision 11) — the user's own Appearance chooser, in every shell's header.
+ * The dialog itself is rendered by {@link MyAppearanceDialogHost}, outside the shell (`F4.346`).
  */
 export function AppearanceButton() {
-  const [open, setOpen] = useState(false);
+  const setOpen = useMyAppearanceDialog((s) => s.setOpen);
   return (
-    <>
-      <button
-        type="button"
-        className="rounded border border-on-dark/20 px-3 py-1.5 text-xs font-semibold text-on-dark/85 transition hover:border-on-dark/40 hover:bg-on-dark/10 hover:text-on-dark"
-        onClick={() => setOpen(true)}
-      >
-        Appearance
-      </button>
-      {open ? <MyAppearanceDialog onClose={() => setOpen(false)} /> : null}
-    </>
+    <button
+      type="button"
+      className="rounded border border-on-dark/20 px-3 py-1.5 text-xs font-semibold text-on-dark/85 transition hover:border-on-dark/40 hover:bg-on-dark/10 hover:text-on-dark"
+      onClick={() => setOpen(true)}
+    >
+      Appearance
+    </button>
   );
+}
+
+/** `F4.346` — the user's own Appearance dialog, rendered by `AppShell` beside the shell. */
+export function MyAppearanceDialogHost() {
+  const { open, setOpen } = useMyAppearanceDialog();
+  return open ? <MyAppearanceDialog onClose={() => setOpen(false)} /> : null;
 }
 
 /** The top navigation bar (Overview, Sites, Energy, Settings), moved verbatim from `app-shell.tsx`. */

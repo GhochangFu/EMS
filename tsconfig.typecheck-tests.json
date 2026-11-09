@@ -185,6 +185,7 @@
     "tests/f4.341-portal-appearance-schema.test.ts",
     "tests/f4.341-design-boot.test.ts",
     "tests/f4.341-shells.test.ts",
+    "tests/f4.346-nav-skins.test.ts",
     "tests/f4.341-fonts.test.ts",
     "tests/f4.341-accent-allowlist.test.ts",
     "tests/f4.341-type-rules-gate.test.ts",

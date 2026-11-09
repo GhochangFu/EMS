@@ -965,7 +965,7 @@ html[data-design="control-room-dark"][data-surface="flat"] {
  * review. Archivo for headings and large figures (`--font-head`, `--font-num`; Archivo offers `tnum`,
  * which the `font-num` utility turns on), IBM Plex Sans for text and tables; the page on `surface`,
  * cards transparent under a 3px `ink` rule; radius 0; the 24px grid gap (`--space-6`); 36px figures
- * (`--text-2xl`); weights ≤ 600, sentence case. The topbar shell. The Atlas red accent is not used:
+ * (`--text-2xl`); weights ≤ 600, sentence case. The sidebar shell, skinned (`F4.346`). The Atlas red accent is not used:
  * red is the critical colour, and the profile sets the accent.
  */
 html[data-design="swiss-grid"] {
@@ -1077,7 +1077,7 @@ html[data-design="swiss-grid"][data-surface="flat"] {
  * F4.341 PR 11 — `bento-ops` (ADR 0118 decision 2, Amendment 1 A1/A5/A6): executive dashboards, site
  * overviews and the lobby screen. Bricolage Grotesque for headings only, IBM Plex Sans for text and
  * numbers; radii 20px (tiles) and pill controls and tabs; soft tile shadows; A6's weights, sentence
- * case and 12px floor. The topbar shell. The two fixed overview pages take their tile spans from
+ * case and 12px floor. The sidebar shell, skinned (`F4.346`). The two fixed overview pages take their tile spans from
  * `lib/board-spans.ts`: the large span is neutral and holds the active alarms (A5).
  */
 html[data-design="bento-ops"] {
@@ -1676,6 +1676,53 @@ html[data-design="bento-ops"][data-theme="dark"]:not([data-surface="flat"]) {
     border-width: 1px 0 0 0;
     border-style: solid;
     border-color: rgb(var(--ink));
+  }
+
+  /*
+   * F4.346 (ADR 0118 Amendment 3 decision 1) — the sidebar skins of `swiss-grid` and `bento-ops`,
+   * tokens only, `:where`-wrapped and their own flat twins as above. `swiss-grid`: a full-height
+   * sidebar on `surface` under a 3px `ink` rule, square items (its radius tokens are 0). `bento-ops`: the sidebar on the page
+   * ground, pill items. In both the selected item is filled `ink` with `surface` text — not the
+   * accent (A5 permits ink); it comes after the hover rules, so a hover keeps it legible.
+   */
+  :where(html[data-design="swiss-grid"]) .surface-sidebar {
+    margin: 0;
+    align-self: stretch;
+    border-width: 3px 0 0 0;
+    border-style: solid;
+    border-color: rgb(var(--ink));
+    border-radius: var(--radius-card);
+    background-color: rgb(var(--surface));
+    box-shadow: none;
+  }
+  :where(html[data-design="swiss-grid"]) .surface-nav-item {
+    margin-inline: 0;
+    border-width: 0;
+    border-radius: var(--radius-control);
+  }
+  :where(html[data-design="swiss-grid"]) .surface-nav-item-selected {
+    border-color: rgb(var(--ink));
+    background-color: rgb(var(--ink));
+    box-shadow: none;
+    color: rgb(var(--surface));
+  }
+  :where(html[data-design="bento-ops"]) .surface-sidebar {
+    margin: 0;
+    align-self: stretch;
+    border-width: 0;
+    background-color: var(--page-ground);
+    box-shadow: none;
+    @apply rounded-none;
+  }
+  :where(html[data-design="bento-ops"]) .surface-nav-item {
+    border-width: 0;
+    border-radius: var(--radius-pill);
+  }
+  :where(html[data-design="bento-ops"]) .surface-nav-item-selected {
+    border-color: rgb(var(--ink));
+    background-color: rgb(var(--ink));
+    box-shadow: none;
+    color: rgb(var(--surface));
   }
 }
 

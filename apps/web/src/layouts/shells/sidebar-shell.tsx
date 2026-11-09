@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { isMasterDataAdmin } from "../../lib/admin-access";
@@ -10,46 +9,33 @@ import {
   adminModuleGroup,
   collapsedLabel,
   moduleGroups,
-  SHELL_RAIL_MAX_WIDTH,
-  useOverlayClosesOnNavigation,
+  useCollapsibleNav,
   useShellModel,
 } from "./navigation-model";
 
 /**
- * `F4.341` PR 5 (ADR 0118 decision 6) — the `sidebar` shell (`nexus-soft`, `enterprise-flat`): the
- * chrome header, the top navigation bar and the module sidebar, which is the app shell as it was
- * before `F4.341`, moved here verbatim. `sidebar-shell-markup.spec.tsx` holds the rendered markup
- * byte for byte to a fixture captured before the move.
+ * `F4.341` PR 5 (ADR 0118 decision 6) — the `sidebar` shell: the chrome header, the top navigation
+ * bar and the module sidebar, which is the app shell as it was before `F4.341`, moved here
+ * verbatim. `sidebar-shell-markup.spec.tsx` holds the rendered markup byte for byte to a fixture
+ * captured before the move.
+ *
+ * `F4.346` (ADR 0118 Amendment 3 decision 1) — four design systems render it (`nexus-soft`,
+ * `enterprise-flat`, `swiss-grid`, `bento-ops`); `swiss-grid` and `bento-ops` skin it in
+ * `index.css` with tokens only, so the markup is the same in all four. The sidebar's slot is the
+ * `nav[aria-label="Modules"]` landmark, outside the `<aside>`, so the fixture still holds.
  */
 export function SidebarShell({ user, children, kpiRibbon }: AppShellProps) {
   const { location, scope, locationScopeLabel, isVisible, handleLogout, isModuleSelected, isAdminSelected, visibleAreas, viewport, copilotPush } =
     useShellModel(user);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-    return window.localStorage.getItem("bms-sidebar-collapsed") === "true";
-  });
-
   // F4.318 — on a narrow viewport the rail is the default and the stored choice is not read or
   // written: a desktop "expanded" must not eat a phone's page. An expanded sidebar there is an
   // overlay, and a move to another page closes it.
-  const narrow = viewport.width <= SHELL_RAIL_MAX_WIDTH;
-  const [overlayOpen, setOverlayOpen] = useOverlayClosesOnNavigation(location.pathname);
-  const collapsed = narrow ? !overlayOpen : sidebarCollapsed;
-  const overlay = narrow && overlayOpen;
-
-  function toggleSidebar(): void {
-    if (narrow) {
-      setOverlayOpen((open) => !open);
-      return;
-    }
-    setSidebarCollapsed((current) => {
-      const next = !current;
-      window.localStorage.setItem("bms-sidebar-collapsed", String(next));
-      return next;
-    });
-  }
+  const {
+    collapsed,
+    narrow,
+    overlay,
+    toggle: toggleSidebar,
+  } = useCollapsibleNav("bms-sidebar-collapsed", location.pathname, viewport.width);
 
   return (
     <div className="flex min-h-screen flex-col surface-page text-ink" style={{ paddingRight: `${copilotPush}px` }}>
@@ -60,7 +46,7 @@ export function SidebarShell({ user, children, kpiRibbon }: AppShellProps) {
       <div className="flex min-h-0 flex-1">
         {/* F4.318 — on a narrow viewport the rail keeps a 64 px slot in the row, and the expanded
             sidebar lies over the page from that slot rather than taking 240 px of it. */}
-        <div className={narrow ? "relative w-16 shrink-0" : "contents"} data-testid="shell-sidebar-slot">
+        <nav aria-label="Modules" className={narrow ? "relative w-16 shrink-0" : "contents"} data-testid="shell-sidebar-slot">
           <aside
             className={`surface-sidebar shrink-0 py-3 text-sm transition-[width] duration-200 ${
               collapsed ? "w-16" : "w-60"
@@ -145,7 +131,7 @@ export function SidebarShell({ user, children, kpiRibbon }: AppShellProps) {
               </div>
             ) : null}
           </aside>
-        </div>
+        </nav>
 
         <ShellMain kpiRibbon={kpiRibbon} scope={scope}>
           {children}
