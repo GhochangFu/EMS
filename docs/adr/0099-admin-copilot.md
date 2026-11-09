@@ -2461,3 +2461,83 @@ review.
   build; if it is over its bound, the bound rises by release 4's rule and the
   owner is asked, as in Amendment 13.
 - No migration and no new route beyond ADR 0116 and plan ruling Q9.
+
+## Amendment 18 — the copilot proposes an onboarding credential copy (ADR 0117 decision 7, `F4.339`)
+
+**Status: accepted — 2026-11-09** (owner, in chat: "Accept Amendment 18 as recommended"). Drafted against `main` at `056ca882`, after
+`F4.339` PR 7 (#1166) shipped `POST /admin/onboarding/sessions/:id/credentials/copy`.
+The `F4.339` plan's owner ruling Q1 (2026-11-09) says a copilot card for the
+copy needs this amendment, and that plan PR 9 builds it only after the
+amendment is accepted. The merge of this amendment approves it. A line marked
+*(drafter)* is a choice the owner may change at review.
+
+### Facts the amendment rests on
+
+- PR 7's route copies one RTU's **stored, encrypted** credential to other MQTT
+  RTUs of a draft on the same broker (host, port, TLS). The blob is copied as
+  stored and never decrypted (plan ruling Q4). The body is
+  `{ from: { rtuIndex } | { rtuId }, toRtuIndexes, replace? }`; the answer is
+  the redacted session; the audit row names codes only.
+- The copied blob is bound to its broker (PR 7 security review H1): a later
+  host, port or TLS edit drops it, so a confirmed copy cannot be redirected.
+- The route is in `EXCLUDED_ROUTES` (`ONBOARDING_PENDING`) with the reason
+  "a credential route (ADR 0022)", so today the copilot cannot reach it.
+- `onboarding.commit` and `onboarding.discovery` are the precedent: a
+  **server-made** card (`proposer: "server"`) after a skill turn whose
+  onboarding agent proposed it; Confirm sends the `X-Copilot-Change` header;
+  one open onboarding card at a time (`F4.339` R4's replace rule).
+- ADR 0022 decision 2: the model never sees a credential value. The copy
+  carries none, so the card can show codes and the broker only.
+
+### Decisions
+
+1. **One catalog entry** `onboarding.credentials.copy` in
+   `packages/shared/src/copilot/catalog/onboarding.ts`, moved out of
+   `ONBOARDING_PENDING`:
+   - `POST /admin/onboarding/sessions/:id/credentials/copy`, body the PR 7
+     schema, `proposer: "server"`, risk `edit`, target
+     `{ kind: "onboardingSession", param: "id" }`, one step **Copy**.
+   - Summary: `Copy the stored credentials of RTU "A" to RTUs "B", "C" (same
+     broker host:port, TLS on|off). No credential value is shown or sent.`
+   - **Draft sources only** *(drafter)*: the card's `from` is `{ rtuIndex }`.
+     A committed source (`rtuId`) stays a drawer action, so the model never
+     names a fleet RTU whose credential it would move.
+   - `replace` is never set by the card *(drafter)*: a target that already
+     holds a credential refuses the card (409), and the admin uses the drawer.
+2. **One agent tool** `propose_credential_copy({ fromIndex, toIndexes })` in
+   the onboarding skill. It writes nothing. It refuses (fixed text, no value)
+   a source with no stored credential, a target that is not MQTT, on another
+   broker or already holding a credential, and the source as a target. On
+   success it stores `state.pendingCredentialCopy` and an action line
+   `Proposed credential copy from RTU "A" to …`; `skillTurn` makes the card as
+   it does for discovery, replacing any pending onboarding card (never one
+   `applying`).
+3. **The route stays the guard at Confirm**: the session lock (PR 6), the
+   hash bind, the broker check, the key version and the 503 with no key all
+   run again, and the card names the draft hash it was made for *(drafter:
+   `draftHash` in the body, as `onboarding.commit`, so a draft changed since
+   the proposal is refused)*.
+4. **The claim guard** (`F4.339` PR 1) learns the phrase `Proposed credential
+   copy`, so a reply that claims a copy happened without the action line is
+   corrected.
+
+### Gate questions
+
+| # | Question | Options | Ruling (owner, 2026-11-09) |
+| - | -------- | ------- | -------------------------- |
+| Q1 | Which sources may the card copy from? | draft RTUs only; draft and committed RTUs | **Draft only** — a committed (fleet) credential moves only by a human act in the drawer |
+| Q2 | May the card overwrite a held credential (`replace: true`)? | never; when the user asks | **Never** — the drawer keeps `replace` |
+| Q3 | Bind the card to the draft hash? | yes (`draftHash` in the body, the commit precedent); no (the route's own checks only) | **Yes** — needs a `draftHash` field in the PR 7 body, optional for the drawer |
+| Q4 | Risk class | `edit`; `create` | **`edit`** — it changes a draft RTU's credential, it creates no row |
+
+### Consequences
+
+- Plan PR 9 adds the entry with its fixture in `catalog.fixtures.ts` and specs,
+  the agent tool with its refusal specs, the server-made card, the claim-guard
+  phrase, and (Q3 yes) the optional `draftHash` on the PR 7 body. The stepper
+  gate does not apply: the drawer control is a plain form, not a
+  `<WizardShell`.
+- The propose budget (`copilot-propose-budget.spec.ts`) is measured at the
+  build; over its bound, the bound rises by release 4's rule and the owner is
+  asked, as in Amendment 13.
+- No migration and no new route.
