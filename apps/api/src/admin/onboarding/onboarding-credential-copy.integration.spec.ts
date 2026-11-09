@@ -130,7 +130,8 @@ export async function assertAHostEditDropsACopiedCredential(ctx: CopyCtx): Promi
   await ctx.service.setCredentials(ctx.jwt, id, { rtuIndex: 0, credentials: TEST_SECRET });
   const copied = await ctx.copies.copy(ctx.jwt, id, { from: { rtuIndex: 0 }, toRtuIndexes: [1] });
   const rtus = (copied.draft.rtus ?? []).map((rtu, i) => (i === 1 ? { ...rtu, config: { ...rtu.config, host: "elsewhere.test" } } : rtu));
-  const dto = await ctx.service.patchDraft(ctx.jwt, id, { ...copied.draft, rtus } as never);
+  // The RTU section alone: a patch that names no location type skips the vocabulary check.
+  const dto = await ctx.service.patchDraft(ctx.jwt, id, { rtus } as never);
   expect(dto.draft.rtus?.map((r) => r.credentialsSet)).toEqual([true, false, false]);
   expect(Object.keys(await secretsOf(ctx, id))).toEqual([codes[0]]);
 }
