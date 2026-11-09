@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { DESIGN_TOKENS, LEADING_STEPS, SHADOW_TOKENS, SPACE_STEPS, TEXT_STEPS } from "../apps/web/src/lib/design";
+import { DESIGN_SYSTEMS } from "../packages/shared/src/contracts/design-system";
 import { parseTokenBlocks } from "./support/colour-tokens";
 import { missingTokens, parseDesignBlocks } from "./support/design-tokens";
 import { repoRoot } from "./support/source-scan";
@@ -170,8 +171,15 @@ describe("F4.341 DT4 the design-block parser", () => {
     expect([...blocks.base.flat.keys()].sort()).toEqual([...DESIGN_TOKENS].sort());
   });
 
-  it("DT4 no design system ships yet (PR 1a adds the base only)", () => {
-    expect([...blocks.designs.keys()]).toEqual([]);
+  it("DS1 every design system's blocks that exist are complete, and each is a contract name (PR 11: all five)", () => {
+    for (const [name, variants] of blocks.designs) {
+      expect((DESIGN_SYSTEMS as readonly string[]).includes(name), name).toBe(true);
+      expect(variants.neumorphic, `${name} neumorphic`).toBeDefined();
+      expect(variants.flat, `${name} flat`).toBeDefined();
+      expect(missingTokens(variants.neumorphic!), `${name} neumorphic`).toEqual([]);
+      expect(missingTokens(variants.flat!), `${name} flat`).toEqual([]);
+    }
+    expect(blocks.designs.size).toBeGreaterThan(0);
   });
 
   it("DT4 the shadow tokens stay out of the design blocks", () => {

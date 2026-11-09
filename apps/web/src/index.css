@@ -736,6 +736,118 @@ html:not([data-design])[data-surface="flat"] {
 }
 
 /*
+ * F4.341 PR 8 — `enterprise-flat` (ADR 0118 decision 2, Amendment 1 A2/A6): admin work, master data,
+ * long forms and tables. IBM Plex Sans for every role; radii 6px (cards) and 4px (controls); cards
+ * on `surface` with a 1px `line` edge and no shadow; A6's weights (600), sentence case, no tracking,
+ * and 12px for the two smallest steps. The sidebar shell; the sidebar sits on `surface` with an
+ * `accent` 12% wash on the active item (a selection, A5).
+ */
+html[data-design="enterprise-flat"] {
+  --font-body: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, sans-serif;
+  --font-head: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, sans-serif;
+  --font-num: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --text-3xs: 12px;
+  --text-2xs: 12px;
+  --text-xs: 0.75rem;
+  --leading-xs: 1rem;
+  --text-sm: 0.875rem;
+  --leading-sm: 1.25rem;
+  --text-base: 1rem;
+  --leading-base: 1.5rem;
+  --text-lg: 1.125rem;
+  --leading-lg: 1.75rem;
+  --text-xl: 1.25rem;
+  --leading-xl: 1.75rem;
+  --text-2xl: 1.5rem;
+  --leading-2xl: 2rem;
+  --text-3xl: 1.875rem;
+  --leading-3xl: 2.25rem;
+  --text-4xl: 2.25rem;
+  --leading-4xl: 2.5rem;
+  --text-5xl: 3rem;
+  --leading-5xl: 1;
+  --text-6xl: 3.75rem;
+  --leading-6xl: 1;
+  --text-wall-min: 16px;
+  --weight-bold: 600;
+  --weight-semibold: 600;
+  --caps-transform: none;
+  --caps-tracking-wide: 0;
+  --caps-tracking-wider: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
+  --radius-card: 6px;
+  --radius-card-sm: 4px;
+  --radius-well: 4px;
+  --radius-control: 4px;
+  --radius-button: 4px;
+  --radius-pill: 9999px;
+  --card-ground: rgb(var(--surface));
+  --page-ground: rgb(var(--canvas));
+  --button-edge: rgb(var(--ink-faint));
+}
+
+html[data-design="enterprise-flat"][data-surface="flat"] {
+  --font-body: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, sans-serif;
+  --font-head: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, sans-serif;
+  --font-num: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --text-3xs: 12px;
+  --text-2xs: 12px;
+  --text-xs: 0.75rem;
+  --leading-xs: 1rem;
+  --text-sm: 0.875rem;
+  --leading-sm: 1.25rem;
+  --text-base: 1rem;
+  --leading-base: 1.5rem;
+  --text-lg: 1.125rem;
+  --leading-lg: 1.75rem;
+  --text-xl: 1.25rem;
+  --leading-xl: 1.75rem;
+  --text-2xl: 1.5rem;
+  --leading-2xl: 2rem;
+  --text-3xl: 1.875rem;
+  --leading-3xl: 2.25rem;
+  --text-4xl: 2.25rem;
+  --leading-4xl: 2.5rem;
+  --text-5xl: 3rem;
+  --leading-5xl: 1;
+  --text-6xl: 3.75rem;
+  --leading-6xl: 1;
+  --text-wall-min: 16px;
+  --weight-bold: 600;
+  --weight-semibold: 600;
+  --caps-transform: none;
+  --caps-tracking-wide: 0;
+  --caps-tracking-wider: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
+  --radius-card: 6px;
+  --radius-card-sm: 4px;
+  --radius-well: 4px;
+  --radius-control: 4px;
+  --radius-button: 4px;
+  --radius-pill: 0;
+  --card-ground: rgb(var(--surface));
+  --page-ground: rgb(var(--canvas));
+  --button-edge: rgb(var(--ink-faint));
+}
+
+
+/*
  * F4.341 P4 (ADR 0118 Amendment 2) — the wall's type floor. On a wall surface (`[data-wall-root]`,
  * `components/control-room/wall-frame.tsx`) every text step under 16px is raised to
  * `--text-wall-min`, in every design system (`nexus-soft` included): a wall is read from across a
@@ -786,6 +898,26 @@ html[data-theme="dark"]:not([data-surface="flat"]) {
   --shadow-pressed-sm: inset 2px 2px 5px rgb(var(--scrim) / 0.6), inset -2px -2px 5px rgb(var(--line-strong) / 0.24);
   --shadow-pill: 2px 2px 5px rgb(var(--scrim) / 0.6), -1px -1px 4px rgb(var(--line-strong) / 0.24);
   --shadow-ribbon: 0 4px 9px -2px rgb(var(--scrim) / 0.55), inset 0 1px 0 rgb(var(--line-strong) / 0.5);
+}
+
+/* F4.341 PR 8 — `enterprise-flat`'s shadows: none on a card (a transparent zero shadow, so the shadow gate's
+ * role-only rule holds), a hairline inset on a well. */
+html[data-design="enterprise-flat"]:not([data-surface="flat"]) {
+  --shadow-raised: 0 0 0 0 rgb(var(--ink) / 0);
+  --shadow-raised-sm: 0 0 0 0 rgb(var(--ink) / 0);
+  --shadow-pressed: inset 0 1px 2px rgb(var(--ink) / 0.06);
+  --shadow-pressed-sm: inset 0 1px 1px rgb(var(--ink) / 0.06);
+  --shadow-pill: 0 0 0 0 rgb(var(--ink) / 0);
+  --shadow-ribbon: 0 1px 0 rgb(var(--line) / 1);
+}
+
+html[data-design="enterprise-flat"][data-theme="dark"]:not([data-surface="flat"]) {
+  --shadow-raised: 0 0 0 0 rgb(var(--scrim) / 0);
+  --shadow-raised-sm: 0 0 0 0 rgb(var(--scrim) / 0);
+  --shadow-pressed: inset 0 1px 2px rgb(var(--scrim) / 0.4);
+  --shadow-pressed-sm: inset 0 1px 1px rgb(var(--scrim) / 0.4);
+  --shadow-pill: 0 0 0 0 rgb(var(--scrim) / 0);
+  --shadow-ribbon: 0 1px 0 rgb(var(--line) / 1);
 }
 
 /*
@@ -1095,6 +1227,32 @@ html[data-theme="dark"]:not([data-surface="flat"]) {
   }
   :where([data-surface="flat"]) .surface-segment-item-selected {
     @apply bg-accent text-on-accent;
+  }
+
+  /*
+   * F4.341 PR 8 — `enterprise-flat`'s explicit rules (plan D3). Each is `:where(html[…])`-wrapped, so
+   * it stays at one class of specificity: it wins over the base and flat rules by source order, and a
+   * call-site utility still wins over it. The selector matches in both surface variants, so it is its
+   * own flat twin. Cards and dialogs carry the 1px `line` edge; the sidebar is full height on
+   * `surface`; the active item is an `accent` 12% wash with `accent-strong` text (a selection, A5).
+   */
+  :where(html[data-design="enterprise-flat"]) .surface-raised,
+  :where(html[data-design="enterprise-flat"]) .surface-raised-sm,
+  :where(html[data-design="enterprise-flat"]) .surface-dialog {
+    border: 1px solid rgb(var(--line));
+  }
+  :where(html[data-design="enterprise-flat"]) .surface-sidebar {
+    margin: 0;
+    align-self: stretch;
+    border-width: 0 1px 0 0;
+    border-style: solid;
+    border-color: rgb(var(--line));
+    @apply rounded-none;
+  }
+  :where(html[data-design="enterprise-flat"]) .surface-nav-item-selected {
+    background-color: rgb(var(--accent) / 0.12);
+    box-shadow: none;
+    color: rgb(var(--accent-strong));
   }
 }
 

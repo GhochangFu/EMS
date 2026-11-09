@@ -660,6 +660,37 @@ function seriesAccentOffenders(theme: Theme, tokens: ReturnType<typeof loadToken
   return out;
 }
 
+/**
+ * `F4.341` (ADR 0118 decision 14) — the grounds a design system paints beyond the base vocabulary,
+ * as pairs measured once per profile × theme (not per combination). No allowlist and no carry-over:
+ * a design system's own ground must pass everywhere. Each design system's PR adds its rows.
+ */
+const DS_TEXT_PAIRS: Record<string, Pair[]> = {
+  // PR 8: the sidebar's active item, `accent-strong` text on an `accent` 12% wash over `surface`.
+  "enterprise-flat": [{ fg: "accent-strong", bg: "surface", wash: { tint: "accent", alpha: 0.12 } }],
+};
+const DS_UI_PAIRS: Record<string, Pair[]> = {
+  "enterprise-flat": [],
+};
+
+describe("F4.341: every design system's own grounds hold in every profile and theme (ADR 0118 decision 14)", () => {
+  it("DS-T every design system's text pairs are ≥ 4.5:1 in every profile, both themes", () => {
+    const pairs = Object.values(DS_TEXT_PAIRS).flat();
+    expect(pairs.length).toBeGreaterThan(0);
+    expect(everyProfile((_n, theme, tokens) => checkPairs(pairs, 4.5, theme, tokens, () => false))).toEqual([]);
+  });
+
+  it("DS-U every design system's UI-part pairs are ≥ 3:1 in every profile, both themes", () => {
+    expect(everyProfile((_n, theme, tokens) => checkPairs(Object.values(DS_UI_PAIRS).flat(), 3, theme, tokens, () => false))).toEqual([]);
+  });
+
+  it("DS-P every design system with a block in index.css has a pair list (even an empty one)", () => {
+    const css = readFileSync(TOKENS_PATH, "utf8");
+    const designs = [...new Set([...css.matchAll(/html\[data-design="([a-z-]+)"\]\s*\{/g)].map((m) => m[1]))];
+    expect(designs.filter((d) => !(d in DS_TEXT_PAIRS) || !(d in DS_UI_PAIRS))).toEqual([]);
+  });
+});
+
 describe("F4.310: every colour profile holds the default's rules on its own values (ADR 0110 decision 5)", () => {
   it("Q5 index.css defines every non-default profile of the contract, so Q1–Q4 are not vacuous (PR D)", () => {
     expect(profilesOf().map(([name]) => name)).toEqual([...COLOUR_PROFILES]);
