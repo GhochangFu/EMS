@@ -2,6 +2,7 @@ import type { OnboardingDraft } from "@bms/shared";
 
 import { cloneJson, rebuildDeep } from "../stack-safe-json";
 import { DISCOVERY_KEY, DISCOVERY_PROPOSAL_KEY } from "./onboarding-discovery-state";
+import { brokerOf, isMqttBroker, sameBroker, type MqttBroker } from "./onboarding-mqtt-broker";
 
 /**
  * Draft redaction and the internal encrypted-credential store (ADR 0022).
@@ -139,7 +140,23 @@ export function isDraftRecordSecretKey(key: string): boolean {
  * else makes `ownBlob` treat the whole entry as absent, the same treatment a
  * malformed `c` already gets.
  */
-export type EncryptedBlob = { c: string; iv: string; v?: number };
+export type EncryptedBlob = {
+  c: string;
+  iv: string;
+  v?: number;
+  /**
+   * `F4.339` (security review H1): the broker a **copied** credential is bound
+   * to. A blob carrying `b` is served only to an RTU whose config still names
+   * that broker (`blobBoundTo`); `reconcileSecrets` drops it otherwise, so an
+   * edit of host, port or TLS can never send a copied fleet credential elsewhere.
+   */
+  b?: MqttBroker;
+};
+
+/** `F4.339`: a blob with no binding, or one whose binding matches the RTU's current broker. */
+export function blobBoundTo(blob: EncryptedBlob, rtu: { config?: unknown } | undefined): boolean {
+  return blob.b === undefined || sameBroker(blob.b, brokerOf(rtu?.config));
+}
 
 /**
  * Reads one blob from the `_secrets` map by **own** property only.
@@ -176,14 +193,19 @@ function ownBlob(secrets: unknown, key: string): EncryptedBlob | null {
   if (typeof entry !== "object" || entry === null) {
     return null;
   }
-  const { c, iv, v } = entry as { c?: unknown; iv?: unknown; v?: unknown };
+  const { c, iv, v, b } = entry as { c?: unknown; iv?: unknown; v?: unknown; b?: unknown };
   if (typeof c !== "string" || typeof iv !== "string") {
     return null;
   }
-  if (v === undefined) {
-    return { c, iv };
+  // F4.339: a binding that does not parse makes the entry absent (fail closed), as a bad `v` does.
+  if (b !== undefined && !isMqttBroker(b)) {
+    return null;
   }
-  return typeof v === "number" && Number.isSafeInteger(v) && v >= 1 ? { c, iv, v } : null;
+  const bound = b === undefined ? {} : { b: { ...b } };
+  if (v === undefined) {
+    return { c, iv, ...bound };
+  }
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 1 ? { c, iv, v, ...bound } : null;
 }
 
 /**
@@ -593,7 +615,8 @@ export function readEncryptedCredentials(
     return null;
   }
   const entry = ownBlob((draft as DraftWithSecrets)._secrets, key);
-  if (!entry) {
+  // F4.339 (review H1): a copied credential is served only to the broker it was copied for.
+  if (!entry || !blobBoundTo(entry, (draft as OnboardingDraft).rtus?.[rtuIndex])) {
     return null;
   }
   return {
@@ -613,6 +636,8 @@ export function readEncryptedCredentials(
  * - Entries whose code no longer appears are **dropped**. The credential is
  *   unrecoverable, which is the correct outcome: re-entering it is cheap,
  *   shipping it to the wrong broker is not.
+ * - `F4.339`: a copied entry bound to a broker (`b`) is dropped once its RTU
+ *   names another host, port or TLS, so a config edit cannot redirect it.
  * - A code appearing on **more than one** RTU drops that entry too — with two
  *   claimants there is no safe answer, so neither gets it.
  * - `credentialsSet` is derived from the store rather than trusted from input,
@@ -634,17 +659,20 @@ export function reconcileSecrets(
   }
 
   const seen = new Map<string, number>();
+  const owner = new Map<string, (typeof next.rtus)[number]>();
   for (const rtu of next.rtus) {
     const code = normaliseCode(rtu?.code) ?? "";
     if (code.length > 0) {
       seen.set(code, (seen.get(code) ?? 0) + 1);
+      owner.set(code, rtu);
     }
   }
 
   const kept: Record<string, EncryptedBlob> = {};
   for (const code of Object.keys(next._secrets ?? {})) {
     const blob = ownBlob(next._secrets, code);
-    if (blob && seen.get(code) === 1) {
+    // F4.339 (review H1): a copied credential whose RTU now names another broker is dropped.
+    if (blob && seen.get(code) === 1 && blobBoundTo(blob, owner.get(code))) {
       setBlob(kept, code, blob);
     }
   }

@@ -16,6 +16,7 @@ import { OnboardingChatService } from "./onboarding-chat.service";
 import { OnboardingCommitService } from "./onboarding-commit.service";
 import {
   assertABrokerMismatchWritesNothing,
+  assertAHostEditDropsACopiedCredential,
   assertACommittedSourceCopiesItsBytes,
   assertAnotherOrganizationsRtuIsNotFound,
   assertASameDraftCopy,
@@ -216,5 +217,9 @@ describe.skipIf(!connectionString)("F4.339 — the onboarding credential copy (r
 
   it("CC5 a broker mismatch refuses and writes nothing", async () => {
     await assertABrokerMismatchWritesNothing(ctx);
+  }, 30_000);
+
+  it("CC6 a host edit after a copy drops the copied credential (review H1)", async () => {
+    await assertAHostEditDropsACopiedCredential(ctx);
   }, 30_000);
 });

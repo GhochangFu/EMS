@@ -1,6 +1,9 @@
 import type { OnboardingDraft } from "@bms/shared";
 
+import { brokerOf, isMqttBroker, sameBroker, type MqttBroker } from "./onboarding-mqtt-broker";
 import { ownBlobAt, rtuSecretKey, storeBlobAt, type EncryptedBlob } from "./onboarding-redaction";
+
+export { brokerOf, isMqttBroker, sameBroker, type MqttBroker };
 
 /**
  * `F4.339` (ADR 0117 decision 7, plan R7) — the pure core of the credential
@@ -8,24 +11,6 @@ import { ownBlobAt, rtuSecretKey, storeBlobAt, type EncryptedBlob } from "./onbo
  * all-or-nothing write of one stored blob to several draft RTUs. The blob is
  * copied **as stored** (`{ c, iv, v }`), never decrypted (owner ruling Q4).
  */
-
-/** The broker an MQTT config connects to. `host` and `port` may be absent (the ingest host's env fallback). */
-export type MqttBroker = { host: string | null; port: number | null; tls: boolean };
-
-/** Reads the broker of an RTU config; `tls` absent reads as `true` (ADR 0114 decision 2). */
-export function brokerOf(config: unknown): MqttBroker {
-  const record = typeof config === "object" && config !== null ? (config as Record<string, unknown>) : {};
-  return {
-    host: typeof record.host === "string" && record.host.trim() !== "" ? record.host.trim().toLowerCase() : null,
-    port: typeof record.port === "number" ? record.port : null,
-    tls: record.tls !== false,
-  };
-}
-
-/** Same host (case-insensitive), port and TLS: a credential is the broker's, so a copy needs all three. */
-export function sameBroker(a: MqttBroker, b: MqttBroker): boolean {
-  return a.host === b.host && a.port === b.port && a.tls === b.tls;
-}
 
 export type CopyRefusal =
   | { refused: "no-code"; indexes: number[] }

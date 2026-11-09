@@ -64,8 +64,10 @@ export async function assertASameDraftCopy(ctx: CopyCtx): Promise<void> {
   expect(JSON.stringify(dto)).not.toContain("_secrets");
   const secrets = await secretsOf(ctx, id);
   expect(Object.keys(secrets).sort()).toEqual([...codes].sort());
-  expect(secrets[codes[1]!]).toEqual(secrets[codes[0]!]);
-  expect(secrets[codes[2]!]).toEqual(secrets[codes[0]!]);
+  // The stored bytes as they were, plus the broker binding (review H1).
+  const bound = { ...secrets[codes[0]!], b: { host: "broker.test", port: PORT, tls: true } };
+  expect(secrets[codes[1]!]).toEqual(bound);
+  expect(secrets[codes[2]!]).toEqual(bound);
   const rows = await audits(ctx, id);
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({ from: { rtuCode: codes[0] }, to: [codes[1], codes[2]], replace: false });
@@ -120,4 +122,15 @@ export async function assertABrokerMismatchWritesNothing(ctx: CopyCtx): Promise<
   expect((err as Error).message).toContain(codes[2]);
   expect(await secretsOf(ctx, id)).toEqual(before);
   expect(await audits(ctx, id)).toEqual([]);
+}
+
+/** CC6 (review H1) — after a copy, moving the target to another host drops its credential; the source keeps its own. */
+export async function assertAHostEditDropsACopiedCredential(ctx: CopyCtx): Promise<void> {
+  const { id, codes } = await ctx.seed();
+  await ctx.service.setCredentials(ctx.jwt, id, { rtuIndex: 0, credentials: TEST_SECRET });
+  const copied = await ctx.copies.copy(ctx.jwt, id, { from: { rtuIndex: 0 }, toRtuIndexes: [1] });
+  const rtus = (copied.draft.rtus ?? []).map((rtu, i) => (i === 1 ? { ...rtu, config: { ...rtu.config, host: "elsewhere.test" } } : rtu));
+  const dto = await ctx.service.patchDraft(ctx.jwt, id, { ...copied.draft, rtus } as never);
+  expect(dto.draft.rtus?.map((r) => r.credentialsSet)).toEqual([true, false, false]);
+  expect(Object.keys(await secretsOf(ctx, id))).toEqual([codes[0]]);
 }

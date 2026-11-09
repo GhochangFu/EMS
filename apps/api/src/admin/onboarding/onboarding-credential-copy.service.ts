@@ -29,7 +29,7 @@ export const COPY_NEEDS_KEY = "CREDENTIAL_ENCRYPTION_KEY is not configured, so a
 /** `F4.339` (R7): the 409 of a blob at a key version this API cannot read now. */
 export const COPY_KEY_VERSION =
   "The source credential is encrypted under a key version that is no longer loaded. Re-enter it with Add credentials.";
-/** `F4.339`: the 404 of a committed source the caller's organization does not have. */
+/** `F4.339`: the 404 of a committed source the caller's organization does not have, or an inactive one. */
 export const COPY_SOURCE_NOT_FOUND = "RTU not found";
 /** `F4.339`: the 403 of a committed source outside the caller's location scope. */
 export const COPY_SOURCE_OUT_OF_SCOPE = "You cannot manage the location of the source RTU.";
@@ -92,7 +92,9 @@ export class OnboardingCredentialCopyService {
     await withTenant(this.tenantDb, session.organizationId, async (tx) => {
       const locked = await lockSession(tx, sessionId);
       assertTurnStillBound(locked, expectedHash);
-      const out = copyBlobToTargets(locked.draft as OnboardingDraft, source.blob, source.draftCode, body.toRtuIndexes, replace);
+      // Review H1: the copy is bound to the broker it was checked against; a later host, port or TLS edit drops it.
+      const bound = { ...source.blob, b: source.broker };
+      const out = copyBlobToTargets(locked.draft as OnboardingDraft, bound, source.draftCode, body.toRtuIndexes, replace);
       if (!("draft" in out)) {
         if (out.refused === "has-credential") throw new ConflictException(copyTargetsHoldCredentials(out.codes));
         if (out.refused === "self") throw new BadRequestException(COPY_TARGET_IS_SOURCE);
@@ -148,7 +150,8 @@ export class OnboardingCredentialCopyService {
         })
         .from(rtus)
         .innerJoin(rtuConnectionConfigs, eq(rtuConnectionConfigs.rtuId, rtus.id))
-        .where(and(eq(rtus.id, from.rtuId), eq(rtus.organizationId, organizationId)))
+        // Review L1: an inactive RTU is no source (a decommissioned credential stays retired).
+        .where(and(eq(rtus.id, from.rtuId), eq(rtus.organizationId, organizationId), eq(rtus.active, true)))
         .limit(1),
     );
     if (!row) throw new NotFoundException(COPY_SOURCE_NOT_FOUND);
