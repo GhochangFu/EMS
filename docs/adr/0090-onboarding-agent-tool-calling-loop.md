@@ -30,6 +30,11 @@ the agent path adds a code-written `Not applied` action line. It amends
 decision 6 and touches ADR 0094 decision 5 (the undo checkpoint's label). It
 is at the end of this record.
 
+**Amendment 5 (2026-11-09)** records row `F4.294`, PR 2: an onboarding agent
+turn gets a 120 s deadline; the copilot chat keeps 45 s. It amends decision 3
+(the caps) and the consequence "A turn can take up to 45 s". It is at the end
+of this record.
+
 Implements row `F3.21` (Track E, Wave 2, ⭐). Amends
 [ADR 0011](./0011-ai-onboarding-chat.md) decision 1 (see *Amended records*).
 Keeps [ADR 0022](./0022-onboarding-credential-capture.md) unchanged. Promotes
@@ -1007,3 +1012,48 @@ None.
 - **History carries the line.** The model reads `action` messages as
   assistant text (decision 6), so the next turn sees what was refused.
 - No schema, migration or dependency change.
+
+## Amendment 5 — a 120 s deadline for onboarding turns (`F4.294` PR 2, 2026-11-09)
+
+**Status:** Accepted — 2026-11-09 (owner, in chat: "Raise the limit", then
+"120 s" and "Onboarding only").
+
+### Context
+
+The owner ruled on 2026-10-31 to keep the 45 s deadline and collect turn times.
+On 2026-11-09 the owner onboarded organization WBLDC on the AWS demo through
+the copilot (the `F4.339` test, ADR 0119 binary format). The location and both
+RTUs went in. Every asset-mapping turn then stopped on `cap_time`: five turns
+in a row at 45001–45010 ms, with 4, 0, 0, 0 and 0 tool calls, provider
+OpenRouter. One of them asked for a single asset. A new chat did not help:
+resuming the draft reloads the same onboarding history. The model needs more
+than 45 s to make its first tool call on a long onboarding history.
+
+### Decision
+
+E1. **Onboarding turns: 120 s.** `ONBOARDING_TURN_DEADLINE_MS = 120_000` in
+    `apps/api/src/admin/onboarding/onboarding-agent-loop.ts`. `runAgentTurn`
+    passes it to `runAgentLoop` as `deadlineMs`; a caller's own `deadlineMs`
+    (the specs) still wins. Every other cap of decision 3 stands (8 tool calls,
+    20 history messages).
+
+E2. **Copilot chat turns: 45 s, unchanged.** `TURN_DEADLINE_MS` in
+    `apps/api/src/llm/agent-loop.ts` stays `45_000`. The dock waits 60 s for
+    a copilot follow-up after a Confirm (`FOLLOW_UP_WAIT_MS`), so a longer
+    chat deadline would need that wait to grow too. The 2026-10-31 ruling
+    (collect more data) still holds for the chat.
+
+E3. **Proxy.** The AWS `deploy/aws/nginx.conf` reads the API for up to 300 s,
+    so a 120 s turn is not cut. A deployment with a shorter proxy read timeout
+    cuts the turn, as the original consequence says.
+
+### Dependencies
+
+None.
+
+### Consequences
+
+- An onboarding turn can hold the "thinking" state for up to 2 minutes.
+- The `cap_time` stop reply is unchanged: it does not name the number.
+- No schema, migration, route or dependency change.
+

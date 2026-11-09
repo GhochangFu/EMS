@@ -38,7 +38,7 @@ import { claimsAWrite, withoutWriteClaims, writeClaimRetryFor } from "./onboardi
  * caller writes the session row once, from `draftPatch`.
  *
  * Two failure classes, told apart by the turn's own `AbortSignal`:
- * - **the 45 s deadline** (`cap_time`) keeps the edits of the tool calls that
+ * - **the deadline** (`cap_time`, {@link ONBOARDING_TURN_DEADLINE_MS}) keeps the edits of the tool calls that
  *   completed, and the guided mode does not run (ruling 3);
  * - **anything else** (`provider_error`) discards every edit of the turn, and
  *   the caller runs the guided mode on the same message (ruling 6).
@@ -50,6 +50,15 @@ import { claimsAWrite, withoutWriteClaims, writeClaimRetryFor } from "./onboardi
  */
 
 export { MAX_TOOL_CALLS_PER_TURN, TURN_DEADLINE_MS };
+
+/**
+ * F4.294 (ADR 0090 Amendment 5, owner ruling 2026-11-09): an onboarding turn
+ * gets 120 s, not the copilot's 45 s (`TURN_DEADLINE_MS`). On AWS the WBLDC
+ * asset-mapping turns stopped at 45 s with no tool call, five in a row. The
+ * copilot chat keeps 45 s, because the dock waits 60 s for a follow-up
+ * (`FOLLOW_UP_WAIT_MS`). The AWS nginx read timeout is 300 s.
+ */
+export const ONBOARDING_TURN_DEADLINE_MS = 120_000;
 export type { AgentStopReason, AgentTurnRecord };
 export const MAX_HISTORY_MESSAGES = 20;
 export const MAX_HISTORY_MESSAGE_CHARS = 2_000;
@@ -328,7 +337,7 @@ export async function runAgentTurn(
       // F4.339 (ADR 0117 decision 2): a final text that claims a write the turn did not make goes back once.
       correctFinal: (text) => writeClaimRetryFor(text, wroteSoFar(input.draft, state, wroteLine)),
     },
-    options,
+    { deadlineMs: ONBOARDING_TURN_DEADLINE_MS, ...options },
   );
   if (stopReason === "provider_error") {
     return { reply: "", draftPatch: {}, actionLines: [], suggestedReplies: [], stopReason, fallback: true, record };

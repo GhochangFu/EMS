@@ -10,6 +10,7 @@ import {
   STOPPED_EARLY_CALLS_REPLY,
   STOPPED_EARLY_TIME_NOTHING_REPLY,
   STOPPED_EARLY_TIME_REPLY,
+  ONBOARDING_TURN_DEADLINE_MS,
   TURN_DEADLINE_MS,
   ONE_ASSET_PER_TURN_RULE,
   stopReply,
@@ -393,7 +394,8 @@ export async function assertTheTurnRecordIsTextFree(): Promise<void> {
 
 export function assertCapsArePinned(): void {
   assert(MAX_TOOL_CALLS_PER_TURN === 8, "8 tool calls per turn");
-  assert(TURN_DEADLINE_MS === 45_000, "45 s per turn");
+  assert(TURN_DEADLINE_MS === 45_000, "45 s per copilot turn");
+  assert(ONBOARDING_TURN_DEADLINE_MS === 120_000, "120 s per onboarding turn (ADR 0090 Amendment 5)");
   assert(MAX_HISTORY_MESSAGES === 20, "20 history messages");
   assert(MAX_HISTORY_MESSAGE_CHARS === 2_000, "2,000 characters per history message");
   assert(TOOL_RESULT_MAX_CHARS === 8_000, "8,000 characters per tool result");
@@ -785,4 +787,27 @@ export async function assertANoOpWriteCountsAsWritten(): Promise<void> {
   assert(llm.calls === 2, `no retry round, got ${llm.calls} calls`);
   assert(result.record.claimReplaced === undefined && result.record.corrected === undefined, "neither corrected nor replaced");
   assert(result.reply === `Set location ${location.name} (smoc_campus)`, `the reply is untouched, got ${result.reply}`);
+}
+
+/**
+ * F4.294 (ADR 0090 Amendment 5): an onboarding turn with no `deadlineMs`
+ * option runs on the 120 s onboarding deadline, not the copilot's 45 s. The
+ * timers are shortened to 1 ms; the delays the loop asked for are recorded.
+ */
+export async function assertTheOnboardingTurnUsesItsOwnDeadline(): Promise<void> {
+  const saved = setTimeout;
+  const asked: number[] = [];
+  (globalThis as { setTimeout: unknown }).setTimeout = ((fn: () => void, ms?: number) => {
+    asked.push(ms ?? 0);
+    return saved(fn, 1);
+  }) as unknown as typeof setTimeout;
+  let result;
+  try {
+    result = await runAgentTurn(turn(new FakeLlmProvider(["hang"])));
+  } finally {
+    (globalThis as { setTimeout: unknown }).setTimeout = saved;
+  }
+  assert(result.stopReason === "cap_time", `the deadline stops the turn, got ${result.stopReason}`);
+  assert(asked.includes(ONBOARDING_TURN_DEADLINE_MS), `the loop asked for 120000 ms, got ${asked.join(",")}`);
+  assert(!asked.includes(TURN_DEADLINE_MS), "the onboarding turn does not use the 45 s copilot deadline");
 }

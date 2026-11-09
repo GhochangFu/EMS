@@ -11,6 +11,7 @@ import {
   assertTheHistoryCutCoversTheRecordPrefix,
   assertThePromptSaysRecordsAreTheSystems,
   assertCapsArePinned,
+  assertTheOnboardingTurnUsesItsOwnDeadline,
   assertHistoryCarriesNoProviderContent,
   assertHistoryIsTheLastTwentyCutToTwoThousand,
   assertProviderContentIsKeptOnTheInTurnAssistantMessage,
@@ -149,6 +150,10 @@ describe("onboarding agent loop (F3.21, ADR 0090 decisions 2, 3, 7, 9)", () => {
 
   it("pins the caps", () => {
     assertCapsArePinned();
+  });
+
+  it("runs an onboarding turn on the 120 s onboarding deadline", async () => {
+    await assertTheOnboardingTurnUsesItsOwnDeadline();
   });
 
   it("records an unknown tool name as unknown", async () => {
