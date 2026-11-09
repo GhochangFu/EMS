@@ -153,8 +153,10 @@ describe("F3.71 the surface boot script", () => {
 // The shadow tokens
 // ---------------------------------------------------------------------------------------------
 
-const LIGHT_SHADOW_SELECTOR = ':root:not([data-surface="flat"])';
-const DARK_SHADOW_SELECTOR = ':root[data-theme="dark"]:not([data-surface="flat"])';
+// `F4.341` (plan D2): keyed on `html`, so a design system's own pair (`html[data-design="…"]…`)
+// wins by specificity; the shadow tokens never enter the root role blocks.
+const LIGHT_SHADOW_SELECTOR = 'html:not([data-surface="flat"])';
+const DARK_SHADOW_SELECTOR = 'html[data-theme="dark"]:not([data-surface="flat"])';
 
 /** Every block whose selector ends in `:not([data-surface="flat"])`, by selector. */
 function shadowBlocks(css: string): { selector: string; body: string }[] {
