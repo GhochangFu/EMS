@@ -20,7 +20,7 @@ import { CredentialCryptoService } from "../../security/credential-crypto.servic
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { brokerOf, copyBlobToTargets, sameBroker, type MqttBroker } from "./onboarding-credential-copy";
 import { draftHash } from "./onboarding-commit-proposal";
-import { assertSessionUnlocked, assertTurnStillBound, lockSession } from "./onboarding-locked-writes";
+import { assertSessionStillDraft, assertSessionUnlocked, assertTurnStillBound, lockSession } from "./onboarding-locked-writes";
 import { blobBoundTo, ownBlobAt, rtuSecretKey, type EncryptedBlob } from "./onboarding-redaction";
 import { OnboardingService } from "./onboarding.service";
 
@@ -29,6 +29,13 @@ export const COPY_NEEDS_KEY = "CREDENTIAL_ENCRYPTION_KEY is not configured, so a
 /** `F4.339` (R7): the 409 of a blob at a key version this API cannot read now. */
 export const COPY_KEY_VERSION =
   "The source credential is encrypted under a key version that is no longer loaded. Re-enter it with Add credentials.";
+/**
+ * `F4.339` PR 9 (ADR 0099 Amendment 18 Q3): the 400 of a copilot card's copy
+ * whose draft changed since the proposal — the commit's `PROPOSED_DRAFT_CHANGED`
+ * precedent. Nothing is copied.
+ */
+export const COPY_PROPOSED_DRAFT_CHANGED =
+  "The draft changed since this copy was proposed, so nothing was copied. Ask for the copy again.";
 /** `F4.339`: the 404 of a committed source the caller's organization does not have, or an inactive one. */
 export const COPY_SOURCE_NOT_FOUND = "RTU not found";
 /** `F4.339`: the 403 of a committed source outside the caller's location scope. */
@@ -68,6 +75,11 @@ export class OnboardingCredentialCopyService {
       throw new ForbiddenException("Session is not editable");
     }
     assertSessionUnlocked(session);
+    // Amendment 18 Q3: a card names the draft it was made for; the lock below re-checks the same hash.
+    const expectedHash = draftHash(session.draft);
+    if (body.draftHash !== undefined && body.draftHash !== expectedHash) {
+      throw new BadRequestException(COPY_PROPOSED_DRAFT_CHANGED);
+    }
     if (!CredentialCryptoService.isConfigured()) {
       throw new ServiceUnavailableException(COPY_NEEDS_KEY);
     }
@@ -87,10 +99,15 @@ export class OnboardingCredentialCopyService {
       }
     }
 
-    const expectedHash = draftHash(session.draft);
     const replace = body.replace === true;
     await withTenant(this.tenantDb, session.organizationId, async (tx) => {
       const locked = await lockSession(tx, sessionId);
+      // Amendment 18 Q3: a card's copy names its own sentence when the draft moved before the lock
+      // (after the status and lock checks, so a commit or a lock in between keeps its own 409).
+      assertSessionStillDraft(locked);
+      if (body.draftHash !== undefined && draftHash(locked.draft) !== body.draftHash) {
+        throw new BadRequestException(COPY_PROPOSED_DRAFT_CHANGED);
+      }
       assertTurnStillBound(locked, expectedHash);
       // Review H1: the copy is bound to the broker it was checked against; a later host, port or TLS edit drops it.
       const bound = { ...source.blob, b: source.broker };

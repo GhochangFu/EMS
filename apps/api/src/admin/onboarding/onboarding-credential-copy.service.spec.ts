@@ -1,11 +1,13 @@
-import { ConflictException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ServiceUnavailableException } from "@nestjs/common";
 import { expect } from "vitest";
 
 import type { JwtPayload } from "@bms/shared";
 
+import { draftHash } from "./onboarding-commit-proposal";
 import {
   COPY_KEY_VERSION,
   COPY_NEEDS_KEY,
+  COPY_PROPOSED_DRAFT_CHANGED,
   copySourceHasNoCredential,
   copyTargetNotSameBroker,
   OnboardingCredentialCopyService,
@@ -31,12 +33,16 @@ function service(secrets: Record<string, unknown>, thirdConfig: Record<string, u
     ],
     _secrets: secrets,
   };
+  lastDraft = draft;
   const sessions = {
     loadSession: async () => ({ id: SESSION_ID, organizationId: "o1", status: "draft", draft, lockReason: null }),
   };
   // No database: every case below refuses before the write transaction.
   return new OnboardingCredentialCopyService({} as never, {} as never, {} as never, sessions as never);
 }
+
+/** The draft the last {@link service} loads, so a case can hash it. */
+let lastDraft: unknown;
 
 const fail = (promise: Promise<unknown>) => promise.then(() => new Error("expected a refusal"), (err: unknown) => err);
 
@@ -69,5 +75,22 @@ export async function aTargetOnAnotherBrokerIsA409(): Promise<void> {
 export async function aStaleBoundSourceIsA409(): Promise<void> {
   const stale = { c: "eA==", iv: "eA==", b: { host: "elsewhere.test", port: 8883, tls: true } };
   const err = await fail(service({ A: stale }).copy(JWT, SESSION_ID, { from: { rtuIndex: 0 }, toRtuIndexes: [1] }));
+  expect(err).toEqual(new ConflictException(copySourceHasNoCredential("A")));
+}
+
+/** `F4.339` PR 9 (Amendment 18 Q3): a card's `draftHash` that is not the stored draft's: 400, nothing is written. */
+export async function aStaleDraftHashIsA400(): Promise<void> {
+  const svc = service({ A: { c: "eA==", iv: "eA==" } });
+  const err = await fail(svc.copy(JWT, SESSION_ID, { from: { rtuIndex: 0 }, toRtuIndexes: [1], draftHash: "b".repeat(64) }));
+  expect(err).toEqual(new BadRequestException(COPY_PROPOSED_DRAFT_CHANGED));
+  expect(COPY_PROPOSED_DRAFT_CHANGED).toBe("The draft changed since this copy was proposed, so nothing was copied. Ask for the copy again.");
+}
+
+/** The adjacent positive: the stored draft's own hash passes the bind and the next check answers. */
+export async function theStoredDraftsHashPassesTheBind(): Promise<void> {
+  const svc = service({});
+  const hash = draftHash(lastDraft);
+  if (hash === null) throw new Error("the fixture draft hashes");
+  const err = await fail(svc.copy(JWT, SESSION_ID, { from: { rtuIndex: 0 }, toRtuIndexes: [1], draftHash: hash }));
   expect(err).toEqual(new ConflictException(copySourceHasNoCredential("A")));
 }
