@@ -156,7 +156,7 @@ function ClassCard({ entry }: { entry: AlarmKbClass }) {
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold text-ink">{entry.templateName}</h3>
-        <span className="font-mono text-[11px] text-ink-muted">
+        <span className="font-mono text-2xs text-ink-muted">
           {entry.templateCode} v{entry.templateVersion}
         </span>
       </div>
@@ -164,7 +164,7 @@ function ClassCard({ entry }: { entry: AlarmKbClass }) {
         {entry.alarms.map((alarm) => (
           <li key={alarm.alarmCode} className="border-t border-well-deep pt-2 first:border-0 first:pt-0">
             <div className="flex flex-wrap items-baseline gap-2">
-              <span className="font-mono text-[11px] text-ink-muted">{alarm.alarmCode}</span>
+              <span className="font-mono text-2xs text-ink-muted">{alarm.alarmCode}</span>
               {alarm.message ? (
                 <span className="text-xs font-medium text-ink">{alarm.message}</span>
               ) : null}

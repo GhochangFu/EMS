@@ -36,7 +36,7 @@ export function RawRecordsTable({ pointRef, pointKey, zone }: RawRecordsTablePro
         </p>
       ) : null}
       <table className="w-full text-left text-sm">
-        <thead className="border-b border-well-deep bg-well text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+        <thead className="border-b border-well-deep bg-well text-2xs font-semibold uppercase tracking-wide text-ink-muted">
           <tr>
             <th className="px-3 py-2">Time</th>
             <th className="px-3 py-2">Device time</th>

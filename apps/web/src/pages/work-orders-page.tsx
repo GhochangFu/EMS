@@ -436,7 +436,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               key={column.key}
               className={`relative overflow-hidden surface-raised surface-kpi p-4 after:absolute ${kpiToneStyle(column.kpiTone)}`}
             >
-              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">
+              <div className="flex items-center gap-2 text-3xs font-bold uppercase tracking-[0.14em] text-ink-muted">
                 <span className="grid h-6 w-6 place-items-center rounded bg-accent/10 text-accent">
                   WO
                 </span>
@@ -533,9 +533,9 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                   handleDrop(column.key, rowsByStatus[column.key].length)
                 }
               >
-                <div className="mb-2 flex items-center justify-between px-1 text-[11px] font-bold uppercase tracking-wide text-ink-muted">
+                <div className="mb-2 flex items-center justify-between px-1 text-2xs font-bold uppercase tracking-wide text-ink-muted">
                   <span>{column.label}</span>
-                  <span className="rounded-full bg-surface px-2 py-0.5 font-mono text-[10px] text-ink-muted">
+                  <span className="rounded-full bg-surface px-2 py-0.5 font-mono text-3xs text-ink-muted">
                     {rowsByStatus[column.key].length}
                   </span>
                 </div>
@@ -569,7 +569,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                         }}
                         onDragEnd={handleDragEnd}
                       >
-                        <div className="flex items-center justify-between gap-2 font-mono text-[10px] text-ink-muted">
+                        <div className="flex items-center justify-between gap-2 font-mono text-3xs text-ink-muted">
                           <span>WO-{row.id.slice(0, 8).toUpperCase()}</span>
                           <span title="Drag to reorder">drag</span>
                         </div>
@@ -581,17 +581,17 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                         </p>
                         <div className="mt-3 flex flex-wrap gap-1">
                           <span
-                            className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${priorityStyle(row.priority)}`}
+                            className={`rounded border px-2 py-0.5 text-3xs font-bold uppercase ${priorityStyle(row.priority)}`}
                           >
                             {priorityLabels[row.priority]}
                           </span>
                           <span
-                            className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${statusStyle(row.status)}`}
+                            className={`rounded border px-2 py-0.5 text-3xs font-bold uppercase ${statusStyle(row.status)}`}
                           >
                             {statusLabels[row.status]}
                           </span>
                         </div>
-                        <div className="mt-3 flex items-center justify-between gap-2 font-mono text-[10px] text-ink-muted">
+                        <div className="mt-3 flex items-center justify-between gap-2 font-mono text-3xs text-ink-muted">
                           {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates. */}
                           <span>
                             <span className="whitespace-nowrap">{row.assetCode}</span>
@@ -599,18 +599,18 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                           </span>
                           <span>{new Date(row.updatedAt).toLocaleDateString()}</span>
                         </div>
-                        <div className="mt-1 text-[10px] text-ink-muted">
+                        <div className="mt-1 text-3xs text-ink-muted">
                           {row.assetName} · {row.siteName}
                         </div>
                         {row.alarmId ? (
-                          <div className="mt-2 rounded bg-canvas px-2 py-1 font-mono text-[10px] text-ink-muted">
+                          <div className="mt-2 rounded bg-canvas px-2 py-1 font-mono text-3xs text-ink-muted">
                             Alarm {row.alarmId.slice(0, 8)}
                           </div>
                         ) : null}
                         <div className="mt-3 flex justify-end gap-2">
                           <button
                             type="button"
-                            className="surface-button px-2 py-1 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                            className="surface-button px-2 py-1 text-2xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                             onClick={() => openStatusEditor(row)}
                             disabled={row.status === "closed"}
                           >
@@ -618,7 +618,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                           </button>
                           <button
                             type="button"
-                            className="surface-button-primary bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
+                            className="surface-button-primary bg-accent px-2 py-1 text-2xs font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
                             onClick={() => openClose(row)}
                             disabled={row.status === "closed"}
                           >

@@ -200,7 +200,7 @@ export function SldPage({ user }: SldPageProps) {
       user={user}
       kpiRibbon={
         <div className="flex flex-wrap items-center gap-3">
-          <span className="rounded-full bg-ok-wash px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ok-ink">
+          <span className="rounded-full bg-ok-wash px-2.5 py-0.5 text-3xs font-bold uppercase tracking-wide text-ok-ink">
             Live
           </span>
           <span className="text-ink">Single-line diagram · telemetry-bound</span>

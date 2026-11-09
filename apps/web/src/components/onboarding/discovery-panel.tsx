@@ -175,10 +175,10 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
           return (
             <li key={rtu.code ?? index} className="surface-raised-sm p-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-mono text-[11px]">{rtu.code ?? `RTU ${index + 1}`}</span>
+                <span className="font-mono text-2xs">{rtu.code ?? `RTU ${index + 1}`}</span>
                 <button
                   type="button"
-                  className="surface-button px-2 py-1 text-[11px] disabled:opacity-50"
+                  className="surface-button px-2 py-1 text-2xs disabled:opacity-50"
                   disabled={active || reason !== null || busy || broker === null}
                   aria-busy={busy}
                   onClick={() => setWizardFor(index)}
@@ -186,12 +186,12 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
                   {busy ? "Waiting for the chat turn…" : `Discover devices on ${rtu.code ?? `RTU ${index + 1}`}`}
                 </button>
               </div>
-              {reason !== null && <p className="mt-1 text-[11px] text-ink-muted">{reason}</p>}
+              {reason !== null && <p className="mt-1 text-2xs text-ink-muted">{reason}</p>}
               {formats.data !== undefined && (
-                <label className="mt-1 flex items-center gap-2 text-[11px]">
+                <label className="mt-1 flex items-center gap-2 text-2xs">
                   <span>Payload format</span>
                   <select
-                    className="surface-field px-1 py-0.5 text-[11px]"
+                    className="surface-field px-1 py-0.5 text-2xs"
                     value={typeof rtu.config.payloadFormat === "string" ? rtu.config.payloadFormat : BUILTIN_PAYLOAD_FORMAT}
                     disabled={busy || formatMutation.isPending}
                     onChange={(event) => formatMutation.mutate({ index, code: event.target.value })}
@@ -204,13 +204,13 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
                   </select>
                 </label>
               )}
-              <p className="mt-1 text-[11px] text-ink-muted">{MQTT_DISCOVERY_SHARED_USER_WARNING}</p>
+              <p className="mt-1 text-2xs text-ink-muted">{MQTT_DISCOVERY_SHARED_USER_WARNING}</p>
             </li>
           );
         })}
       </ul>
       {result !== null && (
-        <div className="mt-2 text-[11px]">
+        <div className="mt-2 text-2xs">
           <p>{statusLine(result, active)}</p>
           {/* F4.335: when messages arrived and none decoded, say so (fixed text, counts only). */}
           {result.status === "done" && result.devices.length === 0 && <p>{discoveryEmptySentence(result)}</p>}
@@ -219,9 +219,9 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
           )}
         </div>
       )}
-      {formatError !== null && <p className="mt-1 text-[11px] text-critical-ink">{formatError}</p>}
+      {formatError !== null && <p className="mt-1 text-2xs text-critical-ink">{formatError}</p>}
       {result !== null && result.status === "done" && result.devices.length > 0 && (
-        <ul aria-label="Discovered devices" className="mt-2 space-y-1 text-[11px]">
+        <ul aria-label="Discovered devices" className="mt-2 space-y-1 text-2xs">
           {result.devices.slice(0, LISTED_ROWS).map((device) => (
             <li key={`${device.topic}-${device.devId}`} className="flex flex-wrap items-center gap-2">
               <span className="font-mono">{device.devId}</span>
@@ -242,7 +242,7 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
         result.devices[0]!.devId.length <= ONBOARDING_DRAFT_STRING_MAX["rtus.rtuCode"] && (
         <button
           type="button"
-          className="mt-1 rounded border border-hairline px-2 py-0.5 text-[11px]"
+          className="mt-1 rounded border border-hairline px-2 py-0.5 text-2xs"
           disabled={busy || deviceKeyMutation.isPending}
           aria-busy={deviceKeyMutation.isPending}
           onClick={() => deviceKeyMutation.mutate({ index: deviceKeyIndex, devId: result.devices[0]!.devId })}
@@ -251,7 +251,7 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
         </button>
       )}
       {discovered.length > 0 && (
-        <ul aria-label="Discovered mappings" className="mt-2 space-y-1 text-[11px]">
+        <ul aria-label="Discovered mappings" className="mt-2 space-y-1 text-2xs">
           {discovered.slice(0, LISTED_ROWS).map((row, i) => {
             const sample = samples.get(row.sourceDataKey);
             return (

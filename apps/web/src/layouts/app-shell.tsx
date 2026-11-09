@@ -341,7 +341,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
           >
             <div className={`mb-3 flex items-center px-3 ${collapsed ? "justify-center" : "justify-between"}`}>
               {collapsed ? null : (
-                <span className="font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
+                <span className="font-condensed text-2xs font-bold uppercase tracking-[0.16em] text-ink-muted">
                   Modules
                 </span>
               )}
@@ -366,7 +366,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                   {collapsed ? (
                     <div className="mx-3 mb-1 border-t border-well-deep" title={group.title} />
                   ) : (
-                    <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
+                    <div className="px-3 pb-1 font-condensed text-2xs font-bold uppercase tracking-[0.16em] text-ink-muted">
                       {group.title}
                     </div>
                   )}
@@ -394,7 +394,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                 {collapsed ? (
                   <div className="mx-3 mb-1 border-t border-well-deep" title={adminModuleGroup.title} />
                 ) : (
-                  <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
+                  <div className="px-3 pb-1 font-condensed text-2xs font-bold uppercase tracking-[0.16em] text-ink-muted">
                     {adminModuleGroup.title}
                   </div>
                 )}

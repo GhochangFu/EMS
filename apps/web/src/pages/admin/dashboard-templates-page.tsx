@@ -224,14 +224,14 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
     if (step.id === "content") {
       if (form.content === undefined) {
         return (
-          <p className="text-[11px] text-ink-muted">
+          <p className="text-2xs text-ink-muted">
             A template is created as a draft at version 1. Widgets are authored on the next screen.
           </p>
         );
       }
       const counts = contentCounts(form.content);
       return (
-        <p className="text-[11px] text-ink-muted">
+        <p className="text-2xs text-ink-muted">
           The template is created with the filled content:{" "}
           {counts === null
             ? "not a widget list."
@@ -285,7 +285,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
           />
         </label>
         {form.target !== undefined ? (
-          <p className="text-[11px] text-ink-muted">Target:{" "}
+          <p className="text-2xs text-ink-muted">Target:{" "}
             {typeof form.target === "string" ? form.target : JSON.stringify(form.target)} (filled by the copilot).</p>
         ) : null}
       </>
@@ -374,11 +374,11 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                   {row.code} v{row.version}
                 </Link>
                 {row.target === "site" ? (
-                  <span className="ml-2 rounded border border-info-line bg-info-wash px-1.5 py-0.5 text-[10px] font-semibold uppercase text-info-ink">
+                  <span className="ml-2 rounded border border-info-line bg-info-wash px-1.5 py-0.5 text-3xs font-semibold uppercase text-info-ink">
                     Site
                   </span>
                 ) : null}
-                <div className="text-[11px] text-ink-muted">
+                <div className="text-2xs text-ink-muted">
                   {row.name} · {row.section} · {row.widgetCount} widget
                   {row.widgetCount === 1 ? "" : "s"}
                 </div>
@@ -437,7 +437,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
               <li key={entry.code} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <div>
                   <div className="text-sm font-semibold text-ink">{entry.name}</div>
-                  <div className="text-[11px] text-ink-muted">
+                  <div className="text-2xs text-ink-muted">
                     {entry.code} · {entry.section} · stock v{entry.stockVersion}
                   </div>
                 </div>

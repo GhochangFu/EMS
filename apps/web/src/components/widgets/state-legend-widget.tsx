@@ -23,7 +23,7 @@ import { StateLegend } from "../control-room/state-legend";
 export function StateLegendWidget({ title }: { title: string; status: WidgetStatus }) {
   return (
     <div className="surface-raised flex h-full flex-wrap items-center gap-x-3 gap-y-1 overflow-hidden px-3 py-1">
-      <span className="min-w-0 truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">{title}</span>
+      <span className="min-w-0 truncate text-2xs font-medium uppercase tracking-wide text-ink-muted">{title}</span>
       {/* `F4.309` — the "Switching states" group sits beside "State legend", and wraps under it when narrow. */}
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
         <StateLegend />

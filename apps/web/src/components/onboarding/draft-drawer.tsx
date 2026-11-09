@@ -163,7 +163,7 @@ export function DraftDrawer({
             <div className="mb-1 font-semibold uppercase tracking-wide text-ink-muted">
               Summary
             </div>
-            <pre className="whitespace-pre-wrap break-words font-mono text-[11px]">
+            <pre className="whitespace-pre-wrap break-words font-mono text-2xs">
               {formatOnboardingDraftSummary(session?.draft ?? {})}
             </pre>
           </div>
@@ -172,7 +172,7 @@ export function DraftDrawer({
               Credentials
             </div>
             {(session?.draft?.rtus ?? []).length === 0 ? (
-              <p className="text-[11px] text-ink-muted">
+              <p className="text-2xs text-ink-muted">
                 Add an RTU first, then set its credentials here.
               </p>
             ) : (
@@ -181,7 +181,7 @@ export function DraftDrawer({
                   <li key={rtu.code ?? index} className="surface-raised-sm p-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex items-center gap-2">
-                        <span className="font-mono text-[11px]">{rtu.code ?? `RTU ${index + 1}`}</span>
+                        <span className="font-mono text-2xs">{rtu.code ?? `RTU ${index + 1}`}</span>
                         {/* F4.326 (ADR 0114 decision 6): only the literal `tls: false`, only MQTT. */}
                         {rtu.protocol === "mqtt" && rtu.config?.tls === false ? (
                           <StatusPill label="Plain MQTT" tone="warning" />
@@ -192,7 +192,7 @@ export function DraftDrawer({
                       ) : (
                         <button
                           type="button"
-                          className="text-[11px] underline"
+                          className="text-2xs underline"
                           onClick={() => {
                             setCredError(null);
                             setCredRtuIndex(index === credRtuIndex ? null : index);
@@ -224,7 +224,7 @@ export function DraftDrawer({
                         }}
                       >
                         <input
-                          className="min-w-0 flex-1 surface-field px-2 py-1 font-mono text-[11px]"
+                          className="min-w-0 flex-1 surface-field px-2 py-1 font-mono text-2xs"
                           aria-label={`Topic for ${rtu.code ?? `RTU ${index + 1}`}`}
                           placeholder="MQTT topic"
                           autoComplete="off"
@@ -248,7 +248,7 @@ export function DraftDrawer({
                               !hasShadowedLegacyTopic(rtu.config))
                           }
                           aria-busy={topicMutation.isPending}
-                          className="shrink-0 surface-button px-2 py-1 text-[11px] disabled:opacity-50"
+                          className="shrink-0 surface-button px-2 py-1 text-2xs disabled:opacity-50"
                         >
                           {topicMutation.isPending ? "Saving topic…" : "Save topic"}
                         </button>
@@ -267,14 +267,14 @@ export function DraftDrawer({
                         }}
                       >
                         <input
-                          className="w-full surface-field px-2 py-1 text-[11px]"
+                          className="w-full surface-field px-2 py-1 text-2xs"
                           placeholder="Username"
                           autoComplete="off"
                           value={credUsername}
                           onChange={(event) => setCredUsername(event.target.value)}
                         />
                         <input
-                          className="w-full surface-field px-2 py-1 text-[11px]"
+                          className="w-full surface-field px-2 py-1 text-2xs"
                           placeholder="Password"
                           type="password"
                           autoComplete="new-password"
@@ -288,7 +288,7 @@ export function DraftDrawer({
                             (!credUsername && !credPassword)
                           }
                           aria-busy={credentialsMutation.isPending}
-                          className="w-full surface-button-primary bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent disabled:opacity-50"
+                          className="w-full surface-button-primary bg-accent px-2 py-1 text-2xs font-semibold text-on-accent disabled:opacity-50"
                         >
                           {credentialsMutation.isPending ? "Encrypting…" : "Save encrypted"}
                         </button>
@@ -304,12 +304,12 @@ export function DraftDrawer({
               // unset, so it is the last message that should read as an aside.
               <p
                 role="alert"
-                className="mt-1 rounded border border-critical-line bg-critical-wash px-3 py-2 text-[11px] text-critical-ink"
+                className="mt-1 rounded border border-critical-line bg-critical-wash px-3 py-2 text-2xs text-critical-ink"
               >
                 {credError}
               </p>
             )}
-            <p className="mt-1 text-[11px] text-ink-muted">
+            <p className="mt-1 text-2xs text-ink-muted">
               Credentials are encrypted before storage and never sent to the assistant.
               Do not type them into the chat — those messages are stored.
             </p>
@@ -320,7 +320,7 @@ export function DraftDrawer({
               Validation
             </div>
             <pre
-              className={`whitespace-pre-wrap break-words font-mono text-[11px] ${
+              className={`whitespace-pre-wrap break-words font-mono text-2xs ${
                 validationErrors.length > 0 ? "text-critical-ink" : "text-ink-muted"
               }`}
             >
@@ -331,7 +331,7 @@ export function DraftDrawer({
             <div className="mb-1 font-semibold uppercase tracking-wide text-ink-muted">
               Output JSON
             </div>
-            <pre className="whitespace-pre-wrap break-words font-mono text-[11px]">
+            <pre className="whitespace-pre-wrap break-words font-mono text-2xs">
               {JSON.stringify(session?.draft ?? {}, null, 2)}
             </pre>
           </div>

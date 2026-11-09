@@ -174,7 +174,7 @@ function BatchRowsTable({
       <div className="overflow-x-auto">
         <table aria-label="Rules to create" className="w-full border-collapse text-xs">
           <thead>
-            <tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
+            <tr className="text-left text-3xs uppercase tracking-wide text-ink-muted">
               {["#", "Name", "Asset", "Point", "Operator", "Threshold", "Severity", ""].map((label, at) => (
                 <th key={at} scope="col" className="py-0.5 pr-1 font-semibold">
                   {label}

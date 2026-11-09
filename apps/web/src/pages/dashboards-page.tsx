@@ -126,7 +126,7 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
         {rows.length > 0 ? (
           <SectionCard bodyClassName="overflow-x-auto p-0">
             <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="border-b border-well-deep bg-well text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+              <thead className="border-b border-well-deep bg-well text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                 <tr>
                   <th className="px-3 py-2">Name</th>
                   <th className="px-3 py-2">Scope</th>

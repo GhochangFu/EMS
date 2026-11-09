@@ -109,7 +109,7 @@ export function OnboardingCommitWizard({ session, onCommitted, onSessionRefreshe
             renderStep={() => (
               <div className="space-y-2 text-xs">
                 <p>{onboardingCommitCounts(draft)}</p>
-                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px]">
+                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-mono text-2xs">
                   {formatOnboardingDraftSummary(session.draft ?? {})}
                 </pre>
               </div>

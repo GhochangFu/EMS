@@ -188,7 +188,7 @@ export function MaintenanceSchedulesPanel({
           ["Safety-critical", safetyCount, "border-warning-line bg-warning-wash text-warning-ink"],
         ].map(([label, value, tone]) => (
           <div key={label} className="surface-raised p-4">
-            <div className={`inline-flex rounded border px-2 py-1 text-[10px] font-bold uppercase ${tone}`}>
+            <div className={`inline-flex rounded border px-2 py-1 text-3xs font-bold uppercase ${tone}`}>
               {label}
             </div>
             <div className="mt-3 font-condensed text-2xl font-bold text-ink">
@@ -298,20 +298,20 @@ export function MaintenanceSchedulesPanel({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="font-mono text-[10px] text-ink-muted">
+                    <div className="font-mono text-3xs text-ink-muted">
                       SCH-{item.id.slice(0, 8).toUpperCase()}
                     </div>
                     <h2 className="mt-1 text-sm font-semibold text-ink">
                       {item.title}
                     </h2>
                     {item.active ? null : (
-                      <span className="text-[10px] font-semibold uppercase text-ink-muted">
+                      <span className="text-3xs font-semibold uppercase text-ink-muted">
                         Inactive
                       </span>
                     )}
                   </div>
                   <span
-                    className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${dueStateStyle(item)}`}
+                    className={`rounded border px-2 py-0.5 text-3xs font-bold uppercase ${dueStateStyle(item)}`}
                   >
                     {dueLabel(item)}
                   </span>
@@ -321,20 +321,20 @@ export function MaintenanceSchedulesPanel({
                 </p>
                 <div className="mt-3 flex flex-wrap gap-1">
                   <span
-                    className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${categoryStyle(item.category)}`}
+                    className={`rounded border px-2 py-0.5 text-3xs font-bold uppercase ${categoryStyle(item.category)}`}
                   >
                     {MAINTENANCE_CATEGORY_LABELS[item.category]}
                   </span>
                   <span
-                    className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${priorityStyle(item.priority)}`}
+                    className={`rounded border px-2 py-0.5 text-3xs font-bold uppercase ${priorityStyle(item.priority)}`}
                   >
                     {WORK_ORDER_PRIORITY_LABELS[item.priority]}
                   </span>
-                  <span className="surface-raised-sm px-2 py-0.5 text-[10px] font-semibold text-ink-muted">
+                  <span className="surface-raised-sm px-2 py-0.5 text-3xs font-semibold text-ink-muted">
                     {MAINTENANCE_GENERATION_MODE_LABELS[item.generationMode]}
                   </span>
                 </div>
-                <div className="mt-3 grid gap-1 text-[11px] text-ink-muted">
+                <div className="mt-3 grid gap-1 text-2xs text-ink-muted">
                   <span>
                     {/* F4.316 / ADR 0111: `<code> · <RTU or location> · <name> · <site>`; the where part wraps. */}
                     <span className="whitespace-nowrap">{item.assetCode}</span>

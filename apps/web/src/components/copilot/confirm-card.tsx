@@ -362,26 +362,26 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
           />
         )}
         {warnings.length > 0 && (
-          <ul aria-label="Layout warnings" className="mt-2 list-disc pl-4 text-[11px] text-warning-ink">
+          <ul aria-label="Layout warnings" className="mt-2 list-disc pl-4 text-2xs text-warning-ink">
             {warnings.map((warning) => (
               <li key={warning.key}>{warning.text}</li>
             ))}
           </ul>
         )}
         {versionNote !== null && (
-          <p data-testid="copilot-layout-version-note" className="mt-2 text-[11px] text-warning-ink">
+          <p data-testid="copilot-layout-version-note" className="mt-2 text-2xs text-warning-ink">
             {versionNote}
           </p>
         )}
         {recipients.length > 0 && (
-          <ul data-testid="copilot-recipients" aria-label="Recipients" className="mt-2 list-disc pl-4 text-[11px] text-ink">
+          <ul data-testid="copilot-recipients" aria-label="Recipients" className="mt-2 list-disc pl-4 text-2xs text-ink">
             {recipients.map((recipient) => (
               <li key={recipient.key}>{recipient.line}</li>
             ))}
           </ul>
         )}
         {moves.length > 0 && (
-          <ul data-testid="copilot-moves" aria-label="Moves" className="mt-2 list-disc pl-4 text-[11px] text-ink">
+          <ul data-testid="copilot-moves" aria-label="Moves" className="mt-2 list-disc pl-4 text-2xs text-ink">
             {moves.map((move) => (
               <li key={move.key}>{move.line}</li>
             ))}
@@ -391,7 +391,7 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
           <div className="mt-2 space-y-1">
             {clientOnly.map((field) => (
               <label key={field.path} className="block">
-                <span className="text-[11px] text-ink-muted">
+                <span className="text-2xs text-ink-muted">
                   {field.label}
                   {field.required ? "" : " (optional)"}
                 </span>
@@ -401,7 +401,7 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
                   onChange={(event) => onType(field, event.target.value)}
                   className="surface-field mt-0.5 block w-full px-2 py-1 text-xs"
                 />
-                {problems[field.path] && <span className="text-[11px] text-critical-ink">{problems[field.path]}</span>}
+                {problems[field.path] && <span className="text-2xs text-critical-ink">{problems[field.path]}</span>}
               </label>
             ))}
           </div>

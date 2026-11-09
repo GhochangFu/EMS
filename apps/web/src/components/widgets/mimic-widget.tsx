@@ -97,7 +97,7 @@ export function MimicWidget({
             aria-label={`Expand ${title}`}
             aria-haspopup="dialog"
             onClick={() => setOpen(true)}
-            className="shrink-0 surface-button px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+            className="shrink-0 surface-button px-2 py-0.5 text-3xs font-semibold uppercase tracking-wide"
           >
             Expand
           </button>

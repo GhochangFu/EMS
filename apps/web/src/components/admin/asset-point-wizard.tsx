@@ -191,7 +191,7 @@ export function AssetPointWizard(props: AssetPointWizardProps) {
             </option>
           ) : null}
         </select>
-        <span className="mt-1 block text-[11px] font-normal">
+        <span className="mt-1 block text-2xs font-normal">
           {formLocationId === null
             ? "Choose a location to pick an RTU"
             : editing
@@ -205,7 +205,7 @@ export function AssetPointWizard(props: AssetPointWizardProps) {
   // template: omitted on a create, an explicit `null` on an edit of a stored value.
   const instrument = (
     <>
-      <p className="text-[11px] text-ink-muted">
+      <p className="text-2xs text-ink-muted">
         Leave a field below empty to follow this asset&apos;s template default. Clearing one on an existing mapping puts it
         back on the template.
       </p>

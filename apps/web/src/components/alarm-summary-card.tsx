@@ -54,7 +54,7 @@ export function AlarmSummaryCard({
 
   return (
     <div className={`surface-raised surface-kpi relative overflow-hidden p-4 after:absolute ${border}`}>
-      <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-ink-muted">
+      <div className="flex items-center gap-2 text-3xs font-bold uppercase tracking-[0.18em] text-ink-muted">
         <span className="grid h-6 w-6 place-items-center surface-raised-sm font-mono">
           {icon}
         </span>

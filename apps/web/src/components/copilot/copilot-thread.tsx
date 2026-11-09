@@ -169,7 +169,7 @@ export function CopilotThread({
                 key={`day-${next?.kind === "message" ? next.message.id : i}`}
                 role="separator"
                 aria-label={row.label}
-                className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-ink-muted"
+                className="flex items-center gap-2 text-3xs font-semibold uppercase tracking-wide text-ink-muted"
               >
                 <span aria-hidden="true" className="h-px flex-1 bg-line" />
                 {row.label}
@@ -181,7 +181,7 @@ export function CopilotThread({
           return (
             <div key={m.id} className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
               <span
-                className={`mb-0.5 px-1 text-[10px] font-semibold uppercase tracking-wide ${
+                className={`mb-0.5 px-1 text-3xs font-semibold uppercase tracking-wide ${
                   m.role === "user" ? "text-accent" : "text-ink-muted"
                 }`}
               >

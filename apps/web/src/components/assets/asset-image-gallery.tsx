@@ -66,7 +66,7 @@ function AssetImageThumbnail({ image }: { image: AssetImageDto }): JSX.Element {
   }
 
   return (
-    <div className="flex h-24 w-24 items-center justify-center surface-pressed text-[10px] text-ink-muted">
+    <div className="flex h-24 w-24 items-center justify-center surface-pressed text-3xs text-ink-muted">
       {status === "loading" ? "Loading…" : "Image unavailable"}
     </div>
   );
@@ -87,10 +87,10 @@ function AssetImageCell({
   return (
     <li className="flex w-24 flex-col gap-1">
       <AssetImageThumbnail image={image} />
-      <span className="truncate text-[11px] text-ink-muted" title={image.caption ?? image.originalFilename}>
+      <span className="truncate text-2xs text-ink-muted" title={image.caption ?? image.originalFilename}>
         {image.caption ?? image.originalFilename}
       </span>
-      <span className="text-[11px] text-ink-muted">{kilobytes(image.byteSize)}</span>
+      <span className="text-2xs text-ink-muted">{kilobytes(image.byteSize)}</span>
       {onDelete ? (
         <button
           type="button"

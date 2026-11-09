@@ -289,13 +289,13 @@ export function OnboardingSkillPanel({
       >
         {session.messages.map((m) =>
           m.role === "action" ? (
-            <div key={m.id} data-message-role="action" className="text-center text-[11px] text-ink-muted">
+            <div key={m.id} data-message-role="action" className="text-center text-2xs text-ink-muted">
               {m.content}
             </div>
           ) : (
             <div key={m.id} className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
               <span
-                className={`mb-0.5 px-1 text-[10px] font-semibold uppercase tracking-wide ${
+                className={`mb-0.5 px-1 text-3xs font-semibold uppercase tracking-wide ${
                   m.role === "user" ? "text-accent" : "text-ink-muted"
                 }`}
               >

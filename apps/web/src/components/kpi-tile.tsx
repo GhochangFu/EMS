@@ -50,7 +50,7 @@ export function KpiTile({
       className={`surface-raised surface-kpi relative flex min-w-0 flex-col overflow-hidden p-4 after:absolute ${toneBorder} ${toneBar} ${staleRing}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">
+        <span className="text-2xs font-medium uppercase tracking-wide text-ink-muted">
           {label}
         </span>
         {icon ? <span className="text-accent">{icon}</span> : null}
@@ -75,13 +75,13 @@ export function KpiTile({
         </p>
       )}
       {hint ? (
-        <p className="mt-1 text-[11px] text-ink-muted">{hint}</p>
+        <p className="mt-1 text-2xs text-ink-muted">{hint}</p>
       ) : null}
       {note ? (
-        <p className="mt-1 text-[11px] font-medium text-warning-ink">{note}</p>
+        <p className="mt-1 text-2xs font-medium text-warning-ink">{note}</p>
       ) : null}
       {stale ? (
-        <p className="mt-2 text-[10px] font-medium uppercase tracking-wide text-warning-ink">
+        <p className="mt-2 text-3xs font-medium uppercase tracking-wide text-warning-ink">
           Stale · no telemetry ~10s
         </p>
       ) : null}

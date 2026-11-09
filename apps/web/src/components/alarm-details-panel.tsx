@@ -194,7 +194,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                 className="rounded border border-info-line bg-info-wash/60 px-3 py-2"
               >
                 <h3 className="text-xs font-semibold text-ink">Class philosophy</h3>
-                <p className="mt-0.5 text-[11px] text-ink-muted">
+                <p className="mt-0.5 text-2xs text-ink-muted">
                   Authored on {details.classPhilosophy.templateName} v
                   {details.classPhilosophy.templateVersion} — it describes this asset class,
                   not this alarm.

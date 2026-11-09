@@ -385,7 +385,7 @@ function RuleCard({
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="font-semibold text-ink">{rule.name}</h3>
           <span
-            className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${toneClass(
+            className={`surface-pill rounded-full border px-2 py-0.5 text-2xs font-semibold ${toneClass(
               toneFor(ruleCategories, rule.category),
             )}`}
           >
@@ -398,17 +398,17 @@ function RuleCard({
           */}
           {rule.assetDomain ? (
             <span
-              className="rounded-full border border-dashed border-ink-faint px-2 py-0.5 text-[11px] text-ink-muted"
+              className="rounded-full border border-dashed border-ink-faint px-2 py-0.5 text-2xs text-ink-muted"
               title="Plant domain, from the asset this rule watches"
             >
               {labelFor(assetDomains, rule.assetDomain)}
             </span>
           ) : null}
-          <span className="surface-pressed-sm rounded-full px-2 py-0.5 text-[11px] text-ink-muted">
+          <span className="surface-pressed-sm rounded-full px-2 py-0.5 text-2xs text-ink-muted">
             {ruleTypeLabels[rule.ruleType]}
           </span>
           <span
-            className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${lifecycleStyle(
+            className={`surface-pill rounded-full border px-2 py-0.5 text-2xs font-semibold ${lifecycleStyle(
               rule,
             )}`}
           >
@@ -471,7 +471,7 @@ function ExecutionRow({ item }: { item: RuleExecutionItem }) {
           <p className="mt-0.5 text-xs text-ink-muted">{formatTime(item.evaluatedAt)}</p>
         </div>
         <span
-          className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusStyle(
+          className={`surface-pill rounded-full border px-2 py-0.5 text-2xs font-semibold ${statusStyle(
             item,
           )}`}
         >
@@ -480,7 +480,7 @@ function ExecutionRow({ item }: { item: RuleExecutionItem }) {
       </div>
       <p className="mt-2 text-sm text-ink-muted">{item.message}</p>
       {item.trace ? (
-        <pre className="mt-2 max-h-28 overflow-auto rounded bg-chrome p-2 text-[11px] text-on-dark">
+        <pre className="mt-2 max-h-28 overflow-auto rounded bg-chrome p-2 text-2xs text-on-dark">
           {JSON.stringify(item.trace, null, 2)}
         </pre>
       ) : null}

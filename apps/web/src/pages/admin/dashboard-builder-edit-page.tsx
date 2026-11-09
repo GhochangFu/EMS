@@ -622,7 +622,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
             }`}
           >
             <div className="font-semibold">{tile.row.title.trim() || WIDGET_CATALOG[tile.row.widgetType].label}</div>
-            <div className="text-[10px] text-ink-muted">
+            <div className="text-3xs text-ink-muted">
               {WIDGET_CATALOG[tile.row.widgetType].label} · {tileBindingText(tile.row)}
             </div>
           </button>
@@ -862,7 +862,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
             </div>
 
             <div className="flex items-start gap-3 border-t border-line pt-3">
-              <div className="text-[11px] text-ink-muted">
+              <div className="text-2xs text-ink-muted">
                 <p>{saveReason}</p>
                 {summaryProblems.length > 0 ? (
                   <ul className="mt-1 space-y-0.5 text-critical-ink">

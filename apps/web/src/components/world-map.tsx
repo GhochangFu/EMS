@@ -77,13 +77,13 @@ export function WorldMap({ sites, siteLink, heightClassName, scrollWheelZoom }: 
           <Popup>
             <div className="min-w-[210px] text-ink">
               <div className="font-condensed text-sm font-bold">{s.name}</div>
-              <div className="text-[10px] uppercase tracking-wide text-ink-muted">
+              <div className="text-3xs uppercase tracking-wide text-ink-muted">
                 <span data-testid="site-kind">{s.kindLabel}</span>
                 {s.organization ? ` · ${s.organization.code}` : ""} ·{" "}
                 <span className="font-mono">{s.live.status}</span>
               </div>
               {s.kind === "eskom_station" ? (
-                <dl className="mt-2 grid gap-1 text-[11px]">
+                <dl className="mt-2 grid gap-1 text-2xs">
                   <div className="flex justify-between gap-2">
                     <dt className="text-ink-muted">Capacity</dt>
                     <dd className="font-mono">
@@ -100,7 +100,7 @@ export function WorldMap({ sites, siteLink, heightClassName, scrollWheelZoom }: 
                   </div>
                 </dl>
               ) : (
-                <dl className="mt-2 grid gap-1 text-[11px]">
+                <dl className="mt-2 grid gap-1 text-2xs">
                   <div className="flex justify-between gap-2">
                     <dt className="text-ink-muted">Open alarms</dt>
                     <dd className="font-mono">{s.live.openAlarms}</dd>

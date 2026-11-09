@@ -62,7 +62,7 @@ export function TankLevelWidget({ title, status, primary, stale, config }: TankL
           x={TANK_VIEW_W / 2}
           y={TANK_VIEW_H / 2}
           textAnchor="middle"
-          className="fill-ink font-mono text-[14px] font-semibold"
+          className="fill-ink font-mono text-sm font-semibold"
         >
           {readout}
         </text>

@@ -74,7 +74,7 @@ export function SameCredentialsCopy({ session, index, disabled, onCopied, onErro
   if (target?.protocol !== "mqtt" || target.credentialsSet === true) return null;
   if (!open) {
     return (
-      <button type="button" className="text-[11px] underline" onClick={() => setOpen(true)} disabled={disabled}>
+      <button type="button" className="text-2xs underline" onClick={() => setOpen(true)} disabled={disabled}>
         Same credentials as…
       </button>
     );
@@ -83,7 +83,7 @@ export function SameCredentialsCopy({ session, index, disabled, onCopied, onErro
     <span className="mt-2 flex flex-wrap items-center gap-1">
       <select
         aria-label={`Credential source for ${targetCode}`}
-        className="surface-field px-2 py-1 text-[11px]"
+        className="surface-field px-2 py-1 text-2xs"
         value={choice}
         onChange={(event) => setChoice(event.target.value)}
       >
@@ -109,7 +109,7 @@ export function SameCredentialsCopy({ session, index, disabled, onCopied, onErro
       </select>
       <button
         type="button"
-        className="surface-button px-2 py-1 text-[11px] disabled:opacity-50"
+        className="surface-button px-2 py-1 text-2xs disabled:opacity-50"
         disabled={choice === "" || disabled || copyM.isPending}
         aria-busy={copyM.isPending}
         onClick={() =>
@@ -118,7 +118,7 @@ export function SameCredentialsCopy({ session, index, disabled, onCopied, onErro
       >
         {copyM.isPending ? "Copying…" : "Copy credentials"}
       </button>
-      <button type="button" className="text-[11px] underline" onClick={() => setOpen(false)}>
+      <button type="button" className="text-2xs underline" onClick={() => setOpen(false)}>
         Cancel
       </button>
     </span>

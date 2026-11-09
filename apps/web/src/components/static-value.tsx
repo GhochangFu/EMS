@@ -32,7 +32,7 @@ export function StaticValue({ children, kind }: StaticValueProps) {
       <span>{children}</span>
       {marker ? (
         <span
-          className={`font-mono text-[9px] font-semibold uppercase tracking-wide ${PROVENANCE_CLASS[kind]}`}
+          className={`font-mono text-3xs font-semibold uppercase tracking-wide ${PROVENANCE_CLASS[kind]}`}
         >
           {marker}
         </span>
@@ -62,7 +62,7 @@ export function StaticTspan({ kind, children }: StaticTspanProps) {
     <tspan>
       <title>{PROVENANCE_TITLE[kind]}</title>
       {children}
-      {marker ? <tspan className="fill-ink-hint text-[7px]">{` ${marker}`}</tspan> : null}
+      {marker ? <tspan fontSize={7} className="fill-ink-hint ">{` ${marker}`}</tspan> : null}
     </tspan>
   );
 }

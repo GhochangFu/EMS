@@ -28,7 +28,7 @@ export function SectionCard({
                 {title}
               </h2>
             ) : null}
-            {subtitle ? <p className="text-[11px] text-ink-muted">{subtitle}</p> : null}
+            {subtitle ? <p className="text-2xs text-ink-muted">{subtitle}</p> : null}
           </div>
           {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
         </div>

@@ -205,7 +205,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
       kpiRibbon={
         <span className="text-ink">
           Alarm Centre · live rows via WebSocket{" "}
-          <code className="text-[10px] text-ink-muted">/ws/alarms</code>
+          <code className="text-3xs text-ink-muted">/ws/alarms</code>
         </span>
       }
     >
@@ -314,7 +314,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
             bodyClassName="surface-table overflow-x-auto p-0"
           >
             <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="border-b border-well-deep bg-well text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+              <thead className="border-b border-well-deep bg-well text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                 <tr>
                   <th className="px-3 py-2">Raised</th>
                   <th className="px-3 py-2">Severity</th>

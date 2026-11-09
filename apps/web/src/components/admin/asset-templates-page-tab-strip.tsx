@@ -70,7 +70,7 @@ export function AssetTemplatesPageTabStrip({
           );
         })}
       </nav>
-      {current ? <p className="text-[11px] text-ink-muted">{current.hint}</p> : null}
+      {current ? <p className="text-2xs text-ink-muted">{current.hint}</p> : null}
     </div>
   );
 }

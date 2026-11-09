@@ -93,7 +93,7 @@ export function PointList({ assetId, points, selected, onChange, zone }: PointLi
         <p className="px-3 py-4 text-xs text-ink-muted">This asset has no active points.</p>
       ) : (
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-well-deep bg-well text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+          <thead className="border-b border-well-deep bg-well text-2xs font-semibold uppercase tracking-wide text-ink-muted">
             <tr>
               <th className="px-3 py-2">Chart</th>
               <th className="px-3 py-2">Point</th>

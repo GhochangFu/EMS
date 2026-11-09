@@ -101,7 +101,7 @@ export function FormulaSuggestions({
     return null;
   }
   return (
-    <details className="mt-1 text-[11px] text-ink-muted sm:col-span-2">
+    <details className="mt-1 text-2xs text-ink-muted sm:col-span-2">
       <summary className="cursor-pointer select-none font-semibold">
         Suggested formulas for <code>{`{${pointKey}}`}</code>
       </summary>
@@ -123,7 +123,7 @@ export function FormulaSuggestions({
               aria-label={`Use this formula from ${suggestion.from}`}
               disabled={disabled}
               onClick={() => onTake(suggestion)}
-              className="surface-button px-2 py-0.5 text-[11px] disabled:opacity-60"
+              className="surface-button px-2 py-0.5 text-2xs disabled:opacity-60"
             >
               Use this formula
             </button>

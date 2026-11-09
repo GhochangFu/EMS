@@ -260,7 +260,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
                 className="w-full surface-field px-2 py-1.5 text-xs"
               />
             </label>
-            <span id="dashboard-slug-hint" className="block text-[11px] text-ink-muted">
+            <span id="dashboard-slug-hint" className="block text-2xs text-ink-muted">
               {DASHBOARD_SLUG_HINT}
             </span>
           </div>
@@ -343,7 +343,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
                 }`}
               >
                 <div className="font-semibold">{tile.row.title.trim() || WIDGET_CATALOG[tile.row.widgetType].label}</div>
-                <div className="text-[10px] text-ink-muted">
+                <div className="text-3xs text-ink-muted">
                   {WIDGET_CATALOG[tile.row.widgetType].label} · {tile.row.points.length} point(s)
                 </div>
               </button>
@@ -369,7 +369,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
           />
         ) : null}
         {problems.length > 0 ? (
-          <div className="text-[11px] text-ink-muted">
+          <div className="text-2xs text-ink-muted">
             <p>Fix the problems below to save.</p>
             {summaryProblems.length > 0 ? (
               <ul className="mt-1 space-y-0.5 text-critical-ink">

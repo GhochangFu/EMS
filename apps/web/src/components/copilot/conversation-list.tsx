@@ -72,7 +72,7 @@ export function ConversationList({ currentId, onOpen, onNew, disabled = false }:
                 }`}
               >
                 <span className="block truncate text-xs font-semibold text-ink">{shownTitle(c)}</span>
-                <span className="block text-[10px] text-ink-muted">
+                <span className="block text-3xs text-ink-muted">
                   {new Date(c.lastTurnAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
                 </span>
               </button>

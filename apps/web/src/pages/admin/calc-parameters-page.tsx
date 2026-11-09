@@ -659,7 +659,7 @@ function CalcParameterForm({
             onChange={(event) => setForm({ ...form, effectiveTo: event.target.value })}
           />
         </label>
-        <p className="mt-1 text-[11px] text-ink-muted">Leave empty for an open-ended value.</p>
+        <p className="mt-1 text-2xs text-ink-muted">Leave empty for an open-ended value.</p>
       </div>
     </>
   );

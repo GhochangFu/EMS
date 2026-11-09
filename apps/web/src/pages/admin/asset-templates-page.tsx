@@ -341,7 +341,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                       {group.latest.name}
                     </span>
                   </div>
-                  <div className="text-[11px] text-ink-muted">
+                  <div className="text-2xs text-ink-muted">
                     {/* `F2.21` — the vocabulary's label, not the bare code.
                         The header printed `hvac` while the new picker beside it
                         prints "HVAC", so filtering by "HVAC" left every row
@@ -352,7 +352,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                     {labelFor(vocabQ.data?.assetDomains, group.latest.domain)}
                   </div>
                 </div>
-                <div className="text-[11px] text-ink-muted">
+                <div className="text-2xs text-ink-muted">
                   {group.versions.length} version{group.versions.length === 1 ? "" : "s"}
                 </div>
               </div>
@@ -371,7 +371,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                       </Link>
                       <StatusPill label={version.status} tone={statusTone(version.status)} />
                     </div>
-                    <div className="text-[11px] text-ink-muted">
+                    <div className="text-2xs text-ink-muted">
                       {version.pointCount} point{version.pointCount === 1 ? "" : "s"}
                       {version.publishedAt
                         ? ` · published ${version.publishedAt.slice(0, 10)}`
@@ -424,11 +424,11 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                         read "Electrical" while the row under it read
                         `· electrical ·`. Fixing the Templates side alone is what
                         made the two cards disagree, so it belongs to this row. */}
-                    <div className="text-[11px] text-ink-muted">
+                    <div className="text-2xs text-ink-muted">
                       {entry.code} · {labelFor(vocabQ.data?.assetDomains, entry.domain)} · stock v
                       {entry.stockVersion}
                     </div>
-                    <div className="text-[11px] text-ink-muted">
+                    <div className="text-2xs text-ink-muted">
                       {entry.assetType} · {entry.points.length} point{entry.points.length === 1 ? "" : "s"}
                     </div>
                   </div>
