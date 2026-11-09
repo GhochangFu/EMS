@@ -11,7 +11,12 @@ import * as copilotApi from "../../api/copilot";
 import * as systemStatusApi from "../../api/system-status";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import type { AuthUser } from "../../stores/auth-store";
-import { DEFINITION_NOT_JSON, PAYLOAD_SAMPLE_COPILOT_NOTE, PayloadFormatsAdminPage } from "./payload-formats-page";
+import {
+  DEFINITION_NOT_JSON,
+  PAYLOAD_SAMPLE_COPILOT_NOTE,
+  PayloadFormatsAdminPage,
+  SAMPLE_NOT_HEX,
+} from "./payload-formats-page";
 
 /**
  * `F4.334` (plan T5.2, ADR 0099 Amendment 17) — the Payload Formats page: fails closed for a
@@ -50,10 +55,28 @@ const BCPL: MqttPayloadFormatDto = {
   },
 };
 
+/** `F4.343` — a binary format row (ADR 0119 decision 6). */
+const WBLDC: MqttPayloadFormatDto = {
+  ...BUILTIN,
+  id: "00000000-0000-4000-8000-000000000003",
+  code: "wbldc-temp-100",
+  name: "WBLDC temperature record (100 bytes)",
+  builtin: false,
+  definition: {
+    kind: "binary",
+    length: 100,
+    byteOrder: "little",
+    time: { fields: { year: 4, month: 6, day: 8, hour: 10, minute: 12, second: 14 }, utcOffsetMinutes: 330 },
+    readings: [{ key: "temp_ch0", byte: 16, type: "int16", scale: 0.1, sentinels: [-32767, -32766] }],
+  },
+};
+/** The GOAT frame captured 2026-11-09, hex only. */
+const GOAT_HEX = "f2f01051ea070b0009000f0024000000" + "0f010301acff2a00" + "00".repeat(76);
+
 function renderPage(as: AuthUser): void {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
-  vi.spyOn(api, "fetchMqttPayloadFormats").mockResolvedValue([BUILTIN, BCPL]);
+  vi.spyOn(api, "fetchMqttPayloadFormats").mockResolvedValue([BUILTIN, BCPL, WBLDC]);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -122,6 +145,39 @@ export async function theTestBoxDecodesTheSample(): Promise<void> {
   await user.click(within(dialog).getByRole("button", { name: "Decode sample" }));
   expect(await within(dialog).findByText("treated_water_flow_klh = 1.2999999523162842")).toBeInTheDocument();
   expect(test.mock.calls[0]?.[0].definition).toEqual(BCPL.definition);
+  expect(test.mock.calls[0]?.[0].encoding).toBe("text");
+}
+
+/** P6 — `F4.343`: the hex toggle sends `encoding: "hex"`; bad hex disables Decode with a sentence. */
+export async function theTestBoxDecodesAHexSample(): Promise<void> {
+  const user = userEvent.setup();
+  const test = vi.spyOn(api, "testMqttPayloadFormat").mockResolvedValue({
+    ok: true,
+    records: [{ deviceKey: "Haringhata_GOAT", at: "2026-11-09T10:06:00.000Z", values: { temp_ch0: 27.1 } }],
+  });
+  renderPage(admin);
+  const row = await rowOf("wbldc-temp-100");
+  expect(within(row).getByText("binary")).toBeInTheDocument();
+  await user.click(within(row).getByRole("button", { name: "Edit wbldc-temp-100" }));
+  const dialog = await screen.findByRole("dialog", { name: "Edit payload format" });
+  await user.click(within(dialog).getByRole("button", { name: "Next" }));
+  const sample = await within(dialog).findByLabelText("Sample message");
+  await user.click(within(dialog).getByRole("checkbox", { name: "Sample is hex" }));
+  await user.click(sample);
+  await user.paste("f2f");
+  const decode = within(dialog).getByRole("button", { name: "Decode sample" });
+  expect(decode).toBeDisabled();
+  expect(within(dialog).getByText(SAMPLE_NOT_HEX)).toBeInTheDocument();
+  await user.clear(sample);
+  await user.paste(GOAT_HEX);
+  expect(decode).toBeEnabled();
+  expect(within(dialog).queryByText(SAMPLE_NOT_HEX)).toBeNull();
+  await user.type(within(dialog).getByLabelText("Sample topic"), "Haringhata_GOAT");
+  await user.click(decode);
+  expect(await within(dialog).findByText("temp_ch0 = 27.1")).toBeInTheDocument();
+  expect(within(dialog).getByText("Haringhata_GOAT · 2026-11-09T10:06:00.000Z")).toBeInTheDocument();
+  expect(test.mock.calls[0]?.[0]).toMatchObject({ encoding: "hex", sample: GOAT_HEX, topic: "Haringhata_GOAT" });
+  expect(test.mock.calls[0]?.[0].definition).toEqual(WBLDC.definition);
 }
 
 /** P5 — a delete the route refuses as in use lists the RTUs (ruling Q5). */

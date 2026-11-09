@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type KeyboardEvent, useState } from "react";
+import { hexToBytes } from "@bms/shared";
 import type { MqttPayloadFormatDto, TestMqttPayloadFormatResponse } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
@@ -27,6 +28,8 @@ import type { AuthUser } from "../../stores/auth-store";
 export const PAYLOAD_SAMPLE_COPILOT_NOTE =
   "A sample message you paste into the copilot goes to the copilot model. Never paste broker credentials.";
 export const DEFINITION_NOT_JSON = "The definition is not valid JSON.";
+/** `F4.343` (ADR 0119 decision 5): the hex toggle's client-side refusal; Decode stays disabled. */
+export const SAMPLE_NOT_HEX = "The sample is not hex.";
 
 /** The literal id on each `WizardShell`, the form the stepper gate detects; a missing entry is a build defect. */
 function wizardEntry(id: string): CatalogEntry {
@@ -135,6 +138,7 @@ function PayloadFormatsCatalog() {
   const [error, setError] = useState<string | null>(null);
   const [testTopic, setTestTopic] = useState("");
   const [testSample, setTestSample] = useState("");
+  const [sampleIsHex, setSampleIsHex] = useState(false);
   const [tested, setTested] = useState<TestMqttPayloadFormatResponse | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
 
@@ -149,6 +153,7 @@ function PayloadFormatsCatalog() {
     setError(null);
     setTested(null);
     setTestError(null);
+    setSampleIsHex(false);
     if (next === "create") setFormState({ code: "", name: "", description: "", definition: NEW_DEFINITION });
     else if (next !== null) setFormState(formOf(next));
     setEditing(next);
@@ -182,6 +187,7 @@ function PayloadFormatsCatalog() {
         definition: definitionOf(form.definition) as Parameters<typeof testMqttPayloadFormat>[0]["definition"],
         topic: testTopic,
         sample: testSample,
+        encoding: sampleIsHex ? "hex" : "text",
       }),
     onSuccess: (result) => {
       setTestError(null);
@@ -215,6 +221,7 @@ function PayloadFormatsCatalog() {
     </label>
   );
 
+  const hexProblem = sampleIsHex && testSample !== "" && hexToBytes(testSample) === null;
   const testBox = (
     <div className="space-y-2 rounded border border-well-deep p-2">
       <div className="text-xs font-semibold text-ink-muted">Test with a sample message</div>
@@ -227,15 +234,26 @@ function PayloadFormatsCatalog() {
       />
       <textarea
         aria-label="Sample message"
+        placeholder="Paste a message (JSON) or hex bytes"
         rows={4}
         className="w-full surface-field px-2 py-1 font-mono text-xs"
         value={testSample}
         onChange={(event) => setTestSample(event.target.value)}
       />
+      <label className="flex items-center gap-2 text-xs text-ink-muted">
+        <input
+          type="checkbox"
+          aria-label="Sample is hex"
+          checked={sampleIsHex}
+          onChange={(event) => setSampleIsHex(event.target.checked)}
+        />
+        Hex bytes (binary formats)
+      </label>
+      {hexProblem && <p className="text-xs text-critical-ink">{SAMPLE_NOT_HEX}</p>}
       <button
         type="button"
         className="surface-button px-2 py-1 text-xs"
-        disabled={testMutation.isPending || testSample === ""}
+        disabled={testMutation.isPending || testSample === "" || hexProblem}
         aria-busy={testMutation.isPending}
         onClick={() => testMutation.mutate()}
       >
