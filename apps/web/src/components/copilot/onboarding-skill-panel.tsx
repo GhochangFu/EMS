@@ -22,7 +22,7 @@ import { DraftDrawer } from "../onboarding/draft-drawer";
 import { ExcelActions } from "../onboarding/excel-actions";
 import { OnboardingCommitWizard } from "../onboarding/onboarding-commit-wizard";
 import { ReplyChips } from "../onboarding/reply-chips";
-import { UndoPicker } from "../onboarding/undo-picker";
+import { UNDO_NO_HASH, UndoPicker } from "../onboarding/undo-picker";
 import { StatusPill } from "../status-pill";
 import { AssistantText } from "./assistant-text";
 import { DraftLockControl } from "./draft-lock-control";
@@ -185,7 +185,12 @@ export function OnboardingSkillPanel({
 
   // F3.25: bound to the checkpoint and the draft hash on screen; a 409 means the draft changed elsewhere.
   const undoM = useMutation({
-    mutationFn: (checkpointId: string) => rollbackOnboardingSession(session.id, checkpointId, session.draftHash!),
+    // F4.339 (plan T8.2): never a rollback bound to no hash; the picker already says why Undo is off.
+    mutationFn: (checkpointId: string) => {
+      const hash = session.draftHash;
+      if (hash === null) return Promise.reject(new Error(UNDO_NO_HASH));
+      return rollbackOnboardingSession(session.id, checkpointId, hash);
+    },
     onSuccess: (data) => {
       onSkillChange(stateOf(skill, data));
       setUndoChoice("");

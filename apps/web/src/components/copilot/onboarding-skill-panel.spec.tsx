@@ -729,3 +729,20 @@ export async function aGlobalAdminLocksWithAReason(): Promise<void> {
   expect(JSON.parse(sent[0]!.body)).toEqual({ reason: "Under site review" });
   expect(await screen.findByText("Under site review")).toBeInTheDocument();
 }
+
+/**
+ * `F4.339` (plan T8.2), the measurement: a draft shaped like the one the report named — a
+ * credentialed MQTT RTU, three checkpoints, a draft hash — has Undo enabled while no turn runs.
+ * So the session's shape does not disable Undo; a turn in flight does, and now says so.
+ */
+export async function aCredentialedDraftWithHistoryCanUndo(): Promise<void> {
+  const shaped = skillState({
+    session: session({
+      draft: { rtus: [{ code: "RTU-1", displayName: "RTU 1", protocol: "mqtt", config: { host: "b", port: 8883 }, credentialsSet: true }] } as never,
+      checkpoints: [1, 2, 3].map((seq) => ({ id: `cp${seq}`, seq, label: `Step ${seq}`, takenAt: "2026-11-09T00:00:00.000Z" })),
+    }),
+  });
+  await openSkill({ skill: shaped });
+  expect(screen.getByTestId("undo-button")).toBeEnabled();
+  expect(screen.queryByTestId("undo-reason")).not.toBeInTheDocument();
+}

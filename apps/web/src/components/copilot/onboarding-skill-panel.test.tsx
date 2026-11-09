@@ -40,6 +40,7 @@ import {
   anOrgAdminGetsNoLockButton,
   aGlobalAdminUnlocksTheDraft,
   aGlobalAdminLocksWithAReason,
+  aCredentialedDraftWithHistoryCanUndo,
 } from "./onboarding-skill-panel.spec";
 
 afterEach(() => {
@@ -99,4 +100,8 @@ describe("F4.339 — a locked draft in the dock", () => {
   it("offers an organization admin no lock button", anOrgAdminGetsNoLockButton);
   it("lets a global administrator unlock it", aGlobalAdminUnlocksTheDraft);
   it("locks only with a reason, posted trimmed", aGlobalAdminLocksWithAReason);
+});
+
+describe("F4.339 — Undo on a credentialed draft (plan T8.2)", () => {
+  it("is enabled with history and no turn running", aCredentialedDraftWithHistoryCanUndo);
 });
