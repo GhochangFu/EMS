@@ -246,3 +246,114 @@ record. The schema change is this ADR's (decision 9).
   and `\d` of the three tables; the route 403 cases with `curl`; the
   precedence at each level after reload; the sign-in page on the portal
   default after sign-out; the wall in each design system.
+
+## Amendment 1 — the design review rulings (2026-11-09)
+
+**Status: Proposed — 2026-11-09. The merge of this amendment is its
+acceptance.** Before the plan, the owner asked for a review of the design
+systems and the profiles against two design rulebooks: Impeccable 4.8.1
+(`critique`, `audit`, `craft-floor`, `mode-operate`, `colorize`, `typeset`,
+`layout`) and taste-skill 2.5.1 (`system`, `cards`, `icons`, `motion`,
+`perf`, `copy-tells`, `library/type.json`, `library/palettes.json`). Both were
+read as rules only: no launcher, binary or gate of either tool was run. The
+reviews read the preview page and `apps/web/src/index.css`, and measured the
+draft profiles with a WCAG 2.x and CIEDE2000 script that reproduces the known
+`nexus` values. The owner then ruled six questions, one at a time, each as
+recommended.
+
+**What the reviews found** (the numbers that drove the rulings):
+
+- `glass-showcase` blurred the alarm card (against decision 7), and
+  `ink-faint` on a glass card measured 3.41–4.14:1 in every profile.
+- `forest`'s draft `accent` `#6D28D9` is exactly the light `simulated-ink`, and
+  its dark `series-3` `#FBBF24` is exactly `warning-on-dark`.
+- `navy-pop`'s `accent` is ΔE2000 22.2 from `critical` (light) but 18.2 from
+  `critical-ink` (dark) and its `accent-on-chrome` 17.5 from
+  `critical-on-dark`. `sand`'s dark `accent` is ΔE2000 14.5 from `info`, and
+  its `series-1` equals its `accent`. No draft sets `series-4…8`.
+- `bento-ops` filled a 64px hero tile with `accent` (with `nexus`, a large
+  green "OK" tile; `on-accent` at .85 opacity measured 2.71:1).
+- `control-room-dark` drew accent corner brackets on every card, and set
+  labels at 10–11px on a wall surface with an icon-only rail.
+- `enterprise-flat`'s secondary button edge (`line-strong` on `surface`)
+  measured 1.47–1.84:1. `nexus-soft` paints `ink-faint` text on `canvas`,
+  4.32:1 in `nexus` light.
+
+| # | Question | Ruling |
+|---|---|---|
+| A1 | `glass-showcase`? | **Dropped.** Five design systems. No `backdrop-filter` in the portal. |
+| A2 | `enterprise-flat`'s font? | **IBM Plex Sans.** Roboto leaves the font list. |
+| A3 | The `forest` profile? | **Re-coloured:** keep the forest-green and beige base, replace the violet accent with a forest/pine accent (two-tone), and replace `series-3` with a non-amber hue. |
+| A4 | The accent gate? | **Every alarm role,** both themes (decision A4 below). |
+| A5 | Accent use and decoration? | **An accent allow-list** for every design system (decision A5 below). |
+| A6 | Type and readability? | **One rule set** for every design system (decision A6 below). |
+
+**Decisions.** Each replaces or refines the decision it names.
+
+- **A1 (amends S2 and decision 1).** `designSystemSchema = z.enum(["nexus-soft",
+  "enterprise-flat", "swiss-grid", "bento-ops", "control-room-dark"])`. Five
+  design systems. No design system uses `backdrop-filter`, translucency over
+  content, or a gradient ground. The lobby or demo use goes to `bento-ops`.
+  Decision 7's glass sentence and decision 14's glass example no longer apply.
+- **A2 (amends decision 5).** The font list is IBM Plex Sans (variable, with
+  the `wdth` axis), IBM Plex Mono, Archivo and Bricolage Grotesque. Roboto and
+  the separate IBM Plex Sans Condensed family are removed: the condensed width
+  comes from the `wdth` axis. *(drafter)* The plan confirms that the
+  self-hosted Plex Sans file carries `wdth` 85–100; if no such file has a
+  usable licence, Plex Sans Condensed comes back by an amendment.
+- **A3 (amends decision 13).** The closed list keeps nine names, with `forest`
+  re-coloured: its `accent`, `accent-strong` and `accent-on-chrome` are
+  forest/pine hues on the beige base, and its `series-3` is not amber, brown
+  or violet. The value table in the values PR is the authority.
+- **A4 (amends decision 13 and ADR 0110 decision 5 / Amendment 1 OQ3, for
+  every profile).** In both themes, `accent`, `accent-strong` and
+  `accent-on-chrome` are each ΔE2000 ≥ 20 from **every** `critical*` and
+  `warning*` role, and ≥ 12 from **every** `info*` role and `simulated-ink`.
+  No `series-*` equals `accent`, and every `series-*` is ΔE2000 ≥ 20 from
+  `warning` and `critical` and ≥ 12 from `info` (S1/S2 extended). Every
+  profile sets `series-1…8`. A profile that fails is re-coloured; if
+  `navy-pop`'s pink cannot pass, it is darkened, and if it still fails an
+  amendment drops it. The existing six profiles are measured again under this
+  gate in the values PR; a failure there is a value change in that PR, not a
+  new ruling.
+- **A5 (amends decision 2).** **The accent allow-list:** in every design
+  system, `accent` paints only the primary button, the focus ring, links, a
+  selection, the active navigation item and the wordmark. No tile, card,
+  border decoration, ground or chart series is filled or drawn in `accent`. A
+  test holds the list per design system. Then:
+  - `bento-ops`'s large tile is a **neutral** span, and the fixed span table
+    gives it only to the abnormal-now tile of a page (the active alarms or the
+    worst asset), never to a quantity such as outflow. Its text is opaque.
+  - `control-room-dark` has no corner brackets.
+  - No primary button carries a shadow; `nexus-soft` keeps its raised cards.
+  - A secondary button edge is ≥ 3:1 against its ground in every design
+    system (a `UI_PAIRS` entry).
+- **A6 (amends decisions 2, 3 and 14).** **One type and readability rule set**
+  for every design system:
+  - labels ≥ 12px, in sentence case, with no tracked capitals; the
+    breadcrumb is a real breadcrumb in normal case, not an uppercase kicker;
+  - weights 400, 500 and 600 only;
+  - spacing tokens on the 4px scale;
+  - a wall type-minimum token: body text on a wall surface is ≥ 16px
+    *(drafter: the plan sets the exact scale)*;
+  - every `--font-num` face proves tabular figures by a test;
+  - at most two families per design system; Archivo and Bricolage Grotesque
+    set headings (and, for Archivo, large figures) only, never body or table
+    text;
+  - `control-room-dark`'s rail shows text labels on a wall surface (a pinned
+    expanded rail), because a wall has no hover;
+  - text pairs are measured on every ground a design system paints, so
+    `nexus-soft` adds `ink-faint` on `canvas` as a text pair: the values PR
+    raises `ink-faint` or moves card meta text to `ink-muted`.
+
+**Consequences of the amendment.**
+
+- The gate matrix becomes 5 design systems × 2 surface variants × 9 profiles
+  × 2 themes (180 combinations).
+- The A4 gate may change values in the six shipped profiles. The values PR
+  shows every changed value and its measured ratios, and merging it approves
+  them (AGENTS §10).
+- One font family fewer to ship (Roboto), and Plex Sans Condensed becomes an
+  axis of Plex Sans.
+- Out of scope, added: glass, gradient or translucent grounds; accent fills on
+  tiles; decorative borders in `accent`.
