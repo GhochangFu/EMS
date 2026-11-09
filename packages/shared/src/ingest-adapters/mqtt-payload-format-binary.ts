@@ -95,12 +95,12 @@ const binaryReadingSchema = z
     /** Added after `scale`, before the point's own `scale_offset`. */
     offset: z.number().finite().optional(),
     /** Raw integer values that make the reading absent (ruling R3). */
-    sentinels: z.array(z.number().int()).max(MQTT_BINARY_SENTINELS_MAX).optional(),
+    sentinels: z.array(z.number().int().safe()).max(MQTT_BINARY_SENTINELS_MAX).optional(),
   })
   .strict();
 
-/** A binary definition (ADR 0119 decision 1). */
-export const mqttBinaryPayloadFormatSchema = z
+/** The binary definition's shape, before its cross-field rules (for the editable union). */
+export const mqttBinaryPayloadFormatObjectSchema = z
   .object({
     kind: z.literal("binary"),
     /** The exact message length; any other length is `binary-length-mismatch`. */
@@ -110,34 +110,42 @@ export const mqttBinaryPayloadFormatSchema = z
     time: z.union([fieldsTimeSchema, epochTimeSchema]).optional(),
     readings: z.array(binaryReadingSchema).min(1).max(MQTT_BINARY_READINGS_CAP),
   })
-  .strict()
-  .superRefine((definition, ctx) => {
-    const issue = (path: (string | number)[], message: string) =>
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
-    const seen = new Set<string>();
-    definition.readings.forEach((reading, index) => {
-      if (seen.has(reading.key)) {
-        issue(["readings", index, "key"], "two readings may not share a key");
-      }
-      seen.add(reading.key);
-      if (reading.byte + BYTES[reading.type] > definition.length) {
-        issue(["readings", index, "byte"], "a reading may not run past the message length");
-      }
-      if (reading.sentinels !== undefined && FLOAT_TYPES.has(reading.type)) {
-        issue(["readings", index, "sentinels"], "sentinels apply to integer readings only");
-      }
-    });
-    const time = definition.time;
-    if (time !== undefined && "fields" in time) {
-      for (const name of DATE_FIELD_NAMES) {
-        if (time.fields[name] + DATE_FIELD_BYTES > definition.length) {
-          issue(["time", "fields", name], "a date field may not run past the message length");
-        }
-      }
-    } else if (time !== undefined && time.byte + EPOCH_BYTES > definition.length) {
-      issue(["time", "byte"], "the epoch time may not run past the message length");
+  .strict();
+
+/** The cross-field rules: unique keys, every field inside `length`, sentinels on integers only. */
+export function refineBinary(
+  definition: z.infer<typeof mqttBinaryPayloadFormatObjectSchema>,
+  ctx: z.RefinementCtx,
+): void {
+  const issue = (path: (string | number)[], message: string) =>
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
+  const seen = new Set<string>();
+  definition.readings.forEach((reading, index) => {
+    if (seen.has(reading.key)) {
+      issue(["readings", index, "key"], "two readings may not share a key");
+    }
+    seen.add(reading.key);
+    if (reading.byte + BYTES[reading.type] > definition.length) {
+      issue(["readings", index, "byte"], "a reading may not run past the message length");
+    }
+    if (reading.sentinels !== undefined && FLOAT_TYPES.has(reading.type)) {
+      issue(["readings", index, "sentinels"], "sentinels apply to integer readings only");
     }
   });
+  const time = definition.time;
+  if (time !== undefined && "fields" in time) {
+    for (const name of DATE_FIELD_NAMES) {
+      if (time.fields[name] + DATE_FIELD_BYTES > definition.length) {
+        issue(["time", "fields", name], "a date field may not run past the message length");
+      }
+    }
+  } else if (time !== undefined && time.byte + EPOCH_BYTES > definition.length) {
+    issue(["time", "byte"], "the epoch time may not run past the message length");
+  }
+}
+
+/** A binary definition (ADR 0119 decision 1). */
+export const mqttBinaryPayloadFormatSchema = mqttBinaryPayloadFormatObjectSchema.superRefine(refineBinary);
 
 export type MqttBinaryPayloadFormat = z.infer<typeof mqttBinaryPayloadFormatSchema>;
 export type MqttBinaryReading = MqttBinaryPayloadFormat["readings"][number];

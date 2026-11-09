@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   theBodiesTakeABinaryDefinitionAndHex,
   theCreateBodyIsDeclarativeOnly,
+  theEditableDefinitionKeepsFieldLevelIssues,
   theResponsesParse,
   theRtuFormatBodyTakesACodeOrNull,
   theTestBodyCapsTheSample,
@@ -21,4 +22,5 @@ describe("F4.334 — MQTT payload format contracts (ADR 0116 decision 5)", () =>
 describe("F4.343 — binary definitions and hex samples (ADR 0119 decisions 1, 5)", () => {
   it("takes a binary definition on create and update, and hex on the test body", () =>
     theBodiesTakeABinaryDefinitionAndHex());
+  it("keeps field-level issues on the editable definition", () => theEditableDefinitionKeepsFieldLevelIssues());
 });

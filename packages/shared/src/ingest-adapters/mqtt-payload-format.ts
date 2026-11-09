@@ -1,7 +1,12 @@
 import { z } from "zod";
 
 import { parseMqttEnvelope } from "./mqtt-envelope";
-import { decodeBinary, mqttBinaryPayloadFormatSchema } from "./mqtt-payload-format-binary";
+import {
+  decodeBinary,
+  mqttBinaryPayloadFormatObjectSchema,
+  mqttBinaryPayloadFormatSchema,
+  refineBinary,
+} from "./mqtt-payload-format-binary";
 import { MQTT_FORBIDDEN_SEGMENTS, mqttPayloadReadingKeySchema } from "./mqtt-payload-keys";
 
 /**
@@ -123,8 +128,8 @@ const builtinDefinitionSchema = z
   .object({ kind: z.literal("builtin"), name: z.literal(MQTT_BUILTIN_PAYLOAD_FORMAT_CODE) })
   .strict();
 
-/** A declarative definition (ADR 0116 decision 3, rulings 2, 3, 14). */
-export const mqttDeclarativePayloadFormatSchema = z
+/** The declarative definition's shape, before its cross-field rule (for the editable union). */
+const declarativeObjectSchema = z
   .object({
     kind: z.literal("declarative"),
     root: z.enum(["object", "array"]),
@@ -140,20 +145,24 @@ export const mqttDeclarativePayloadFormatSchema = z
     byteOrder: byteOrderSchema.default("big"),
     readings: z.array(readingSchema).min(1).max(MQTT_PAYLOAD_FORMAT_READINGS_CAP),
   })
-  .strict()
-  .superRefine((definition, ctx) => {
-    const seen = new Set<string>();
-    definition.readings.forEach((reading, index) => {
-      if (seen.has(reading.key)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["readings", index, "key"],
-          message: "two readings may not share a key",
-        });
-      }
-      seen.add(reading.key);
-    });
+  .strict();
+
+function refineDeclarative(definition: z.infer<typeof declarativeObjectSchema>, ctx: z.RefinementCtx): void {
+  const seen = new Set<string>();
+  definition.readings.forEach((reading, index) => {
+    if (seen.has(reading.key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["readings", index, "key"],
+        message: "two readings may not share a key",
+      });
+    }
+    seen.add(reading.key);
   });
+}
+
+/** A declarative definition (ADR 0116 decision 3, rulings 2, 3, 14). */
+export const mqttDeclarativePayloadFormatSchema = declarativeObjectSchema.superRefine(refineDeclarative);
 
 export const mqttPayloadFormatDefinitionSchema = z.union([
   builtinDefinitionSchema,
@@ -161,11 +170,17 @@ export const mqttPayloadFormatDefinitionSchema = z.union([
   mqttBinaryPayloadFormatSchema,
 ]);
 
-/** What an admin may create or edit (`POST`/`PUT`): never `builtin` (ruling 16). */
-export const mqttEditablePayloadFormatSchema = z.union([
-  mqttDeclarativePayloadFormatSchema,
-  mqttBinaryPayloadFormatSchema,
-]);
+/**
+ * What an admin may create or edit (`POST`/`PUT`): never `builtin` (ruling 16).
+ * Discriminated on `kind` (ADR 0119), so a non-object is still "Expected
+ * object" and a wrong field names its own path within the chosen kind, as the
+ * single declarative schema did — never a bare "Invalid input".
+ */
+export const mqttEditablePayloadFormatSchema = z
+  .discriminatedUnion("kind", [declarativeObjectSchema, mqttBinaryPayloadFormatObjectSchema])
+  .superRefine((definition, ctx) =>
+    definition.kind === "binary" ? refineBinary(definition, ctx) : refineDeclarative(definition, ctx),
+  );
 
 export type MqttPayloadFormatDefinition = z.infer<typeof mqttPayloadFormatDefinitionSchema>;
 export type MqttDeclarativePayloadFormat = z.infer<typeof mqttDeclarativePayloadFormatSchema>;
@@ -394,7 +409,7 @@ function decodeDeclarative(
  * never echoes the payload in a reason.
  *
  * `builtin` and `declarative` decode the bytes as UTF-8 with a non-fatal
- * `TextDecoder`, so invalid bytes become U+FFFD and `JSON.parse` fails as
+ * `TextDecoder` that keeps a BOM, so invalid bytes become U+FFFD and `JSON.parse` fails as
  * `not-json` — exactly what `Buffer.toString("utf8")` gave before.
  *
  * The built-in kind is `parseMqttEnvelope` wrapped as one record, byte for
@@ -407,9 +422,15 @@ export function decodeMqttPayload(
   raw: Uint8Array,
 ): MqttDecodeResult {
   if (definition.kind === "binary") {
-    return decodeBinary(definition, topic, raw);
+    try {
+      return decodeBinary(definition, topic, raw);
+    } catch {
+      // Unreachable for a schema-parsed definition; a decoder bug is a drop, not a crash.
+      return { ok: false, reason: "binary-length-mismatch" };
+    }
   }
-  const text = new TextDecoder().decode(raw);
+  // `ignoreBOM: true` keeps a leading BOM, as `Buffer.toString("utf8")` did.
+  const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(raw);
   if (definition.kind === "builtin") {
     try {
       const parsed = parseMqttEnvelope(text);

@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   aFloat64SpansFourWords,
   aJsonFrameInsideALargerBufferDecodes,
+  anUnparsedBinaryDefinitionNeverThrows,
   aSignedWordIsItsSixteenBitPattern,
   absentReadingsAreNullOrOmitted,
   fieldReadingsAcceptNumbersAndNumericStrings,
@@ -49,5 +50,6 @@ describe("F4.334 — decodeMqttPayload", () => {
 describe("F4.343 — decodeMqttPayload takes bytes (ADR 0119 decision 2)", () => {
   it("10 reads binary bytes as not-json for a JSON kind and dispatches the binary kind", () =>
     theDecoderTakesBytesForEveryKind());
-  it("11 decodes a JSON frame inside a larger buffer", () => aJsonFrameInsideALargerBufferDecodes());
+  it("11 decodes a JSON frame inside a larger buffer and keeps a BOM", () => aJsonFrameInsideALargerBufferDecodes());
+  it("12 drops, never throws, on an unparsed binary definition", () => anUnparsedBinaryDefinitionNeverThrows());
 });

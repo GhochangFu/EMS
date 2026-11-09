@@ -341,4 +341,18 @@ export function aJsonFrameInsideALargerBufferDecodes(): void {
   expect(frame.byteOffset).toBeGreaterThan(0);
   expect(decodeMqttPayload(bcpl(), "t", frame)).toEqual(decodeMqttPayload(bcpl(), "t", utf8(BCPL_SAMPLE)));
   expect(new TextDecoder().decode(frame)).toBe(BCPL_SAMPLE);
+  // A leading BOM stays in the text, as `Buffer.toString("utf8")` kept it: not JSON.
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf, ...utf8("{}")]);
+  expect(decodeMqttPayload(MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION, "t", bom)).toEqual({ ok: false, reason: "not-json" });
+}
+
+/** 12 — an unparsed binary definition that reads past its length is a drop, never a throw. */
+export function anUnparsedBinaryDefinitionNeverThrows(): void {
+  const unparsed = {
+    kind: "binary",
+    length: 2,
+    byteOrder: "little",
+    readings: [{ key: "late", byte: 1, type: "float64" }],
+  } as MqttPayloadFormatDefinition;
+  expect(decodeMqttPayload(unparsed, "t", new Uint8Array(2))).toEqual({ ok: false, reason: "binary-length-mismatch" });
 }

@@ -112,3 +112,22 @@ export function theBodiesTakeABinaryDefinitionAndHex(): void {
   const absent = testMqttPayloadFormatBodySchema.parse(test);
   expect(absent.encoding).toBeUndefined();
 }
+
+/** The editable union is discriminated on `kind`: a non-object and a bad field keep their own messages. */
+export function theEditableDefinitionKeepsFieldLevelIssues(): void {
+  const issues = (definition: unknown) => {
+    const result = createMqttPayloadFormatBodySchema.safeParse({ code: "acme", name: "Acme", definition });
+    return result.success ? [] : result.error.issues.map((i) => ({ path: i.path.join("."), message: i.message }));
+  };
+  expect(issues("not json")[0]?.message).toContain("Expected object");
+  expect(issues({ ...DEFINITION, kind: "script" })[0]?.path).toBe("definition.kind");
+  expect(issues({ ...DEFINITION, readings: undefined })).toEqual([
+    { path: "definition.readings", message: "Required" },
+  ]);
+  const late = { ...WBLDC_DEFINITION_INPUT, readings: [{ key: "late", byte: 99, type: "int16" }] };
+  expect(issues(late)).toEqual([
+    { path: "definition.readings.0.byte", message: "a reading may not run past the message length" },
+  ]);
+  const twice = { ...DEFINITION, readings: [...DEFINITION.readings, ...DEFINITION.readings] };
+  expect(issues(twice)[0]?.path).toBe("definition.readings.1.key");
+}
