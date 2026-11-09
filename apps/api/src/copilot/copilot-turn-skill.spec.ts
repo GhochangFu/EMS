@@ -50,6 +50,8 @@ function sessionDto(status: OnboardingSessionDto["status"], messages: Onboarding
 
 type FakeOptions = {
   status?: OnboardingSessionDto["status"];
+  /** F4.339: the session's lock (none by default). */
+  lock?: OnboardingSessionDto["lock"];
   /** The rows `chat` adds after the opening line; a user row, an action line and the reply by default. */
   added?: (message: string) => OnboardingChatMessage[];
 };
@@ -73,7 +75,7 @@ export function fakeOnboarding(options: FakeOptions = {}) {
     },
     getSession: async (...args) => {
       calls.getSession.push(args);
-      return sessionDto(options.status ?? "draft", [OPENING]);
+      return { ...sessionDto(options.status ?? "draft", [OPENING]), lock: options.lock ?? null };
     },
     chat: async (jwt: JwtPayload, id: string, message: string) => {
       calls.chat.push([jwt, id, message]);
@@ -277,4 +279,15 @@ export async function aLostSessionDiscardsItsCommitCardOnly(): Promise<void> {
   expect(h.discarded).toEqual([[OPEN_COMMIT_ID]]);
   expect(h.pendingAsked.listOpen).toEqual([[ORG_ADMIN.id, CONVERSATION]]);
   expect(h.pendingAsked.discardUsers).toEqual([ORG_ADMIN.id]);
+}
+
+/** F4.339 (ADR 0117 decision 9): a locked draft answers the lock's sentence — uncounted, `chat` never runs, nothing stored. */
+export async function aLockedDraftAnswersTheLockSentence(): Promise<void> {
+  const lock = { lockedAt: "2026-11-09T00:00:00.000Z", lockedBy: null, reason: "F4.327 evidence" };
+  const h = skillHarness(fakeOnboarding({ lock }));
+  const response = await h.turn("Add an asset");
+  expect(response.reply).toBe("This draft is locked: F4.327 evidence. A global administrator can unlock it.");
+  expect(h.fake.calls.chat).toHaveLength(0);
+  expect(h.counts.consumeTurn).toHaveLength(0);
+  expect(h.counts.appendTurn).toBe(0);
 }

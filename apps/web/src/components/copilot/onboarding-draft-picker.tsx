@@ -1,9 +1,11 @@
-import { skipToken, useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId } from "react";
 import type { OnboardingDraftSummaryDto } from "@bms/shared";
 
 import { fetchOnboardingDrafts } from "../../api/admin/onboarding";
 import { onboardingDraftsKey } from "../../lib/copilot-invalidations";
+import { StatusPill } from "../status-pill";
+import { DraftLockControl } from "./draft-lock-control";
 
 /**
  * Whose drafts the picker lists: a named organization, the caller's home organization (`"home"`:
@@ -28,6 +30,8 @@ type OnboardingDraftPickerProps = {
   resuming: string | null;
   onStartNew(): void;
   onResume(sessionId: string): void;
+  /** `F4.339` (ruling Q6): the signed-in user is a global administrator, so each row offers Lock / Unlock. */
+  canLock?: boolean;
 };
 
 /** How long ago `iso` was, coarse: the row only needs to tell an old draft from a new one. */
@@ -69,8 +73,10 @@ export function OnboardingDraftPicker({
   resuming,
   onStartNew,
   onResume,
+  canLock = false,
 }: OnboardingDraftPickerProps) {
   const rowId = useId();
+  const queryClient = useQueryClient();
   const named = draftsOf !== null && draftsOf !== "home" ? draftsOf.organizationId : undefined;
   const drafts = useQuery({
     queryKey: onboardingDraftsKey(named),
@@ -94,6 +100,15 @@ export function OnboardingDraftPicker({
                   {" · "}phase: {item.currentPhase} · updated {updatedAgo(item.updatedAt)} · {startedBy(item, currentUserId)}
                 </span>
               </span>
+              {/* F4.339: a locked draft still resumes (a resume binds and reads). */}
+              {item.locked && <StatusPill label="Locked" tone="warning" />}
+              {canLock && (
+                <DraftLockControl
+                  sessionId={item.id}
+                  locked={item.locked}
+                  onChanged={() => void queryClient.invalidateQueries({ queryKey: onboardingDraftsKey(named) })}
+                />
+              )}
               <button
                 type="button"
                 onClick={() => onResume(item.id)}

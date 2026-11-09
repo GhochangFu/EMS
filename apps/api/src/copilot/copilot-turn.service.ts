@@ -50,6 +50,7 @@ import {
   skillStateOfSession,
 } from "./copilot-onboarding-skill";
 import { CopilotOnboardingCommitReader, discardOnboardingCommitCards } from "./copilot-onboarding-commit";
+import { lockedSessionMessage } from "../admin/onboarding/onboarding-locked-writes";
 import { onboardingSkillCards } from "./copilot-onboarding-discovery";
 import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pending-changes.service";
 import { accessIntentOf } from "./copilot-access-intent";
@@ -888,6 +889,10 @@ export class CopilotTurnService {
     }
     if (before.status !== "draft") {
       return respond(conversationId, "answered", COPILOT_SKILL_SESSION_CLOSED_REPLY, { skill: skillStateOfSession(before) });
+    }
+    // F4.339 (ADR 0117 decision 9): a locked draft answers the lock's sentence, uncounted, and `chat` never runs.
+    if (before.lock !== null) {
+      return respond(conversationId, "answered", lockedSessionMessage(before.lock.reason), { skill: skillStateOfSession(before) });
     }
     const usage = await this.usage.consumeTurn(identity, organizationId, this.clock());
     if (!usage.ok) throw usageLimitException(usage);

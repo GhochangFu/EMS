@@ -764,6 +764,7 @@ function DockPanel({
                 resuming={startSkill.isPending ? (startSkill.variables ?? null) : null}
                 onStartNew={() => startSkill.mutate(undefined)}
                 onResume={(id) => startSkill.mutate(id)}
+                canLock={isGlobalAdmin}
               />
               {onboardBlocked && <span className="text-ink-muted">{ONBOARD_PICK_SENTENCE}</span>}
             </div>
@@ -811,6 +812,11 @@ function DockPanel({
             <p className="border-t border-line p-3 text-xs text-ink-muted">{SCOPE_OFF_SENTENCE}</p>
           ) : skill === null && configured === undefined ? (
             <p className="border-t border-line p-3 text-xs text-ink-muted">Checking this organization…</p>
+          ) : skill !== null && skill.session.lock != null ? (
+            // F4.339 (ADR 0117 decision 9): a locked draft takes no turn; the send box is replaced by the lock's sentence.
+            <p className="border-t border-line p-3 text-xs text-ink-muted">
+              {`This draft is locked: ${skill.session.lock.reason}. A global administrator can unlock it.`}
+            </p>
           ) : skill !== null || configured ? (
             <form onSubmit={onSubmit} className="border-t border-line p-3">
               {attachAllowed && (

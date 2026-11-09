@@ -678,3 +678,54 @@ export async function aConfirmedDiscoveryReadsTheSession(): Promise<void> {
   fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
   await waitFor(() => expect(sent.some((r) => r.method === "GET" && SESSION_URL.test(r.url))).toBe(true));
 }
+
+const LOCKED = skillState({
+  session: session({
+    lock: { lockedAt: "2026-10-12T00:00:00.000Z", lockedBy: null, reason: "Under site review" },
+    checkpoints: [{ id: "cp1", seq: 1, label: "Added RTU-1", takenAt: "2026-10-12T00:00:00.000Z" }],
+  }),
+});
+
+/** `F4.339` (ADR 0117 decision 9): a locked draft shows the pill and reason; no Undo, chips or send box. */
+export async function aLockedDraftIsReadOnly(): Promise<void> {
+  await openSkill({ skill: LOCKED });
+  expect(screen.getByText("Locked")).toBeInTheDocument();
+  expect(screen.getByText("Under site review")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Suggested replies" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("textbox", { name: "Message the copilot" })).not.toBeInTheDocument();
+  expect(screen.getByText("This draft is locked: Under site review. A global administrator can unlock it.")).toBeInTheDocument();
+}
+
+/** `F4.339` (ruling Q6): an organization admin gets no lock button, on a locked draft or an open one. */
+export async function anOrgAdminGetsNoLockButton(): Promise<void> {
+  await openSkill({ skill: LOCKED });
+  expect(screen.queryByRole("button", { name: "Unlock draft" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Lock draft" })).not.toBeInTheDocument();
+}
+
+/** `F4.339` (ruling Q6): a global administrator unlocks a locked draft with one POST. */
+export async function aGlobalAdminUnlocksTheDraft(): Promise<void> {
+  await openSkill({ skill: LOCKED, role: "admin" });
+  const sent = stubFetch(() => ({ status: 200, json: session() }));
+  fireEvent.click(screen.getByRole("button", { name: "Unlock draft" }));
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]!.url).toMatch(new RegExp(`/api/v1/admin/onboarding/sessions/${SESSION}/unlock$`));
+  expect(sent[0]!.method).toBe("POST");
+}
+
+/** `F4.339` (ruling Q6): Lock needs a reason, and posts it trimmed. */
+export async function aGlobalAdminLocksWithAReason(): Promise<void> {
+  await openSkill({ role: "admin" });
+  const sent = stubFetch(() => ({ status: 200, json: LOCKED.session }));
+  fireEvent.click(screen.getByRole("button", { name: "Lock draft" }));
+  const confirm = screen.getByRole("button", { name: "Confirm lock" });
+  expect(confirm).toBeDisabled();
+  fireEvent.change(screen.getByRole("textbox", { name: "Lock reason" }), { target: { value: "  Under site review " } });
+  expect(confirm).toBeEnabled();
+  fireEvent.click(confirm);
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]!.url).toMatch(new RegExp(`/api/v1/admin/onboarding/sessions/${SESSION}/lock$`));
+  expect(JSON.parse(sent[0]!.body)).toEqual({ reason: "Under site review" });
+  expect(await screen.findByText("Under site review")).toBeInTheDocument();
+}
