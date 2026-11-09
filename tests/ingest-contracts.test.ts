@@ -102,6 +102,15 @@ describe("ADR 0016 ingest contracts", () => {
     expect(ingest.MQTT_BUILTIN_PAYLOAD_FORMAT_CODE).toBe("thinkiot-envelope");
   });
 
+  it("publishes the binary payload format pieces through ./ingest", () => {
+    // `F4.343` (ADR 0119 decision 2): the binary decoder and the hex parser ride
+    // the same built subpath the ingest host and the worker load.
+    const ingest = require_("@bms/shared/ingest") as Record<string, unknown>;
+    expect(typeof ingest.hexToBytes, "hexToBytes is not exported").toBe("function");
+    expect(typeof ingest.decodeBinary, "decodeBinary is not exported").toBe("function");
+    expect(ingest.MQTT_DECODE_FAILURES as readonly string[]).toContain("binary-length-mismatch");
+  });
+
   it("publishes ./ingest under both import and require conditions", () => {
     // ADR 0016 §8 calls this out specifically: `apps/sim` consumes @bms/shared
     // through `createRequire(import.meta.url)`, so an import-only condition

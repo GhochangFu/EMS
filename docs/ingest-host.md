@@ -337,8 +337,13 @@ code — it never needs the catalog row, so every PHE RTU behaves as before.
   first, and every decoded record still goes through the `F1.7` topic check
   (`device is not bound to this topic`). A message the format cannot decode
   logs `warn` `mqtt payload not decoded topic=<t> formatCode=<code>
-  reason=<not-json|root-mismatch|no-device-key|too-many-records>` — never the
-  payload. The built-in path keeps `mqtt payload was not valid JSON`.
+  reason=<not-json|root-mismatch|no-device-key|too-many-records|binary-length-mismatch>`
+  — never the payload. The built-in path keeps `mqtt payload was not valid JSON`.
+- **Binary formats** (ADR 0119, `F4.343`). The adapter passes the payload
+  bytes, not a UTF-8 string, so a `binary` format reads a fixed-length record
+  with byte positions, types and sentinels. Its device key is the topic (one
+  topic = one RTU, ADR 0119 R4), and a frame of any other length is dropped
+  with `reason=binary-length-mismatch`.
 - **Skips.** A code with no catalog row is `payload-format-unknown`; a row whose
   definition fails the schema is `payload-format-invalid`; a second RTU on the
   same endpoint **and topic** naming a different format is

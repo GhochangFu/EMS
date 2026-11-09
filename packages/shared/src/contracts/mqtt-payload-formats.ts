@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import {
   MQTT_PAYLOAD_FORMAT_ARRAY_CAP,
-  mqttDeclarativePayloadFormatSchema,
+  mqttEditablePayloadFormatSchema,
   mqttPayloadFormatCodeSchema,
   mqttPayloadFormatDefinitionSchema,
 } from "../ingest-adapters/mqtt-payload-format";
@@ -37,13 +37,16 @@ export const mqttPayloadFormatsListResponseSchema = z.array(mqttPayloadFormatDto
 const nameSchema = z.string().trim().min(1).max(128);
 const descriptionSchema = z.string().trim().max(1000);
 
-/** `POST` — a new format is always declarative; the built-in kind is never written (ruling 16). */
+/**
+ * `POST` — a new format is declarative or binary (ADR 0119); the built-in kind
+ * is never written (ruling 16).
+ */
 export const createMqttPayloadFormatBodySchema = z
   .object({
     code: mqttPayloadFormatCodeSchema,
     name: nameSchema,
     description: descriptionSchema.optional(),
-    definition: mqttDeclarativePayloadFormatSchema,
+    definition: mqttEditablePayloadFormatSchema,
   })
   .strict();
 
@@ -52,19 +55,29 @@ export const updateMqttPayloadFormatBodySchema = z
   .object({
     name: nameSchema.optional(),
     description: descriptionSchema.optional(),
-    definition: mqttDeclarativePayloadFormatSchema.optional(),
+    definition: mqttEditablePayloadFormatSchema.optional(),
   })
   .strict();
 
 /** The largest sample message the test route takes (64 KiB). */
 export const MQTT_PAYLOAD_FORMAT_TEST_SAMPLE_MAX = 65_536;
 
-/** `POST /test` — decode a pasted sample against a definition; nothing is stored. */
+/** How the test route reads `sample` (ADR 0119 decision 5): JSON text, or hex bytes. */
+export const MQTT_PAYLOAD_FORMAT_SAMPLE_ENCODINGS = ["text", "hex"] as const;
+
+/** The fixed 400 for a hex sample that is not hex (plan R4); it names no byte of it. */
+export const MQTT_PAYLOAD_FORMAT_HEX_MESSAGE = "sample is not hex";
+
+/**
+ * `POST /test` — decode a pasted sample against a definition; nothing is stored.
+ * `encoding` absent is `text`, so a caller from before ADR 0119 is unchanged.
+ */
 export const testMqttPayloadFormatBodySchema = z
   .object({
     definition: mqttPayloadFormatDefinitionSchema,
     topic: z.string().max(255),
     sample: z.string().max(MQTT_PAYLOAD_FORMAT_TEST_SAMPLE_MAX),
+    encoding: z.enum(MQTT_PAYLOAD_FORMAT_SAMPLE_ENCODINGS).optional(),
   })
   .strict();
 

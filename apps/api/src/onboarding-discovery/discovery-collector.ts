@@ -138,18 +138,44 @@ export const BUILTIN_DISCOVERY_FORMATS: readonly DiscoveryFormat[] = [
   { code: MQTT_BUILTIN_PAYLOAD_FORMAT_CODE, definition: MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION },
 ];
 
+/** True when the bytes are valid UTF-8 **and** parse as JSON (ADR 0119 ruling R6). */
+function isJsonText(bytes: Uint8Array): boolean {
+  try {
+    JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The first format whose decode yields at least one record with a non-blank
  * device key. A built-in decode of a payload with no `dev_id` (every BCPL
  * message) yields the empty key, so it falls through to the next format.
+ *
+ * ADR 0119 decision 4 (ruling R6): a `binary` format is tried only when the
+ * message's length is its `length` **and** the message is not valid UTF-8
+ * JSON — worked out once, at the first binary format that could apply. JSON
+ * formats cannot decode non-JSON bytes, so the list's order between the two
+ * kinds does not matter.
  */
 function decodeWithFirst(
   formats: readonly DiscoveryFormat[],
   topic: string,
-  raw: string,
+  bytes: Uint8Array,
 ): { code: string; records: MqttDecodedRecord[] } | null {
+  let json: boolean | undefined;
   for (const format of formats) {
-    const decoded = decodeMqttPayload(format.definition, topic, raw);
+    if (format.definition.kind === "binary") {
+      if (format.definition.length !== bytes.byteLength) {
+        continue;
+      }
+      json ??= isJsonText(bytes);
+      if (json) {
+        continue;
+      }
+    }
+    const decoded = decodeMqttPayload(format.definition, topic, bytes);
     if (decoded.ok && decoded.records.some((record) => record.deviceKey.trim() !== "")) {
       return { code: format.code, records: decoded.records };
     }
@@ -213,8 +239,9 @@ export function createDiscoveryCollector(opts: {
     if (stopped) {
       return;
     }
-    const bytes = typeof payload === "string" ? Buffer.byteLength(payload, "utf8") : payload.byteLength;
-    if (bytes > caps.maxPayloadBytes) {
+    // The size check stays first: a string is measured before it is encoded.
+    const size = typeof payload === "string" ? Buffer.byteLength(payload, "utf8") : payload.byteLength;
+    if (size > caps.maxPayloadBytes) {
       skip("oversize");
       return;
     }
@@ -227,7 +254,9 @@ export function createDiscoveryCollector(opts: {
       skip("unusable-topic");
       return;
     }
-    const decoded = decodeWithFirst(formats, topic, typeof payload === "string" ? payload : new TextDecoder().decode(payload));
+    // ADR 0119 decision 4: the decoder takes bytes, so a binary format sees them intact.
+    const bytes = typeof payload === "string" ? new TextEncoder().encode(payload) : payload;
+    const decoded = decodeWithFirst(formats, topic, bytes);
     if (decoded === null) {
       skip("no-format");
       return;

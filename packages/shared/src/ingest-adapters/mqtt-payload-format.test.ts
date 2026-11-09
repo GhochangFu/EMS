@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   aFloat64SpansFourWords,
+  aJsonFrameInsideALargerBufferDecodes,
+  anUnparsedBinaryDefinitionNeverThrows,
   aSignedWordIsItsSixteenBitPattern,
   absentReadingsAreNullOrOmitted,
   fieldReadingsAcceptNumbersAndNumericStrings,
@@ -11,6 +13,7 @@ import {
   theBcplAndBuiltinDefinitionsParse,
   theBcplGoldenSampleDecodes,
   theByteOrderTwinDecodesDifferently,
+  theDecoderTakesBytesForEveryKind,
   thePheGoldenSampleMatchesTheEnvelopeParse,
   theReadingShapeIsStrict,
   theReadingsCapIs128,
@@ -42,4 +45,11 @@ describe("F4.334 — decodeMqttPayload", () => {
   it("7 uses the topic when no device-key path is set", () => theTopicIsTheKeyWhenNoPathIsSet());
   it("8 checks the root and caps and never throws", () => rootCapsAndTotality());
   it("9 applies scale and offset", () => scaleAndOffsetApply());
+});
+
+describe("F4.343 — decodeMqttPayload takes bytes (ADR 0119 decision 2)", () => {
+  it("10 reads binary bytes as not-json for a JSON kind and dispatches the binary kind", () =>
+    theDecoderTakesBytesForEveryKind());
+  it("11 decodes a JSON frame inside a larger buffer and keeps a BOM", () => aJsonFrameInsideALargerBufferDecodes());
+  it("12 drops, never throws, on an unparsed binary definition", () => anUnparsedBinaryDefinitionNeverThrows());
 });

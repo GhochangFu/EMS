@@ -257,7 +257,7 @@ export function createMqttAdapter(
       return;
     }
     if (payload.length > MAX_PAYLOAD_BYTES) {
-      // Checked before `toString`, so an oversized frame is never materialised
+      // Checked before any decode, so an oversized frame is never materialised
       // as a string either (§5 rule 6). Size only — never the content.
       context?.logger.warn("mqtt payload rejected: too large", {
         bytes: payload.length,
@@ -269,12 +269,11 @@ export function createMqttAdapter(
     // ADR 0116 decision 6: decode with the format of the topic the message
     // arrived on. A topic whose bindings name no format uses the built-in
     // envelope — `parseMqttEnvelope`, unchanged — so PHE behaves as before.
+    // ADR 0119 decision 3: the decoder takes the bytes (a `Buffer` is a
+    // `Uint8Array`), so a binary format reads them before any UTF-8 decode;
+    // the JSON kinds decode them as UTF-8 exactly as `toString("utf8")` did.
     const format = formatByTopic.get(topic);
-    const decoded = decodeMqttPayload(
-      format?.definition ?? MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION,
-      topic,
-      payload.toString("utf8"),
-    );
+    const decoded = decodeMqttPayload(format?.definition ?? MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION, topic, payload);
     if (!decoded.ok) {
       if (format === undefined) {
         // A malformed payload is one device misbehaving, not a connection fault.
