@@ -961,6 +961,119 @@ html[data-design="control-room-dark"][data-surface="flat"] {
 
 
 /*
+ * F4.341 PR 10 — `swiss-grid` (ADR 0118 decision 2, Amendment 1 A6): energy reports and management
+ * review. Archivo for headings and large figures (`--font-head`, `--font-num`; Archivo offers `tnum`,
+ * which the `font-num` utility turns on), IBM Plex Sans for text and tables; the page on `surface`,
+ * cards transparent under a 3px `ink` rule; radius 0; the 24px grid gap (`--space-6`); 36px figures
+ * (`--text-2xl`); weights ≤ 600, sentence case. The topbar shell. The Atlas red accent is not used:
+ * red is the critical colour, and the profile sets the accent.
+ */
+html[data-design="swiss-grid"] {
+  --font-body: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, sans-serif;
+  --font-head: "Archivo Variable", system-ui, sans-serif;
+  --font-num: "Archivo Variable", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --text-3xs: 12px;
+  --text-2xs: 12px;
+  --text-xs: 0.75rem;
+  --leading-xs: 1rem;
+  --text-sm: 0.875rem;
+  --leading-sm: 1.25rem;
+  --text-base: 1rem;
+  --leading-base: 1.5rem;
+  --text-lg: 1.125rem;
+  --leading-lg: 1.75rem;
+  --text-xl: 1.25rem;
+  --leading-xl: 1.75rem;
+  --text-2xl: 2.25rem;
+  --leading-2xl: 2.5rem;
+  --text-3xl: 1.875rem;
+  --leading-3xl: 2.25rem;
+  --text-4xl: 2.25rem;
+  --leading-4xl: 2.5rem;
+  --text-5xl: 3rem;
+  --leading-5xl: 1;
+  --text-6xl: 3.75rem;
+  --leading-6xl: 1;
+  --text-wall-min: 16px;
+  --weight-bold: 600;
+  --weight-semibold: 600;
+  --caps-transform: none;
+  --caps-tracking-wide: 0;
+  --caps-tracking-wider: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
+  --radius-card: 0;
+  --radius-card-sm: 0;
+  --radius-well: 0;
+  --radius-control: 0;
+  --radius-button: 0;
+  --radius-pill: 0;
+  --card-ground: transparent;
+  --page-ground: rgb(var(--surface));
+  --button-edge: rgb(var(--ink-faint));
+}
+
+html[data-design="swiss-grid"][data-surface="flat"] {
+  --font-body: "IBM Plex Sans Variable", "IBM Plex Sans", system-ui, sans-serif;
+  --font-head: "Archivo Variable", system-ui, sans-serif;
+  --font-num: "Archivo Variable", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --text-3xs: 12px;
+  --text-2xs: 12px;
+  --text-xs: 0.75rem;
+  --leading-xs: 1rem;
+  --text-sm: 0.875rem;
+  --leading-sm: 1.25rem;
+  --text-base: 1rem;
+  --leading-base: 1.5rem;
+  --text-lg: 1.125rem;
+  --leading-lg: 1.75rem;
+  --text-xl: 1.25rem;
+  --leading-xl: 1.75rem;
+  --text-2xl: 2.25rem;
+  --leading-2xl: 2.5rem;
+  --text-3xl: 1.875rem;
+  --leading-3xl: 2.25rem;
+  --text-4xl: 2.25rem;
+  --leading-4xl: 2.5rem;
+  --text-5xl: 3rem;
+  --leading-5xl: 1;
+  --text-6xl: 3.75rem;
+  --leading-6xl: 1;
+  --text-wall-min: 16px;
+  --weight-bold: 600;
+  --weight-semibold: 600;
+  --caps-transform: none;
+  --caps-tracking-wide: 0;
+  --caps-tracking-wider: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
+  --radius-card: 0;
+  --radius-card-sm: 0;
+  --radius-well: 0;
+  --radius-control: 0;
+  --radius-button: 0;
+  --radius-pill: 0;
+  --card-ground: transparent;
+  --page-ground: rgb(var(--surface));
+  --button-edge: rgb(var(--ink-faint));
+}
+
+
+/*
  * F4.341 P4 (ADR 0118 Amendment 2) — the wall's type floor. On a wall surface (`[data-wall-root]`,
  * `components/control-room/wall-frame.tsx`) every text step under 16px is raised to
  * `--text-wall-min`, in every design system (`nexus-soft` included): a wall is read from across a
@@ -1053,6 +1166,25 @@ html[data-design="control-room-dark"][data-theme="dark"]:not([data-surface="flat
   --shadow-ribbon: 0 1px 0 rgb(var(--line-strong) / 1);
 }
 
+/* F4.341 PR 10 — `swiss-grid` casts no shadow: rules, not depth. */
+html[data-design="swiss-grid"]:not([data-surface="flat"]) {
+  --shadow-raised: 0 0 0 0 rgb(var(--ink) / 0);
+  --shadow-raised-sm: 0 0 0 0 rgb(var(--ink) / 0);
+  --shadow-pressed: 0 0 0 0 rgb(var(--ink) / 0);
+  --shadow-pressed-sm: 0 0 0 0 rgb(var(--ink) / 0);
+  --shadow-pill: 0 0 0 0 rgb(var(--ink) / 0);
+  --shadow-ribbon: 0 3px 0 rgb(var(--ink) / 1);
+}
+
+html[data-design="swiss-grid"][data-theme="dark"]:not([data-surface="flat"]) {
+  --shadow-raised: 0 0 0 0 rgb(var(--scrim) / 0);
+  --shadow-raised-sm: 0 0 0 0 rgb(var(--scrim) / 0);
+  --shadow-pressed: 0 0 0 0 rgb(var(--scrim) / 0);
+  --shadow-pressed-sm: 0 0 0 0 rgb(var(--scrim) / 0);
+  --shadow-pill: 0 0 0 0 rgb(var(--scrim) / 0);
+  --shadow-ribbon: 0 3px 0 rgb(var(--ink) / 1);
+}
+
 /*
  * F3.71 — the surface vocabulary (ADR 0085 decisions 3–5, plan §2). A call site names what a
  * shape is (`surface-raised`, `surface-field`), never its colours; the rule decides how it looks
@@ -1075,6 +1207,17 @@ html[data-design="control-room-dark"][data-theme="dark"]:not([data-surface="flat
  * it replaces.
  */
 @layer components {
+  /*
+   * F4.341 PR 10 — the page behind every shell (its root and its page area): `--page-ground`, which is
+   * `canvas` in every design system but `swiss-grid` (`surface`). The same in both surface variants.
+   */
+  .surface-page {
+    background-color: var(--page-ground);
+  }
+  :where([data-surface="flat"]) .surface-page {
+    background-color: var(--page-ground);
+  }
+
   /* Cards, sections, KPI tiles, page headers, widget frames, the capability footer. */
   .surface-raised {
     border-width: 0;
@@ -1386,6 +1529,22 @@ html[data-design="control-room-dark"][data-theme="dark"]:not([data-surface="flat
     background-color: rgb(var(--accent) / 0.12);
     box-shadow: none;
     color: rgb(var(--accent-strong));
+  }
+
+  /*
+   * F4.341 PR 10 — `swiss-grid`'s explicit rules: a card is a 3px `ink` rule over the page, a small
+   * card a 1px one (`:where`-wrapped, its own flat twin, as `enterprise-flat`'s).
+   */
+  :where(html[data-design="swiss-grid"]) .surface-raised,
+  :where(html[data-design="swiss-grid"]) .surface-dialog {
+    border-width: 3px 0 0 0;
+    border-style: solid;
+    border-color: rgb(var(--ink));
+  }
+  :where(html[data-design="swiss-grid"]) .surface-raised-sm {
+    border-width: 1px 0 0 0;
+    border-style: solid;
+    border-color: rgb(var(--ink));
   }
 }
 

@@ -27,7 +27,7 @@ export function ShellMain({
           ) : null}
         </div>
       </section>
-      <div className="flex-1 overflow-auto bg-canvas p-4">{children}</div>
+      <div className="flex-1 overflow-auto surface-page p-4">{children}</div>
     </main>
   );
 }

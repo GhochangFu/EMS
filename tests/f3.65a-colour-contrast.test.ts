@@ -671,11 +671,21 @@ const DS_TEXT_PAIRS: Record<string, Pair[]> = {
   // PR 9: the rail's labels (`ink-muted`, `ink`) on the rail's `canvas` and the cards' `surface` are
   // base pairs already; its one new ground is none.
   "control-room-dark": [],
+  // PR 10: the page and every transparent card show `surface`, so the meta and muted text sit on it.
+  "swiss-grid": [
+    { fg: "ink-faint", bg: "surface" },
+    { fg: "ink-muted", bg: "surface" },
+  ],
 };
 const DS_UI_PAIRS: Record<string, Pair[]> = {
   "enterprise-flat": [],
   // PR 9: paints no ground beyond the base vocabulary (cards on `surface`, the page on `canvas`).
   "control-room-dark": [],
+  // PR 10: the 3px card rule is `ink` on `surface`; a secondary button edge (`ink-faint`) on `surface`.
+  "swiss-grid": [
+    { fg: "ink", bg: "surface" },
+    { fg: "ink-faint", bg: "surface" },
+  ],
 };
 
 describe("F4.341: every design system's own grounds hold in every profile and theme (ADR 0118 decision 14)", () => {
