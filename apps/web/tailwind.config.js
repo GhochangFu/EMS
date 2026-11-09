@@ -177,6 +177,31 @@ export default {
         head: ["var(--font-head)"],
         mono: ["var(--font-mono)"],
       },
+      // F4.344 (ADR 0120 decisions 7–8, plan R6): the mimic glyph state motion. Three keyframes,
+      // four utilities — `pulse` and `pulse-fast` share one keyframe at two rates. Opacity and a
+      // small scale only, never a colour; every cycle is ≥ 0.8 s (WCAG 2.3.1). The classes are used
+      // only behind `motion-safe:` (`MIMIC_GLYPH_MOTION_CLASS`); `tests/f4.344-mimic-motion-gate`
+      // MG1–MG3 hold the rates, the properties and the reduced-motion media query.
+      keyframes: {
+        "mimic-blink": {
+          "0%": { opacity: "1" },
+          "50%": { opacity: ".15" },
+        },
+        "mimic-pulse": {
+          "0%, 100%": { opacity: "1", transform: "scale(1)" },
+          "50%": { opacity: ".45", transform: "scale(1.06)" },
+        },
+        "mimic-breathe": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: ".7" },
+        },
+      },
+      animation: {
+        "mimic-blink": "mimic-blink 1s step-end infinite",
+        "mimic-pulse": "mimic-pulse 1.6s ease-in-out infinite",
+        "mimic-pulse-fast": "mimic-pulse 0.8s ease-in-out infinite",
+        "mimic-breathe": "mimic-breathe 3.2s ease-in-out infinite",
+      },
     },
   },
   plugins: [
