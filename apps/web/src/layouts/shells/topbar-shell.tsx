@@ -17,7 +17,7 @@ export function TopbarShell({ user, children, kpiRibbon }: AppShellProps) {
   const model = useShellModel(user);
   const groups = shellGroups(model, isMasterDataAdmin(user.role));
   return (
-    <div className="flex min-h-screen flex-col bg-canvas text-ink" style={{ paddingRight: `${model.copilotPush}px` }}>
+    <div className="flex min-h-screen flex-col surface-page text-ink" style={{ paddingRight: `${model.copilotPush}px` }}>
       <ShellHeader user={user} locationScopeLabel={model.locationScopeLabel} onLogout={model.handleLogout} />
       <ShellTopNav user={user} pathname={model.location.pathname} />
       {/* The ribbon shape is on a wrapper: the chrome (header, nav, footer) carries no surface class (f3.71 V6). */}
