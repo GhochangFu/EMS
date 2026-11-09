@@ -30,6 +30,10 @@ const dir = join("out", "fill");
 const files = readdirSync(join(HERE, dir))
   .filter((f) => f.endsWith(".svg"))
   .map((f) => join(dir, f));
+if (files.length === 0) {
+  console.log("FAIL out/fill holds no .svg; run build.mjs first");
+  process.exit(1);
+}
 for (const file of files) {
   try {
     const result = parseSvgSymbol(readFileSync(join(HERE, file)));

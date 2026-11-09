@@ -264,6 +264,7 @@ function build(lib, dir, collect = null) {
         if (seen.has(key)) fail(`${key} is listed twice`);
         seen.add(key);
         const label = lib.entryShape === "object" && typeof item.label === "string" ? item.label : labelOf(name);
+        if (label.trim() === "" || label !== label.trim()) fail(`${key}: label ${JSON.stringify(label)} is empty or padded`);
         if (label.length > MAX_LABEL) fail(`${key}: label "${label}" is longer than ${MAX_LABEL}`);
         if (labels.has(label)) fail(`${key}: label "${label}" repeats in ${lib.code}`);
         labels.add(label);
@@ -296,8 +297,25 @@ function build(lib, dir, collect = null) {
     entries,
   };
   // A source's own extra modules (repo-relative path and text), written beside the web module.
-  built.extraModules = typeof source.extraModules === "function" && !collect ? source.extraModules(built) : [];
+  // Built in --report mode too, so a refusal in them is reported rather than hidden.
+  built.extraModules = [];
+  if (typeof source.extraModules === "function") {
+    try {
+      built.extraModules = source.extraModules(built);
+      for (const extra of built.extraModules) checkExtraPath(lib.code, extra.path);
+    } catch (error) {
+      if (!collect) throw error;
+      collect(error instanceof Refusal ? error.message : `${lib.code}: ${error.message}`);
+    }
+  }
   return built;
+}
+
+/** An extra module's path: a generated module under apps/ or packages/, repo-relative, no `..`. */
+function checkExtraPath(code, path) {
+  if (!/^(?:apps|packages)\/[\w./-]+\.generated\.ts$/.test(path) || path.includes("..")) {
+    fail(`${code}: extra module path ${path} is not a generated module under apps/ or packages/`);
+  }
 }
 
 const HEADER = (lib) =>
@@ -641,12 +659,8 @@ function main() {
     writeFileSync(join(SHARED_DIR, `${lib.code}.generated.ts`), sharedModule(lib));
     writeFileSync(join(WEB_DIR, `${lib.code}.generated.ts`), webModule(lib));
     if (lib.hasCredits) writeFileSync(join(WEB_DIR, `${lib.code}.credits.generated.ts`), creditsModule(lib));
-    for (const extra of lib.extraModules) {
-      if (!/^(?:apps|packages)\/[\w./-]+\.generated\.ts$/.test(extra.path) || extra.path.includes("..")) {
-        fail(`${lib.code}: extra module path ${extra.path} is not a generated module under apps/ or packages/`);
-      }
-      writeFileSync(join(ROOT, extra.path), extra.text);
-    }
+    // Paths were checked in build(), before any file was written.
+    for (const extra of lib.extraModules) writeFileSync(join(ROOT, extra.path), extra.text);
     console.log(`generate: ${lib.code} ${lib.version} — ${lib.entries.length} symbols`);
   }
   if (opts.migration) writeMigration(libs.filter((l) => MIGRATION_0090_CODES.includes(l.code)));

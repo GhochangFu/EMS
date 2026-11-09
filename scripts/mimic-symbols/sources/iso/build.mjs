@@ -54,7 +54,8 @@ const LINE = 40;
 
 const outDir = join(HERE, "out");
 const fillDir = join(outDir, "fill");
-// A full build starts clean, so a glyph removed from CORE leaves no stale file behind.
+// A full build starts clean, so a glyph removed from CORE leaves no stale file behind. An ONLY=
+// build is a preview: its manifest lists the subset, so generate.mjs refuses the other glyphs.
 if (!ONLY) rmSync(outDir, { recursive: true, force: true });
 mkdirSync(fillDir, { recursive: true });
 
@@ -101,8 +102,9 @@ const r2 = (n) => Math.round(n * 100) / 100;
 
 /**
  * A glyph's level box in its view box: the shell's floor centre (`cx`, `bottom`), the top of its
- * inner volume (`top`) and the radii of the liquid surface's ellipse, the ribbon's half width
- * inside the shell's lines, so the fill sits within them (plan R5).
+ * inner volume (`top`) and the radii of the liquid surface's ellipse (plan R5): `rx` is the
+ * ribbon's half width inside the shell's side lines, `ry = rx·sinE` the same ellipse's minor
+ * radius. The renderer paints the fill under the glyph's lines, which cover its edge.
  */
 function levelBoxOf({ r, z0, z1 }, P, half) {
   const [cx, bottom] = k.iso([0, 0, z0], P);

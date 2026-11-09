@@ -113,12 +113,14 @@ describe("F4.345 isometric glyph sources", () => {
   });
 
   it("4. nothing under apps/ or packages/ imports the kit; the build reads the vendored copy only", () => {
-    const importsKit = (text: string) => /from\s+["'][^"']*vendor\/anatomy-kit|import\([^)]*anatomy-kit/.test(text);
+    // A static import, a dynamic import of the path, or the path built with join("vendor", "anatomy-kit").
+    const importsKit = (text: string) =>
+      /from\s+["'][^"']*vendor\/anatomy-kit|import\(\s*["'`][^"'`]*anatomy-kit|["']vendor["'],\s*["']anatomy-kit["']/.test(text);
     const shipped = [...filesUnder("apps"), ...filesUnder("packages")].filter((f) => importsKit(read(f)));
     expect(shipped).toEqual([]);
     const build = read(BUILD);
-    // Positive control: the scan sees the build's own import of the kit.
-    expect(/vendor["'],\s*["']anatomy-kit|vendor\/anatomy-kit/.test(build)).toBe(true);
+    // Positive control: the same scanner sees the build's own reach for the kit.
+    expect(importsKit(build)).toBe(true);
     expect(build).not.toContain("ANATOMY_KIT");
     expect(build).not.toContain("homedir(");
   });
@@ -152,6 +154,10 @@ describe("F4.345 isometric glyph sources", () => {
       const changed = { ...kit, "lathe.mjs": kit["lathe.mjs"].replace(/^./, (c: string) => (c === "a" ? "b" : "a")) };
       expect(load({ kit: changed })).toThrow(/SOURCE\.md/);
       expect(load({ line: 16 })).toThrow(/line/);
+      expect(load({ glyphs: ["y"] })).toThrow(/not in the build's manifest/);
+      expect(load({}, SVG.replace("<svg ", "<g ").replace("</svg>", "</g>"))).toThrow(/not <svg>/);
+      expect(load({}, SVG.replace('viewBox="-4 -1 46 46"', 'viewBox="0 0 46"'))).toThrow(/viewBox/);
+      expect(load({}, SVG.replace("<svg ", '<svg transform="scale(2)" '))).toThrow(/transform/);
       // Positive twin: the unchanged manifest passes.
       expect(load({})).not.toThrow();
     });
@@ -162,6 +168,8 @@ describe("F4.345 isometric glyph sources", () => {
       expect(modules).toHaveLength(1);
       expect(modules[0].path).toBe("apps/web/src/components/widgets/mimic-symbol-libraries/iso.level-boxes.generated.ts");
       expect(modules[0].text).toContain('"iso:x": { cx: 12, rx: 12, ry: 6, top: 12, bottom: 24 },');
+      // A level box for a glyph the curation does not list is refused.
+      expect(() => LIBRARY.load(dir).extraModules({ entries: [{ key: "iso:y" }] })).toThrow(/does not list/);
     });
   });
 
@@ -169,8 +177,10 @@ describe("F4.345 isometric glyph sources", () => {
     const generator = read(GENERATOR);
     expect(generator).toContain("--iso");
     expect(/const LIBRARIES = \[[\s\S]*?\n {2}ISO,\n\];/.test(generator)).toBe(true);
-    expect(generator).toContain("item.label");
-    expect(generator).toContain("extraModules");
+    expect(generator).toContain('typeof item.label === "string" ? item.label : labelOf(name)');
+    // build() computes the extra modules (in --report mode too) and main() writes each one.
+    expect(/built\.extraModules = source\.extraModules\(built\);/.test(generator)).toBe(true);
+    expect(/for \(const extra of lib\.extraModules\) writeFileSync\(join\(ROOT, extra\.path\), extra\.text\);/.test(generator)).toBe(true);
     expect(existsSync(join(repoRoot, "scripts/mimic-symbols/sources/iso.mjs"))).toBe(true);
   });
 });

@@ -57,9 +57,12 @@ function readGlyph(dir, name) {
   if (!existsSync(file)) fail(`iso:${name} ${file} is missing; run sources/iso/build.mjs first`);
   const root = parseXml(readFileSync(file, "utf8"));
   if (root.name !== "svg") fail(`iso:${name} root is <${root.name}>, not <svg>`);
+  const rootExtra = Object.keys(root.attrs).filter((a) => a !== "viewBox" && a !== "xmlns");
+  if (rootExtra.length > 0) fail(`iso:${name} <svg> carries ${rootExtra.join(", ")}; only viewBox is kept`);
   if (root.children.length === 0) fail(`iso:${name} has no shapes`);
   for (const node of root.children) {
     if (node.name !== "path") fail(`iso:${name} has a <${node.name}>; only <path> is drawn`);
+    if (node.children.length > 0) fail(`iso:${name} <path> has child elements`);
     const extra = Object.keys(node.attrs).filter((a) => a !== "d");
     if (extra.length > 0) fail(`iso:${name} <path> carries ${extra.join(", ")}; only d is kept`);
     if (typeof node.attrs.d !== "string" || node.attrs.d.trim() === "") fail(`iso:${name} <path> has no d`);
