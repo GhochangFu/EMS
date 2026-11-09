@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const controllerPath = join(repoRoot, "apps/api/src/alarm-kb/alarm-kb.controller.ts");
 const appPath = join(repoRoot, "apps/web/src/app.tsx");
-const shellPath = join(repoRoot, "apps/web/src/layouts/app-shell.tsx");
+const shellPath = join(repoRoot, "apps/web/src/layouts/shells/navigation-model.ts") // F4.341 PR 5: the nav model moved out of app-shell.tsx;
 /**
  * Comments stripped before matching, and the first draft of this file did not
  * do that — it failed on its own subject. The controller's doc comment

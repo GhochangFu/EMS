@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const webSrc = join(repoRoot, "apps/web/src");
 const appPath = join(webSrc, "app.tsx");
-const appShellPath = join(webSrc, "layouts/app-shell.tsx");
+const appShellPath = join(webSrc, "layouts/shells/navigation-model.ts"); // F4.341 PR 5: the nav model moved out of app-shell.tsx
 const loginPagePath = join(webSrc, "pages/login-page.tsx");
 const authCallbackPagePath = join(webSrc, "pages/auth-callback-page.tsx");
 const landingRoutePath = join(webSrc, "lib/landing-route.ts");
