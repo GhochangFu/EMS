@@ -45,7 +45,7 @@ async function renderPage(): Promise<void> {
       </QueryClientProvider>
     </MemoryRouter>,
   );
-  // The first load transforms the three lazy shape modules (about 240 KB of source).
+  // The first load transforms the four lazy shape modules (about 1.3 MB of source since F4.345).
   await screen.findAllByTestId("attribution-entry", {}, { timeout: 5000 });
 }
 
@@ -112,11 +112,11 @@ export async function theCatalogIsReadUnscoped(): Promise<void> {
   expect(urls[0]?.endsWith("/api/v1/mimic-symbol-libraries")).toBe(true);
 }
 
-/** T13 — the organization section leaves the global list at seven entries. */
+/** T13 — the organization section leaves the global list at eight entries. */
 export async function theOrgSectionIsNotAGlobalEntry(): Promise<void> {
   renderPageWithCatalog(orgCatalogFixture());
   await screen.findAllByTestId("attribution-org-entry");
-  expect(await screen.findAllByTestId("attribution-entry")).toHaveLength(7);
+  expect(await screen.findAllByTestId("attribution-entry")).toHaveLength(8);
 }
 
 /** T1 — the page names itself. */
@@ -125,10 +125,12 @@ export async function theHeadingRenders(): Promise<void> {
   expect(screen.getByRole("heading", { name: "Attributions" })).toBeInTheDocument();
 }
 
-/** T2 — one section per library. */
-export async function sevenEntriesRender(): Promise<void> {
+/** T2 — one section per library; since F4.345 the eighth is the isometric library. */
+export async function eightEntriesRender(): Promise<void> {
   await renderPage();
-  expect(screen.getAllByTestId("attribution-entry")).toHaveLength(7);
+  expect(screen.getAllByTestId("attribution-entry")).toHaveLength(8);
+  const iso = entryNamed(/^Isometric/);
+  expect(within(iso).getByText("Licence: Own work; anatomy kit MIT")).toBeInTheDocument();
 }
 
 /** T3 — Lucide's heading and licence line. */

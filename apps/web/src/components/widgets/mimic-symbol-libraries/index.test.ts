@@ -7,7 +7,7 @@ import {
 } from "./index.spec";
 import { LAZY_MIMIC_LIBRARY_CODES, ensureLibraryShapes } from ".";
 
-// `F3.32h`: `qet`, `wmpid` and `drawio` load on first use; these claims read them synchronously.
+// `F3.32h`, `F4.345`: the lazy libraries (`qet`, `wmpid`, `drawio`, `iso`) load on first use; these claims read them synchronously.
 beforeAll(() => ensureLibraryShapes(LAZY_MIMIC_LIBRARY_CODES));
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */

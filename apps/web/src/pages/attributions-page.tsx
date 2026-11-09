@@ -38,7 +38,7 @@ export function AttributionsPage({ user }: { user: AuthUser }) {
 }
 
 /**
- * `F3.32h` — the preloaded libraries. The `qet`, `wmpid` and `drawio` notices and every per-file
+ * `F3.32h` — the preloaded libraries. The `qet`, `wmpid`, `drawio` and (F4.345) `iso` notices and every per-file
  * credit load on first use, so the list waits for them; a failed load shows what did load and says so.
  */
 function GlobalLibraries() {

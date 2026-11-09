@@ -3,6 +3,7 @@ import type { z } from "zod";
 import type { MimicSymbolGroupCode, mimicStaticSymbolSchema, mimicSymbolLibraryCodeSchema } from "../contracts/mimic-layouts";
 import { MIMIC_ORG_LIBRARY_KEY, MIMIC_ORG_SYMBOL_KEY } from "../contracts/mimic-symbol-libraries";
 import { DRAWIO_SYMBOL_KEYS, DRAWIO_SYMBOL_META } from "./drawio.generated";
+import { ISO_SYMBOL_KEYS, ISO_SYMBOL_META } from "./iso.generated";
 import { LUCIDE_SYMBOL_KEYS, LUCIDE_SYMBOL_META } from "./lucide.generated";
 import { MDI_SYMBOL_KEYS, MDI_SYMBOL_META } from "./mdi.generated";
 import { QET_SYMBOL_KEYS, QET_SYMBOL_META } from "./qet.generated";
@@ -46,8 +47,9 @@ export type MimicSymbolLibrary = {
 };
 
 /**
- * The seven libraries in palette order. `0090`'s library rows restate the first four (with `0091`'s
- * Lucide licence); `0092`'s the three of ADR 0086 decision 9.
+ * The eight libraries in palette order. `0090`'s library rows restate the first four (with `0091`'s
+ * Lucide licence); `0092`'s the three of ADR 0086 decision 9; `0136`'s the isometric library
+ * (`F4.345` / ADR 0121: own work, drawn with the anatomy kit, fill style).
  */
 export const MIMIC_SYMBOL_LIBRARIES: readonly MimicSymbolLibrary[] = [
   {
@@ -120,6 +122,16 @@ export const MIMIC_SYMBOL_LIBRARIES: readonly MimicSymbolLibrary[] = [
     style: "stroke",
     sortOrder: 70,
   },
+  {
+    code: "iso",
+    label: "Isometric",
+    source: "Own work: scripts/mimic-symbols/sources/iso",
+    version: "1",
+    licence: "Own work; anatomy kit MIT",
+    attributionUrl: "https://github.com/wheresryan22/anatomy",
+    style: "fill",
+    sortOrder: 80,
+  },
 ];
 
 /** One library symbol as the palette lists it. */
@@ -143,6 +155,7 @@ const ENTRIES: Readonly<Record<Exclude<LibraryCode, "core">, readonly MimicLibra
   qet: entriesOf(QET_SYMBOL_KEYS, QET_SYMBOL_META),
   wmpid: entriesOf(WMPID_SYMBOL_KEYS, WMPID_SYMBOL_META),
   drawio: entriesOf(DRAWIO_SYMBOL_KEYS, DRAWIO_SYMBOL_META),
+  iso: entriesOf(ISO_SYMBOL_KEYS, ISO_SYMBOL_META),
 };
 
 const LABELS: ReadonlyMap<string, string> = new Map(
@@ -186,6 +199,7 @@ export function symbolLibraryLabel(key: string): string | null {
 }
 
 export * from "./drawio.generated";
+export * from "./iso.generated";
 export * from "./lucide.generated";
 export * from "./mdi.generated";
 export * from "./qet.generated";

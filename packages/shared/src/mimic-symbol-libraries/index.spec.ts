@@ -30,13 +30,23 @@ export function libraryOfSymbolReadsThePrefix(): void {
 
 /** The registry holds every contract code, in contract order, with the decision 4 and ADR 0086
  * decision 9 styles. */
-export function registryIsTheSevenLibrariesWithTheirStyles(): void {
+export function registryIsTheEightLibrariesWithTheirStyles(): void {
   const codes = MIMIC_SYMBOL_LIBRARIES.map((l) => l.code);
   assert(JSON.stringify(codes) === JSON.stringify(mimicSymbolLibraryCodeSchema.options), `codes: ${JSON.stringify(codes)}`);
   const styles = MIMIC_SYMBOL_LIBRARIES.map((l) => l.style);
-  assert(JSON.stringify(styles) === JSON.stringify(["stroke", "stroke", "stroke", "fill", "stroke", "stroke", "stroke"]), `styles: ${JSON.stringify(styles)}`);
+  assert(JSON.stringify(styles) === JSON.stringify(["stroke", "stroke", "stroke", "fill", "stroke", "stroke", "stroke", "fill"]), `styles: ${JSON.stringify(styles)}`);
   assert(mimicSymbolLibrary("mdi").licence === "Apache 2.0", "mdi licence");
   assert(mimicSymbolLibrary("lucide").licence === "ISC and MIT", "lucide licence");
+  assert(mimicSymbolLibrary("iso").licence === "Own work; anatomy kit MIT", "iso licence");
+}
+
+/** `F4.345` / ADR 0121 — the isometric library: 50 entries, labels from the curation (plan R1:
+ * "Storage tank", not the derived "Tank"), keys answered by their library. Mutation: drop the
+ * `item.label` override in `generate.mjs` and regenerate → the label claim reddens. */
+export function isoLibraryHasFiftyCuratedEntries(): void {
+  assert(librarySymbolEntries("iso").length === 50, `iso entries: ${librarySymbolEntries("iso").length}`);
+  assert(symbolLibraryLabel("iso:tank") === "Storage tank", `iso:tank label: ${symbolLibraryLabel("iso:tank")}`);
+  assert(libraryOfSymbol("iso:pump") === "iso", `iso:pump → ${libraryOfSymbol("iso:pump")}`);
 }
 
 /** F3.32f: a prefix is a library when the registry holds it (ADR 0086 decision 9). Mutation:

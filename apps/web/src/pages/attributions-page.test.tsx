@@ -13,7 +13,7 @@ import {
   lucideSourceLinkOpensSafely,
   mdiShowsItsNotice,
   aLazyNoticeLoadsAndNoAlertShows,
-  sevenEntriesRender,
+  eightEntriesRender,
   theCatalogIsReadUnscoped,
   theHeadingRenders,
   theOrgSectionIsNotAGlobalEntry,
@@ -33,8 +33,8 @@ describe("F3.32f the attributions page", () => {
   it("T1 renders the Attributions heading", async () => {
     await theHeadingRenders();
   });
-  it("T2 renders seven entries", async () => {
-    await sevenEntriesRender();
+  it("T2 renders eight entries", async () => {
+    await eightEntriesRender();
   });
   it("T3 Lucide shows its version and licence", async () => {
     await lucideShowsItsVersionAndLicence();

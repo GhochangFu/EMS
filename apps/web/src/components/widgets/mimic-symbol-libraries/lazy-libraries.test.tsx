@@ -8,13 +8,14 @@ import {
   aLazyKeyHasShapesOnlyAfterItsLoad,
   aLazyNoticeArrivesWithItsLoad,
   aLoadReadsOnlyTheLibrariesAskedFor,
+  anIsoKeyHasFillShapesOnlyAfterItsLoad,
   aStaleLazyKeyDrawsTheFallbackAfterTheLoad,
   aStaticKeyNeedsNoLoad,
   everyNonCoreLibraryHasANoticeAfterTheLoad,
 } from "./lazy-libraries.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014); jsdom opts in here (ADR 0042). */
-describe("F3.32h the qet, wmpid and drawio libraries load on first use", () => {
+describe("F3.32h, F4.345 the qet, wmpid, drawio and iso libraries load on first use", () => {
   afterEach(() => {
     cleanup();
     vi.doUnmock("./qet.generated");
@@ -22,6 +23,9 @@ describe("F3.32h the qet, wmpid and drawio libraries load on first use", () => {
 
   it("L1 a lazy key has shapes only after its load", async () => {
     await aLazyKeyHasShapesOnlyAfterItsLoad();
+  });
+  it("L1b an iso key has fill shapes only after its load", async () => {
+    await anIsoKeyHasFillShapesOnlyAfterItsLoad();
   });
   it("L2 a load reads only the libraries asked for", async () => {
     await aLoadReadsOnlyTheLibrariesAskedFor();

@@ -9,8 +9,8 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
 const WEB_DIR = "apps/web/src/components/widgets/mimic-symbol-libraries";
 
-/** Every library with a generated web shapes module: 0090's three and 0092's three. */
-const PREFIXES = ["TABLER", "LUCIDE", "MDI", "QET", "WMPID", "DRAWIO"] as const;
+/** Every library with a generated web shapes module: 0090's three, 0092's three and 0136's iso. */
+const PREFIXES = ["TABLER", "LUCIDE", "MDI", "QET", "WMPID", "DRAWIO", "ISO"] as const;
 
 const BOX_MIN = -1;
 const BOX_MAX = 25;

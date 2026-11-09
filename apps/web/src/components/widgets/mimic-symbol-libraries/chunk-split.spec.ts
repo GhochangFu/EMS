@@ -27,7 +27,7 @@ export function staticSpecifiers(text: string): string[] {
 /** Whether `specifier` names a lazy module: a lazy library's shapes or credits, or `credits`. */
 export function namesALazyModule(specifier: string): boolean {
   return (
-    /(^|\/)(qet|wmpid|drawio)(\.credits)?\.generated$/.test(specifier) ||
+    /(^|\/)(qet|wmpid|drawio|iso)(\.credits)?\.generated$/.test(specifier) ||
     /(^|\/)mimic-symbol-libraries\/credits$/.test(specifier) ||
     specifier === "./credits"
   );
@@ -50,6 +50,9 @@ export function theScanRecognisesEveryForm(): void {
   expect(lazy('import {\n  DRAWIO_SHAPES,\n} from "./drawio.generated";')).toBe(true);
   expect(lazy('import type { MimicSymbolCredit } from "./credits";')).toBe(false);
   expect(lazy('import { TABLER_SHAPES } from "./tabler.generated";')).toBe(false);
+  // F4.345: the isometric shapes are lazy; its level boxes (five numbers) are imported statically.
+  expect(lazy('import { ISO_SHAPES } from "./iso.generated";')).toBe(true);
+  expect(lazy('import { ISO_LEVEL_BOXES } from "./iso.level-boxes.generated";')).toBe(false);
 }
 
 /** C2 — no production module statically imports a lazy module, except `credits.ts` its own credits. */
@@ -70,7 +73,7 @@ export function noModuleStaticallyImportsALazyModule(): void {
 /** C3 — the store reaches each lazy module through a dynamic `import()`. */
 export function theStoreImportsEachLazyModuleDynamically(): void {
   const store = sources().find(([rel]) => rel === STORE_MODULE)?.[1] ?? "";
-  for (const specifier of ["./qet.generated", "./wmpid.generated", "./drawio.generated", "./credits"]) {
+  for (const specifier of ["./qet.generated", "./wmpid.generated", "./drawio.generated", "./iso.generated", "./credits"]) {
     expect(store, specifier).toContain(`import("${specifier}")`);
   }
 }

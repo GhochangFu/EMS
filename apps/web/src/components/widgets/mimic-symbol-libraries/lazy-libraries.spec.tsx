@@ -34,6 +34,17 @@ export async function aLazyKeyHasShapesOnlyAfterItsLoad(): Promise<void> {
   expect(store.lazyLibraryState(key)).toBe("loaded");
 }
 
+/** L1b — `F4.345`: an `iso` key has no shapes before its library loads, and fill-style shapes after. */
+export async function anIsoKeyHasFillShapesOnlyAfterItsLoad(): Promise<void> {
+  const store = await freshStore();
+  expect(store.librarySymbolShapes("iso:tank")).toBeNull();
+  expect(store.lazyLibraryState("iso:tank")).toBe("loading");
+  await store.ensureLibraryShapes(["iso"]);
+  expect(store.librarySymbolShapes("iso:tank")?.shapes.length ?? 0).toBeGreaterThan(0);
+  expect(store.librarySymbolShapes("iso:tank")?.style).toBe("fill");
+  expect(store.lazyLibraryState("iso:tank")).toBe("loaded");
+}
+
 /** L2 — a load reads only the libraries asked for: loading `qet` leaves `wmpid` unloaded. */
 export async function aLoadReadsOnlyTheLibrariesAskedFor(): Promise<void> {
   const store = await freshStore();
@@ -66,7 +77,7 @@ export async function everyNonCoreLibraryHasANoticeAfterTheLoad(): Promise<void>
   const store = await freshStore();
   await store.ensureLibraryShapes(store.LAZY_MIMIC_LIBRARY_CODES);
   const codes = MIMIC_SYMBOL_LIBRARIES.map((l) => l.code).filter((c): c is Exclude<MimicSymbolLibraryCode, "core"> => c !== "core");
-  expect(codes.length).toBe(6);
+  expect(codes.length).toBe(7);
   for (const code of codes) expect(store.mimicLibraryNotice(code)?.length ?? 0, code).toBeGreaterThan(0);
 }
 

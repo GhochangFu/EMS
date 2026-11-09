@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { DRAWIO_SYMBOL_KEYS } from "../mimic-symbol-libraries/drawio.generated";
+import { ISO_SYMBOL_KEYS } from "../mimic-symbol-libraries/iso.generated";
 import { LUCIDE_SYMBOL_KEYS } from "../mimic-symbol-libraries/lucide.generated";
 import { MDI_SYMBOL_KEYS } from "../mimic-symbol-libraries/mdi.generated";
 import { QET_SYMBOL_KEYS } from "../mimic-symbol-libraries/qet.generated";
@@ -96,10 +97,12 @@ export const mimicCoreSymbolSchema = z.enum([
 
 /**
  * `F3.32e` / ADR 0084 decision 4 — the four preloaded symbol libraries, then (`F3.32f` / ADR 0086
- * decision 9) QElectroTech, Wikimedia Commons P&ID and draw.io, in palette order. The rows of
- * `bms.mimic_symbol_libraries` restate them: migration `0090` the first four, `0092` the other three.
+ * decision 9) QElectroTech, Wikimedia Commons P&ID and draw.io, then (`F4.345` / ADR 0121) the
+ * built-in isometric set, in palette order — appended, never reordered. The rows of
+ * `bms.mimic_symbol_libraries` restate them: migration `0090` the first four, `0092` the next
+ * three, `0136` the isometric library.
  */
-export const mimicSymbolLibraryCodeSchema = z.enum(["core", "tabler", "lucide", "mdi", "qet", "wmpid", "drawio"]);
+export const mimicSymbolLibraryCodeSchema = z.enum(["core", "tabler", "lucide", "mdi", "qet", "wmpid", "drawio", "iso"]);
 
 /**
  * The eight palette groups (ADR 0082 decision 2), in order. `mimic_symbols_group_code_check`
@@ -136,6 +139,7 @@ export const mimicStaticSymbolSchema = z.enum(
     ...QET_SYMBOL_KEYS,
     ...WMPID_SYMBOL_KEYS,
     ...DRAWIO_SYMBOL_KEYS,
+    ...ISO_SYMBOL_KEYS,
   ],
   { errorMap: () => ({ message: "Unknown mimic symbol" }) },
 );

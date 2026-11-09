@@ -35,7 +35,7 @@ import {
 } from "./mimic-scene.spec";
 import { LAZY_MIMIC_LIBRARY_CODES, ensureLibraryShapes } from "./mimic-symbol-libraries";
 
-// `F3.32h`: `qet`, `wmpid` and `drawio` load on first use; these claims read them synchronously.
+// `F3.32h`, `F4.345`: the lazy libraries (`qet`, `wmpid`, `drawio`, `iso`) load on first use; these claims read them synchronously.
 beforeAll(() => ensureLibraryShapes(LAZY_MIMIC_LIBRARY_CODES));
 
 /**
