@@ -383,11 +383,11 @@ function BatteryStringCard({
         </div>
         <div className="flex flex-wrap gap-2">
           {string.state.matchedRule ? (
-            <span className="surface-pill rounded-full border border-warning-line bg-warning-wash-strong px-2 py-0.5 text-[11px] font-semibold text-warning-ink">
+            <span className="surface-pill rounded-full border border-warning-line bg-warning-wash-strong px-2 py-0.5 text-2xs font-semibold text-warning-ink">
               {string.state.matchedRule.name}
             </span>
           ) : null}
-          <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(string.state.status)}`}>
+          <span className={`surface-pill rounded-full border px-2 py-0.5 text-2xs font-semibold ${statusPillClass(string.state.status)}`}>
             {statusLabel(string.state.status)}
           </span>
         </div>
@@ -419,8 +419,8 @@ function BatteryStringCard({
                 : `Cell #${cell.index} · ${cell.voltage.toFixed(2)} V · ${cell.temperature.toFixed(1)} C`
             }
           >
-            <div className="font-mono text-[10px]">#{cell.index}</div>
-            <div className="font-mono text-[10px] font-semibold">
+            <div className="font-mono text-3xs">#{cell.index}</div>
+            <div className="font-mono text-3xs font-semibold">
               {string.state.stale ? STALE_VALUE : `${cell.voltage.toFixed(2)}V`}
             </div>
           </div>

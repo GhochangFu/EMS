@@ -80,7 +80,7 @@ export function SegmentView({ data, onPoint }: Props) {
           pointCode={point.code}
         />
         {data.trimmed ? (
-          <p className="mt-2 text-[11px] text-ink-muted">
+          <p className="mt-2 text-2xs text-ink-muted">
             {`The chart draws the top ${SEGMENT_VIEW_SERIES_MAX} assets by mean.`}
           </p>
         ) : null}

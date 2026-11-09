@@ -20,7 +20,7 @@ export function CostByDayFields({ row, onChange }: CostByDayFieldsProps) {
   const valid = rowWithCostDays(text) !== null;
   return (
     <div className="space-y-2">
-      <label className="block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+      <label className="block text-2xs font-semibold uppercase tracking-wide text-ink-muted">
         Days read
         <input
           type="text"
@@ -34,8 +34,8 @@ export function CostByDayFields({ row, onChange }: CostByDayFieldsProps) {
           className="surface-field mt-1 w-full px-2 py-1.5 text-xs font-normal normal-case"
         />
       </label>
-      {valid ? null : <p className="text-[11px] text-critical-ink">{COST_DAYS_MESSAGE}</p>}
-      <p className="text-[11px] text-ink-muted">
+      {valid ? null : <p className="text-2xs text-critical-ink">{COST_DAYS_MESSAGE}</p>}
+      <p className="text-2xs text-ink-muted">
         One bar per local day: each hour&apos;s energy priced at the rate in force in that hour. Viewers switch between 7,
         30 and 90 days (up to the days read); the total under the chart is the sum of the bars shown.
       </p>

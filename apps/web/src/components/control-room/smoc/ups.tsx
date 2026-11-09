@@ -313,7 +313,7 @@ export function ControlRoomUpsContent() {
             onClick={() => setTab(unit.code)}
           >
             {unit.label} · {unit.capacityKva} kVA
-            <span className={`ml-2 surface-pill rounded-full border px-2 py-0.5 text-[10px] ${statusPillClass(unit.state.status)}`}>
+            <span className={`ml-2 surface-pill rounded-full border px-2 py-0.5 text-3xs ${statusPillClass(unit.state.status)}`}>
               {statusLabel(unit.state.status)}
             </span>
           </button>
@@ -399,7 +399,7 @@ function CombinedSummary({
                 <td className="px-4 py-3">{n(freshValue(unit.slice.backupMin, unit.state.stale), 0)} min</td>
                 <td className="px-4 py-3">{n(freshValue(unit.slice.healthPct, unit.state.stale), 0)}%</td>
                 <td className="px-4 py-3">
-                  <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
+                  <span className={`surface-pill rounded-full border px-2 py-0.5 text-2xs font-semibold ${statusPillClass(unit.state.status)}`}>
                     {statusLabel(unit.state.status)}
                   </span>
                 </td>
@@ -481,13 +481,13 @@ function UnitDetail({
             <p className="text-xs text-ink-muted">Live load snapshot · simulator window</p>
           </div>
           {unit.state.matchedRule ? (
-            <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
+            <span className={`surface-pill rounded-full border px-2 py-0.5 text-2xs font-semibold ${statusPillClass(unit.state.status)}`}>
               {unit.state.matchedRule.name}
             </span>
           ) : null}
         </div>
         <div className="mt-4 h-28 rounded bg-gradient-to-r from-accent/10 via-accent/40 to-warning/50" />
-        <p className="mt-2 text-center font-mono text-[10px] text-ink-muted">
+        <p className="mt-2 text-center font-mono text-3xs text-ink-muted">
           Load trend placeholder uses live current value until historical charting is promoted.
         </p>
       </section>
@@ -535,7 +535,7 @@ function UpsBlockDiagram({
       <Block x={670} y={80} w={100} title="STATIC SW" sub={<StaticTspan kind="simulated">NORMAL</StaticTspan>} status={status} />
       <Flow x1={770} y1={110} x2={810} y2={110} colorClass={lineStroke} />
       <Block x={810} y={80} w={80} title="LOAD" sub={`${n(freshValue(slice.loadPct, dark), 0)}%`} status={status} />
-      <text x="450" y="40" textAnchor="middle" className="fill-ink-hint font-mono text-[10px]">BYPASS LINE (auto)</text>
+      <text x="450" y="40" textAnchor="middle" className="fill-ink-hint font-mono text-3xs">BYPASS LINE (auto)</text>
       <line x1="74" y1="60" x2="850" y2="60" className="stroke-ink-hint" strokeWidth={1.4} strokeDasharray="5 5" />
     </svg>
   );
@@ -559,8 +559,8 @@ function Block({
   return (
     <g>
       <rect x={x} y={y} width={w} height={58} rx={6} className={boxClass(status)} />
-      <text x={x + w / 2} y={y + 24} textAnchor="middle" className="fill-ink font-condensed text-[13px] font-bold">{title}</text>
-      <text x={x + w / 2} y={y + 42} textAnchor="middle" className="fill-ink-muted font-mono text-[10px]">{sub}</text>
+      <text x={x + w / 2} y={y + 24} textAnchor="middle" className="fill-ink font-condensed text-xs font-bold">{title}</text>
+      <text x={x + w / 2} y={y + 42} textAnchor="middle" className="fill-ink-muted font-mono text-3xs">{sub}</text>
     </g>
   );
 }

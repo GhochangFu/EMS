@@ -38,7 +38,7 @@ export function ChartPointColorSelect({
         disabled={disabled}
         value={value}
         onChange={(event) => onChange(event.target.value as SeriesRole | "")}
-        className="surface-field px-1 py-0.5 text-[11px] disabled:opacity-60"
+        className="surface-field px-1 py-0.5 text-2xs disabled:opacity-60"
       >
         {CHART_COLOR_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>

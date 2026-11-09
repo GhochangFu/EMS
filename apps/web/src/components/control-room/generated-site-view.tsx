@@ -94,7 +94,7 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
         />
       </div>
       {location?.scopeLabel === "partial" ? (
-        <p className="text-[11px] text-ink-muted">
+        <p className="text-2xs text-ink-muted">
           Partial scope: these figures and panels cover only the assets in your asset groups.
         </p>
       ) : null}

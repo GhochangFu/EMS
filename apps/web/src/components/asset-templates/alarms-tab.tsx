@@ -162,7 +162,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
           disabled and is owed a limit, and that saving this tab moves nothing
           already live — decision 1's republish semantics, which is the single
           most likely misreading now that a link between the two exists. */}
-      <p className="rounded border border-warning-line bg-warning-wash p-3 text-[11px] text-warning-ink">
+      <p className="rounded border border-warning-line bg-warning-wash p-3 text-2xs text-warning-ink">
         These are the thresholds this asset class ships with, and the knowledge behind each one.
         <strong> Instantiating a published version creates one automation rule per alarm per
         asset</strong> — a row with a threshold arms at once, and a row without one is created
@@ -341,7 +341,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
                 rowProblems.some((problem) => PHILOSOPHY_FIELDS.includes(problem.field))
               }
             >
-              <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+              <summary className="cursor-pointer text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                 Alarm philosophy
                 {rowProblems.some((problem) => PHILOSOPHY_FIELDS.includes(problem.field)) ? (
                   <span className="ml-2 font-normal text-critical-ink">needs attention</span>
@@ -430,7 +430,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
           >
             {saveM.isPending ? "Saving…" : "Save alarms"}
           </button>
-          <span className="text-[11px] text-ink-muted">
+          <span className="text-2xs text-ink-muted">
             {!vocabQ.isSuccess
               ? "Loading the severity, category and skill vocabularies…"
               : blockedKeys.length > 0

@@ -174,13 +174,13 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
   return (
     <section className="surface-raised-sm space-y-3 p-3">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+        <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
           {WIDGET_CATALOG[row.widgetType].label}
         </span>
         <button
           type="button"
           onClick={onRemove}
-          className="surface-button border-critical-line px-2 py-0.5 text-[11px] text-critical-ink"
+          className="surface-button border-critical-line px-2 py-0.5 text-2xs text-critical-ink"
         >
           Remove
         </button>
@@ -489,7 +489,7 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
             ))}
           </select>
           {tabs.length === 0 ? (
-            <p className="mt-1 text-[11px] text-ink-muted">This dashboard has no tabs yet, so there is nothing to link to.</p>
+            <p className="mt-1 text-2xs text-ink-muted">This dashboard has no tabs yet, so there is nothing to link to.</p>
           ) : null}
         </Field>
       ) : null}
@@ -560,7 +560,7 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
                         thresholds: row.config.thresholds.filter((_, position) => position !== index),
                       })
                     }
-                    className="surface-button border-critical-line px-2 py-0.5 text-[11px] text-critical-ink"
+                    className="surface-button border-critical-line px-2 py-0.5 text-2xs text-critical-ink"
                   >
                     Remove
                   </button>
@@ -571,7 +571,7 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
                 onClick={() =>
                   updateConfig({ thresholds: [...row.config.thresholds, { value: "", tone: "ok" }] })
                 }
-                className="surface-button px-2 py-1 text-[11px]"
+                className="surface-button px-2 py-1 text-2xs"
               >
                 Add a threshold band
               </button>
@@ -840,7 +840,7 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
       {row.widgetType === "chart" && row.points.length > 0 ? (
         <div className="space-y-1">
           {/* `F4.325` — an hourly kind (heatmap, matrix) draws one scale, coloured by `colors[0]`. */}
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+          <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
             {chartReadsHours(row.config.series) ? "Scale colour" : "Point colours"}
           </span>
           <ul className="space-y-1">
@@ -898,7 +898,7 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
             />
           ) : null}
           {showsValueTileSecondMetricNote(row.widgetType, row.sources.length) ? (
-            <p className="mt-1 text-[11px] text-ink-muted">{VALUE_TILE_SECOND_METRIC_NOTE}</p>
+            <p className="mt-1 text-2xs text-ink-muted">{VALUE_TILE_SECOND_METRIC_NOTE}</p>
           ) : null}
           {/*
             The column picker (ADR 0048 decision 2), shown only once a dataset is actually

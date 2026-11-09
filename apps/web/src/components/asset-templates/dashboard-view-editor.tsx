@@ -84,7 +84,7 @@ function DashboardViewEditor({
         <Field label="Featured points" error={problemFor("featured")}>
           <div className="space-y-1">
             {view.featured.length === 0 ? (
-              <p className="text-[11px] text-ink-muted">
+              <p className="text-2xs text-ink-muted">
                 No points featured yet — a view needs at least one.
               </p>
             ) : null}
@@ -141,7 +141,7 @@ function DashboardViewEditor({
       </section>
 
       <section className="space-y-3">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+        <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
           Widgets
         </span>
         {view.widgets.length === 0 ? (
@@ -178,7 +178,7 @@ function DashboardViewEditor({
           </div>
         ) : null}
         {problemFor("widgets") ? (
-          <p className="text-[11px] text-critical-ink">{problemFor("widgets")}</p>
+          <p className="text-2xs text-critical-ink">{problemFor("widgets")}</p>
         ) : null}
       </section>
     </div>

@@ -23,7 +23,7 @@ const DOT_TONE_CLASS: Record<NonNullable<SiteWidgetTab["status"]>["tone"], strin
  */
 export function TabStatusMarker({ status }: { status: SiteWidgetTab["status"] }) {
   return (
-    <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-medium text-ink-muted">
+    <span className="ml-2 inline-flex items-center gap-1 text-2xs font-medium text-ink-muted">
       <span
         aria-hidden="true"
         data-tab-marker-dot

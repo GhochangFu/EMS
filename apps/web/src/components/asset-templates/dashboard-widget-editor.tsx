@@ -42,7 +42,7 @@ function WidgetEditor({
   return (
     <section className="surface-raised-sm p-3">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+        <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
           {WIDGET_TYPE_LABELS[widget.widgetType]}
         </span>
         {editable ? (

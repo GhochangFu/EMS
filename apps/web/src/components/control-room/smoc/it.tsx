@@ -245,7 +245,7 @@ export function ControlRoomItContent() {
                   <td className="px-3 py-2">{server.type}</td>
                   <td className="px-3 py-2 text-right font-mono">{server.watts}</td>
                   <td className="px-3 py-2">
-                    <span className="surface-pill rounded-full border border-ok/20 bg-ok/10 px-2 py-0.5 text-[11px] font-semibold text-ok-strong">
+                    <span className="surface-pill rounded-full border border-ok/20 bg-ok/10 px-2 py-0.5 text-2xs font-semibold text-ok-strong">
                       ON
                     </span>
                   </td>
@@ -531,10 +531,10 @@ function MapBox({
   return (
     <g>
       <rect x={x} y={y} width={w} height={h} rx={6} className={classes.rect} strokeWidth={1.5} />
-      <text x={x + w / 2} y={y + h / 2 - 2} textAnchor="middle" className={`${classes.text} font-condensed text-[12px] font-bold`}>
+      <text x={x + w / 2} y={y + h / 2 - 2} textAnchor="middle" className={`${classes.text} font-condensed text-xs font-bold`}>
         {title}
       </text>
-      <text x={x + w / 2} y={y + h / 2 + 13} textAnchor="middle" className={`${classes.sub} font-mono text-[9px]`}>
+      <text fontSize={9} x={x + w / 2} y={y + h / 2 + 13} textAnchor="middle" className={`${classes.sub} font-mono `}>
         {sub} · {statusLabel(status).toUpperCase()}
       </text>
     </g>
@@ -556,7 +556,7 @@ function PduBadge({
     <div className="surface-pressed p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="font-semibold text-ink">{label}</span>
-        <span className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(status.status)}`}>
+        <span className={`surface-pill rounded-full border px-2 py-0.5 text-2xs font-semibold ${statusPillClass(status.status)}`}>
           {statusLabel(status.status)}
         </span>
       </div>

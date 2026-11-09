@@ -167,10 +167,10 @@ export function SiteAssetsView({ locationId, siteName }: SiteAssetsViewProps) {
     <>
       {location ? (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded bg-canvas px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-neutral-ink">
+          <span className="rounded bg-canvas px-2.5 py-1 text-3xs font-bold uppercase tracking-wide text-neutral-ink">
             {location.organization.code}
           </span>
-          <span className="rounded bg-well-deep px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+          <span className="rounded bg-well-deep px-2.5 py-1 text-3xs font-semibold uppercase tracking-wide text-ink-muted">
             {location.typeLabel}
           </span>
         </div>
@@ -265,7 +265,7 @@ export function SiteAssetsView({ locationId, siteName }: SiteAssetsViewProps) {
                     className="surface-raised p-3"
                   >
                     <div className="font-semibold text-ink">{rtu.displayName}</div>
-                    <div className="mt-1 text-[11px] uppercase tracking-wide text-ink-muted">
+                    <div className="mt-1 text-2xs uppercase tracking-wide text-ink-muted">
                       {rtu.sourceType}
                       {rtu.domain ? ` · ${rtu.domain}` : ""}
                       {rtu.ingestEnabled ? " · ingest on" : ""}
@@ -362,7 +362,7 @@ export function SiteAssetsView({ locationId, siteName }: SiteAssetsViewProps) {
                             <AssetHistoryLink assetId={asset.id} code={asset.code} />
                           </div>
                           <AssetWhere code={asset.code} rtuName={asset.rtuDisplayName} locationName={siteName} />
-                          <div className="mt-1 text-[11px] uppercase tracking-wide text-ink-muted">
+                          <div className="mt-1 text-2xs uppercase tracking-wide text-ink-muted">
                             {asset.domain}
                           </div>
                           <AssetImagesToggleButton
@@ -384,7 +384,7 @@ export function SiteAssetsView({ locationId, siteName }: SiteAssetsViewProps) {
                               {asset.telemetry.slice(0, 5).map((sample) => (
                                 <span
                                   key={sample.pointKey}
-                                  className="surface-pressed-sm px-2 py-1 font-mono text-[11px] text-ink"
+                                  className="surface-pressed-sm px-2 py-1 font-mono text-2xs text-ink"
                                   title={`${sample.pointKey} @ ${formatTime(sample.time)}`}
                                 >
                                   <span className="font-sans text-ink-muted">
@@ -401,7 +401,7 @@ export function SiteAssetsView({ locationId, siteName }: SiteAssetsViewProps) {
                             label={freshnessLabel(asset.freshness)}
                             tone={freshnessTone(asset.freshness)}
                           />
-                          <div className="mt-1 font-mono text-[11px] text-ink-muted">
+                          <div className="mt-1 font-mono text-2xs text-ink-muted">
                             {formatTime(asset.latestTelemetryAt)}
                           </div>
                         </td>
@@ -424,7 +424,7 @@ export function SiteAssetsView({ locationId, siteName }: SiteAssetsViewProps) {
                             ) : null}
                           </div>
                           {asset.latestAlarm ? (
-                            <div className="mt-1 max-w-[320px] truncate text-[11px] text-ink-muted">
+                            <div className="mt-1 max-w-[320px] truncate text-2xs text-ink-muted">
                               {asset.latestAlarm.message}
                             </div>
                           ) : null}

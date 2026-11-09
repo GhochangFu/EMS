@@ -196,10 +196,10 @@ export function CreateTemplateWizard({
           />
         </label>
         {form.content !== undefined ? (
-          <p className="text-[11px] text-ink-muted">{filledNote("Content", form.content)}</p>
+          <p className="text-2xs text-ink-muted">{filledNote("Content", form.content)}</p>
         ) : null}
         {form.points !== undefined ? (
-          <p className="text-[11px] text-ink-muted">{filledNote("Points", form.points)}</p>
+          <p className="text-2xs text-ink-muted">{filledNote("Points", form.points)}</p>
         ) : null}
       </>
     );
@@ -209,7 +209,7 @@ export function CreateTemplateWizard({
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
       <div className="w-full max-w-lg space-y-3 surface-dialog p-4">
         <h2 className="font-condensed text-base font-bold text-ink">New template</h2>
-        <p className="text-[11px] text-ink-muted">
+        <p className="text-2xs text-ink-muted">
           A template is created as a draft at version 1. Points, calculations, KPIs and alarms are
           added on the next screen.
         </p>

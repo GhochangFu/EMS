@@ -459,7 +459,7 @@ export function DashboardCanvas<T extends CanvasTile>({
               type="button"
               aria-label="Move widget"
               title="Drag to move"
-              className="absolute left-1 top-1 z-10 cursor-move touch-none rounded border border-line-strong bg-surface/90 px-1 text-[10px] font-semibold leading-4 text-ink-muted"
+              className="absolute left-1 top-1 z-10 cursor-move touch-none rounded border border-line-strong bg-surface/90 px-1 text-3xs font-semibold leading-4 text-ink-muted"
               onPointerDown={(event) => beginDrag(tile, "move", event)}
               onPointerMove={onHandleMove}
               onPointerUp={endDrag}

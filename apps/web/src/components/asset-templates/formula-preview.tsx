@@ -138,7 +138,7 @@ export function FormulaPreview({ expression, dialect, disabled = false }: Formul
 
   return (
     <div className="mt-2 rounded border border-dashed border-line p-2">
-      <span className="block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+      <span className="block text-2xs font-semibold uppercase tracking-wide text-ink-muted">
         Preview
       </span>
       {keys.length > 0 || crossRefs.length > 0 || paramRefs.length > 0 || windowReads.length > 0 ? (
@@ -218,7 +218,7 @@ type SampleInputProps = {
 function SampleInput({ label, value, disabled, onChange }: SampleInputProps) {
   return (
     <label className="block space-y-0.5">
-      <span className="block text-[11px] text-ink-muted">
+      <span className="block text-2xs text-ink-muted">
         <code className="rounded bg-well-deep px-1">{label}</code>
       </span>
       <input

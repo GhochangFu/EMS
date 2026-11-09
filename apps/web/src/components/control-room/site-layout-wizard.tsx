@@ -167,7 +167,7 @@ export function SiteLayoutWizard({ locationId, siteName }: SiteLayoutWizardProps
           .
         </p>
         {ambiguous === null ? (
-          <p className="text-[11px] text-ink-muted">
+          <p className="text-2xs text-ink-muted">
             Each tab is matched to the site&apos;s asset groups. If more than one group fits a tab, you choose here after
             Submit.
           </p>

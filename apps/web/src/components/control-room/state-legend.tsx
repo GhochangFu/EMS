@@ -74,7 +74,7 @@ export function StateLegend() {
             <span
               key={`${entry.tone}:${entry.label}`}
               title={`${entry.label} (${entry.tone})`}
-              className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[10.5px] font-semibold uppercase text-ink-muted"
+              className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-2xs font-semibold uppercase text-ink-muted"
             >
               <svg viewBox="0 0 24 24" className="h-3 w-3" aria-hidden="true">
                 <BreakerSwitch

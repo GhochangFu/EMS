@@ -38,7 +38,7 @@ export function TemplateTabStrip({ active, onSelect }: TemplateTabStripProps) {
           </button>
         ))}
       </nav>
-      <p className="text-[11px] text-ink-muted">{current.hint}</p>
+      <p className="text-2xs text-ink-muted">{current.hint}</p>
     </div>
   );
 }

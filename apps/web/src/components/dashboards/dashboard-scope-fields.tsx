@@ -193,18 +193,18 @@ export function DashboardScopeFields({
     const asset = assets.find((item) => item.id === value.assetId);
     return (
       <fieldset className="space-y-2">
-        <legend className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Scope</legend>
+        <legend className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">Scope</legend>
         <p className="text-xs text-ink-muted">
           {`Scoped to asset ${asset?.name ?? value.assetId}. An asset-scoped dashboard keeps its scope; edit its widgets here.`}
         </p>
-        {error ? <p className="text-[11px] text-critical-ink">{error}</p> : null}
+        {error ? <p className="text-2xs text-critical-ink">{error}</p> : null}
       </fieldset>
     );
   }
 
   return (
     <fieldset className="space-y-2">
-      <legend className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Scope</legend>
+      <legend className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">Scope</legend>
       <div className="flex flex-wrap gap-4 text-xs">
         {canOrgWide ? (
           <label className="flex items-center gap-1.5">
@@ -331,7 +331,7 @@ export function DashboardScopeFields({
         </Field>
       ) : null}
 
-      {error ? <p className="text-[11px] text-critical-ink">{error}</p> : null}
+      {error ? <p className="text-2xs text-critical-ink">{error}</p> : null}
     </fieldset>
   );
 }
