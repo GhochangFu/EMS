@@ -8,7 +8,9 @@ import {
   refusesALayoutArmWithoutALayoutId,
   refusesAnUnknownSource,
   runDashboardsSchemaMimicSourceShapeTests,
+  theStrictArmsAcceptGlyphSet,
   theStrictArmsAcceptMotion,
+  theStrictArmsRefuseAnUnknownGlyphSet,
   theStrictArmsRefuseANonBooleanMotion,
 } from "./dashboard-writes.mimic.spec";
 
@@ -52,5 +54,14 @@ describe("F4.344 — the strict mimic arms carry the glyph motion switch", () =>
   });
   it("refuse a non-boolean motion at config.motion on both arms", () => {
     theStrictArmsRefuseANonBooleanMotion();
+  });
+});
+
+describe("F4.345 — the strict mimic arms carry the glyph set", () => {
+  it("accept glyphSet iso on the preset and layout arms", () => {
+    theStrictArmsAcceptGlyphSet();
+  });
+  it("refuse an unknown glyphSet at config.glyphSet on both arms", () => {
+    theStrictArmsRefuseAnUnknownGlyphSet();
   });
 });

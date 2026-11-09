@@ -1,8 +1,22 @@
-import { MIMIC_SHAPE_ATTRS, libraryOfSymbol, type MimicCoreSymbol, type MimicOrgSymbolDto, type MimicShape } from "@bms/shared";
+import {
+  MIMIC_SHAPE_ATTRS,
+  libraryOfSymbol,
+  type MimicCoreSymbol,
+  type MimicOrgSymbolDto,
+  type MimicShape,
+} from "@bms/shared";
+import type { MimicGlyphSet } from "@bms/shared/contracts";
 import { createElement, type ReactNode } from "react";
 
-import { MIMIC_GLYPH_FILL_CLASS, MIMIC_GLYPH_MOTION_CLASS, type MimicGlyphKind, type MimicGlyphMotion } from "../../lib/mimic";
+import {
+  MIMIC_GLYPH_FILL_CLASS,
+  MIMIC_GLYPH_MOTION_CLASS,
+  mimicGlyphKindFor,
+  type MimicGlyphKind,
+  type MimicGlyphMotion,
+} from "../../lib/mimic";
 import { lazyLibraryState, librarySymbolShapes } from "./mimic-symbol-libraries";
+import { ISO_LEVEL_BOXES, type MimicLevelBox } from "./mimic-symbol-libraries/iso.level-boxes.generated";
 import { useLazyLibraries } from "./mimic-symbol-libraries/use-lazy-libraries";
 
 /**
@@ -247,9 +261,23 @@ const PATHS: Readonly<Record<MimicCoreSymbol | "alert", ReactNode>> = {
 };
 
 /** The liquid inside `tank`, from `top` down to the curved floor, in the same 24-unit grid. */
-function tankFillPath(fraction: number): string {
+export function tankFillPath(fraction: number): string {
   const top = 18 - fraction * 11;
   return `M4.75 ${top} H19.25 V17.5 c0 1.5 -3.2 2.8 -7.25 2.8 s-7.25 -1.3 -7.25 -2.8 Z`;
+}
+
+const twoPlaces = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * `F4.345` (ADR 0121 decision 6, plan R5) — the liquid inside the isometric tank, from its
+ * generated level box: the back arc of the surface at `fraction` of the way from the floor to the
+ * top, the right side, the front arc of the floor, closed. No `<clipPath>`, so two mimics on one
+ * dashboard share no id; it is painted under the glyph's lines, which cover its edge.
+ */
+export function isoTankLevelPath({ cx, rx, ry, top, bottom }: MimicLevelBox, fraction: number): string {
+  const [left, right] = [twoPlaces(cx - rx), twoPlaces(cx + rx)];
+  const surface = twoPlaces(bottom - fraction * (bottom - top));
+  return `M${left} ${surface}A${rx} ${ry} 0 0 1 ${right} ${surface}L${right} ${bottom}A${rx} ${ry} 0 0 1 ${left} ${bottom}Z`;
 }
 
 /** The glyph's stroke width in its 24-unit grid. */
@@ -344,11 +372,16 @@ type MimicGlyphProps = {
   orgSymbol?: MimicOrgSymbolDto | null;
   /** `F4.344` (ADR 0120): the unit's state motion (`mimicGlyphMotion`); absent or `"none"` is still. */
   motion?: MimicGlyphMotion;
+  /** `F4.345` (ADR 0121 decision 5): the widget's glyph set; `iso` draws a core kind's isometric twin. */
+  glyphSet?: MimicGlyphSet;
 };
 
 /** One illustrated unit symbol, scaled into a `size` square at (`x`, `y`) in viewBox units. */
-export function MimicGlyph({ kind, x, y, size, className, level = null, orgSymbol = null, motion = "none" }: MimicGlyphProps) {
-  // `F3.32h`: a `qet`, `wmpid` or `drawio` key loads its library on first draw and redraws here.
+export function MimicGlyph(props: MimicGlyphProps) {
+  const { x, y, size, className, level = null, orgSymbol = null, motion = "none", glyphSet } = props;
+  // `F4.345` (plan R6): under the `iso` set a core kind draws its twin; every other kind is unchanged.
+  const kind = mimicGlyphKindFor(props.kind, glyphSet) as MimicGlyphKind;
+  // `F3.32h`: a lazy library's key (`qet`, `wmpid`, `drawio`, `iso`) loads it on first draw and redraws here.
   useLazyLibraries([libraryOfSymbol(kind)]);
   const transform = `translate(${x} ${y}) scale(${size / 24})`;
 
@@ -440,6 +473,7 @@ export function MimicGlyph({ kind, x, y, size, className, level = null, orgSymbo
   }
 
   const shapes = library.shapes.map(([tag, attrs], i) => createElement(tag, keyed(shapeProps(attrs), i)));
+  const levelBox = kind === "iso:tank" && level !== null ? ISO_LEVEL_BOXES["iso:tank"] : undefined;
 
   return (
     <g
@@ -452,7 +486,21 @@ export function MimicGlyph({ kind, x, y, size, className, level = null, orgSymbo
       stroke="none"
       className={MIMIC_GLYPH_FILL_CLASS[className] ?? "fill-ink-muted"}
     >
-      {motionWrap(motion, shapes)}
+      {motionWrap(
+        motion,
+        <>
+          {levelBox !== undefined && level !== null ? (
+            <path
+              data-testid="mimic-tank-level"
+              data-level={Math.round(level * 100)}
+              d={isoTankLevelPath(levelBox, level)}
+              stroke="none"
+              className="fill-info/30"
+            />
+          ) : null}
+          {shapes}
+        </>,
+      )}
     </g>
   );
 }

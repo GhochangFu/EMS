@@ -4,6 +4,7 @@ import { MIMIC_HEADLINE_POINTS, mimicCoreSymbolSchema, mimicPresetSchema } from 
 import {
   BREAKER_ROLE_CODES,
   type BreakerState,
+  ISO_SYMBOL_KEYS,
   MIMIC_PRESETS,
   type GeneratedSiteAssetDto,
   type GeneratedSitePointDto,
@@ -26,6 +27,7 @@ import {
   mimicAriaLabel,
   mimicBadge,
   mimicCalloutText,
+  mimicGlyphKindFor,
   mimicGlyphMotion,
   mimicLevelFraction,
   mimicLevelPoint,
@@ -587,5 +589,36 @@ export function motionClassesAreMotionSafeLiterals(): void {
   for (const key of ["blink", "breathe"] as const) {
     expect(MIMIC_GLYPH_MOTION_CLASS[key]).not.toContain("origin-center");
     expect(MIMIC_GLYPH_MOTION_CLASS[key]).not.toContain("[transform-box:fill-box]");
+  }
+}
+
+/**
+ * MG-S1 — `F4.345` (ADR 0121 decision 5): with the `iso` glyph set every core key draws its
+ * isometric twin. Positive control: 29 distinct answers, each an `ISO_SYMBOL_KEYS` member.
+ * Mutation: return `kind` unchanged → this reddens.
+ */
+export function everyCoreKeyDrawsItsIsoTwin(): void {
+  const core = mimicCoreSymbolSchema.options;
+  expect(core).toHaveLength(29);
+  const answers = core.map((k) => mimicGlyphKindFor(k, "iso"));
+  expect(answers).toEqual(core.map((k) => `iso:${k}`));
+  expect(new Set(answers).size).toBe(29);
+  for (const a of answers) expect(ISO_SYMBOL_KEYS as readonly string[]).toContain(a);
+}
+
+/** MG-S2 — `alert`, a library key and an organization key are unchanged under `iso`: nothing
+ * without a twin falls back to the `unit` square. */
+export function aKindWithoutATwinIsUnchanged(): void {
+  expect(mimicGlyphKindFor("alert", "iso")).toBe("alert");
+  expect(mimicGlyphKindFor("mdi:heat-pump", "iso")).toBe("mdi:heat-pump");
+  expect(mimicGlyphKindFor("org.plant:inlet", "iso")).toBe("org.plant:inlet");
+  expect(mimicGlyphKindFor("iso:pump", "iso")).toBe("iso:pump");
+}
+
+/** MG-S3 — with `core` or no glyph set every kind is unchanged (ruling 3: no widget changes). */
+export function coreOrAbsentIsTheIdentity(): void {
+  for (const k of [...mimicCoreSymbolSchema.options, "alert", "mdi:heat-pump", "org.plant:inlet"]) {
+    expect(mimicGlyphKindFor(k, undefined)).toBe(k);
+    expect(mimicGlyphKindFor(k, "core")).toBe(k);
   }
 }

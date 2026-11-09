@@ -719,3 +719,38 @@ export function aMatrixOffersOneScaleColour(): void {
   expect(screen.getAllByRole("combobox", { name: /^Colour of/ })).toHaveLength(1);
   expect(screen.getByRole("combobox", { name: "Colour of the scale" })).not.toBeNull();
 }
+
+const GLYPH_SET = { name: "Glyph set" } as const;
+
+/** `F4.345` (ADR 0121 decision 5) — "Glyph set" shows on both arms with Core and Isometric, Core by default. */
+export function theGlyphSetSelectIsCoreByDefaultOnBothArms(): void {
+  for (const row of [blankDashboardWidgetRow("mimic"), layoutMimicRow()]) {
+    renderInspector(row);
+    const select = screen.getByRole("combobox", GLYPH_SET) as HTMLSelectElement;
+    expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual(["Core", "Isometric"]);
+    expect(select.value).toBe("core");
+    cleanup();
+  }
+}
+
+/** `F4.345` — choosing Isometric writes `mimicGlyphSet: "iso"`; choosing Core writes it unset. */
+export async function choosingIsometricWritesIso(): Promise<void> {
+  const onChange = vi.fn();
+  renderInspector(blankDashboardWidgetRow("mimic"), { onChange });
+  await userEvent.selectOptions(screen.getByRole("combobox", GLYPH_SET), "Isometric");
+  expect(onChange).toHaveBeenLastCalledWith({ config: expect.objectContaining({ mimicGlyphSet: "iso" }) });
+  cleanup();
+  const row = layoutMimicRow();
+  row.config.mimicGlyphSet = "iso";
+  const back = vi.fn();
+  renderInspector(row, { onChange: back });
+  expect((screen.getByRole("combobox", GLYPH_SET) as HTMLSelectElement).value).toBe("iso");
+  await userEvent.selectOptions(screen.getByRole("combobox", GLYPH_SET), "Core");
+  expect(back).toHaveBeenLastCalledWith({ config: expect.objectContaining({ mimicGlyphSet: undefined }) });
+}
+
+/** `F4.345` — a non-mimic row has no Glyph set select. */
+export function aNonMimicRowHasNoGlyphSet(): void {
+  renderInspector(blankDashboardWidgetRow("value_tile"));
+  expect(screen.queryByRole("combobox", GLYPH_SET)).toBeNull();
+}

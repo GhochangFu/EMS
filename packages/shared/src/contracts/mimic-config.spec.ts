@@ -123,3 +123,29 @@ export function motionRefusesANonBoolean(): void {
     assert(!result.success && paths.includes(JSON.stringify(["motion"])), `${arm.source}: motion "off" must be refused at ["motion"], got ${issuesOf(result)}`);
   }
 }
+
+/**
+ * `F4.345` (ADR 0121 decision 5) — `glyphSet` parses on both arms: `"iso"`, `"core"` and absent,
+ * each kept as sent (absent stays absent: ruling 3, no widget changes on deploy).
+ */
+export function glyphSetParsesOnBothArms(): void {
+  for (const arm of [{ source: "preset", preset: "water_train" }, { source: "layout", layoutId: LAYOUT_ID }] as const) {
+    for (const glyphSet of ["iso", "core", undefined] as const) {
+      const input = glyphSet === undefined ? { ...arm } : { ...arm, glyphSet };
+      const result = mimicConfigSchema.safeParse(input);
+      assert(result.success, `${arm.source} with glyphSet ${String(glyphSet)} must parse, got ${issuesOf(result)}`);
+      const parsed = result.success ? (result.data as { glyphSet?: string }) : {};
+      assert(parsed.glyphSet === glyphSet, `${arm.source}: glyphSet ${String(glyphSet)} must be kept, got ${String(parsed.glyphSet)}`);
+      assert(glyphSet !== undefined || !("glyphSet" in parsed), `${arm.source}: an absent glyphSet must stay absent`);
+    }
+  }
+}
+
+/** `F4.345` — `glyphSet` is `core` or `iso` only: `"isometric"` is refused at `["glyphSet"]` on both arms. */
+export function glyphSetRefusesAnUnknownSet(): void {
+  for (const arm of [{ source: "preset", preset: "water_train" }, { source: "layout", layoutId: LAYOUT_ID }]) {
+    const result = mimicConfigSchema.safeParse({ ...arm, glyphSet: "isometric" });
+    const paths = result.success ? [] : result.error.issues.map((i) => JSON.stringify(i.path));
+    assert(!result.success && paths.includes(JSON.stringify(["glyphSet"])), `${arm.source}: glyphSet "isometric" must be refused at ["glyphSet"], got ${issuesOf(result)}`);
+  }
+}

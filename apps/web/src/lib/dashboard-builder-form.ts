@@ -331,6 +331,7 @@ export function configRowFromDto(widget: DashboardWidgetSpec): WidgetConfigRow {
         row.mimicTabKey = widget.config.tabKey;
       }
       if (widget.config.motion === false) row.mimicMotion = false; // F4.344: only a stored `false` is off.
+      if (widget.config.glyphSet === "iso") row.mimicGlyphSet = "iso"; // F4.345: `core` and absent read unset.
       break;
     case "active_alarms_rail":
       // `F3.73` — the same edit-and-resave reason as the arms above: a field `buildActiveAlarmsRailConfig`

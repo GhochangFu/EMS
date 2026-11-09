@@ -257,6 +257,7 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           geometry={widget.config.source === "preset" ? presetGeometry(widget.config.preset) : EMPTY_GEOMETRY}
           nodes={NO_MIMIC_NODES}
           readings={NO_LIVE_READINGS}
+          glyphSet={widget.config.glyphSet}
         />
       );
     // `F3.73` — the five site widgets bind nothing and read one response, which this dispatcher

@@ -63,6 +63,14 @@ const mimicTabKeySchema = dashboardTabKeySchema.describe(
 );
 
 /**
+ * `F4.345` (ADR 0121 decision 5) — the glyph set a mimic widget draws its core-keyed units with:
+ * `core` (the 29 core glyphs) or `iso` (their isometric twins, `iso:<key>`). Absent means `core`,
+ * so no stored widget changes on deploy (ruling 3) and there is no migration.
+ */
+export const mimicGlyphSetSchema = z.enum(["core", "iso"]);
+export type MimicGlyphSet = z.infer<typeof mimicGlyphSetSchema>;
+
+/**
  * The preset arm (`F3.32`, ADR 0079 decision 2). Every field added since v1 is optional, so a
  * stored widget with `source: "preset"` never needs migrating; ADR 0082 only widens the enum, and
  * `F3.74` adds `tabKey` (see `MIMIC_TAB_MESSAGE`) and `compact` (draw labels, switches and pills
@@ -83,6 +91,8 @@ export const mimicPresetConfigSchema = z.object({
   // `F4.344` (ADR 0120 decision 5): the per-widget glyph motion switch. Absent or `true` is on,
   // `false` is off; no migration — every stored widget reads as on.
   motion: z.boolean().optional(),
+  // `F4.345` (ADR 0121 decision 5): the per-widget glyph set; absent is `core`.
+  glyphSet: mimicGlyphSetSchema.optional(),
 });
 
 /**
@@ -105,6 +115,8 @@ export const mimicLayoutConfigSchema = z.object({
   tabKey: mimicTabKeySchema.optional(),
   // `F4.344` (ADR 0120 decision 5): as on the preset arm — absent or `true` is on, `false` off.
   motion: z.boolean().optional(),
+  // `F4.345` (ADR 0121 decision 5): as on the preset arm — absent is `core`.
+  glyphSet: mimicGlyphSetSchema.optional(),
 });
 
 /**

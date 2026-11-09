@@ -1,4 +1,5 @@
 import type { BreakerState, MimicOrgSymbolDto, MimicSymbol } from "@bms/shared";
+import type { MimicGlyphSet } from "@bms/shared/contracts";
 
 import type { MimicGlyphMotion } from "../../lib/mimic";
 import { BREAKER_LOOK_CLASSES, type BreakerLook } from "../../lib/mimic-breaker";
@@ -26,6 +27,8 @@ type BreakerSwitchProps = {
    * glyph) moves as the unit's glyph would; absent is still. Fan-out member rows never pass one.
    */
   readonly motion?: MimicGlyphMotion;
+  /** `F4.345` (ADR 0121 decision 5): the widget's glyph set, for the `unknown` state's plain glyph. */
+  readonly glyphSet?: MimicGlyphSet;
 };
 
 /**
@@ -53,11 +56,21 @@ export function BreakerSwitch({
   plainClass,
   orgSymbol = null,
   motion = "none",
+  glyphSet,
 }: BreakerSwitchProps) {
   if (state === "unknown") {
     return (
       <g data-testid="mimic-breaker-switch" data-breaker-state={state}>
-        <MimicGlyph kind={symbol} x={x} y={y} size={size} className={plainClass} orgSymbol={orgSymbol} motion={motion} />
+        <MimicGlyph
+          kind={symbol}
+          x={x}
+          y={y}
+          size={size}
+          className={plainClass}
+          orgSymbol={orgSymbol}
+          motion={motion}
+          glyphSet={glyphSet}
+        />
       </g>
     );
   }

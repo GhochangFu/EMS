@@ -16,6 +16,7 @@ import {
   staleBeatsAClosedValue,
   staleBeatsFlowing,
   switchboardDoesNotSwitch,
+  isometricBreakerAndIsolatorSwitch,
   tripBeatsClosed,
   trippedOutranksShut,
   valveOneDerivesFlowing,
@@ -102,5 +103,11 @@ describe("F3.74 — the switching symbols and the breaker roles (ADR 0088, plan 
 
   it("lists no flow role as a breaker role", () => {
     noFlowRoleIsABreakerRole();
+  });
+});
+
+describe("F4.345 — the isometric switching symbols (owner ruling 2026-11-09)", () => {
+  it("switches on iso:breaker and iso:isolator, not on iso:switchboard", () => {
+    isometricBreakerAndIsolatorSwitch();
   });
 });

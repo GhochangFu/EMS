@@ -76,6 +76,8 @@ export function MimicWidgetLive({ widget, dashboardId }: MimicWidgetLiveProps) {
       // F4.344 (ADR 0120 decision 5): the live tile is the one place the glyphs move; the
       // widget's switch turns them off. Absent or `true` is on, only `false` is off.
       motion={widget.config.motion !== false}
+      // F4.345 (ADR 0121 decision 5): both arms carry the glyph set; absent is core.
+      glyphSet={widget.config.glyphSet}
     />
   );
 }

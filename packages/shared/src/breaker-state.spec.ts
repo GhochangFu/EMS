@@ -203,3 +203,16 @@ export function noFlowRoleIsABreakerRole(): void {
     assert(!roles.includes(flow), `"${flow}" must not be a breaker role`);
   }
 }
+
+/**
+ * `F4.345` (owner ruling 2026-11-09) — the isometric breaker and isolator switch, so a layout unit
+ * drawn with either shows its breaker state without the "Switches" tick. The isometric switchboard
+ * (a bus, not a switch) does not.
+ */
+export function isometricBreakerAndIsolatorSwitch(): void {
+  for (const key of ["iso:breaker", "iso:isolator"]) {
+    assert(isSwitchingSymbol(key) === true, `isSwitchingSymbol("${key}") — expected true`);
+    assert(symbolLibraryLabel(key) !== null, `${key} must be a declared symbol`);
+  }
+  assert(isSwitchingSymbol("iso:switchboard") === false, `isSwitchingSymbol("iso:switchboard") — expected false`);
+}

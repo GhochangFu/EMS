@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { MimicNodeDto, PointKeyStateMapDto } from "@bms/shared";
+import type { MimicGlyphSet } from "@bms/shared/contracts";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import type { MimicGeometry } from "../../lib/mimic-geometry";
@@ -31,6 +32,8 @@ type MimicWidgetProps = {
    * Expand dialog alike. Off by default; only `MimicWidgetLive` turns it on.
    */
   motion?: boolean;
+  /** `F4.345` (ADR 0121 decision 5) — the widget's glyph set, on the tile and in the Expand dialog alike. */
+  glyphSet?: MimicGlyphSet;
 };
 
 /**
@@ -76,6 +79,7 @@ export function MimicWidget({
   compact,
   expandable = false,
   motion = false,
+  glyphSet,
 }: MimicWidgetProps) {
   const [open, setOpen] = useState(false);
   const expandRef = useRef<HTMLButtonElement>(null);
@@ -120,6 +124,7 @@ export function MimicWidget({
             stateMaps={stateMaps}
             compact={compact}
             motion={motion}
+            glyphSet={glyphSet}
           />
         </div>
       </div>
@@ -133,6 +138,7 @@ export function MimicWidget({
             readings={readings}
             stateMaps={stateMaps}
             motion={motion}
+            glyphSet={glyphSet}
           />
         </MimicExpandDialog>
       ) : null}

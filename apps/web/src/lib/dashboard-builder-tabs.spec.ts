@@ -451,3 +451,45 @@ export function runMimicMotionRoundTripTests(): void {
   const on = dashboardRowsFromDto(dtoWith({ source: "preset", preset: "lv_single_line" }))[0]!;
   assert(on.config.mimicMotion === undefined, `a stored widget without motion reads undefined — got ${JSON.stringify(on.config)}`);
 }
+
+/**
+ * `F4.345` (ADR 0121 decision 5, plan R7) — the glyph set round-trips: a row with
+ * `mimicGlyphSet: "iso"` writes `glyphSet: "iso"` on both arms; `"core"` and absent write nothing
+ * (ruling 3: an edit-and-resave of a core widget stays byte-identical); a stored `glyphSet: "iso"`
+ * reads back as `"iso"` on both arms, and a stored `"core"` or none reads `undefined`.
+ * Mutation: drop the layout arm's spread => red.
+ */
+export function runMimicGlyphSetRoundTripTests(): void {
+  const configOf = (row: ReturnType<typeof mimicOnOverview>): Record<string, unknown> =>
+    buildPutWidgetsPayload([row], []).widgets[0]!.config as Record<string, unknown>;
+  const preset = mimicOnOverview("electrical");
+  preset.config.mimicGlyphSet = "iso";
+  assert(configOf(preset).glyphSet === "iso", `the preset arm writes glyphSet iso — got ${JSON.stringify(configOf(preset))}`);
+  const layout = mimicOnOverview("electrical");
+  layout.config.mimicSource = "layout";
+  layout.config.mimicLayoutId = "77777777-7777-4777-8777-777777777777";
+  layout.config.mimicGlyphSet = "iso";
+  assert(configOf(layout).glyphSet === "iso", `the layout arm writes glyphSet iso — got ${JSON.stringify(configOf(layout))}`);
+  for (const value of ["core", undefined] as const) {
+    for (const row of [mimicOnOverview("electrical"), layout]) {
+      row.config.mimicGlyphSet = value;
+      assert(!("glyphSet" in configOf(row)), `glyphSet ${String(value)} is written absent — got ${JSON.stringify(configOf(row))}`);
+    }
+  }
+
+  const dtoWith = (config: Record<string, unknown>) =>
+    ({
+      tabs: [{ id: "t1", key: "overview", label: "Overview", sortOrder: 0, assetGroupId: null }],
+      widgets: [
+        { id: "w1", tabId: "t1", widgetType: "mimic", title: null, gridX: 0, gridY: 0, gridW: 12, gridH: 6, points: [], sources: [], config },
+      ],
+    }) as unknown as Parameters<typeof dashboardRowsFromDto>[0];
+  const isoLayout = dashboardRowsFromDto(dtoWith({ source: "layout", layoutId: "77777777-7777-4777-8777-777777777777", glyphSet: "iso" }))[0]!;
+  assert(isoLayout.config.mimicGlyphSet === "iso", `a stored layout glyphSet iso reads back — got ${JSON.stringify(isoLayout.config)}`);
+  const isoPreset = dashboardRowsFromDto(dtoWith({ source: "preset", preset: "lv_single_line", glyphSet: "iso" }))[0]!;
+  assert(isoPreset.config.mimicGlyphSet === "iso", `a stored preset glyphSet iso reads back — got ${JSON.stringify(isoPreset.config)}`);
+  for (const config of [{ source: "preset", preset: "lv_single_line" }, { source: "preset", preset: "lv_single_line", glyphSet: "core" }]) {
+    const row = dashboardRowsFromDto(dtoWith(config))[0]!;
+    assert(row.config.mimicGlyphSet === undefined, `${JSON.stringify(config)} reads glyphSet undefined — got ${JSON.stringify(row.config)}`);
+  }
+}

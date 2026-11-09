@@ -1,7 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  aKindWithoutATwinIsUnchanged,
   alarmWinsOverFreshness,
+  coreOrAbsentIsTheIdentity,
+  everyCoreKeyDrawsItsIsoTwin,
   calloutTextIsCutByCodePoint,
   everyBreakerRoleFanOutNodeDrawsTheBreakerGlyph,
   pumpStationPresetsDrawCoreSymbolsAndNoBreaker,
@@ -173,5 +176,14 @@ describe("F3.32 U4 — the plant mimic's pure half", () => {
   });
   it("MG-T4 the motion classes are motion-safe literals; only the pulses scale (F4.344)", () => {
     motionClassesAreMotionSafeLiterals();
+  });
+  it("MG-S1 with the iso glyph set every core key draws its isometric twin (F4.345)", () => {
+    everyCoreKeyDrawsItsIsoTwin();
+  });
+  it("MG-S2 alert, library and organization keys are unchanged under iso (F4.345)", () => {
+    aKindWithoutATwinIsUnchanged();
+  });
+  it("MG-S3 core or no glyph set is the identity (F4.345)", () => {
+    coreOrAbsentIsTheIdentity();
   });
 });

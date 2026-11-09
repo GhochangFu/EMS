@@ -1,4 +1,5 @@
-import { MIMIC_HEADLINE_POINTS } from "@bms/shared/contracts";
+import { MIMIC_HEADLINE_POINTS, type MimicGlyphSet } from "@bms/shared/contracts";
+import { ISO_SYMBOL_KEYS } from "@bms/shared";
 import type {
   BreakerState,
   GeneratedSiteAssetDto,
@@ -460,6 +461,21 @@ export function mimicPanelBox(
  * in `mimic-glyphs.tsx`; a library key draws its vendored shapes.
  */
 export type MimicGlyphKind = MimicSymbol | "alert";
+
+/** The isometric twins (`iso:<core key>`) the `iso` glyph set can draw. */
+const ISO_TWINS: ReadonlySet<string> = new Set<string>(ISO_SYMBOL_KEYS);
+
+/**
+ * `F4.345` (ADR 0121 decision 5, plan R6) — the kind a glyph draws under a widget's glyph set.
+ * With `iso`, a kind whose `iso:<kind>` twin exists draws the twin; everything else (`alert`, a
+ * library or organization key, a core key with no twin) is unchanged, so nothing falls back to the
+ * `unit` square. With `core` or no set, every kind is unchanged.
+ */
+export function mimicGlyphKindFor(kind: string, glyphSet: MimicGlyphSet | undefined): string {
+  if (glyphSet !== "iso") return kind;
+  const twin = `iso:${kind}`;
+  return ISO_TWINS.has(twin) ? twin : kind;
+}
 
 /**
  * Node key → its symbol. Typed like `MIMIC_LAYOUTS`: a missing node key is a compile error.
