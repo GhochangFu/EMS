@@ -117,6 +117,8 @@ export function runAssetTemplateTabTests(): void {
         // `F4.334` (ADR 0116 decision 5) — Payload Formats, `globalAdminOnly` like Location Types.
         "/admin/payload-formats",
         "/admin/calc-parameters",
+        // `F4.341` PR 12 (ADR 0118 decision 11) — Portal Appearance, `globalAdminOnly`.
+        "/admin/portal-appearance",
         // Templates & Visuals. `F3.36` Part F (ADR 0049) — ungated, like Asset
         // Groups: authoring is hidden inside the page by `canAuthorTemplates`,
         // not by the tab. `F3.32c` (ADR 0081 decision 3) — Mimic Layouts is
@@ -171,7 +173,8 @@ export function runAssetTemplateTabTests(): void {
     // 20 -> 21 and 18 -> 19; `location_admin` stays at 11.
     // `F4.309` added State Labels as `globalAdminOnly`: `admin` alone goes 21 -> 22.
     // `F4.334` added Payload Formats as `globalAdminOnly`: `admin` alone goes 22 -> 23.
-    const expected = role === "location_admin" ? 11 : role === "admin" ? 23 : 19;
+    // `F4.341` added Portal Appearance as `globalAdminOnly`: `admin` alone goes 23 -> 24.
+    const expected = role === "location_admin" ? 11 : role === "admin" ? 24 : 19;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,

@@ -542,13 +542,14 @@ export async function theColourProfileColumnAndActionFollowTheRole(): Promise<vo
   renderPageAs("organization_admin");
   const row = (await screen.findByText("Rupee organization")).closest("tr")!;
   expect(within(row).getByText("Nexus (default)")).toBeInTheDocument();
-  await userEvent.click(within(row).getByRole("button", { name: "Colour profile" }));
-  expect(screen.getByRole("dialog", { name: /Colour profile — Rupee organization/ })).toBeInTheDocument();
+  // F4.341 PR 12: the action opens the Appearance panel (the design system and the colour profile).
+  await userEvent.click(within(row).getByRole("button", { name: "Appearance" }));
+  expect(screen.getByRole("dialog", { name: /Appearance — Rupee organization/ })).toBeInTheDocument();
   cleanup();
   stubApi();
   renderPageAs("location_admin");
   const other = (await screen.findByText("Rupee organization")).closest("tr")!;
-  expect(within(other).queryByRole("button", { name: "Colour profile" })).toBeNull();
+  expect(within(other).queryByRole("button", { name: "Appearance" })).toBeNull();
 }
 
 /** `F4.341` (ADR 0118 decision 9) — a row whose colour profile is NULL inherits the portal: it reads "Inherit". */

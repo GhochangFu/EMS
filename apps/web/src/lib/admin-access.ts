@@ -398,6 +398,9 @@ export const masterDataTabs = [
   // server. The organization option is hidden inside the form by
   // `canWriteOrganizationScopedCalcParameter`, never by the tab.
   { label: "Calc Parameters", path: "/admin/calc-parameters", area: "reference" },
+  // `F4.341` PR 12 (ADR 0118 decision 11): the portal default design system and colour profile —
+  // read and written by the global `admin` only (`PortalSettingsService`), so the tab is too.
+  { label: "Portal Appearance", path: "/admin/portal-appearance", globalAdminOnly: true, area: "reference" },
   // ADR 0038 decision 10: deliberately **not** `catalogOnly`. A location admin
   // cannot author a template but can instantiate one, and this page is the only
   // route to Instantiate. Marking it `catalogOnly` would hide the page from the
