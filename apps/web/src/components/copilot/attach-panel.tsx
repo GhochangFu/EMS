@@ -25,15 +25,15 @@ export function AttachPanel({
 }) {
   return (
     <>
-      <p className="mb-2 text-[11px] text-ink-muted">{unscrubbedSentence(scopeLabel)}</p>
-      <p className="mb-2 text-[11px] text-ink-muted">{CARRY_ONLY_SENTENCE}</p>
+      <p className="mb-2 text-2xs text-ink-muted">{unscrubbedSentence(scopeLabel)}</p>
+      <p className="mb-2 text-2xs text-ink-muted">{CARRY_ONLY_SENTENCE}</p>
       {files.length > 0 && (
         <ul aria-label="Files to attach" className="mb-2 flex flex-wrap gap-1">
           {files.map((file, i) => (
             <li
               key={`${i}-${file.name}`}
               data-name={file.name}
-              className="surface-pressed flex max-w-full items-center gap-1 rounded px-2 py-0.5 text-[11px] text-ink"
+              className="surface-pressed flex max-w-full items-center gap-1 rounded px-2 py-0.5 text-2xs text-ink"
             >
               <span className="truncate">{file.name}</span>
               <span className="text-ink-muted">{sizeLabel(file.size)}</span>
@@ -55,7 +55,7 @@ export function AttachPanel({
         </ul>
       )}
       {rendering.length > 0 && (
-        <p role="status" className="mb-2 flex flex-wrap gap-1 text-[11px] text-ink-muted">
+        <p role="status" className="mb-2 flex flex-wrap gap-1 text-2xs text-ink-muted">
           {rendering.map((name, i) => (
             <span key={`${i}-${name}`} className="surface-pressed rounded px-2 py-0.5">{`Rendering ${name}…`}</span>
           ))}

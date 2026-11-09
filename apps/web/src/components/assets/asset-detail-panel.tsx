@@ -103,7 +103,7 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
         {kpisQ.data ? <AssetKpisCard data={kpisQ.data} /> : null}
 
         <section className="border-t border-line pt-3">
-          <h3 className="text-[11px] font-medium uppercase tracking-wide text-ink-muted">Dashboards</h3>
+          <h3 className="text-2xs font-medium uppercase tracking-wide text-ink-muted">Dashboards</h3>
           {dashboardsQ.isLoading ? <p className="mt-1 text-xs text-ink-muted">Loading dashboards…</p> : null}
           {dashboardsQ.isError ? (
             <p className="mt-1 rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">

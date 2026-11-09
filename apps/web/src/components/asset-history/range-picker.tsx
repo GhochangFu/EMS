@@ -109,7 +109,7 @@ export function RangePicker({ range, zone, zoneLabel, onChange }: RangePickerPro
       <button type="button" className="rounded border border-line-strong px-2 py-1 text-xs" onClick={applyCustom}>
         Apply
       </button>
-      <span className="text-[11px] text-ink-muted">Times in {zoneLabel}</span>
+      <span className="text-2xs text-ink-muted">Times in {zoneLabel}</span>
       <label className="flex items-center gap-1 text-xs">
         <input
           type="checkbox"

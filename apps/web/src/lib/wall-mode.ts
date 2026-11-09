@@ -120,7 +120,7 @@ export function formatWallTime(ms: number): string {
  * `F3.77` follow-up (plan D5, owner ruling Q2) — the wall's zoom is computed, not a stylesheet
  * constant: the base scale for the screen's width, then reduced so the whole page fits one screen.
  *
- * `zoom` (not a root `font-size`) because many widget sizes are px literals (`text-[11px]`), which
+ * `zoom` (not a root `font-size`) because many widget sizes are px literals (`text-2xs`), which
  * a root size would leave alone. The wall PCs run Chrome or Edge; Firefox before 126 ignores
  * `zoom`. `WallFrame` sets it inline on `[data-wall-root]`; it is the one source.
  */

@@ -111,7 +111,7 @@ function SymbolButton({ symbol, label, name, orgSymbol, onAddUnit }: SymbolButto
       title={label}
       aria-label={name}
       onClick={() => onAddUnit(symbol, label)}
-      className="surface-raised-sm flex flex-col items-center p-1 text-[10px] text-ink-muted hover:text-ink"
+      className="surface-raised-sm flex flex-col items-center p-1 text-3xs text-ink-muted hover:text-ink"
     >
       <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true">
         <MimicGlyph kind={symbol} x={0} y={0} size={24} className="stroke-ink-muted" orgSymbol={orgSymbol} />
@@ -187,7 +187,7 @@ function LibraryNotice({ tab }: { tab: PaletteTab }) {
   const notice =
     tab.kind === "org" ? tab.library.attribution : tab.library.code === "core" ? "" : (mimicLibraryNotice(tab.library.code) ?? "");
   return (
-    <div className="space-y-1 text-[10px] text-ink-muted">
+    <div className="space-y-1 text-3xs text-ink-muted">
       <p>{`${tab.label} — ${tab.library.licence}`}</p>
       {/* A plain anchor in a new tab: the editor holds unsaved state, and the palette renders outside a Router. */}
       <a href="/attributions" target="_blank" rel="noopener noreferrer" className="underline">

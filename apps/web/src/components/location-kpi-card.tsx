@@ -43,7 +43,7 @@ export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
           </div>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <span className="rounded bg-canvas px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-neutral-ink">
+          <span className="rounded bg-canvas px-2 py-0.5 text-3xs font-bold uppercase tracking-wide text-neutral-ink">
             {location.organization.code}
           </span>
           <span className="rounded bg-ok-wash px-2 py-1 text-xs font-semibold text-ok-ink">
@@ -86,7 +86,7 @@ function LiveBadge({ live }: { live: boolean }) {
   return (
     <span
       data-testid="site-live-badge"
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-2xs font-bold uppercase tracking-wider ${
         live ? "bg-ok-wash text-ok-ink" : "bg-warning-wash text-warning-ink"
       }`}
     >

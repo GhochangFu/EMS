@@ -286,10 +286,10 @@ function LibraryBoxes({
               {row.label}
             </label>
             {row.retired && catalog !== null ? (
-              <p className="ml-5 text-[10px] text-ink-muted">{`${row.label} is retired`}</p>
+              <p className="ml-5 text-3xs text-ink-muted">{`${row.label} is retired`}</p>
             ) : null}
             {locked ? (
-              <p className="ml-5 text-[10px] text-ink-muted">{`${row.label} is used by: ${users.join(", ")}`}</p>
+              <p className="ml-5 text-3xs text-ink-muted">{`${row.label} is used by: ${users.join(", ")}`}</p>
             ) : null}
           </div>
         );

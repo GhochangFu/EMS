@@ -513,7 +513,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
           <p className="text-xs text-ink-muted">{backfillSummary(dashboardsReport)}</p>
           <div className="mt-2 surface-table overflow-x-auto">
             <table className="w-full min-w-[520px] text-left text-xs">
-              <thead className="border-b border-well-deep text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+              <thead className="border-b border-well-deep text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                 <tr>
                   <th className="py-1 pr-3">Asset</th>
                   <th className="py-1 pr-3">Outcome</th>

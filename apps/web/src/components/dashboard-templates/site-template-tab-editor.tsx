@@ -71,7 +71,7 @@ export function SiteTemplateTabEditor({
         Add tab
       </button>
       {atTabCap ? (
-        <span className="text-[11px] text-ink-muted">A template holds at most {MAX_DASHBOARD_TABS} tabs.</span>
+        <span className="text-2xs text-ink-muted">A template holds at most {MAX_DASHBOARD_TABS} tabs.</span>
       ) : null}
     </div>
   ) : null;

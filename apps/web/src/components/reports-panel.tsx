@@ -150,7 +150,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
                     <p className="mt-1 text-sm text-ink-muted">{card.description}</p>
                   </div>
                   <span
-                    className={`surface-pill rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                    className={`surface-pill rounded-full border px-2 py-0.5 text-2xs font-semibold ${
                       card.active
                         ? "border-accent/20 bg-accent/10 text-accent-strong"
                         : "text-ink-muted"

@@ -93,7 +93,7 @@ function filledNotes(values: Record<string, unknown>, fields: readonly string[])
   return fields
     .filter((field) => values[field] !== undefined)
     .map((field) => (
-      <p key={field} className="text-[11px] text-ink-muted">
+      <p key={field} className="text-2xs text-ink-muted">
         {FIELD_LABELS[field] ?? field}:{" "}
         {typeof values[field] === "string" ? (values[field] as string) : JSON.stringify(values[field])} (filled by the
         copilot).
@@ -200,7 +200,7 @@ export function InstantiateWizard({
     if (isSite || isOrganization) {
       return (
         <>
-          <p className="text-[11px] text-ink-muted">
+          <p className="text-2xs text-ink-muted">
             {isSite
               ? "A site layout takes no name or slug: the copy is named for its site."
               : "An organization layout takes no name or slug: the copy is named for its organization."}
@@ -234,7 +234,7 @@ export function InstantiateWizard({
                 className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
               />
             </label>
-            <span id="instantiate-slug-hint" className="mt-1 block text-[11px] text-ink-muted">
+            <span id="instantiate-slug-hint" className="mt-1 block text-2xs text-ink-muted">
               {DASHBOARD_SLUG_HINT}
             </span>
           </div>
@@ -289,7 +289,7 @@ export function InstantiateWizard({
   function renderOrganizationTarget(): ReactNode {
     return (
       <>
-        <p className="text-[11px] text-ink-muted">
+        <p className="text-2xs text-ink-muted">
           An organization template is copied onto one organization-wide dashboard of its own
           organization: the strip at the top of that organization&apos;s Control Room page.
         </p>

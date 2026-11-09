@@ -13,7 +13,7 @@ export function PageHeader({ title, subtitle, eyebrow, actions }: PageHeaderProp
     <header className="surface-raised flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         {eyebrow ? (
-          <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-accent-strong">
+          <div className="font-mono text-3xs font-semibold uppercase tracking-[0.18em] text-accent-strong">
             {eyebrow}
           </div>
         ) : null}

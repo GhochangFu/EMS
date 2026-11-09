@@ -54,7 +54,7 @@ function ValueText(props: { text: string; full: string | undefined }) {
   return (
     <details>
       <summary className="cursor-pointer">{props.text}</summary>
-      <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px]">{props.full}</pre>
+      <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-2xs">{props.full}</pre>
     </details>
   );
 }
@@ -75,7 +75,7 @@ export function ChangeCard(props: ChangeCardProps) {
       {props.rows.length > 0 && (
         <table className="mt-2 w-full table-fixed border-collapse">
           <thead>
-            <tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
+            <tr className="text-left text-3xs uppercase tracking-wide text-ink-muted">
               <th scope="col" className="w-1/3 py-0.5 font-semibold">
                 Field
               </th>
@@ -108,7 +108,7 @@ export function ChangeCard(props: ChangeCardProps) {
           </tbody>
         </table>
       )}
-      {props.note && <p className="mt-2 text-[11px] text-ink-muted">{props.note}</p>}
+      {props.note && <p className="mt-2 text-2xs text-ink-muted">{props.note}</p>}
       {!props.closed && props.children}
       {props.error && (
         <p role="alert" className="mt-2 rounded border border-critical-line bg-critical-wash px-2 py-1 text-critical-ink">

@@ -281,7 +281,7 @@ export function PointCalcScheduleFields({ config, draft, busy, onDraftChange, st
           ))}
         </select>
         {isV2 ? (
-          <span className="mt-1 block text-[11px] text-ink-muted">
+          <span className="mt-1 block text-2xs text-ink-muted">
             {isV3 ? V3_TRIGGER_LATENCY_HINT : V2_TRIGGER_LATENCY_HINT}
           </span>
         ) : null}

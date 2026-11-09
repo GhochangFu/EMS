@@ -80,8 +80,8 @@ function RuleCell({ rule }: { rule: Record<string, unknown> }) {
   return (
     <td className="py-0.5 pr-2">
       <div className="font-semibold">{textOf(rule.name)}</div>
-      <div className="text-[10px] text-ink-muted">{facts.join(" · ")}</div>
-      {typeof rule.description === "string" && rule.description !== "" && <div className="text-[10px] text-ink-muted">{rule.description}</div>}
+      <div className="text-3xs text-ink-muted">{facts.join(" · ")}</div>
+      {typeof rule.description === "string" && rule.description !== "" && <div className="text-3xs text-ink-muted">{rule.description}</div>}
     </td>
   );
 }
@@ -91,9 +91,9 @@ export function RuleBatchTable({ rules, checks, excluded = NONE_EXCLUDED, onTogg
   const checkList = Array.isArray(checks) ? checks : [];
   return (
     <div className="mt-2 max-h-80 overflow-auto">
-      <table aria-label={onToggle ? "Proposed rules" : "Rules to create"} className="w-full border-collapse text-[11px]">
+      <table aria-label={onToggle ? "Proposed rules" : "Rules to create"} className="w-full border-collapse text-2xs">
         <thead>
-          <tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
+          <tr className="text-left text-3xs uppercase tracking-wide text-ink-muted">
             {(onToggle ? CHECKED_COLUMNS : LISTED_COLUMNS).map((label) => (
               <th key={label} scope="col" className="py-0.5 pr-2 font-semibold">
                 {label}

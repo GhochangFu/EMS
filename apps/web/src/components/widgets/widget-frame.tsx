@@ -31,9 +31,9 @@ export function WidgetFrame({ title, status, stale = false, actions, children }:
   return (
     <div className="surface-raised flex h-full flex-col p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">{title}</h3>
+        <h3 className="truncate text-2xs font-medium uppercase tracking-wide text-ink-muted">{title}</h3>
         {status === "ready" && stale ? (
-          <span className="shrink-0 rounded-full bg-warning-wash-strong px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-warning-ink">
+          <span className="shrink-0 rounded-full bg-warning-wash-strong px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-wide text-warning-ink">
             Offline
           </span>
         ) : null}

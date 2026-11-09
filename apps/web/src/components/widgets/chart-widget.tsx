@@ -86,19 +86,19 @@ export function ChartWidget({
       {/* `F4.323` (ADR 0047 Amendment 7 item 4) — a point with no positive number has no share,
           so the ring leaves it out; this line keeps that from reading as a silent gap. */}
       {status === "ready" && leftOut > 0 ? (
-        <p className="mt-1 text-[11px] text-ink-muted">
+        <p className="mt-1 text-2xs text-ink-muted">
           {leftOut === 1 ? "1 point" : `${leftOut} points`} not shown: no positive value in this window.
         </p>
       ) : null}
       {/* `F4.323` PR 2 (ADR 0047 Amendment 7 item 5) — the hours are the site's; when the response
           names no zone they are UTC, and the chart says so rather than passing UTC off as local. */}
       {chartReadsHours(config.series) && status === "ready" && timeZone === null ? (
-        <p className="mt-1 text-[11px] text-ink-muted">Hours shown in UTC: the site's time zone is not known.</p>
+        <p className="mt-1 text-2xs text-ink-muted">Hours shown in UTC: the site's time zone is not known.</p>
       ) : null}
       {/* `F4.332` (ADR 0070 Amendment 7 decision 8) — the stored cost points are priced at the
           latest tick's rate, so a rate change re-prices the whole period. */}
       {storedCost && status === "ready" ? (
-        <p className="mt-1 text-[11px] text-ink-muted">Energy cost {RATE_EFFECTIVE_NOW_NOTE}.</p>
+        <p className="mt-1 text-2xs text-ink-muted">Energy cost {RATE_EFFECTIVE_NOW_NOTE}.</p>
       ) : null}
       {config.footerStats && status === "ready" ? (
         <ChartFooter config={config} stats={stats ?? null} bucketSeconds={bucketSeconds ?? null} />
@@ -143,7 +143,7 @@ function ChartFooter({
 }) {
   const format = { decimals: config.decimals, unit: config.unit };
   return (
-    <dl className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-well-deep pt-2 text-[11px] text-ink-muted">
+    <dl className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-well-deep pt-2 text-2xs text-ink-muted">
       <div className="flex items-baseline gap-1">
         <dt className="font-medium uppercase tracking-wide">Peak</dt>
         <dd className="tabular-nums text-ink">

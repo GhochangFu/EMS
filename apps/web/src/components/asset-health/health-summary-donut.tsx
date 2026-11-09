@@ -93,14 +93,14 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
 
   return (
     <div className="flex h-full flex-col surface-raised p-3">
-      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-muted">{title}</h3>
+      <h3 className="mb-2 text-2xs font-medium uppercase tracking-wide text-ink-muted">{title}</h3>
       {slices.length === 0 ? (
         <div
           className="flex flex-col items-center justify-center gap-1 px-4 text-center"
           style={{ height: 200 }}
         >
           <p className="text-xs font-medium text-ink">No band cut-points configured</p>
-          <p className="text-[11px] leading-snug text-ink-muted">
+          <p className="text-2xs leading-snug text-ink-muted">
             Bands come from an asset template&rsquo;s health tier. The figures below are real; only
             the slices are missing.
           </p>
@@ -118,7 +118,7 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
           </div>
         ))}
       </dl>
-      <dl className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-well-deep pt-2 text-[11px] text-ink-muted">
+      <dl className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-well-deep pt-2 text-2xs text-ink-muted">
         <div className="flex items-baseline gap-1">
           <dt className="font-medium uppercase tracking-wide">Scored</dt>
           <dd className="tabular-nums text-ink">
@@ -154,7 +154,7 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
       </dl>
 
       {coverage.warning !== null ? (
-        <p className="mt-2 rounded border border-warning-line bg-warning-wash px-2 py-1 text-[11px] leading-snug text-warning-ink">
+        <p className="mt-2 rounded border border-warning-line bg-warning-wash px-2 py-1 text-2xs leading-snug text-warning-ink">
           {coverage.warning}
         </p>
       ) : null}

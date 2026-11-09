@@ -110,7 +110,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
       kpiRibbon={
         <div className="flex flex-wrap items-center gap-3">
           <span
-            className={`rounded-full surface-pill px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+            className={`rounded-full surface-pill px-2.5 py-0.5 text-3xs font-bold uppercase tracking-wide ${
               stale
                 ? "bg-warning-wash-strong text-warning-ink"
                 : "bg-ok-wash text-ok-ink"

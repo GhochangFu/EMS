@@ -19,7 +19,7 @@ export function AssetWhere({
   const { where } = assetLabelParts({ code, rtuName, locationName });
   if (where === null) return null;
   return (
-    <div className={`break-words font-sans text-[11px] text-ink-muted ${className}`.trim()}>
+    <div className={`break-words font-sans text-2xs text-ink-muted ${className}`.trim()}>
       {`${ASSET_LABEL_SEPARATOR.trim()} ${where}`}
     </div>
   );

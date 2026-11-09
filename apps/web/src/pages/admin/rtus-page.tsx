@@ -191,7 +191,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                     ) : null}
                   </div>
                   {releasedTopicLine(item) !== null ? (
-                    <p className="mt-1 text-[11px] text-ink-muted">{releasedTopicLine(item)}</p>
+                    <p className="mt-1 text-2xs text-ink-muted">{releasedTopicLine(item)}</p>
                   ) : null}
                 </td>
                 <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>

@@ -128,7 +128,7 @@ function MetadataCell({
       {text}
       {parts === "none" ? null : (
         <span
-          className="ml-1 rounded bg-accent/10 px-1 text-[10px] text-accent-strong"
+          className="ml-1 rounded bg-accent/10 px-1 text-3xs text-accent-strong"
           title={`From the template: ${inheritedFields(effective, fields).join(", ")}`}
         >
           {parts === "all" ? "inherited" : "partly inherited"}

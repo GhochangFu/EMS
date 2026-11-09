@@ -13,7 +13,7 @@ export function ImportPreviewCard({ preview }: { preview: unknown }) {
   if (!parsed.success) return null;
   const { totalRows, acceptedCount, rejectedCount, rejected, mappingsToCreate } = parsed.data;
   return (
-    <section data-testid="copilot-import-preview" aria-label="Import preview" className="mt-2 space-y-1 text-[11px] text-ink">
+    <section data-testid="copilot-import-preview" aria-label="Import preview" className="mt-2 space-y-1 text-2xs text-ink">
       <p>{`${acceptedCount} of ${totalRows} rows accepted, ${rejectedCount} rejected.`}</p>
       {/* Owner ruling 2026-10-25 (Q4): beside the counts, the preview is not the commit. */}
       <p className="text-ink-muted">Commit can still reject rows that the preview accepted.</p>

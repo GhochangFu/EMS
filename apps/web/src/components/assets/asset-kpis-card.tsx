@@ -18,7 +18,7 @@ type AssetKpisCardProps = {
 export function AssetKpisCard({ data }: AssetKpisCardProps) {
   return (
     <div className="flex flex-col surface-raised p-3">
-      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-muted">KPIs</h3>
+      <h3 className="mb-2 text-2xs font-medium uppercase tracking-wide text-ink-muted">KPIs</h3>
       {data.items.length === 0 ? (
         <p className="text-xs text-ink-muted">No KPIs on this asset&apos;s template.</p>
       ) : (

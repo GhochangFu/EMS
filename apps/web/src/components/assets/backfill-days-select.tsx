@@ -36,7 +36,7 @@ export function BackfillDaysSelect({
           </option>
         ))}
       </select>
-      <span className="mt-1 block text-[11px] text-ink-muted">
+      <span className="mt-1 block text-2xs text-ink-muted">
         Computes the point over this many past days when you save. Stored readings are never overwritten.
       </span>
     </label>

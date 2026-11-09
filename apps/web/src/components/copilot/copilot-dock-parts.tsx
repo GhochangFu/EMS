@@ -98,7 +98,7 @@ export function UserText({ content }: { content: string }) {
   return (
     <>
       <span>{text}</span>
-      <ul aria-label="Attached files, not stored" className="mt-1 space-y-0.5 break-all text-[11px] text-on-accent/70">
+      <ul aria-label="Attached files, not stored" className="mt-1 space-y-0.5 break-all text-2xs text-on-accent/70">
         {records.map((record, i) => (
           <li key={i}>{record}</li>
         ))}

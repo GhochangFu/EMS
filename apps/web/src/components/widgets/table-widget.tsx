@@ -98,7 +98,7 @@ export function TableWidget({
             </tbody>
           </table>
           {truncated ? (
-            <p className="px-2 py-1.5 text-[11px] text-ink-muted">
+            <p className="px-2 py-1.5 text-2xs text-ink-muted">
               Showing the first {rows.length} rows.
             </p>
           ) : null}

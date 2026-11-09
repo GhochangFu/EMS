@@ -17,7 +17,7 @@ import { fetchAdminPointKeys } from "../../api/admin/point-keys";
 
 const LABEL = "block text-xs font-semibold text-ink-muted";
 const FIELD = "mt-1 w-full surface-field px-2 py-1 text-xs font-normal";
-const BUTTON = "surface-field px-1.5 py-0.5 text-[10px] text-ink disabled:opacity-50";
+const BUTTON = "surface-field px-1.5 py-0.5 text-3xs text-ink disabled:opacity-50";
 
 export function PointListField({
   pointKeys,
@@ -95,7 +95,7 @@ export function PointListField({
           })}
         </ul>
       ) : (
-        <p className="text-[10px] text-ink-muted">None listed — the unit shows its asset's headline points.</p>
+        <p className="text-3xs text-ink-muted">None listed — the unit shows its asset's headline points.</p>
       )}
       <label className={LABEL}>
         Add point
@@ -119,7 +119,7 @@ export function PointListField({
             ))}
         </select>
       </label>
-      {full ? <p id={hintId} className="text-[10px] text-ink-muted">{`${MIMIC_HEADLINE_POINTS} of ${MIMIC_HEADLINE_POINTS}`}</p> : null}
+      {full ? <p id={hintId} className="text-3xs text-ink-muted">{`${MIMIC_HEADLINE_POINTS} of ${MIMIC_HEADLINE_POINTS}`}</p> : null}
     </div>
   );
 }

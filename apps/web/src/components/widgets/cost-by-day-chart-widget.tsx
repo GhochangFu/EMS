@@ -50,7 +50,7 @@ export function CostByDayChartWidget({ title, status, stale, rows }: CostByDayCh
             type="button"
             aria-pressed={windowDays === days}
             onClick={() => setChosen(windowDays)}
-            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+            className={`rounded px-1.5 py-0.5 text-3xs font-semibold ${
               windowDays === days ? "bg-accent text-on-accent" : "text-ink-muted"
             }`}
           >
@@ -66,7 +66,7 @@ export function CostByDayChartWidget({ title, status, stale, rows }: CostByDayCh
         <ReactECharts option={option} theme={theme} style={{ position: "absolute", inset: 0, height: "100%" }} notMerge lazyUpdate />
       </div>
       {status === "ready" ? (
-        <p className="mt-1 text-[11px] text-ink-muted" data-testid="cost-window-total">
+        <p className="mt-1 text-2xs text-ink-muted" data-testid="cost-window-total">
           {costTotalLine(costWindowTotal(shown))}
         </p>
       ) : null}

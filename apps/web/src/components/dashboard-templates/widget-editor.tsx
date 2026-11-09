@@ -81,14 +81,14 @@ export function WidgetEditor({
   return (
     <section className="space-y-2 surface-raised-sm p-3">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+        <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
           {row.key}
         </span>
         {editable ? (
           <button
             type="button"
             onClick={onRemove}
-            className="rounded border border-critical-line px-2 py-0.5 text-[11px] font-semibold text-critical-ink"
+            className="rounded border border-critical-line px-2 py-0.5 text-2xs font-semibold text-critical-ink"
           >
             Remove
           </button>
@@ -107,7 +107,7 @@ export function WidgetEditor({
       </label>
 
       <div className="grid grid-cols-4 gap-2">
-        <label className="block text-[11px] font-semibold text-ink">
+        <label className="block text-2xs font-semibold text-ink">
           gridX
           <input
             type="number"
@@ -119,7 +119,7 @@ export function WidgetEditor({
             className="mt-1 w-full surface-field px-2 py-1 text-xs disabled:opacity-60"
           />
         </label>
-        <label className="block text-[11px] font-semibold text-ink">
+        <label className="block text-2xs font-semibold text-ink">
           gridY
           <input
             type="number"
@@ -130,7 +130,7 @@ export function WidgetEditor({
             className="mt-1 w-full surface-field px-2 py-1 text-xs disabled:opacity-60"
           />
         </label>
-        <label className="block text-[11px] font-semibold text-ink">
+        <label className="block text-2xs font-semibold text-ink">
           gridW
           <input
             type="number"
@@ -142,7 +142,7 @@ export function WidgetEditor({
             className="mt-1 w-full surface-field px-2 py-1 text-xs disabled:opacity-60"
           />
         </label>
-        <label className="block text-[11px] font-semibold text-ink">
+        <label className="block text-2xs font-semibold text-ink">
           gridH
           <input
             type="number"
@@ -157,7 +157,7 @@ export function WidgetEditor({
       </div>
 
       <div>
-        <span className="text-[11px] font-semibold text-ink">Bindings</span>
+        <span className="text-2xs font-semibold text-ink">Bindings</span>
         <ul className="mt-1 space-y-1">
           {bindings.map((binding, index) => (
             <li
@@ -208,7 +208,7 @@ export function WidgetEditor({
           the picker: hidden for a chart, as in `WidgetInspector`. */}
       {sourceCardinality.max > 0 && row.widgetType !== "chart" ? (
         <div>
-          <span className="text-[11px] font-semibold text-ink">Named metric</span>
+          <span className="text-2xs font-semibold text-ink">Named metric</span>
           <ul className="mt-1 space-y-1">
             {sources.map((source, index) => {
               const pointKey = source.params?.pointKey;
@@ -256,10 +256,10 @@ export function WidgetEditor({
                     ) : null}
                   </div>
                   {groupsByLocation && editable ? (
-                    <label className="mt-1 flex items-center gap-2 text-[11px] text-ink-muted">
+                    <label className="mt-1 flex items-center gap-2 text-2xs text-ink-muted">
                       Group by
                       <select
-                        className="surface-field px-2 py-1 text-[11px]"
+                        className="surface-field px-2 py-1 text-2xs"
                         value={typeof groupDepth === "number" ? String(groupDepth) : ""}
                         onChange={(event) => setGroupDepth(event.target.value)}
                       >
@@ -273,12 +273,12 @@ export function WidgetEditor({
                     </label>
                   ) : null}
                   {groupsByLocation && !editable && typeof groupDepth === "number" ? (
-                    <p className="mt-1 text-[11px] text-ink-muted">
+                    <p className="mt-1 text-2xs text-ink-muted">
                       {`Grouped by ancestor depth ${groupDepth}`}
                     </p>
                   ) : null}
                   {showsWaterBalanceNote ? (
-                    <p className="mt-1 text-[11px] text-ink-muted">
+                    <p className="mt-1 text-2xs text-ink-muted">
                       {METRIC_CATALOG_PRESENTATION[source.catalogKey].description}
                     </p>
                   ) : null}
@@ -300,7 +300,7 @@ export function WidgetEditor({
             </div>
           ) : null}
           {showsValueTileSecondMetricNote(row.widgetType, sources.length) ? (
-            <p className="mt-1 text-[11px] text-ink-muted">{VALUE_TILE_SECOND_METRIC_NOTE}</p>
+            <p className="mt-1 text-2xs text-ink-muted">{VALUE_TILE_SECOND_METRIC_NOTE}</p>
           ) : null}
         </div>
       ) : null}
@@ -316,7 +316,7 @@ export function WidgetEditor({
 export function renderTemplateTile(tile: SectionTemplateWidgetInput) {
   return (
     <div
-      className="h-full surface-raised-sm p-1 text-[10px] text-ink-muted"
+      className="h-full surface-raised-sm p-1 text-3xs text-ink-muted"
       style={{ minHeight: `${builderCellHeightPx(tile.gridH)}px` }}
     >
       {tile.title ?? tile.key}

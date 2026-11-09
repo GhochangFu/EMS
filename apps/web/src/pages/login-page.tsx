@@ -96,7 +96,7 @@ export function LoginPage() {
                 <div className="font-condensed text-2xl font-bold text-on-dark">
                   {value}
                 </div>
-                <div className="mt-1 text-[11px] uppercase tracking-wide text-on-dark/60">
+                <div className="mt-1 text-2xs uppercase tracking-wide text-on-dark/60">
                   {label}
                 </div>
               </div>
@@ -108,7 +108,7 @@ export function LoginPage() {
           <div className="w-full max-w-md surface-raised p-7">
             <div className="mb-7 flex items-center justify-between gap-3">
               <div>
-                <div className="font-condensed text-[11px] font-bold uppercase tracking-[0.18em] text-accent-strong">
+                <div className="font-condensed text-2xs font-bold uppercase tracking-[0.18em] text-accent-strong">
                   Secure access
                 </div>
                 <h2 className="mt-2 font-condensed text-3xl font-bold text-ink">
@@ -125,10 +125,10 @@ export function LoginPage() {
                     the plan's own call: `chrome` is constant-dark in both themes and its
                     `on-dark` pair is already declared (§2.4's "TEXT_PAIRS" `on-dark` on `chrome`),
                     so it reproduces the original `#003366` badge's always-dark pixel. */}
-                <span className="rounded bg-chrome px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-on-dark">
+                <span className="rounded bg-chrome px-2.5 py-1 text-3xs font-bold uppercase tracking-wide text-on-dark">
                   Euphoria Delivery
                 </span>
-                <span className="font-mono text-[10px] uppercase tracking-wide text-ink-muted">
+                <span className="font-mono text-3xs uppercase tracking-wide text-ink-muted">
                   Confidential
                 </span>
               </div>
@@ -222,7 +222,7 @@ export function LoginPage() {
             </button>
           </form>
         )}
-            <div className="mt-6 border-t border-well-deep pt-4 text-center text-[11px] leading-5 text-ink-muted">
+            <div className="mt-6 border-t border-well-deep pt-4 text-center text-2xs leading-5 text-ink-muted">
               IONSiTE NEXUS v0.1<br />
               Powered By:{" "}
               <b className="text-ink">Euphoria Infotech India Limited</b>

@@ -56,13 +56,13 @@ export function FileAgainSlot({
 
   if (kept !== undefined) {
     return (
-      <p data-testid="copilot-file-kept" className="mt-2 text-[11px] text-ink-muted">
+      <p data-testid="copilot-file-kept" className="mt-2 text-2xs text-ink-muted">
         {`File: ${filename} (kept in this browser until Confirm).`}
       </p>
     );
   }
   return (
-    <div className="mt-2 text-[11px]">
+    <div className="mt-2 text-2xs">
       <label className="block text-ink-muted">
         {picked === null ? `Attach ${filename} again to confirm.` : `File: ${filename}.`}
         <input

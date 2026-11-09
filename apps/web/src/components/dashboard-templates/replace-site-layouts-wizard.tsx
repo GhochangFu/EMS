@@ -74,7 +74,7 @@ export function ReplaceSiteLayoutsWizard({
         </p>
         <table className="w-full text-xs">
           <thead>
-            <tr className="text-left text-[11px] uppercase text-ink-muted">
+            <tr className="text-left text-2xs uppercase text-ink-muted">
               <th className="py-1">Site</th>
               <th className="py-1">Result</th>
             </tr>
@@ -136,7 +136,7 @@ export function ReplaceSiteLayoutsWizard({
       <p className="text-critical-ink">{REPLACE_LOSES}</p>
       <table className="w-full text-xs">
         <thead>
-          <tr className="text-left text-[11px] uppercase text-ink-muted">
+          <tr className="text-left text-2xs uppercase text-ink-muted">
             <th className="py-1">Site</th>
             <th className="py-1">Holds</th>
             <th className="py-1">Edits</th>

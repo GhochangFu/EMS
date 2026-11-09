@@ -276,7 +276,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
       const isCanvas =
         JSON.stringify(values.content) === JSON.stringify(canvasContent());
       return (
-        <p className="text-[11px] text-ink-muted">
+        <p className="text-2xs text-ink-muted">
           {count === null
             ? "The content to save is not a widget list."
             : `The content to save: ${count} widget${count === 1 ? "" : "s"}.`}
@@ -313,12 +313,12 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
           />
         </label>
         {values.section !== undefined ? (
-          <p className="text-[11px] text-ink-muted">
+          <p className="text-2xs text-ink-muted">
             Section: {typeof values.section === "string" ? values.section : JSON.stringify(values.section)} (filled by
             the copilot; now {template.section}).
           </p>
         ) : null}
-        <p className="text-[11px] text-ink-muted">Leave a field empty to keep it as it is.</p>
+        <p className="text-2xs text-ink-muted">Leave a field empty to keep it as it is.</p>
       </>
     );
   }
@@ -729,7 +729,7 @@ function ResolutionReport({ result }: { result: InstantiateSectionTemplateRespon
 
       <table className="w-full text-xs">
         <thead>
-          <tr className="text-left text-[11px] uppercase text-ink-muted">
+          <tr className="text-left text-2xs uppercase text-ink-muted">
             <th className="py-1">Widget</th>
             <th className="py-1">Matched members</th>
             <th className="py-1">Bound points</th>

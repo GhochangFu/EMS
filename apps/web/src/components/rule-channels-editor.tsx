@@ -146,7 +146,7 @@ export function RuleChannelsEditor({
 
   return (
     <div className="mt-3 surface-pressed p-3">
-      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+      <h4 className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
         Notification channels
       </h4>
 
@@ -224,14 +224,14 @@ export function RuleChannelsEditor({
               submitting={saveM.isPending}
             />
           ) : null}
-          <p className="mt-2 text-[11px] text-ink-muted">{caption}</p>
+          <p className="mt-2 text-2xs text-ink-muted">{caption}</p>
           {/*
             Inside this block on purpose: `channels` is also `[]` while the
             list loads and after it fails, and out here every joined id would
             count as hidden and the count would be a lie in both states.
           */}
           {hidden.length > 0 ? (
-            <p className="mt-1 text-[11px] text-ink-muted">
+            <p className="mt-1 text-2xs text-ink-muted">
               {hidden.length === 1
                 ? "1 joined channel outside your scope stays joined."
                 : `${hidden.length} joined channels outside your scope stay joined.`}

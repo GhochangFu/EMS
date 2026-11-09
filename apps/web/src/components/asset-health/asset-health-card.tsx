@@ -32,7 +32,7 @@ export function AssetHealthCard({ title = "Asset Health", data }: AssetHealthCar
 
   return (
     <div className="flex h-full flex-col surface-raised p-3">
-      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-muted">{title}</h3>
+      <h3 className="mb-2 text-2xs font-medium uppercase tracking-wide text-ink-muted">{title}</h3>
 
       <div className="flex items-baseline gap-2">
         <span className="font-condensed text-3xl font-bold tabular-nums text-ink">
@@ -47,7 +47,7 @@ export function AssetHealthCard({ title = "Asset Health", data }: AssetHealthCar
 
       {data.scoredTags.length > 0 ? (
         <div className="mt-3">
-          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Scored tags</h4>
+          <h4 className="text-3xs font-semibold uppercase tracking-wide text-ink-muted">Scored tags</h4>
           <ul className="mt-1 space-y-1 text-xs text-ink">
             {data.scoredTags.map((tag) => (
               <li key={tag.pointKey} className="flex items-center justify-between gap-2">
@@ -65,7 +65,7 @@ export function AssetHealthCard({ title = "Asset Health", data }: AssetHealthCar
 
       {data.unscoredTags.length > 0 ? (
         <div className="mt-3">
-          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+          <h4 className="text-3xs font-semibold uppercase tracking-wide text-ink-muted">
             Unscored tags
           </h4>
           <ul className="mt-1 space-y-1 text-xs text-ink-muted">
@@ -76,7 +76,7 @@ export function AssetHealthCard({ title = "Asset Health", data }: AssetHealthCar
         </div>
       ) : null}
 
-      <dl className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-well-deep pt-2 text-[11px] text-ink-muted">
+      <dl className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-well-deep pt-2 text-2xs text-ink-muted">
         <div className="flex items-baseline gap-1">
           <dt className="font-medium uppercase tracking-wide">Granularity</dt>
           <dd className="text-ink">{formatBucketWidth(data.bucketSeconds)}</dd>
@@ -95,7 +95,7 @@ export function AssetHealthCard({ title = "Asset Health", data }: AssetHealthCar
       </dl>
 
       {coverage.warning !== null ? (
-        <p className="mt-2 rounded border border-warning-line bg-warning-wash px-2 py-1 text-[11px] leading-snug text-warning-ink">
+        <p className="mt-2 rounded border border-warning-line bg-warning-wash px-2 py-1 text-2xs leading-snug text-warning-ink">
           {coverage.warning}
         </p>
       ) : null}

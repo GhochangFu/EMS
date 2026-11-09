@@ -62,7 +62,7 @@ export function AssetImagesToggleButton({
     <button
       type="button"
       aria-expanded={open}
-      className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-ink-muted hover:text-ink"
+      className="mt-1 text-2xs font-semibold uppercase tracking-wide text-ink-muted hover:text-ink"
       onClick={() => onToggle(assetId)}
     >
       Images
