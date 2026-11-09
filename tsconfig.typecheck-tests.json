@@ -197,6 +197,7 @@
     "tests/f3.32f-org-symbol-libraries.test.ts",
     "tests/f3.32f-org-symbol-libraries.integration.test.ts",
     "tests/f3.32f-symbol-libraries-admin-reachable.test.ts",
+    "tests/f4.345-iso-sources.test.ts",
     "tests/f3.72-control-room-entry.test.ts",
     "tests/f3.73-dashboard-tabs-schema.test.ts",
     "tests/f3.73-dashboard-tabs-schema.integration.test.ts",

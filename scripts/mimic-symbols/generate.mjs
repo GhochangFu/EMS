@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * `F3.32e` / ADR 0084 decisions 4 and 5, and `F3.32f` / ADR 0086 decision 9 — vendors the
- * curated mimic symbol libraries.
+ * `F3.32e` / ADR 0084 decisions 4 and 5, `F3.32f` / ADR 0086 decision 9, and `F4.345` /
+ * ADR 0121 — vendors the curated mimic symbol libraries.
  *
  * Run by hand, with the extracted sources of each pinned release:
  *
@@ -12,6 +12,7 @@
  *     --qet <dir from fetch-sources.mjs qet> \
  *     --wmpid <dir from fetch-sources.mjs wmpid> \
  *     --drawio <dir from fetch-sources.mjs drawio> \
+ *     --iso <scripts/mimic-symbols/sources/iso/out/fill, from sources/iso/build.mjs> \
  *     [--only <code>[,<code>]] [--report] [--sql-rows <code>] [--migration]
  *
  * - `--only` builds and writes only the named libraries; only their directory flags are required.
@@ -30,11 +31,14 @@
  * - `apps/web/src/components/widgets/mimic-symbol-libraries/<library>.generated.ts` — the
  *   licence notice and each key's shape elements, which `MimicGlyph` draws as React elements;
  * - for a source with per-file credits (`qet`, `wmpid`, `drawio`),
- *   `apps/web/src/components/widgets/mimic-symbol-libraries/<library>.credits.generated.ts`.
+ *   `apps/web/src/components/widgets/mimic-symbol-libraries/<library>.credits.generated.ts`;
+ * - any module a source's `extraModules(lib)` returns (`iso`: the tank's level box,
+ *   `iso.level-boxes.generated.ts`), at its repo-relative path.
  *
  * Curation entries are names (`tabler`, `lucide`, `mdi`: `{ "<group>": ["<name>"] }`) or objects
- * (`qet`, `wmpid`, `drawio`: `{ "<group>": [{ "name": "<name>", …source fields }] }`, see
- * `sources/*.mjs`).
+ * (`qet`, `wmpid`, `drawio`, `iso`: `{ "<group>": [{ "name": "<name>", …source fields }] }`, see
+ * `sources/*.mjs`). An object entry's `label`, when present, is the symbol's label (`iso`, plan
+ * R1); otherwise the label is derived from the name (`labelOf`).
  *
  * It refuses, naming the symbol, anything decision 4 leaves out: an unknown name; an element or an
  * attribute outside the geometry lists (`lib/grammar.mjs`); a value outside its attribute's grammar
@@ -62,6 +66,7 @@ import {
   labelOf,
 } from "./lib/grammar.mjs";
 import { LIBRARY as DRAWIO } from "./sources/drawio.mjs";
+import { LIBRARY as ISO } from "./sources/iso.mjs";
 import { LIBRARY as QET } from "./sources/qet.mjs";
 import { LIBRARY as WMPID } from "./sources/wmpid.mjs";
 
@@ -160,7 +165,7 @@ function mdiSource(dir) {
 
 /**
  * The libraries in registry order. A descriptor's `load(dir)` answers `{ version, licence,
- * conversion?, shapes(entry), credit?(entry) }`; `entryShape` says whether a curation entry is a
+ * conversion?, shapes(entry), credit?(entry), extraModules?(lib) }`; `entryShape` says whether a curation entry is a
  * name (`string`) or an object with a `name` (`object`).
  */
 const LIBRARIES = [
@@ -211,6 +216,7 @@ const LIBRARIES = [
   QET,
   WMPID,
   DRAWIO,
+  ISO,
 ];
 
 /** The libraries migration 0090 holds; `--migration` writes from these only. */
@@ -257,7 +263,7 @@ function build(lib, dir, collect = null) {
         if (COLOUR_WORD.test(key)) fail(`${key} names fill, stroke, style or class, which the colour scan refuses`);
         if (seen.has(key)) fail(`${key} is listed twice`);
         seen.add(key);
-        const label = labelOf(name);
+        const label = lib.entryShape === "object" && typeof item.label === "string" ? item.label : labelOf(name);
         if (label.length > MAX_LABEL) fail(`${key}: label "${label}" is longer than ${MAX_LABEL}`);
         if (labels.has(label)) fail(`${key}: label "${label}" repeats in ${lib.code}`);
         labels.add(label);
@@ -282,13 +288,16 @@ function build(lib, dir, collect = null) {
   const extra = lib.extraLicence
     ? "\n\n" + readFileSync(join(ROOT, "scripts", "mimic-symbols", "licences", lib.extraLicence), "utf8").trim()
     : "";
-  return {
+  const built = {
     ...lib,
     version: source.version,
     licence: `${changed}\n\n${source.licence.trim()}${extra}`,
     hasCredits: typeof source.credit === "function",
     entries,
   };
+  // A source's own extra modules (repo-relative path and text), written beside the web module.
+  built.extraModules = typeof source.extraModules === "function" && !collect ? source.extraModules(built) : [];
+  return built;
 }
 
 const HEADER = (lib) =>
@@ -632,6 +641,12 @@ function main() {
     writeFileSync(join(SHARED_DIR, `${lib.code}.generated.ts`), sharedModule(lib));
     writeFileSync(join(WEB_DIR, `${lib.code}.generated.ts`), webModule(lib));
     if (lib.hasCredits) writeFileSync(join(WEB_DIR, `${lib.code}.credits.generated.ts`), creditsModule(lib));
+    for (const extra of lib.extraModules) {
+      if (!/^(?:apps|packages)\/[\w./-]+\.generated\.ts$/.test(extra.path) || extra.path.includes("..")) {
+        fail(`${lib.code}: extra module path ${extra.path} is not a generated module under apps/ or packages/`);
+      }
+      writeFileSync(join(ROOT, extra.path), extra.text);
+    }
     console.log(`generate: ${lib.code} ${lib.version} — ${lib.entries.length} symbols`);
   }
   if (opts.migration) writeMigration(libs.filter((l) => MIGRATION_0090_CODES.includes(l.code)));
