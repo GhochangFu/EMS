@@ -238,6 +238,11 @@ function checkCredit(key, credit) {
 /**
  * Reads one library's curation through its source. `collect`, when given, receives each refusal
  * and the build goes on (`--report`); otherwise the first refusal stops it.
+ *
+ * The curation's keys are walked in file order, which fixes each symbol's position (its
+ * `sort_order` and its place in the generated key list). A group may appear again under a key
+ * suffixed with `#` (`"hvac#f4.352"`): the group is the key up to `#`, so symbols added later are
+ * appended after the existing ones instead of shifting them (ADR 0121 Amendment 1).
  */
 function build(lib, dir, collect = null) {
   const source = lib.load(dir);
@@ -247,7 +252,8 @@ function build(lib, dir, collect = null) {
   const seen = new Set();
   const labels = new Set();
   const paths = new Map();
-  for (const [group, list] of Object.entries(curation)) {
+  for (const [key, list] of Object.entries(curation)) {
+    const group = key.replace(/#.*$/, "");
     if (!GROUPS.includes(group)) fail(`${lib.code} curation has unknown group ${group}`);
     if (!Array.isArray(list)) fail(`${lib.code} curation group ${group} is not a list`);
     for (const item of list) {

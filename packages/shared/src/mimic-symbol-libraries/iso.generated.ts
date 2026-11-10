@@ -56,6 +56,14 @@ export const ISO_SYMBOL_KEYS = [
   "iso:lamp",
   "iso:lift",
   "iso:unit",
+  "iso:telemetry-tower",
+  "iso:gateway",
+  "iso:blast-freezer",
+  "iso:cold-room",
+  "iso:deep-freezer",
+  "iso:unit-cooler",
+  "iso:temperature-probe",
+  "iso:reefer",
 ] as const;
 
 export type IsoSymbolKey = (typeof ISO_SYMBOL_KEYS)[number];
@@ -114,4 +122,12 @@ export const ISO_SYMBOL_META: Readonly<
   "iso:lamp": { label: "Light fitting", group: "facility" },
   "iso:lift": { label: "Lift", group: "facility" },
   "iso:unit": { label: "Package unit", group: "general" },
+  "iso:telemetry-tower": { label: "Telemetry tower", group: "general" },
+  "iso:gateway": { label: "Network gateway", group: "it_ups" },
+  "iso:blast-freezer": { label: "Blast freezer", group: "hvac" },
+  "iso:cold-room": { label: "Cold room", group: "hvac" },
+  "iso:deep-freezer": { label: "Deep freezer", group: "hvac" },
+  "iso:unit-cooler": { label: "Unit cooler", group: "hvac" },
+  "iso:temperature-probe": { label: "Temperature probe", group: "environment" },
+  "iso:reefer": { label: "Refrigerated container", group: "facility" },
 };

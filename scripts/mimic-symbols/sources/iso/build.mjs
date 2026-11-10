@@ -45,6 +45,9 @@ const CORE = [
   "submersible-pump", "bar-screen", "filter-press", "horizontal-tank", "condensing-unit",
   "solar-panel", "wind-turbine", "ev-charger", "capacitor-bank", "isolator", "vfd",
   "smoke-detector", "pressure-gauge",
+  // F4.352 (ADR 0121 Amendment 1): the PHE RTU signal and network, and the WBLDC cold chain.
+  "telemetry-tower", "gateway", "blast-freezer", "cold-room", "deep-freezer", "unit-cooler",
+  "temperature-probe", "reefer",
 ];
 const ONLY = process.env.ONLY?.split(",");
 const GLYPHS = CORE.filter((id) => existsSync(join(HERE, "glyphs", `${id}.mjs`)) && (!ONLY || ONLY.includes(id)));

@@ -40,12 +40,16 @@ export function registryIsTheEightLibrariesWithTheirStyles(): void {
   assert(mimicSymbolLibrary("iso").licence === "Own work; anatomy kit MIT", "iso licence");
 }
 
-/** `F4.345` / ADR 0121 — the isometric library: 50 entries, labels from the curation (plan R1:
- * "Storage tank", not the derived "Tank"), keys answered by their library. Mutation: drop the
- * `item.label` override in `generate.mjs` and regenerate → the label claim reddens. */
-export function isoLibraryHasFiftyCuratedEntries(): void {
-  assert(librarySymbolEntries("iso").length === 50, `iso entries: ${librarySymbolEntries("iso").length}`);
+/** `F4.345` / ADR 0121 — the isometric library: 58 entries (50, then F4.352's eight appended,
+ * Amendment 1), labels from the curation (plan R1: "Storage tank", not the derived "Tank"), keys
+ * answered by their library. Mutation: drop the `item.label` override in `generate.mjs` and
+ * regenerate → the label claims redden. */
+export function isoLibraryHasFiftyEightCuratedEntries(): void {
+  const entries = librarySymbolEntries("iso");
+  assert(entries.length === 58, `iso entries: ${entries.length}`);
   assert(symbolLibraryLabel("iso:tank") === "Storage tank", `iso:tank label: ${symbolLibraryLabel("iso:tank")}`);
+  assert(symbolLibraryLabel("iso:cold-room") === "Cold room", `iso:cold-room label: ${symbolLibraryLabel("iso:cold-room")}`);
+  assert(entries.at(-1)?.key === "iso:reefer", `last iso entry: ${entries.at(-1)?.key}`);
   assert(libraryOfSymbol("iso:pump") === "iso", `iso:pump → ${libraryOfSymbol("iso:pump")}`);
 }
 

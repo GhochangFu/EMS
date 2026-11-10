@@ -17,7 +17,7 @@ import {
   mimicSymbolRefusalIsShort,
   mimicSymbolSchemaAcceptsAnOrgKey,
   mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder,
-  mimicSymbolSchemaEndsWithTheFiftyIsoKeys,
+  mimicSymbolSchemaEndsWithTheFiftyEightIsoKeys,
   mimicSymbolSchemaRefusesOrgPlantWithNoName,
   mimicWidgetNodesParsesTheLayoutArm,
   mimicWidgetNodesParsesThePresetArm,
@@ -43,8 +43,8 @@ describe("F3.32c — the mimic layout contracts (ADR 0081)", () => {
     everyLibraryKeyNamesItsLibraryAndFitsSixtyFour();
   });
 
-  it("ends the static symbol list with the fifty isometric keys (F4.345)", () => {
-    mimicSymbolSchemaEndsWithTheFiftyIsoKeys();
+  it("ends the static symbol list with the fifty-eight isometric keys (F4.345, F4.352)", () => {
+    mimicSymbolSchemaEndsWithTheFiftyEightIsoKeys();
   });
 
   it("declares the eight symbol libraries in palette order (F3.32e, F3.32f, F4.345)", () => {

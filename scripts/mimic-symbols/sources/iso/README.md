@@ -28,7 +28,9 @@ node scripts/mimic-symbols/generate.mjs --iso scripts/mimic-symbols/sources/iso/
 - `glyphs/<id>.mjs` — one asset: `name`, `extent` (world points) and `parts(k, G, P)` in paint
   order, back to front; `tank.mjs` also exports `level` (the shell, for the live level fill).
   A new glyph is added to `CORE` in `build.mjs` and to `../../curation/iso.json` (name, label,
-  palette group).
+  palette group). Append it at the end of both: a later batch goes in a block whose key is the
+  group plus a `#` suffix (`"hvac#f4.352"`), so the glyphs already shipped keep their order and
+  their `sort_order`.
 - `lib/flatten.mjs` — hidden-line removal: each part's outline and creases are cut where a nearer
   part covers them.
 - `lib/ribbon.mjs` — each line as a thin filled ribbon; a `d` stays under the 8,192-character cap.
