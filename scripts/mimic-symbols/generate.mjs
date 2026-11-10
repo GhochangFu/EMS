@@ -254,8 +254,8 @@ function build(lib, dir, collect = null) {
   const paths = new Map();
   for (const [key, list] of Object.entries(curation)) {
     const group = key.replace(/#.*$/, "");
-    if (!GROUPS.includes(group)) fail(`${lib.code} curation has unknown group ${group}`);
-    if (!Array.isArray(list)) fail(`${lib.code} curation group ${group} is not a list`);
+    if (!GROUPS.includes(group)) fail(`${lib.code} curation key ${key} names an unknown group ${group}`);
+    if (!Array.isArray(list)) fail(`${lib.code} curation group ${key} is not a list`);
     for (const item of list) {
       try {
         const name = lib.entryShape === "object" ? item?.name : item;

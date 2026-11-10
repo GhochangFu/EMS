@@ -5,7 +5,8 @@
  * `generate.mjs --iso <that fill dir>` reads them.
  *
  * Curation (`curation/iso.json`): `{ "<group>": [{ "name": "<glyph id>", "label": "<label>" }] }`;
- * the generator takes the `label` as written (plan R1).
+ * the generator takes the `label` as written (plan R1). A later batch is appended under a key
+ * `"<group>#<suffix>"` (`"hvac#f4.352"`, ADR 0121 Amendment 1); the group is the key up to `#`.
  *
  * The interface:
  * - `LIBRARY.load(dir)` → `{ version, licence, conversion, shapes(entry), extraModules(lib) }`:
