@@ -48,8 +48,9 @@ export function RailShell({ user, children, kpiRibbon }: AppShellProps) {
   );
   const toggleName = collapsed ? "Expand rail" : "Collapse rail";
   // F4.347 — below `xl` the user and the controls fold into one menu; on a phone the status strip
-  // moves into that menu too, so the header never runs past the screen.
-  const headerFolded = model.viewport.width <= RAIL_HEADER_FOLD_MAX_WIDTH;
+  // moves into that menu too, so the header never runs past the screen. The width is the page's,
+  // less the docked Copilot's push.
+  const headerFolded = model.viewport.width - model.copilotPush <= RAIL_HEADER_FOLD_MAX_WIDTH;
   const statusStrip = (
     <span className="flex items-center gap-2 text-on-dark/80" data-testid="rail-status-strip">
       <StatusBarClock />

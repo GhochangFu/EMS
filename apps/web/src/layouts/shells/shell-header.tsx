@@ -102,6 +102,7 @@ export function HeaderMenu({
 }) {
   const [open, setOpen] = useOverlayClosesOnNavigation(pathname);
   const root = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) {
       return;
@@ -109,6 +110,8 @@ export function HeaderMenu({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpen(() => false);
+        // Focus was inside the panel that unmounts; give it back to the button that opened it.
+        button.current?.focus();
       }
     };
     const onPointer = (event: PointerEvent) => {
@@ -126,6 +129,7 @@ export function HeaderMenu({
   return (
     <div ref={root} className="relative" data-testid="header-menu">
       <button
+        ref={button}
         type="button"
         className={HEADER_BUTTON}
         aria-expanded={open}

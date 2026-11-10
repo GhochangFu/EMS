@@ -75,17 +75,28 @@ export function aPhoneFoldsTheSidebarHeaderIntoAMenu(): void {
   expect(within(open).getByRole("button", { name: "Appearance" })).toBeInTheDocument();
   expect(within(open).getByRole("button", { name: "Logout" })).toBeInTheDocument();
 
-  // A control inside the panel keeps it open.
-  act(() => within(open).getByRole("button", { name: "Dark" }).click());
+  // A press on a control inside the panel keeps it open (the outside test runs on `pointerdown`).
+  const dark = within(open).getByRole("button", { name: "Dark" });
+  fireEvent.pointerDown(dark);
+  act(() => dark.click());
   expect(panel()).not.toBeNull();
+
+  // A press on Menu itself while open closes the panel once: `pointerdown` does not close it, the
+  // click toggles it.
+  fireEvent.pointerDown(menuButton());
+  act(() => menuButton().click());
+  expect(panel()).toBeNull();
+  expect(menuButton()).toHaveAttribute("aria-expanded", "false");
 }
 
 /** H2 — Escape, a press outside and Appearance each close the panel; Appearance opens its dialog. */
 export function thePanelClosesOnEscapeOutsideAppearanceAndNavigation(): void {
   renderShell("swiss-grid", 390);
   act(() => menuButton().click());
+  within(panel()!).getByRole("button", { name: "Logout" }).focus();
   fireEvent.keyDown(document, { key: "Escape" });
   expect(panel()).toBeNull();
+  expect(document.activeElement).toBe(menuButton());
 
   act(() => menuButton().click());
   fireEvent.pointerDown(screen.getByText("body"));

@@ -47,7 +47,8 @@ export function SidebarShell({ user, children, kpiRibbon }: AppShellProps) {
         user={user}
         locationScopeLabel={locationScopeLabel}
         onLogout={handleLogout}
-        viewportWidth={viewport.width}
+        // F4.347 — the header's own width: the docked Copilot pushes the page in from the right.
+        viewportWidth={viewport.width - copilotPush}
         pathname={location.pathname}
       />
 
