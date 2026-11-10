@@ -128,6 +128,19 @@ describe("ADR 0016 ingest contracts", () => {
     expect(String(ingest.UPLINK_TOKEN_PATTERN)).toBe("/^bmsgw_[A-Za-z0-9_-]{43}$/");
   });
 
+  it("publishes the edge configuration file schema and its bounds through ./ingest", () => {
+    // `E7.2` (ADR 0123 decisions 3 and 7): the edge entry point loads the built
+    // subpath, so a schema only the source exports would leave the box unable to start.
+    const ingest = require_("@bms/shared/ingest") as Record<string, unknown>;
+    const schema = ingest.edgeConfigFileSchema as { safeParse?: unknown } | undefined;
+    expect(typeof schema?.safeParse, "edgeConfigFileSchema is not exported by @bms/shared/ingest").toBe("function");
+    expect(ingest.EDGE_DEFAULT_BUFFER_MAX_AGE_MS).toBe(259_200_000);
+    expect(ingest.EDGE_MAX_BUFFER_MAX_AGE_MS).toBe(518_400_000);
+    expect(ingest.EDGE_DEFAULT_BUFFER_MAX_BYTES).toBe(1_073_741_824);
+    expect(ingest.EDGE_MIN_REPLAY_MAX_SAMPLES_PER_S).toBe(50);
+    expect(String(ingest.EDGE_CREDENTIAL_ENV_PATTERN)).toBe("/^EDGE_CRED_[A-Z0-9_]+$/");
+  });
+
   it("publishes the notify live window through ./ingest", () => {
     // `E7.2` (ADR 0123 decision 10): the API's manual-entry write and the
     // ingest host's `writeResolved` gate `pg_notify` on one constant.

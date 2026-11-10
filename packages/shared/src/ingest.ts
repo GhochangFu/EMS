@@ -41,6 +41,8 @@ export * from "./ingest-adapters/mqtt-payload-format-binary";
 export * from "./protocol-catalog";
 // `E7.2` (ADR 0123 decision 4): the edge-to-cloud uplink wire schema.
 export * from "./ingest-uplink";
+// `E7.2` (ADR 0123 decision 3): the edge gateway's configuration file schema.
+export * from "./ingest-edge-config";
 
 /**
  * Compile-time drift guard: every ingest protocol must be expressible in
