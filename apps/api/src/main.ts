@@ -13,6 +13,8 @@ import { ZodErrorFilter } from "./common/zod-error.filter";
 import { GLOBAL_PREFIX, GLOBAL_PREFIX_OPTIONS } from "./global-prefix";
 import { areApiDocsEnabled } from "./openapi/api-docs-enabled";
 import { buildOpenApiDocument } from "./openapi/openapi-document";
+import { createClientIpLimitMiddleware } from "./rate-limit/client-ip-limit.middleware";
+import { RateLimiterService } from "./rate-limit/rate-limiter.service";
 import { createSocketIoAdapter } from "./realtime/redis-io.adapter";
 
 async function bootstrap(): Promise<void> {
@@ -48,6 +50,26 @@ async function bootstrap(): Promise<void> {
     // to its default name until the F2.7 PR 2 browser run noticed.
     exposedHeaders: ["Content-Disposition"],
   });
+
+  // `F4.17` / ADR 0125 decision 8 — the client address behind the reverse
+  // proxy. A hop count, read from the right of `X-Forwarded-For`, so a client
+  // cannot choose its own bucket by prepending to the header. `0` (the
+  // default) trusts no forwarded header: correct for direct local access. The
+  // AWS chain (Caddy → web nginx → api) sets 2.
+  //
+  // Then **Stage 1** (decisions 1 and 2): per client IP, on every `/api/v1`
+  // request, registered here so it runs before the Nest router and every
+  // guard, pipe and multer buffer. `/health` and `/metrics` are never counted.
+  // **After `enableCors`**: a refusal must carry the CORS headers, or the SPA
+  // reads a CORS failure instead of a 429; and a preflight is answered by the
+  // CORS middleware before it is ever counted.
+  const rateLimiter = app.get(RateLimiterService);
+  app.set("trust proxy", rateLimiter.config.trustProxyHops);
+  app.use(createClientIpLimitMiddleware(rateLimiter));
+  Logger.log(
+    `Rate limits: mode ${rateLimiter.mode}, trusted proxy hops ${rateLimiter.config.trustProxyHops}`,
+    "Bootstrap",
+  );
 
   // `F4.20` / ADR 0029 **Amendment 2** — the docs are absent or open, never
   // guarded, and the whole route is registered only where they are wanted.

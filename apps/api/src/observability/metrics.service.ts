@@ -78,6 +78,21 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /** `F4.17` / ADR 0125 decision 7 — one sample per counted request, per stage. */
+  private readonly rateLimitDecisions = new Counter({
+    name: "bms_rate_limit_decisions_total",
+    help: "Rate-limit decisions by stage (ip, identity), bucket and outcome (allowed, refused, shadow_refused).",
+    labelNames: ["stage", "bucket", "outcome"],
+    registers: [this.registry],
+  });
+
+  /** `F4.17` / ADR 0125 decision 4 — store calls that fell back to the in-process window. */
+  private readonly rateLimitStoreErrors = new Counter({
+    name: "bms_rate_limit_store_errors_total",
+    help: "Rate-limit store calls that fell back from Redis to the in-process window.",
+    registers: [this.registry],
+  });
+
   private readonly websocketEvents = new Counter({
     name: "bms_api_websocket_events_total",
     help: "Socket.IO events emitted by namespace and event type.",
@@ -324,6 +339,16 @@ export class MetricsService {
     this.httpDuration
       .labels(method, route, String(statusCode))
       .observe(durationSeconds);
+  }
+
+  /** `F4.17` — one rate-limit decision (ADR 0125 decision 7). */
+  recordRateLimitDecision(stage: string, bucket: string, outcome: string): void {
+    this.rateLimitDecisions.inc({ stage, bucket, outcome });
+  }
+
+  /** `F4.17` — one store fallback from Redis to memory (ADR 0125 decision 4). */
+  recordRateLimitStoreError(): void {
+    this.rateLimitStoreErrors.inc();
   }
 
   /** Records websocket event emission by namespace and event name. */

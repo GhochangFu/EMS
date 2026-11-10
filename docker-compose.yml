@@ -336,6 +336,22 @@ services:
       # per organization). Empty = the default (150, 1500); see .env.example.
       COPILOT_USER_DAILY_TURNS: ${COPILOT_USER_DAILY_TURNS:-}
       COPILOT_ORG_DAILY_TURNS: ${COPILOT_ORG_DAILY_TURNS:-}
+      # `F4.17` / ADR 0125 decisions 5, 7 and 8. Shadow first: counted and
+      # logged, never refused, until the owner reads a week of
+      # `bms_rate_limit_decisions_total` and sets `enforce`. Empty = the code's
+      # default (ADR decision 5's numbers). Set on `api` and `api-replica`
+      # identically — both count against one Redis budget, so different limits
+      # would make the budget depend on which process a request hit.
+      # `tests/f4.17-rate-limit-compose.test.ts` holds the pair equal.
+      # Hops 0 here: the browser reaches the API directly, with no proxy.
+      RATE_LIMIT_MODE: ${RATE_LIMIT_MODE:-shadow}
+      RATE_LIMIT_READ_PER_MIN: ${RATE_LIMIT_READ_PER_MIN:-}
+      RATE_LIMIT_WRITE_PER_MIN: ${RATE_LIMIT_WRITE_PER_MIN:-}
+      RATE_LIMIT_HEAVY_PER_MIN: ${RATE_LIMIT_HEAVY_PER_MIN:-}
+      RATE_LIMIT_IP_PER_MIN: ${RATE_LIMIT_IP_PER_MIN:-}
+      RATE_LIMIT_LOGIN_PER_MIN: ${RATE_LIMIT_LOGIN_PER_MIN:-}
+      RATE_LIMIT_WS_HANDSHAKE_PER_MIN: ${RATE_LIMIT_WS_HANDSHAKE_PER_MIN:-}
+      API_TRUST_PROXY_HOPS: ${API_TRUST_PROXY_HOPS:-0}
       # `F3.3` / ADR 0066 decision 3. All six, or none: an endpoint with a
       # missing bucket or key is a boot error, not a half-configured API
       # (`readStorageConfig`). Unset entirely — a native run without MinIO —
@@ -462,6 +478,22 @@ services:
       # `F3.85` — identical to `api` above: the counters are shared, so the limits must be too.
       COPILOT_USER_DAILY_TURNS: ${COPILOT_USER_DAILY_TURNS:-}
       COPILOT_ORG_DAILY_TURNS: ${COPILOT_ORG_DAILY_TURNS:-}
+      # `F4.17` / ADR 0125 decisions 5, 7 and 8. Shadow first: counted and
+      # logged, never refused, until the owner reads a week of
+      # `bms_rate_limit_decisions_total` and sets `enforce`. Empty = the code's
+      # default (ADR decision 5's numbers). Set on `api` and `api-replica`
+      # identically — both count against one Redis budget, so different limits
+      # would make the budget depend on which process a request hit.
+      # `tests/f4.17-rate-limit-compose.test.ts` holds the pair equal.
+      # Hops 0 here: the browser reaches the API directly, with no proxy.
+      RATE_LIMIT_MODE: ${RATE_LIMIT_MODE:-shadow}
+      RATE_LIMIT_READ_PER_MIN: ${RATE_LIMIT_READ_PER_MIN:-}
+      RATE_LIMIT_WRITE_PER_MIN: ${RATE_LIMIT_WRITE_PER_MIN:-}
+      RATE_LIMIT_HEAVY_PER_MIN: ${RATE_LIMIT_HEAVY_PER_MIN:-}
+      RATE_LIMIT_IP_PER_MIN: ${RATE_LIMIT_IP_PER_MIN:-}
+      RATE_LIMIT_LOGIN_PER_MIN: ${RATE_LIMIT_LOGIN_PER_MIN:-}
+      RATE_LIMIT_WS_HANDSHAKE_PER_MIN: ${RATE_LIMIT_WS_HANDSHAKE_PER_MIN:-}
+      API_TRUST_PROXY_HOPS: ${API_TRUST_PROXY_HOPS:-0}
       # Identical to `api` above (ADR 0066 decisions 3 and 8). The replica is
       # a second API process against the same database and the same bucket:
       # `ensureBucket` is idempotent and a `BucketAlreadyOwnedByYou` from a

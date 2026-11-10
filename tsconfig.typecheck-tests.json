@@ -302,6 +302,8 @@
     "tests/f4.339-onboarding-session-lock-schema.test.ts",
     "tests/f4.339-rtu-released-mqtt-topic-schema.test.ts",
     "tests/f4.343-wbldc-payload-format-schema.test.ts",
-    "tests/f4.344-mimic-motion-gate.test.ts"
+    "tests/f4.344-mimic-motion-gate.test.ts",
+    "tests/f4.17-rate-limit-compose.test.ts",
+    "tests/f4.17-rate-limit-wiring.test.ts"
   ]
 }
