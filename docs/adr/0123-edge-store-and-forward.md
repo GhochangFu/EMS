@@ -2,10 +2,11 @@
 
 ## Status
 
-**Proposed — 2026-11-10.** Drafted for the owner's §10 gate. **Nothing is
-built until the open questions below are ruled.** Every numbered item under
-*Decision* is the drafter's recommendation, not a ruling; each one names the
-open question that settles it.
+**Accepted — 2026-11-10** (owner, in chat: "all as recommended, accept ADR
+0123"; proposed the same day). Every question under *Rulings* — Q1 to Q14
+and the sub-questions Q3a, Q3b, Q4a, Q7a, Q9a and Q13a — is ruled as
+recommended, so each numbered item under *Decision* stands as written.
+**Nothing is built until the plan is approved.**
 
 Backlog row `E7.2` (Track A, Wave 4, P1, 8–12, depends on `F1.1` ✅ and
 `F1.10` ✅). Plan: [`docs/plans/e7.2-edge-store-and-forward.md`](../plans/e7.2-edge-store-and-forward.md).
@@ -14,15 +15,14 @@ Code citations are to `main` at `0bc360c`.
 **Adds no npm dependency** (§9.4): the recommendation uses Node core only
 (`node:fs`, `node:http`, `node:zlib`, `node:crypto`, global `fetch`).
 **Adds one table, one column and one migration.** **Adds no database role and
-writes no `GRANT`.** **Adds no app** if Q2 is ruled as recommended (a second
-entry point in `apps/ingest`); Q2 option A adds `apps/edge` and
-`packages/ingest-core`.
+writes no `GRANT`.** **Adds no app** (Q2: a second entry point in `apps/ingest`).
 
 AGENTS.md §6 does not name the edge runtime, so nothing is removed from it.
 The `chore(agents):` sweep owed after the build (§10.1) is listed under
 *Consequences*.
 
-**Would amend, if accepted:**
+**Amends** (each amendment's text lands in the code PR that changes the
+behaviour, as the plan orders them):
 
 - [ADR 0016](./0016-ingest-adapter-framework.md) §6 commit 4 — the repo
   invariant "one entry point in `apps/ingest/src`" becomes "one entry point
@@ -114,7 +114,7 @@ adapter is added: each still needs its own ADR (AGENTS.md §6). No broker is
 introduced (EMQX stays out of scope). `telemetry.*` gets no
 `organization_id` and no RLS (ADR 0043 decision 9).
 
-## Decision (recommended — each item is settled by the question it names)
+## Decision
 
 1. **Scope is the data plane** (Q1). The edge runtime collects, buffers and
    forwards. It starts and runs with no cloud and no database. It evaluates no
@@ -279,10 +279,11 @@ a real database before the migration is written.
 | edge | `EDGE_REPLAY_MAX_SAMPLES_PER_S` | `500` |
 | edge | `EDGE_CRED_<NAME>` | per device credential |
 
-## Open questions for the owner
+## Rulings (owner, 2026-11-10)
 
-Each question lists options and the drafter's recommendation. The
-recommendation is what *Decision* above assumes.
+The questions as they were put at the §10 gate, with their options. **The
+owner ruled every one as recommended**, so in each the line that starts
+"Recommend" is the ruling.
 
 **Q1. What does "offline ops" mean for this row?**
 - A. Data plane only: collect, buffer, forward; start and run with no cloud.
