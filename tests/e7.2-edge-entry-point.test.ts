@@ -25,9 +25,59 @@ import { describe, expect, it } from "vitest";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const ingestSrc = join(repoRoot, "apps", "ingest", "src");
 
-/** Block comments and `//` tails, so a commented-out import cannot count either way. */
-function withoutComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+/**
+ * One pass over the source that knows strings, template literals and regex
+ * literals, so a string holding `/*` or `//` cannot swallow the code after it.
+ * Both outputs keep every offset: `code` has comments blanked and strings
+ * intact; `bare` has string and regex contents blanked too, for searching
+ * code only.
+ */
+function scan(src: string): { code: string; bare: string } {
+  const code = src.split("");
+  const bare = src.split("");
+  const blank = (from: number, to: number, both: boolean): void => {
+    for (let k = from; k < to; k += 1) {
+      if (src[k] === "\n") continue;
+      bare[k] = " ";
+      if (both) code[k] = " ";
+    }
+  };
+  let i = 0;
+  let prev = "";
+  while (i < src.length) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (c === "/" && next === "/") {
+      const end = src.indexOf("\n", i) === -1 ? src.length : src.indexOf("\n", i);
+      blank(i, end, true);
+      i = end;
+    } else if (c === "/" && next === "*") {
+      const end = src.indexOf("*/", i + 2) === -1 ? src.length : src.indexOf("*/", i + 2) + 2;
+      blank(i, end, true);
+      i = end;
+    } else if (c === '"' || c === "'" || c === "`") {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c) j += src[j] === "\\" ? 2 : 1;
+      blank(i + 1, j, false);
+      i = j + 1;
+      prev = c;
+    } else if (c === "/" && (prev === "" || "(,=:[!&|?{};+-*%<>~^".includes(prev))) {
+      let j = i + 1;
+      let inClass = false;
+      while (j < src.length && src[j] !== "\n" && (inClass || src[j] !== "/")) {
+        if (src[j] === "[") inClass = true;
+        else if (src[j] === "]") inClass = false;
+        j += src[j] === "\\" ? 2 : 1;
+      }
+      blank(i + 1, j, false);
+      i = j + 1;
+      prev = "/";
+    } else {
+      if (!/\s/.test(c)) prev = c;
+      i += 1;
+    }
+  }
+  return { code: code.join(""), bare: bare.join("") };
 }
 
 /** `true` for `type X`, `{ type A, type B }` — a clause the compiler erases. */
@@ -47,22 +97,38 @@ function typeOnly(clause: string): boolean {
   return specifiers.length > 0 && specifiers.every((s) => /^type\s/.test(s));
 }
 
-/** Every specifier `file` loads at run time. */
-function runtimeImports(source: string): string[] {
-  const src = withoutComments(source);
-  const found: string[] = [];
-  for (const match of src.matchAll(/(?:^|[\n;])\s*(?:import|export)\s+([^;'"]*?)\s*from\s*["']([^"']+)["']/g)) {
+/**
+ * Every specifier the source loads at run time, and every load the walker
+ * cannot follow: an `import(` or `require(` whose argument is not one string
+ * literal, or any `createRequire`. A load the walker cannot follow fails the
+ * test rather than being trusted.
+ */
+function runtimeImports(source: string): { specifiers: string[]; unfollowable: string[] } {
+  const { code, bare } = scan(source);
+  const specifiers: string[] = [];
+  const unfollowable: string[] = [];
+  for (const match of code.matchAll(/(?:^|[\n;])\s*(?:import|export)\s+([^;'"]*?)\s*from\s*["']([^"']+)["']/g)) {
     if (!typeOnly(match[1])) {
-      found.push(match[2]);
+      specifiers.push(match[2]);
     }
   }
-  for (const match of src.matchAll(/(?:^|[\n;])\s*import\s*["']([^"']+)["']/g)) {
-    found.push(match[1]);
+  for (const match of code.matchAll(/(?:^|[\n;])\s*import\s*["']([^"']+)["']/g)) {
+    specifiers.push(match[1]);
   }
-  for (const match of src.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)) {
-    found.push(match[1]);
+  for (const match of bare.matchAll(/\b(import|require)\s*\(/g)) {
+    const at = (match.index ?? 0) + match[0].length;
+    const literal = /^\s*(["'])[^"'\n]*\1\s*\)/.exec(bare.slice(at));
+    const spec = literal === null ? null : /^\s*["']([^"']*)["']/.exec(code.slice(at));
+    if (spec === null) {
+      unfollowable.push(`${match[1]}(${code.slice(at, at + 30).split("\n")[0]}`);
+    } else {
+      specifiers.push(spec[1]);
+    }
   }
-  return found;
+  if (/\bcreateRequire\b/.test(bare)) {
+    unfollowable.push("createRequire");
+  }
+  return { specifiers, unfollowable };
 }
 
 /** A relative `./x.js` to the file on disk (`x.ts`, or the `.js` itself). */
@@ -77,8 +143,14 @@ function resolveRelative(from: string, specifier: string): string | undefined {
 }
 
 /** The runtime closure from `entry`: source files (relative to `src/`) and bare packages. */
-function walkFrom(entry: string): { files: Set<string>; packages: Set<string>; unresolved: string[] } {
+function walkFrom(entry: string): {
+  files: Set<string>;
+  packages: Set<string>;
+  unresolved: string[];
+  unfollowable: string[];
+} {
   const files = new Set<string>();
+  const unfollowable: string[] = [];
   const packages = new Set<string>();
   const unresolved: string[] = [];
   const pending = [join(ingestSrc, entry)];
@@ -89,7 +161,9 @@ function walkFrom(entry: string): { files: Set<string>; packages: Set<string>; u
       continue;
     }
     files.add(rel);
-    for (const specifier of runtimeImports(readFileSync(file, "utf8"))) {
+    const found = runtimeImports(readFileSync(file, "utf8"));
+    unfollowable.push(...found.unfollowable.map((u) => `${rel}: ${u}`));
+    for (const specifier of found.specifiers) {
       if (specifier.startsWith(".")) {
         const next = resolveRelative(file, specifier);
         if (next === undefined) {
@@ -102,7 +176,7 @@ function walkFrom(entry: string): { files: Set<string>; packages: Set<string>; u
       }
     }
   }
-  return { files, packages, unresolved };
+  return { files, packages, unresolved, unfollowable };
 }
 
 /** Modules only the cloud host may load: each one reads, writes or plans against Postgres. */
@@ -123,17 +197,31 @@ const reachesDatabasePackage = (packages: Set<string>): string[] =>
 
 describe("E7.2 — the edge entry point cannot reach Postgres (ADR 0123 decision 2)", () => {
   it("the walker skips type-only imports and follows the rest", () => {
-    expect(runtimeImports('import type { A } from "./a.js";\nimport { type B, type C } from "./b.js";')).toEqual([]);
-    expect(runtimeImports('import { type B, c } from "./b.js";\nexport { d } from "./d.js";')).toEqual([
-      "./b.js",
-      "./d.js",
-    ]);
-    expect(runtimeImports('// import pg from "pg";\nimport "./side.js";')).toEqual(["./side.js"]);
+    const specs = (src: string) => runtimeImports(src).specifiers;
+    expect(specs('import type { A } from "./a.js";\nimport { type B, type C } from "./b.js";')).toEqual([]);
+    expect(specs('import { type B, c } from "./b.js";\nexport { d } from "./d.js";')).toEqual(["./b.js", "./d.js"]);
+    expect(specs('// import pg from "pg";\nimport "./side.js";')).toEqual(["./side.js"]);
+    expect(specs('const x = await import("pg");\nconst y = require("@bms/db");')).toEqual(["pg", "@bms/db"]);
+  });
+
+  it("a string holding a comment opener cannot hide an import", () => {
+    expect(runtimeImports('const s = "/*";\nimport pg from "pg";\nconst t = "*/";').specifiers).toEqual(["pg"]);
+    expect(runtimeImports("const r = /[\"'/*]/;\nimport pg from \"pg\";\n").specifiers).toEqual(["pg"]);
+  });
+
+  it("a load the walker cannot follow is reported, never trusted", () => {
+    expect(runtimeImports('const m = "p" + "g";\nawait import(m);').unfollowable).toHaveLength(1);
+    expect(runtimeImports("const db = require(name);").unfollowable).toHaveLength(1);
+    expect(runtimeImports('import { createRequire } from "node:module";\ncreateRequire(import.meta.url)("pg");').unfollowable).toContain(
+      "createRequire",
+    );
+    expect(runtimeImports('log("import(x) in a string");').unfollowable).toEqual([]);
   });
 
   it("edge-main.ts reaches no pg, no @bms/db and no cloud-only module", () => {
     const edge = walkFrom("edge-main.ts");
     expect(edge.unresolved, "every relative import resolves").toEqual([]);
+    expect(edge.unfollowable, "every load from edge-main.ts is a string literal the walk follows").toEqual([]);
     // Positive controls: the walk reached the edge's own modules, including
     // one that type-imports `bindings.ts`.
     for (const file of ["host/uplink-client.ts", "host/supervisor.ts", "host/disk-buffer.ts", "host/edge-plan.ts", "adapters/mqtt.ts"]) {

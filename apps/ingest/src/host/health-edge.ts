@@ -34,6 +34,7 @@ export function edgeDegrades(edge: EdgeHealth | undefined, now: Date): boolean {
   return edge.clock !== "synced" || (refusedAt !== undefined && now.getTime() - refusedAt < REFUSED_RECENT_MS);
 }
 
+/** The one `edge …` line: the clock, the last uplink outcome, and the uplink counters. */
 export function renderEdgeLine(edge: EdgeHealth): string {
   const u = edge.uplink;
   return (

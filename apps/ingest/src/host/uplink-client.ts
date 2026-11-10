@@ -276,6 +276,10 @@ function createPostLock(scheduler: Scheduler) {
   };
 }
 
+/**
+ * Builds the client one edge process shares across its endpoints: one token,
+ * one post in flight, one throttle schedule, one `Retry-After` gate.
+ */
 export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
   const { scheduler, logger } = deps;
   const endpoint = new URL(EDGE_UPLINK_PATH, deps.url).href;

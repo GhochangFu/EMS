@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 
 import {
+  EDGE_CREDENTIAL_KEY_PATTERN,
   EDGE_DEFAULT_BUFFER_MAX_AGE_MS,
   EDGE_DEFAULT_BUFFER_MAX_BYTES,
   EDGE_DEFAULT_REPLAY_MAX_SAMPLES_PER_S,
@@ -124,6 +125,10 @@ function readToken(raw: string): string {
 
 /** Pure over its input, so every rule is testable without mutating `process.env`. */
 export function readEdgeEnv(env: NodeJS.ProcessEnv): EdgeEnv {
+  // Node's own switch would turn verification off for the uplink too; the edge has none (decision 5).
+  if (env.NODE_TLS_REJECT_UNAUTHORIZED?.trim() === "0") {
+    throw new Error("NODE_TLS_REJECT_UNAUTHORIZED=0 is refused: the edge never lowers certificate verification");
+  }
   const configFile = absolutePath("EDGE_CONFIG_FILE", required(env, "EDGE_CONFIG_FILE"));
   const uplinkUrl = readUplinkUrl(required(env, "EDGE_UPLINK_URL"));
   const gatewayToken = readToken(required(env, "EDGE_GATEWAY_TOKEN"));
@@ -191,11 +196,30 @@ export type EdgeFileDeps = {
 };
 
 /** `endpoints[0].devices[1].device.topic` — a location in the file, never what is there. */
-function where(prefix: string, path: readonly (string | number)[]): string {
-  return path.reduce<string>(
-    (out, part) => (typeof part === "number" ? `${out}[${part}]` : out === "" ? part : `${out}.${part}`),
-    prefix,
-  );
+/**
+ * `endpoints[0].devices[1].device.topic` — a location in the file, never what
+ * is there. A key under `credentials` that is not a credential key (a secret
+ * pasted where a key belongs) is printed by position, `credentials[<n>]`, and
+ * `root` is the parsed file it is counted in.
+ */
+function where(prefix: string, path: readonly (string | number)[], root?: unknown): string {
+  let out = prefix;
+  let node: unknown = root;
+  let parent: string | number | undefined;
+  for (const part of path) {
+    const container = node;
+    node = typeof node === "object" && node !== null ? (node as Record<string | number, unknown>)[part] : undefined;
+    if (typeof part === "number") {
+      out = `${out}[${part}]`;
+    } else if (parent === "credentials" && !EDGE_CREDENTIAL_KEY_PATTERN.test(part)) {
+      const index = typeof container === "object" && container !== null ? Object.keys(container).indexOf(part) : -1;
+      out = `${out}[${index}]`;
+    } else {
+      out = out === "" ? part : `${out}.${part}`;
+    }
+    parent = part;
+  }
+  return out;
 }
 
 /**
@@ -203,14 +227,14 @@ function where(prefix: string, path: readonly (string | number)[]): string {
  * messages quote the received value for enums and literals. A key name an
  * unknown-key issue lists is the operator's own, and is named.
  */
-function describeIssue(prefix: string, issue: ZodIssue): string {
+function describeIssue(prefix: string, issue: ZodIssue, root?: unknown): string {
   const detail =
     issue.code === "unrecognized_keys"
       ? ` (${issue.keys.join(", ")})`
       : issue.code === "invalid_type"
         ? ` (expected ${issue.expected})`
         : "";
-  return `${where(prefix, issue.path)}: ${issue.code}${detail}`;
+  return `${where(prefix, issue.path, root)}: ${issue.code}${detail}`;
 }
 
 /** Every problem in the file, not the first: a box on a site visit should be fixed in one pass. */
@@ -253,7 +277,7 @@ export function parseEdgeConfigFile(text: string, deps: EdgeFileDeps): readonly 
   }
   const shape = edgeConfigFileSchema.safeParse(json);
   if (!shape.success) {
-    throw new EdgeConfigError(shape.error.issues.map((issue) => describeIssue("", issue)));
+    throw new EdgeConfigError(shape.error.issues.map((issue) => describeIssue("", issue, json)));
   }
 
   const problems: string[] = [];

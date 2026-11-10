@@ -78,7 +78,10 @@ export function anUnsyncedClockDegrades(): void {
 
 /** The cloud host has no edge line and its verdict ignores the field's absence. */
 export function theCloudHasNoEdgeLine(): void {
+  const edgeBody = renderHealth(snapshot(edge()), NOW);
+  assert(edgeBody.includes(" notify=cloud ") && !edgeBody.includes("notify=on"), "the edge does not claim to notify");
   const body = renderHealth(snapshot(), NOW);
+  assert(body.includes(" notify=on "), "the cloud's literal is unchanged");
   assert(lineOf(body, "edge ") === undefined, "no edge line on the cloud");
   assert(body.startsWith("ingest-host ok "), `the cloud verdict is unchanged: ${body.split("\n")[0]}`);
 }

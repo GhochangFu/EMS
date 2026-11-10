@@ -9,6 +9,7 @@ import {
   credentialsAreNamesOnly,
   eachRequiredVariableIsNamed,
   mqttDevicesNeedSourceKeysAndInlineFormats,
+  nodesTlsSwitchIsRefused,
   plainMqttOnlyForAnAllowListedHost,
   rejectUnauthorizedIsRefused,
   relativePathsAreRefused,
@@ -42,6 +43,10 @@ describe("E7.2 — the edge environment (ADR 0123 decisions 5 and 7, plan T5.1)"
 
   it("holds the replay rate at or above 50/s", () => {
     theReplayRateHasAFloor();
+  });
+
+  it("refuses NODE_TLS_REJECT_UNAUTHORIZED=0", () => {
+    nodesTlsSwitchIsRefused();
   });
 
   it("needs no database", () => {

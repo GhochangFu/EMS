@@ -35,6 +35,10 @@ export type EdgeEndpointPlan = {
   readonly plan: EndpointPlan;
 };
 
+/**
+ * The edge's plans, in file order, each with the factory that serves it.
+ * Throws when two file endpoints resolve to one endpoint key.
+ */
 export function planEdgeEndpoints(
   endpoints: readonly EdgeEndpoint[],
 ): readonly EdgeEndpointPlan[] {

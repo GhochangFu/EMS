@@ -6,7 +6,7 @@
 # `node dist/edge-main.js` is the second entry point, and it reaches no
 # database. Run from this directory:
 #
-#   cp .env.example .env          # then fill in the token and the credentials
+#   install -m 600 .env.example .env   # then fill in the token and the credentials
 #   cp edge-config.example.json edge-config.json
 #   docker compose up -d --build
 #

@@ -29,7 +29,9 @@ import { z } from "zod";
 export const EDGE_CREDENTIAL_ENV_PATTERN = /^EDGE_CRED_[A-Z0-9_]+$/;
 
 /** A credential key as an adapter reads it from `AdapterContext.credentials`. */
-const credentialKey = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/);
+export const EDGE_CREDENTIAL_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+
+const credentialKey = z.string().regex(EDGE_CREDENTIAL_KEY_PATTERN);
 
 export const edgeDeviceEntrySchema = z
   .object({

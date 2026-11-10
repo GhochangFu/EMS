@@ -121,6 +121,13 @@ export function theReplayRateHasAFloor(): void {
   assert(message.includes("EDGE_REPLAY_MAX_SAMPLES_PER_S"), `the rate must be named: ${message}`);
 }
 
+/** Node's own TLS switch is refused: the edge never lowers certificate verification. */
+export function nodesTlsSwitchIsRefused(): void {
+  const message = thrownMessage(() => readEdgeEnv(env({ NODE_TLS_REJECT_UNAUTHORIZED: "0" })), "TLS off");
+  assert(message.includes("NODE_TLS_REJECT_UNAUTHORIZED"), `named: ${message}`);
+  readEdgeEnv(env({ NODE_TLS_REJECT_UNAUTHORIZED: "1" }));
+}
+
 /** The edge reads no database variable: a stray `DATABASE_URL` is not required and not kept. */
 export function theEdgeNeedsNoDatabase(): void {
   const parsed = readEdgeEnv(BASE) as Record<string, unknown>;
@@ -194,6 +201,11 @@ export function credentialsAreNamesOnly(): void {
   const message = thrownMessage(() => parse(file([pasted])), "a pasted secret");
   assert(message.includes("endpoints[0].credentials.password"), `the key path is named: ${message}`);
   assert(!message.includes("hunter2-PASTED-SECRET"), `a pasted secret must not be printed: ${message}`);
+
+  const pastedKey = { ...MQTT_ENDPOINT, credentials: { username: "EDGE_CRED_U", "hunter2 KEY-SECRET": "EDGE_CRED_P" } };
+  const byPosition = thrownMessage(() => parse(file([pastedKey])), "a secret pasted as a key");
+  assert(byPosition.includes("endpoints[0].credentials[1]"), `a bad key is named by position: ${byPosition}`);
+  assert(!byPosition.includes("KEY-SECRET"), `a bad key is never printed: ${byPosition}`);
 
   const lower = { ...MQTT_ENDPOINT, credentials: { password: "EDGE_CRED_lower" } };
   thrownMessage(() => parse(file([lower])), "a lower-case name");

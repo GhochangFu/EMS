@@ -539,7 +539,7 @@ describe("repo invariants", () => {
     const ingestSrc = join(repoRoot, "apps", "ingest", "src");
     const entryPoints = walk(ingestSrc)
       .map((f) => relative(ingestSrc, f).split("\\").join("/"))
-      .filter((f) => /(^|\/)(index|[\w-]*main)\.(ts|js)$/.test(f))
+      .filter((f) => /(^|\/)(index|main|edge-main|[\w-]+-main|main-[\w-]+)\.(ts|js)$/.test(f)) // any other *-main/main-* fails too
       .sort();
     expect(
       entryPoints,

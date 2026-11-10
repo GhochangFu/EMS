@@ -244,7 +244,8 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
       // the lifetime `bufferDropped` counter. `writePath=` on the endpoint
       // line is the second gauge, for the case the first cannot see: nothing
       // on disk because nothing could be put there.
-      `skipped=${snapshot.skipped.length} notify=on ` +
+      // The edge writes and notifies nothing: its rows are notified by the cloud.
+      `skipped=${snapshot.skipped.length} notify=${snapshot.edge === undefined ? "on" : "cloud"} ` +
       `uptime=${uptimeSeconds}s`,
   );
 
