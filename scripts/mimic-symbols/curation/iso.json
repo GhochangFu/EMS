@@ -64,5 +64,23 @@
   ],
   "general": [
     { "name": "unit", "label": "Package unit" }
+  ],
+  "general#f4.352": [
+    { "name": "telemetry-tower", "label": "Telemetry tower" }
+  ],
+  "it_ups#f4.352": [
+    { "name": "gateway", "label": "Network gateway" }
+  ],
+  "hvac#f4.352": [
+    { "name": "blast-freezer", "label": "Blast freezer" },
+    { "name": "cold-room", "label": "Cold room" },
+    { "name": "deep-freezer", "label": "Deep freezer" },
+    { "name": "unit-cooler", "label": "Unit cooler" }
+  ],
+  "environment#f4.352": [
+    { "name": "temperature-probe", "label": "Temperature probe" }
+  ],
+  "facility#f4.352": [
+    { "name": "reefer", "label": "Refrigerated container" }
   ]
 }

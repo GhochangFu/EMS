@@ -967,6 +967,13 @@
       "when": 1794293987388,
       "tag": "0138_rtu_expected_interval",
       "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1794312817982,
+      "tag": "0139_mimic_iso_cold_chain_glyphs",
+      "breakpoints": true
     }
   ]
 }

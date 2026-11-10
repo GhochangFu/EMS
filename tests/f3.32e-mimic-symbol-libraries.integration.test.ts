@@ -368,10 +368,10 @@ describe.skipIf(!has)("F3.32e — migration 0090 against a live database", () =>
       });
     });
 
-    it("the tenant reads 50 iso symbols, the tank, pump, damper and RTU among them", async () => {
+    it("the tenant reads 58 iso symbols (0136's 50 + 0139's 8), the tank, pump, damper and RTU among them", async () => {
       await inTx(async (run) => {
         const count = await run(`SELECT count(*)::int AS n FROM bms.mimic_symbols WHERE library_code = 'iso'`);
-        expect(count.rows[0]?.n).toBe(50);
+        expect(count.rows[0]?.n).toBe(58);
         const named = await run(
           `SELECT key FROM bms.mimic_symbols WHERE key = ANY($1::text[]) ORDER BY key`,
           [["iso:tank", "iso:pump", "iso:damper", "iso:rtu"]],
@@ -397,6 +397,32 @@ describe.skipIf(!has)("F3.32e — migration 0090 against a live database", () =>
 
     it("drizzle.__drizzle_migrations holds 0136 by the sha256 of the file's bytes (superuser read)", async () => {
       const file = join(repoRoot, "packages/db/drizzle/0136_mimic_iso_symbol_library.sql");
+      const hash = createHash("sha256").update(readFileSync(file).toString()).digest("hex");
+      const rows = await client.query("SELECT hash FROM drizzle.__drizzle_migrations WHERE hash = $1", [hash]);
+      expect(rows.rows, `no applied migration has hash ${hash}`).toHaveLength(1);
+    });
+
+    // F4.352 / ADR 0121 Amendment 1: the eight appended glyphs, at sort_order 510-580.
+    it("the tenant reads 0139's eight iso symbols at sort_order 510-580, in order", async () => {
+      await inTx(async (run) => {
+        const rows = await run(
+          `SELECT key, sort_order FROM bms.mimic_symbols WHERE library_code = 'iso' AND sort_order > 500 ORDER BY sort_order`,
+        );
+        expect(rows.rows.map((r) => [r.key, r.sort_order])).toEqual([
+          ["iso:telemetry-tower", 510],
+          ["iso:gateway", 520],
+          ["iso:blast-freezer", 530],
+          ["iso:cold-room", 540],
+          ["iso:deep-freezer", 550],
+          ["iso:unit-cooler", 560],
+          ["iso:temperature-probe", 570],
+          ["iso:reefer", 580],
+        ]);
+      });
+    });
+
+    it("drizzle.__drizzle_migrations holds 0139 by the sha256 of the file's bytes (superuser read)", async () => {
+      const file = join(repoRoot, "packages/db/drizzle/0139_mimic_iso_cold_chain_glyphs.sql");
       const hash = createHash("sha256").update(readFileSync(file).toString()).digest("hex");
       const rows = await client.query("SELECT hash FROM drizzle.__drizzle_migrations WHERE hash = $1", [hash]);
       expect(rows.rows, `no applied migration has hash ${hash}`).toHaveLength(1);

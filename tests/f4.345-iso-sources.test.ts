@@ -18,6 +18,9 @@ const CURATION = "scripts/mimic-symbols/curation/iso.json";
 const BUILD = "scripts/mimic-symbols/sources/iso/build.mjs";
 const GENERATOR = "scripts/mimic-symbols/generate.mjs";
 
+/** ADR 0121 Amendment 1 (`F4.352`): the eight glyphs appended after the first 50, in its table order. */
+const F4352 = ["telemetry-tower", "gateway", "blast-freezer", "cold-room", "deep-freezer", "unit-cooler", "temperature-probe", "reefer"];
+
 const sha256 = (rel: string): string => createHash("sha256").update(readFileSync(join(repoRoot, rel))).digest("hex");
 
 /** `SOURCE.md`'s `- \`<file>\` <64 hex>` lines, as file → hash. */
@@ -56,7 +59,7 @@ function filesUnder(rel: string): string[] {
 /**
  * `F4.345` / ADR 0121 decision 2 (plan T1.4) — the isometric glyph kit in the repository: the
  * vendored anatomy-kit files are the ones `SOURCE.md` names, unchanged, under their MIT licence;
- * the glyph modules and the curation name the same 50 glyphs, the 29 core symbols among them;
+ * the glyph modules and the curation name the same 58 glyphs (50 from F4.345, 8 appended by F4.352), the 29 core symbols among them;
  * nothing the product ships imports the kit; and the `iso` source converts the build output into
  * the 24-unit box every other library uses. Assertions inline, no `.spec` sibling (§4.6).
  *
@@ -75,14 +78,22 @@ describe("F4.345 isometric glyph sources", () => {
     for (const [file, hash] of hashes) expect(sha256(`${VENDOR}/${file}`), file).toBe(hash);
   });
 
-  it("2. the glyph modules and the curation name the same 50 glyphs, the 29 core symbols among them", async () => {
+  it("2. the glyph modules and the curation name the same 58 glyphs, the 29 core symbols among them", async () => {
     const modules = readdirSync(join(repoRoot, GLYPHS))
       .filter((f) => f.endsWith(".mjs"))
       .map((f) => f.replace(/\.mjs$/, ""))
       .sort();
     const names = Object.values(curation()).flat().map((e) => e.name);
-    expect(modules).toHaveLength(50);
+    expect(modules).toHaveLength(58);
     expect([...names].sort()).toEqual(modules);
+    // F4.352: the eight are appended — the curation's last eight names and CORE's last eight ids,
+    // after "pressure-gauge", in the amendment's order.
+    expect(names.slice(-8)).toEqual(F4352);
+    const core8 = /const CORE = \[([\s\S]*?)\];/.exec(read(BUILD))?.[1];
+    if (!core8) throw new Error("CORE not found in build.mjs");
+    const ids = [...core8.matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(58);
+    expect(ids.slice(-9)).toEqual(["pressure-gauge", ...F4352]);
     const core = coreSymbols();
     expect(core).toHaveLength(29);
     for (const name of core) expect(names, name).toContain(name);
@@ -100,15 +111,20 @@ describe("F4.345 isometric glyph sources", () => {
 
   it("3. every curation entry has a label of at most 64 characters, unique, in a known group", () => {
     const labels: string[] = [];
-    for (const [group, list] of Object.entries(curation())) {
-      expect(GROUPS, group).toContain(group);
+    const keys = Object.keys(curation());
+    // F4.352: a group may appear again under a suffixed key ("hvac#f4.352"); the generator reads the
+    // group up to "#". Positive control: at least one key carries the suffix.
+    expect(keys.some((key) => key.includes("#"))).toBe(true);
+    expect(read(GENERATOR)).toContain('key.replace(/#.*$/, "")');
+    for (const [key, list] of Object.entries(curation())) {
+      expect(GROUPS, key).toContain(key.replace(/#.*$/, ""));
       for (const entry of list) {
         expect(typeof entry.label, entry.name).toBe("string");
         expect(entry.label.length, entry.name).toBeLessThanOrEqual(MAX_LABEL);
         labels.push(entry.label);
       }
     }
-    expect(labels).toHaveLength(50);
+    expect(labels).toHaveLength(58);
     expect(new Set(labels).size).toBe(labels.length);
   });
 

@@ -142,12 +142,15 @@ export function mimicSymbolSchemaIsCoreThenEachLibraryInRegistryOrder(): void {
   assert(new Set(expected).size === expected.length, "a symbol key repeats");
 }
 
-/** `F4.345` / ADR 0121 decision 1 — the isometric library's 50 keys close the static list, the
- * tank's twin among them. Mutation: drop `...ISO_SYMBOL_KEYS` from `mimicStaticSymbolSchema` →
- * this claim reddens. */
-export function mimicSymbolSchemaEndsWithTheFiftyIsoKeys(): void {
-  const last = mimicStaticSymbolSchema.options.slice(-50);
-  assert(last.length === 50 && last.every((key) => key.startsWith("iso:")), `last 50: ${JSON.stringify(last.slice(0, 3))}…`);
+/** `F4.345` / ADR 0121 decision 1 — the isometric library's 58 keys close the static list, the
+ * tank's twin among them, F4.352's eight last (Amendment 1). Mutation: drop `...ISO_SYMBOL_KEYS`
+ * from `mimicStaticSymbolSchema` → this claim reddens. */
+export function mimicSymbolSchemaEndsWithTheFiftyEightIsoKeys(): void {
+  const last = mimicStaticSymbolSchema.options.slice(-58);
+  assert(last.length === 58 && last.every((key) => key.startsWith("iso:")), `last 58: ${JSON.stringify(last.slice(0, 3))}…`);
+  const eight = JSON.stringify(mimicStaticSymbolSchema.options.slice(-8));
+  const expected = JSON.stringify(["iso:telemetry-tower", "iso:gateway", "iso:blast-freezer", "iso:cold-room", "iso:deep-freezer", "iso:unit-cooler", "iso:temperature-probe", "iso:reefer"]);
+  assert(eight === expected, `last 8: ${eight}`);
   assert((last as readonly string[]).includes("iso:tank"), "iso:tank is not a static symbol");
   assert(mimicSymbolSchema.safeParse("iso:pump").success, "iso:pump does not parse as a symbol");
 }

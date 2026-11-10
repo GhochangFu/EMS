@@ -37,8 +37,8 @@ export function everyShapeParsesUnderTheContractGrammar(code: MimicSymbolLibrary
   if (code === "tabler" || code === "lucide" || code === "mdi") {
     expect(keys, `${code} key count`).toBeGreaterThan(0);
   } else if (code === "iso") {
-    // F4.345 / ADR 0121: the isometric set is exactly the owner's 50 glyphs.
-    expect(keys, "iso key count").toBe(50);
+    // F4.345 / ADR 0121: the owner's 50 glyphs; F4.352 / Amendment 1 appends eight.
+    expect(keys, "iso key count").toBe(58);
   } else {
     // qet 137, wmpid 157 and drawio 131 at the slice-2 pins; each vendored library holds >= 100.
     expect(keys, `${code} key count (${keys})`).toBeGreaterThanOrEqual(100);
