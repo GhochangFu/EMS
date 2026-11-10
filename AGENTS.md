@@ -1146,6 +1146,31 @@
 > state off `accent`, and `accent-on-chrome` (changeable) is the brand colour on
 > the chrome. The chooser is the "Colour profile" action on
 > `/admin/organizations`; PDF and Excel reports and the emails do not change.
+> (Since `F4.341` the profile is one half of an *appearance*, resolved user >
+> organization > portal; the paragraph below.)
+> And **the portal has selectable design systems** (**ADR 0118** with
+> Amendments 1–4; rows `F4.341` #1170–#1198, `F4.346` #1201–#1202, `F4.347`
+> #1207, `F4.348` #1206; this sweep merges last). Five closed design systems
+> (`nexus-soft`, the default and the look before, `enterprise-flat`,
+> `swiss-grid`, `bento-ops`, `control-room-dark`) set design tokens — type,
+> spacing, shape, icon line — and pick one of two shells, never a colour role;
+> thirteen closed colour profiles (`nexus`, `ocean`, `lagoon`, `indigo`,
+> `graphite`, `high-contrast`, `forest`, `sand`, `navy-pop`, `hmi-grey`,
+> `moss`, `colour-safe`, `night-shift`) set the changeable roles. Each of the
+> two resolves **the user's value, else the home organization's, else the
+> portal's**: migration `0134` adds `bms.portal_settings` (one row) and the
+> nullable `design_system` / `colour_profile` columns on `bms.organizations`
+> and `bms.users`; `0133` and `0137` widen the profile CHECKs to nine and then
+> thirteen. Writers: `PUT /api/v1/admin/portal-settings/appearance` (global
+> `admin`), `PUT /api/v1/admin/organizations/:id/appearance` (as the
+> colour-profile route before it) and `PUT /api/v1/me/appearance` (any
+> signed-in user, for themself), each audited; `GET /auth/me` answers
+> `appearance` with each value and the level it came from; the unauthenticated
+> `GET /api/v1/public/appearance` gives the sign-in page the portal default.
+> The old `PUT …/colour-profile` route and the `/auth/me` `colourProfile` field
+> stay one release as aliases and go in `F4.342`. Fonts are self-hosted
+> (`@fontsource`, ADR 0118 is the §9.4 record). The rules are in §5 *Design
+> systems*.
 > And **state labels for switching points, managed in the portal** (**ADR 0088
 > Amendment 3**, #1026, and **ADR 0099 Amendment 13**, #1027; row `F4.309`;
 > PR 1 #1034, PR 2 #1036, PR 3 #1038; this sweep merges last).
@@ -4055,7 +4080,9 @@ failed too, so a disabled Keycloak account remains), and
 `ESKOM_SMOC.html` is the UX spec. Match it as strictly as the current
 React architecture allows:
 
-- Dark top bar, green nav, left module sidebar, KPI ribbon, dark status bar.
+- Dark top bar, green nav, left module sidebar, KPI ribbon, dark status bar
+  (the default design system, `nexus-soft`; the others are in *Design
+  systems* below).
 - IBM Plex font family.
 - Green accent `#00A651`, status colour palette as defined in the file.
 - For every new module, identify the closest original route / renderer
@@ -4073,9 +4100,10 @@ React components in `apps/web/src/components/`.
 Phase 5 Sprint I completed the dedicated UI/UX revisit pass. Future
 completed pages should continue using the shared shell, page header,
 card, status pill, and disabled command affordance language introduced in
-that sprint. The current shell also includes a collapsible left module
-sidebar; keep scoped visibility and active-state behaviour consistent with
-`AppShell` when adding new navigation items.
+that sprint. Every shell (*Design systems* below) reads one navigation model,
+`apps/web/src/layouts/shells/navigation-model.ts`: add a navigation item there,
+with its icon in `NAV_ICONS` (`shells/nav-icons.ts`), never in a shell, so scoped visibility, order and
+active state stay the same in both shells.
 
 A **locked entry the user must still be able to reach** (`F4.164`, the top-nav
 Settings entry for a non-administrator) is the one exception to
@@ -4083,9 +4111,12 @@ Settings entry for a non-administrator) is the one exception to
 focus and a screen reader never announces why. Render such an entry as a
 `button` with `aria-disabled="true"`, its reason in an `sr-only` sibling
 referenced by `aria-describedby`, and text at 3:1 or better on its ground.
-A collapsed sidebar link is named `"<label> (<code>)"` so its accessible name
-contains the code it shows (WCAG 2.5.3); a new item whose code collides takes
-an entry in `COLLAPSED_LABEL_OVERRIDES`, which `collapsedRailEntries()` gates.
+A collapsed sidebar or rail link shows only its icon and is named by its full
+label (`aria-label` and `title`); since `F4.348` (ADR 0118 Amendment 4) the
+icons replace the letter codes and `COLLAPSED_LABEL_OVERRIDES` is retired. A new
+item takes a Lucide key in `NAV_ICONS` (keyed by label) that no other item uses;
+L1–L9 in `apps/web/src/layouts/app-shell.spec.tsx` gate it over
+`navIconEntries()`, hidden items included.
 A button that is disabled while its own action pends changes its accessible
 name while it pends ("Save" → "Saving…"; the `aria-label` when the button has
 one) and carries `aria-busy` on that flag. A per-row button keys the pending
@@ -4168,8 +4199,9 @@ dark; light stays the default (ADR 0074). The switch is the sun / moon
 calls the store's `setTheme`, which sets `data-theme` without a reload and
 writes `"light"` or `"dark"`. There is no "System" choice and no `matchMedia`.
 
-**Colour profiles are per organization** (**ADR 0110**, `F4.310`,
-2026-11-05). Each role is **fixed** (`FIXED_ROLES` in `apps/web/src/lib/theme.ts`:
+**Colour profiles** (**ADR 0110**, `F4.310`, 2026-11-05; per organization at
+first, since **ADR 0118** decision 8 the user's, else the organization's, else
+the portal's, and thirteen closed names since `F4.346`). Each role is **fixed** (`FIXED_ROLES` in `apps/web/src/lib/theme.ts`:
 the alarm and state roles, `ok`, `ok-strong`, `simulated-ink`, `on-dark`,
 `scrim`) or **changeable** (`PROFILE_ROLES`: the neutrals, the accent family,
 `accent-on-chrome`, the chrome, `on-accent`, `focus`, `series-*`). A profile
@@ -4186,15 +4218,19 @@ role and no fixed one; the default `nexus` is the base blocks and has none.
   entries (the default's failures a fixed role or a WCAG exemption causes; the
   brand-green entries never carry over), S1/S2, `accent` and `accent-strong`
   ΔE2000 ≥ 20 from `warning` and `critical`, and `accent` ≥ 12 from `info` and
-  `simulated-ink`. A new profile is a contract change (`colourProfileSchema`),
-  an ADR 0110 amendment and a migration (the CHECK).
+  `simulated-ink`; since ADR 0118 Amendment 1 A4, `accent` clears every alarm
+  role in both themes. A new profile is a contract change
+  (`colourProfileSchema`), an ADR 0118 amendment, and a migration that widens
+  the three CHECKs (`bms.organizations`, `bms.portal_settings`, `bms.users`;
+  a frozen migration keeps the list it shipped, `0137` holds the live ones).
 - **No `data-profile` variant** (`[[data-profile=…]_&]:`, `data-[profile=…]:`)
   — a profile recolours through role values only (R4f2).
 - **`data-profile` follows `/auth/me`.** Every `fetchCurrentUser` answer sets it
   through the theme store (`setProfile`; `nexus` removes it) and caches it in
   `localStorage["bms.profile"]`; the boot script applies the cache only with a
-  stored session, and `clearSession` resets to `nexus`, so the sign-in page is
-  always the default. `currentRoles()` caches by theme **and** profile.
+  stored session, and `clearSession` removes it, so the sign-in page shows the
+  portal default (`bms.portal-appearance`, from `GET /public/appearance`).
+  `currentRoles()` caches by theme, profile **and** design system.
 
 **Surfaces are named, not spelled** (**ADR 0085**, `F3.71`, 2026-09-29). The
 app has two surface styles, chosen per browser beside the theme: **Neumorphic**
@@ -4230,6 +4266,65 @@ The choice is `localStorage["bms.surface"]`, read by the same inline script as
 the theme: only `"flat"` gives Flat. The **Surface** group beside the theme
 switch (`components/surface-switch.tsx`, over the shared `PreferenceSwitch`)
 writes it and sets `data-surface` without a reload.
+
+**Design systems** (**ADR 0118** and Amendments 1–4, `F4.341`, `F4.346`,
+`F4.347`, `F4.348`, 2026-11-09/10). Five closed names in `designSystemSchema`
+(`packages/shared/src/contracts/design-system.ts`): `nexus-soft` (the default,
+the look before ADR 0118), `enterprise-flat`, `swiss-grid`, `bento-ops`,
+`control-room-dark`. A design system is a set of **design token** values (type,
+spacing, shape, the four icon tokens) plus one **shell**; it **never sets a
+colour role** — colour is the profile's, and the alarm roles stay fixed in every
+one (decision 7). It resolves user > organization > portal, as the profile does,
+and `data-design` on `<html>` carries it (`nexus-soft` removes it), cached in
+`localStorage["bms.design"]` and removed at sign-out.
+
+- **Tokens, not utilities.** Text size, leading and spacing go through the
+  tokens in `apps/web/src/lib/design.ts` (`TEXT_STEPS`, `LEADING_STEPS`,
+  `SPACE_STEPS`, `DESIGN_TOKENS`, `ICON_TOKENS`); a raw size or spacing utility
+  is a hard zero (`tests/f4.341-type-spacing-gate.test.ts`). Each design system
+  defines every token in both surface variants
+  (`tests/f4.341-design-tokens.test.ts`); its explicit rules are
+  `:where(html[data-design="<name>"]…)`, so they keep one class of specificity
+  (`tests/f4.341-design-systems.test.ts`).
+- **One type rule set** (Amendment 1 A6, `tests/f4.341-type-rules-gate.test.ts`):
+  labels ≥ 12px in sentence case with no tracked capitals, weights 400/500/600
+  only, the 4px spacing scale, wall text ≥ 16px, at most two families, and every
+  `--font-num` face proven tabular. Fonts are self-hosted `@fontsource` files
+  (`tests/f4.341-fonts.test.ts`); no run-time font call.
+- **The accent allow-list** (Amendment 1 A5,
+  `tests/f4.341-accent-allowlist.test.ts`): `accent` paints the primary button,
+  the focus ring, links, a selection and the wordmark only. A new `index.css`
+  rule naming `accent` goes on `ALLOWED_RULES` with its reason; a new opaque
+  `bg-accent` site changes `ACCENT_FILL_FILES`' exact counts; no chart series
+  is `accent`.
+- **Boards change spans from a fixed table only** (`apps/web/src/lib/board-spans.ts`,
+  `tests/f4.341-board-spans.test.ts`), never free placement.
+- **Two shells over one navigation model** (`SHELL_OF_DESIGN` in `lib/design.ts`,
+  `tests/f4.341-shells.test.ts`): `sidebar` (`nexus-soft`, `enterprise-flat`,
+  and `swiss-grid` / `bento-ops` as token-only skins, held by
+  `tests/f4.346-nav-skins.test.ts`) and `rail` (`control-room-dark`), both under
+  `apps/web/src/layouts/shells/`. Both collapse through `useCollapsibleNav`
+  (stored under `bms-sidebar-collapsed` / `bms-rail-collapsed`); at ≤ 767 px
+  (`SHELL_RAIL_MAX_WIDTH`) the collapsed bar keeps a 64 px slot and the expanded
+  one lies over the page and closes on navigation. Every item carries its Lucide
+  icon (`NavIcon`, `currentColor`, the design system's icon tokens,
+  `tests/f4.348-nav-icon-tokens.test.ts`). The page body is portalled into the
+  active shell, so a shell swap never remounts the page.
+- **The chrome header never runs past the screen** (`F4.347`): the user, Theme,
+  Surface, Appearance and Logout fold into one Menu (`HeaderMenu` in
+  `shells/shell-header.tsx`) at ≤ `HEADER_FOLD_MAX_WIDTH` (767 px) in the
+  sidebar shell and ≤ `RAIL_HEADER_FOLD_MAX_WIDTH` (1279 px) in the rail; the
+  width is the viewport less the docked Copilot's push, read from
+  `useShellModel` (no `matchMedia`, F3.65 R16). A new header control goes into
+  both the row and the panel.
+- **One Appearance panel at three levels** (the portal tab under Reference
+  Data, `/admin/organizations`, the header's Appearance): a choice previews the
+  whole page, the shell included (`previewDesign`), Cancel restores, Save writes
+  and re-reads `/auth/me`; "Inherit" writes NULL except at the portal level.
+- **A new design system** is a contract change, an ADR 0118 amendment, a
+  migration (the `design_system` CHECKs), a `SHELL_OF_DESIGN` entry and a full
+  token block in both variants; the gates above cover it once it is in the
+  contract.
 
 ---
 
