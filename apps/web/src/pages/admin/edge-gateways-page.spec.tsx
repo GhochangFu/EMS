@@ -14,7 +14,7 @@ import * as copilotApi from "../../api/copilot";
 import * as systemStatusApi from "../../api/system-status";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import type { AuthUser } from "../../stores/auth-store";
-import { EdgeGatewaysAdminPage, TOKEN_SHOWN_ONCE } from "./edge-gateways-page";
+import { EdgeGatewaysAdminPage, NO_GATEWAYS, TOKEN_SHOWN_ONCE } from "./edge-gateways-page";
 
 /**
  * `E7.2` (ADR 0123 decision 12, plan T6.3) — the Edge Gateways page: fails closed for a tenant
@@ -96,10 +96,10 @@ function rtu(id: string, code: string, organizationCode: string): AdminRtuDto {
   };
 }
 
-function renderPage(as: AuthUser): QueryClient {
+function renderPage(as: AuthUser, gateways: () => Promise<EdgeGatewayDto[]> = async () => [GW1, GW2, GW_REVOKED]): QueryClient {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
-  vi.spyOn(api, "fetchEdgeGateways").mockResolvedValue([GW1, GW2, GW_REVOKED]);
+  vi.spyOn(api, "fetchEdgeGateways").mockImplementation(gateways);
   vi.spyOn(organizationsApi, "fetchAdminOrganizations").mockResolvedValue({
     items: [
       { id: PHE, code: "PHE", name: "PHE West Bengal" },
@@ -168,6 +168,8 @@ export async function theTokenShowsOnce(): Promise<void> {
   await user.click(within(dialog).getByRole("button", { name: "Rotate token" }));
   expect(await within(dialog).findByDisplayValue(TOKEN)).toBeInTheDocument();
   expect(within(dialog).getByText(TOKEN_SHOWN_ONCE)).toBeInTheDocument();
+  // Security review L2: the admin is told to clear the clipboard once the token is on the box.
+  expect(TOKEN_SHOWN_ONCE).toMatch(/clear your clipboard/i);
   expect(mint).toHaveBeenCalledWith(GW1.id);
   await user.click(within(dialog).getByRole("button", { name: "Copy token" }));
   expect(writeText).toHaveBeenCalledWith(TOKEN);
@@ -251,4 +253,25 @@ export async function renameSendsTheName(): Promise<void> {
   await waitFor(() => expect(update).toHaveBeenCalledWith(GW1.id, { name: "Lakwa box 2", locationId: LOC }));
   expect(await within(dialog).findByRole("alert")).toHaveTextContent("Nope");
   expect(within(dialog).getByRole("alert").textContent).not.toContain("statusCode");
+}
+
+/** E8 — an empty list says so, keeps "New gateway", and draws no table. */
+export async function anEmptyListSaysSo(): Promise<void> {
+  renderPage(admin, async () => []);
+  expect(await screen.findByText(NO_GATEWAYS)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "New gateway" })).toBeInTheDocument();
+  expect(screen.queryByRole("table")).toBeNull();
+  expect(screen.queryByText("Loading edge gateways…")).toBeNull();
+}
+
+/** E9 — a refused list read renders as a sentence, never as the empty state or a JSON envelope. */
+export async function aListErrorIsShown(): Promise<void> {
+  renderPage(admin, async () => {
+    throw new Error('{"statusCode":503,"message":"The database is unavailable"}');
+  });
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("The database is unavailable");
+  expect(alert.textContent).not.toContain("statusCode");
+  expect(screen.queryByText(NO_GATEWAYS)).toBeNull();
+  expect(screen.queryByRole("table")).toBeNull();
 }

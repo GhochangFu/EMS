@@ -25,7 +25,11 @@ import type { AuthUser } from "../../stores/auth-store";
 
 /** The fixed sentence beside a minted token (ADR 0123 decision 5, §9.6). */
 export const TOKEN_SHOWN_ONCE =
-  "This token is shown once. Put it in the box's EDGE_GATEWAY_TOKEN now: it cannot be shown again, only replaced.";
+  "This token is shown once. Put it in the box's EDGE_GATEWAY_TOKEN now: it cannot be shown again, only replaced. " +
+  "Once it is pasted on the box, clear your clipboard.";
+
+/** The empty state: the list loaded and holds no gateway. "New gateway" stays above it. */
+export const NO_GATEWAYS = "No edge gateways yet. Create one with New gateway.";
 
 type Dialog =
   | { kind: "create" }
@@ -110,30 +114,38 @@ function EdgeGatewaysCatalog() {
             {apiErrorMessage(listQ.error)}
           </p>
         ) : null}
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs uppercase text-ink-muted">
-                <th className="px-2 py-2">Code</th>
-                <th className="px-2 py-2">Name</th>
-                <th className="px-2 py-2">Organization</th>
-                <th className="px-2 py-2">Location</th>
-                <th className="px-2 py-2">Status</th>
-                <th className="px-2 py-2">Last seen</th>
-                <th className="px-2 py-2">Backlog</th>
-                <th className="px-2 py-2">Clock</th>
-                <th className="px-2 py-2">Token</th>
-                <th className="px-2 py-2">RTUs</th>
-                <th className="px-2 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((gateway) => (
-                <GatewayRow key={gateway.id} gateway={gateway} open={setDialog} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {listQ.isPending ? (
+          <p role="status" className="text-xs text-ink-muted">
+            Loading edge gateways…
+          </p>
+        ) : null}
+        {listQ.isSuccess && items.length === 0 ? <p className="text-sm text-ink-muted">{NO_GATEWAYS}</p> : null}
+        {items.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase text-ink-muted">
+                  <th className="px-2 py-2">Code</th>
+                  <th className="px-2 py-2">Name</th>
+                  <th className="px-2 py-2">Organization</th>
+                  <th className="px-2 py-2">Location</th>
+                  <th className="px-2 py-2">Status</th>
+                  <th className="px-2 py-2">Last seen</th>
+                  <th className="px-2 py-2">Backlog</th>
+                  <th className="px-2 py-2">Clock</th>
+                  <th className="px-2 py-2">Token</th>
+                  <th className="px-2 py-2">RTUs</th>
+                  <th className="px-2 py-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((gateway) => (
+                  <GatewayRow key={gateway.id} gateway={gateway} open={setDialog} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </SectionCard>
 
       {dialog !== null ? (

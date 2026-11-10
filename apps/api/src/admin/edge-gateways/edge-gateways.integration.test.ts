@@ -57,6 +57,7 @@ describe.skipIf(!connectionString)("E7.2 — the edge gateway admin service", ()
   const rtuIds: string[] = [];
   const assetIds: string[] = [];
   const gatewayIds: string[] = [];
+  const organizationIds: string[] = [];
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -104,14 +105,30 @@ describe.skipIf(!connectionString)("E7.2 — the edge gateway admin service", ()
 
     const rtu = async (
       suffix: string,
-      opts: { orgId?: string; locId?: string; sourceType?: string; rtuCode?: boolean; protocol?: string } = {},
+      opts: {
+        orgId?: string;
+        locId?: string;
+        sourceType?: string;
+        rtuCode?: boolean;
+        protocol?: string;
+        active?: boolean;
+        ingestEnabled?: boolean;
+      } = {},
     ): Promise<string> => {
       const code = `e72gw-${stamp}-${suffix}`;
       const orgId = opts.orgId ?? organizationId;
       const { rows } = await observer.query<{ id: string }>(
         `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type, rtu_code, ingest_enabled, active)
-         VALUES ($1, $2, $3, $3, $4, $5, true, true) RETURNING id`,
-        [orgId, opts.locId ?? locationId, code, opts.sourceType ?? "mqtt", opts.rtuCode === false ? null : code],
+         VALUES ($1, $2, $3, $3, $4, $5, $6, $7) RETURNING id`,
+        [
+          orgId,
+          opts.locId ?? locationId,
+          code,
+          opts.sourceType ?? "mqtt",
+          opts.rtuCode === false ? null : code,
+          opts.ingestEnabled ?? true,
+          opts.active ?? true,
+        ],
       );
       const id = rows[0]!.id;
       rtuIds.push(id);
@@ -140,6 +157,25 @@ describe.skipIf(!connectionString)("E7.2 — the edge gateway admin service", ()
     const modbus = await rtu("modbus", { sourceType: "catalog", protocol: "modbus_tcp" });
     const simulatorFed = await rtu("simfed");
     const foreign = await rtu("foreign", { orgId: foreignOrganizationId, locId: foreignLocationId });
+    const inactive = await rtu("inactive", { active: false });
+    const ingestOff = await rtu("ingestoff", { ingestEnabled: false });
+
+    // A run-owned organization with its ingest switch off (the F4.330 fixture shape), one location
+    // and one RTU, so the seeded organizations' switches are never touched.
+    const offCode = `E72GW-${stamp.toUpperCase()}-OFF`;
+    const { rows: offOrg } = await observer.query<{ id: string }>(
+      "INSERT INTO bms.organizations (code, name, currency, ingest_enabled) VALUES ($1, 'E7.2 ingest-off fixture', 'INR', false) RETURNING id",
+      [offCode],
+    );
+    const offOrganizationId = offOrg[0]!.id;
+    organizationIds.push(offOrganizationId);
+    const { rows: offLoc } = await observer.query<{ id: string }>(
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+       VALUES ($1, $2, $3, 'E7.2 ingest-off fixture site', (SELECT code FROM bms.location_types ORDER BY code LIMIT 1), 0, 0)
+       RETURNING id`,
+      [offOrganizationId, `${offCode}-LOC`, `${offCode}-loc`.toLowerCase()],
+    );
+    const offRtu = await rtu("off-rtu", { orgId: offOrganizationId, locId: offLoc[0]!.id });
     const ok1AssetId = await asset("ok1-asset", ok1, "mqtt");
     await asset("simfed-asset", simulatorFed, "catalog");
 
@@ -156,7 +192,8 @@ describe.skipIf(!connectionString)("E7.2 — the edge gateway admin service", ()
       organizationId,
       locationId,
       foreignLocationId,
-      rtus: { ok1, ok2, noCode, modbus, simulatorFed, foreign },
+      rtus: { ok1, ok2, noCode, modbus, simulatorFed, foreign, inactive, ingestOff },
+      switchedOff: { organizationId: offOrganizationId, rtuId: offRtu },
       ok1AssetId,
       gatewayIds,
     };
@@ -170,6 +207,9 @@ describe.skipIf(!connectionString)("E7.2 — the edge gateway admin service", ()
       await observer.query("DELETE FROM bms.rtus WHERE id = ANY($1::uuid[])", [rtuIds]);
       await observer.query("DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])", [gatewayIds]);
       await observer.query("DELETE FROM bms.edge_gateways WHERE id = ANY($1::uuid[])", [gatewayIds]);
+      // The run's ingest-off organization last: its location, then itself.
+      await observer.query("DELETE FROM bms.locations WHERE organization_id = ANY($1::uuid[])", [organizationIds]);
+      await observer.query("DELETE FROM bms.organizations WHERE id = ANY($1::uuid[])", [organizationIds]);
     }
     await Promise.all([observer?.end(), authPool?.end(), tenantPool?.end()]);
   }, 60_000);

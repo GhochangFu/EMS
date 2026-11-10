@@ -3,6 +3,8 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aListErrorIsShown,
+  anEmptyListSaysSo,
   aTenantAdminSeesTheStatusLine,
   createSendsTheBody,
   renameSendsTheName,
@@ -26,4 +28,6 @@ describe("E7.2 — the Edge Gateways page (plan T6.3)", () => {
   it("E5 offers only the gateway's organization in the RTU picker", thePickerIsTheOrganizations);
   it("E6 creates a gateway", createSendsTheBody);
   it("E7 renames a gateway and renders a refusal as a sentence", renameSendsTheName);
+  it("E8 says so when there is no gateway, New gateway still offered", anEmptyListSaysSo);
+  it("E9 renders a list error as a sentence", aListErrorIsShown);
 });

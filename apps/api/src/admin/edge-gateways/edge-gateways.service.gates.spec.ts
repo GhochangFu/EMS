@@ -20,6 +20,9 @@ import {
   RTU_NOT_FOUND_MESSAGE,
   RTU_OTHER_GATEWAY_MESSAGE,
   RTU_SIMULATOR_FED_MESSAGE,
+  ORGANIZATION_INGEST_DISABLED_MESSAGE,
+  RTU_INACTIVE_MESSAGE,
+  RTU_INGEST_DISABLED_MESSAGE,
 } from "./edge-gateways.service";
 
 /**
@@ -52,6 +55,8 @@ const RTU = {
   elsewhere: "00000000-0000-4000-8000-000000000c06",
   foreign: "00000000-0000-4000-8000-000000000c07",
   assigned: "00000000-0000-4000-8000-000000000c08",
+  inactive: "00000000-0000-4000-8000-000000000c09",
+  ingestOff: "00000000-0000-4000-8000-000000000c0a",
 } as const;
 
 type Gateway = {
@@ -71,6 +76,8 @@ type Rtu = {
   rtu_code: string | null;
   protocol: string;
   simulator_fed: boolean;
+  active: boolean;
+  ingest_enabled: boolean;
   edge_gateway_id: string | null;
 };
 type Statement = { tag: string; sql: string; params: unknown[]; tx: number };
@@ -93,6 +100,11 @@ function idList(text: string, params: unknown[], negated: boolean): string[] | u
 /** Two tables, in memory, and every statement the service sent. */
 export class FakeFleet {
   gateways = new Map<string, Gateway>();
+  /** `bms.organizations.ingest_enabled`, by organization id (ADR 0115). */
+  organizationIngest = new Map<string, boolean>([
+    [ORG_A, true],
+    [ORG_B, true],
+  ]);
   rtus: Rtu[] = [];
   statements: Statement[] = [];
   transactions = 0;
@@ -119,6 +131,8 @@ export class FakeFleet {
       rtu_code: `R-${id.slice(-4)}`,
       protocol: "mqtt",
       simulator_fed: false,
+      active: true,
+      ingest_enabled: true,
       edge_gateway_id: null,
       ...over,
     });
@@ -131,6 +145,8 @@ export class FakeFleet {
       rtu(RTU.elsewhere, { edge_gateway_id: GW_OTHER }),
       rtu(RTU.foreign, { organization_id: ORG_B }),
       rtu(RTU.assigned, { edge_gateway_id: GW }),
+      rtu(RTU.inactive, { active: false }),
+      rtu(RTU.ingestOff, { ingest_enabled: false }),
     ];
   }
 
@@ -255,7 +271,19 @@ export class FakeFleet {
         return {
           rows: this.rtus
             .filter((r) => ids.includes(r.id) && keepRtu(r))
-            .map((r) => ({ id: r.id, rtu_code: r.rtu_code, protocol: r.protocol, edge_gateway_id: r.edge_gateway_id, simulator_fed: r.simulator_fed })),
+            .map((r) => ({
+              id: r.id,
+              rtu_code: r.rtu_code,
+              protocol: r.protocol,
+              edge_gateway_id: r.edge_gateway_id,
+              simulator_fed: r.simulator_fed,
+              // Only what the statement selects — a dropped column reads as missing, as on Postgres.
+              ...(/r\.active\b/.test(text) ? { active: r.active } : {}),
+              ...(/r\.ingest_enabled\b/.test(text) ? { ingest_enabled: r.ingest_enabled } : {}),
+              ...(/o\.ingest_enabled AS organization_ingest_enabled/.test(text)
+                ? { organization_ingest_enabled: this.organizationIngest.get(r.organization_id) ?? false }
+                : {}),
+            })),
         };
       }
       case "unassign-all":
@@ -477,11 +505,19 @@ export async function theAssignmentRules(): Promise<void> {
     [RTU.modbus, RTU_NO_ADAPTER_MESSAGE],
     [RTU.simFed, RTU_SIMULATOR_FED_MESSAGE],
     [RTU.elsewhere, RTU_OTHER_GATEWAY_MESSAGE],
+    // What `bindings.ts` plans: `r.active AND r.ingest_enabled`, and the organization's switch on.
+    [RTU.inactive, RTU_INACTIVE_MESSAGE],
+    [RTU.ingestOff, RTU_INGEST_DISABLED_MESSAGE],
   ] as const) {
     const refused = await settle(svc.replaceRtus(JWT, GW, { rtuIds: [RTU.ok, rtuId] }));
     expect(refused, rtuId).toBeInstanceOf(ConflictException);
     expect((refused as ConflictException).message).toBe(message);
   }
+  db.organizationIngest.set(ORG_A, false);
+  const switchedOff = await settle(svc.replaceRtus(JWT, GW, { rtuIds: [RTU.ok] }));
+  expect(switchedOff).toBeInstanceOf(ConflictException);
+  expect((switchedOff as ConflictException).message).toBe(ORGANIZATION_INGEST_DISABLED_MESSAGE);
+  db.organizationIngest.set(ORG_A, true);
   expect(db.ofTag("assign")).toEqual([]);
   expect(db.rtus.find((r) => r.id === RTU.assigned)?.edge_gateway_id).toBe(GW);
   expect(audits).toEqual([]);

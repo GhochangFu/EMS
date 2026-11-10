@@ -30,14 +30,17 @@ const json = (method: string, body: unknown): RequestInit => ({
 
 const path = (id: string, rest = ""): string => `/admin/edge-gateways/${encodeURIComponent(id)}${rest}`;
 
+/** `GET /admin/edge-gateways` — every gateway, with its RTUs; never a token or its hash. */
 export async function fetchEdgeGateways(): Promise<EdgeGatewaysListResponse> {
   return adminFetch("/admin/edge-gateways", edgeGatewaysListResponseSchema);
 }
 
+/** `POST /admin/edge-gateways` — a new gateway with no token; mint one separately. */
 export async function createEdgeGateway(input: CreateEdgeGatewayBody): Promise<EdgeGatewayDto> {
   return adminFetch("/admin/edge-gateways", edgeGatewayDtoSchema, json("POST", input));
 }
 
+/** `PATCH /admin/edge-gateways/:id` — rename or move; the code and organization never change. */
 export async function updateEdgeGateway(id: string, input: UpdateEdgeGatewayBody): Promise<EdgeGatewayDto> {
   return adminFetch(path(id), edgeGatewayDtoSchema, json("PATCH", input));
 }
@@ -57,6 +60,7 @@ export async function putEdgeGatewayRtus(id: string, rtuIds: readonly string[]):
   return adminFetch(path(id, "/rtus"), edgeGatewayDtoSchema, json("PUT", { rtuIds }));
 }
 
+/** Refetches the gateway list after a write; the token is never in it. */
 export async function invalidateEdgeGatewayReads(queryClient: QueryClient): Promise<void> {
   await queryClient.invalidateQueries({ queryKey: edgeGatewaysQueryKey });
 }

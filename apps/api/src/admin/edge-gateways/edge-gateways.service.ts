@@ -40,6 +40,11 @@ export const RTU_NOT_FOUND_MESSAGE = "RTU not found in the gateway's organizatio
 
 /** The fixed 409s (§4.7: after every 400 and 404). */
 export const GATEWAY_REVOKED_MESSAGE = "This edge gateway is revoked; revoke is final";
+export const RTU_INACTIVE_MESSAGE = "An inactive RTU cannot be served by an edge gateway";
+export const RTU_INGEST_DISABLED_MESSAGE =
+  "An RTU whose ingest is not enabled cannot be served by an edge gateway; turn ingest on for the RTU first";
+export const ORGANIZATION_INGEST_DISABLED_MESSAGE =
+  "The organization's ingest is switched off, so none of its RTUs can be served by an edge gateway";
 export const RTU_NO_CODE_MESSAGE =
   "An RTU with no RTU code cannot be served by an edge gateway: the RTU code is its device key";
 export const RTU_NO_ADAPTER_MESSAGE =
@@ -90,6 +95,11 @@ type AssignCandidate = {
   protocol: string;
   edge_gateway_id: string | null;
   simulator_fed: boolean;
+  /** `bms.rtus.active` and `.ingest_enabled`: the cloud plan reads only rows where both are true. */
+  active: boolean;
+  ingest_enabled: boolean;
+  /** `bms.organizations.ingest_enabled` (ADR 0115): off, the plan skips every RTU of the organization. */
+  organization_ingest_enabled: boolean;
 };
 
 type Executor = Pick<BmsDb, "execute">;
@@ -115,7 +125,8 @@ type Executor = Pick<BmsDb, "execute">;
  *
  * **One writer per RTU** (decision 6, `F4.59`). An assignment never writes
  * `assets.meta.telemetrySource`. It is refused (409) for an RTU the cloud plan
- * could not hand to the edge — no `rtu_code`, a protocol with no adapter
+ * could not hand to the edge — inactive, ingest not enabled, its organization's
+ * ingest switch off, no `rtu_code`, a protocol with no adapter
  * (`INGEST_WIRED_PROTOCOLS`) — and for one whose assets the simulator feeds,
  * which would otherwise be served by the simulator while the receiver counted
  * the edge's samples as foreign. Revoke unassigns the gateway's RTUs in its
@@ -308,12 +319,14 @@ export class EdgeGatewaysAdminService {
       const found = rowsOf<AssignCandidate>(
         await tx.execute(sql`/* edge-gateways:assign-candidates */
           SELECT r.id, r.rtu_code, coalesce(c.protocol, r.source_type) AS protocol, r.edge_gateway_id,
+                 r.active, r.ingest_enabled, o.ingest_enabled AS organization_ingest_enabled,
                  EXISTS (
                    SELECT 1 FROM bms.assets a
                     WHERE a.rtu_id = r.id AND a.organization_id = r.organization_id
                       AND coalesce(a.meta->>'telemetrySource', 'sim') <> 'mqtt'
                  ) AS simulator_fed
             FROM bms.rtus r
+            JOIN bms.organizations o ON o.id = r.organization_id
             LEFT JOIN bms.rtu_connection_configs c ON c.rtu_id = r.id AND c.organization_id = r.organization_id
            WHERE r.id = ANY(${idArray}::uuid[]) AND r.organization_id = ${organizationId}
            ORDER BY r.id
@@ -325,6 +338,9 @@ export class EdgeGatewaysAdminService {
       if (current.status !== "active") {
         throw new ConflictException(GATEWAY_REVOKED_MESSAGE);
       }
+      // The one-writer rule (decision 6) is checked here, at assignment, only. A later edit of the
+      // RTU (ingest off, deactivate, protocol) or of its assets' `telemetrySource` is not yet
+      // refused while `edge_gateway_id` is set (PR 6 security review L1; a follow-up backlog row).
       for (const rtu of found) {
         const refusal = assignmentRefusal(rtu, gatewayId);
         if (refusal !== null) {
@@ -388,6 +404,17 @@ export function mintGatewayToken(): { token: string; hash: Buffer; last4: string
 
 /** Why one RTU may not be assigned to `gatewayId`, or `null`. Pure; exported for the gates spec. */
 export function assignmentRefusal(rtu: AssignCandidate, gatewayId: string): string | null {
+  // `apps/ingest/src/host/bindings.ts` plans only `r.active AND r.ingest_enabled`, and skips an
+  // organization whose switch is off; the receiver drops an unplanned RTU's samples as foreign.
+  if (!rtu.active) {
+    return RTU_INACTIVE_MESSAGE;
+  }
+  if (!rtu.ingest_enabled) {
+    return RTU_INGEST_DISABLED_MESSAGE;
+  }
+  if (!rtu.organization_ingest_enabled) {
+    return ORGANIZATION_INGEST_DISABLED_MESSAGE;
+  }
   if (rtu.rtu_code === null || rtu.rtu_code === "") {
     return RTU_NO_CODE_MESSAGE;
   }

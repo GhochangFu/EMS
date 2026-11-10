@@ -16,6 +16,9 @@ import {
   RTU_NOT_FOUND_MESSAGE,
   RTU_OTHER_GATEWAY_MESSAGE,
   RTU_SIMULATOR_FED_MESSAGE,
+  ORGANIZATION_INGEST_DISABLED_MESSAGE,
+  RTU_INACTIVE_MESSAGE,
+  RTU_INGEST_DISABLED_MESSAGE,
 } from "./edge-gateways.service";
 
 /**
@@ -44,7 +47,13 @@ export type EdgeGatewayFixtures = {
     simulatorFed: string;
     /** An RTU of another organization. */
     foreign: string;
+    /** `active = false`: the cloud plan never reads it. */
+    inactive: string;
+    /** `ingest_enabled = false`: the cloud plan never reads it. */
+    ingestOff: string;
   };
+  /** A fixture organization of this run with `ingest_enabled = false`, one location and one RTU. */
+  switchedOff: { organizationId: string; rtuId: string };
   /** The `mqtt` asset on `ok1`, whose `meta` an assignment must leave as it was. */
   ok1AssetId: string;
   gatewayIds: string[];
@@ -205,7 +214,9 @@ export async function assertTheMintStoresOnlyTheHash(ctx: EdgeGatewayFixtures, a
   );
   expect(oldHash, "a second mint replaces the first").toEqual([]);
 
-  const listed = await ctx.svc.list(admin);
+  // Only this run's gateways: the database is shared, and another suite's rows are not this claim.
+  const listed = (await ctx.svc.list(admin)).filter((g) => ctx.gatewayIds.includes(g.id));
+  expect(listed.map((g) => g.id)).toContain(id);
   expect(edgeGatewaysListResponseSchema.safeParse(listed).success).toBe(true);
   const listText = JSON.stringify(listed);
   expect(listText).not.toMatch(/hash/i);
@@ -254,11 +265,25 @@ export async function assertTheAssignmentRules(ctx: EdgeGatewayFixtures, admin: 
     [ctx.rtus.noCode, RTU_NO_CODE_MESSAGE],
     [ctx.rtus.modbus, RTU_NO_ADAPTER_MESSAGE],
     [ctx.rtus.simulatorFed, RTU_SIMULATOR_FED_MESSAGE],
+    // What `apps/ingest/src/host/bindings.ts` plans: `r.active AND r.ingest_enabled`.
+    [ctx.rtus.inactive, RTU_INACTIVE_MESSAGE],
+    [ctx.rtus.ingestOff, RTU_INGEST_DISABLED_MESSAGE],
   ] as const) {
     const refused = await settle(ctx.svc.replaceRtus(admin, id, { rtuIds: [rtuId] }));
     expect(refused instanceof ConflictException && refused.message, rtuId).toBe(message);
     expect(await edgeOf(rtuId)).toBeNull();
   }
+
+  // An organization whose ingest switch is off (ADR 0115): the plan skips all of its RTUs.
+  const offGateway = await ctx.svc.create(admin, {
+    organizationId: ctx.switchedOff.organizationId,
+    code: `e72gw-${ctx.stamp}-off`,
+    name: "E7.2 gateway off",
+  });
+  ctx.gatewayIds.push(offGateway.id);
+  const switchedOff = await settle(ctx.svc.replaceRtus(admin, offGateway.id, { rtuIds: [ctx.switchedOff.rtuId] }));
+  expect(switchedOff instanceof ConflictException && switchedOff.message).toBe(ORGANIZATION_INGEST_DISABLED_MESSAGE);
+  expect(await edgeOf(ctx.switchedOff.rtuId)).toBeNull();
 
   const assigned = await ctx.svc.replaceRtus(admin, id, { rtuIds: [ctx.rtus.ok1, ctx.rtus.ok2] });
   expect(assigned.rtus.map((r) => r.id).sort()).toEqual([ctx.rtus.ok1, ctx.rtus.ok2].sort());
