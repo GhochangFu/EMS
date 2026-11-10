@@ -111,6 +111,13 @@ export type UplinkClientDeps = {
   /** Samples on disk across the store, sent as `buffered`. */
   readonly buffered: () => number;
   readonly clock: () => UplinkBatch["clock"];
+  /**
+   * A trusted cloud time: the `Date` header of a `200` whose body passed
+   * `uplinkResponseSchema`, in ms since the epoch. The clock guard decides what
+   * to make of it (`edge-clock.ts`, ADR 0123 Amendment 2). Absent or
+   * unparseable headers are never passed on.
+   */
+  readonly onServerTime?: (serverMs: number) => void;
 };
 
 /** Counters and gauges for the edge health line. Rendered, never compared (AGENTS.md §4.6). */
@@ -280,6 +287,7 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
     });
     let status: number;
     let retryAfter: string | null;
+    let dateHeader: string | null;
     let text: string;
     try {
       const response = await deps.fetch(endpoint, {
@@ -295,6 +303,7 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
       });
       status = response.status;
       retryAfter = response.headers.get("retry-after");
+      dateHeader = response.headers.get("date");
       text = await response.text();
     } catch (error) {
       return abort.signal.aborted
@@ -305,26 +314,39 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
     }
 
     if (status === 200) {
-      totals.batchesSent += 1;
-      lastOutcome = "200";
-      if (lastProblem !== undefined) {
-        lastProblem = undefined;
-        logger.info("uplink recovered", {});
-      }
       let parsed: ReturnType<typeof uplinkResponseSchema.safeParse>;
       try {
         parsed = uplinkResponseSchema.safeParse(JSON.parse(text));
       } catch {
         parsed = uplinkResponseSchema.safeParse(undefined);
       }
-      if (parsed.success) {
-        totals.accepted += parsed.data.accepted;
-        totals.foreignDevice += parsed.data.rejected.foreignDevice;
-        totals.futureRx += parsed.data.rejected.futureRx;
-        totals.tooOld += parsed.data.rejected.tooOld;
-        totals.unresolved += parsed.data.rejected.unresolved;
-      } else {
+      if (!parsed.success) {
         logger.warn("uplink 200 body unreadable; the batch is stored, its counts are not known", {});
+        totals.batchesSent += 1;
+        lastOutcome = "200";
+        return;
+      }
+      // Only a schema-valid body is the receiver's own answer, so only its Date is trusted.
+      const serverMs = dateHeader === null ? Number.NaN : Date.parse(dateHeader);
+      if (Number.isFinite(serverMs)) {
+        deps.onServerTime?.(serverMs);
+      }
+      const { rejected } = parsed.data;
+      totals.accepted += parsed.data.accepted;
+      totals.foreignDevice += rejected.foreignDevice;
+      totals.futureRx += rejected.futureRx;
+      totals.tooOld += rejected.tooOld;
+      totals.unresolved += rejected.unresolved;
+      if (count > 0 && rejected.futureRx === count) {
+        // Every sample is ahead of the cloud's clock: our clock is wrong, not the
+        // data. Keep it on disk under its bounds rather than delete a site's telemetry.
+        return retryLater("future-rx", "every sample refused as ahead of the cloud's clock");
+      }
+      totals.batchesSent += 1;
+      lastOutcome = "200";
+      if (lastProblem !== undefined) {
+        lastProblem = undefined;
+        logger.info("uplink recovered", {});
       }
       return;
     }

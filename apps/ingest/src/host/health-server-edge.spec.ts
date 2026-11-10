@@ -67,6 +67,8 @@ export function theEdgeLineRenders(): void {
 
 /** `clock=unsynced` degrades the verdict: every row stamped now may be offset (decision 8). */
 export function anUnsyncedClockDegrades(): void {
+  const skewed = renderHealth(snapshot(edge({ clock: "skewed" })), NOW);
+  assert(skewed.startsWith("ingest-host degraded ") && skewed.includes("edge clock=skewed "), "skewed degrades too");
   const body = renderHealth(snapshot(edge({ clock: "unsynced" })), NOW);
   assert(body.startsWith("ingest-host degraded "), `unsynced must degrade: ${body.split("\n")[0]}`);
   assert(lineOf(body, "edge ")?.startsWith("edge clock=unsynced ") === true, "and says why");

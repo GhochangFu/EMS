@@ -1,4 +1,4 @@
-import type { EdgeClockState } from "./edge-clock.js";
+import type { EdgeClockReport } from "./edge-clock.js";
 import type { UplinkStats } from "./uplink-client.js";
 
 /**
@@ -6,7 +6,7 @@ import type { UplinkStats } from "./uplink-client.js";
  * C12). The edge serves the cloud's health listener, so its body is the same
  * `ingest-host …` header and endpoint lines, plus this one line.
  *
- * `clock=unsynced` **degrades** the verdict: every row stamped while it holds
+ * `clock=unsynced` and `clock=skewed` **degrade** the verdict: every row stamped while it holds
  * may be offset, and an operator must see that before they trust the times.
  * The counters are lifetime counters and are rendered only — the verdict
  * never reads one (AGENTS.md §4.6); an outage shows as `buffered>0` and
@@ -16,13 +16,14 @@ import type { UplinkStats } from "./uplink-client.js";
  */
 
 export type EdgeHealth = {
-  readonly clock: EdgeClockState;
+  /** `skewed`: synced, but the cloud's time is more than 60 s away (ADR 0123 Amendment 2). */
+  readonly clock: EdgeClockReport;
   readonly uplink: UplinkStats;
 };
 
 /** Whether the edge line moves the header verdict to `degraded`. */
 export function edgeDegrades(edge: EdgeHealth | undefined): boolean {
-  return edge?.clock === "unsynced";
+  return edge !== undefined && edge.clock !== "synced";
 }
 
 export function renderEdgeLine(edge: EdgeHealth): string {

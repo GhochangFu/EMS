@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 import { lookupAdapter } from "./adapter/registry.js";
 import { loadEdgeConfigFile, readEdgeEnv } from "./host/edge-config.js";
-import { createEdgeClock } from "./host/edge-clock.js";
+import { createEdgeClock, MARK_TICK_MS } from "./host/edge-clock.js";
 import { planEdgeEndpoints } from "./host/edge-plan.js";
 import { openDiskBufferStore } from "./host/disk-buffer.js";
 import { startHealthServer } from "./host/health-server.js";
@@ -26,9 +26,6 @@ import { createUplinkClient, EDGE_WRITE_TIMEOUT_MS, type UplinkFetch } from "./h
  * comes from compose, and loading `apps/api/.env` as `main.ts` does would put
  * a database URL in this process.
  */
-
-/** How often the clock mark is offered a write; `persist` itself holds it to once a minute. */
-const MARK_TICK_MS = 15_000;
 
 async function main(): Promise<void> {
   const env = readEdgeEnv(process.env);
@@ -67,6 +64,7 @@ async function main(): Promise<void> {
     maxBacklogSamplesPerS: env.replayMaxSamplesPerS,
     buffered: () => bufferStore.backlog().reduce((n, b) => n + b.buffered, 0),
     clock: clock.state,
+    onServerTime: clock.observeServerTime,
   });
 
   const supervisors: Supervisor[] = plans.map(({ factory, plan }) =>
@@ -91,7 +89,7 @@ async function main(): Promise<void> {
     skipped: [],
     startedAt,
     staleAfterMs: env.staleAfterMs,
-    edge: { clock: clock.state(), uplink: uplink.stats() },
+    edge: { clock: clock.report(), uplink: uplink.stats() },
   }));
 
   const markTimer = setInterval(() => void clock.persist(), MARK_TICK_MS);
@@ -123,7 +121,7 @@ async function main(): Promise<void> {
       clearInterval(markTimer);
       // A batch whose post fails while stopping is spilled, not lost.
       await Promise.all(supervisors.map((s) => s.stop()));
-      await clock.persist({ force: true });
+      await clock.persist({ force: true, final: true });
       await health.close();
       process.exit(0);
     })();

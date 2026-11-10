@@ -1,4 +1,11 @@
-import { createEdgeClock, type EdgeClockFs, MARK_PERSIST_INTERVAL_MS } from "./edge-clock.js";
+import {
+  createEdgeClock,
+  type EdgeClockFs,
+  LOAD_MARGIN_MS,
+  MARK_PERSIST_INTERVAL_MS,
+  SKEW_WINDOW_MS,
+  TRUST_WINDOW_MS,
+} from "./edge-clock.js";
 import { assert } from "./normaliser.spec.js";
 
 /**
@@ -56,13 +63,14 @@ function harness(markText: string | Error | undefined) {
   };
 }
 
-function mark(ms: number): string {
-  return JSON.stringify({ mark: new Date(ms).toISOString() });
+/** A mark as the periodic persist writes it (`clean` false) or a clean shutdown does. */
+function mark(ms: number, clean = false): string {
+  return JSON.stringify({ mark: new Date(ms).toISOString(), ...(clean ? { clean: true } : {}) });
 }
 
 /** A wall clock at or ahead of the mark is trusted. */
 export async function aWallAheadOfTheMarkIsSynced(): Promise<void> {
-  const h = harness(mark(T0 - 60_000));
+  const h = harness(mark(T0 - LOAD_MARGIN_MS));
   await h.clock.load();
   assert(h.clock.state() === "synced", `state: ${h.clock.state()}`);
   assert(h.clock.scheduler.now().getTime() === T0, "synced reads the wall clock");
@@ -72,7 +80,7 @@ export async function aWallAheadOfTheMarkIsSynced(): Promise<void> {
 /** Behind the mark at start: unsynced, mark plus monotonic elapsed, never backwards. */
 export async function aWallBehindTheMarkIsUnsyncedAndMonotonic(): Promise<void> {
   const ahead = T0 + 3_600_000;
-  const h = harness(mark(ahead));
+  const h = harness(mark(ahead, true));
   await h.clock.load();
   assert(h.clock.state() === "unsynced", `state: ${h.clock.state()}`);
   const first = h.clock.scheduler.now().getTime();
@@ -91,7 +99,7 @@ export async function aWallBehindTheMarkIsUnsyncedAndMonotonic(): Promise<void> 
 /** When the wall clock passes the estimate the clock is synced again, with no backward step. */
 export async function theWallPassingTheEstimateResyncs(): Promise<void> {
   const ahead = T0 + 30_000;
-  const h = harness(mark(ahead));
+  const h = harness(mark(ahead, true));
   await h.clock.load();
   h.advance(20_000);
   const before = h.clock.scheduler.now().getTime();
@@ -117,19 +125,27 @@ export async function theMarkIsWrittenAtMostOnceAMinuteAndOnShutdown(): Promise<
   await h.clock.persist();
   assert(h.writes.length === 1, `one write inside a minute, got ${h.writes.length}`);
   const [write] = h.writes;
-  assert(write?.path === `${MARK_PATH}.tmp` && write.mode === 0o600, `written to a 0600 temp file: ${write?.path}`);
-  assert(h.renames[0]?.[0] === `${MARK_PATH}.tmp` && h.renames[0]?.[1] === MARK_PATH, "then renamed over the mark");
+  assert(write?.path.startsWith(`${MARK_PATH}.`) === true && write.path.endsWith(".tmp"), `a temp file: ${write?.path}`);
+  assert(write.mode === 0o600, "written 0600");
+  assert(h.renames[0]?.[0] === write.path && h.renames[0]?.[1] === MARK_PATH, "then renamed over the mark");
   assert(write.data.includes(new Date(T0).toISOString()), `the mark is the clock's time: ${write.data}`);
   h.advance(1);
   await h.clock.persist();
   assert(h.writes.length === 2, "a minute later it is written again");
-  await h.clock.persist({ force: true });
+  await h.clock.persist({ force: true, final: true });
   assert(h.writes.length === 3, "shutdown forces a write");
+  assert(new Set(h.writes.map((w) => w.path)).size === 3, "every write has its own temp path");
+  assert(h.writes[2]?.data.includes('"clean":true') === true && !h.writes[0]?.data.includes("clean"), "only shutdown is clean");
 }
 
 /** An unreadable mark warns and counts as none; a missing one (first boot) is silent. */
 export async function anUnreadableMarkWarnsAndCountsAsNone(): Promise<void> {
-  for (const bad of ["{ not json", JSON.stringify({ mark: "yesterday" }), Object.assign(new Error("EACCES"), { code: "EACCES" })]) {
+  for (const bad of [
+    "{ not json",
+    JSON.stringify({ mark: "yesterday" }),
+    JSON.stringify({ mark: "+010000-01-01T00:00:00.000Z" }),
+    JSON.stringify({ mark: "0999-12-31T00:00:00.000Z" }),
+    Object.assign(new Error("EACCES"), { code: "EACCES" })]) {
     const h = harness(bad);
     await h.clock.load();
     assert(h.clock.state() === "synced" && h.clock.scheduler.now().getTime() === T0, "no mark: the wall clock");
@@ -138,4 +154,63 @@ export async function anUnreadableMarkWarnsAndCountsAsNone(): Promise<void> {
   const first = harness(undefined);
   await first.clock.load();
   assert(first.lines.length === 0, "a first boot with no mark is not a warning");
+}
+
+/** A periodic (unclean) mark starts the estimate one interval and one tick past it (crash safety, S3). */
+export async function aStaleMarkStartsPastItsMargin(): Promise<void> {
+  const h = harness(mark(T0 - 10_000));
+  await h.clock.load();
+  assert(h.clock.state() === "unsynced", "a wall clock inside the crash margin is not trusted");
+  const first = h.clock.scheduler.now().getTime();
+  assert(first === T0 - 10_000 + LOAD_MARGIN_MS, `mark + margin: ${first - T0}`);
+  const clean = harness(mark(T0 - 10_000, true));
+  await clean.clock.load();
+  assert(clean.clock.state() === "synced", "a clean-shutdown mark needs no margin");
+}
+
+/** D9: a mark 30 s ahead with a correct wall clock converges after one trusted cloud time. */
+export async function aTrustedCloudTimeEndsUnsyncedFromAMarkAhead(): Promise<void> {
+  const h = harness(mark(T0 + 30_000, true));
+  await h.clock.load();
+  h.advance(60_000);
+  assert(h.clock.state() === "unsynced", "the wall never reaches mark + elapsed on its own");
+  // A cloud time too far from the wall proves nothing.
+  h.clock.observeServerTime(T0 + 60_000 + TRUST_WINDOW_MS + 1);
+  assert(h.clock.state() === "unsynced", "an untrusted cloud time changes nothing");
+  h.clock.observeServerTime(T0 + 60_000 + 1_000);
+  assert(h.clock.state() === "synced" && h.clock.report() === "synced", "one trusted response resyncs");
+  assert(h.clock.scheduler.now().getTime() === T0 + 60_000, "now is the wall clock again");
+  const resync = h.lines.filter((l) => l.message.includes("resynced"));
+  assert(resync.length === 1 && resync[0]?.fields?.stepBackMs === 30_000, `logged once with the step: ${JSON.stringify(resync)}`);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert(h.writes.at(-1)?.data.includes(new Date(T0 + 60_000).toISOString()) === true, "the mark is reset to the wall clock");
+}
+
+/** A 2 s step back while synced goes unsynced, then one trusted response returns it to synced. */
+export async function aBackwardStepConvergesAfterOneTrustedResponse(): Promise<void> {
+  const h = harness(undefined);
+  await h.clock.load();
+  h.clock.scheduler.now();
+  h.advance(30_000);
+  h.clock.scheduler.now();
+  h.setWall(T0 + 28_000);
+  h.advance(200, false);
+  const stepped = h.clock.scheduler.now().getTime();
+  assert(h.clock.state() === "unsynced" && stepped === T0 + 30_200, `monotonic after the step: ${stepped - T0}`);
+  h.advance(3_600_000);
+  const later = h.clock.scheduler.now().getTime();
+  assert(h.clock.state() === "unsynced" && later - (T0 + 3_628_000) === 2_200, `an hour on, still 2.2 s ahead: ${later - T0}`);
+  h.clock.observeServerTime(T0 + 28_000 + 3_600_000);
+  assert(h.clock.state() === "synced", "one trusted response returns it to synced");
+}
+
+/** Synced, but the cloud is more than 60 s away: `skewed`, and `rx` is not shifted (Q7a). */
+export async function aSyncedClockFarFromTheCloudIsSkewed(): Promise<void> {
+  const h = harness(undefined);
+  await h.clock.load();
+  h.clock.observeServerTime(T0 + SKEW_WINDOW_MS + 1_000);
+  assert(h.clock.report() === "skewed" && h.clock.state() === "synced", `report: ${h.clock.report()}`);
+  assert(h.clock.scheduler.now().getTime() === T0, "rx stays the wall clock: no offset correction");
+  h.clock.observeServerTime(T0 + 5_000);
+  assert(h.clock.report() === "synced", "a close cloud time clears it");
 }

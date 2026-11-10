@@ -76,6 +76,7 @@ function harness(answers: Answer[] | ((call: Call) => Answer), options: { rate?:
   const clock = fakeScheduler();
   const calls: Call[] = [];
   const lines: string[] = [];
+  const serverTimes: number[] = [];
   const fetch: UplinkFetch = async (url, init) => {
     const batch = uplinkBatchSchema.parse(JSON.parse(gunzipSync(init.body).toString("utf8")));
     const call = { url, init, batch };
@@ -105,8 +106,9 @@ function harness(answers: Answer[] | ((call: Call) => Answer), options: { rate?:
     maxBacklogSamplesPerS: options.rate ?? 500,
     buffered: () => 7,
     clock: () => "unsynced",
+    onServerTime: (ms) => serverTimes.push(ms),
   });
-  return { client, calls, lines, clock };
+  return { client, calls, lines, clock, serverTimes };
 }
 
 function samples(n: number, receivedAt: Date, deviceKey?: string): ReceivedSample[] {
@@ -335,4 +337,33 @@ export async function postsAreSerialisedLiveFirst(): Promise<void> {
   await Promise.all([first, backlog, live]);
   assert(maxInFlight === 1, `one post at a time: ${maxInFlight}`);
   assert(order.join(",") === "false,false,true", `the waiting live batch goes before the backlog: ${order.join(",")}`);
+}
+
+/** A schema-valid `200`'s `Date` header is passed to the clock guard; nothing else is. */
+export async function onlyAValid200sDateIsTrusted(): Promise<void> {
+  const date = "Tue, 10 Nov 2026 12:00:05 GMT";
+  const h = harness([
+    { status: 200, body: OK, headers: { date } },
+    { status: 200, body: OK },
+    { status: 200, body: OK, headers: { date: "not a date" } },
+    { status: 503, headers: { date } },
+  ]);
+  const write = h.client.writerFor(ONE_DEVICE);
+  await write(samples(1, new Date(T0)));
+  await write(samples(1, new Date(T0)));
+  await write(samples(1, new Date(T0)));
+  await rejection(write(samples(1, new Date(T0))));
+  assert(h.serverTimes.join(",") === String(Date.parse(date)), `only the first Date is passed on: ${h.serverTimes.join(",")}`);
+}
+
+/** A `200` that refused every sample as `futureRx` keeps the batch: a wrong clock must not delete it. */
+export async function anAllFutureRx200IsRetryLater(): Promise<void> {
+  const all = { accepted: 0, rejected: { foreignDevice: 0, futureRx: 3, tooOld: 0, unresolved: 0 } };
+  const some = { accepted: 1, rejected: { foreignDevice: 0, futureRx: 2, tooOld: 0, unresolved: 0 } };
+  const h = harness([{ status: 200, body: all }, { status: 200, body: some }]);
+  const write = h.client.writerFor(ONE_DEVICE);
+  const error = await rejection(write(samples(3, new Date(T0))));
+  assert(error instanceof UplinkRetryLater, "every sample futureRx is a retry-later");
+  await write(samples(3, new Date(T0)));
+  assert(h.client.stats().futureRx === 5 && h.client.stats().batchesSent === 1, "a partial futureRx is delivered, and counted");
 }

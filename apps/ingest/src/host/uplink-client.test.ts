@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   aHungPostIsAbortedAtTwentySeconds,
+  anAllFutureRx200IsRetryLater,
+  onlyAValid200sDateIsTrusted,
   anOversizeBatchIsSplit,
   everyOutcomeIsHandled,
   onlyBacklogBatchesAreThrottled,
@@ -48,5 +50,13 @@ describe("E7.2 — the edge uplink client (ADR 0123 decisions 4 and 9, plan T5.4
 
   it("keeps one post in flight, live ahead of backlog", async () => {
     await postsAreSerialisedLiveFirst();
+  });
+
+  it("passes only a schema-valid 200's Date header to the clock guard", async () => {
+    await onlyAValid200sDateIsTrusted();
+  });
+
+  it("treats a 200 that refused every sample as futureRx as retry-later", async () => {
+    await anAllFutureRx200IsRetryLater();
   });
 });
