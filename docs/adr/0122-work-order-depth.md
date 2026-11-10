@@ -2,16 +2,15 @@
 
 ## Status
 
-**Proposed — 2026-11-10; all gate questions ruled the same day, acceptance
-still owed.** Drafted by the agent for backlog rows `E3.1` and `E3.4`
-(`docs/BACKLOG.md` §2 Track M). The owner ruled Q1–Q12 and the plan's
-P1–P12 in chat on 2026-11-10, one at a time (see *Rulings*); *Decision* below
-is written to those rulings. The owner has **not** yet accepted this record.
-No code, schema or contract changes until it is Accepted and the plan
-(`docs/plans/e3.1-work-order-depth.md`) is approved. Lines marked *(drafter)*
-are drafter calls the plan may refine.
+**Accepted — 2026-11-10** (owner, in chat: "accept the ADR and yes to the
+plan"; proposed the same day). Drafted by the agent for backlog rows `E3.1`
+and `E3.4` (`docs/BACKLOG.md` §2 Track M). The owner ruled Q1–Q12 and the
+plan's P1–P12 and R1–R5 in chat on 2026-11-10, one at a time (see
+*Rulings*); *Decision* below is written to those rulings. The plan
+(`docs/plans/e3.1-work-order-depth.md`) was approved in the same message.
+Lines marked *(drafter)* are drafter calls the plan may refine.
 
-Builds on ADR 0006 (work-order foundation). On acceptance this record
+Builds on ADR 0006 (work-order foundation). This record
 **stands as the amendment** to **ADR 0017** (a third write class) and
 **ADR 0106** (what the copilot's `workOrder.close` means) — ruling P11; each
 of those records gets a one-line pointer here and no separate amendment text.
@@ -53,7 +52,7 @@ drafter reads work-order closure approval as neither, so no §6 item moves.
 If the owner reads it otherwise, this is a §10 promotion and the closure part
 waits for it.
 
-## Decision (as ruled 2026-11-10; in force once Accepted)
+## Decision
 
 ### 1. Scope *(Q1, Q2)*
 
