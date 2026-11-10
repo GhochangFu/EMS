@@ -532,3 +532,91 @@ the aggregates are not repaired.
 - Which RTUs a gateway may write is checked against the in-memory binding
   plan, so for up to one reload tick a gateway can still write an RTU that
   was just reassigned.
+
+## Amendment 2 — the edge clock guard and delete rules, as built in PR 5 (2026-11-10)
+
+**Drafted by the build session for the owner to confirm. It is not an owner
+ruling.** The semantics in (a) 1 — trusting the receiver's `Date` header —
+are a drafter's call, made because the owner was away during the review. No
+decision above is reworded; this records what PR 5 built where it adds to
+decisions 4 and 8.
+
+**Why.** The PR 5 code and security reviews reproduced two failures of the
+guard as first written (decision 8's text, read literally): a mark even
+slightly ahead of a correct wall clock (a 2 s chrony step back, a mark 30 s
+ahead at boot) **never** returned to `synced`, because the estimate and the
+wall clock advance at the same rate; and a mark far ahead (an RTC kept in
+local time and read as UTC) stamped every `rx` more than 60 s into the
+future, so the cloud refused every sample as `futureRx` until the clock
+caught up.
+
+**(a) Decision 8, the edge guard, as built** (`apps/ingest/src/host/edge-clock.ts`):
+
+1. `unsynced` ends when the wall clock reaches the estimate, **or** when a
+   trusted cloud time says the wall clock is right: on a `200` whose body
+   passes `uplinkResponseSchema`, the response's `Date` header, if it is
+   within 30 s of the wall clock. The guard then returns to the wall clock
+   and resets the mark to it. That is the one case `rx` steps backwards; any
+   step over a second is logged at `warn` with its size. An absent or
+   unparseable header, or a `200` whose body is not the receiver's, changes
+   nothing.
+2. While `synced`, a trusted cloud time more than 60 s from the wall clock
+   reports `clock=skewed` on the health line, which degrades the verdict.
+3. A wall clock that steps back while running goes `unsynced` as before and
+   converges at the next trusted response under 1.
+4. A crash cannot re-issue an `rx` already sent. A periodic mark is written
+   at most a minute apart and offered every 15 s, so on load the estimate
+   starts at `mark + 75 s`. A mark written by a clean shutdown carries
+   `"clean": true` and needs no margin, because nothing was stamped after
+   it; on load such a mark is **replaced at once** by an unclean one (the
+   same time, forced), so a kill later in that run makes the next boot apply
+   the margin. All writes go through one serial chain (a periodic write in
+   flight cannot land after a resync's), each to a unique temp file,
+   `fsync`ed, then renamed. A mark that is not a finite time within a
+   four-digit year is refused with a warning and treated as none. Deleting
+   `clock-mark.json` is the manual reset.
+
+**What stays ruled:** Q7a. The edge never shifts `rx` by a measured offset;
+the cloud rejects and counts. `skewed` is reported, not corrected.
+
+**(b) Decision 4, the edge client's outcomes, as built**
+(`apps/ingest/src/host/uplink-client.ts`). Only the receiver, refusing the
+**content**, can make the edge drop a batch:
+
+- A batch is dropped (counted `uplinkRefused`) **only** on the receiver's
+  own `400 bad-schema`. Every sample is checked against the same
+  `uplinkSampleSchema` before it is sent (a device time that does not fit is
+  left off; a sample that still does not fit is dropped alone and counted),
+  so `bad-schema` should only happen on a version mismatch between the ends.
+  The codes and statuses are one constant, `UPLINK_REFUSAL_STATUS` in
+  `packages/shared/src/ingest-uplink.ts`, which the listener answers from.
+- The receiver's transport refusals — `400 bad-encoding`, `400 bad-gzip`,
+  `400 bad-json`, `413 too-large` — are retry-later: a middlebox rewriting
+  the body must not drain the backlog. So are `422`, any `400`/`413` with
+  another body (a proxy page) and a `200` whose body fails
+  `uplinkResponseSchema`. Bodies are split to at most 500 samples by count
+  and 256 KiB compressed.
+- A schema-valid `200` is **delivered**, whatever its reject counts — Q7a as
+  ruled: "one bad sample cannot block a gateway's queue for ever". When it
+  reports `futureRx` or `tooOld`, the edge degrades its health for ten
+  minutes and logs one throttled line with the counts.
+- **Tried and withdrawn:** for one review round a `200` in which every
+  sample was `futureRx` was treated as retry-later, to keep a wrong clock
+  from deleting telemetry. It retained data that could only ever land at a
+  wrong time, could wedge replay behind segments that never aged out, and
+  mixed badly with batches that were also partly foreign. The protection
+  that remains is (a) 1 — a box whose mark is ahead loses at most the
+  batches before its first good reply — and (a) 2, which makes a wrong clock
+  visible.
+
+**Known limits, for the owner.**
+
+- A box whose RTC is more than 60 s ahead, with the cloud reachable, shows
+  `clock=skewed` (degraded) and **its samples are rejected by the cloud until
+  the clock is fixed**. That is ruling Q7a working as ruled.
+- The trusted-`Date` rule trusts what arrives over the verified TLS
+  connection. A TLS-inspecting proxy at the site that stamps `Date` from the
+  same wrong site clock would make a wrong wall clock look right.
+- A possible follow-up, **not built, for the owner to rule on**: while
+  `skewed`, stamp `rx` from a cloud-disciplined clock (the last trusted
+  `Date` plus monotonic elapsed time) instead of the wall clock.

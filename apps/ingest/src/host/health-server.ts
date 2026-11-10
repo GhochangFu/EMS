@@ -1,6 +1,7 @@
 import http from "node:http";
 
 import type { SkippedBinding } from "./bindings.js";
+import { type EdgeHealth, edgeDegrades, renderEdgeLine } from "./health-edge.js";
 import { type GatewayHealth, renderGatewayLines } from "./health-gateways.js";
 import type { StoppedEndpoint } from "./reconcile.js";
 import type { SupervisorHealth } from "./supervisor.js";
@@ -40,6 +41,11 @@ export type HealthSnapshot = {
    * `health-gateways.ts`. Absent on a host that has not loaded them.
    */
   readonly gateways?: readonly GatewayHealth[];
+  /**
+   * The edge runtime's clock and uplink (`E7.2`, plan T5.5) — `health-edge.ts`.
+   * `clock=unsynced` degrades the verdict. Absent on the cloud host.
+   */
+  readonly edge?: EdgeHealth;
 };
 
 /** One RTU that has stopped publishing, with the endpoint it sits on. */
@@ -212,7 +218,7 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
     // Reporting `ok` with a mapped RTU publishing nothing is exactly what let
     // three silent PHE stations go unnoticed — see `stale rtu=` below.
     `ingest-host ${
-      unhealthy.length === 0 && stale.length === 0 && buffered === 0 && everyWritePathOk
+      unhealthy.length === 0 && stale.length === 0 && buffered === 0 && everyWritePathOk && !edgeDegrades(snapshot.edge)
         ? "ok"
         : "degraded"
     } ` +
@@ -238,7 +244,8 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
       // the lifetime `bufferDropped` counter. `writePath=` on the endpoint
       // line is the second gauge, for the case the first cannot see: nothing
       // on disk because nothing could be put there.
-      `skipped=${snapshot.skipped.length} notify=on ` +
+      // The edge writes and notifies nothing: its rows are notified by the cloud.
+      `skipped=${snapshot.skipped.length} notify=${snapshot.edge === undefined ? "on" : "cloud"} ` +
       `uptime=${uptimeSeconds}s`,
   );
 
@@ -312,6 +319,11 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
       `skipped rtu=${skip.rtuCode === null ? "(no rtu_code)" : token(skip.rtuCode)} reason=${skip.reason}` +
         (skip.detail === undefined ? "" : ` detail=${token(skip.detail)}`),
     );
+  }
+
+  // The edge runtime's own line, after its endpoints (absent on the cloud).
+  if (snapshot.edge !== undefined) {
+    lines.push(renderEdgeLine(snapshot.edge));
   }
 
   // Edge gateways last, and after the verdict was fixed in the header above.

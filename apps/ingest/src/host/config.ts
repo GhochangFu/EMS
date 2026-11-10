@@ -168,7 +168,7 @@ const MAX_TIMER_MS = 2 ** 31 - 1;
  */
 const MAX_BUFFER_BYTES = 2 ** 40;
 
-function positiveInt(
+export function positiveInt(
   raw: string | undefined,
   fallback: number,
   name: string,
@@ -287,6 +287,16 @@ function readUplinkRate(raw: string | undefined): number {
   return value;
 }
 
+/**
+ * The plain-MQTT broker allow-list (ADR 0114 decision 1). Exported so the edge
+ * entry point reads the variable through this module too (`E7.2` plan M16, P6):
+ * `host/config.ts` stays the one file in `apps/ingest` that names it. A bad
+ * entry throws, and the process refuses to start.
+ */
+export function readMqttPlaintextHosts(env: NodeJS.ProcessEnv): ReadonlySet<string> {
+  return parseMqttPlaintextHosts(env.MQTT_PLAINTEXT_HOSTS);
+}
+
 /** Pure over its input, so the parsing rules are testable without mutating `process.env`. */
 export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   const databaseUrl = env.DATABASE_URL;
@@ -369,7 +379,7 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
     credentialKeyConfigured: credentialKeys.current !== null,
     // ADR 0114 decision 1: not wrapped, so a bad entry escapes to `main().catch`
     // and the host refuses to start, like the credential-key refusal above.
-    mqttPlaintextHosts: parseMqttPlaintextHosts(env.MQTT_PLAINTEXT_HOSTS),
+    mqttPlaintextHosts: readMqttPlaintextHosts(env),
     notifyLiveWindowMs: readNotifyLiveWindowMs(env.INGEST_NOTIFY_LIVE_WINDOW_MS),
     uplinkPort: readUplinkPort(env.INGEST_UPLINK_PORT, healthPort),
     uplinkMaxSamplesPerS: readUplinkRate(env.INGEST_UPLINK_MAX_SAMPLES_PER_S),

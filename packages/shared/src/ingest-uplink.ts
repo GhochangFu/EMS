@@ -25,7 +25,7 @@ import { INGEST_PROTOCOLS } from "./ingest-protocols";
  * the two key sets equal.
  */
 
-/** Samples per batch. The edge splits anything larger; the cloud refuses it. */
+/** Samples per batch. The edge client splits a larger batch by count before sending (`uplink-client.ts`); the cloud refuses it. */
 export const UPLINK_MAX_SAMPLES = 500;
 /** Compressed (gzip) body bytes the receiver reads before it answers 413. */
 export const UPLINK_MAX_BODY_BYTES = 262_144;
@@ -72,6 +72,34 @@ export const uplinkBatchSchema = z.object({
 });
 
 export type UplinkBatch = z.infer<typeof uplinkBatchSchema>;
+
+/**
+ * Every refusal the receiver answers, with its status. The body of a refusal
+ * is exactly `{ "error": <code> }`. One definition for both ends: the
+ * receiver (`uplink-server.ts`) answers from it, and the edge client treats a
+ * `400`/`413` as final **only** when its body carries one of these codes with
+ * that status — a proxy's error page with the same status is retried, never
+ * taken as the receiver refusing the data (ADR 0123 Amendment 2).
+ */
+export const UPLINK_REFUSAL_STATUS = {
+  "not-found": 404,
+  method: 405,
+  unauthorized: 401,
+  "gateway-revoked": 403,
+  "ingest-disabled": 403,
+  busy: 429,
+  overloaded: 429,
+  "rate-limited": 429,
+  "bad-encoding": 400,
+  "too-large": 413,
+  "bad-gzip": 400,
+  "bad-json": 400,
+  "bad-schema": 400,
+} as const;
+
+export type UplinkRefusal = keyof typeof UPLINK_REFUSAL_STATUS;
+
+export const UPLINK_REFUSAL_CODES = Object.keys(UPLINK_REFUSAL_STATUS) as readonly UplinkRefusal[];
 
 const count = z.number().int().nonnegative();
 

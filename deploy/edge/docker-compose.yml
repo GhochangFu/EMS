@@ -1,0 +1,52 @@
+# The edge gateway (E7.2, ADR 0123) — one site box, one service.
+#
+# Its own compose file, not a profile in the root one (plan C14), so the root
+# file's topology tests (F4.61) and the plain-MQTT invariant (ADR 0114) keep
+# their meaning. The image is the cloud ingest image; only the command differs:
+# `node dist/edge-main.js` is the second entry point, and it reaches no
+# database. Run from this directory:
+#
+#   install -m 600 .env.example .env   # then fill in the token and the credentials
+#   cp edge-config.example.json edge-config.json
+#   docker compose up -d --build
+#
+# Docs: docs/edge-gateway.md.
+name: bms-edge
+
+services:
+  edge:
+    build:
+      context: ../..
+      dockerfile: apps/ingest/Dockerfile
+    image: ${EDGE_IMAGE:-bms-ingest:edge}
+    command: ["node", "dist/edge-main.js"]
+    # The box has no operator on site: come back after a crash or a reboot.
+    restart: unless-stopped
+    # Shutdown stops the uplink first (later batches spill to disk), then the
+    # supervisors, together (5 s disconnect + 10 s settle, each bounded), then
+    # writes the clock mark: more than Docker's default 10 s before SIGKILL.
+    stop_grace_period: 30s
+    # EDGE_GATEWAY_TOKEN and every EDGE_CRED_<NAME> come from here, never
+    # from the config file and never from the cloud (ADR 0123 decision 3).
+    env_file:
+      - .env
+    environment:
+      EDGE_CONFIG_FILE: /etc/bms-edge/edge-config.json
+      EDGE_BUFFER_DIR: /var/lib/bms-edge
+      INGEST_HOST_HEALTH_PORT: 9103
+      MQTT_PLAINTEXT_HOSTS: ${MQTT_PLAINTEXT_HOSTS:-}
+    volumes:
+      # The disk buffer and the clock mark. A named volume, so a backlog
+      # survives `docker compose down` and an image update.
+      - edge-buffer:/var/lib/bms-edge
+      - ./edge-config.json:/etc/bms-edge/edge-config.json:ro
+    # No `ports:`. The health listener is read from inside the container:
+    #   docker compose exec edge wget -qO- http://127.0.0.1:9103/
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9103/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  edge-buffer: {}

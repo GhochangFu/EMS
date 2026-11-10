@@ -1645,3 +1645,37 @@ window itself.
 **Superseded sentences are left standing**, as Amendment 5 did: §6 commit 4,
 Amendment 3 item 4 and Amendment 4 decision 5 are read through this
 amendment, not rewritten.
+
+**(b) The public uplink route (amending Amendment 8 decision 2)** is owed by
+`E7.2` PR 4 and is appended here when that PR lands. Part (c) below was
+written first because PR 5 does not depend on the route to build or test.
+
+**(c) "One entry point" becomes "exactly `main.ts` and `edge-main.ts`, and
+only `main.ts` reaches Postgres"** (`E7.2` PR 5, ADR 0123 decision 2). §6
+commit 4 deleted `src/index.js` so that `apps/ingest/src` held one entry
+point, and `tests/repo-invariants.test.ts` pinned it. ADR 0123 Q2 (ruled B)
+adds a second: `src/edge-main.ts`, started as `node dist/edge-main.js` from
+the same image, runs the same registry, adapters, supervisor and disk buffer
+on a site box, with an HTTPS uplink client as its `writeSamples`.
+
+What commit 4 protected was not the count but the absence of a second,
+drifting copy of the host. That still holds, by two static checks:
+
+- `tests/repo-invariants.test.ts` matches `index` and any `*main` file under
+  `apps/ingest/src` (the pattern was widened to `[\w-]*main` first and seen
+  red with `edge-main.ts` present) and requires exactly
+  `["edge-main.ts", "main.ts"]`. A third entry point fails it.
+- `tests/e7.2-edge-entry-point.test.ts` walks the runtime import graph from
+  `edge-main.ts`, skipping `import type`, and requires that it reaches no
+  `pg`, no `@bms/db` and none of `host/normaliser`, `host/bindings`,
+  `host/reconcile`, `rtu-config.js`, `host/uplink-server`, `host/uplink-write`,
+  `host/uplink-receiver`, `host/uplink-gateways` or `host/aggregate-repair`.
+  The same walk from `main.ts` must reach `pg`. The edge therefore cannot
+  write, normalise or notify: it forwards un-normalised samples, and the
+  cloud's `writeResolved` stays the one write path.
+
+`edge-main.ts` is wiring only, as `main.ts` is; its decisions live in tested
+modules (`host/edge-config.ts`, `edge-plan.ts`, `edge-clock.ts`,
+`uplink-client.ts`). `start` stays `node dist/main.js`. A `start:edge` script
+is owed to the owner (an agent may not edit a `package.json`); until then
+`deploy/edge/docker-compose.yml` runs `node dist/edge-main.js` directly.

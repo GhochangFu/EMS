@@ -1,0 +1,16 @@
+{
+  "endpoints": [
+    {
+      "protocol": "mqtt",
+      "config": { "host": "broker.site.local", "port": 8883 },
+      "credentials": { "username": "EDGE_CRED_SITE_BROKER_USER", "password": "EDGE_CRED_SITE_BROKER_PASSWORD" },
+      "devices": [
+        {
+          "deviceKey": "SITE-RTU-01",
+          "device": { "topic": "site/rtu-01/data" },
+          "sourceKeys": ["kw", "kwh", "pf"]
+        }
+      ]
+    }
+  ]
+}

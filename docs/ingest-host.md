@@ -8,6 +8,7 @@ host from `F1.1` (**[ADR 0016](./adr/0016-ingest-adapter-framework.md)**).
 | Command | What it is |
 | --- | --- |
 | `pnpm start` → `node dist/main.js` | The pluggable adapter host, and what the pilot runs. Serves MQTT today; `F1.2`–`F1.6` add protocols. |
+| `node dist/edge-main.js` | The edge gateway (`E7.2`, ADR 0016 Amendment 9 (c)): same image, reaches no database — see [`edge-gateway.md`](./edge-gateway.md). |
 
 **The strangler migration is finished.** ADR 0016 §6 ran it in four commits:
 commit 2 built the host beside the ADR 0007 pilot's `src/index.js`, commit 3
