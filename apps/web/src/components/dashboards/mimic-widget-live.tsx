@@ -25,9 +25,10 @@ type MimicWidgetLiveProps = {
  */
 function geometryFor(entry: MimicWidgetNodesDto | undefined, config: MimicConfig): MimicGeometry {
   if (entry !== undefined) {
-    return entry.source === "layout" ? layoutGeometry(entry.layout) : presetGeometry(entry.preset);
+    return entry.source === "layout" ? layoutGeometry(entry.layout) : presetGeometry(entry.preset, config.glyphSet);
   }
-  return config.source === "preset" ? presetGeometry(config.preset) : EMPTY_GEOMETRY;
+  // `F4.352`: the glyph set picks the preset's isometric node glyphs (the PHE tower and gateway).
+  return config.source === "preset" ? presetGeometry(config.preset, config.glyphSet) : EMPTY_GEOMETRY;
 }
 
 /**

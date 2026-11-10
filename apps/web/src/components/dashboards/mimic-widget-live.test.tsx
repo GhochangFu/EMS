@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import {
   anIsoWidgetDrawsIsoUnitsAndTheTankLevel,
   aWidgetWithoutAGlyphSetDrawsCoreUnits,
+  aCorePheWidgetStillDrawsTheSensor,
+  anIsoPheWidgetDrawsTheTowerAndTheGateway,
   aCompactConfigReachesTheScene,
   theLiveTileMovesByDefault,
   aMotionFalseConfigDrawsStill,
@@ -98,5 +100,11 @@ describe("F3.32 U4 — MimicWidgetLive", () => {
   });
   it("LV-B3b a widget without a glyph set draws core units (F4.345)", async () => {
     await aWidgetWithoutAGlyphSetDrawsCoreUnits();
+  });
+  it("LV-B4 an iso PHE widget draws the RTU tower and the network gateway (F4.352)", async () => {
+    await anIsoPheWidgetDrawsTheTowerAndTheGateway();
+  });
+  it("LV-B4b a PHE widget without a glyph set still draws the sensor (F4.352)", async () => {
+    await aCorePheWidgetStillDrawsTheSensor();
   });
 });

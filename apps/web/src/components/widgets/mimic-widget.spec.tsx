@@ -13,7 +13,7 @@ import type { WidgetStatus } from "../../lib/widget-catalog";
 import { MIMIC_NODE_GLYPHS } from "../../lib/mimic";
 import { presetGeometry } from "../../lib/mimic-geometry";
 import { FRESH_MS } from "../../lib/schematic-telemetry";
-import { MimicWidget } from "./mimic-widget";
+import { MimicWidget, NO_MIMIC_NODES } from "./mimic-widget";
 
 /**
  * `F3.32` U4 — what a person sees on a plant mimic (ADR 0079, plan §3 U4 "jsdom").
@@ -544,4 +544,30 @@ export function anIsoTileExpandsIntoAnIsoDialogAndKeepsTheMarkersCore(): void {
   // Positive control: the markers are drawn, and none is an isometric twin.
   expect(others).toEqual(expect.arrayContaining(["pump", "discharge"]));
   expect(others.filter((k) => k.startsWith("iso:"))).toEqual([]);
+}
+
+/**
+ * `F4.352` (ADR 0121 Amendment 1 decision 3) — the Expand dialog of an isometric PHE environment
+ * tile draws the same node glyphs as the tile: the RTU as the telemetry tower, the network as the
+ * gateway. Mutation: drop the glyph set from `presetGeometry` → both read `iso:sensor`.
+ */
+export function anIsoPheTileExpandsIntoTheSameTower(): void {
+  render(
+    <MimicWidget
+      title="PHE station"
+      status="ready"
+      geometry={presetGeometry("pump_station_environment", "iso")}
+      nodes={NO_MIMIC_NODES}
+      readings={READINGS}
+      expandable
+      glyphSet="iso"
+    />,
+  );
+  const glyphOf = (root: ParentNode, key: string): string | null | undefined =>
+    root.querySelector(`[data-testid=mimic-node][data-node-key=${key}] [data-testid=mimic-glyph]`)?.getAttribute("data-glyph");
+  expect(glyphOf(document, "rtu")).toBe("iso:telemetry-tower");
+  fireEvent.click(screen.getByRole("button", { name: "Expand PHE station" }));
+  const dialog = screen.getByRole("dialog", { name: "PHE station — full view" });
+  expect(glyphOf(dialog, "rtu")).toBe("iso:telemetry-tower");
+  expect(glyphOf(dialog, "network")).toBe("iso:gateway");
 }

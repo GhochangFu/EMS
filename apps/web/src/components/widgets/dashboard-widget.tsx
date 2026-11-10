@@ -254,7 +254,9 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
         <MimicWidget
           title={title}
           status={status}
-          geometry={widget.config.source === "preset" ? presetGeometry(widget.config.preset) : EMPTY_GEOMETRY}
+          geometry={
+            widget.config.source === "preset" ? presetGeometry(widget.config.preset, widget.config.glyphSet) : EMPTY_GEOMETRY
+          }
           nodes={NO_MIMIC_NODES}
           readings={NO_LIVE_READINGS}
           glyphSet={widget.config.glyphSet}

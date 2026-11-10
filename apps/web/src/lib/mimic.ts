@@ -1,5 +1,5 @@
 import { MIMIC_HEADLINE_POINTS, type MimicGlyphSet } from "@bms/shared/contracts";
-import { ISO_SYMBOL_KEYS } from "@bms/shared";
+import { ISO_SYMBOL_KEYS, type IsoSymbolKey } from "@bms/shared";
 import type {
   BreakerState,
   GeneratedSiteAssetDto,
@@ -587,6 +587,22 @@ export const MIMIC_NODE_GLYPHS: {
     battery: "battery",
     network: "sensor",
   },
+};
+
+/**
+ * `F4.352` (ADR 0121 Amendment 1 decision 3) — a preset node's own isometric glyph, which wins
+ * over its core key's twin when the widget's `glyphSet` is `iso`. The PHE `rtu` nodes (the RTU
+ * signal) draw the telemetry tower and the `network` node (the GSM link) the gateway, where the
+ * twin rule would draw `iso:sensor`. The core set does not change: with `glyphSet` absent or
+ * `core` these nodes still draw `MIMIC_NODE_GLYPHS`' `sensor`, because the core set has no tower.
+ * Typed like `MIMIC_NODE_GLYPHS`: a wrong node key or a non-`iso` key is a compile error. Read by
+ * `buildPresetGeometry` only (`mimic-geometry.ts`), the one place a node key meets its symbol.
+ */
+export const MIMIC_NODE_ISO_GLYPHS: {
+  readonly [P in MimicPreset]?: { readonly [key in NodeKeyOf<P>]?: IsoSymbolKey };
+} = {
+  pump_station_overview: { rtu: "iso:telemetry-tower" },
+  pump_station_environment: { rtu: "iso:telemetry-tower", network: "iso:gateway" },
 };
 
 /**

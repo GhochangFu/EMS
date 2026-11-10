@@ -611,3 +611,57 @@ export async function aWidgetWithoutAGlyphSetDrawsCoreUnits(): Promise<void> {
   expect(keys.length).toBeGreaterThanOrEqual(8);
   expect(keys.filter((k) => k.startsWith("iso:"))).toEqual([]);
 }
+
+/** The PHE environment preset, read back with no node resolved (`F4.352`). */
+function phe(glyphSet?: "iso" | "core"): { answer: () => Promise<DashboardMimicNodesResponseDto>; widget: MimicWidgetDto } {
+  const answer: DashboardMimicNodesResponseDto = {
+    dashboardId: DASHBOARD_ID,
+    resolvedAt: new Date().toISOString(),
+    stateMaps: [],
+    widgets: [{ source: "preset", widgetId: WIDGET_A, preset: "pump_station_environment", nodes: [] }],
+  };
+  const config = glyphSet === undefined ? { source: "preset" as const, preset: "pump_station_environment" as const } : { source: "preset" as const, preset: "pump_station_environment" as const, glyphSet };
+  return { answer: () => Promise.resolve(answer), widget: { ...mimicWidget(WIDGET_A, "PHE"), config } };
+}
+
+/** The drawn glyph of each unit, by node key, once no glyph is still loading. */
+async function unitGlyphsByKey(): Promise<Record<string, string>> {
+  await waitFor(() => expect(document.querySelectorAll("[data-testid=mimic-node] [data-testid=mimic-glyph]").length).toBeGreaterThan(0));
+  await waitFor(() => expect(document.querySelector("[data-testid=mimic-node] [data-glyph-loading]")).toBeNull());
+  return Object.fromEntries(
+    [...document.querySelectorAll("[data-testid=mimic-node]")].map((n) => [
+      n.getAttribute("data-node-key") ?? "",
+      n.querySelector("[data-testid=mimic-glyph]")?.getAttribute("data-glyph") ?? "",
+    ]),
+  );
+}
+
+/**
+ * LV-B4 — `F4.352` (ADR 0121 Amendment 1 decision 3, end to end): a `pump_station_environment`
+ * widget with `glyphSet: "iso"` draws the RTU node as the telemetry tower and the network node as
+ * the gateway, in the fill style with no fallback, while the battery keeps its twin. Mutation:
+ * drop `config.glyphSet` from `geometryFor` → the RTU draws `iso:sensor` and this reddens.
+ */
+export async function anIsoPheWidgetDrawsTheTowerAndTheGateway(): Promise<void> {
+  const { answer, widget } = phe("iso");
+  renderWidget(answer, widget);
+  const glyphs = await unitGlyphsByKey();
+  expect(glyphs.rtu).toBe("iso:telemetry-tower");
+  expect(glyphs.network).toBe("iso:gateway");
+  expect(glyphs.battery).toBe("iso:battery");
+  for (const key of ["rtu", "network"]) {
+    const glyph = document.querySelector(`[data-testid=mimic-node][data-node-key=${key}] [data-testid=mimic-glyph]`);
+    expect(glyph?.getAttribute("data-glyph-style"), key).toBe("fill");
+    expect(glyph?.getAttribute("data-glyph-fallback"), key).toBeNull();
+  }
+}
+
+/** LV-B4b — the positive twin: the same widget without `glyphSet` draws the core `sensor`. */
+export async function aCorePheWidgetStillDrawsTheSensor(): Promise<void> {
+  const { answer, widget } = phe();
+  renderWidget(answer, widget);
+  const glyphs = await unitGlyphsByKey();
+  expect(glyphs.rtu).toBe("sensor");
+  expect(glyphs.network).toBe("sensor");
+  expect(glyphs.battery).toBe("battery");
+}

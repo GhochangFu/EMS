@@ -352,3 +352,44 @@ export function anUnflaggedValveDoesNotSwitch(): void {
 export function theBreakerSymbolSwitchesWhateverTheFlag(): void {
   expect([switchingOf("breaker", false), switchingOf("breaker", true)]).toEqual([true, true]);
 }
+
+/**
+ * G26 — `F4.352` (ADR 0121 Amendment 1 decision 3): with the `iso` glyph set the PHE presets'
+ * `rtu` nodes draw the telemetry tower and the `network` node the gateway; every other unit keeps
+ * the symbol `MIMIC_NODE_GLYPHS` names (the scene turns those into their twins), and the
+ * overridden units do not switch. Mutation: drop the override read in `buildPresetGeometry` → this
+ * reddens.
+ */
+export function theIsoSetDrawsTheTowerAndTheGateway(): void {
+  const env = presetGeometry("pump_station_environment", "iso");
+  const glyphs = MIMIC_NODE_GLYPHS.pump_station_environment as Readonly<Record<string, string>>;
+  const want: Record<string, string> = { rtu: "iso:telemetry-tower", network: "iso:gateway" };
+  expect(env.units.map((u) => u.key)).toEqual(expect.arrayContaining(["rtu", "network", "battery"]));
+  for (const u of env.units) {
+    expect(u.symbol, `pump_station_environment.${u.key}`).toBe(want[u.key] ?? glyphs[u.key]);
+    if (u.key in want) expect(u.switching, u.key).toBe(false);
+  }
+  const overview = presetGeometry("pump_station_overview", "iso");
+  const rtu = overview.units.find((u) => u.key === "rtu");
+  expect(rtu?.symbol).toBe("iso:telemetry-tower");
+  expect(rtu?.switching).toBe(false);
+  expect(overview.units.find((u) => u.key === "main_pump")?.symbol).toBe("pump");
+}
+
+/**
+ * G26b — the core set is unchanged (amendment decision 3): with no glyph set or `core` the PHE
+ * nodes still draw `sensor`, the two sets are memoised apart, and each is memoised once.
+ */
+export function theCoreSetStillDrawsTheSensor(): void {
+  for (const p of ["pump_station_overview", "pump_station_environment"] as const) {
+    const plain = presetGeometry(p);
+    const core = presetGeometry(p, "core");
+    expect(core).toBe(plain);
+    expect(plain.units.find((u) => u.key === "rtu")?.symbol, p).toBe("sensor");
+    expect(presetGeometry(p, "iso")).not.toBe(plain);
+    expect(presetGeometry(p, "iso")).toBe(presetGeometry(p, "iso"));
+  }
+  expect(presetGeometry("pump_station_environment").units.find((u) => u.key === "network")?.symbol).toBe("sensor");
+  // A preset with no override draws the same symbols under either set.
+  expect(presetGeometry("water_train", "iso").units.map((u) => u.symbol)).toEqual(presetGeometry("water_train").units.map((u) => u.symbol));
+}
