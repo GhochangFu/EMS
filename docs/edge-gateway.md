@@ -124,15 +124,15 @@ misspelt key is refused by name. The shipped example is
 
 `src/host/uplink-client.ts` is the supervisor's `writeSamples`: a resolve is
 done, a reject is a spill to disk and a probe on the §5 backoff, exactly as a
-database failure is on the cloud. The rule is that **only the receiver itself
-can make the edge delete data** (ADR 0123 Amendment 2).
+database failure is on the cloud. The rule is that **only the receiver,
+refusing the content, can make the edge drop a batch** (ADR 0123 Amendment 2).
 
 | Answer | What the edge does |
 | --- | --- |
-| `200` with a body that passes `uplinkResponseSchema` | Done. The counts are added to the health line in their own units (`accepted` is rows, the rejections are samples). |
-| `200` in which every sample was refused `futureRx` | Kept and retried: the edge's clock is wrong, not the data. It waits on disk under the buffer bounds. |
+| `200` with a body that passes `uplinkResponseSchema` | Delivered, whatever its reject counts (ruling Q7a). The counts are added to the health line in their own units (`accepted` is rows, the rejections are samples). If any sample was rejected `futureRx` or `tooOld`, health is `degraded` for ten minutes and one line a minute says so. |
 | `200` with any other body (a proxy or captive-portal page) | Kept and retried. |
-| `400` or `413` whose body is `{ "error": <code> }` with one of the receiver's own codes for that status (`UPLINK_REFUSAL_STATUS` in `@bms/shared/ingest`) | The batch can never be accepted: counted `uplinkRefused`, logged, **dropped**, so one poison batch cannot hold the queue (plan M4). Health is `degraded` for ten minutes after. |
+| `400` whose body is `{ "error": "bad-schema" }` | The batch can never be accepted: counted `uplinkRefused`, logged, **dropped**, so one poison batch cannot hold the queue (plan M4). Every sample is pre-checked against the same schema, so this means the two ends disagree on the version. Health is `degraded` for ten minutes. |
+| `400` `bad-encoding`/`bad-gzip`/`bad-json`, `413` `too-large` (the receiver's transport refusals, `UPLINK_REFUSAL_STATUS` in `@bms/shared/ingest`) | Kept and retried — a middlebox rewriting the body must not drain the backlog. Health is `degraded` for ten minutes. |
 | `400`/`413` with any other body, `422` | Kept and retried — a proxy's error page is not the receiver refusing the data. |
 | `401`, `403` | Kept and retried — a token being rotated or an organization switched off must not delete data. |
 | `429`, `503` | Kept and retried; `Retry-After` (capped at 5 min) is a not-before time. |
@@ -152,10 +152,13 @@ batch of up to 500 samples per round trip.
 
 A batch is `backlog` when its oldest sample is more than 10 s old on the edge
 clock; backlog batches wait on a schedule at `EDGE_REPLAY_MAX_SAMPLES_PER_S`.
-A wait past 30 s is refused at once without reserving, and a batch that never
-posts gives its share back, so many endpoints replaying at the floor cannot
-livelock. No post starts that could finish after the supervisor's 90 s write
-timeout. A body over 256 KiB compressed is split; if any half fails, the whole
+The schedule runs on the monotonic clock, so a clock resync cannot freeze
+replay. A wait past ≈50 s (the write timeout less the lock wait and one post)
+is refused at once without reserving, and a batch that never posts gives its
+share back: five endpoints replaying full batches at the 50/s floor all fit.
+A refused wait is a failed replay write, so that endpoint's breaker opens and
+its live batches spill until the next probe succeeds — delayed, not lost. No post starts that could finish after the supervisor's 90 s write
+timeout. A body over 500 samples or 256 KiB compressed is split; if any half fails, the whole
 batch is retried at the same `rx`. Every batch carries `buffered` (samples on
 disk) and `clock`. On shutdown the client refuses new posts and aborts the
 one in flight, so the batches are spilled, not lost.
@@ -169,14 +172,15 @@ and on shutdown with `"clean": true`).
 
 - **At start**, if the wall clock is behind the mark — plus 75 s (one persist
   interval and one tick) unless the mark is from a clean shutdown, so a crash
-  can never re-issue an `rx` already sent — the edge stamps `rx` as mark plus
+  can never re-issue an `rx` already sent (a clean mark is replaced by an
+  unclean one as soon as it is read) — the edge stamps `rx` as mark plus
   monotonic elapsed time and reports `clock=unsynced`. Order is kept across a
   reboot with a reset clock.
 - **`unsynced` ends** when the wall clock reaches that estimate, or at the
   first `200` with a schema-valid body whose `Date` header is within 30 s of
   the wall clock: the cloud says the wall clock is right and the mark was
   wrong. The edge returns to the wall clock and resets the mark — the one case
-  `rx` steps backwards, logged once at `warn` with the step size.
+  `rx` steps backwards, logged at `warn` whenever the step is over a second.
 - A wall clock that steps back while running goes `unsynced` the same way, and
   returns at the next trusted response.
 - **While `synced`**, a trusted cloud time more than 60 s from the wall clock
@@ -208,6 +212,16 @@ counters and never part of the verdict.
 - The container runs as root (the ingest image's default). Owed as a
   follow-up backlog row: a non-root user that owns the buffer volume.
 - Throughput is one post at a time per gateway (see *The uplink*).
+- A box whose RTC is more than 60 s ahead, with the cloud reachable, shows
+  `clock=skewed` (degraded) and **its samples are rejected by the cloud
+  (`futureRx`) until the clock is fixed** — ruling Q7a working as ruled. A
+  box whose *mark* is ahead loses at most the batches before its first good
+  reply, which resyncs it.
+- The trusted-`Date` rule trusts what arrives over the verified TLS
+  connection; a TLS-inspecting proxy at the site that stamps `Date` from the
+  same wrong clock would make a wrong wall clock look right.
+- Not built, for the owner to rule on: while `skewed`, stamp `rx` from the
+  last trusted cloud time plus monotonic elapsed time.
 
 ## What is not yet proved
 
