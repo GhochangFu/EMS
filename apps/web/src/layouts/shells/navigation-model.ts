@@ -18,8 +18,9 @@ import { useCopilotPagePush } from "../../stores/copilot-window-store";
  * `F4.341` PR 5 (ADR 0118 decision 6) — the one navigation model every shell renders: the same
  * items, in the same order, with the same visibility and selection rules and the same routes. It
  * moved here from `app-shell.tsx` unchanged; `app-shell.tsx` re-exports the names other files
- * import. `sidebar-shell.tsx` (today's markup), `topbar-shell.tsx` and `rail-shell.tsx` differ only
- * in how they lay the items out.
+ * import. `sidebar-shell.tsx` (today's markup) and `rail-shell.tsx` differ only in how they lay the
+ * items out. `F4.346` (ADR 0118 Amendment 3) removed the third shell; both that remain collapse
+ * through {@link useCollapsibleNav}.
  */
 
 export const topNav = [
@@ -243,8 +244,7 @@ export function useShellModel(user: AuthUser) {
 }
 
 /**
- * The visible groups as flat data, for the shells that lay the items out themselves (topbar,
- * rail): the module groups with their visible items (an empty group is dropped, `F4.156`), then
+ * The visible groups as flat data, for the shell that lays the items out itself (the rail): the module groups with their visible items (an empty group is dropped, `F4.156`), then
  * Administration for a master-data role, filtered to the areas the role sees.
  */
 export function shellGroups(model: ReturnType<typeof useShellModel>, showAdmin: boolean): ShellGroup[] {
@@ -274,4 +274,42 @@ export function useOverlayClosesOnNavigation(pathname: string): [boolean, (next:
     setOverlayOpen(false);
   }, [pathname]);
   return [overlayOpen, setOverlayOpen];
+}
+
+/**
+ * `F4.346` (ADR 0118 Amendment 3 decisions 1 and 2) — the one collapse behaviour of both shells,
+ * moved out of the sidebar unchanged (`F4.318`). On a desktop width the stored choice under
+ * `storageKey` (`"true"` is collapsed; anything else, expanded) is read once and written on each
+ * toggle. On a narrow viewport (≤ `SHELL_RAIL_MAX_WIDTH`) the nav is collapsed, the stored choice is
+ * neither read nor written, and the toggle opens an overlay that a move to another page closes.
+ */
+export function useCollapsibleNav(
+  storageKey: string,
+  pathname: string,
+  viewportWidth: number,
+): { collapsed: boolean; narrow: boolean; overlay: boolean; toggle: () => void } {
+  const [storedCollapsed, setStoredCollapsed] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.localStorage.getItem(storageKey) === "true";
+  });
+  const narrow = viewportWidth <= SHELL_RAIL_MAX_WIDTH;
+  const [overlayOpen, setOverlayOpen] = useOverlayClosesOnNavigation(pathname);
+  const collapsed = narrow ? !overlayOpen : storedCollapsed;
+  const overlay = narrow && overlayOpen;
+
+  function toggle(): void {
+    if (narrow) {
+      setOverlayOpen((open) => !open);
+      return;
+    }
+    setStoredCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem(storageKey, String(next));
+      return next;
+    });
+  }
+
+  return { collapsed, narrow, overlay, toggle };
 }

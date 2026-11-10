@@ -14,10 +14,14 @@ import { useThemeStore } from "../../stores/theme-store";
 import { AppShell } from "../app-shell";
 
 /**
- * `F4.341` PR 5 (ADR 0118 decision 6, plan D7) — the topbar and rail shells render the sidebar's
- * navigation model: the same items in the same order under the same visibility rules, the selected
- * item marked `aria-current="page"`, the wordmark and logout present, and every rail item labelled
- * in text (no hover-only label). The sidebar's own cases stay in `app-shell.spec.tsx`.
+ * `F4.341` PR 5 (ADR 0118 decision 6, plan D7) — the rail shell renders the sidebar's navigation
+ * model: the same items in the same order under the same visibility rules, the selected item marked
+ * `aria-current="page"`, the wordmark and logout present, and every rail item labelled in text (no
+ * hover-only label). The sidebar's own cases stay in `app-shell.spec.tsx`.
+ *
+ * `F4.346` (ADR 0118 Amendment 3 decision 1, plan S2) — two shells: every design system lists its
+ * module and administration items as links in one vertical `nav[aria-label="Modules"]`, with no
+ * sideways scroller for the navigation.
  */
 const GLOBAL: AccessibleScope = { kind: "global", locations: [], assetGroups: [], assetIds: [] };
 const NONE: AccessibleScope = { kind: "none", locations: [], assetGroups: [], assetIds: [] };
@@ -42,9 +46,8 @@ function renderAs(design: DesignSystem, role: UserRole, path: string, scope: Acc
 }
 
 /** The module links the shell shows, in order, as `label → href`. */
-function moduleLinks(design: DesignSystem): string[] {
-  const container = design === "nexus-soft" ? screen.getByRole("complementary") : screen.getByRole("navigation", { name: "Modules" });
-  return within(container)
+function moduleLinks(): string[] {
+  return within(screen.getByRole("navigation", { name: "Modules" }))
     .getAllByRole("link")
     .map((a) => `${a.getAttribute("title") ?? a.textContent} → ${a.getAttribute("href")}`)
     .filter((entry) => !/^(Overview|Sites|Energy|Settings) → /.test(entry));
@@ -52,7 +55,7 @@ function moduleLinks(design: DesignSystem): string[] {
 
 function linksFor(design: DesignSystem, role: UserRole, scope: AccessibleScope = GLOBAL): string[] {
   renderAs(design, role, "/alarms", scope);
-  const links = moduleLinks(design).map((e) => e.replace(/^(.*?) → /, (_m, label: string) => `${label.trim()} → `));
+  const links = moduleLinks().map((e) => e.replace(/^(.*?) → /, (_m, label: string) => `${label.trim()} → `));
   return links;
 }
 
@@ -61,7 +64,7 @@ export function theOtherShellsListTheSidebarsItemsInOrder(cleanup: () => void): 
     for (const scope of [GLOBAL, NONE]) {
       const sidebar = linksFor("nexus-soft", role, scope);
       cleanup();
-      for (const design of ["swiss-grid", "control-room-dark"] as DesignSystem[]) {
+      for (const design of ["enterprise-flat", "swiss-grid", "bento-ops", "control-room-dark"] as DesignSystem[]) {
         expect(linksFor(design, role, scope), `${design} ${role} ${scope.kind}`).toEqual(sidebar);
         cleanup();
       }
@@ -93,4 +96,44 @@ export function everyRailItemHasAVisibleTextLabel(): void {
   }
   expect(nav.className + (nav.parentElement?.className ?? "")).toMatch(/\btext-xs\b/);
   expect(screen.getByTestId("rail-status-strip")).toBeInTheDocument();
+}
+
+/** The labels of every visible module and administration item, for an `admin` with a global scope. */
+const ADMIN_ITEMS = [
+  "Alarm Centre",
+  "Control Room",
+  "Alarm Philosophy",
+  "Dashboards",
+  "Sustainability",
+  "Assets",
+  "Sites Map",
+  "Energy Analytics",
+  "Maintenance",
+  "Schedule Centre",
+  "Rule Engine",
+  "Reports",
+  "Master Data Hub",
+];
+
+/**
+ * S2 — at a 1440 px viewport, every visible module and administration item is a link inside the one
+ * `nav[aria-label="Modules"]`, its lists are vertical (no `flex` row) and nothing in the shell
+ * outside the page body scrolls sideways.
+ */
+export function everyItemIsInOneVerticalModulesNav(design: DesignSystem): void {
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1440 });
+  renderAs(design, "admin", "/alarms");
+  const navs = screen.getAllByRole("navigation", { name: "Modules" });
+  expect(navs).toHaveLength(1);
+  const nav = navs[0]!;
+  const names = within(nav)
+    .getAllByRole("link")
+    .map((a) => a.getAttribute("title") ?? a.textContent ?? "");
+  for (const label of ADMIN_ITEMS) expect(names, `${design} ${label}`).toContain(label);
+  for (const list of nav.querySelectorAll("ul")) expect(list.className, design).not.toMatch(/\bflex\b/);
+  const main = screen.getByRole("main");
+  const scrollers = [...document.body.querySelectorAll<HTMLElement>("*")].filter(
+    (el) => !main.contains(el) && /\boverflow-x-(auto|scroll)\b|\bw-max\b/.test(el.getAttribute("class") ?? ""),
+  );
+  expect(scrollers.map((el) => el.outerHTML.slice(0, 80)), design).toEqual([]);
 }

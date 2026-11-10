@@ -35,6 +35,11 @@ type ThemeState = {
   /** `F4.341` — the effective design system (ADR 0118 decision 8); `nexus-soft` by default. */
   design: DesignSystem;
   setDesign: (design: DesignSystem) => void;
+  /**
+   * `F4.346` (ADR 0118 Amendment 3 decision 3) — the Appearance panel's previewed design system,
+   * or `null`. It is never stored; `AppShell` renders the shell of `preview ?? design`.
+   */
+  preview: DesignSystem | null;
 };
 
 let cache: { theme: Theme; profile: ColourProfile; design: DesignSystem; roles: Roles } | null = null;
@@ -102,8 +107,11 @@ export const useThemeStore = create<ThemeState>()((set) => ({
     } catch {
       // The design holds for this page; the next `/auth/me` read sets it again.
     }
-    set({ design });
+    // The attribute now shows the stored value, so a preview (the sign-in page's portal default,
+    // or an open panel's) is over: the shell follows the attribute.
+    set({ design, preview: null });
   },
+  preview: null,
 }));
 
 function applyDesignAttribute(design: DesignSystem): void {
@@ -113,11 +121,14 @@ function applyDesignAttribute(design: DesignSystem): void {
 
 /**
  * `F4.341` (ADR 0118 decision 11) — the Appearance panel's live preview: paints the page in
- * `design` without storing it; `null` puts the viewer's own design system back.
+ * `design` without storing it; `null` puts the viewer's own design system back. `F4.346`
+ * (Amendment 3 decision 3): the store's `preview` moves with the attribute, so the shell changes
+ * too; `null` clears it.
  */
 export function previewDesign(design: DesignSystem | null): void {
   if (typeof document === "undefined") return;
   applyDesignAttribute(design ?? useThemeStore.getState().design);
+  useThemeStore.setState({ preview: design });
 }
 
 /**
@@ -131,6 +142,14 @@ export function clearDesign(): void {
 /** `F4.341` — the effective design system; a component re-renders when it changes. */
 export function useDesignSystem(): DesignSystem {
   return useThemeStore((s) => s.design);
+}
+
+/**
+ * `F4.346` (ADR 0118 Amendment 3 decision 3) — the design system the page shows: the panel's
+ * preview while there is one, else the saved value. `AppShell` picks its shell from it.
+ */
+export function useShownDesignSystem(): DesignSystem {
+  return useThemeStore((s) => s.preview ?? s.design);
 }
 
 /**

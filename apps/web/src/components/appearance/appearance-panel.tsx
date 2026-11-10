@@ -72,9 +72,11 @@ export function AppearancePanel({ levelLabel, initial, allowInherit, inherited, 
     setError(null);
     try {
       await save(value);
+      // `F4.346`: re-read `/auth/me` before the preview ends, so the shell goes straight to the
+      // saved value rather than back to the old one for a moment.
+      if (accessToken) await fetchCurrentUser(accessToken).catch(() => undefined);
       previewDesign(null);
       previewProfile(null);
-      if (accessToken) await fetchCurrentUser(accessToken).catch(() => undefined);
       await queryClient.invalidateQueries({ queryKey: ["admin", "organizations"] });
       await queryClient.invalidateQueries({ queryKey: ["appearance"] });
       onDone();

@@ -73,12 +73,15 @@ export const DESIGN_STORAGE_KEY = "bms.design";
  */
 export const PORTAL_APPEARANCE_STORAGE_KEY = "bms.portal-appearance";
 
-/** `F4.341` (ADR 0118 decision 6) — the shell each design system renders. */
-export const SHELL_OF_DESIGN: Readonly<Record<DesignSystem, "sidebar" | "topbar" | "rail">> = {
+/**
+ * `F4.341` (ADR 0118 decision 6) — the shell each design system renders. `F4.346` (Amendment 3
+ * decision 1): two shells; `swiss-grid` and `bento-ops` skin the sidebar with tokens only.
+ */
+export const SHELL_OF_DESIGN: Readonly<Record<DesignSystem, "sidebar" | "rail">> = {
   "nexus-soft": "sidebar",
   "enterprise-flat": "sidebar",
-  "swiss-grid": "topbar",
-  "bento-ops": "topbar",
+  "swiss-grid": "sidebar",
+  "bento-ops": "sidebar",
   "control-room-dark": "rail",
 };
 

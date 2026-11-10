@@ -4,6 +4,7 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import { useThemeStore } from "../../stores/theme-store";
 import {
+  everyItemIsInOneVerticalModulesNav,
   everyRailItemHasAVisibleTextLabel,
   theOtherShellsListTheSidebarsItemsInOrder,
   theSelectedItemIsAriaCurrent,
@@ -15,13 +16,19 @@ afterEach(() => {
   vi.restoreAllMocks();
   useThemeStore.getState().setDesign("nexus-soft");
   localStorage.clear();
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1024 });
 });
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
-describe("F4.341 the topbar and rail shells (ADR 0118 decision 6)", () => {
-  it("SH1 the topbar and the rail list the sidebar's items in its order, per role and scope", () => {
+describe("F4.341 / F4.346 the sidebar and rail shells (ADR 0118 decision 6, Amendment 3)", () => {
+  it("SH1 every design system lists the nexus-soft sidebar's items in its order, per role and scope", () => {
     theOtherShellsListTheSidebarsItemsInOrder(cleanup);
   });
+
+  it.each(["nexus-soft", "enterprise-flat", "swiss-grid", "bento-ops", "control-room-dark"] as const)(
+    "S2 %s at 1440 px: every item is a link in one vertical Modules nav, with no sideways scroller",
+    (design) => everyItemIsInOneVerticalModulesNav(design),
+  );
 
   it.each(["swiss-grid", "bento-ops", "control-room-dark"] as const)("SH2 %s marks the selected item aria-current", (design) => {
     theSelectedItemIsAriaCurrent(design);

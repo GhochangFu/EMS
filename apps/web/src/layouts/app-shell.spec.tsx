@@ -206,10 +206,13 @@ export function doesNotHighlightTheEntryElsewhere(): void {
  * master-data administrator it is a focusable `button` with
  * `aria-disabled="true"`, an accessible description holding
  * `SETTINGS_LOCKED_REASON`, and `text-on-dark/70` (3.43:1 on `chrome-nav`).
- * Every case reads inside the top navigation, where the entry lives.
+ * Every case reads inside the top navigation, where the entry lives: the one `nav` without a
+ * name (`F4.346` made the sidebar's slot the `Modules` navigation landmark).
  */
 function topNav(): HTMLElement {
-  return screen.getByRole("navigation");
+  const unnamed = screen.getAllByRole("navigation").filter((nav) => !nav.hasAttribute("aria-label"));
+  expect(unnamed).toHaveLength(1);
+  return unnamed[0]!;
 }
 
 function lockedSettings(): HTMLElement {
