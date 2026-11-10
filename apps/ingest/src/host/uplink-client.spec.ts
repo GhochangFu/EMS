@@ -13,7 +13,10 @@ import type { ReceivedSample } from "./received-sample.js";
 import type { Scheduler } from "./supervisor.js";
 import {
   BACKLOG_AGE_MS,
+  BACKLOG_WAIT_BUDGET_MS,
   createUplinkClient,
+  EDGE_WRITE_TIMEOUT_MS,
+  RESPONSE_MAX_BYTES,
   EDGE_UPLINK_PATH,
   RETRY_AFTER_CAP_MS,
   UPLINK_POST_TIMEOUT_MS,
@@ -48,18 +51,25 @@ function fakeScheduler() {
   const timers: { ms: number; fire: () => void }[] = [];
   const scheduler: Scheduler = {
     now: () => new Date(nowMs),
-    sleep: (ms, signal) =>
-      new Promise<void>((resolve) => {
-        if (ms >= UPLINK_POST_TIMEOUT_MS) {
+    sleep: (ms, signal) => {
+      const startedMs = nowMs;
+      return new Promise<void>((resolve) => {
+        // The 20 s post abort and the 20 s lock wait are timers the spec fires;
+        // every other sleep is a throttle wait and moves fake time forward.
+        if (ms === UPLINK_POST_TIMEOUT_MS) {
           const entry = { ms, fire: resolve };
           timers.push(entry);
           signal.addEventListener("abort", () => resolve(), { once: true });
           return;
         }
         sleeps.push(ms);
-        nowMs += ms;
-        resolve();
-      }),
+        // Time moves when the sleep ends, not when it starts, so concurrent sleeps overlap.
+        setImmediate(() => {
+          nowMs = Math.max(nowMs, startedMs + ms);
+          resolve();
+        });
+      });
+    },
   };
   return {
     scheduler,
@@ -92,7 +102,7 @@ function harness(answers: Answer[] | ((call: Call) => Answer), options: { rate?:
     return {
       status: answer.status,
       headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
-      text: async () => (typeof answer.body === "string" ? answer.body : JSON.stringify(answer.body ?? { error: "x" })),
+      body: new Response(typeof answer.body === "string" ? answer.body : JSON.stringify(answer.body ?? { error: "x" })).body,
     };
   };
   const record = (level: string) => (message: string, fields?: Record<string, unknown>) =>
@@ -323,7 +333,7 @@ export async function postsAreSerialisedLiveFirst(): Promise<void> {
     maxInFlight = Math.max(maxInFlight, inFlight);
     await new Promise<void>((resolve) => gates.push(resolve));
     inFlight -= 1;
-    return { status: 200, headers: { get: () => null }, text: async () => JSON.stringify(OK) };
+    return { status: 200, headers: { get: () => null }, body: new Response(JSON.stringify(OK)).body };
   };
   const noop = () => undefined;
   const client = createUplinkClient({
@@ -413,4 +423,82 @@ export async function aSplitBatchWithAFailedHalfIsResentWhole(): Promise<void> {
   const keys = (call: Call | undefined) => (call?.batch.samples ?? []).map((s) => `${s.value}|${s.rx}`).join(",");
   assert(h.calls.length === 4, `both halves re-sent: ${h.calls.length}`);
   assert(keys(h.calls[2]) === keys(h.calls[0]) && keys(h.calls[3]) === keys(h.calls[1]), "with identical rx");
+}
+
+/** Many endpoints replaying at once at the 50/s floor: past a 30 s wait a batch is refused at once, unreserved. */
+export async function aFullThrottleRefusesWithoutReserving(): Promise<void> {
+  const h = harness([], { rate: 50 });
+  const old = new Date(T0 - 3_600_000);
+  // 400 samples at 50/s is an 8 s share: waits 0, 8, 16, 24 fit the budget; 32 does not.
+  const calls = Array.from({ length: 8 }, (_, i) =>
+    h.client.writerFor({ protocol: "mqtt", bindings: [{ deviceKey: `RTU-${i}` }] })(samples(400, old)).then(
+      () => "sent",
+      (error: unknown) => (error instanceof UplinkRetryLater ? "later" : "other"),
+    ),
+  );
+  const outcomes = await Promise.all(calls);
+  assert(BACKLOG_WAIT_BUDGET_MS === 30_000, "the budget is 30 s");
+  assert(outcomes.join(",") === "sent,sent,sent,sent,later,later,later,later", `outcomes: ${outcomes.join(",")}`);
+  assert(h.calls.length === 4, `only the admitted four were posted: ${h.calls.length}`);
+  assert(Math.max(...h.clock.sleeps) <= BACKLOG_WAIT_BUDGET_MS, `no wait past the budget: ${h.clock.sleeps.join(",")}`);
+  // The refused four reserved nothing: the next batch, once the four are through, waits only for them.
+  const next = h.client.writerFor(ONE_DEVICE)(samples(400, old));
+  await next;
+  assert(h.calls.length === 5, "a later batch is admitted once the schedule has room");
+}
+
+/** A batch that gives up before posting gives its throttle share back. */
+export async function aBatchThatNeverPostsReleasesItsShare(): Promise<void> {
+  const h = harness((call) => (call.batch.backlog ? { status: 200, body: OK } : "hang"));
+  const write = h.client.writerFor(ONE_DEVICE);
+  const live = write(samples(1, new Date(T0)));
+  await until(() => h.calls.length === 1, "the hanging live post");
+  const old = new Date(T0 - 3_600_000);
+  // A 500-sample share at 500/s is 1 s. This one waits on the lock and times out.
+  const gaveUp = write(samples(500, old));
+  await until(() => h.clock.timers.length >= 2, "the lock wait");
+  h.clock.timers.find((t, i) => i > 0 && t.ms === 20_000)?.fire();
+  assert((await rejection(gaveUp)) instanceof UplinkRetryLater, "the lock wait timed out");
+  h.clock.timers[0]?.fire();
+  await rejection(live);
+  const before = h.clock.sleeps.length;
+  await write(samples(500, old));
+  assert(h.clock.sleeps.length === before, `the released share is not waited for: ${h.clock.sleeps.slice(before).join(",")}`);
+}
+
+/** A batch still waiting when its caller's write timeout passes is never posted. */
+export async function noPostAfterTheCallerTimedOut(): Promise<void> {
+  const h = harness(["hang", { status: 200, body: OK }]);
+  const write = h.client.writerFor(ONE_DEVICE);
+  const holder = write(samples(1, new Date(T0)));
+  await until(() => h.calls.length === 1, "the hanging post");
+  const waiting = write(samples(1, new Date(T0)));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  // The waiting caller's write timeout passes while the lock is held.
+  h.clock.advance(EDGE_WRITE_TIMEOUT_MS);
+  h.clock.timers[0]?.fire();
+  await rejection(holder);
+  const error = await rejection(waiting);
+  assert(error instanceof UplinkRetryLater, `rejected: ${error.message}`);
+  assert(h.calls.length === 1, `nothing posted after the caller's timeout: ${h.calls.length}`);
+}
+
+/** After `stop()` nothing is posted, and a post in flight is aborted as a retry-later. */
+export async function stopRejectsAndAbortsInFlight(): Promise<void> {
+  const h = harness(["hang"]);
+  const write = h.client.writerFor(ONE_DEVICE);
+  const pending = write(samples(1, new Date(T0)));
+  await until(() => h.calls.length === 1, "the post");
+  h.client.stop();
+  assert((await rejection(pending)) instanceof UplinkRetryLater && h.calls[0]?.init.signal.aborted === true, "aborted");
+  assert((await rejection(write(samples(1, new Date(T0))))) instanceof UplinkRetryLater, "a later call rejects");
+  assert(h.calls.length === 1, "and posts nothing");
+}
+
+/** A response body over 64 KiB is not read to the end: the post is aborted and retried. */
+export async function anOversizeResponseIsCutOff(): Promise<void> {
+  const h = harness([{ status: 200, body: "x".repeat(RESPONSE_MAX_BYTES + 1) }]);
+  const error = await rejection(h.client.writerFor(ONE_DEVICE)(samples(1, new Date(T0))));
+  assert(error instanceof UplinkRetryLater && error.message.includes("over"), `retry-later: ${error.message}`);
+  assert(h.calls[0]?.init.signal.aborted === true, "the request was aborted");
 }

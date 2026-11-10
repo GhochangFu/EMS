@@ -1,6 +1,11 @@
 import { describe, it } from "vitest";
 
 import {
+  aBatchThatNeverPostsReleasesItsShare,
+  aFullThrottleRefusesWithoutReserving,
+  anOversizeResponseIsCutOff,
+  noPostAfterTheCallerTimedOut,
+  stopRejectsAndAbortsInFlight,
   aHungPostIsAbortedAtTwentySeconds,
   anAllFutureRx200IsRetryLater,
   aSplitBatchWithAFailedHalfIsResentWhole,
@@ -68,5 +73,25 @@ describe("E7.2 — the edge uplink client (ADR 0123 decisions 4 and 9, plan T5.4
 
   it("re-sends both halves of a split batch, at the same rx, when the second half fails", async () => {
     await aSplitBatchWithAFailedHalfIsResentWhole();
+  });
+
+  it("refuses a backlog batch past a 30 s throttle wait without reserving (no livelock)", async () => {
+    await aFullThrottleRefusesWithoutReserving();
+  });
+
+  it("gives a throttle share back when the batch never posts", async () => {
+    await aBatchThatNeverPostsReleasesItsShare();
+  });
+
+  it("posts nothing after the caller's write timeout", async () => {
+    await noPostAfterTheCallerTimedOut();
+  });
+
+  it("rejects and aborts in-flight posts once stopping", async () => {
+    await stopRejectsAndAbortsInFlight();
+  });
+
+  it("cuts off a response body over 64 KiB", async () => {
+    await anOversizeResponseIsCutOff();
   });
 });

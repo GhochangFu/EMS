@@ -119,7 +119,9 @@ async function main(): Promise<void> {
     logger.info("shutting down", { signal });
     void (async () => {
       clearInterval(markTimer);
-      // A batch whose post fails while stopping is spilled, not lost.
+      // The uplink first: every later batch rejects at once and is spilled,
+      // and a post in flight is aborted and spilled too, not lost.
+      uplink.stop();
       await Promise.all(supervisors.map((s) => s.stop()));
       await clock.persist({ force: true, final: true });
       await health.close();

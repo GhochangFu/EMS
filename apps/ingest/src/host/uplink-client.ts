@@ -60,6 +60,16 @@ export const UPLINK_POST_TIMEOUT_MS = 20_000;
 export const BACKLOG_AGE_MS = 10_000;
 /** The longest `Retry-After` honoured (plan C4). */
 export const RETRY_AFTER_CAP_MS = 300_000;
+/** The most of a response body the client reads; past it the post is aborted and retried. */
+export const RESPONSE_MAX_BYTES = 65_536;
+/**
+ * The longest a backlog batch waits on the throttle. A longer wait is a
+ * retry-later at once, **without** reserving a share: with many endpoints
+ * replaying at the 50/s floor the queue of reservations would otherwise
+ * outgrow every caller's write timeout and each would wait for a slot it
+ * never uses.
+ */
+export const BACKLOG_WAIT_BUDGET_MS = 30_000;
 /** How long a batch waits for the post in flight before it is a retry-later. */
 export const LOCK_WAIT_MS = 20_000;
 /**
@@ -102,7 +112,8 @@ export type UplinkFetchInit = {
 export type UplinkFetchResponse = {
   readonly status: number;
   readonly headers: { get(name: string): string | null };
-  text(): Promise<string>;
+  /** Read with a byte counter (`RESPONSE_MAX_BYTES`), never `text()`, so no answer can grow without bound. */
+  readonly body: ReadableStream<Uint8Array> | null;
 };
 
 export type UplinkFetch = (url: string, init: UplinkFetchInit) => Promise<UplinkFetchResponse>;
@@ -169,6 +180,11 @@ export type UplinkPlan = {
 export type UplinkClient = {
   /** The `writeSamples` for one endpoint's supervisor. */
   writerFor(plan: UplinkPlan): (samples: readonly ReceivedSample[]) => Promise<void>;
+  /**
+   * Shutdown: every later call rejects at once, so the drain loop spills
+   * instead of posting, and every post in flight is aborted (retry-later).
+   */
+  stop(): void;
   stats(): UplinkStats;
 };
 
@@ -201,6 +217,26 @@ function toWire(protocol: IngestProtocol, received: ReceivedSample, deviceKey: s
     rx: received.receivedAt.toISOString(),
     ...(sample.good === undefined ? {} : { good: sample.good }),
   };
+}
+
+/** The body as UTF-8, at most `RESPONSE_MAX_BYTES`; past that the request is aborted and this throws. */
+async function readCapped(body: ReadableStream<Uint8Array> | null, abort: AbortController): Promise<string> {
+  if (body === null) return "";
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > RESPONSE_MAX_BYTES) {
+      abort.abort();
+      await reader.cancel().catch(() => undefined);
+      throw new Error("response too large");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 /** A one-slot lock whose live waiters go before its backlog waiters, with a bounded wait. */
@@ -263,6 +299,9 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
   };
   let lastOutcome: string | undefined;
   let lastRefusedAt: Date | undefined;
+  let stopping = false;
+  /** Posts in flight, aborted by `stop()`. */
+  const inFlight = new Set<AbortController>();
 
   /** At most one "not sent" line a minute, with the counts since the last one (nit: a busy endpoint must not flood the log). */
   let unsentLoggedAtMs: number | undefined;
@@ -316,10 +355,14 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
   }
 
   async function post(count: number, body: Buffer): Promise<void> {
+    if (stopping) {
+      throw new UplinkRetryLater("stopping");
+    }
     if (deferred()) {
-      retryLater("deferred", "deferred by the receiver's Retry-After");
+      throw new UplinkRetryLater("deferred by the receiver's Retry-After");
     }
     const abort = new AbortController();
+    inFlight.add(abort);
     const timer = new AbortController();
     void scheduler.sleep(UPLINK_POST_TIMEOUT_MS, timer.signal).then(() => {
       if (!timer.signal.aborted) {
@@ -345,13 +388,20 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
       status = response.status;
       retryAfter = response.headers.get("retry-after");
       dateHeader = response.headers.get("date");
-      text = await response.text();
+      text = await readCapped(response.body, abort);
     } catch (error) {
+      if (stopping) {
+        throw new UplinkRetryLater("stopping");
+      }
+      if (error instanceof Error && error.message === "response too large") {
+        return retryLater("response-too-large", `answered with a body over ${RESPONSE_MAX_BYTES} bytes`);
+      }
       return abort.signal.aborted
         ? retryLater("timeout", `no answer within ${UPLINK_POST_TIMEOUT_MS} ms`)
         : retryLater("network", `unreachable (${networkCode(error)})`);
     } finally {
       timer.abort();
+      inFlight.delete(abort);
     }
 
     if (status === 200) {
@@ -450,29 +500,58 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
         if (wire.length === 0) {
           return;
         }
-        if (deferred()) {
-          retryLater("deferred", "deferred by the receiver's Retry-After");
+        if (stopping) {
+          throw new UplinkRetryLater("stopping");
         }
-        const nowMs = scheduler.now().getTime();
-        const backlog = nowMs - oldestMs > BACKLOG_AGE_MS;
+        if (deferred()) {
+          // `lastOutcome` keeps the status that set the deferral.
+          throw new UplinkRetryLater("deferred by the receiver's Retry-After");
+        }
+        const callStartMs = scheduler.now().getTime();
+        const backlog = callStartMs - oldestMs > BACKLOG_AGE_MS;
+        let share = 0;
         if (backlog) {
           // A virtual schedule, not a refilling bucket: a backlog batch starts
           // no sooner than the previous one's share of the cap has elapsed.
-          const startMs = Math.max(nowMs, nextBacklogAtMs);
-          nextBacklogAtMs = startMs + wire.length * msPerSample;
-          if (startMs > nowMs) {
-            await scheduler.sleep(startMs - nowMs, new AbortController().signal);
+          const startMs = Math.max(callStartMs, nextBacklogAtMs);
+          if (startMs - callStartMs > BACKLOG_WAIT_BUDGET_MS) {
+            throw new UplinkRetryLater("backlog throttle is full");
+          }
+          share = wire.length * msPerSample;
+          nextBacklogAtMs = startMs + share;
+          if (startMs > callStartMs) {
+            await scheduler.sleep(startMs - callStartMs, new AbortController().signal);
           }
         }
-        const release = await acquire(!backlog);
+        let posted = false;
         try {
-          for (const { count, body } of await encode(wire, backlog)) {
-            await post(count, body);
+          const release = await acquire(!backlog);
+          try {
+            for (const { count, body } of await encode(wire, backlog)) {
+              // The supervisor stops waiting after EDGE_WRITE_TIMEOUT_MS and spills
+              // the batch: a post that could finish only after that is not sent.
+              if (scheduler.now().getTime() + UPLINK_POST_TIMEOUT_MS > callStartMs + EDGE_WRITE_TIMEOUT_MS) {
+                throw new UplinkRetryLater("the caller's write timeout has passed");
+              }
+              posted = true;
+              await post(count, body);
+            }
+          } finally {
+            release();
           }
-        } finally {
-          release();
+        } catch (error) {
+          if (!posted && share > 0) {
+            // Nothing was sent: give the reservation back.
+            nextBacklogAtMs -= share;
+          }
+          throw error;
         }
       };
+    },
+
+    stop() {
+      stopping = true;
+      for (const abort of inFlight) abort.abort();
     },
 
     stats() {
