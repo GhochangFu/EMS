@@ -7,14 +7,15 @@ import {
   assertDerivedRowsCarryNoTier,
   assertDerivedRowsCarryTheirFormula,
   assertDerivedRowsCarryUnitKl,
-  assertOnlyDerivedRowsGetTheInterval,
-  assertTheCalcIntervalIsSixtySeconds,
   assertEveryPositionalArrayHasTheSameLength,
   assertMeasuredRowsAreKindMeasured,
   assertMeasuredRowsCarryNoFormula,
   assertMeasuredRowsCarryTheirTier,
   assertMeasuredRowsCarryUnitKlPerHour,
   assertOnlyADerivedRowGetsTheDialect,
+  assertOnlyDerivedRowsGetTheInterval,
+  assertOnlyTheStpAndEtpMirrorsCarryAPrefix,
+  assertTheCalcIntervalIsSixtySeconds,
   assertTheDerivedRowsEqualTheVolumeRowsInEveryColumn,
   assertTheDialectParamIsV3,
   assertTheMeasuredRowsEqualTheFlowRowsInEveryColumn,
@@ -22,6 +23,7 @@ import {
   assertThePinnedCountMatchesTheAssetToItsOwnTemplate,
   assertThePinnedCountZipsTheTwoCodeLists,
   assertThePostConditionReadsNoLikePattern,
+  assertThePrefixIsInsertedAndFilledOnlyWhereNull,
   assertTheSqlBindsNoPositionTwelve,
   assertTheSqlBindsPositionEleven,
   assertTheTemplatePointsCountReadsTheFiveCodes,
@@ -139,5 +141,15 @@ describe("E4.3 U11 — the demo water plant's post-condition", () => {
 
   it("counts the template points of the five template codes exactly", () => {
     assertTheTemplatePointsCountReadsTheFiveCodes();
+  });
+});
+
+describe("E3.1 — the demo STP and ETP mirrors override the work-order prefix (ADR 0122 ruling R3)", () => {
+  it("gives a prefix to the STP and ETP mirrors only", () => {
+    assertOnlyTheStpAndEtpMirrorsCarryAPrefix();
+  });
+
+  it("inserts the prefix and fills it only where it is NULL", () => {
+    assertThePrefixIsInsertedAndFilledOnlyWhereNull();
   });
 });

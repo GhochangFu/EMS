@@ -96,6 +96,8 @@ export type * from "./types/telemetry-history";
 export type * from "./types/appearance";
 export * from "./location-tree";
 export type * from "./types/locations";
+export type * from "./types/work-orders";
+export * from "./work-order-sla";
 
 /** The `bms-calc-v1` grammar (ADR 0036, `F2.3`) — tokenizer, parser, AST
  * types, and the pure `parseFormula`/`validateFormula` surface. No `./calc-dsl`
@@ -409,15 +411,11 @@ export type AlarmKbResponse = z.infer<typeof Op.alarmKbResponseSchema>;
 // Work orders and maintenance
 // ---------------------------------------------------------------------------
 
-export type WorkOrderStatus = z.infer<typeof Op.workOrderStatusSchema>;
-export type WorkOrderPriority = z.infer<typeof Op.workOrderPrioritySchema>;
 export type MaintenanceDueState = z.infer<typeof Op.maintenanceDueStateSchema>;
 export type MaintenanceScheduleCategory = z.infer<
   typeof Op.maintenanceScheduleCategorySchema
 >;
 export type MaintenanceGenerationMode = z.infer<typeof Op.maintenanceGenerationModeSchema>;
-/** One work order row for Phase 5 Sprint A API responses. */
-export type WorkOrderListItem = z.infer<typeof Op.workOrderListItemSchema>;
 /** Maintenance schedule item shown in the Phase 5 Sprint C Schedule Centre. */
 export type MaintenanceScheduleItem = z.infer<typeof Op.maintenanceScheduleItemSchema>;
 
@@ -801,7 +799,6 @@ export type TemplateMigrationResultResponse = z.infer<
 export type AlarmsListResponse = z.infer<typeof E.alarmsListResponseSchema>;
 /** `GET /api/v1/alarms/summary` (`F3.28`, ADR 0074 decision 3). */
 export type AlarmSummaryResponse = z.infer<typeof E.alarmSummaryResponseSchema>;
-export type WorkOrdersListResponse = z.infer<typeof E.workOrdersListResponseSchema>;
 export type MaintenanceSchedulesResponse = z.infer<
   typeof E.maintenanceSchedulesResponseSchema
 >;

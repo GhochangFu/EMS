@@ -1,7 +1,10 @@
 import { eq } from "drizzle-orm";
 
+import { WORK_ORDER_SLA_DEFAULT_MINUTES } from "@bms/shared";
+
 import type { BmsDb } from "./client";
 import type { SeededAsset } from "./eskom-assets-seed";
+import { allocateWorkOrderReference } from "./work-order-reference";
 import {
   alarms,
   maintenanceSchedules,
@@ -82,6 +85,19 @@ export async function seedDemoAlarms(
   }
 }
 
+/**
+ * E3.1 (ADR 0122 decision 3): the SLA a demo ticket carries — the platform default for
+ * its priority, from one `createdAt`, so `sla_due_at - created_at` is exactly the
+ * minutes, as on a ticket the API creates.
+ */
+function slaSnapshot(
+  priority: keyof typeof WORK_ORDER_SLA_DEFAULT_MINUTES,
+  createdAt: Date,
+): { slaMinutes: number; slaDueAt: Date; createdAt: Date } {
+  const slaMinutes = WORK_ORDER_SLA_DEFAULT_MINUTES[priority];
+  return { slaMinutes, slaDueAt: new Date(createdAt.getTime() + slaMinutes * 60_000), createdAt };
+}
+
 /** Seeds two demo work orders with their checklist tasks. */
 export async function seedDemoWorkOrders(
   db: BmsDb,
@@ -103,12 +119,19 @@ export async function seedDemoWorkOrders(
     const cracAsset =
       assetRows.find((row) => row.code === "CH-CRAC-101") ?? assetRows[0];
 
+    // E3.1 (ADR 0122 decision 2): seq and reference are NOT NULL since migration 0140
+    // and come from the one allocator, here inside the caller's organization bracket.
+    const seededAt = new Date();
+    const firstAssetId = alarmSeed?.assetId ?? upsAsset.id;
+    const firstReference = await allocateWorkOrderReference(db, organizationId, firstAssetId);
+    const secondReference = await allocateWorkOrderReference(db, organizationId, cracAsset.id);
     const insertedWorkOrders = await db
       .insert(workOrders)
       .values([
         {
           organizationId,
-          assetId: alarmSeed?.assetId ?? upsAsset.id,
+          ...firstReference,
+          assetId: firstAssetId,
           alarmId: alarmSeed?.id,
           title: "Investigate alarm follow-up",
           description:
@@ -117,9 +140,11 @@ export async function seedDemoWorkOrders(
           priority: "high",
           createdBy: adminId,
           dueAt: new Date(Date.now() + 2 * DAY_MS),
+          ...slaSnapshot("high", seededAt),
         },
         {
           organizationId,
+          ...secondReference,
           assetId: cracAsset.id,
           title: "Inspect CRAC condensate drain",
           description:
@@ -129,6 +154,7 @@ export async function seedDemoWorkOrders(
           assignedTo: adminId,
           createdBy: adminId,
           dueAt: new Date(Date.now() + 7 * DAY_MS),
+          ...slaSnapshot("medium", seededAt),
         },
       ])
       .returning({ id: workOrders.id, title: workOrders.title });

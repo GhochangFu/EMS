@@ -1,6 +1,7 @@
 import {
   boolean,
   integer,
+  primaryKey,
   text,
   timestamp,
   uuid,
@@ -29,6 +30,12 @@ export const workOrders = bmsSchema.table("work_orders", {
   organizationId: uuid("organization_id")
     .notNull()
     .references(() => organizations.id),
+  // E3.1 (ADR 0122 decision 2, migration 0140): the per-organization number and the
+  // `<PREFIX>-<seq>` reference built from it. Both come from
+  // `allocateWorkOrderReference`, are written once at create and never change.
+  // UNIQUE (organization_id, seq) and UNIQUE (organization_id, reference).
+  seq: integer("seq").notNull(),
+  reference: varchar("reference", { length: 32 }).notNull(),
   assetId: uuid("asset_id")
     .notNull()
     .references(() => assets.id),
@@ -41,6 +48,12 @@ export const workOrders = bmsSchema.table("work_orders", {
   assignedTo: uuid("assigned_to").references(() => users.id),
   createdBy: uuid("created_by").references(() => users.id),
   dueAt: timestamp("due_at", { withTimezone: true }),
+  // E3.1 (ADR 0122 decision 3, migration 0140): the SLA snapshot. Minutes from creation
+  // to `resolved`, copied at create from the organization's policy (or the platform
+  // default, or the create body); `slaDueAt` is `createdAt + slaMinutes`. Both NULL on a
+  // ticket older than 0140 — a CHECK keeps them NULL together.
+  slaMinutes: integer("sla_minutes"),
+  slaDueAt: timestamp("sla_due_at", { withTimezone: true }),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -50,6 +63,47 @@ export const workOrders = bmsSchema.table("work_orders", {
     .notNull()
     .defaultNow(),
 });
+
+/**
+ * E3.1 (ADR 0122 decision 2.3, migration 0140) — one row per organization: the next
+ * `work_orders.seq` to hand out. Written only by `allocateWorkOrderReference`, whose
+ * upsert takes the row lock, so two concurrent creates never read the same number.
+ * Tenant table under FORCE row security.
+ */
+export const workOrderCounters = bmsSchema.table("work_order_counters", {
+  organizationId: uuid("organization_id")
+    .primaryKey()
+    .references(() => organizations.id),
+  nextSeq: integer("next_seq").notNull().default(1),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * E3.1 (ADR 0122 decision 3.2, migration 0140) — an organization's SLA per priority, in
+ * minutes from creation to `resolved`. A priority with no row uses
+ * `WORK_ORDER_SLA_DEFAULT_MINUTES`. Create snapshots the value onto the ticket, so an
+ * edit here never moves an open ticket. Tenant table under FORCE row security.
+ */
+export const workOrderSlaPolicies = bmsSchema.table(
+  "work_order_sla_policies",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    priority: varchar("priority", { length: 32 }).notNull(),
+    resolutionMinutes: integer("resolution_minutes").notNull(),
+    updatedBy: uuid("updated_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.organizationId, table.priority] })],
+);
 
 export const workOrderTasks = bmsSchema.table("work_order_tasks", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -70,6 +70,8 @@ export * from "./notifications";
 export * from "./onboarding";
 export * from "./onboarding-discovery";
 export * from "./operations";
+// `E3.1` (ADR 0122): the work-order depth response schemas.
+export * from "./work-orders";
 export * from "./point-keys";
 export * from "./point-key-states";
 // `F4.334` (ADR 0116 decision 5): the MQTT payload format catalog.

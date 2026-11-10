@@ -4,7 +4,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 import { sql } from "drizzle-orm";
 
-import { assets, createDb, locations, workOrders } from "@bms/db";
+import { allocateWorkOrderReference, assets, createDb, locations, workOrders } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
@@ -245,7 +245,8 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
     await withTenant(tenantDb, organizationId, async (tx) => {
       const [wo] = await tx
         .insert(workOrders)
-        .values({ organizationId, assetId, title: "E7.1b WO A", status: "open", priority: "medium" })
+        // E3.1 (migration 0140): seq and reference are NOT NULL and come from the allocator.
+        .values({ organizationId, ...(await allocateWorkOrderReference(tx, organizationId, assetId)), assetId, title: "E7.1b WO A", status: "open", priority: "medium" })
         .returning({ id: workOrders.id });
       inScopeWorkOrderId = wo.id;
     });
@@ -267,6 +268,7 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
         .insert(workOrders)
         .values({
           organizationId: foreignOrgId,
+          ...(await allocateWorkOrderReference(tx, foreignOrgId, asset.id)),
           assetId: asset.id,
           title: "E7.1b WO B",
           status: "open",

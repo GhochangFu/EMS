@@ -288,8 +288,8 @@ strict-body ledger gain each one.
 | `PATCH /work-orders/reorder` | operational | refuses a move into `resolved` (400) |
 | `GET` · `PATCH /admin/vocabularies/asset-domains/:code` | global `admin` | **new** — `workOrderPrefix` only (rulings P8, R4) |
 | asset-template authoring routes | unchanged gates | body gains `workOrderPrefix?` |
-| `GET` · `PUT /admin/work-order-sla-policies` | configuration + `canManageOrganization` | **new** |
-| `GET` · `POST` · `PATCH /admin/work-order-checklist-templates` | configuration + `canManageOrganization` | **new** |
+| `GET` · `PUT /admin/work-order-sla-policies` | configuration + `isOrganizationLevelAdmin` | **new** |
+| `GET` · `POST` · `PATCH /admin/work-order-checklist-templates` | configuration + `isOrganizationLevelAdmin` | **new** |
 | `PATCH /maintenance/schedules/:id` | configuration | body gains `checklistTemplateId?` |
 
 Copilot (ADR 0099 / 0106): `workOrder.setStatus` and `workOrder.close` keep
@@ -371,8 +371,14 @@ string in the browser.
 | Q12 | Audit shape and stepper | (a) new append-only `work_order_events` table feeds a five-step stepper (step 5 at `closed`, *Awaiting approval* while `resolved`); `audit_log` still written · (b) richer `audit_log` payload only, add `assigned_at` / `started_at` columns for the stepper · (c) six steps with a separate *Approved* | (a) | as recommended |
 
 Who may edit SLA policies and checklist templates (`admin` and
-`organization_admin`, through `canManageOrganization`) is a drafter call the
-plan may refine; say so if it should be wider.
+`organization_admin`) is a drafter call the plan may refine; say so if it
+should be wider.
+
+**As built, 2026-11-10 (PR 1).** The check is `isOrganizationLevelAdmin`, not
+`canManageOrganization` as first drafted. `canManageOrganization` also answers
+yes for a `location_admin` in any organization where they hold one node, which
+is wider than the two roles named above. The route table in decision 10 says
+so now, and the checklist-template routes of PR 3 take the same check.
 
 ## Rulings (owner, in chat, 2026-11-10)
 

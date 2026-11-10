@@ -96,6 +96,8 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/work-orders/work-orders.controller.ts", full: true },
   // `F4.334` (ADR 0099 Amendment 17 decision 5): every write excluded until that amendment's build.
   { file: "apps/api/src/admin/mqtt-payload-formats/mqtt-payload-formats.controller.ts", full: true },
+  // `E3.1` (ADR 0122): the SLA policy PUT is on the exclusion list, not an entry.
+  { file: "apps/api/src/admin/work-order-sla-policies/work-order-sla-policies.controller.ts", full: true },
 ];
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;

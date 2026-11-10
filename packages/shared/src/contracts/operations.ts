@@ -9,6 +9,7 @@
 import { z } from "zod";
 
 import { switchingStateDtoSchema } from "./point-key-states";
+import { WORK_ORDER_SLA_STATES } from "../work-order-sla";
 
 // ---------------------------------------------------------------------------
 // Energy
@@ -142,6 +143,12 @@ export const workOrderStatusSchema = z.enum([
 
 export const workOrderPrioritySchema = z.enum(["low", "medium", "high", "critical"]);
 
+/**
+ * `E3.1` (ADR 0122 decision 3.5) — where a work order stands against its SLA. Computed
+ * on read by `workOrderSlaState`, never stored. The values are `WORK_ORDER_SLA_STATES`.
+ */
+export const workOrderSlaStateSchema = z.enum(WORK_ORDER_SLA_STATES);
+
 export const maintenanceDueStateSchema = z.enum(["overdue", "upcoming"]);
 
 export const maintenanceScheduleCategorySchema = z.enum([
@@ -172,6 +179,8 @@ export const maintenanceGenerationModeSchema = z.enum([
 /** One work order row for Phase 5 Sprint A API responses. */
 export const workOrderListItemSchema = z.object({
   id: z.string(),
+  /** `E3.1` (ADR 0122 decision 2): `<PREFIX>-<seq>`, written once at create. */
+  reference: z.string(),
   assetId: z.string(),
   alarmId: z.string().nullable(),
   title: z.string(),
@@ -184,6 +193,10 @@ export const workOrderListItemSchema = z.object({
   dueAt: z.string().nullable(),
   resolvedAt: z.string().nullable(),
   closedAt: z.string().nullable(),
+  /** `E3.1` (ADR 0122 decision 3): null on a ticket older than the SLA columns. */
+  slaMinutes: z.number().int().nullable(),
+  slaDueAt: z.string().nullable(),
+  slaState: workOrderSlaStateSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
   assetCode: z.string(),
