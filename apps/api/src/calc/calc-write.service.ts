@@ -29,8 +29,9 @@ export interface CalcWriteOptions {
    * backfill (`F4.311`, ADR 0109 decision 7) passes it: its rows are history,
    * and a NOTIFY reaches every consumer that treats a reading as live — the
    * alarm engine (which would raise, and notify on, a weeks-old breach), the
-   * streaming host, and the WebSocket gateway. `TelemetryWriteService`'s
-   * `NOTIFY_LIVE_WINDOW_MS` holds the same line for a backdated manual entry.
+   * streaming host, and the WebSocket gateway. `TelemetryWriteService`, with
+   * `NOTIFY_LIVE_WINDOW_MS` from `@bms/shared/ingest`, holds the same line
+   * for a backdated manual entry.
    * Default `true`: the sweep and the streaming host write current instants.
    */
   readonly notify?: boolean;

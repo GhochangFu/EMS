@@ -216,11 +216,13 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
       // with every notification failing.
       //
       // The delivery signal is `written=` and `writeFailures=` on the endpoint
-      // lines: commit 4 left no branch between writing and notifying, so
-      // `writeResolved` does both or throws, and the supervisor only counts
-      // `samplesWritten` when the whole call succeeded. `docs/ingest-host.md`
-      // says so; do not reintroduce a `notify` field that varies, because a
-      // varying one would mean the switch is back.
+      // lines: commit 4 left no branch between writing and notifying a live
+      // row, so `writeResolved` does both or throws, and the supervisor only
+      // counts `samplesWritten` when the whole call succeeded. The one gate is
+      // the row's own time (ADR 0016 Amendment 9): a row older than the live
+      // window is written and not notified, so a replay's rows are history.
+      // `docs/ingest-host.md` says so; do not reintroduce a `notify` field
+      // that varies, because a varying one would mean the switch is back.
       //
       // `buffered=` is the second delivery signal, added by F1.10: a batch
       // that fails to write is not lost, it is spilled to disk, so

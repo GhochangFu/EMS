@@ -7,6 +7,7 @@ import type pg from "pg";
 import { assetPoints, assets, pointValues, refreshAggregatesFrom } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import {
+  NOTIFY_LIVE_WINDOW_MS,
   telemetryEntryRowSchema,
   type JwtPayload,
   type RejectedRowDto,
@@ -28,24 +29,11 @@ const MAX_ROWS_PER_STATEMENT = 500;
 /** How far into the future a caller's clock is trusted before a reading is refused. */
 const FUTURE_SKEW_MS = 60_000;
 
-/**
- * How recent a WRITTEN reading must be to raise a `pg_notify` — the only
- * mechanism that reaches `AlarmEngineService` (it evaluates exclusively off
- * `TelemetryBroadcastHub`'s `"readings"` event, fed exclusively by `LISTEN
- * bms_telemetry`; there is no other path from `point_values` to alarm
- * evaluation).
- *
- * Gated on the READING's own timestamp, not on which caller/endpoint wrote
- * it: a manual entry backdated three weeks should no more raise a live alarm
- * than an imported one should, and a bulk import whose last few rows happen
- * to be timestamped seconds ago legitimately should. Five minutes is wider
- * than the web client's own 25 s live-staleness window
- * (`apps/web/src/lib/schematic-telemetry.ts`'s `FRESH_MS`) — that constant
- * governs socket freshness for a UI already streaming; this one has to
- * absorb the human latency of typing a reading in, which the socket case
- * never pays.
- */
-const NOTIFY_LIVE_WINDOW_MS = 5 * 60_000;
+// `NOTIFY_LIVE_WINDOW_MS` — how recent a written reading must be to be
+// notified — lives in `packages/shared/src/ingest.ts` since `E7.2` (ADR 0123
+// decision 10), because the ingest host's `writeResolved` applies the same
+// rule. Imported through the root barrel, which re-exports `./ingest`: this
+// app resolves with `node10`, which does not read the `./ingest` subpath.
 
 /** Postgres `unique_violation`. */
 const UNIQUE_VIOLATION = "23505";

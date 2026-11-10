@@ -1596,3 +1596,52 @@ must call `http://127.0.0.1:9102/` from inside the container, which sends a
 loopback `Host`. The operator command `curl 127.0.0.1:9102` on the host no
 longer works; that is the cost of Decision 3, accepted by the owner. Segmenting the other services from each other is not decided
 here.
+
+## Amendment 9 — notification is keyed on the row's time (`E7.2`, 2026-11-10)
+
+**Status:** Accepted. The owner ruled ADR 0123 Q9 "as recommended" on
+2026-11-10; ADR 0123 decision 10 is the decision and this amendment records
+what it changes here. Parts (b) (the public uplink route, amending Amendment 8
+decision 2) and (c) (the edge entry point, amending §6 commit 4's "one entry
+point") are owed by `E7.2` PR 4 and PR 5, and are appended to this section
+when those PRs land. This is part (a) only.
+
+**(a) "Unconditional" now reads "every row inside the live window".** Two
+sentences of this ADR say every written row is notified:
+
+- §6 commit 4 (and Amendment 3, *What commit 4 therefore does*, item 4): "the
+  `INGEST_NOTIFY` flag is deleted and `pg_notify` becomes unconditional."
+- Amendment 4 decision 5: "Replayed rows are notified like any upsert; a
+  listener sees the backlog arrive once."
+
+Both now mean: **`writeResolved` notifies every row whose `time` is no more
+than the live window before the host's clock**, and writes, without notifying,
+every row older than that. The window is `INGEST_NOTIFY_LIVE_WINDOW_MS`,
+default `NOTIFY_LIVE_WINDOW_MS` (5 minutes, the API's manual-entry rule, moved
+to `packages/shared/src/ingest.ts`); `writeResolved(client, rows, { now,
+liveWindowMs })` takes it as a required option and reports `rowsNotNotified`.
+A row ahead of the clock is live.
+
+**Why.** Amendment 4 decision 5 was written for a one-hour buffer, where a
+replay is minutes old. An edge gateway (ADR 0123) replays up to six days. A
+`pg_notify` reaches the alarm engine, the streaming host and the WebSocket
+gateway, all of which treat a reading as current: a six-day-old breach would
+raise a live alarm and live tiles would move backwards. The rule is keyed on
+the row's time and not on the path, so an `F1.10` replay older than the
+window lands silently too. Alarms are not evaluated retrospectively.
+
+**What does not change — commit 4's point.** There is still no flag, option,
+environment value or default that stops a *live* row being notified. The
+window is bounded at start-up to 60 000 – 900 000 ms and the host refuses to
+start outside it (`host/config.ts`), because a window of 0 would be the
+deleted `INGEST_NOTIFY` switch under a new name. The health body's
+`notify=on` stays a literal. `tests/repo-invariants.test.ts` still forbids
+any read of `INGEST_NOTIFY`; its `\bINGEST_NOTIFY\b` pattern does not match
+`INGEST_NOTIFY_LIVE_WINDOW_MS`, which is the bounded window and not the
+switch. The positive assertion in `normaliser.spec.ts` now states that a write
+of live rows always notifies; `normaliser-notify-window.spec.ts` holds the
+window itself.
+
+**Superseded sentences are left standing**, as Amendment 5 did: §6 commit 4,
+Amendment 3 item 4 and Amendment 4 decision 5 are read through this
+amendment, not rewritten.

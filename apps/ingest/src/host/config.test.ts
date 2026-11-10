@@ -7,6 +7,7 @@ import {
   runCredentialKeyVersionZeroRefusedTests,
   runHostConfigTests,
   runMqttPlaintextHostsConfigTests,
+  runNotifyLiveWindowConfigTests,
 } from "./config.spec.js";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -33,5 +34,9 @@ describe("host config", () => {
 
   it("parses MQTT_PLAINTEXT_HOSTS and refuses to boot on a bad entry (ADR 0114)", () => {
     runMqttPlaintextHostsConfigTests();
+  });
+
+  it("bounds INGEST_NOTIFY_LIVE_WINDOW_MS to 60 s – 15 min and refuses to boot outside (ADR 0123)", () => {
+    runNotifyLiveWindowConfigTests();
   });
 });

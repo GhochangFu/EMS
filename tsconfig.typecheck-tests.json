@@ -19,6 +19,7 @@
     "tests/adr-0111-asset-label-schemas.test.ts",
     "tests/adr-0114-plaintext-hosts-invariants.test.ts",
     "tests/ingest-contracts.test.ts",
+    "tests/e7.2-uplink-wire-parity.test.ts",
     "tests/adr-0024-retention-bounds.test.ts",
     "tests/adr-0025-level-selector.test.ts",
     "tests/adr-0029-openapi-contract.test.ts",

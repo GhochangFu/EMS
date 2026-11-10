@@ -1,5 +1,6 @@
 import {
   assert,
+  LIVE,
   makeFakeClient,
   PILOT_INDEX,
   RECEIVED_AT,
@@ -324,7 +325,7 @@ export async function assertNotifyPayloadKeepsFiveFields(): Promise<void> {
       unit: "m³/h",
       deviceTime: LEADING_DEVICE_TIME,
     },
-  ]);
+  ], LIVE);
 
   const notify = calls.find((c) => c.text.includes("pg_notify"));
   assert(notify !== undefined, "the write must notify at all, or this assertion proves nothing");

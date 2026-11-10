@@ -60,6 +60,7 @@ still the only working credential path (ADR 0016 Amendment 3).
 | `INGEST_BUFFER_DIR` | `/var/lib/bms-ingest` | Where a batch the database refused lands (`F1.10`, ADR 0016 Amendment 4 ruling 4). Blank or unset takes the default; compose mounts a named volume at that path. **Must be absolute** — a relative value would resolve against the container working directory, putting the buffer on the writable layer with the volume unused, which nothing downstream can detect. A directory that cannot be created, that fails a write-and-unlink probe, or whose listing fails refuses host start-up with the path in the error — there is no "no buffer" mode. |
 | `INGEST_BUFFER_MAX_AGE_MS` | `3600000` | How long a spilled segment survives, by receipt minute, before the age bound erases it. Strictly older than the bound is erased; exactly the bound is kept. Ceiling `2^31-1`, the same timer limit `INGEST_RELOAD_MS` and `INGEST_STALE_AFTER_MS` share. |
 | `INGEST_BUFFER_MAX_BYTES` | `268435456` | Total bytes the on-disk buffer may hold, host-wide across every endpoint, before the byte bound erases the oldest segment. Ceiling `2^40` (1 TiB) — a fact about a disk, not about integers. |
+| `INGEST_NOTIFY_LIVE_WINDOW_MS` | `300000` | ADR 0123 decision 10 (`E7.2`). How old a written row's `time` may be and still be notified on `bms_telemetry`; an older row is written as history and not notified (see *Realtime has no switch* below). Defaults to the shared `NOTIFY_LIVE_WINDOW_MS`. Accepted from `60000` to `900000`; anything else, `0` included, refuses start-up with the variable and its bounds in the error. |
 
 `INGEST_BUFFER_MAX_AGE_MS` and `INGEST_BUFFER_MAX_BYTES` parse through the
 same digits-only, safe-integer rule as `INGEST_RELOAD_MS` and
@@ -73,10 +74,22 @@ deleted entry point — the host owns its own reconnect (exponential, jittered) 
 binds `INGEST_HOST_HEALTH_PORT`. A copy left in an old `.env` is inert; the specs
 assert that rather than leaving it to be discovered.
 
-### Realtime is unconditional, and that is the point of commit 4
+### Realtime has no switch, and that is the point of commit 4
 
-The host always emits `pg_notify('bms_telemetry', …)`. There is no flag, no
-option and no default that can turn it off.
+The host emits `pg_notify('bms_telemetry', …)` for **every row inside the live
+window**. There is no flag, no option and no default that can turn that off.
+
+**The one gate is the row's own time** (ADR 0016 Amendment 9, ADR 0123
+decision 10, `E7.2`). A row whose `time` is more than
+`INGEST_NOTIFY_LIVE_WINDOW_MS` (default 5 minutes) before the host's clock is
+written and **not** notified: a replay after an outage, from the `F1.10` disk
+buffer or from an edge gateway, lands in history without raising a live alarm
+or moving a live tile backwards. Alarms are not evaluated retrospectively. The
+rule is the same one the API applies to a backdated manual entry
+(`NOTIFY_LIVE_WINDOW_MS`, `@bms/shared/ingest`). The window is bounded to
+60 s – 15 min and the host refuses to start outside it, because a window of 0
+would be the deleted flag under a new name. A batch that held rows back logs
+`rows written outside the live window, not notified` with the count.
 
 It was not always so, and the history is worth keeping because the reasoning
 inverted. During the parallel-run window two processes wrote the same rows
@@ -101,10 +114,11 @@ on that, both worth knowing before an incident:
   delivery.** It reports intent, and it prints `on` whether or not a single
   notification has succeeded. **Watch `written=` and `lastSample=` on the
   endpoint line instead** — since commit 4 there is no branch between writing and
-  notifying, so `writeResolved` either does both or throws, and a failing
-  `pg_notify` lands in `writeFailures=` rather than passing silently. A rising
-  `written=` is therefore evidence that notifications are flowing; `notify=on` is
-  not.
+  notifying a live row, so `writeResolved` either does both or throws, and a
+  failing `pg_notify` lands in `writeFailures=` rather than passing silently. A
+  rising `written=` on live traffic is therefore evidence that notifications are
+  flowing; `notify=on` is not. While `replayed=` is climbing, part of `written=`
+  is history the live window held back, by design.
 - **The same silent outage is still reachable one hop downstream.** The API's
   `telemetry-notify.service.ts` holds the `LISTEN bms_telemetry` with no error
   handler and no reconnect, so a dropped listener connection gives dead
@@ -611,8 +625,9 @@ service was rebuilt and recreated onto `pnpm start:host` with `INGEST_NOTIFY:
 - **`INGEST_NOTIFY: "on"` became required configuration** — with one ingest
   process there was nothing to double, so the flag stopped protecting anything
   and became the only thing keeping realtime alive. It held that role for eight
-  days. **Commit 4 deleted it on 2026-08-14**, which is why realtime is now
-  unconditional rather than one compose line deep.
+  days. **Commit 4 deleted it on 2026-08-14**, which is why realtime now has
+  no switch rather than one compose line deep (every live row is notified;
+  ADR 0016 Amendment 9 keys that on the row's time).
 - **One message was lost to the container restart**, the minute between the
   legacy process's last write and the host's first. Recreating the container is
   not a hot swap; a cutover run during a maintenance window would cost the same

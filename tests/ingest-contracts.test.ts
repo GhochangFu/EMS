@@ -111,6 +111,30 @@ describe("ADR 0016 ingest contracts", () => {
     expect(ingest.MQTT_DECODE_FAILURES as readonly string[]).toContain("binary-length-mismatch");
   });
 
+  it("publishes the uplink wire schema and its bounds through ./ingest", () => {
+    // `E7.2` (ADR 0123 decision 4): the edge client and the cloud receiver both
+    // load the built subpath, so a schema only the source exports would pass
+    // every shared spec and leave both ends of the uplink without a parser.
+    const ingest = require_("@bms/shared/ingest") as Record<string, unknown>;
+    for (const name of ["uplinkBatchSchema", "uplinkSampleSchema", "uplinkResponseSchema"]) {
+      const schema = ingest[name] as { safeParse?: unknown } | undefined;
+      expect(typeof schema?.safeParse, `${name} is not exported by @bms/shared/ingest`).toBe("function");
+    }
+    expect(ingest.UPLINK_MAX_SAMPLES).toBe(500);
+    expect(ingest.UPLINK_MAX_BODY_BYTES).toBe(262_144);
+    expect(ingest.UPLINK_MAX_DECODED_BYTES).toBe(1_048_576);
+    expect(ingest.UPLINK_MAX_FUTURE_MS).toBe(60_000);
+    expect(ingest.UPLINK_MAX_AGE_MS).toBe(561_600_000);
+    expect(String(ingest.UPLINK_TOKEN_PATTERN)).toBe("/^bmsgw_[A-Za-z0-9_-]{43}$/");
+  });
+
+  it("publishes the notify live window through ./ingest", () => {
+    // `E7.2` (ADR 0123 decision 10): the API's manual-entry write and the
+    // ingest host's `writeResolved` gate `pg_notify` on one constant.
+    const ingest = require_("@bms/shared/ingest") as Record<string, unknown>;
+    expect(ingest.NOTIFY_LIVE_WINDOW_MS).toBe(300_000);
+  });
+
   it("publishes ./ingest under both import and require conditions", () => {
     // ADR 0016 §8 calls this out specifically: `apps/sim` consumes @bms/shared
     // through `createRequire(import.meta.url)`, so an import-only condition
