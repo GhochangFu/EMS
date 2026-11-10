@@ -3,6 +3,10 @@ import { describe, it } from "vitest";
 import {
   copilotNeverSendsSlaMinutes,
   createBodyBoundsSlaMinutes,
+  detailIsAnIntersectionWithTheListItem,
+  eventDetailIsAClosedShape,
+  eventRowRoundTrips,
+  eventTypesAreTheTenRuled,
   itemRequiresReferenceAndSlaState,
   policyBodyIsStrictAndUniquePerPriority,
   policyResponseCarriesSource,
@@ -33,5 +37,23 @@ describe("E3.1 — work-order depth contracts, PR 1 (ADR 0122)", () => {
 
   it("keeps slaMinutes out of the copilot's model body", () => {
     copilotNeverSendsSlaMinutes();
+  });
+});
+
+describe("E3.1 — work-order timeline contracts, PR 2 (ADR 0122 decisions 7 and 8)", () => {
+  it("names the ten ruled event types", () => {
+    eventTypesAreTheTenRuled();
+  });
+
+  it("keeps an event's detail a closed shape", () => {
+    eventDetailIsAClosedShape();
+  });
+
+  it("round-trips an event row", () => {
+    eventRowRoundTrips();
+  });
+
+  it("builds the detail as a z.intersection with the list item", () => {
+    detailIsAnIntersectionWithTheListItem();
   });
 });

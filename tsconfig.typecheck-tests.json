@@ -312,6 +312,7 @@
     "tests/f4.344-mimic-motion-gate.test.ts",
     "tests/e3.1-work-order-reference-sla-schema.test.ts",
     "tests/e3.1-work-order-write-gates.test.ts",
+    "tests/e3.1-work-order-events-schema.test.ts",
     "tests/f4.17-rate-limit-compose.test.ts",
     "tests/f4.17-rate-limit-wiring.test.ts"
   ]

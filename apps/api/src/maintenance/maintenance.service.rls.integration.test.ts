@@ -6,8 +6,9 @@ import type { BmsDb } from "@bms/db";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { withTenant } from "../database/tenant-context";
-import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { openIntegrationPool, requireIntegrationDb, resolveIntegrationRoleUrl } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
+import { deleteWorkOrderEvents } from "../testing/work-order-events-cleanup";
 import { jwtFor, primeSeededSubjects } from "../testing/seeded-subjects";
 import { MaintenanceService } from "./maintenance.service";
 import {
@@ -243,6 +244,8 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
         );
       }
       if (createdWorkOrderIds.length > 0) {
+        // E3.1 (migration 0144): events first, as the superuser — the fleet role cannot delete them.
+        await deleteWorkOrderEvents(resolveIntegrationRoleUrl(connectionString as string, "superuser", process.env), { workOrderIds: createdWorkOrderIds });
         await ownerPool.query(`DELETE FROM bms.work_orders WHERE id = ANY($1)`, [
           createdWorkOrderIds,
         ]);

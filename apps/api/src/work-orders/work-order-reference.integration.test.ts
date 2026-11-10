@@ -8,8 +8,9 @@ import { assetTemplates, assets, createDb, fixtureAssetDomainCode, locations } f
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { withTenant } from "../database/tenant-context";
-import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { openIntegrationPool, requireIntegrationDb, resolveIntegrationRoleUrl } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
+import { deleteWorkOrderEvents } from "../testing/work-order-events-cleanup";
 import { jwtFor, primeSeededSubjects } from "../testing/seeded-subjects";
 import {
   assertAForeignSettingCannotTouchTheCounter,
@@ -209,6 +210,8 @@ describe.skipIf(!connectionString)("E3.1 — work-order reference and SLA snapsh
     // Children first, on the BYPASSRLS fleet connection, each bounded to this run's own
     // codes or its own two organizations.
     if (fleetPool) {
+      // E3.1 (migration 0144): events first, as the superuser — the fleet role cannot delete them.
+      await deleteWorkOrderEvents(resolveIntegrationRoleUrl(connectionString as string, "superuser", process.env), { assetCodeLike: `${PREFIX}%` });
       await fleetPool.query(
         `DELETE FROM bms.work_orders WHERE asset_id IN (SELECT id FROM bms.assets WHERE code LIKE $1)`,
         [`${PREFIX}%`],

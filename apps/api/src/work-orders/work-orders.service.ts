@@ -9,6 +9,7 @@ import { and, asc, desc, eq, ilike, inArray, type SQL } from "drizzle-orm";
 import { alarms, assets, workOrders } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
+  WorkOrderDetail,
   CloseWorkOrderBody,
   CreateWorkOrderBody,
   JwtPayload,
@@ -22,12 +23,13 @@ import {
   type AuditInput,
   MasterDataAuditService,
 } from "../admin/master-data-audit.service";
-import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
 import { ASSIGNEE_REFUSAL, readActiveOrganizationUser } from "./assignee";
 import { insertWorkOrder } from "./work-order-create";
+import { readWorkOrderDetail } from "./work-order-detail";
+import { resolveWorkOrderActor, statusEventType, type WorkOrderActor, writeWorkOrderEvent } from "./work-order-events";
 import { mapWorkOrderRow, readWorkOrderListItem, selectWorkOrderList } from "./work-order-projection";
 
 const terminalStatuses = new Set<WorkOrderStatus>(["closed"]);
@@ -90,15 +92,14 @@ export class WorkOrdersService {
   ) {}
 
   /**
-   * Resolves the acting user's row id. `bms.users` is a pre-tenant identity
-   * table (Amendment 4 territory), so this reads on `fleetDb` — it must resolve
-   * the actor regardless of any tenant GUC.
+   * Resolves the acting user once per write: the row id for `createdBy` and the
+   * display name the timeline saves (E3.1, ruling P7). `bms.users` is a pre-tenant
+   * identity table (Amendment 4 territory), so this reads on `fleetDb` — it must
+   * resolve the actor, a global admin included, regardless of any tenant GUC.
    */
-  private async resolveActorId(
-    actor: Pick<JwtPayload, "sub" | "email">,
-  ): Promise<string | null> {
+  private resolveActor(actor: Pick<JwtPayload, "sub" | "email">): Promise<WorkOrderActor> {
     // F3.78: by subject (or local id), never by email — the shared resolver.
-    return resolveActorId(this.fleetDb, actor);
+    return resolveWorkOrderActor(this.fleetDb, actor);
   }
 
   /**
@@ -238,6 +239,24 @@ export class WorkOrdersService {
     );
   }
 
+  /**
+   * One work order with its timeline and its alarm (E3.1, `GET /work-orders/:id`).
+   * Reads through `withReadScope`, like `list`: a single-organization actor is served
+   * under the tenant setting, and an actor with no readable asset gets the same 404 as
+   * for a ticket that does not exist.
+   */
+  async getDetail(id: string, assetIds?: string[] | null): Promise<WorkOrderDetail> {
+    return withReadScope<WorkOrderDetail>(
+      this.db,
+      this.fleetDb,
+      assetIds,
+      () => {
+        throw new NotFoundException("Work order not found");
+      },
+      (tx) => readWorkOrderDetail(tx, id, assetIds),
+    );
+  }
+
   /** Creates a work order linked to an asset and optionally an alarm. */
   async create(
     dto: CreateWorkOrderBody,
@@ -264,7 +283,7 @@ export class WorkOrdersService {
     }
     const organizationId = asset.organizationId;
 
-    const actorId = await this.resolveActorId(actor);
+    const who = await this.resolveActor(actor);
     const createdId = await withTenant(this.db, organizationId, async (tx) => {
       // The alarm consistency read runs inside the tenant GUC: a foreign-org
       // alarm reads as absent under the policy, so it cannot be attached and its
@@ -299,7 +318,8 @@ export class WorkOrdersService {
         status: dto.assignedTo ? "assigned" : "open",
         priority: dto.priority,
         assignedTo: dto.assignedTo,
-        createdBy: actorId,
+        actor: who,
+        origin: dto.alarmId ? "alarm" : "manual",
         dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
         slaMinutes: dto.slaMinutes,
       });
@@ -346,8 +366,25 @@ export class WorkOrdersService {
     }
 
     const organizationId = await this.resolveWorkOrderOrg(id, assetIds);
+    const who = await this.resolveActor(actor);
     const now = new Date();
     await withTenant(this.db, organizationId, async (tx) => {
+      // E3.1: lock the row and decide from what the lock shows, not from `current`,
+      // which was read before this transaction. Two writes that overlap would otherwise
+      // both act on the same old status: one could reopen a ticket the other just
+      // closed, and the timeline would record a move that never happened, or none.
+      const [locked] = await tx
+        .select({ status: workOrders.status, assignedTo: workOrders.assignedTo, sortOrder: workOrders.sortOrder })
+        .from(workOrders)
+        .where(eq(workOrders.id, id))
+        .for("update");
+      if (!locked) {
+        throw new NotFoundException("Work order not found");
+      }
+      const fromStatus = locked.status as WorkOrderStatus;
+      if (terminalStatuses.has(fromStatus)) {
+        throw new BadRequestException("Closed work orders cannot be updated");
+      }
       // `F4.285` (DC-D): `null` clears the assignee and an omitted field keeps it — neither reads a user.
       if (typeof dto.assignedTo === "string") {
         await this.assertAssignee(tx, dto.assignedTo, organizationId);
@@ -361,7 +398,7 @@ export class WorkOrdersService {
           // E3.1: stamp only on the real transition. The SLA state reads `resolvedAt`
           // (ADR 0122 decision 3.4), so re-stamping a ticket that is already resolved
           // would turn a `met` SLA into `missed`.
-          resolvedAt: dto.status === "resolved" && current.status !== "resolved" ? now : undefined,
+          resolvedAt: dto.status === "resolved" && fromStatus !== "resolved" ? now : undefined,
           closedAt: dto.status === "closed" ? now : undefined,
           updatedAt: now,
         })
@@ -376,15 +413,41 @@ export class WorkOrdersService {
           entityId: id,
           reason: dto.reason ?? `Status changed to ${dto.status}`,
           payload: {
-            fromStatus: current.status,
+            reference: current.reference,
+            fromStatus,
             toStatus: dto.status,
-            sortOrder: dto.sortOrder ?? current.sortOrder,
+            sortOrder: dto.sortOrder ?? locked.sortOrder,
             oidcSubject: actor.sub,
             actorEmail: actor.email,
           },
         },
         tx,
       );
+
+      // E3.1 (ADR 0122 decision 7.3): the timeline, in this same transaction. A write
+      // that only moves the card within its column changes nothing a reader would call
+      // an event, so it writes none.
+      const event = { organizationId, workOrderId: id, actor: who };
+      // Postgres answers a uuid in lower case; the body's may be upper case.
+      const assignedTo = dto.assignedTo?.toLowerCase() ?? dto.assignedTo;
+      if (assignedTo !== undefined && assignedTo !== locked.assignedTo) {
+        await writeWorkOrderEvent(tx, {
+          ...event,
+          eventType: "assigned",
+          fromStatus,
+          toStatus: dto.status,
+          detail: { assignedTo },
+        });
+      }
+      if (dto.status !== fromStatus) {
+        await writeWorkOrderEvent(tx, {
+          ...event,
+          eventType: statusEventType(dto.status),
+          fromStatus,
+          toStatus: dto.status,
+          detail: dto.reason === undefined ? {} : { reason: dto.reason },
+        });
+      }
     });
 
     return this.readBackWorkOrder(id, organizationId, assetIds);
@@ -426,6 +489,7 @@ export class WorkOrdersService {
       .select({
         id: workOrders.id,
         status: workOrders.status,
+        reference: workOrders.reference,
         organizationId: workOrders.organizationId,
       })
       .from(workOrders)
@@ -443,24 +507,39 @@ export class WorkOrdersService {
       "reorder",
     );
 
-    const currentById = new Map(
-      currentRows.map((row) => [row.id, row.status as WorkOrderStatus]),
-    );
-    for (const item of dto.items) {
-      const currentStatus = currentById.get(item.id);
-      if (!currentStatus) {
-        throw new NotFoundException("Work order not found");
+    // The moves are checked twice: here, so a bad request is refused before any
+    // transaction opens, and again under the row locks, where the answer is final.
+    const assertMoves = (statusById: ReadonlyMap<string, WorkOrderStatus>): void => {
+      for (const item of dto.items) {
+        const currentStatus = statusById.get(item.id);
+        if (!currentStatus) {
+          throw new NotFoundException("Work order not found");
+        }
+        if (currentStatus === "closed" && item.status !== "closed") {
+          throw new BadRequestException("Closed work orders cannot be reopened");
+        }
+        if (currentStatus !== "closed" && item.status === "closed") {
+          throw new BadRequestException("Use the close workflow for Done");
+        }
       }
-      if (currentStatus === "closed" && item.status !== "closed") {
-        throw new BadRequestException("Closed work orders cannot be reopened");
-      }
-      if (currentStatus !== "closed" && item.status === "closed") {
-        throw new BadRequestException("Use the close workflow for Done");
-      }
-    }
+    };
+    assertMoves(new Map(currentRows.map((row) => [row.id, row.status as WorkOrderStatus])));
 
+    const referenceById = new Map(currentRows.map((row) => [row.id, row.reference]));
+    const who = await this.resolveActor(actor);
     const now = new Date();
     await withTenant(this.db, organizationId, async (tx) => {
+      // E3.1: lock the batch's rows, in id order so two overlapping drags cannot
+      // deadlock, and decide from the locked statuses — see `updateStatus`.
+      const lockedRows = await tx
+        .select({ id: workOrders.id, status: workOrders.status })
+        .from(workOrders)
+        .where(inArray(workOrders.id, ids))
+        .orderBy(asc(workOrders.id))
+        .for("update");
+      const currentById = new Map(lockedRows.map((row) => [row.id, row.status as WorkOrderStatus]));
+      assertMoves(currentById);
+
       // One actor lookup and one insert for the whole batch (`writeMany`), not one per moved item.
       const audits: AuditInput[] = [];
       for (const item of dto.items) {
@@ -486,12 +565,24 @@ export class WorkOrdersService {
             entityId: item.id,
             reason: dto.reason ?? `Moved to ${item.status} by Kanban drag`,
             payload: {
+              reference: referenceById.get(item.id) ?? null,
               fromStatus: currentStatus,
               toStatus: item.status,
               sortOrder: item.sortOrder,
               oidcSubject: actor.sub,
               actorEmail: actor.email,
             },
+          });
+          // E3.1 (decision 7.3): one event per ticket whose status changed, in this
+          // transaction. A row that only changed position writes none.
+          await writeWorkOrderEvent(tx, {
+            organizationId,
+            workOrderId: item.id,
+            actor: who,
+            eventType: statusEventType(item.status),
+            fromStatus: currentStatus,
+            toStatus: item.status,
+            detail: dto.reason === undefined ? {} : { reason: dto.reason },
           });
         }
       }

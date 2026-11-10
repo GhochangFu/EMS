@@ -26,11 +26,11 @@ import type {
 } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
-import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
 import { insertWorkOrder } from "../work-orders/work-order-create";
+import { resolveWorkOrderActor } from "../work-orders/work-order-events";
 import { readWorkOrderListItem } from "../work-orders/work-order-projection";
 import type {
   ConvertMaintenanceBody,
@@ -154,19 +154,6 @@ export class MaintenanceService {
       activeWorkOrderId,
       active: r.active,
     };
-  }
-
-  /**
-   * Resolves the acting user's row id. `bms.users` is a pre-tenant identity
-   * table (Amendment 4 territory), so this reads on `fleetDb`: after `0047`'s
-   * NULL-tolerant `users` policy a scoped actor's row is invisible to the bare
-   * tenant pool (no `current_org`), which would silently drop the audit actor.
-   */
-  private async resolveActorId(
-    actor: Pick<JwtPayload, "sub" | "email">,
-  ): Promise<string | null> {
-    // F3.78: by subject (or local id), never by email — the shared resolver.
-    return resolveActorId(this.fleetDb, actor);
   }
 
   /**
@@ -639,7 +626,13 @@ export class MaintenanceService {
       );
     }
 
-    const actorId = await this.resolveActorId(actor);
+    // `bms.users` is a pre-tenant identity table (Amendment 4 territory), so the actor
+    // resolves on `fleetDb`: after `0047`'s NULL-tolerant `users` policy a scoped
+    // actor's row is invisible to the bare tenant pool, which would silently drop the
+    // audit actor. F3.78: by subject (or local id), never by email. E3.1 (ruling P7):
+    // the same read gives the display name the timeline saves.
+    const who = await resolveWorkOrderActor(this.fleetDb, actor);
+    const actorId = who.id;
     const now = new Date();
     const nextDueBase =
       schedule.nextDueAt.getTime() > now.getTime() ? schedule.nextDueAt : now;
@@ -659,7 +652,8 @@ export class MaintenanceService {
           `Preventive maintenance generated from schedule ${scheduleId}.`,
         status: "open",
         priority: schedule.priority as WorkOrderPriority,
-        createdBy: actorId,
+        actor: who,
+        origin: "schedule",
         dueAt: schedule.nextDueAt,
       });
 

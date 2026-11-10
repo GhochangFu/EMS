@@ -9,8 +9,9 @@ import type { JwtPayload } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { withTenant } from "../database/tenant-context";
-import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { openIntegrationPool, requireIntegrationDb, resolveIntegrationRoleUrl } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
+import { deleteWorkOrderEvents } from "../testing/work-order-events-cleanup";
 import { jwtFor, primeSeededSubjects } from "../testing/seeded-subjects";
 import { WorkOrdersService } from "./work-orders.service";
 import {
@@ -72,6 +73,8 @@ const EMAIL_PREFIX = PREFIX.toLowerCase();
 async function sweepStaleRuns(fleet: pg.Pool, superuser: pg.Pool): Promise<void> {
   const staleFamily = `${FAMILY}%`;
   try {
+    // E3.1 (migration 0144): events first, as the superuser — the fleet role cannot delete them.
+    await deleteWorkOrderEvents(resolveIntegrationRoleUrl(connectionString as string, "superuser", process.env), { assetCodeLike: staleFamily, olderThanMinutes: 30 });
     await fleet.query(
       `DELETE FROM bms.work_orders
         WHERE asset_id IN (
@@ -243,6 +246,8 @@ describe.skipIf(!connectionString)("F4.285 — the work-order routes refuse a ba
           [actorUserId, SUITE_START],
         );
       }
+      // E3.1 (migration 0144): events first, as the superuser — the fleet role cannot delete them.
+      await deleteWorkOrderEvents(resolveIntegrationRoleUrl(connectionString as string, "superuser", process.env), { assetCodeLike: `${PREFIX}%` });
       await ownerPool.query(
         `DELETE FROM bms.work_orders
           WHERE asset_id IN (SELECT id FROM bms.assets WHERE code LIKE $1)`,
