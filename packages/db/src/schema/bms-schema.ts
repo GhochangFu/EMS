@@ -208,6 +208,11 @@ export const rtus = bmsSchema.table("rtus", {
   // configured, so the freshness window follows the learned median gap. The CHECK
   // (rtus_expected_interval_seconds_check, > 0) is SQL-only, like locations_org_code_idx.
   expectedIntervalSeconds: integer("expected_interval_seconds"),
+  // 0141 (E7.2, ADR 0123 decision 6): the edge gateway that serves this RTU; NULL = the cloud
+  // host dials it. The composite FK (rtus_edge_gateway_id_organization_id_fkey, to
+  // edge_gateways (id, organization_id)) is SQL-only: .references() would import
+  // edge-gateways-schema.ts, which imports this file (plan C9).
+  edgeGatewayId: uuid("edge_gateway_id"),
   stationCode: varchar("station_code", { length: 64 }),
   stationName: varchar("station_name", { length: 255 }),
   ingestEnabled: boolean("ingest_enabled").notNull().default(false),

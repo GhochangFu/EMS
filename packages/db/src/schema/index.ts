@@ -13,3 +13,4 @@ export * from "./mimic-layouts-schema";
 export * from "./copilot-schema";
 export * from "./trend-points-schema";
 export * from "./calc-backfill-schema";
+export * from "./edge-gateways-schema";

@@ -458,3 +458,61 @@ export async function assertAnInactiveRtuIsNotPlanned(pool: pg.Pool): Promise<vo
     client.release();
   }
 }
+
+/**
+ * `E7.2` / ADR 0123 decision 6 — `rtus.edge_gateway_id` (migration `0141`) is
+ * selected, never filtered: assigning an RTU to a gateway changes no row count,
+ * and its rows read the gateway's id as a JS string, so `planEndpoints` can move
+ * it into `edgeServed`. Inside `BEGIN … ROLLBACK` on one client; the gateway is
+ * inserted as `bms_fleet`, which also proves 0041's default privileges reached
+ * the new table.
+ */
+export async function assertTheEdgeGatewayIsSelectedNotFiltered(pool: pg.Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const { rows: candidates } = await client.query<{ rtu_id: string; organization_id: string }>(
+      ORGANIZATION_RTU_QUERY,
+    );
+    expect(candidates.length, "no ingest-bound RTU to assign to a gateway").toBe(1);
+    const { rtu_id: rtuId, organization_id: organizationId } = candidates[0]!;
+
+    const baseline = await bindingRows(client);
+    for (const row of baseline) {
+      expect(Object.prototype.hasOwnProperty.call(row, "edge_gateway_id"), "edge_gateway_id is missing").toBe(true);
+    }
+    const before = baseline.filter((r) => r.rtu_id === rtuId);
+    expect(before.length, "the chosen RTU is missing from the binding query").toBeGreaterThan(0);
+    const original = before.map((r) => r.edge_gateway_id);
+
+    await client.query("BEGIN");
+    try {
+      const { rows: inserted } = await client.query<{ id: string }>(
+        `INSERT INTO bms.edge_gateways (organization_id, code, name)
+         VALUES ($1, $2, 'E7.2 bindings fixture') RETURNING id`,
+        [organizationId, `E72-BINDINGS-${Date.now()}`],
+      );
+      const gatewayId = inserted[0]!.id;
+      await client.query("UPDATE bms.rtus SET edge_gateway_id = $2 WHERE id = $1", [rtuId, gatewayId]);
+
+      const assigned = await bindingRows(client);
+      expect(
+        assigned.length,
+        "assigning an RTU to a gateway changed the row count — the SQL is filtering on it, " +
+          "so the receiver would never learn the RTU's points",
+      ).toBe(baseline.length);
+      const after = assigned.filter((r) => r.rtu_id === rtuId);
+      expect(after.length).toBe(before.length);
+      expect(
+        after.every((r) => r.edge_gateway_id === gatewayId),
+        `the RTU's rows must read the gateway id, got ${JSON.stringify(after.map((r) => r.edge_gateway_id))}`,
+      ).toBe(true);
+    } finally {
+      await client.query("ROLLBACK");
+    }
+
+    const restored = (await bindingRows(client)).filter((r) => r.rtu_id === rtuId).map((r) => r.edge_gateway_id);
+    expect(restored, "the fixture must leave nothing behind").toEqual(original);
+  } finally {
+    client.release();
+  }
+}

@@ -109,6 +109,8 @@ export function row(overrides: Partial<BindingRow> = {}): BindingRow {
     // ADR 0116 decision 4: no format named, so the join is null.
     payload_format_code: null,
     payload_format_definition: null,
+    // ADR 0123 decision 6: no gateway, so the cloud host serves the RTU.
+    edge_gateway_id: null,
     ...overrides,
   };
 }

@@ -84,6 +84,11 @@ export const FORCED_TABLES = [
   // `tests/f4.311-calc-backfill-runs-schema.integration.test.ts` holds the
   // non-vacuous half (a cross-organization insert is refused).
   "calc_backfill_runs",
+  // `E7.2` (ADR 0123 decision 5, migration `0141`). A strict tenant table. The
+  // count-0 check below is VACUOUS for it (the seed writes no gateway);
+  // `tests/e7.2-edge-gateways-schema.integration.test.ts` holds the
+  // non-vacuous half (organization B neither reads nor writes A's gateway).
+  "edge_gateways",
 ] as const;
 
 function assert(condition: boolean, message: string): void {
