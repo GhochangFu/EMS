@@ -22,9 +22,9 @@ services:
     command: ["node", "dist/edge-main.js"]
     # The box has no operator on site: come back after a crash or a reboot.
     restart: unless-stopped
-    # Shutdown stops the uplink first (later batches spill to disk), then each
-    # supervisor (10 s each, bounded), then writes the clock mark: more than
-    # Docker's default 10 s before SIGKILL.
+    # Shutdown stops the uplink first (later batches spill to disk), then the
+    # supervisors, together (5 s disconnect + 10 s settle, each bounded), then
+    # writes the clock mark: more than Docker's default 10 s before SIGKILL.
     stop_grace_period: 30s
     # EDGE_GATEWAY_TOKEN and every EDGE_CRED_<NAME> come from here, never
     # from the config file and never from the cloud (ADR 0123 decision 3).

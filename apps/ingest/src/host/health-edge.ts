@@ -1,5 +1,5 @@
 import type { EdgeClockReport } from "./edge-clock.js";
-import { REFUSED_RECENT_MS, type UplinkStats } from "./uplink-client.js";
+import type { UplinkStats } from "./uplink-client.js";
 
 /**
  * The health body's edge line (`E7.2`, ADR 0123 decision 8, plan T5.5 and
@@ -24,14 +24,13 @@ export type EdgeHealth = {
 
 /**
  * Whether the edge line moves the header verdict to `degraded`: a clock that
- * is not `synced`, or a batch refused for good within the last
- * `REFUSED_RECENT_MS` — a recent window, so one refusal an hour ago does not
- * degrade the box for ever (AGENTS.md §4.6).
+ * is not `synced`, or a refusal by the cloud within the last ten minutes on
+ * the client's monotonic clock (`refusedRecently`) — a recent window, so one
+ * refusal an hour ago does not degrade the box for ever (AGENTS.md §4.6), and
+ * a wall-clock step cannot stretch it.
  */
-export function edgeDegrades(edge: EdgeHealth | undefined, now: Date): boolean {
-  if (edge === undefined) return false;
-  const refusedAt = edge.uplink.lastRefusedAt?.getTime();
-  return edge.clock !== "synced" || (refusedAt !== undefined && now.getTime() - refusedAt < REFUSED_RECENT_MS);
+export function edgeDegrades(edge: EdgeHealth | undefined): boolean {
+  return edge !== undefined && (edge.clock !== "synced" || edge.uplink.refusedRecently);
 }
 
 /** The one `edge …` line: the clock, the last uplink outcome, and the uplink counters. */

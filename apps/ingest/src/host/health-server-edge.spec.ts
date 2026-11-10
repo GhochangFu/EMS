@@ -35,6 +35,7 @@ function edge(overrides: Partial<EdgeHealth> = {}): EdgeHealth {
       unattributed: 5,
       invalid: 6,
       deviceTimeDropped: 7,
+      refusedRecently: false,
       lastOutcome: "200",
     },
     ...overrides,
@@ -86,11 +87,12 @@ export function theCloudHasNoEdgeLine(): void {
   assert(body.startsWith("ingest-host ok "), `the cloud verdict is unchanged: ${body.split("\n")[0]}`);
 }
 
-/** A batch refused for good degrades the verdict for ten minutes, then not: a window, not a counter. */
+/** A recent refusal degrades the verdict; the window itself is the client's, on its monotonic clock. */
 export function aRecentRefusalDegradesForTenMinutes(): void {
-  const refused = (agoMs: number) =>
-    renderHealth(snapshot(edge({ uplink: { ...edge().uplink, lastRefusedAt: new Date(NOW.getTime() - agoMs) } })), NOW);
-  assert(refused(60_000).startsWith("ingest-host degraded "), "a refusal a minute ago degrades");
-  assert(refused(600_000).startsWith("ingest-host ok "), "ten minutes on it no longer does");
-  assert(refused(60_000).includes("lastRefused=2026-11-10T08:59:00.000Z"), "and the line says when");
+  const at = new Date(NOW.getTime() - 60_000);
+  const body = (recent: boolean) =>
+    renderHealth(snapshot(edge({ uplink: { ...edge().uplink, lastRefusedAt: at, refusedRecently: recent } })), NOW);
+  assert(body(true).startsWith("ingest-host degraded "), "a recent refusal degrades");
+  assert(body(false).startsWith("ingest-host ok "), "past the window it no longer does");
+  assert(body(true).includes("lastRefused=2026-11-10T08:59:00.000Z"), "and the line says when");
 }

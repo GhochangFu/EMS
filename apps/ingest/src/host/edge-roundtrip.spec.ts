@@ -30,9 +30,10 @@ import { startUplinkServer, WRITE_RETRY_AFTER_SECONDS } from "./uplink-server.js
  * as `edge-config.ts` requires, and the injected `fetch` sends the request to
  * `http://127.0.0.1:<port>` — the edge itself has no plain-text uplink.
  *
- * **The edge clock is skewed, not slept.** The listener answers a failed
- * write `503` with `Retry-After: 30`, which the client honours; the harness
- * moves the edge clock 31 s forward at recovery instead of waiting it out.
+ * **The edge clocks are skewed, not slept.** The listener answers a failed
+ * write `503` with `Retry-After: 30`, which the client honours on its
+ * monotonic clock; the harness moves both the edge clock and that monotonic
+ * clock 31 s forward at recovery instead of waiting it out.
  */
 
 export const EDGE_TOKEN = `bmsgw_${"E72edgeRoundTrip".padEnd(43, "e")}`;
@@ -111,6 +112,8 @@ export async function startEdge(deps: {
     maxBacklogSamplesPerS: 100_000,
     buffered: () => store.backlog().reduce((n, b) => n + b.buffered, 0),
     clock: () => "synced",
+    // `Retry-After` runs on the monotonic clock, so the skew moves it too.
+    monoNow: () => performance.now() + skew.ms,
   });
   let sink: ((samples: readonly SourceSample[]) => void) | undefined;
   const factory = fakePushFactory((emit) => {

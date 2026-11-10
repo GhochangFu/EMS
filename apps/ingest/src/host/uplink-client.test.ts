@@ -7,7 +7,11 @@ import {
   noPostAfterTheCallerTimedOut,
   stopRejectsAndAbortsInFlight,
   aHungPostIsAbortedAtTwentySeconds,
-  anAllFutureRx200IsRetryLater,
+  aClockRejected200IsDeliveredAndDegrades,
+  aSampleTooLargeToSendIsDroppedAndVisible,
+  aWallStepDoesNotFreezeTheThrottle,
+  fiveEndpointsReplayingAtTheFloorAllProgress,
+  moreThanFiveHundredSamplesAreSplitByCount,
   aSplitBatchWithAFailedHalfIsResentWhole,
   oneBadSampleNeverSinksTheBatch,
   onlyAValid200sDateIsTrusted,
@@ -39,7 +43,7 @@ describe("E7.2 — the edge uplink client (ADR 0123 decisions 4 and 9, plan T5.4
     await theFloorRateWaitsTenSeconds();
   });
 
-  it("drops a batch only on the receiver's own 400/413 code; retries everything else (C4, Amendment 2)", async () => {
+  it("drops a batch only on the receiver's 400 bad-schema; retries everything else (C4, Amendment 2)", async () => {
     await everyOutcomeIsHandled();
   });
 
@@ -63,8 +67,24 @@ describe("E7.2 — the edge uplink client (ADR 0123 decisions 4 and 9, plan T5.4
     await onlyAValid200sDateIsTrusted();
   });
 
-  it("treats a 200 that refused every sample as futureRx as retry-later", async () => {
-    await anAllFutureRx200IsRetryLater();
+  it("delivers a 200 that refused every sample as futureRx, and degrades health for the window (Q7a)", async () => {
+    await aClockRejected200IsDeliveredAndDegrades();
+  });
+
+  it("lets five endpoints replay at the 50/s floor while the live path posts", async () => {
+    await fiveEndpointsReplayingAtTheFloorAllProgress();
+  });
+
+  it("keeps the throttle on the monotonic clock through a wall-clock step", async () => {
+    await aWallStepDoesNotFreezeTheThrottle();
+  });
+
+  it("splits more than 500 samples by count", async () => {
+    await moreThanFiveHundredSamplesAreSplitByCount();
+  });
+
+  it("drops, counts and shows a sample too large to send", async () => {
+    await aSampleTooLargeToSendIsDroppedAndVisible();
   });
 
   it("sends a sample without a device time that does not fit, and drops only a sample that cannot be sent", async () => {
@@ -75,7 +95,7 @@ describe("E7.2 — the edge uplink client (ADR 0123 decisions 4 and 9, plan T5.4
     await aSplitBatchWithAFailedHalfIsResentWhole();
   });
 
-  it("refuses a backlog batch past a 30 s throttle wait without reserving (no livelock)", async () => {
+  it("refuses a backlog batch past the ≈50 s throttle budget without reserving", async () => {
     await aFullThrottleRefusesWithoutReserving();
   });
 

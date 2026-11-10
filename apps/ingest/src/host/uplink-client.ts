@@ -5,6 +5,7 @@ import {
   type IngestProtocol,
   UPLINK_MAX_BODY_BYTES,
   UPLINK_MAX_DECODED_BYTES,
+  UPLINK_MAX_SAMPLES,
   type UplinkBatch,
   UPLINK_REFUSAL_STATUS,
   type UplinkRefusal,
@@ -62,14 +63,6 @@ export const BACKLOG_AGE_MS = 10_000;
 export const RETRY_AFTER_CAP_MS = 300_000;
 /** The most of a response body the client reads; past it the post is aborted and retried. */
 export const RESPONSE_MAX_BYTES = 65_536;
-/**
- * The longest a backlog batch waits on the throttle. A longer wait is a
- * retry-later at once, **without** reserving a share: with many endpoints
- * replaying at the 50/s floor the queue of reservations would otherwise
- * outgrow every caller's write timeout and each would wait for a slot it
- * never uses.
- */
-export const BACKLOG_WAIT_BUDGET_MS = 30_000;
 /** How long a batch waits for the post in flight before it is a retry-later. */
 export const LOCK_WAIT_MS = 20_000;
 /**
@@ -83,12 +76,34 @@ export const LOCK_WAIT_MS = 20_000;
 export const EDGE_WRITE_TIMEOUT_MS = 90_000;
 
 /**
- * Final only when the **receiver** says so: a `400` or `413` whose body is
- * `{ error }` with one of its own codes for that status. A proxy's page, a
- * `422`, any other body is retried (ADR 0123 Amendment 2).
+ * The longest a backlog batch waits on the throttle: whatever the caller's
+ * write timeout leaves after the lock wait and one post (≈ 50 s). Past it the
+ * batch is retry-later at once **without** reserving a share, so the queue of
+ * reservations can never outgrow every caller's timeout. Five endpoints
+ * replaying full batches at the 50/s floor (waits 0–40 s) all fit.
+ *
+ * That give-up is a rejected replay write, so the supervisor opens that
+ * endpoint's breaker and its live batches spill until the next replay probe
+ * succeeds — delayed, not lost. Avoiding it needs a supervisor change, which
+ * this PR does not make (plan M3).
+ */
+export const BACKLOG_WAIT_BUDGET_MS = EDGE_WRITE_TIMEOUT_MS - UPLINK_POST_TIMEOUT_MS - LOCK_WAIT_MS;
+
+/**
+ * Final only for the **content**: the receiver's own `400 bad-schema`. Every
+ * sample is checked against the same `uplinkSampleSchema` before it is sent,
+ * so this should only ever happen on a version mismatch between the two ends.
+ * The receiver's transport refusals (`bad-encoding`, `bad-gzip`, `bad-json`,
+ * `too-large`) are retry-later — a middlebox rewriting the body must not
+ * drain the backlog — and so are a proxy's page and a `422` (ADR 0123
+ * Amendment 2).
  */
 function isTerminal(status: number, code: string | undefined): boolean {
-  if (status !== 400 && status !== 413) return false;
+  return status === UPLINK_REFUSAL_STATUS["bad-schema"] && code === "bad-schema";
+}
+
+/** One of the receiver's own refusal codes, answered with its own status. */
+function isReceiverRefusal(status: number, code: string | undefined): boolean {
   return (
     code !== undefined &&
     Object.prototype.hasOwnProperty.call(UPLINK_REFUSAL_STATUS, code) &&
@@ -146,6 +161,12 @@ export type UplinkClientDeps = {
    * unparseable headers are never passed on.
    */
   readonly onServerTime?: (serverMs: number) => void;
+  /**
+   * Monotonic ms. The throttle schedule, `Retry-After`, the caller deadline
+   * and the refusal window run on it, so a clock resync cannot freeze replay
+   * or stretch a window by the size of the step. Defaults to `performance.now`.
+   */
+  readonly monoNow?: () => number;
 };
 
 /** Counters and gauges for the edge health line. Rendered, never compared (AGENTS.md §4.6). */
@@ -164,8 +185,14 @@ export type UplinkStats = {
   readonly invalid: number;
   /** Samples sent without `at` because their device time did not fit the wire; the cloud uses `rx`. */
   readonly deviceTimeDropped: number;
-  /** When a batch was last refused for good; the health verdict degrades for `REFUSED_RECENT_MS` after it. */
+  /**
+   * When the cloud last refused something: a batch dropped, a transport
+   * refusal, a sample too large to send, or samples rejected `futureRx` /
+   * `tooOld` in a `200`. For display.
+   */
   readonly lastRefusedAt?: Date;
+  /** Whether that was within `REFUSED_RECENT_MS` on the monotonic clock — what degrades health. */
+  readonly refusedRecently: boolean;
   /** The last outcome: an HTTP status, `network` or `timeout`; absent before the first post. */
   readonly lastOutcome?: string;
   /** Before this, nothing is posted (`Retry-After`). */
@@ -284,8 +311,11 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
   const { scheduler, logger } = deps;
   const endpoint = new URL(EDGE_UPLINK_PATH, deps.url).href;
   const acquire = createPostLock(scheduler);
+  const mono = deps.monoNow ?? (() => performance.now());
   const msPerSample = 1000 / deps.maxBacklogSamplesPerS;
+  /** Monotonic ms. */
   let nextBacklogAtMs = Number.NEGATIVE_INFINITY;
+  /** Monotonic ms. */
   let notBeforeMs: number | undefined;
   /** The last retry-later reason logged, so a long outage writes one line per change, not per batch. */
   let lastProblem: string | undefined;
@@ -303,6 +333,14 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
   };
   let lastOutcome: string | undefined;
   let lastRefusedAt: Date | undefined;
+  let lastRefusedMono: number | undefined;
+  const noteRefused = (): void => {
+    lastRefusedAt = scheduler.now();
+    lastRefusedMono = mono();
+  };
+  /** The cloud's clock guards, logged at most once a minute with the counts since. */
+  let clockRejectLoggedMono: number | undefined;
+  const clockRejectPending = { futureRx: 0, tooOld: 0 };
   let stopping = false;
   /** Posts in flight, aborted by `stop()`. */
   const inFlight = new Set<AbortController>();
@@ -321,7 +359,7 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
     unsentPending.invalid = 0;
   };
 
-  const deferred = (): boolean => notBeforeMs !== undefined && scheduler.now().getTime() < notBeforeMs;
+  const deferred = (): boolean => notBeforeMs !== undefined && mono() < notBeforeMs;
 
   const retryLater = (outcome: string, reason: string): never => {
     lastOutcome = outcome;
@@ -342,6 +380,13 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
       clock: deps.clock(),
       samples: [...samples],
     };
+    if (samples.length > UPLINK_MAX_SAMPLES) {
+      // The receiver refuses more than 500 by count; the supervisor's batch size is not relied on.
+      return [
+        ...(await encode(samples.slice(0, UPLINK_MAX_SAMPLES), backlog)),
+        ...(await encode(samples.slice(UPLINK_MAX_SAMPLES), backlog)),
+      ];
+    }
     const json = Buffer.from(JSON.stringify(batch), "utf8");
     const body = json.length > UPLINK_MAX_DECODED_BYTES ? undefined : await gzip(json);
     if (body !== undefined && body.length <= UPLINK_MAX_BODY_BYTES) {
@@ -350,7 +395,7 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
     if (samples.length === 1) {
       // One sample over 256 KiB compressed: the receiver would answer 413 for ever.
       totals.uplinkRefused += 1;
-      lastRefusedAt = scheduler.now();
+      noteRefused();
       logger.error("uplink sample too large to send; dropped", { bytes: json.length });
       return [];
     }
@@ -430,10 +475,20 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
       totals.futureRx += rejected.futureRx;
       totals.tooOld += rejected.tooOld;
       totals.unresolved += rejected.unresolved;
-      if (count > 0 && rejected.futureRx === count) {
-        // Every sample is ahead of the cloud's clock: our clock is wrong, not the
-        // data. Keep it on disk under its bounds rather than delete a site's telemetry.
-        return retryLater("future-rx", "every sample refused as ahead of the cloud's clock");
+      // ADR 0123 Q7a as ruled: the cloud rejects and counts a sample outside its
+      // clock bounds and answers 200, so the batch is delivered. What this
+      // edge can do is say so: health degrades for the window, and one line.
+      if (rejected.futureRx > 0 || rejected.tooOld > 0) {
+        noteRefused();
+        clockRejectPending.futureRx += rejected.futureRx;
+        clockRejectPending.tooOld += rejected.tooOld;
+        const at = mono();
+        if (clockRejectLoggedMono === undefined || at - clockRejectLoggedMono >= 60_000) {
+          clockRejectLoggedMono = at;
+          logger.warn("cloud rejected samples outside its clock bounds; check this box's clock", { ...clockRejectPending });
+          clockRejectPending.futureRx = 0;
+          clockRejectPending.tooOld = 0;
+        }
       }
       totals.batchesSent += 1;
       lastOutcome = "200";
@@ -453,13 +508,17 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
     if (isTerminal(status, code)) {
       totals.uplinkRefused += count;
       lastOutcome = String(status);
-      lastRefusedAt = scheduler.now();
+      noteRefused();
       logger.error("uplink refused a batch; it cannot be retried and is dropped", { status, samples: count, error: code });
       return;
     }
+    if (isReceiverRefusal(status, code) && (status === 400 || status === 413)) {
+      // The receiver refused the transport (encoding, gzip, JSON, size): kept, and visible.
+      noteRefused();
+    }
     const wait = retryAfterMs(retryAfter, scheduler.now().getTime());
     if (wait !== undefined && (status === 429 || status === 503)) {
-      notBeforeMs = scheduler.now().getTime() + wait;
+      notBeforeMs = mono() + wait;
     }
     return retryLater(String(status), `answered ${status}`);
   }
@@ -511,20 +570,21 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
           // `lastOutcome` keeps the status that set the deferral.
           throw new UplinkRetryLater("deferred by the receiver's Retry-After");
         }
-        const callStartMs = scheduler.now().getTime();
-        const backlog = callStartMs - oldestMs > BACKLOG_AGE_MS;
+        const callStartMono = mono();
+        const backlog = scheduler.now().getTime() - oldestMs > BACKLOG_AGE_MS;
         let share = 0;
         if (backlog) {
-          // A virtual schedule, not a refilling bucket: a backlog batch starts
-          // no sooner than the previous one's share of the cap has elapsed.
-          const startMs = Math.max(callStartMs, nextBacklogAtMs);
-          if (startMs - callStartMs > BACKLOG_WAIT_BUDGET_MS) {
+          // A virtual schedule on the monotonic clock, not a refilling bucket: a
+          // backlog batch starts no sooner than the previous one's share of the
+          // cap has elapsed, and a wall-clock step cannot move the schedule.
+          const startMono = Math.max(callStartMono, nextBacklogAtMs);
+          if (startMono - callStartMono > BACKLOG_WAIT_BUDGET_MS) {
             throw new UplinkRetryLater("backlog throttle is full");
           }
           share = wire.length * msPerSample;
-          nextBacklogAtMs = startMs + share;
-          if (startMs > callStartMs) {
-            await scheduler.sleep(startMs - callStartMs, new AbortController().signal);
+          nextBacklogAtMs = startMono + share;
+          if (startMono > callStartMono) {
+            await scheduler.sleep(startMono - callStartMono, new AbortController().signal);
           }
         }
         let posted = false;
@@ -534,7 +594,7 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
             for (const { count, body } of await encode(wire, backlog)) {
               // The supervisor stops waiting after EDGE_WRITE_TIMEOUT_MS and spills
               // the batch: a post that could finish only after that is not sent.
-              if (scheduler.now().getTime() + UPLINK_POST_TIMEOUT_MS > callStartMs + EDGE_WRITE_TIMEOUT_MS) {
+              if (mono() + UPLINK_POST_TIMEOUT_MS > callStartMono + EDGE_WRITE_TIMEOUT_MS) {
                 throw new UplinkRetryLater("the caller's write timeout has passed");
               }
               posted = true;
@@ -563,7 +623,10 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
         ...totals,
         ...(lastOutcome === undefined ? {} : { lastOutcome }),
         ...(lastRefusedAt === undefined ? {} : { lastRefusedAt }),
-        ...(notBeforeMs === undefined || !deferred() ? {} : { notBefore: new Date(notBeforeMs) }),
+        refusedRecently: lastRefusedMono !== undefined && mono() - lastRefusedMono < REFUSED_RECENT_MS,
+        ...(notBeforeMs === undefined || !deferred()
+          ? {}
+          : { notBefore: new Date(scheduler.now().getTime() + (notBeforeMs - mono())) }),
       };
     },
   };

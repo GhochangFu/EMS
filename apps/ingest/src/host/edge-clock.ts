@@ -22,7 +22,8 @@ import { realScheduler, type Scheduler } from "./supervisor.js";
  *   `observeServerTime`) is within `TRUST_WINDOW_MS` of the wall clock: then
  *   the wall clock is right and the mark was wrong (a mark written while the
  *   clock was fast, a crash margin), so the guard returns to the wall clock.
- *   That is the one case `rx` steps backwards, logged once with its size.
+ *   That is the one case `rx` steps backwards, logged whenever the step is
+ *   over a second.
  *   Without it a mark even slightly ahead never converges, and a mark far
  *   ahead stamps every row into the cloud's `futureRx` refusal.
  * - While `synced`, a trusted cloud time more than `SKEW_WINDOW_MS` away
@@ -32,7 +33,9 @@ import { realScheduler, type Scheduler } from "./supervisor.js";
  * **A crash cannot re-issue an `rx`.** A mark written by the periodic persist
  * may be up to one interval plus one tick stale, so on load the estimate
  * starts at `mark + LOAD_MARGIN_MS` — unless the mark says it was written by
- * a clean shutdown, after which nothing was stamped.
+ * a clean shutdown, after which nothing was stamped. A clean mark is
+ * replaced by an unclean one as soon as it is read, so a kill later in the
+ * run cannot reuse it. Writes are serialised on one chain.
  *
  * It is a `Scheduler` (plan M3): the supervisor stamps a live batch with
  * `scheduler.now()` and the store bounds its segments by the same clock.
@@ -143,8 +146,8 @@ export function createEdgeClock(deps: EdgeClockDeps): EdgeClock {
   let highMono = monoNow();
   let lastPersistMono: number | undefined;
   let tempCounter = 0;
-  /** A resync by cloud time is logged once per process: the log is for an operator, not a trace. */
-  let resyncLogged = false;
+  /** Every write runs here, one after another, so an older mark can never land after a newer one. */
+  let chain: Promise<void> = Promise.resolve();
 
   function now(): Date {
     const wall = wallNow();
@@ -171,16 +174,22 @@ export function createEdgeClock(deps: EdgeClockDeps): EdgeClock {
     return new Date(estimate);
   }
 
-  async function persist(options?: { readonly force?: boolean; readonly final?: boolean }): Promise<void> {
+  function persist(options?: { readonly force?: boolean; readonly final?: boolean }): Promise<void> {
     const mono = monoNow();
     if (options?.force !== true && lastPersistMono !== undefined && mono - lastPersistMono < MARK_PERSIST_INTERVAL_MS) {
-      return;
+      return chain;
     }
     lastPersistMono = mono;
+    // The mark's value is read when the write runs, not when it was asked for.
+    chain = chain.then(() => write(options?.final === true));
+    return chain;
+  }
+
+  async function write(final: boolean): Promise<void> {
     tempCounter += 1;
     // Unique per write, so a periodic and a forced persist never share a temp file.
     const temp = `${markPath}.${process.pid}.${tempCounter}.tmp`;
-    const body = { mark: now().toISOString(), ...(options?.final === true ? { clean: true } : {}) };
+    const body = { mark: now().toISOString(), ...(final ? { clean: true } : {}) };
     try {
       await fs.writeFile(temp, `${JSON.stringify(body)}\n`, { mode: 0o600 });
       await fs.rename(temp, markPath);
@@ -221,6 +230,11 @@ export function createEdgeClock(deps: EdgeClockDeps): EdgeClock {
           behindMs: floor - wall,
         });
       }
+      if (mark.clean) {
+        // Consume the clean flag at once: a kill later in this run must not let
+        // the next boot read `clean: true` and skip the crash margin.
+        await persist({ force: true });
+      }
     },
 
     observeServerTime(serverMs) {
@@ -239,8 +253,7 @@ export function createEdgeClock(deps: EdgeClockDeps): EdgeClock {
         skewed = false;
         high = wall;
         highMono = monoNow();
-        if (!resyncLogged) {
-          resyncLogged = true;
+        if (stepBackMs > 1_000) {
           logger.warn("edge clock resynced to the wall clock by the cloud's time; rx stepped back", { stepBackMs });
         }
         void persist({ force: true });

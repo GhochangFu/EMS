@@ -25,7 +25,7 @@ import { INGEST_PROTOCOLS } from "./ingest-protocols";
  * the two key sets equal.
  */
 
-/** Samples per batch. The edge splits anything larger; the cloud refuses it. */
+/** Samples per batch. The edge client splits a larger batch by count before sending (`uplink-client.ts`); the cloud refuses it. */
 export const UPLINK_MAX_SAMPLES = 500;
 /** Compressed (gzip) body bytes the receiver reads before it answers 413. */
 export const UPLINK_MAX_BODY_BYTES = 262_144;

@@ -32,7 +32,8 @@ const ingestSrc = join(repoRoot, "apps", "ingest", "src");
  * intact; `bare` has string and regex contents blanked too, for searching
  * code only.
  */
-function scan(src: string): { code: string; bare: string } {
+function scan(src: string): { code: string; bare: string; templateLoads: number } {
+  let templateLoads = 0;
   const code = src.split("");
   const bare = src.split("");
   const blank = (from: number, to: number, both: boolean): void => {
@@ -58,6 +59,8 @@ function scan(src: string): { code: string; bare: string } {
     } else if (c === '"' || c === "'" || c === "`") {
       let j = i + 1;
       while (j < src.length && src[j] !== c) j += src[j] === "\\" ? 2 : 1;
+      // A `${…}` expression is code the blanking would hide: a template holding a load is flagged whole.
+      if (c === "`" && /\b(import|require)\s*\(|\bcreateRequire\b/.test(src.slice(i + 1, j))) templateLoads += 1;
       blank(i + 1, j, false);
       i = j + 1;
       prev = c;
@@ -77,7 +80,7 @@ function scan(src: string): { code: string; bare: string } {
       i += 1;
     }
   }
-  return { code: code.join(""), bare: bare.join("") };
+  return { code: code.join(""), bare: bare.join(""), templateLoads };
 }
 
 /** `true` for `type X`, `{ type A, type B }` — a clause the compiler erases. */
@@ -104,7 +107,7 @@ function typeOnly(clause: string): boolean {
  * test rather than being trusted.
  */
 function runtimeImports(source: string): { specifiers: string[]; unfollowable: string[] } {
-  const { code, bare } = scan(source);
+  const { code, bare, templateLoads } = scan(source);
   const specifiers: string[] = [];
   const unfollowable: string[] = [];
   for (const match of code.matchAll(/(?:^|[\n;])\s*(?:import|export)\s+([^;'"]*?)\s*from\s*["']([^"']+)["']/g)) {
@@ -124,6 +127,9 @@ function runtimeImports(source: string): { specifiers: string[]; unfollowable: s
     } else {
       specifiers.push(spec[1]);
     }
+  }
+  for (let k = 0; k < templateLoads; k += 1) {
+    unfollowable.push("a template literal holding import(, require( or createRequire");
   }
   if (/\bcreateRequire\b/.test(bare)) {
     unfollowable.push("createRequire");
@@ -216,6 +222,8 @@ describe("E7.2 — the edge entry point cannot reach Postgres (ADR 0123 decision
       "createRequire",
     );
     expect(runtimeImports('log("import(x) in a string");').unfollowable).toEqual([]);
+    expect(runtimeImports("const x = `${await import(\"pg\")}`;").unfollowable).toHaveLength(1);
+    expect(runtimeImports("const y = `${require(name)}`;").unfollowable).toHaveLength(1);
   });
 
   it("edge-main.ts reaches no pg, no @bms/db and no cloud-only module", () => {

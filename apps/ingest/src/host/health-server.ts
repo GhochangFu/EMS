@@ -218,7 +218,7 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
     // Reporting `ok` with a mapped RTU publishing nothing is exactly what let
     // three silent PHE stations go unnoticed — see `stale rtu=` below.
     `ingest-host ${
-      unhealthy.length === 0 && stale.length === 0 && buffered === 0 && everyWritePathOk && !edgeDegrades(snapshot.edge, now)
+      unhealthy.length === 0 && stale.length === 0 && buffered === 0 && everyWritePathOk && !edgeDegrades(snapshot.edge)
         ? "ok"
         : "degraded"
     } ` +

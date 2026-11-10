@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  aCleanMarkIsConsumedOnLoad,
+  aPeriodicPersistInFlightCannotOverwriteAResync,
   aBackwardStepConvergesAfterOneTrustedResponse,
   aStaleMarkStartsPastItsMargin,
   aSyncedClockFarFromTheCloudIsSkewed,
@@ -38,7 +40,7 @@ describe("E7.2 — the edge clock guard (ADR 0123 decision 8, plan T5.3)", () =>
     await aStaleMarkStartsPastItsMargin();
   });
 
-  it("ends unsynced after one trusted cloud time (D9: mark 30 s ahead)", async () => {
+  it("ends unsynced after one trusted cloud time (D9; a mark an hour ahead)", async () => {
     await aTrustedCloudTimeEndsUnsyncedFromAMarkAhead();
   });
 
@@ -48,5 +50,13 @@ describe("E7.2 — the edge clock guard (ADR 0123 decision 8, plan T5.3)", () =>
 
   it("reports skewed, without shifting rx, when the cloud is over 60 s away", async () => {
     await aSyncedClockFarFromTheCloudIsSkewed();
+  });
+
+  it("consumes a clean mark on load, so a later kill cannot reuse it (SF3)", async () => {
+    await aCleanMarkIsConsumedOnLoad();
+  });
+
+  it("serialises persists, so a periodic write cannot land after a resync's", async () => {
+    await aPeriodicPersistInFlightCannotOverwriteAResync();
   });
 });

@@ -47,10 +47,12 @@ type Answer = { status: number; body?: unknown; headers?: Record<string, string>
 /** A scheduler whose throttle sleeps advance fake time, and whose abort/lock timers wait to be fired. */
 function fakeScheduler() {
   let nowMs = T0;
+  /** A wall-clock step that the monotonic clock (`nowMs`) does not see. */
+  let wallStepMs = 0;
   const sleeps: number[] = [];
   const timers: { ms: number; fire: () => void }[] = [];
   const scheduler: Scheduler = {
-    now: () => new Date(nowMs),
+    now: () => new Date(nowMs + wallStepMs),
     sleep: (ms, signal) => {
       const startedMs = nowMs;
       return new Promise<void>((resolve) => {
@@ -79,6 +81,9 @@ function fakeScheduler() {
       nowMs += ms;
     },
     nowMs: () => nowMs,
+    stepWall: (ms: number) => {
+      wallStepMs += ms;
+    },
   };
 }
 
@@ -117,6 +122,7 @@ function harness(answers: Answer[] | ((call: Call) => Answer), options: { rate?:
     buffered: () => 7,
     clock: () => "unsynced",
     onServerTime: (ms) => serverTimes.push(ms),
+    monoNow: clock.nowMs,
   });
   return { client, calls, lines, clock, serverTimes };
 }
@@ -227,15 +233,11 @@ export async function theFloorRateWaitsTenSeconds(): Promise<void> {
 /** C4: every row of the outcome table. */
 export async function everyOutcomeIsHandled(): Promise<void> {
   const errors: Error[] = [];
-  for (const [status, code] of [
-    [400, "bad-schema"],
-    [400, "bad-json"],
-    [413, "too-large"],
-  ] as const) {
+  for (const [status, code] of [[400, "bad-schema"]] as const) {
     const h = harness([{ status, body: { error: code } }]);
     await h.client.writerFor(ONE_DEVICE)(samples(4, new Date(T0)));
     assert(h.client.stats().uplinkRefused === 4, `${status} is terminal for the batch and counted`);
-    assert(h.client.stats().lastRefusedAt?.getTime() === T0, "and stamped for the health window");
+    assert(h.client.stats().lastRefusedAt?.getTime() === T0 && h.client.stats().refusedRecently, "and stamped for the health window");
     assert(h.lines.some((l) => l.includes('"level":"error"') && l.includes(`"status":${status}`)), `${status} logged`);
     assertNoToken(h.lines);
   }
@@ -244,6 +246,19 @@ export async function everyOutcomeIsHandled(): Promise<void> {
   const stats = ok.client.stats();
   assert(stats.batchesSent === 1 && stats.accepted === 5 && stats.foreignDevice === 1 && stats.tooOld === 2, "200 counts");
   assert(stats.unresolved === 3 && stats.uplinkRefused === 0, "the 200 body's own units, never compared to the batch");
+
+  // The receiver's transport refusals: kept, retried, and visible in health.
+  for (const [status, code] of [
+    [400, "bad-json"],
+    [400, "bad-gzip"],
+    [400, "bad-encoding"],
+    [413, "too-large"],
+  ] as const) {
+    const h = harness([{ status, body: { error: code } }]);
+    const error = await rejection(h.client.writerFor(ONE_DEVICE)(samples(4, new Date(T0))));
+    assert(error instanceof UplinkRetryLater && h.client.stats().uplinkRefused === 0, `${status} ${code} keeps the batch`);
+    assert(h.client.stats().refusedRecently, `${status} ${code} degrades health for the window`);
+  }
 
   const retry: Answer[] = [
     { status: 422, body: { error: "bad-schema" } },
@@ -343,6 +358,7 @@ export async function postsAreSerialisedLiveFirst(): Promise<void> {
     scheduler: clock.scheduler,
     logger: { info: noop, warn: noop, error: noop },
     maxBacklogSamplesPerS: 100_000,
+    monoNow: clock.nowMs,
     buffered: () => 0,
     clock: () => "synced",
   });
@@ -369,6 +385,7 @@ export async function onlyAValid200sDateIsTrusted(): Promise<void> {
     { status: 200, body: OK, headers: { date } },
     { status: 200, body: OK },
     { status: 200, body: OK, headers: { date: "not a date" } },
+    { status: 200, body: "<html>captive portal</html>", headers: { date } },
     { status: 503, headers: { date } },
   ]);
   const write = h.client.writerFor(ONE_DEVICE);
@@ -376,19 +393,28 @@ export async function onlyAValid200sDateIsTrusted(): Promise<void> {
   await write(samples(1, new Date(T0)));
   await write(samples(1, new Date(T0)));
   await rejection(write(samples(1, new Date(T0))));
+  await rejection(write(samples(1, new Date(T0))));
   assert(h.serverTimes.join(",") === String(Date.parse(date)), `only the first Date is passed on: ${h.serverTimes.join(",")}`);
 }
 
-/** A `200` that refused every sample as `futureRx` keeps the batch: a wrong clock must not delete it. */
-export async function anAllFutureRx200IsRetryLater(): Promise<void> {
+/**
+ * Q7a as ruled: a schema-valid `200` is delivered whatever its reject counts,
+ * even when every sample was `futureRx`. Health degrades for the window and
+ * the counters say why; nothing is retried.
+ */
+export async function aClockRejected200IsDeliveredAndDegrades(): Promise<void> {
   const all = { accepted: 0, rejected: { foreignDevice: 0, futureRx: 3, tooOld: 0, unresolved: 0 } };
-  const some = { accepted: 1, rejected: { foreignDevice: 0, futureRx: 2, tooOld: 0, unresolved: 0 } };
-  const h = harness([{ status: 200, body: all }, { status: 200, body: some }]);
+  const h = harness([{ status: 200, body: all }, { status: 200, body: OK }]);
   const write = h.client.writerFor(ONE_DEVICE);
-  const error = await rejection(write(samples(3, new Date(T0))));
-  assert(error instanceof UplinkRetryLater, "every sample futureRx is a retry-later");
   await write(samples(3, new Date(T0)));
-  assert(h.client.stats().futureRx === 5 && h.client.stats().batchesSent === 1, "a partial futureRx is delivered, and counted");
+  const stats = h.client.stats();
+  assert(stats.batchesSent === 1 && stats.futureRx === 3, `delivered and counted once: ${JSON.stringify(stats)}`);
+  assert(stats.refusedRecently && stats.lastRefusedAt?.getTime() === T0, "health degrades for the window");
+  assert(h.lines.filter((l) => l.includes("outside its clock bounds")).length === 1, "one warn");
+  h.clock.advance(600_000);
+  assert(!h.client.stats().refusedRecently, "ten minutes on, the window has passed");
+  await write(samples(1, new Date(h.clock.nowMs())));
+  assert(h.calls.length === 2 && h.client.stats().futureRx === 3, "nothing was re-sent, nothing double-counted");
 }
 
 /** One sample whose device time does not fit is sent without it; one that cannot be sent is dropped alone. */
@@ -425,26 +451,70 @@ export async function aSplitBatchWithAFailedHalfIsResentWhole(): Promise<void> {
   assert(keys(h.calls[2]) === keys(h.calls[0]) && keys(h.calls[3]) === keys(h.calls[1]), "with identical rx");
 }
 
-/** Many endpoints replaying at once at the 50/s floor: past a 30 s wait a batch is refused at once, unreserved. */
+/** Five endpoints replaying at the 50/s floor all make progress, and the live path keeps posting. */
+export async function fiveEndpointsReplayingAtTheFloorAllProgress(): Promise<void> {
+  const h = harness([], { rate: 50 });
+  const old = new Date(T0 - 3_600_000);
+  const outcome = (p: Promise<void>) =>
+    p.then(
+      () => "sent",
+      (error: unknown) => (error instanceof UplinkRetryLater ? "later" : "other"),
+    );
+  // 499 samples at 50/s is a 9.98 s share: waits 0 … 39.92 s all fit the ≈50 s budget.
+  // (499, not 500: the fake scheduler treats a sleep of exactly 20 s as the post or lock timer.)
+  const replays = Array.from({ length: 5 }, (_, i) =>
+    outcome(h.client.writerFor({ protocol: "mqtt", bindings: [{ deviceKey: `RTU-${i}` }] })(samples(499, old))),
+  );
+  const live = outcome(h.client.writerFor(ONE_DEVICE)(samples(1, new Date(T0))));
+  assert((await live) === "sent", "the live batch is posted while five replays wait");
+  const outcomes = await Promise.all(replays);
+  assert(outcomes.join(",") === "sent,sent,sent,sent,sent", `every replay progresses: ${outcomes.join(",")}`);
+  assert(BACKLOG_WAIT_BUDGET_MS === 50_000, `the budget is write − post − lock: ${BACKLOG_WAIT_BUDGET_MS}`);
+  assert(h.calls.filter((c) => !c.batch.backlog).length === 1 && h.calls.length === 6, "one live and five backlog posts");
+}
+
+/** Past the budget a batch is refused at once and reserves nothing. */
 export async function aFullThrottleRefusesWithoutReserving(): Promise<void> {
   const h = harness([], { rate: 50 });
   const old = new Date(T0 - 3_600_000);
-  // 400 samples at 50/s is an 8 s share: waits 0, 8, 16, 24 fit the budget; 32 does not.
+  // 9.98 s shares: waits 0 … 49.9 s fit; 59.88 and 69.86 s do not.
   const calls = Array.from({ length: 8 }, (_, i) =>
-    h.client.writerFor({ protocol: "mqtt", bindings: [{ deviceKey: `RTU-${i}` }] })(samples(400, old)).then(
+    h.client.writerFor({ protocol: "mqtt", bindings: [{ deviceKey: `RTU-${i}` }] })(samples(499, old)).then(
       () => "sent",
       (error: unknown) => (error instanceof UplinkRetryLater ? "later" : "other"),
     ),
   );
   const outcomes = await Promise.all(calls);
-  assert(BACKLOG_WAIT_BUDGET_MS === 30_000, "the budget is 30 s");
-  assert(outcomes.join(",") === "sent,sent,sent,sent,later,later,later,later", `outcomes: ${outcomes.join(",")}`);
-  assert(h.calls.length === 4, `only the admitted four were posted: ${h.calls.length}`);
+  assert(outcomes.join(",") === "sent,sent,sent,sent,sent,sent,later,later", `outcomes: ${outcomes.join(",")}`);
+  assert(h.calls.length === 6, `only the admitted six were posted: ${h.calls.length}`);
   assert(Math.max(...h.clock.sleeps) <= BACKLOG_WAIT_BUDGET_MS, `no wait past the budget: ${h.clock.sleeps.join(",")}`);
-  // The refused four reserved nothing: the next batch, once the four are through, waits only for them.
-  const next = h.client.writerFor(ONE_DEVICE)(samples(400, old));
-  await next;
-  assert(h.calls.length === 5, "a later batch is admitted once the schedule has room");
+}
+
+/** The throttle runs on the monotonic clock: a wall-clock step back of an hour does not freeze replay. */
+export async function aWallStepDoesNotFreezeTheThrottle(): Promise<void> {
+  const h = harness([], { rate: 500 });
+  const write = h.client.writerFor(ONE_DEVICE);
+  await write(samples(500, new Date(T0 - 7_200_000)));
+  h.clock.stepWall(-3_600_000);
+  await write(samples(500, new Date(T0 - 7_200_000)));
+  assert(h.clock.sleeps.join(",") === "1000", `one share, not an hour: ${h.clock.sleeps.join(",")}`);
+}
+
+/** More than 500 samples are split by count, whatever their size. */
+export async function moreThanFiveHundredSamplesAreSplitByCount(): Promise<void> {
+  const h = harness([]);
+  await h.client.writerFor(ONE_DEVICE)(samples(1_200, new Date(T0)));
+  assert(h.calls.map((c) => c.batch.samples.length).join(",") === "500,500,200", `by count: ${h.calls.map((c) => c.batch.samples.length).join(",")}`);
+}
+
+/** One sample too large to ever send is dropped, counted, and stamps the health window. */
+export async function aSampleTooLargeToSendIsDroppedAndVisible(): Promise<void> {
+  const h = harness([]);
+  const huge = [{ sample: { sourceKey: randomBytes(400_000).toString("base64"), value: 1, deviceKey: "RTU-1" }, receivedAt: new Date(T0) }];
+  await h.client.writerFor(ONE_DEVICE)(huge);
+  const stats = h.client.stats();
+  assert(h.calls.length === 0 && stats.uplinkRefused === 1, "dropped and counted");
+  assert(stats.refusedRecently && stats.lastRefusedAt?.getTime() === T0, "and visible in health");
 }
 
 /** A batch that gives up before posting gives its throttle share back. */

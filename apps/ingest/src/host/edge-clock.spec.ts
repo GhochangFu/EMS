@@ -170,7 +170,8 @@ export async function aStaleMarkStartsPastItsMargin(): Promise<void> {
 
 /** D9: a mark 30 s ahead with a correct wall clock converges after one trusted cloud time. */
 export async function aTrustedCloudTimeEndsUnsyncedFromAMarkAhead(): Promise<void> {
-  const h = harness(mark(T0 + 30_000, true));
+  // An hour ahead, further than the elapsed time, so the reset of the high-water mark is what makes `synced` stick.
+  const h = harness(mark(T0 + 3_600_000, true));
   await h.clock.load();
   h.advance(60_000);
   assert(h.clock.state() === "unsynced", "the wall never reaches mark + elapsed on its own");
@@ -180,10 +181,13 @@ export async function aTrustedCloudTimeEndsUnsyncedFromAMarkAhead(): Promise<voi
   h.clock.observeServerTime(T0 + 60_000 + 1_000);
   assert(h.clock.state() === "synced" && h.clock.report() === "synced", "one trusted response resyncs");
   assert(h.clock.scheduler.now().getTime() === T0 + 60_000, "now is the wall clock again");
+  h.advance(1_000);
+  assert(h.clock.scheduler.now().getTime() === T0 + 61_000 && h.clock.state() === "synced", "and stays synced");
   const resync = h.lines.filter((l) => l.message.includes("resynced"));
-  assert(resync.length === 1 && resync[0]?.fields?.stepBackMs === 30_000, `logged once with the step: ${JSON.stringify(resync)}`);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert(h.writes.at(-1)?.data.includes(new Date(T0 + 60_000).toISOString()) === true, "the mark is reset to the wall clock");
+  assert(resync.length === 1 && resync[0]?.fields?.stepBackMs === 3_600_000, `logged with the step: ${JSON.stringify(resync)}`);
+  await h.clock.persist(); // inside the interval: returns the chain the resync's write is on
+  const reset = Date.parse((JSON.parse(h.writes.at(-1)?.data ?? "{}") as { mark?: string }).mark ?? "");
+  assert(reset >= T0 + 60_000 && reset <= T0 + 61_000, `the mark is reset to the wall clock: ${reset - T0}`);
 }
 
 /** A 2 s step back while synced goes unsynced, then one trusted response returns it to synced. */
@@ -213,4 +217,90 @@ export async function aSyncedClockFarFromTheCloudIsSkewed(): Promise<void> {
   assert(h.clock.scheduler.now().getTime() === T0, "rx stays the wall clock: no offset correction");
   h.clock.observeServerTime(T0 + 5_000);
   assert(h.clock.report() === "synced", "a close cloud time clears it");
+}
+
+/** A shared, file-backed fake: two runs of the box over one volume. */
+function volume() {
+  const files = new Map<string, string>();
+  let wall = T0;
+  let mono = 0;
+  let hold: Promise<void> | undefined;
+  const fs: EdgeClockFs = {
+    async readFile(path) {
+      const text = files.get(path);
+      if (text === undefined) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      return text;
+    },
+    async writeFile(path, data) {
+      const gate = hold;
+      hold = undefined;
+      if (gate !== undefined) await gate;
+      files.set(path, data);
+    },
+    async rename(from, to) {
+      files.set(to, files.get(from) ?? "");
+      files.delete(from);
+    },
+  };
+  const quiet = { info: () => undefined, warn: () => undefined, error: () => undefined };
+  return {
+    files,
+    boot: () => createEdgeClock({ markPath: MARK_PATH, wallNow: () => wall, monoNow: () => mono, fs, logger: quiet }),
+    setWall: (ms: number) => {
+      wall = ms;
+    },
+    advance: (ms: number) => {
+      wall += ms;
+      mono += ms;
+    },
+    /** The next `writeFile` waits until the returned function is called. */
+    holdNextWrite: (): (() => void) => {
+      let release: () => void = () => undefined;
+      hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return release;
+    },
+  };
+}
+
+/** SF3: clean stop, boot with a reset clock, stamp, kill: the next boot never re-issues an rx. */
+export async function aCleanMarkIsConsumedOnLoad(): Promise<void> {
+  const v = volume();
+  const first = v.boot();
+  await first.load();
+  v.advance(30_000);
+  first.scheduler.now();
+  await first.persist({ force: true, final: true });
+  const cleanAt = first.scheduler.now().getTime();
+  // Boot with the RTC reset an hour back.
+  v.setWall(cleanAt - 3_600_000);
+  const second = v.boot();
+  await second.load();
+  assert(!(v.files.get(MARK_PATH) ?? "").includes("clean"), "the clean flag is consumed on load");
+  v.advance(50_000);
+  const issued = second.scheduler.now().getTime();
+  // Killed: no persist. Boot again, clock still wrong.
+  const third = v.boot();
+  await third.load();
+  const next = third.scheduler.now().getTime();
+  assert(next > issued, `the third run starts after every rx the second issued: ${next - issued} ms`);
+}
+
+/** Persists are serialised: a periodic write in flight cannot land after the resync's mark. */
+export async function aPeriodicPersistInFlightCannotOverwriteAResync(): Promise<void> {
+  const v = volume();
+  v.files.set(MARK_PATH, mark(T0 + 3_600_000, true));
+  const clock = v.boot();
+  await clock.load();
+  v.advance(60_000);
+  const release = v.holdNextWrite();
+  const periodic = clock.persist();
+  await new Promise((resolve) => setImmediate(resolve));
+  clock.observeServerTime(T0 + 60_000);
+  release();
+  await periodic;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const final = JSON.parse(v.files.get(MARK_PATH) ?? "{}") as { mark?: string };
+  assert(Date.parse(final.mark ?? "") === T0 + 60_000, `the last mark is the resync's wall clock: ${final.mark}`);
 }
