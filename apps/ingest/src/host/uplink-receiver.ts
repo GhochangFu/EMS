@@ -3,9 +3,21 @@ import {
   UPLINK_MAX_AGE_MS,
   UPLINK_MAX_FUTURE_MS,
   type UplinkBatch,
+  type UplinkResponse,
 } from "@bms/shared/ingest";
 
+import type { EdgeServed } from "./binding-targets.js";
+import type { HostLogger } from "./logger.js";
+import {
+  droppedCount,
+  type PointIndex,
+  type QueryableClient,
+  resolveSamples,
+  type WriteResult,
+} from "./normaliser.js";
 import type { ReceivedSample } from "./received-sample.js";
+import type { GatewayRecord } from "./uplink-gateways.js";
+import { writeUplinkRows } from "./uplink-write.js";
 
 /**
  * The uplink receiver's batch handling (`E7.2`, ADR 0123 decisions 4, 5 and 8,
@@ -85,4 +97,72 @@ export function screenBatch(batch: UplinkBatch, deviceKeys: ReadonlySet<string>,
   }
 
   return { samples, rejected };
+}
+
+/** The slice of a pooled `pg` client the receiver needs. */
+export type ReceiverClient = QueryableClient & { release(): void };
+
+export type UplinkReceiverDeps = {
+  /** This host's clock: the screening bound, the live window and `last_seen_at`. */
+  readonly now: () => Date;
+  /** The latest binding plan's edge-served map; swapped by `main.ts` on each reload. */
+  readonly edgeServed: () => EdgeServed;
+  readonly connect: () => Promise<ReceiverClient>;
+  readonly liveWindowMs: number;
+  readonly logger: HostLogger;
+};
+
+/** Accepts one authenticated batch; resolves to the `200` body, rejects on a failed write. */
+export type ReceiveBatch = (gateway: GatewayRecord, batch: UplinkBatch) => Promise<UplinkResponse>;
+
+const NO_DEVICES: ReadonlySet<string> = new Set();
+const NO_POINTS: PointIndex = new Map();
+
+/**
+ * Builds the receiver: screen → `resolveSamples` → `writeUplinkRows`.
+ *
+ * Resolves only after the rows and the gateway report have committed, so a
+ * `200` means stored (decision 4). A rejection is a failed write and the
+ * listener answers `503` with `Retry-After` (ruling P1 (b)): the edge keeps
+ * the batch on its own disk and retries, and nothing is spilled here.
+ *
+ * `deviceKey` is required on the wire, so there is no sole-device fallback:
+ * `resolveSamples` gets `undefined` for it. A sample that resolves to no point
+ * is counted `unresolved` (`droppedCount`: unmapped key, bad quality,
+ * non-finite, out of range). Logs carry counts and the gateway's id and code,
+ * never a sample value or key.
+ */
+export function createUplinkReceiver(deps: UplinkReceiverDeps): ReceiveBatch {
+  return async (gateway, batch) => {
+    const now = deps.now();
+    const served = deps.edgeServed().get(gateway.id);
+    const screened = screenBatch(batch, served?.deviceKeys ?? NO_DEVICES, now);
+    const { rows, counters } = resolveSamples(screened.samples, served?.pointIndex ?? NO_POINTS, undefined);
+    const unresolved = droppedCount(counters);
+
+    const client = await deps.connect();
+    let written: WriteResult;
+    try {
+      written = await writeUplinkRows(client, rows, {
+        now,
+        liveWindowMs: deps.liveWindowMs,
+        report: { gatewayId: gateway.id, buffered: batch.buffered, clock: batch.clock },
+      });
+    } finally {
+      client.release();
+    }
+
+    const rejected = { ...screened.rejected, unresolved };
+    if (rejected.foreignDevice + rejected.futureRx + rejected.tooOld + rejected.unresolved > 0) {
+      deps.logger.warn("uplink samples rejected", { gatewayId: gateway.id, gatewayCode: gateway.code, ...rejected });
+    }
+    if (written.rowsNotNotified > 0) {
+      deps.logger.info("uplink rows written outside the live window, not notified", {
+        gatewayId: gateway.id,
+        rowsWritten: written.rowsWritten,
+        rowsNotNotified: written.rowsNotNotified,
+      });
+    }
+    return { accepted: written.rowsWritten, rejected };
+  };
 }
