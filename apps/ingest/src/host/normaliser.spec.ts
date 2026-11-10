@@ -1,4 +1,4 @@
-import type { SourceSample } from "@bms/shared/ingest";
+import { NOTIFY_LIVE_WINDOW_MS, type SourceSample } from "@bms/shared/ingest";
 
 import {
   buildUpsert,
@@ -29,6 +29,14 @@ export function assert(condition: boolean, message: string): void {
 }
 
 export const RECEIVED_AT = new Date("2026-08-05T10:00:00.000Z");
+
+/**
+ * The live-window options every write below passes (ADR 0123 decision 10): the
+ * clock reads `RECEIVED_AT`, so every fixture row is live and the notify
+ * assertions here keep their meaning. The window itself is
+ * `normaliser-notify-window.spec.ts`'s subject.
+ */
+export const LIVE = { now: () => RECEIVED_AT, liveWindowMs: NOTIFY_LIVE_WINDOW_MS } as const;
 
 function makeIndex(
   entries: Record<string, Record<string, PointTarget[]>>,
@@ -380,29 +388,32 @@ export async function runNormaliserWriteTests(): Promise<void> {
 
   {
     const { client, calls } = makeFakeClient();
-    await writeResolved(client, rows);
+    await writeResolved(client, rows, LIVE);
     assert(calls[0].text === "BEGIN", `the batch must open a transaction, got "${calls[0].text}"`);
     assert(calls[1].text.startsWith("INSERT INTO"), "the upsert runs inside the transaction");
     assert(calls[2].text === "COMMIT", `the transaction must commit, got "${calls[2].text}"`);
   }
 
-  // ---- notify is unconditional (ADR 0016 §6 commit 4) ----------------------
+  // ---- every live row is notified (ADR 0016 §6 commit 4, Amendment 9) ------
 
   {
-    // There is no way to write rows without notifying. Until commit 4 there was:
-    // `notify` defaulted to off, which was right only while the ADR 0007 pilot
-    // was also notifying, and afterwards was the one configuration that wrote
-    // telemetry while every dashboard went silently dead.
+    // There is no way to write LIVE rows without notifying them. Until commit 4
+    // there was: `notify` defaulted to off, which was right only while the ADR
+    // 0007 pilot was also notifying, and afterwards was the one configuration
+    // that wrote telemetry while every dashboard went silently dead.
     //
-    // Reinstating a suppression path — an option, a flag, an early return — makes
-    // this assertion fail, which is the point of stating it positively on the
-    // plain call rather than only testing the enabled case.
+    // Since ADR 0123 decision 10 (ADR 0016 Amendment 9) the one gate is each
+    // row's own time: a row outside the live window is history and is not
+    // announced (`normaliser-notify-window.spec.ts`). Rows inside it are always
+    // announced. Reinstating any other suppression path — an option, a flag,
+    // an early return — makes this assertion fail, which is the point of
+    // stating it positively on live rows rather than only testing the window.
     const { client, calls } = makeFakeClient();
-    const result = await writeResolved(client, rows);
+    const result = await writeResolved(client, rows, LIVE);
     assert(
       calls.some((c) => c.text.includes("pg_notify")),
-      "a plain writeResolved must notify — no argument, environment or default " +
-        "may suppress realtime (ADR 0016 §6 commit 4, Amendment 3)",
+      "a writeResolved of live rows must notify — no argument, environment or default " +
+        "may suppress realtime for a live row (ADR 0016 §6 commit 4, Amendments 3 and 9)",
     );
     assert(result.notificationsSent === 1, "the notification is reported, not merely sent");
     assert(result.rowsWritten === 2, "both rows are still written");
@@ -412,7 +423,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
 
   {
     const { client, calls } = makeFakeClient();
-    const result = await writeResolved(client, rows);
+    const result = await writeResolved(client, rows, LIVE);
     const notifies = calls.filter((c) => c.text.includes("pg_notify"));
     assert(notifies.length === 1, `two small rows fit one notification, got ${notifies.length}`);
     assert(result.notificationsSent === 1, "the notification count is reported");
@@ -451,7 +462,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
       "RTU-1",
     );
     const { client, calls } = makeFakeClient();
-    await writeResolved(client, resolved);
+    await writeResolved(client, resolved, LIVE);
     const payload = JSON.parse(
       String(calls.find((c) => c.text.includes("pg_notify"))?.values?.[1]),
     ) as { readings: { value: number }[] };
@@ -473,7 +484,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
       deviceTime: null,
     }));
     const { client, calls } = makeFakeClient();
-    const result = await writeResolved(client, many);
+    const result = await writeResolved(client, many, LIVE);
     const inserts = calls.filter((c) => c.text.startsWith("INSERT INTO telemetry.point_values"));
     assert(inserts.length === 3, `2500 rows must split into 3 statements, got ${inserts.length}`);
     assert(
@@ -501,7 +512,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
     const { client, calls } = makeFakeClient(/^INSERT/);
     let rejected = false;
     try {
-      await writeResolved(client, rows);
+      await writeResolved(client, rows, LIVE);
     } catch {
       rejected = true;
     }
@@ -517,7 +528,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
 
   {
     const { client, calls } = makeFakeClient();
-    const result = await writeResolved(client, []);
+    const result = await writeResolved(client, [], LIVE);
     assert(calls.length === 0, "an empty batch must not open a transaction or notify");
     assert(result.rowsWritten === 0, "an empty batch writes nothing");
   }

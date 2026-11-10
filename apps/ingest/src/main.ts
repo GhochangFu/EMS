@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
 import pg from "pg";
 
+import { NOTIFY_LIVE_WINDOW_MS } from "@bms/shared/ingest";
+
 import { lookupAdapter } from "./adapter/registry.js";
 import {
   loadBindingRows,
@@ -212,7 +214,7 @@ async function main(): Promise<void> {
         }
         const client = await pool.connect();
         try {
-          await writeResolved(client, rows);
+          await writeResolved(client, rows, { now: realScheduler.now, liveWindowMs: NOTIFY_LIVE_WINDOW_MS });
         } finally {
           client.release();
         }

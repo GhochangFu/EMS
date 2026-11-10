@@ -500,20 +500,54 @@ function toNotifyReading(row: PointValueRow): NotifyReading {
 export type WriteResult = {
   readonly rowsWritten: number;
   readonly notificationsSent: number;
+  /**
+   * Written rows the live window held back from `pg_notify` (ADR 0123
+   * decision 10): history, not a live reading. A count, so the caller can log
+   * it — a replay that lands silently is the rule, not a fault, but it is never
+   * invisible.
+   */
+  readonly rowsNotNotified: number;
 };
 
 /**
- * Writes resolved rows and notifies.
+ * The live-window rule, passed by the caller (ADR 0123 decision 10).
  *
- * **Notification is unconditional (ADR 0016 §6 commit 4).** It used to sit
+ * **Required, with no default.** A defaulted window would be the deleted
+ * `INGEST_NOTIFY` switch's failure in a new place: a caller that forgot it
+ * would get whatever the default meant without saying so. `main.ts` passes
+ * `realScheduler.now` and `HostConfig.notifyLiveWindowMs`; a test passes a
+ * fixed clock.
+ */
+export type WriteOptions = {
+  /** The clock a row's age is measured against. */
+  readonly now: () => Date;
+  /**
+   * How old a row's `time` may be and still be notified, in ms. A row ahead of
+   * `now` is always inside (an edge clock running fast is still live).
+   */
+  readonly liveWindowMs: number;
+};
+
+/**
+ * Writes resolved rows and notifies **every row inside the live window**.
+ *
+ * **There is no switch (ADR 0016 §6 commit 4).** Notification used to sit
  * behind a `notify` option defaulting to off, which was right only while the
  * ADR 0007 pilot entry point was also notifying — two notifying processes
  * deliver every PHE reading to live dashboards twice, because writes are
  * idempotent under `ON CONFLICT DO UPDATE` and notifications are not. With one
  * ingest process there is nothing to double, and the option had become the
  * *dangerous* direction: it was the only way to run ingest writing rows while
- * every dashboard went dead, with no error and no alarm. It is deleted rather
+ * every dashboard went dead, with no error and no alarm. It was deleted rather
  * than defaulted to `true` so that state is unreachable.
+ *
+ * **The one gate is the row's own time (ADR 0016 Amendment 9, ADR 0123
+ * decision 10).** A row whose `time` is more than `liveWindowMs` before
+ * `now()` is written and not notified: an `F1.10` replay or an edge backlog is
+ * history, and announcing it would raise live alarms on old values and move
+ * live tiles backwards. Every *live* row is still notified, with no option,
+ * environment value or default that can turn that off — the window is bounded
+ * at start-up (`config.ts`) so it cannot be set to zero.
  *
  * The upsert runs inside a transaction and the notifications are sent **after**
  * `COMMIT`, exactly as the pilot did it — a listener must never be told about a
@@ -524,9 +558,10 @@ export type WriteResult = {
 export async function writeResolved(
   client: QueryableClient,
   rows: readonly PointValueRow[],
+  options: WriteOptions,
 ): Promise<WriteResult> {
   if (rows.length === 0) {
-    return { rowsWritten: 0, notificationsSent: 0 };
+    return { rowsWritten: 0, notificationsSent: 0, rowsNotNotified: 0 };
   }
 
   await client.query("BEGIN");
@@ -542,15 +577,19 @@ export async function writeResolved(
     throw error;
   }
 
-  // Notify the deduped set — the rows actually written. Notifying the raw
-  // sample list would announce readings the upsert collapsed.
+  // Notify the deduped set — the rows actually written — less the rows the
+  // live window holds back. Notifying the raw sample list would announce
+  // readings the upsert collapsed; notifying a late row would announce history
+  // as live. The filter runs after the write, never before it: every row lands.
+  const nowMs = options.now().getTime();
+  const live = rows.filter((row) => nowMs - row.time.getTime() <= options.liveWindowMs);
   let notificationsSent = 0;
-  for (const chunk of chunkReadings(rows.map(toNotifyReading))) {
+  for (const chunk of chunkReadings(live.map(toNotifyReading))) {
     await client.query("SELECT pg_notify($1, $2)", [
       NOTIFY_CHANNEL,
       JSON.stringify({ readings: chunk }),
     ]);
     notificationsSent += 1;
   }
-  return { rowsWritten: rows.length, notificationsSent };
+  return { rowsWritten: rows.length, notificationsSent, rowsNotNotified: rows.length - live.length };
 }
