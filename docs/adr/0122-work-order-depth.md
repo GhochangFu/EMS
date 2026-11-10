@@ -2,16 +2,19 @@
 
 ## Status
 
-**Proposed — 2026-11-10.** Drafted by the agent for backlog row `E3.1`
-(`docs/BACKLOG.md` §2 Track M). **Nothing here is decided.** The owner rules
-the twelve *Gate questions* at the end; every line in *Decision* is the
-drafter's recommendation and names the question it hangs on. No code, schema
-or contract changes until this record is Accepted and the plan
-(`docs/plans/e3.1-work-order-depth.md`) is approved.
+**Proposed — 2026-11-10; all gate questions ruled the same day, acceptance
+still owed.** Drafted by the agent for backlog rows `E3.1` and `E3.4`
+(`docs/BACKLOG.md` §2 Track M). The owner ruled Q1–Q12 and the plan's
+P1–P12 in chat on 2026-11-10, one at a time (see *Rulings*); *Decision* below
+is written to those rulings. The owner has **not** yet accepted this record.
+No code, schema or contract changes until it is Accepted and the plan
+(`docs/plans/e3.1-work-order-depth.md`) is approved. Lines marked *(drafter)*
+are drafter calls the plan may refine.
 
-Builds on ADR 0006 (work-order foundation). Would amend **ADR 0017** (a third
-write class) and **ADR 0106** (what the copilot's `workOrder.close` means) if
-Q10 is ruled as recommended.
+Builds on ADR 0006 (work-order foundation). On acceptance this record
+**stands as the amendment** to **ADR 0017** (a third write class) and
+**ADR 0106** (what the copilot's `workOrder.close` means) — ruling P11; each
+of those records gets a one-line pointer here and no separate amendment text.
 
 ## Context
 
@@ -50,15 +53,14 @@ drafter reads work-order closure approval as neither, so no §6 item moves.
 If the owner reads it otherwise, this is a §10 promotion and the closure part
 waits for it.
 
-## Decision (recommended — each line waits on its question)
+## Decision (as ruled 2026-11-10; in force once Accepted)
 
 ### 1. Scope *(Q1, Q2)*
 
-One record for all seven items, built as six small PRs. `E3.4` (alarm
-enrichment → work order) stays its own row: this record adds the ticket's
-**own** root-cause fields and does not copy or read the alarm's enrichment.
-The column names below are chosen so `E3.4` can add a snapshot or a
-read-through later without a rename.
+One record for all seven items, built as seven small PRs (ruling R1). **`E3.4` (alarm
+enrichment → work order) is folded into this record** (ruling Q2) as a
+**frozen snapshot** (ruling Q2b) — decision 5a. Its backlog row closes with
+`E3.1`.
 
 ### 2. Human-readable reference *(Q3, Q4)*
 
@@ -73,12 +75,20 @@ read-through later without a rename.
    `bms.work_order_counters (organization_id PK, next_seq)`, taken with a row
    lock inside the create transaction. The number alone is unique within an
    organization; the prefix is a label.
-4. The prefix is a new nullable column `bms.asset_domains.work_order_prefix
-   varchar(8)`, seeded `ELEC`, `HVAC`, `IT`, `ENV`, `WATER`, `MECH`, `UPS`,
-   `FAC`; a domain with none uses `GEN`. Global-`admin` write, like every
-   other catalog field.
-5. `STP` and `ETP` are not domains today. Release 1 gives a sewage-plant asset
-   `WATER-…` *(Q4)*.
+4. The domain prefix is a new nullable column
+   `bms.asset_domains.work_order_prefix varchar(8)`, seeded `ELEC`, `HVAC`,
+   `IT`, `ENV`, `WATER`, `MECH`, `UPS`, `FAC`. A global `admin` edits it
+   through a new route and screen (ruling P8).
+5. **An asset template may override it** (ruling Q4): a new nullable column
+   `bms.asset_templates.work_order_prefix varchar(8)`, edited where the
+   template is authored (ADR 0015 / 0038 gates unchanged). This is how an STP
+   or ETP template gives `STP-…` or `ETP-…` without a new domain. Order at
+   create: the asset's template prefix, else its domain's prefix, else `GEN`.
+   Both columns take `^[A-Z0-9]{2,8}$` *(drafter)*. A template's prefix is
+   set on a **draft** only — a published version stays immutable (ruling
+   R2). The demo seed sets `STP` and `ETP` on its two demo templates; the
+   stock catalog is left alone (ruling R3). The copilot does not set it
+   (ruling R5).
 6. Backfill: existing rows get `seq` in `created_at` order per organization
    and a reference from their asset's current domain.
 
@@ -133,35 +143,69 @@ read-through later without a rename.
    `causeCode` when the ticket has an `alarm_id`; they are optional on a
    planned-maintenance ticket.
 3. They are editable while `resolved` and frozen at `closed`.
+4. The seed is nine codes (ruling P5): `equipment_failure`, `wear_and_tear`,
+   `power_quality`, `sensor_fault`, `configuration_error`, `operator_error`,
+   `external_event`, `no_fault_found`, `other`.
+
+### 5a. Alarm enrichment snapshot — `E3.4` *(Q2, Q2b)*
+
+1. Four nullable columns on `bms.work_orders`: `alarm_root_cause text`,
+   `alarm_corrective_actions text`, `alarm_skill_code varchar(64)` →
+   `bms.alarm_skills`, `alarm_etr_at timestamptz`.
+2. When a ticket is created with an `alarm_id` and that alarm has a
+   `bms.alarm_enrichments` row, the create transaction copies the four
+   values. **They are never updated afterwards** — a later edit of the
+   alarm's enrichment does not reach the ticket, and no route writes them.
+3. They are shown read-only in the detail drawer as *From the alarm*, apart
+   from the technician's own findings (decision 5). They do not satisfy the
+   resolve gate of decision 5.2.
+4. A ticket created before this lands, or from an alarm with no enrichment,
+   has all four `NULL`. No backfill.
 
 ### 6. Closure approval *(Q1, Q10, Q11)*
 
-1. No new status. `resolved` **means** "done, waiting for approval";
-   `closed` means "approved".
+1. `resolved` **means** "done, waiting for approval"; `closed` means
+   "approved". One new status, `cancelled`, comes from ruling P2 (item 8).
 2. `POST /work-orders/:id/close` becomes the **approval**. It needs a new
    third write class, `approval` (`OperationsWriteClass` in
    `apps/api/src/auth/operations-write.ts`): the four admin roles ✅,
    `operator` ❌, `viewer` ❌. The existing scope check still applies. It
    stamps `approved_by` and `approved_at`.
-3. **Four eyes:** the approver must not be the user who resolved the ticket
-   (new column `resolved_by`). Refused with 409.
+3. **Self-approval is allowed and recorded** (ruling Q11). `resolved_by` is
+   stamped at resolve; when the approver is the same user, the `approved`
+   event and the audit row carry `selfApproved: true` and the drawer says
+   *Self-approved*. Only the `approval` class can do it, so an `operator`
+   still never closes their own work.
 4. New `POST /work-orders/:id/reject` (`approval` class, reason required)
    sends a `resolved` ticket back to `in_progress`.
 5. `PATCH /:id/status` no longer accepts `closed` — the body schema drops it,
    which is what the copilot's model body already does (ADR 0106 decision 2).
-   Kanban drag to *Done* already refuses.
+   `close` approves **only a `resolved` ticket**, 409 otherwise (ruling P2).
+   The operational class may move a `resolved` ticket back to `in_progress`
+   through the status route, which clears the resolve stamps (ruling P3).
+   `PATCH /reorder` refuses a move into `resolved` with 400, as it already
+   refuses *Done* (ruling P1) — resolve always goes through its form.
 6. Approval applies to **every** work order.
 7. Existing `closed` rows stay closed with `approved_by NULL` (read as
    "closed before approval existed"). Existing `resolved` rows wait for
    approval.
+8. **Cancel** (ruling P2). A sixth status `cancelled`, terminal like
+   `closed`. New `POST /work-orders/:id/cancel` — `approval` class, reason
+   required — from `open`, `assigned`, `in_progress` or `resolved`. It stamps
+   `cancelled_by` and `cancelled_at` and skips the checklist and root-cause
+   gates. A cancelled ticket cannot be reopened, reads SLA state `none`, and
+   is not a Kanban column: the board hides it behind a *Cancelled* filter
+   *(drafter)*. The four admin roles may cancel; an `operator` may not
+   *(drafter — stated to the owner on 2026-11-10, no objection recorded)*.
+   Neither status route nor reorder accepts `cancelled`.
 
 ### 7. Timeline and audit *(Q12)*
 
 1. New tenant table `bms.work_order_events (id, organization_id,
-   work_order_id, event_type, actor_id, from_status, to_status, detail jsonb,
-   created_at)`. `event_type` is a closed `CHECK` vocabulary: `created`,
-   `assigned`, `status_changed`, `task_updated`, `root_cause_set`,
-   `resolved`, `approved`, `rejected`, `sla_changed`.
+   work_order_id, event_type, actor_id, actor_name, from_status, to_status,
+   detail jsonb, created_at)`. `event_type` is a closed `CHECK` vocabulary:
+   `created`, `assigned`, `status_changed`, `task_updated`, `root_cause_set`,
+   `resolved`, `approved`, `rejected`, `cancelled`, `sla_changed`.
 2. It is **append-only by privilege**: the migration revokes `UPDATE` and
    `DELETE` from `bms_tenant` and `bms_fleet`. It is not hash-chained —
    tamper evidence stays with `F4.15`.
@@ -170,9 +214,13 @@ read-through later without a rename.
    The audit payload gains `reference`, `fromStatus` and `toStatus`. The
    events table is the product history any reader of the ticket may see;
    `audit_log` stays the compliance record with its own gate.
-4. `detail` never holds free text beyond the reason the user typed, and never
-   an `oidcSubject` — the reader sees the actor's display name (the ADR 0046
-   Amendment 2 rule).
+4. **The actor's display name is saved on the event** (ruling P7):
+   `actor_name varchar(255)`, written at insert and never changed, so a
+   tenant reader sees the real name of a global admin and a later rename does
+   not rewrite history. It is a display name only — never an email or an
+   `oidcSubject` (the ADR 0046 Amendment 2 rule). `detail` holds no free text
+   beyond the reason the user typed.
+5. No events are invented for tickets older than this table (ruling P10).
 
 ### 8. Lifecycle stepper *(Q12)*
 
@@ -181,6 +229,9 @@ Five steps, as the reference draws them, derived from the events:
 step reads *Raised manually* or *Scheduled maintenance*) → **Work Order
 Created** → **Assigned** → **In Progress** → **Completed**. Step 5 is reached
 at `closed`; while the ticket is `resolved` it reads *Awaiting approval*.
+A cancelled ticket stops at the step it had reached and reads *Cancelled*.
+A ticket older than the events table lights its steps from its status and
+shows a time only where one is known (ruling P10).
 The stepper lives in a new work-order detail drawer on `/work-orders`,
 together with the checklist, the root-cause form, the SLA chip and the
 timeline. There is no `ESKOM_SMOC.html` screen for it (AGENTS.md §5); the
@@ -193,10 +244,10 @@ time (`0140` onward today), one per PR:
 
 | Migration | Tables |
 | --- | --- |
-| A — references and SLA | `work_orders` + `seq`, `reference`, `sla_minutes`, `sla_due_at`; `asset_domains` + `work_order_prefix`; new `work_order_counters`, `work_order_sla_policies`; backfill |
+| A — references and SLA | `work_orders` + `seq`, `reference`, `sla_minutes`, `sla_due_at`; `asset_domains` + `work_order_prefix`; `asset_templates` + `work_order_prefix`; new `work_order_counters`, `work_order_sla_policies`; backfill |
 | B — events | new `work_order_events` |
-| C — checklists | new `work_order_checklist_templates`, `work_order_checklist_template_items`; `work_order_tasks` + five columns; `maintenance_task_templates` + `checklist_template_id` |
-| D — root cause and approval | new `work_order_cause_codes` (+ seed); `work_orders` + `root_cause`, `corrective_action`, `preventive_action`, `cause_code`, `resolved_by`, `approved_by`, `approved_at` |
+| C — checklists | new `work_order_checklist_templates`, `work_order_checklist_template_items`; `work_order_tasks` + five columns and its policy re-created; `maintenance_task_templates` + `checklist_template_id` |
+| D — root cause, snapshot, approval, cancel | new `work_order_cause_codes` (+ nine-code seed); `work_orders` + `root_cause`, `corrective_action`, `preventive_action`, `cause_code`, `alarm_root_cause`, `alarm_corrective_actions`, `alarm_skill_code`, `alarm_etr_at`, `resolved_by`, `approved_by`, `approved_at`, `cancelled_by`, `cancelled_at`; a `CHECK` on `status` naming the six values |
 
 - Every new tenant table (`work_order_counters`, `work_order_sla_policies`,
   `work_order_events`, both checklist tables) is created inside `SET ROLE
@@ -206,6 +257,9 @@ time (`0140` onward today), one per PR:
   that checks its own `organization_id` **and** its org-bearing parent
   (`EXISTS`, the `0050` / `0082` / `0123` shape).
 - `work_order_events`: `REVOKE UPDATE, DELETE` from `bms_tenant`, `bms_fleet`.
+- `work_order_tasks` gets its first tenant-pool writer, and its `0047`
+  policy checks only its own column. Migration C re-creates it with the
+  parent `EXISTS` on `work_orders` (ruling P9).
 - `work_order_cause_codes` is a global catalog with no row security:
   `REVOKE INSERT, UPDATE, DELETE` from `bms_tenant` (the `0090` shape).
 - `bms_auth` and `bms_rollup` get nothing. No hypertable, no Timescale
@@ -222,22 +276,32 @@ strict-body ledger gain each one.
 | Route | Class (ADR 0017) | Change |
 | --- | --- | --- |
 | `GET /work-orders` | read | item gains `reference`, `slaMinutes`, `slaDueAt`, `slaState`, `checklistDone`, `checklistTotal`, `causeCode`, `approvedAt` |
-| `GET /work-orders/:id` | read | **new** — the item plus `tasks`, `events`, root-cause fields, alarm summary |
+| `GET /work-orders/:id` | read | **new** — the item plus `tasks`, `events`, root-cause fields, the alarm snapshot (5a), alarm summary |
 | `GET /work-orders/cause-codes` | read | **new** |
+| `GET /work-orders/checklist-templates?assetId=` | read | **new** — active templates that fit the asset, so an operator's create form can pick one (ruling P6) |
 | `POST /work-orders` | operational | body gains `slaMinutes?`, `checklistTemplateId?` |
 | `PATCH /work-orders/:id/status` | operational | body loses `closed`; gains `rootCause?`, `correctiveAction?`, `preventiveAction?`, `causeCode?`; `resolved` enforces decisions 4.4 and 5.2 (409) |
 | `PUT /work-orders/:id/root-cause` | operational | **new** — while `resolved` or earlier |
 | `POST /work-orders/:id/tasks` · `PATCH /work-orders/:id/tasks/:taskId` | operational | **new** |
-| `POST /work-orders/:id/close` | **approval** | now the approval; four-eyes check |
+| `POST /work-orders/:id/close` | **approval** | now the approval; only from `resolved`; records self-approval |
 | `POST /work-orders/:id/reject` | **approval** | **new** |
-| `PATCH /work-orders/reorder` | operational | unchanged |
+| `POST /work-orders/:id/cancel` | **approval** | **new** — reason required |
+| `PATCH /work-orders/reorder` | operational | refuses a move into `resolved` (400) |
+| `GET` · `PATCH /admin/vocabularies/asset-domains/:code` | global `admin` | **new** — `workOrderPrefix` only (rulings P8, R4) |
+| asset-template authoring routes | unchanged gates | body gains `workOrderPrefix?` |
 | `GET` · `PUT /admin/work-order-sla-policies` | configuration + `canManageOrganization` | **new** |
 | `GET` · `POST` · `PATCH /admin/work-order-checklist-templates` | configuration + `canManageOrganization` | **new** |
 | `PATCH /maintenance/schedules/:id` | configuration | body gains `checklistTemplateId?` |
 
 Copilot (ADR 0099 / 0106): `workOrder.setStatus` and `workOrder.close` keep
 their ids and routes; the close card's wording becomes *approve and close*.
-The new routes go on the catalog's named exclusion list in this row.
+The new routes go on the catalog's named exclusion list in this row, and the
+new body fields (`slaMinutes`, `checklistTemplateId`, the four root-cause
+fields) are `clientOnly`, so the copilot never sends them (ruling P4). Its
+resolve of an alarm ticket with no saved root cause is therefore refused, and
+the user completes it on the page.
+
+`workOrderStatusSchema` gains `cancelled`.
 
 ## Dependencies
 
@@ -246,7 +310,7 @@ None. No new npm package in any app.
 ## Not in this record
 
 Mobile execution and photo evidence (`E3.2`); a CMMS/EAM connector (`E3.3`);
-copying alarm enrichment into the ticket (`E3.4`); SLA breach notification,
+a live view of the alarm's current enrichment beside the snapshot; SLA breach notification,
 escalation, pause, or business-hours calendars; response-time SLA; parts,
 labour, cost; audit hash-chaining (`F4.15`); degradation and RUL (`E1.5`);
 operator use of the copilot; any device command.
@@ -255,8 +319,13 @@ operator use of the copilot; any device command.
 
 - **An operator can no longer close a work order.** That is the point of
   closure approval, and it is a behaviour change for every current user of
-  the *Done* column. A site with one administrator who also does the work
-  cannot approve their own ticket — a global `admin` must (Q11).
+  the *Done* column. An administrator who also does the work may approve
+  their own ticket; the record says so (Q11). That is a weaker control than
+  four eyes, chosen so a one-admin site is not stuck.
+- `cancelled` is a sixth status value. Every reader of
+  `workOrderStatusSchema` (board, filters, KPIs, copilot text) must handle it.
+- `E3.4` closes with this row. The ticket carries the alarm's enrichment as
+  it stood at creation; it can go stale, by design.
 - `PATCH /:id/status` dropping `closed` is a breaking contract change. The
   web close wizard and the copilot already use the close route.
 - ADR 0017's matrix gains a class; AGENTS.md §4.7 and §3 owe a
@@ -275,9 +344,12 @@ operator use of the copilot; any device command.
 Per PR, in the plan. In summary: each migration applied twice on a seeded
 database and its `DO` block green; RLS integration suites prove a second
 organization reads and writes none of the new rows under the tenant pool; the
-role matrix spec proves `operator` is refused `close` and `reject` and still
-allowed `status`; four-eyes refused with 409; a mandatory item blocks
-`resolved`; the counter gives no duplicate reference under concurrent creates;
+role matrix spec proves `operator` is refused `close`, `reject` and `cancel`
+and still allowed `status`; a self-approval is recorded as one; `close` on a
+ticket that is not `resolved` is 409; a cancelled ticket cannot be reopened;
+the alarm snapshot is copied at create and does not move when the enrichment
+is edited; a template prefix wins over the domain prefix; a mandatory item
+blocks `resolved`; the counter gives no duplicate reference under concurrent creates;
 contract round-trip specs for every new schema; one live create → assign →
 start → resolve → approve run against the Docker stack, asserted by exact
 string in the browser.
@@ -286,19 +358,49 @@ string in the browser.
 
 | # | Question | Options | Recommended | Ruled |
 | --- | --- | --- | --- | --- |
-| Q1 | Is work-order closure approval inside current scope, given AGENTS.md §6 names "approval workflows" under device commanding and identity governance? | (a) in scope, no §6 item moves · (b) needs a §10 promotion first | (a) | |
-| Q2 | One record for all seven items, and does `E3.1` absorb `E3.4`? | (a) one ADR, six PRs, `E3.4` stays separate · (b) absorb `E3.4` · (c) split SLA/stepper into a second row | (a) | |
-| Q3 | How does a work order get a prefixed id without breaking existing ids? | (a) keep the uuid; add a frozen `reference` from a per-organization counter + domain prefix · (b) per-domain counters · (c) compute the label on read, store nothing | (a) | |
-| Q4 | Where does `STP` / `ETP` come from, since they are not asset domains? | (a) domain only in release 1 — an STP asset reads `WATER-…` · (b) a prefix override on the asset template · (c) add `stp` / `etp` domains | (a) | |
-| Q5 | SLA source and units | (a) minutes, from a per-organization per-priority policy, snapshotted on the ticket, with a per-ticket override · (b) typed per ticket only · (c) from the alarm rule or severity | (a) | |
-| Q6 | Default SLA when an organization has set none | critical 30 min · high 1h · medium 4h · low 24h — or the owner's numbers | as listed | |
-| Q7 | What the SLA clock measures | (a) creation → resolved, wall time, no pause, state computed on read, no alerts · (b) also a response SLA (creation → assigned) · (c) add breach notifications now | (a) | |
-| Q8 | Checklist templates: per what? | (a) per organization, optional asset domain, copied onto the ticket; schedules may name one · (b) per ticket only, no templates · (c) on the asset template (ADR 0015) | (a) | |
-| Q9 | Root-cause shape and when it is required | (a) three text fields + a coded cause; required to resolve an alarm-linked ticket · (b) text only · (c) required on every ticket | (a) | |
-| Q10 | Who may approve closure, and for which tickets? | (a) the four admin roles within their scope, every ticket, new `approval` write class · (b) `organization_admin` and `admin` only · (c) only high / critical tickets need approval · (d) a per-organization switch | (a) | |
-| Q11 | May the person who resolved a ticket approve it? | (a) no — strict four eyes, 409 · (b) yes for admins, recorded as self-approved | (a) | |
-| Q12 | Audit shape and stepper | (a) new append-only `work_order_events` table feeds a five-step stepper (step 5 at `closed`, *Awaiting approval* while `resolved`); `audit_log` still written · (b) richer `audit_log` payload only, add `assigned_at` / `started_at` columns for the stepper · (c) six steps with a separate *Approved* | (a) | |
+| Q1 | Is work-order closure approval inside current scope, given AGENTS.md §6 names "approval workflows" under device commanding and identity governance? | (a) in scope, no §6 item moves · (b) needs a §10 promotion first | (a) | as recommended |
+| Q2 | One record for all seven items, and does `E3.1` absorb `E3.4`? | (a) one ADR, six PRs, `E3.4` stays separate · (b) absorb `E3.4` · (c) split SLA/stepper into a second row | (a) | **(b) absorb `E3.4`** — as a frozen snapshot (Q2b) |
+| Q3 | How does a work order get a prefixed id without breaking existing ids? | (a) keep the uuid; add a frozen `reference` from a per-organization counter + domain prefix · (b) per-domain counters · (c) compute the label on read, store nothing | (a) | as recommended |
+| Q4 | Where does `STP` / `ETP` come from, since they are not asset domains? | (a) domain only in release 1 — an STP asset reads `WATER-…` · (b) a prefix override on the asset template · (c) add `stp` / `etp` domains | (a) | **(b) prefix override on the asset template** |
+| Q5 | SLA source and units | (a) minutes, from a per-organization per-priority policy, snapshotted on the ticket, with a per-ticket override · (b) typed per ticket only · (c) from the alarm rule or severity | (a) | as recommended |
+| Q6 | Default SLA when an organization has set none | critical 30 min · high 1h · medium 4h · low 24h — or the owner's numbers | as listed | as recommended |
+| Q7 | What the SLA clock measures | (a) creation → resolved, wall time, no pause, state computed on read, no alerts · (b) also a response SLA (creation → assigned) · (c) add breach notifications now | (a) | as recommended |
+| Q8 | Checklist templates: per what? | (a) per organization, optional asset domain, copied onto the ticket; schedules may name one · (b) per ticket only, no templates · (c) on the asset template (ADR 0015) | (a) | as recommended |
+| Q9 | Root-cause shape and when it is required | (a) three text fields + a coded cause; required to resolve an alarm-linked ticket · (b) text only · (c) required on every ticket | (a) | as recommended |
+| Q10 | Who may approve closure, and for which tickets? | (a) the four admin roles within their scope, every ticket, new `approval` write class · (b) `organization_admin` and `admin` only · (c) only high / critical tickets need approval · (d) a per-organization switch | (a) | as recommended |
+| Q11 | May the person who resolved a ticket approve it? | (a) no — strict four eyes, 409 · (b) yes for admins, recorded as self-approved | (a) | **(b) yes for admins, recorded** |
+| Q12 | Audit shape and stepper | (a) new append-only `work_order_events` table feeds a five-step stepper (step 5 at `closed`, *Awaiting approval* while `resolved`); `audit_log` still written · (b) richer `audit_log` payload only, add `assigned_at` / `started_at` columns for the stepper · (c) six steps with a separate *Approved* | (a) | as recommended |
 
 Who may edit SLA policies and checklist templates (`admin` and
 `organization_admin`, through `canManageOrganization`) is a drafter call the
 plan may refine; say so if it should be wider.
+
+## Rulings (owner, in chat, 2026-11-10)
+
+The twelve gate questions are ruled in the table above. The plan raised
+twelve more; the owner ruled them the same day:
+
+| # | Question | Ruled |
+| --- | --- | --- |
+| Q2b | How the alarm's enrichment reaches the ticket | **frozen snapshot at creation** |
+| P1 | A Kanban drag into `resolved` | refused (400) |
+| P2 | `close` from any status, and a cancel path | **close only from `resolved`; add a cancel path** (`cancelled` status, approver, reason) |
+| P3 | An operator moving a `resolved` ticket back to work | allowed |
+| P4 | The copilot filling the new fields | no — `clientOnly` |
+| P5 | Cause-code seed | the nine listed in decision 5.4 |
+| P6 | A template list an operator may read | yes |
+| P7 | Timeline actor name | **saved on the event** |
+| P8 | Editing domain prefixes | **an admin route and screen** |
+| P9 | Tighten the `work_order_tasks` policy | yes |
+| P10 | Stepper for older tickets | steps from status, no event backfill |
+| P11 | The ADR 0017 and ADR 0106 amendments | ADR 0122 stands as both |
+| P12 | Merge rule for the six build PRs | **green CI + clean branch + required reviews, for all six** |
+
+| R1 | Seven build PRs, not six (approval and cancel reviewed apart from root cause) | yes |
+| R2 | Template prefix editable on a published version | no — draft only |
+| R3 | Who seeds `STP` / `ETP` | the demo seed only |
+| R4 | Path of the domain-prefix route | `/admin/vocabularies/asset-domains/:code` |
+| R5 | The copilot setting a template's prefix | no — `clientOnly` |
+
+Bold marks a ruling that differs from the drafter's recommendation. R1–R5
+were raised by the plan after the first rulings.
