@@ -11,7 +11,7 @@ import { Wordmark } from "../../components/wordmark";
 import { navIcon, shellGroups, topNav, useCollapsibleNav, useShellModel, type NavIconKey } from "./navigation-model";
 import { NavIcon } from "./nav-icon";
 import { ShellMain } from "./shell-footer";
-import { AppearanceButton } from "./shell-header";
+import { AppearanceButton, HeaderMenu, RAIL_HEADER_FOLD_MAX_WIDTH } from "./shell-header";
 import type { AppShellProps } from "./shell-props";
 
 /** `F4.346` — the store key of the rail's collapsed choice, apart from the sidebar's. */
@@ -47,6 +47,15 @@ export function RailShell({ user, children, kpiRibbon }: AppShellProps) {
     model.viewport.width,
   );
   const toggleName = collapsed ? "Expand rail" : "Collapse rail";
+  // F4.347 — below `xl` the user and the controls fold into one menu; on a phone the status strip
+  // moves into that menu too, so the header never runs past the screen.
+  const headerFolded = model.viewport.width <= RAIL_HEADER_FOLD_MAX_WIDTH;
+  const statusStrip = (
+    <span className="flex items-center gap-2 text-on-dark/80" data-testid="rail-status-strip">
+      <StatusBarClock />
+      <SystemStatusIndicator />
+    </span>
+  );
 
   function entry(item: RailEntry) {
     return (
@@ -73,11 +82,17 @@ export function RailShell({ user, children, kpiRibbon }: AppShellProps) {
       <header className="flex h-10 shrink-0 items-center justify-between gap-3 bg-chrome px-4 text-xs text-on-dark">
         <div className="flex items-center gap-3">
           <Wordmark variant="header" />
-          <span className="flex items-center gap-2 text-on-dark/80" data-testid="rail-status-strip">
-            <StatusBarClock />
-            <SystemStatusIndicator />
-          </span>
+          {narrow ? null : statusStrip}
         </div>
+        {headerFolded ? (
+          <HeaderMenu
+            user={user}
+            locationScopeLabel={model.locationScopeLabel}
+            onLogout={model.handleLogout}
+            pathname={model.location.pathname}
+            status={narrow ? statusStrip : undefined}
+          />
+        ) : (
         <div className="flex items-center gap-3">
           <span className="text-on-dark/80">
             {user.displayName} · {roleLabel(user.role)} · {model.locationScopeLabel}
@@ -93,6 +108,7 @@ export function RailShell({ user, children, kpiRibbon }: AppShellProps) {
             Logout
           </button>
         </div>
+        )}
       </header>
       <div className="flex min-h-0 flex-1">
         {/* F4.318 — on a narrow viewport the rail keeps a 64 px slot in the row, and the expanded

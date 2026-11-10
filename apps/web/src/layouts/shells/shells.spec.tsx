@@ -80,6 +80,8 @@ export function theSelectedItemIsAriaCurrent(design: DesignSystem): void {
 }
 
 export function theWordmarkAndLogoutAreThere(design: DesignSystem): void {
+  // F4.347 — below `xl` the rail folds Logout into its header menu (`header-menu.spec.tsx`).
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1440 });
   renderAs(design, "operator", "/");
   expect(screen.getByRole("img", { name: "IONSiTE NEXUS" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Logout" })).toBeInTheDocument();

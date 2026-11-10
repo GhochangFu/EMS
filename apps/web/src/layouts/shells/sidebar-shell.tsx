@@ -43,7 +43,13 @@ export function SidebarShell({ user, children, kpiRibbon }: AppShellProps) {
 
   return (
     <div className="flex min-h-screen flex-col surface-page text-ink" style={{ paddingRight: `${copilotPush}px` }}>
-      <ShellHeader user={user} locationScopeLabel={locationScopeLabel} onLogout={handleLogout} />
+      <ShellHeader
+        user={user}
+        locationScopeLabel={locationScopeLabel}
+        onLogout={handleLogout}
+        viewportWidth={viewport.width}
+        pathname={location.pathname}
+      />
 
       <ShellTopNav user={user} pathname={location.pathname} />
 
