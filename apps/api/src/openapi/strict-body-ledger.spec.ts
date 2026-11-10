@@ -58,6 +58,10 @@ import {
   updatePointKeyStateBodySchema,
   // `F4.317` task 4.2 (ADR 0112 decision 4).
   putOrganizationControlRoomViewBodySchema,
+  // `E7.2` (ADR 0123 decision 12): the edge gateway write bodies.
+  createEdgeGatewayBodySchema,
+  putEdgeGatewayRtusBodySchema,
+  updateEdgeGatewayBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -303,6 +307,10 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `E3.1` (ADR 0122 decision 3.2, plan D8). `.strict()` at both levels: a replace-all set, so a
   // misspelt key dropped silently would reset that priority to its default at 200.
   putWorkOrderSlaPoliciesBodySchema,
+  // `E7.2` (ADR 0123 decision 12). `.strict()`: closed shapes, so an unknown key is a caller error.
+  createEdgeGatewayBodySchema,
+  updateEdgeGatewayBodySchema,
+  putEdgeGatewayRtusBodySchema,
   // `F3.32f` slice 3 (ADR 0086 decisions 4, 6, 7). `.strict()`: a library, a symbol patch and the
   // switch are closed authoring shapes with no `z.record` escape, so an unknown key is a typo.
   createMimicOrgSymbolLibraryBodySchema,

@@ -486,6 +486,12 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // `E3.1` (ADR 0122 decision 3.2, plan D8): the replace-all SLA set and each of its rows.
   putWorkOrderSlaPoliciesBodySchema: STRICT(CALLER_ERROR),
   "putWorkOrderSlaPoliciesBodySchema/policies[]": STRICT(CALLER_ERROR),
+  // `E7.2` (ADR 0123 decision 12): every field named, no `z.record` escape. An unknown key beside
+  // them — a `status`, a `tokenHash` — has nowhere legitimate to land; dropped silently it would
+  // read as a revoke or a token set that never happened.
+  createEdgeGatewayBodySchema: STRICT(CALLER_ERROR),
+  updateEdgeGatewayBodySchema: STRICT(CALLER_ERROR),
+  putEdgeGatewayRtusBodySchema: STRICT(CALLER_ERROR),
   // `F3.73` plan D6 — the "Make site layout" body. Both keys are optional, so an unknown key
   // dropped silently (a misspelt `tabGroup`) would run the copy with no choice at all. The
   // `tabGroups` record is the one open map, and its keys and values are each bounded.
