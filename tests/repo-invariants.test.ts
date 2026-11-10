@@ -520,7 +520,7 @@ describe("repo invariants", () => {
     ).toEqual([]);
   });
 
-  it("ingest has one entry point and no NOTIFY switch", () => {
+  it("ingest has its two entry points and no NOTIFY switch", () => {
     // ADR 0016 §6 commit 4 ended the strangler migration. Both halves of that are
     // structural, and neither can be carried by a behavioural test:
     //
@@ -539,15 +539,15 @@ describe("repo invariants", () => {
     const ingestSrc = join(repoRoot, "apps", "ingest", "src");
     const entryPoints = walk(ingestSrc)
       .map((f) => relative(ingestSrc, f).split("\\").join("/"))
-      .filter((f) => /(^|\/)(index|main)\.(ts|js)$/.test(f))
+      .filter((f) => /(^|\/)(index|[\w-]*main)\.(ts|js)$/.test(f))
       .sort();
     expect(
       entryPoints,
-      `apps/ingest/src must hold exactly one entry point and it must be main.ts, found: ` +
-        `${entryPoints.join(", ")}. ADR 0016 §6 commit 4 deleted index.js; a second entry point ` +
-        "reopens the two-entrypoint window the strangler migration closed. `rtu-config.js` is " +
-        "not an entry point and is deliberately kept — it is the ADR 0012 credential seam.",
-    ).toEqual(["main.ts"]);
+      `apps/ingest/src must hold exactly main.ts and edge-main.ts (ADR 0016 Amendment 9 (c)), found: ` +
+        `${entryPoints.join(", ")}. ADR 0016 §6 commit 4 deleted index.js; a third entry point ` +
+        "reopens the window the strangler closed. Only main.ts may reach Postgres " +
+        "(tests/e7.2-edge-entry-point.test.ts). `rtu-config.js` is the ADR 0012 credential seam.",
+    ).toEqual(["edge-main.ts", "main.ts"]);
 
     const pkg = JSON.parse(
       readFileSync(join(repoRoot, "apps", "ingest", "package.json"), "utf8"),
