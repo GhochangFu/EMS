@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import {
   EDGE_DEFAULT_BUFFER_MAX_AGE_MS,
   EDGE_DEFAULT_BUFFER_MAX_BYTES,
@@ -261,4 +263,15 @@ export function mqttDevicesNeedSourceKeysAndInlineFormats(): void {
   const [endpoint] = parse(file([inline]));
   const device = endpoint.devices[0]?.device as { payloadFormat?: { code?: string } };
   assert(device.payloadFormat?.code === "acme-json", "an inline payload format reaches the adapter");
+}
+
+/** `deploy/edge/edge-config.example.json` is a file the box accepts, with its two credential names. */
+export function theShippedExampleParses(): void {
+  const text = readFileSync(new URL("../../../../deploy/edge/edge-config.example.json", import.meta.url), "utf8");
+  const [endpoint] = parseEdgeConfigFile(text, {
+    env: { EDGE_CRED_SITE_BROKER_USER: "u", EDGE_CRED_SITE_BROKER_PASSWORD: "p" },
+    lookup: lookupAdapter,
+    mqttPlaintextHosts: new Set(),
+  });
+  assert(endpoint?.protocol === "mqtt" && endpoint.devices.length === 1, "the example is one MQTT endpoint");
 }

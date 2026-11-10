@@ -33,7 +33,10 @@ function plans(endpoints: readonly unknown[]) {
     lookup,
     mqttPlaintextHosts: new Set(),
   });
-  return planEdgeEndpoints(parsed);
+  return planEdgeEndpoints(parsed).map((entry) => {
+    assert(entry.factory.protocol === entry.plan.protocol, "the plan carries its own factory");
+    return entry.plan;
+  });
 }
 
 const BROKER = { host: "broker.site.local", port: 8883 };

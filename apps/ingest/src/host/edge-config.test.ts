@@ -15,6 +15,7 @@ import {
   theBufferBoundsDefaultAndTheAgeHasACeiling,
   theEdgeNeedsNoDatabase,
   theReplayRateHasAFloor,
+  theShippedExampleParses,
 } from "./edge-config.spec.js";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -75,5 +76,9 @@ describe("E7.2 — the edge configuration file (ADR 0123 decision 3, plan C11)",
 
   it("needs MQTT sourceKeys and inline payload formats", () => {
     mqttDevicesNeedSourceKeysAndInlineFormats();
+  });
+
+  it("accepts the shipped deploy/edge example", () => {
+    theShippedExampleParses();
   });
 });

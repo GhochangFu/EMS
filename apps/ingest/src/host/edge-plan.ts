@@ -1,6 +1,7 @@
 // Type-only: the edge must not load `bindings.ts` or `normaliser.ts` at run
 // time (ADR 0123 decision 2; `tests/e7.2-edge-entry-point.test.ts` walks the
 // runtime import graph from `edge-main.ts` and skips `import type`).
+import type { IngestAdapterFactory } from "../adapter/types.js";
 import type { EndpointPlan } from "./bindings.js";
 import type { EdgeEndpoint } from "./edge-config.js";
 import type { PointIndex } from "./normaliser.js";
@@ -28,12 +29,29 @@ import type { PointIndex } from "./normaliser.js";
 
 const EMPTY_INDEX: PointIndex = new Map();
 
-export function planEdgeEndpoints(endpoints: readonly EdgeEndpoint[]): readonly EndpointPlan[] {
-  const plans = new Map<string, EndpointPlan & { bindings: EndpointPlan["bindings"][number][] }>();
+/** A plan and the factory that serves it, so the entry point looks nothing up again. */
+export type EdgeEndpointPlan = {
+  readonly factory: IngestAdapterFactory;
+  readonly plan: EndpointPlan;
+};
+
+export function planEdgeEndpoints(
+  endpoints: readonly EdgeEndpoint[],
+): readonly EdgeEndpointPlan[] {
+  const plans = new Map<
+    string,
+    {
+      factory: IngestAdapterFactory;
+      plan: EndpointPlan & { bindings: EndpointPlan["bindings"][number][] };
+    }
+  >();
   const owner = new Map<string, number>();
   endpoints.forEach((endpoint, e) => {
     for (const device of endpoint.devices) {
-      const endpointKey = endpoint.factory.endpointKey(endpoint.config, device.deviceKey);
+      const endpointKey = endpoint.factory.endpointKey(
+        endpoint.config,
+        device.deviceKey,
+      );
       const key = `${endpoint.protocol}\u0000${endpointKey}`;
       const first = owner.get(key);
       if (first !== undefined && first !== e) {
@@ -42,21 +60,24 @@ export function planEdgeEndpoints(endpoints: readonly EdgeEndpoint[]): readonly 
         );
       }
       owner.set(key, e);
-      let plan = plans.get(key);
-      if (plan === undefined) {
-        plan = {
-          protocol: endpoint.protocol,
-          endpointKey,
-          config: endpoint.config,
-          credentials: endpoint.credentials,
-          bindings: [],
-          pointIndex: EMPTY_INDEX,
-          // Only the cloud's reload registry reads this; the edge plan never changes while running.
-          decoderFingerprint: "",
+      let entry = plans.get(key);
+      if (entry === undefined) {
+        entry = {
+          factory: endpoint.factory,
+          plan: {
+            protocol: endpoint.protocol,
+            endpointKey,
+            config: endpoint.config,
+            credentials: endpoint.credentials,
+            bindings: [],
+            pointIndex: EMPTY_INDEX,
+            // Only the cloud's reload registry reads this; the edge plan never changes while running.
+            decoderFingerprint: "",
+          },
         };
-        plans.set(key, plan);
+        plans.set(key, entry);
       }
-      plan.bindings.push({
+      entry.plan.bindings.push({
         rtuId: device.deviceKey,
         rtuCode: device.deviceKey,
         deviceKey: device.deviceKey,
