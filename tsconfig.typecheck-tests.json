@@ -315,6 +315,8 @@
     "tests/e3.1-work-order-write-gates.test.ts",
     "tests/f4.17-rate-limit-compose.test.ts",
     "tests/f4.17-rate-limit-wiring.test.ts",
+    "tests/f4.17-service-accounts-schema.test.ts",
+    "tests/f4.17-service-accounts-schema.integration.test.ts",
     "tests/f4.17-heavy-route-classes.test.ts"
   ]
 }

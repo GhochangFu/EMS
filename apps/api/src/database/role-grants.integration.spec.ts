@@ -44,6 +44,9 @@ const USER_INSERT_COLUMNS = [
   "display_name",
   "email",
   "id",
+  // F4.17 / ADR 0125 (migration 0144): a create writes `kind` — `service` only
+  // through the service-account admin, `human` (the default) everywhere else.
+  "kind",
   "oidc_subject",
   "organization_id",
   "role",
@@ -157,7 +160,7 @@ export async function assertNoPoolRoleReachesPasswordHashByInsertOrUpdate(pool: 
 
 /**
  * `F3.78` / ADR 0089 decision 7 — both pool roles hold the column `INSERT` on
- * exactly the seven non-secret columns. Exact, so a widened grant (a
+ * exactly the seven non-secret columns, eight since `F4.17` added `kind`. Exact, so a widened grant (a
  * `password_hash` or a `disabled_at` written at creation) fails here.
  */
 export async function assertTenantAndFleetHoldTheColumnInsert(pool: pg.Pool): Promise<void> {
@@ -209,7 +212,13 @@ export async function assertAuthReachesOnlyIdentityTables(pool: pg.Pool): Promis
       where grantee = 'bms_auth'
      order by table_schema, table_name`,
   );
-  expect(rows).toEqual([{ table_schema: "bms", table_name: "users" }]);
+  // F4.17 / ADR 0125 decision 17 (migration 0144): plus the token table, where
+  // `bms_auth` reads the verifier's columns and writes `last_used_at` only —
+  // the same pre-tenant lookup it does on `bms.users`, for a `bms_sat_` token.
+  expect(rows).toEqual([
+    { table_schema: "bms", table_name: "service_account_tokens" },
+    { table_schema: "bms", table_name: "users" },
+  ]);
 }
 
 /**

@@ -100,6 +100,16 @@ export const users = bmsSchema.table("users", {
   // writer, for the caller's own row.
   designSystem: varchar("design_system", { length: 32 }),
   colourProfile: varchar("colour_profile", { length: 32 }),
+  // F4.17 / ADR 0125 decision 10 (migration 0144): `human` or `service`. A
+  // `service` row never signs in (no password hash, no OIDC subject), has a
+  // home organization and holds `viewer` or `operator` only
+  // (`users_service_account_check`). No pool role may UPDATE it.
+  kind: varchar("kind", { length: 16 }).notNull().default("human"),
+}, (t) => {
+  return {
+    // Only the target of service_account_tokens_service_account_fkey (0144); never refuses a row.
+    idOrganizationKey: unique("users_id_organization_id_key").on(t.id, t.organizationId),
+  };
 });
 
 /**
