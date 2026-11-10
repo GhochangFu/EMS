@@ -3,21 +3,21 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { vi } from "vitest";
 
-import { REPORTING_WINDOW_SECONDS } from "../telemetry/telemetry-freshness";
+import { FRESHNESS_FLOOR_SECONDS } from "../telemetry/telemetry-cadence";
 import { DashboardService } from "./dashboard.service";
 
 /**
- * `F4.260` (ADR 0075 Amendment 2) — a sample just outside the 150 s site window, and one just
- * inside it but outside the 25 s reading window: the age a 60 s device reaches between reports.
+ * `F4.350` (ADR 0075 Amendment 3) — a sample just outside the 25 s floor (the fixture RTUs have no interval), and one just
+ * inside it. The 60 s-device cases are in `telemetry-cadence.integration.spec.ts`.
  */
-const PAST_SITE_WINDOW_S = REPORTING_WINDOW_SECONDS + 10;
-const INSIDE_SITE_WINDOW_S = REPORTING_WINDOW_SECONDS - 10;
+const PAST_SITE_WINDOW_S = FRESHNESS_FLOOR_SECONDS + 10;
+const INSIDE_SITE_WINDOW_S = FRESHNESS_FLOOR_SECONDS - 10;
 
 /**
  * `F3.30` (ADR 0075 decision 2) — the dashboard's three freshness counts use
  * the any-point rule of ADR 0074 OQ1 through a shared CTE, and `total_kw`
  * does not change. `F4.260` (ADR 0075 Amendment 2): that CTE is now
- * `reporting`, the 150 s site window, no longer the 25 s `live` one. Assertions live here; the sibling
+ * `reporting`, the 25 s floor window (F4.350), no longer the 25 s `live` one. Assertions live here; the sibling
  * `.integration.test` owns the pool (ADR 0014).
  *
  * **Every case runs in one transaction on one client and rolls it back.**
@@ -280,8 +280,8 @@ export async function assertSitesOnlineUsesAnyPoint(client: pg.PoolClient): Prom
 }
 
 /**
- * Case 5 — `F4.260` (ADR 0075 Amendment 2): the `sites_online` window is the 150 s
- * reporting window. A `kw` sample 140 s old counts, one 160 s old (another asset at another
+ * Case 5 — `F4.260` (ADR 0075 Amendment 2): the `sites_online` window is the 25 s floor
+ * reporting window. A `kw` sample 15 s old counts, one 35 s old (another asset at another
  * location) does not. Both are `kw`, so the point-key change cannot turn this green; only the
  * window can. `F4.317` (ADR 0112 decision 7): a site is a location, so the two assets sit at two
  * locations — two site names at one location are one site (case 5b).
@@ -297,7 +297,7 @@ export async function assertSitesOnlineWindowIsTheReportingWindow(client: pg.Poo
   const got = { sitesOnline: kpis.sitesOnline, sitesTotal: kpis.sitesTotal };
   assert(
     got.sitesOnline === 1 && got.sitesTotal === 2,
-    `expected { sitesOnline: 1, sitesTotal: 2 } (140 s counts, 160 s does not), got ${JSON.stringify(got)}`,
+    `expected { sitesOnline: 1, sitesTotal: 2 } (15 s counts, 35 s does not), got ${JSON.stringify(got)}`,
   );
 }
 
@@ -561,7 +561,7 @@ export async function assertLocationDashboardCodeIsLocationsCode(client: pg.Pool
 
 /**
  * `F4.260` (ADR 0075 Amendment 2) — the location card counts an asset whose newest sample is
- * 140 s old (inside the 150 s site window, outside the 25 s reading window) and not one 160 s
+ * 15 s old (inside the 25 s floor window (F4.350), outside the 25 s reading window) and not one 35 s
  * old. A 60 s device is never older than about 60 s between reports, so its site stays live.
  */
 export async function assertLocationCardsUseTheReportingWindow(client: pg.PoolClient): Promise<void> {
@@ -577,7 +577,7 @@ export async function assertLocationCardsUseTheReportingWindow(client: pg.PoolCl
   const got = { fresh: items[0]?.freshAssetCount, total: items[0]?.assetCount };
   assert(
     got.fresh === 1 && got.total === 2,
-    `expected { fresh: 1, total: 2 } (140 s counts, 160 s does not), got ${JSON.stringify(got)}`,
+    `expected { fresh: 1, total: 2 } (15 s counts, 35 s does not), got ${JSON.stringify(got)}`,
   );
 }
 
@@ -595,6 +595,6 @@ export async function assertRtuRowsUseTheReportingWindow(client: pg.PoolClient):
   const rtu = dto?.rtus.find((r) => r.id === site.rtuId);
   assert(
     rtu?.freshAssetCount === 1 && rtu?.assetCount === 2,
-    `expected the fixture RTU at 1 fresh of 2 (140 s counts, 160 s does not), got ${JSON.stringify(rtu ?? null)}`,
+    `expected the fixture RTU at 1 fresh of 2 (15 s counts, 35 s does not), got ${JSON.stringify(rtu ?? null)}`,
   );
 }

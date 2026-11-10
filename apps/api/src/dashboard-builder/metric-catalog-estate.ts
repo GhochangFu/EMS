@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 
 import { latestPueRatio } from "../telemetry/pue-ratio";
-import { REPORTING_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
+import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-cadence";
 import { priorOf } from "./metric-catalog-prior";
 import type { Resolver } from "./metric-catalog-types";
 
@@ -17,8 +17,8 @@ import type { Resolver } from "./metric-catalog-types";
 
 /**
  * `sites.live.count` — decision 7: **a site is a location.** The locations in scope with at
- * least one asset that reports inside the 150 s site window (`REPORTING_ASSETS_CTE_SQL`, the
- * window the location cards and the estate "Sites online" read; ADR 0075 Amendment 2), and the
+ * least one asset that reports inside its own RTU's window (`LIVE_ASSETS_CTE_SQL`, the rule the
+ * location cards and the estate "Sites online" read; ADR 0075 Amendment 3, `F4.350`), and the
  * location total as `coverage`, so the tile reads `live / total`: `fresh` is the live count,
  * `carrying` every location that owns an asset in scope.
  *
@@ -33,15 +33,15 @@ export const sitesLiveCount: Resolver = async (tx, organizationId, scope) => {
     return { shape: "metric", key: "sites.live.count", value: 0, unit: null, coverage: { fresh: 0, carrying: 0 } };
   }
   const result = await tx.execute<{ live: number; total: number }>(sql`
-    WITH ${sql.raw(REPORTING_ASSETS_CTE_SQL)}
-    SELECT COUNT(DISTINCT a.location_id) FILTER (WHERE reporting.asset_id IS NOT NULL)::int AS live,
+    WITH ${sql.raw(LIVE_ASSETS_CTE_SQL)}
+    SELECT COUNT(DISTINCT a.location_id) FILTER (WHERE live.asset_id IS NOT NULL)::int AS live,
            COUNT(DISTINCT a.location_id)::int AS total
       FROM bms.assets a
       JOIN bms.locations l
         ON l.id = a.location_id
        AND l.organization_id = ${organizationId}
        AND l.active
-      LEFT JOIN reporting ON reporting.asset_id = a.id
+      LEFT JOIN live ON live.asset_id = a.id
      WHERE a.id = ANY(${sql.param([...scope])}::uuid[])
        AND a.organization_id = ${organizationId}
   `);

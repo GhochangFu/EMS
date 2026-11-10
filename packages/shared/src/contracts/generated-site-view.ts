@@ -42,6 +42,8 @@ export const generatedSiteAssetSchema = z.object({
   domain: z.string(),
   latestTelemetryAt: z.string().nullable(),
   freshness: z.enum(["live", "stale", "none"]),
+  /** F4.350 (ADR 0075 Amendment 3): the window `freshness` was judged on, seconds. Absent = the 25 s floor. */
+  freshnessWindowSeconds: z.number().int().positive().optional(),
   points: z.array(generatedSitePointSchema),
 });
 

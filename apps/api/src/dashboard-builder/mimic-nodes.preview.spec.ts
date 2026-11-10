@@ -58,6 +58,7 @@ const memberRow = {
   location_name: null,
   domain: "water",
   member_count: 1,
+  freshness_window_seconds: 150,
   active_alarms: 2,
   top_alarm_severity: null,
   top_alarm_tone: null,

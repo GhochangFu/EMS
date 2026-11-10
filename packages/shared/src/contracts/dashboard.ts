@@ -66,6 +66,8 @@ const dashboardAssetRowSchema = z.object({
   latestKw: z.number().nullable(),
   latestTelemetryAt: z.string().nullable(),
   freshness: z.enum(["live", "stale", "none"]),
+  /** F4.350 (ADR 0075 Amendment 3): the window `freshness` was judged on, seconds. Absent = the 25 s floor. */
+  freshnessWindowSeconds: z.number().int().positive().optional(),
   telemetry: z.array(
     z.object({
       pointKey: z.string(),

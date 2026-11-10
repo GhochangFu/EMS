@@ -50,10 +50,10 @@ export const systemComponentSchema = z.object({
  *
  * `percent` is `null` when `streamingAssets` is `0` — there is no ratio to
  * report, and `0` would claim a real, measured zero rather than "nothing to
- * measure". `windowSeconds` is `REPORTING_WINDOW_SECONDS` (150 s, ADR 0075
- * Amendment 1 — not the 25 s reading window; the site cards share it since
- * Amendment 2), carried so a reader never has to know the constant to explain
- * the figure.
+ * measure". `windowSeconds` is the **smallest** window an asset can have, the
+ * 25 s floor (ADR 0075 Amendment 3, `F4.350`): since that amendment each asset
+ * is fresh inside its own RTU's window (`clamp(2.5 x interval, 25 s, 900 s)`),
+ * so there is no single window to report. It is kept for the contract's sake.
  */
 export const systemDataQualitySchema = z.object({
   percent: z.number().min(0).max(100).nullable(),

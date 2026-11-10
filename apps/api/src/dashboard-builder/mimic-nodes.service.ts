@@ -22,6 +22,7 @@ import { orgSymbolsOf, type OrgSymbolRow } from "../mimic-layouts/mimic-org-symb
 // A namespace import, so the window constant's name appears in this file once: at the one
 // place it is interpolated (`tests/f3.32-mimic-widget.test.ts` counts it in the raw text).
 import * as generatedSiteView from "../control-room/generated-site-view.service";
+import { assetWindowsCteSql, FRESHNESS_FLOOR_SECONDS } from "../telemetry/telemetry-cadence";
 import { FLEET_DRIZZLE, FLEET_POOL } from "../database/database.tokens";
 
 import {
@@ -300,6 +301,11 @@ export class MimicNodesService {
     if (groupIds.length > 0 && (readableAssetIds === null || readableAssetIds.length > 0)) {
       const memberRows = await this.pool.query<MemberRow>(
         `
+        -- F4.350 (ADR 0075 Amendment 3): each member's window, from its own RTU, folded into this
+        -- statement so the read keeps its statement count.
+        WITH ${assetWindowsCteSql(
+          "SELECT wm.asset_id FROM bms.asset_group_members wm WHERE wm.asset_group_id = ANY($1::uuid[])",
+        )}
         SELECT
           m.asset_group_id,
           m.role,
@@ -311,6 +317,7 @@ export class MimicNodesService {
           m.location_name,
           m.domain,
           m.member_count,
+          COALESCE(aw.window_seconds, ${FRESHNESS_FLOOR_SECONDS})::int AS freshness_window_seconds,
           (
             SELECT count(*)::int
             FROM bms.alarms al
@@ -347,6 +354,7 @@ export class MimicNodesService {
             AND agm.role = ANY($3::text[])
             AND ($4::uuid[] IS NULL OR a.id = ANY($4::uuid[]))
         ) m
+        LEFT JOIN asset_windows aw ON aw.asset_id = m.asset_id
         LEFT JOIN LATERAL (
           SELECT al.severity, s.tone, s.label, al.message, al.raised_at, s.rank
           FROM bms.alarms al
@@ -513,7 +521,14 @@ export class MimicNodesService {
       const memberOf = (row: MemberRow): MimicNodeMemberDto => {
         const statePoints = statePointsByAsset.get(row.asset_id) ?? [];
         return {
-          asset: assetOf(row, pointsOf(row.asset_id), statePoints, nowMs, pointsByAsset.get(row.asset_id) ?? []),
+          asset: assetOf(
+            row,
+            pointsOf(row.asset_id),
+            statePoints,
+            nowMs,
+            pointsByAsset.get(row.asset_id) ?? [],
+            Number(row.freshness_window_seconds ?? FRESHNESS_FLOOR_SECONDS),
+          ),
           activeAlarms: Number(row.active_alarms),
           topAlarm: topAlarmOf(row),
           statePoints,

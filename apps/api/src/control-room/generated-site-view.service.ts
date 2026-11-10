@@ -11,6 +11,7 @@ import type {
 
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_POOL } from "../database/database.tokens";
+import { assetWindowsCteSql, FRESHNESS_FLOOR_SECONDS } from "../telemetry/telemetry-cadence";
 import { telemetryFreshnessAt } from "../telemetry/telemetry-freshness";
 
 const NOT_FOUND = "Location not found or outside your access scope";
@@ -43,6 +44,8 @@ interface AssetRow {
   location_name: string | null;
   domain_code: string | null;
   domain_label: string | null;
+  /** `F4.350`: the asset's own RTU window, seconds. */
+  window_seconds?: number | string | null;
 }
 
 /** Statement (2)'s row: one active registered point of one asset, with its latest sample. */
@@ -127,8 +130,14 @@ export class GeneratedSiteViewService {
 
     const assets = await this.pool.query<AssetRow>(
       `
+      -- F4.350 (ADR 0075 Amendment 3): each asset's window, from its own RTU, folded into this
+      -- statement so the read keeps its two statements.
+      WITH ${assetWindowsCteSql(
+        "SELECT wa.id FROM bms.assets wa WHERE wa.location_id = $1 AND ($2::uuid[] IS NULL OR wa.id = ANY($2::uuid[]))",
+      )}
       SELECT
         a.id AS asset_id,
+        COALESCE(aw.window_seconds, ${FRESHNESS_FLOOR_SECONDS})::int AS window_seconds,
         a.code AS asset_code,
         a.name AS asset_name,
         r.display_name AS rtu_display_name,
@@ -140,6 +149,7 @@ export class GeneratedSiteViewService {
         ON a.location_id = l.id
        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
       LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+      LEFT JOIN asset_windows aw ON aw.asset_id = a.id
       LEFT JOIN bms.asset_domains d ON d.code = a.domain
       WHERE l.id = $1
       ORDER BY d.sort_order, a.domain, a.code
@@ -218,6 +228,7 @@ export class GeneratedSiteViewService {
         domains.set(code, domain);
       }
       const latestTelemetryAt = newestByAsset.get(row.asset_id) ?? null;
+      const freshnessWindowSeconds = Number(row.window_seconds ?? FRESHNESS_FLOOR_SECONDS);
       const asset: GeneratedSiteAssetDto = {
         id: row.asset_id,
         code: row.asset_code ?? "",
@@ -226,7 +237,8 @@ export class GeneratedSiteViewService {
         assetLocationName: row.location_name,
         domain: code,
         latestTelemetryAt,
-        freshness: telemetryFreshnessAt(latestTelemetryAt, nowMs),
+        freshness: telemetryFreshnessAt(latestTelemetryAt, nowMs, freshnessWindowSeconds),
+        freshnessWindowSeconds,
         points: pointsByAsset.get(row.asset_id) ?? [],
       };
       domain.assets.push(asset);

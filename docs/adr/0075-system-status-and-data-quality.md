@@ -389,7 +389,7 @@ and not the window below.
 **Cause.** One number, 25 s (`LIVE_TELEMETRY_MAX_AGE_SECONDS` in
 `telemetry-freshness.ts`, and the web `FRESH_MS`), judges every device. WBLDC and
 PHE devices report about once a minute, and BCPL devices "in seconds" (owner;
-earlier notes said about 160 s — the two disagree, see *Open numbers*). A 60 s
+earlier notes said about 160 s — the two disagree, see *Measured numbers*). A 60 s
 device is therefore inside 25 s for about 25 s of every minute, and the class
 strip, the dashboard offline counts and each asset's Live/Stale pill show it
 offline for the rest. Amendment 1 and Amendment 2 patched the *status bar* and
@@ -403,11 +403,15 @@ device whose cadence is neither 1–5 s nor about 60 s.
    `window = clamp(2.5 × interval, FLOOR, CAP)` with `FLOOR = 25 s`.
 2. *Where does `interval` come from?* — **Configured wins.** A new nullable
    `bms.rtus.expected_interval_seconds` (CHECK `> 0`), when set; else the
-   **learned median gap** between the RTU's samples over the last 24 h; else the
-   25 s floor.
-3. *The cap.* — **900 s proposed**, to be confirmed against the measured gaps.
-   It is the largest window the product will accept as "live"; a device that
-   reports less often than every 360 s reads stale between reports by design.
+   **learned interval** — as built (`F4.350` PR 2), the median over the last 24
+   completed hours of `3600 / n`, `n` being the RTU's samples in that hour from the
+   `point_values_1h` aggregate. For a steady device that is its median gap, and the
+   aggregate is read in place of raw rows. An RTU younger than an hour has none;
+   else the 25 s floor.
+3. *The cap.* — **900 s, confirmed by the owner on 2026-11-10** after the
+   measurement below. It is the largest window the product will accept as
+   "live"; a device that reports less often than every 360 s reads stale
+   between reports by design. No measured device is that slow.
 
 **Decision.**
 
@@ -453,8 +457,22 @@ device whose cadence is neither 1–5 s nor about 60 s.
 - The "Assets fresh" tile and an asset row's pill now use the same window, which
   removes the disagreement Amendment 2 recorded.
 
-**Open numbers.** The cadences are owner statements, not yet measured: the
-cloud session that drafted this had no route to AWS (the proxy refuses it) or a
-dev database. The measurement — median and maximum sample gap per RTU over 24 h
-for PHE, WBLDC, BCPL and the ESKOM simulator — is owed in the `F4.350` PR 1
-body, and the 900 s cap and the BCPL cadence stay proposals until it is in.
+**Measured numbers** (owner, from AWS, 2026-11-10; the cloud session that drafted
+this had no route to AWS). Sample gap per RTU over 24 h, and the window each
+gives under the rule:
+
+| Org | RTUs | Median gap | Max gap | Window |
+| --- | --- | --- | --- | --- |
+| BCPL | 18 | 10.1 s for 16 RTUs; `LEPPLT1` 20.0 s; `LEPPLT4` 59.9 s | 107–1290 s | 25 s (floor) for 17; 150 s for `LEPPLT4` |
+| PHEWB | 5 | 25–32 s | 60 s; `RTU-861736076128187` 212 s | 63–80 s |
+| WBLDC | 4 | 60.0 s | about 120 s | 150 s |
+| ESKOM simulator | — | not measured | — | 25 s (floor), 1–5 s devices |
+
+What this changes: **BCPL is "in seconds", not 160 s** (the earlier note was
+wrong). **PHEWB sends every 25–32 s, not 60 s**, so its window is 63–80 s, not
+150 s: a stopped PHEWB device reads offline in about a minute and a quarter. The
+BCPL max gaps (107–1290 s) are real outages, not cadence; with a 25 s window
+those assets read offline during them, which is the intended reading. WBLDC's
+longest gap (about 120 s) is inside its 150 s window, so no WBLDC room flickers.
+The ESKOM simulator was not measured; it is taken as the 1–5 s devices the
+simulator is configured for.

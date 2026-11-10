@@ -9,20 +9,13 @@ import type { AccessibleScope, AssetRoleSummaryItem, AssetRoleSummaryResponse } 
 import { activeAlarmFilter } from "../alarms/active-alarm-filter";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withReadScope } from "../database/tenant-read-scope";
-import { LIVE_WINDOW_INTERVAL_SQL } from "../telemetry/telemetry-freshness";
+import { liveAssetsCteSql } from "../telemetry/telemetry-cadence";
 
 /**
- * The `live` window as a literal interval built from
- * `LIVE_WINDOW_INTERVAL_SQL`, not a bound parameter. TimescaleDB excludes
- * `point_values` chunks at plan time only for `now() - <literal interval>`;
- * a bound `$n` (or `make_interval($n)`) plans every chunk and prunes at
- * executor start instead. Measured on the dev database (2026-09-24, ~5.4k
- * chunks, as `bms_fleet`): the whole role-summary query planned in
- * 520–1900 ms with the parameter and 42–100 ms with the literal. `sql.raw`
- * is safe here: `LIVE_WINDOW_INTERVAL_SQL` is checked to be built from a
- * positive integer in `telemetry-freshness.ts`, never request input.
+ * `F4.350` (ADR 0075 Amendment 3): the `learned` and `live` CTEs, narrowed to the members. Each
+ * asset is live inside its own RTU's window; the cap is a plan-time literal inside the CTE.
  */
-const LIVE_WINDOW = sql.raw(LIVE_WINDOW_INTERVAL_SQL);
+const LIVE_CTES = sql.raw(liveAssetsCteSql("SELECT asset_id FROM members"));
 
 /**
  * The asset groups whose memberships the caller may count (security L1,
@@ -95,8 +88,8 @@ interface RoleSummaryRow extends Record<string, unknown> {
  *    (`activeAlarmFilter`: raised and not cleared, acknowledged or not).
  *    Higher `rank` is more urgent (ADR 0032).
  * 3. `live` — the member assets with a sample of **any** point newer than
- *    the window `telemetry-freshness.ts` exports (OQ1), written into the SQL
- *    as {@link LIVE_WINDOW} — never a restated number;
+ *    its own RTU's window (OQ1; `F4.350`), written into the SQL by
+ *    `liveAssetsCteSql` (`telemetry-cadence.ts`) — never a restated number;
  *    `tests/f3.28-offline-bound-single-source` holds that.
  * 4. `role_worst` — each role's highest asset rank.
  * 5. The final group counts the role's assets, those at the role's worst rank
@@ -159,12 +152,7 @@ export class AssetRoleSummaryService {
               AND alarms.asset_id IN (SELECT asset_id FROM members)
             GROUP BY alarms.asset_id
           ),
-          live AS (
-            SELECT DISTINCT pv.asset_id
-            FROM telemetry.point_values pv
-            WHERE pv.time > now() - ${LIVE_WINDOW}
-              AND pv.asset_id IN (SELECT asset_id FROM members)
-          ),
+          ${LIVE_CTES},
           per_asset AS (
             SELECT m.role, m.asset_id, w.rank, (l.asset_id IS NULL) AS offline
             FROM members m

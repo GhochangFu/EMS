@@ -291,7 +291,7 @@ export async function assertNoBindingsResolvesEmpty(
  * `offline` status and their active alarm count.
  *
  * The fixture holds one asset sampled a second ago (live), one sampled a minute ago (offline:
- * the window is `LIVE_TELEMETRY_MAX_AGE_SECONDS`, 25 s — a resolver on any wider window counts
+ * the window is the asset's own RTU window, the 25 s floor for these RTU-less fixtures (`F4.350`) — a resolver on any wider window counts
  * it live and this goes red), one never sampled (offline), and one retired asset, which is
  * neither: a retired asset is absent, as it is from the role summary's `offlineCount`.
  */

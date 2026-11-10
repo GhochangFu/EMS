@@ -293,7 +293,7 @@ export async function clearOrganizationView(fx: OrganizationLayoutFixture, organ
   ]);
 }
 
-/** One sample on `assetId` now, so it reports inside the live window (`REPORTING_ASSETS_CTE_SQL`). */
+/** One sample on `assetId` now, so it reports inside the live window (`LIVE_ASSETS_CTE_SQL`). */
 export async function reportNow(fx: OrganizationLayoutFixture, assetId: string): Promise<void> {
   await fx.superuserPool.query(
     `INSERT INTO telemetry.point_values (time, asset_id, point_key, value) VALUES (now(), $1, 'kw', 1)`,

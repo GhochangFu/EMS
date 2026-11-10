@@ -21,7 +21,7 @@ import {
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
-import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
+import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-cadence";
 import { readBreakerRows } from "./breaker-rows";
 import { resolveAssetScope, type DashboardAssetScope } from "./dashboard-scope-assets";
 
@@ -93,7 +93,7 @@ export interface TabStatusRow extends Record<string, unknown> {
  * asked for, so the Overview's module cards and critical-systems list read their status here: the
  * worst `bms.alarm_severities.rank` among the active alarms of the tab group's readable active
  * members, their active-alarm count, how many of them have no sample in the shared live window
- * (`LIVE_ASSETS_CTE_SQL`, `telemetry-freshness.ts` — never a restated interval), and how many
+ * (`LIVE_ASSETS_CTE_SQL`, `telemetry-cadence.ts` — each asset on its own RTU window, never a restated interval), and how many
  * there are. The tone is the worst severity's, raised to `warning` by an offline member when no
  * alarm is `critical` or `warning` (`tabTone`). A tab with no group (the Overview) is not listed: it has no status to show. A tab
  * whose group has members, none of them readable, answers `status: null` ("Outside scope"),

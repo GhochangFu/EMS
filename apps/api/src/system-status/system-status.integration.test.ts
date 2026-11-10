@@ -53,7 +53,7 @@ describe.skipIf(!connectionString)("F3.30 — GET /system/status read (real data
     await assertOneFreshOfTwoStreaming(db);
   }, 60_000);
 
-  it("a 200 s old mqtt sample, beyond the 150 s reporting window, reads field_data degraded", async () => {
+  it("a 200 s old mqtt sample, beyond a 60 s device's 150 s window, reads field_data degraded", async () => {
     await assertStaleMqttIsDegraded(db);
   }, 60_000);
 
@@ -85,7 +85,7 @@ describe.skipIf(!connectionString)("F3.30 — GET /system/status read (real data
     await assertThreeSamplesCountOneFreshAsset(db);
   }, 60_000);
 
-  it("a 60 s old mqtt sample is inside the 150 s reporting window and reads field_data ok", async () => {
+  it("a 60 s old mqtt sample is inside a 60 s device's 150 s window and reads field_data ok", async () => {
     await assertSixtySecondMqttSampleIsReporting(db);
   }, 60_000);
 });

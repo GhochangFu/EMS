@@ -67,15 +67,15 @@ describe.skipIf(!connectionString)("F3.30 — dashboard freshness counts use the
 
   it("kpis.sitesOnline counts a site whose fresh sample is not kw", run(assertSitesOnlineUsesAnyPoint), 60_000);
 
-  it("F4.260 — kpis.sitesOnline counts a 140 s sample and not a 160 s one", run(assertSitesOnlineWindowIsTheReportingWindow), 60_000);
+  it("F4.260 — kpis.sitesOnline counts a 15 s sample and not a 35 s one", run(assertSitesOnlineWindowIsTheReportingWindow), 60_000);
 
   it("F4.317 — kpis.sitesTotal counts two site names at one location as one site", run(assertSitesTotalCountsLocationsNotSiteNames), 60_000);
 
   it("F4.317 — kpis counts no site at an inactive location", run(assertSitesSkipInactiveLocations), 60_000);
 
-  it("F4.260 — locationKpis counts a 140 s sample fresh and not a 160 s one", run(assertLocationCardsUseTheReportingWindow), 60_000);
+  it("F4.260 — locationKpis counts a 15 s sample fresh and not a 35 s one", run(assertLocationCardsUseTheReportingWindow), 60_000);
 
-  it("F4.260 — the RTU row counts a 140 s sample fresh and not a 160 s one", run(assertRtuRowsUseTheReportingWindow), 60_000);
+  it("F4.260 — the RTU row counts a 15 s sample fresh and not a 35 s one", run(assertRtuRowsUseTheReportingWindow), 60_000);
 
   it("kpis.totalKw still sums a stale kw with no site online", run(assertKpisTotalKwUnchanged), 60_000);
 
