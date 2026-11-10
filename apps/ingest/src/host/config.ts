@@ -16,7 +16,7 @@ import {
   resolveCredentialKeys,
   type Base64Decoder,
 } from "@bms/shared/credential-keys";
-import { parseMqttPlaintextHosts } from "@bms/shared/ingest";
+import { NOTIFY_LIVE_WINDOW_MS, parseMqttPlaintextHosts } from "@bms/shared/ingest";
 
 export type HostConfig = {
   readonly databaseUrl: string;
@@ -97,6 +97,13 @@ export type HostConfig = {
    * reaches this field: the shared parser throws and the host refuses to start.
    */
   readonly mqttPlaintextHosts: ReadonlySet<string>;
+  /**
+   * How old a written row's `time` may be and still be sent on `bms_telemetry`
+   * (`INGEST_NOTIFY_LIVE_WINDOW_MS`, ADR 0123 decision 10). Defaults to the
+   * shared `NOTIFY_LIVE_WINDOW_MS` (5 min); 60 s to 15 min is accepted and
+   * anything else refuses start-up — see `readNotifyLiveWindowMs`.
+   */
+  readonly notifyLiveWindowMs: number;
 };
 
 /**
@@ -170,6 +177,40 @@ function positiveInt(
   return value;
 }
 
+/** The bounds on `INGEST_NOTIFY_LIVE_WINDOW_MS` (plan P4, ruled as recommended). */
+export const MIN_NOTIFY_LIVE_WINDOW_MS: number = 60_000;
+export const MAX_NOTIFY_LIVE_WINDOW_MS: number = 900_000;
+
+/**
+ * The live window `writeResolved` notifies inside, **bounded at both ends**.
+ *
+ * The floor is the reason this is not `positiveInt`: a window of `0` notifies
+ * no row at all, which is the `INGEST_NOTIFY=off` switch ADR 0016 §6 commit 4
+ * deleted, back under a new name — rows landing while every dashboard goes
+ * dead, with no error. A window of a few seconds is the same failure for any
+ * reading that waits in a queue. 60 s is the smallest value that still
+ * notifies a reading the host was a little slow to write. The ceiling stops a
+ * replay of a long outage being announced as live: past 15 minutes a reading
+ * is history to the alarm engine.
+ */
+function readNotifyLiveWindowMs(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") {
+    return NOTIFY_LIVE_WINDOW_MS;
+  }
+  const value = /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : Number.NaN;
+  if (
+    !Number.isSafeInteger(value) ||
+    value < MIN_NOTIFY_LIVE_WINDOW_MS ||
+    value > MAX_NOTIFY_LIVE_WINDOW_MS
+  ) {
+    throw new Error(
+      `INGEST_NOTIFY_LIVE_WINDOW_MS must be an integer between ${MIN_NOTIFY_LIVE_WINDOW_MS} and ` +
+        `${MAX_NOTIFY_LIVE_WINDOW_MS}, got "${raw}"`,
+    );
+  }
+  return value;
+}
+
 /**
  * The buffer directory, trimmed, defaulted, and **required to be absolute**.
  *
@@ -228,9 +269,10 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   // stays on. Refusing to start on its presence would take the pilot down over a
   // variable that no longer has any effect.
   //
-  // There is no `notifyEnabled` here on purpose. The host always notifies, so
-  // there is no configuration that can run ingest with realtime silently off —
-  // the failure mode commit 4 exists to remove.
+  // There is no `notifyEnabled` here on purpose. The host always notifies every
+  // row inside the live window (ADR 0123 decision 10), and that window is
+  // bounded below, so there is no configuration that can run ingest with
+  // realtime silently off — the failure mode commit 4 exists to remove.
   //
   // Two things carry that guarantee, and neither is in this file: the positive
   // `pg_notify` assertion in `normaliser.spec.ts`, which fails if any
@@ -281,5 +323,6 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
     // ADR 0114 decision 1: not wrapped, so a bad entry escapes to `main().catch`
     // and the host refuses to start, like the credential-key refusal above.
     mqttPlaintextHosts: parseMqttPlaintextHosts(env.MQTT_PLAINTEXT_HOSTS),
+    notifyLiveWindowMs: readNotifyLiveWindowMs(env.INGEST_NOTIFY_LIVE_WINDOW_MS),
   };
 }

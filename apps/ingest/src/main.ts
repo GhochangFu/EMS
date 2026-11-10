@@ -3,8 +3,6 @@ import { resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
 import pg from "pg";
 
-import { NOTIFY_LIVE_WINDOW_MS } from "@bms/shared/ingest";
-
 import { lookupAdapter } from "./adapter/registry.js";
 import {
   loadBindingRows,
@@ -18,7 +16,7 @@ import { readHostConfig } from "./host/config.js";
 import { openDiskBufferStore } from "./host/disk-buffer.js";
 import { startHealthServer } from "./host/health-server.js";
 import { createHostLogger } from "./host/logger.js";
-import type { PointIndex } from "./host/normaliser.js";
+import type { PointIndex, WriteResult } from "./host/normaliser.js";
 import { droppedCount, resolveSamples, writeResolved } from "./host/normaliser.js";
 import { createEndpointRegistry } from "./host/reconcile.js";
 import { createSupervisor, realScheduler, type Supervisor } from "./host/supervisor.js";
@@ -43,9 +41,11 @@ import { decryptCredentials, resolveMqttConnection } from "./rtu-config.js";
  * The strangler migration is finished: commit 2 built this alongside the ADR 0007
  * pilot's `src/index.js`, commit 3 verified the two agreed and cut the
  * deployment over on 2026-08-06, and commit 4 deleted `index.js` so `pnpm start`
- * runs `dist/main.js`. `pg_notify` is unconditional — the `INGEST_NOTIFY` switch
+ * runs `dist/main.js`. `pg_notify` has no switch — the `INGEST_NOTIFY` switch
  * existed only for the parallel-run window and its survival would have meant a
  * way to write rows while every dashboard silently went dead (Amendment 3).
+ * Every row inside the live window is notified; an older row is written as
+ * history (ADR 0016 Amendment 9, ADR 0123 decision 10).
  */
 
 async function main(): Promise<void> {
@@ -213,10 +213,27 @@ async function main(): Promise<void> {
           return;
         }
         const client = await pool.connect();
+        let written: WriteResult;
         try {
-          await writeResolved(client, rows, { now: realScheduler.now, liveWindowMs: NOTIFY_LIVE_WINDOW_MS });
+          // ADR 0123 decision 10: every row is written; only rows inside the
+          // live window are notified. Measured against the wall clock, because
+          // a row's `time` is the receive time the wall clock stamped.
+          written = await writeResolved(client, rows, {
+            now: realScheduler.now,
+            liveWindowMs: hostConfig.notifyLiveWindowMs,
+          });
         } finally {
           client.release();
+        }
+        if (written.rowsNotNotified > 0) {
+          // History landing silently is the rule (a replay after an outage),
+          // not a fault — but it is never invisible. A count, never the values.
+          logger.info("rows written outside the live window, not notified", {
+            endpointKey: plan.endpointKey,
+            rowsWritten: written.rowsWritten,
+            rowsNotNotified: written.rowsNotNotified,
+            liveWindowMs: hostConfig.notifyLiveWindowMs,
+          });
         }
       },
     });

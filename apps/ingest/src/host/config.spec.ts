@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 
+import { NOTIFY_LIVE_WINDOW_MS } from "@bms/shared/ingest";
+
 import {
   DEFAULT_BUFFER_DIR,
   DEFAULT_BUFFER_MAX_AGE_MS,
@@ -62,8 +64,9 @@ export function runHostConfigTests(): void {
 
   {
     // Commit 4 deleted `INGEST_NOTIFY`, and this is the assertion that keeps it
-    // deleted. The host always notifies, so no environment can run ingest with
-    // realtime silently off — rows landing while every dashboard is dead, with no
+    // deleted. The host always notifies every live row, so no environment can
+    // run ingest with realtime silently off (the live window of ADR 0123
+    // decision 10 is bounded below, `runNotifyLiveWindowConfigTests`) — rows landing while every dashboard is dead, with no
     // error and no alarm, was the live failure mode the flag had become.
     //
     // Asserting the *absence* of the key is what makes this fail if the flag is
@@ -545,4 +548,47 @@ export function runMqttPlaintextHostsConfigTests(): void {
     `the refusal names the position: ${messageOf(err)}`,
   );
   assert(!messageOf(err).includes("secret.example"), "the refusal never echoes the entry");
+}
+
+/**
+ * `E7.2` / ADR 0123 decision 10 — `INGEST_NOTIFY_LIVE_WINDOW_MS`, the window
+ * inside which `writeResolved` notifies a row.
+ *
+ * Unset is `NOTIFY_LIVE_WINDOW_MS` (5 min, the API's rule). Accepted from
+ * 60 000 to 900 000 ms (plan P4, ruled "as recommended"); anything else
+ * refuses start-up. The floor is the point: a window of `0` would notify
+ * nothing, which is the deleted `INGEST_NOTIFY=off` under a new name, and a
+ * very small one is the same failure for any reading that waits a few seconds
+ * in a queue. The ceiling keeps a replay of a long outage from being announced
+ * as live. Reddens if the floor is dropped.
+ */
+export function runNotifyLiveWindowConfigTests(): void {
+  const unset = readHostConfig({ ...BASE }).notifyLiveWindowMs;
+  assert(
+    unset === NOTIFY_LIVE_WINDOW_MS && unset === 300_000,
+    `an unset INGEST_NOTIFY_LIVE_WINDOW_MS is the shared five-minute window, got ${unset}`,
+  );
+  const blank = readHostConfig({ ...BASE, INGEST_NOTIFY_LIVE_WINDOW_MS: " " }).notifyLiveWindowMs;
+  assert(blank === 300_000, `a blank value is unset, got ${blank}`);
+
+  for (const [raw, expected] of [
+    ["60000", 60_000],
+    ["120000", 120_000],
+    [" 900000 ", 900_000],
+  ] as const) {
+    const got = readHostConfig({ ...BASE, INGEST_NOTIFY_LIVE_WINDOW_MS: raw }).notifyLiveWindowMs;
+    assert(got === expected, `INGEST_NOTIFY_LIVE_WINDOW_MS="${raw}" must read ${expected}, got ${got}`);
+  }
+
+  for (const raw of ["0", "59999", "900001", "abc", "5m", "1e5", "-60000", "60000.5"]) {
+    const err = thrownBy(
+      () => readHostConfig({ ...BASE, INGEST_NOTIFY_LIVE_WINDOW_MS: raw }),
+      `INGEST_NOTIFY_LIVE_WINDOW_MS="${raw}"`,
+    );
+    assert(
+      messageOf(err).startsWith("INGEST_NOTIFY_LIVE_WINDOW_MS must be an integer between 60000 and 900000"),
+      `INGEST_NOTIFY_LIVE_WINDOW_MS="${raw}" must refuse start-up and name the variable and its ` +
+        `bounds — a window of 0 is the deleted INGEST_NOTIFY switch; got: ${messageOf(err)}`,
+    );
+  }
 }
