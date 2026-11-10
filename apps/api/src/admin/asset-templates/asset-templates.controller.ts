@@ -42,6 +42,7 @@ import { AssetTemplateMigrationService } from "./asset-templates-migrate.service
 import { AssetTemplateSeededRulesService } from "./asset-templates-seeded-rules.service";
 import { AssetTemplatesStockService } from "./asset-templates-stock.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
+import { RateLimitClassOf } from "../../rate-limit/rate-limit-class.decorator";
 
 /**
  * The asset template admin surface — `F2.1`, ADR 0015; the stock routes are
@@ -98,6 +99,7 @@ export class AssetTemplatesAdminController {
    * `viewer` included — could enumerate the shipped catalog.
    */
   @Get("stock")
+  @RateLimitClassOf("heavy")
   async listStock(@CurrentUser() user: JwtPayload) {
     await this.stock.assertCanList(user);
     return this.stock.list();

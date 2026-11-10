@@ -8,6 +8,7 @@ import { idParamSchema } from "../admin/admin.schema";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { SiteSegmentViewsService } from "./segment-views.service";
+import { RateLimitClassOf } from "../rate-limit/rate-limit-class.decorator";
 
 /**
  * `F4.302` / ADR 0108 Amendment 4 item 4 — one segment of the Trends & Energy
@@ -45,6 +46,7 @@ export class SiteSegmentViewsController {
    * `SiteSegmentViewsController_exportCsv`.
    */
   @Get("sites/:locationId/segment-views/export.csv")
+  @RateLimitClassOf("heavy")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="segment-view.csv"')
   @Header("Cache-Control", "no-store")
@@ -59,6 +61,7 @@ export class SiteSegmentViewsController {
 
   /** `F4.303` — the same rows as `xlsx`, one sheet. `@Res()`: the body is a `Buffer`. */
   @Get("sites/:locationId/segment-views/export.xlsx")
+  @RateLimitClassOf("heavy")
   async exportXlsx(
     @Param("locationId") locationId: string,
     @Query() query: unknown,

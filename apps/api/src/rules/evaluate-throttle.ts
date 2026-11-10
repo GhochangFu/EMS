@@ -1,4 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
+
+import { evaluateThrottleKey } from "../rate-limit/rate-limit-key";
+import { RateLimitStore } from "../rate-limit/rate-limit-store";
 
 /**
  * The minimum interval between two `POST /api/v1/rules/evaluate` sweeps in one
@@ -173,6 +176,11 @@ export function throttleKeysFor(
  * already wrong before the buckets were split: the stand-in bucket was always
  * its own, and a global admin's press stamps no organization key.
  *
+ * **Superseded by `F4.17` (ADR 0125 Q9): see {@link EvaluateThrottle.claim}.**
+ * With Redis configured the window is shared and the bound below is per fleet,
+ * not per process. The paragraph stays as the record of what `F3.47` shipped
+ * and of what still holds while Redis is unavailable.
+ *
  * **Per API process.** The state is a `Map` in this process's memory, so N
  * processes serving this route give N times the bound and nothing in this
  * repository detects it. `docker-compose.yml` runs one `api` container with no
@@ -196,6 +204,43 @@ export function throttleKeysFor(
 export class EvaluateThrottle {
   /** Key → the instant that key's last allowed sweep started. */
   private readonly lastSweepStartedAt = new Map<string, number>();
+
+  /**
+   * `F4.17` / ADR 0125 Q9 — the shared store, when the process has one. Optional
+   * so a spec (and any module without `RateLimitModule`) builds the throttle by
+   * hand and gets the in-process window alone.
+   */
+  constructor(@Optional() private readonly shared?: RateLimitStore) {}
+
+  /**
+   * **The route calls this, not {@link check}.** `F4.17` / ADR 0125 Q9 moved the
+   * window into Redis, so the bound above stops being per process: `api` and
+   * `api-replica` claim the same keys through one atomic script
+   * (`CLAIM_ALL_SCRIPT`), which keeps `check`'s two rules — any key inside its
+   * window refuses, and only an allowed press stamps, all keys at once. The
+   * ceiling becomes **K + 1 + G sweeps per interval for the whole fleet**.
+   *
+   * With no usable Redis (unset, down or slow) it falls back to {@link check},
+   * the in-process window, and the bound is per process again for as long as
+   * that lasts — the same fail-open rule as the request limiter (decision 4).
+   * An allowed shared claim also stamps the local `Map`, so a Redis outage
+   * that starts mid-window cannot hand this process a free press.
+   */
+  async claim(keys: string[], now: number): Promise<EvaluateThrottleDecision> {
+    const remainingMs = this.shared
+      ? await this.shared.claimAll(keys.map(evaluateThrottleKey), EVALUATE_MIN_INTERVAL_MS)
+      : null;
+    if (remainingMs === null) {
+      return this.check(keys, now);
+    }
+    if (remainingMs > 0) {
+      return { allowed: false, retryAfterSeconds: Math.ceil(remainingMs / 1000) };
+    }
+    for (const key of keys) {
+      this.lastSweepStartedAt.set(key, now);
+    }
+    return { allowed: true };
+  }
 
   /**
    * Whether a sweep may start now for these keys, stamping every one of them

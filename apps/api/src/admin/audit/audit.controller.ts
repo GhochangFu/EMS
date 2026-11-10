@@ -9,6 +9,7 @@ import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { auditExportQuerySchema, auditListQuerySchema } from "./audit.schema";
 import { AuditAdminService } from "./audit.service";
 import type { AuditExportFile } from "./audit.service";
+import { RateLimitClassOf } from "../../rate-limit/rate-limit-class.decorator";
 
 /**
  * Audit log read + export (ADR 0021, `F4.14`; widened by ADR 0046, `E7.1e`).
@@ -37,6 +38,7 @@ export class AuditAdminController {
   }
 
   @Get("export")
+  @RateLimitClassOf("heavy")
   async export(
     @CurrentUser() user: JwtPayload,
     @Query() query: unknown,

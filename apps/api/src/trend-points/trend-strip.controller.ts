@@ -8,6 +8,7 @@ import { idParamSchema } from "../admin/admin.schema";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { SiteTrendStripService } from "./trend-strip.service";
+import { RateLimitClassOf } from "../rate-limit/rate-limit-class.decorator";
 
 /**
  * `F4.301` / ADR 0108 Amendment 2 item 3 — the Control Room trend strip, one
@@ -42,6 +43,7 @@ export class SiteTrendStripController {
    * fixed: no id, code or name. Registry key `SiteTrendStripController_exportCsv`.
    */
   @Get("sites/:locationId/trend-strip/export.csv")
+  @RateLimitClassOf("heavy")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="trend-strip.csv"')
   @Header("Cache-Control", "no-store")
@@ -56,6 +58,7 @@ export class SiteTrendStripController {
 
   /** `F4.303` — the same rows as `xlsx`, one sheet. `@Res()`: the body is a `Buffer`. */
   @Get("sites/:locationId/trend-strip/export.xlsx")
+  @RateLimitClassOf("heavy")
   async exportXlsx(
     @Param("locationId") locationId: string,
     @Query() query: unknown,

@@ -20,6 +20,7 @@ import { CopilotUploadChangeInterceptor } from "../../copilot/copilot-upload-cha
 import { CopilotUploadRoute } from "../../copilot/copilot-upload-route";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { TelemetryImportService } from "./telemetry-import.service";
+import { RateLimitClassOf } from "../../rate-limit/rate-limit-class.decorator";
 
 type UploadedImportFile = { buffer: Buffer } | undefined;
 
@@ -30,6 +31,7 @@ export class TelemetryImportController {
   constructor(private readonly service: TelemetryImportService) {}
 
   @Post("preview")
+  @RateLimitClassOf("heavy")
   @HttpCode(HttpStatus.OK)
   // `files: 1` caps the multipart part count for the file field itself;
   // `fields: 4` caps the non-file fields (`sourceKind`, `conflictPolicy`,
@@ -47,6 +49,7 @@ export class TelemetryImportController {
   }
 
   @Post("commit")
+  @RateLimitClassOf("heavy")
   @HttpCode(HttpStatus.OK)
   // `files: 1` caps the multipart part count for the file field itself;
   // `fields: 4` caps the non-file fields (`sourceKind`, `conflictPolicy`,

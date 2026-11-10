@@ -1,4 +1,5 @@
 import { LIFECYCLE_TICK_MS } from "../alarms/alarm-lifecycle";
+import type { RateLimitStore } from "../rate-limit/rate-limit-store";
 import {
   EVALUATE_MIN_INTERVAL_MS,
   EvaluateThrottle,
@@ -386,4 +387,57 @@ export function holdsTheSameIntervalAsTheAutomaticSweep(): void {
     `the interval matches the lifecycle tick, got ${EVALUATE_MIN_INTERVAL_MS} vs ${LIFECYCLE_TICK_MS}`,
   );
   assert(EVALUATE_MIN_INTERVAL_MS === 30_000, `both are 30 s, got ${EVALUATE_MIN_INTERVAL_MS}`);
+}
+
+// ── F4.17 / ADR 0125 Q9 — the shared window, against a fake store ───────────
+
+type ClaimAll = RateLimitStore["claimAll"];
+
+function throttleOver(claimAll: ClaimAll): EvaluateThrottle {
+  return new EvaluateThrottle({ claimAll } as unknown as RateLimitStore);
+}
+
+/** No store at all (a spec, or a module without `RateLimitModule`): `claim` is `check`. */
+export async function claimWithoutAStoreIsTheInProcessWindow(): Promise<void> {
+  const throttle = new EvaluateThrottle();
+  const organizationId = freshOrganizationId();
+  assert((await throttle.claim([organizationId], T)).allowed, "the first press runs");
+  const held = await throttle.claim([organizationId], T + 1);
+  assert(!held.allowed, "the second press is refused by the in-process window");
+}
+
+/** The store answers `null` (Redis unset, down or slow): `claim` falls back to `check`. */
+export async function aStoreWithNoRedisFallsBackToTheInProcessWindow(): Promise<void> {
+  const throttle = throttleOver(async () => null);
+  const organizationId = freshOrganizationId();
+  assert((await throttle.claim([organizationId], T)).allowed, "the first press runs");
+  assert(!(await throttle.claim([organizationId], T + 1)).allowed, "the second is refused locally");
+}
+
+/** The store refuses: the wait is the shared remainder, rounded up. */
+export async function aSharedRefusalReportsTheSharedRemainder(): Promise<void> {
+  const throttle = throttleOver(async () => 12_345);
+  const decision = refusal(await throttle.claim([freshOrganizationId()], T), "a held shared window");
+  assert(decision.retryAfterSeconds === 13, `expected 13 s, got ${decision.retryAfterSeconds}`);
+}
+
+/**
+ * The store allows: the claim also stamps the local `Map`, so if Redis then
+ * fails mid-window this process does not hand out a free press.
+ */
+export async function aSharedClaimAlsoStampsTheLocalWindow(): Promise<void> {
+  let redisUp = true;
+  const keysSeen: string[][] = [];
+  const throttle = throttleOver(async (keys) => {
+    keysSeen.push(keys);
+    return redisUp ? 0 : null;
+  });
+  const organizationId = freshOrganizationId();
+  assert((await throttle.claim([organizationId], T)).allowed, "the shared claim runs");
+  redisUp = false;
+  assert(!(await throttle.claim([organizationId], T + 1)).allowed, "the local window still holds");
+  assert(
+    keysSeen[0]?.[0] === `rl:v1:evaluate:${organizationId}`,
+    `the shared key is namespaced, got ${keysSeen[0]?.[0]}`,
+  );
 }

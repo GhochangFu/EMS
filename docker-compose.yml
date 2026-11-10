@@ -244,14 +244,12 @@ services:
         condition: service_healthy
 
   api:
-    # ONE process, and one route depends on that. `F3.47` bounds
-    # `POST /api/v1/rules/evaluate` with a `Map` in this container's memory
-    # (`apps/api/src/rules/evaluate-throttle.ts`) — one full ~289-rule sweep per
-    # 30 s per bucket. Adding `deploy.replicas`, or putting a load balancer in
-    # front of more than one API process, multiplies that ceiling by the process
-    # count, and nothing in this repository can detect it: each process holds
-    # its own Map and they never talk. Moving the state to Redis (already a
-    # service here) is the fix if that day comes. See also `api-replica` below.
+    # `F3.47` bounds `POST /api/v1/rules/evaluate` to one full ~289-rule sweep
+    # per 30 s per bucket (`apps/api/src/rules/evaluate-throttle.ts`). Since
+    # `F4.17` (ADR 0125 Q9) that window lives in Redis, so a second API process
+    # (`api-replica` below, or `deploy.replicas`) shares it instead of doubling
+    # it. While Redis is unavailable each process falls back to its own
+    # in-memory window, and for that time the ceiling is per process again.
     profiles: ["core", "pilot", "phe"]
     build:
       context: .
@@ -404,20 +402,18 @@ services:
         condition: service_completed_successfully
 
   api-replica:
-    # A SECOND API process, and therefore a second `F3.47` evaluate-throttle
-    # `Map` with its own empty state. The SPA cannot reach it: `web` is built
-    # with `VITE_API_URL: http://localhost:4000`, so browser presses go to `api`
-    # only and the bound holds for them.
+    # A SECOND API process on the same database and the same Redis. The SPA
+    # cannot reach it (`web` is built with `VITE_API_URL:
+    # http://localhost:4000`); an HTTP caller can, on 4001.
     #
-    # An HTTP caller is another matter. This service publishes 4001 and points
-    # at the same database, so a request to localhost:4001 reaches
-    # `POST /api/v1/rules/evaluate` on a second process holding its own empty
-    # `Map`. While the `realtime-smoke` profile is up, the real ceiling for
-    # anything that is not the SPA is therefore TWO sweeps per bucket per 30 s
-    # — one per process, and neither process can see the other's Map. Bring
-    # another replica up under any profile and it is three, on the same terms.
-    # That is inherent to a second process and is the reason the throttle's
-    # docblock says the bound is per process.
+    # Since `F4.17` (ADR 0125) it shares every limit with `api` through Redis:
+    # the request limiter's counters (Stage 1 per IP, Stage 2 per user) and the
+    # `F3.47` evaluate-now window. Until then this process held its own empty
+    # evaluate-throttle `Map`, so the ceiling for anything that was not the SPA
+    # was two sweeps per bucket per 30 s. It is one again, for the whole fleet,
+    # while Redis is up; with Redis down each process counts alone. This is
+    # also why its RATE_LIMIT_* values must equal `api`'s
+    # (`tests/f4.17-rate-limit-compose.test.ts`).
     #
     # It used to be worse. This service set neither AUTH_MODE nor OIDC_ISSUER,
     # so `resolveAuthMode` (apps/api/src/auth/auth-mode.ts) answered `local`

@@ -33,6 +33,7 @@ import {
 } from "./telemetry.schema";
 import { resolveAggregateRange } from "./point-aggregate-window";
 import { TelemetryService } from "./telemetry.service";
+import { RateLimitClassOf } from "../rate-limit/rate-limit-class.decorator";
 
 const assetIdSchema = z.string().uuid();
 
@@ -330,6 +331,7 @@ export class TelemetryController {
    * fixed: no id, code or name. Registry key `TelemetryController_historyCsv`.
    */
   @Get("assets/:assetId/history/export.csv")
+  @RateLimitClassOf("heavy")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="asset-history.csv"')
   @Header("Cache-Control", "no-store")
@@ -343,6 +345,7 @@ export class TelemetryController {
 
   /** `F4.303` — the same rows as `xlsx`, one sheet. `@Res()`: the body is a `Buffer`. */
   @Get("assets/:assetId/history/export.xlsx")
+  @RateLimitClassOf("heavy")
   async historyXlsx(
     @CurrentUser() user: JwtPayload,
     @Param("assetId") assetId: string,
