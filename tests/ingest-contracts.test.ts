@@ -128,6 +128,13 @@ describe("ADR 0016 ingest contracts", () => {
     expect(String(ingest.UPLINK_TOKEN_PATTERN)).toBe("/^bmsgw_[A-Za-z0-9_-]{43}$/");
   });
 
+  it("publishes the notify live window through ./ingest", () => {
+    // `E7.2` (ADR 0123 decision 10): the API's manual-entry write and the
+    // ingest host's `writeResolved` gate `pg_notify` on one constant.
+    const ingest = require_("@bms/shared/ingest") as Record<string, unknown>;
+    expect(ingest.NOTIFY_LIVE_WINDOW_MS).toBe(300_000);
+  });
+
   it("publishes ./ingest under both import and require conditions", () => {
     // ADR 0016 §8 calls this out specifically: `apps/sim` consumes @bms/shared
     // through `createRequire(import.meta.url)`, so an import-only condition

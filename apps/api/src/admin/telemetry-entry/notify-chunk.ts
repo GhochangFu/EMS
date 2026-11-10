@@ -9,7 +9,7 @@
  * the same one. The simple re-stringify-per-item approach is used rather than
  * `chunk.ts`'s incremental one: ADR 0016 calls that fine "for a handful of
  * MQTT points," and the only readings this ever chunks are the *live* subset
- * of one write batch (`NOTIFY_LIVE_WINDOW_MS` in `telemetry-write.service.ts`)
+ * of one write batch (`NOTIFY_LIVE_WINDOW_MS` in `@bms/shared/ingest`)
  * — a handful, not a device stream.
  */
 

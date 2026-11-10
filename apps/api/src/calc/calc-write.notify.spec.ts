@@ -17,7 +17,7 @@ import { CalcWriteService, type CalcWriteInput } from "./calc-write.service";
  * instance's `TelemetryBroadcastHub`, whose consumers (the alarm engine, the
  * streaming host, the WebSocket gateway) treat a reading as live. A backfill
  * writes weeks-old values, which must raise no live alarm and reach no
- * browser as current (`telemetry-write.service.ts`' `NOTIFY_LIVE_WINDOW_MS`
+ * browser as current (`NOTIFY_LIVE_WINDOW_MS` in `@bms/shared/ingest`
  * holds the same line for a backdated manual entry).
  */
 

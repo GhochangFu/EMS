@@ -54,6 +54,31 @@ const _ingestProtocolsAreOnboardable: readonly OnboardingProtocol[] = INGEST_PRO
 void _ingestProtocolsAreOnboardable;
 
 /**
+ * How recent a WRITTEN reading must be to raise a `pg_notify` on
+ * `bms_telemetry` — the only mechanism that reaches `AlarmEngineService` (it
+ * evaluates exclusively off `TelemetryBroadcastHub`'s `"readings"` event, fed
+ * exclusively by `LISTEN bms_telemetry`; there is no other path from
+ * `point_values` to alarm evaluation).
+ *
+ * Gated on the READING's own timestamp, not on which caller or path wrote it:
+ * a manual entry backdated three weeks should no more raise a live alarm than
+ * an imported one should, and a bulk import whose last few rows happen to be
+ * timestamped seconds ago legitimately should. Five minutes is wider than the
+ * web client's own 25 s live-staleness window
+ * (`apps/web/src/lib/schematic-telemetry.ts`'s `FRESH_MS`) — that constant
+ * governs socket freshness for a UI already streaming; this one has to absorb
+ * the human latency of typing a reading in, which the socket case never pays.
+ *
+ * Moved here from `apps/api/src/admin/telemetry-entry/telemetry-write.service.ts`
+ * by `E7.2` (ADR 0123 decision 10), because it gained a second consumer: the
+ * ingest host's `writeResolved` now applies the same rule to every row it
+ * writes, so an `F1.10` replay or an edge backlog lands in history without
+ * raising a live alarm. The host's window is configurable
+ * (`INGEST_NOTIFY_LIVE_WINDOW_MS`, bounded) and defaults to this value.
+ */
+export const NOTIFY_LIVE_WINDOW_MS = 5 * 60_000;
+
+/**
  * Whether the host drives the adapter (`poll`) or the adapter drives the host
  * (`push`).
  *

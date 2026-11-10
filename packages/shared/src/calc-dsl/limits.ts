@@ -116,7 +116,7 @@ export const MAX_INPUT_AGE_SECONDS_BOUND = 86_400;
  * *not* reusing an existing "freshness" constant, because neither answers
  * this question: `FRESH_MS` (25 s, `apps/web/src/lib/schematic-telemetry.ts`)
  * governs socket freshness for a UI already streaming, and
- * `NOTIFY_LIVE_WINDOW_MS` (5 min, `telemetry-write.service.ts`) absorbs the
+ * `NOTIFY_LIVE_WINDOW_MS` (5 min, `@bms/shared/ingest`) absorbs the
  * human latency of typing a reading in. This is neither — too tight and a
  * formula silently produces nothing, which reads as "the feature is broken"
  * and is the harder failure to diagnose; too loose only means the author has
