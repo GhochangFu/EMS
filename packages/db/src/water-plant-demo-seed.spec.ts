@@ -5,10 +5,12 @@ import {
   DEMO_WATER_CALC_INTERVAL_SECONDS,
   DEMO_WATER_CLASSES,
   DEMO_WATER_TEMPLATE_POINTS_SQL,
+  DEMO_WATER_TEMPLATE_PREFIX_FILL_SQL,
+  DEMO_WATER_TEMPLATE_SQL,
   DEMO_WATER_VERIFY_SQL,
-  type DemoWaterClass,
   demoWaterTemplatePointsParams,
   demoWaterVerifyParams,
+  type DemoWaterClass,
 } from "./water-plant-demo-seed";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
@@ -288,4 +290,28 @@ export function assertThePinnedCountMatchesTheAssetToItsOwnTemplate(): void {
 export function assertTheTemplatePointsCountReadsTheFiveCodes(): void {
   const sql = DEMO_WATER_VERIFY_SQL.replace(/\s+/g, " ");
   expect(sql).toContain("AND t.code = ANY($5::varchar[]) AND t.version = 1 ) AS template_points");
+}
+
+/**
+ * `E3.1` (ADR 0122 ruling R3) — the STP and ETP mirrors, and only those, override the
+ * `water` domain's work-order prefix.
+ */
+export function assertOnlyTheStpAndEtpMirrorsCarryAPrefix(): void {
+  expect(DEMO_WATER_CLASSES.filter((c) => c.workOrderPrefix !== undefined).map((c) => [c.templateCode, c.workOrderPrefix])).toEqual([
+    ["DEMO-WATER-STP", "STP"],
+    ["DEMO-WATER-ETP", "ETP"],
+  ]);
+}
+
+/** The insert writes the prefix as `$5`; the fill writes only where it is NULL, on version 1 of the organization's own row. */
+export function assertThePrefixIsInsertedAndFilledOnlyWhereNull(): void {
+  expect(DEMO_WATER_TEMPLATE_SQL).toContain("content, published_at, work_order_prefix)");
+  expect(DEMO_WATER_TEMPLATE_SQL).toContain("now(), $5)");
+  expect(DEMO_WATER_TEMPLATE_SQL).toContain("DO NOTHING");
+  expect(DEMO_WATER_TEMPLATE_PREFIX_FILL_SQL).toContain("SET work_order_prefix = $3");
+  expect(DEMO_WATER_TEMPLATE_PREFIX_FILL_SQL).toContain("WHERE organization_id = $1::uuid");
+  expect(DEMO_WATER_TEMPLATE_PREFIX_FILL_SQL).toContain("AND code = $2");
+  expect(DEMO_WATER_TEMPLATE_PREFIX_FILL_SQL).toContain("AND version = 1");
+  expect(DEMO_WATER_TEMPLATE_PREFIX_FILL_SQL).toContain("AND work_order_prefix IS NULL");
+  expect(DEMO_WATER_TEMPLATE_PREFIX_FILL_SQL).not.toContain("content");
 }

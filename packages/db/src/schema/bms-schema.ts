@@ -253,6 +253,9 @@ export const assetDomains = bmsSchema.table("asset_domains", {
   label: varchar("label", { length: 128 }).notNull(),
   sortOrder: integer("sort_order").notNull().default(100),
   active: boolean("active").notNull().default(true),
+  // E3.1 (ADR 0122 decision 2.4, migration 0140): the work-order reference prefix of
+  // this domain (`ELEC`), `^[A-Z0-9]{2,8}$` by CHECK. NULL reads `GEN`.
+  workOrderPrefix: varchar("work_order_prefix", { length: 8 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -693,6 +696,9 @@ export const assetTemplates = bmsSchema.table("asset_templates", {
   // itself. Both nullable: a hand-authored template has no stock stamp.
   stockCode: varchar("stock_code", { length: 64 }),
   stockVersion: integer("stock_version"),
+  // E3.1 (ADR 0122 decision 2.5, migration 0140): overrides the domain's work-order
+  // prefix for assets on this template version (`STP`). Same CHECK as the domain's.
+  workOrderPrefix: varchar("work_order_prefix", { length: 8 }),
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

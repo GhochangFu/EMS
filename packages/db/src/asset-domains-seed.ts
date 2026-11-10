@@ -56,6 +56,14 @@ export type AssetDomainSeed = {
   readonly code: string;
   readonly label: string;
   readonly sortOrder: number;
+  /**
+   * `E3.1` (ADR 0122 decision 2.4, plan D14): the work-order reference prefix,
+   * `^[A-Z0-9]{2,8}$`. Written on INSERT only. Migration `0140` fills the prefix of the
+   * rows that exist when it runs; on a fresh database these rows do not exist yet, so
+   * the insert carries it. There is deliberately no later fill: a global admin may clear
+   * a prefix (the row then reads `GEN`), and a re-seed must not put it back.
+   */
+  readonly workOrderPrefix: string;
 };
 
 /**
@@ -77,9 +85,9 @@ export type AssetDomainSeed = {
  * (`tests/f4.300-ups-assets-seed.integration.test.ts`).
  */
 export const PACK_ASSET_DOMAINS: readonly AssetDomainSeed[] = [
-  { code: "mechanical", label: "Mechanical", sortOrder: 60 },
-  { code: "facility", label: "Facility", sortOrder: 70 },
-  { code: "ups", label: "UPS", sortOrder: 15 },
+  { code: "mechanical", label: "Mechanical", sortOrder: 60, workOrderPrefix: "MECH" },
+  { code: "facility", label: "Facility", sortOrder: 70, workOrderPrefix: "FAC" },
+  { code: "ups", label: "UPS", sortOrder: 15, workOrderPrefix: "UPS" },
 ];
 
 /**
@@ -126,14 +134,14 @@ export function fixtureAssetDomainCode(tag: string): string {
  * `active` is not in the column list on purpose — see the module docblock.
  */
 export const ASSET_DOMAIN_SQL = `
-  INSERT INTO bms.asset_domains (code, label, sort_order)
-  VALUES ($1, $2, $3)
+  INSERT INTO bms.asset_domains (code, label, sort_order, work_order_prefix)
+  VALUES ($1, $2, $3, $4)
   ON CONFLICT (code) DO NOTHING
 `;
 
 /** Seeds every pack-declared domain. Idempotent; never overwrites (see above). */
 export async function seedAssetDomains(pool: pg.Pool): Promise<void> {
   for (const row of PACK_ASSET_DOMAINS) {
-    await pool.query(ASSET_DOMAIN_SQL, [row.code, row.label, row.sortOrder]);
+    await pool.query(ASSET_DOMAIN_SQL, [row.code, row.label, row.sortOrder, row.workOrderPrefix]);
   }
 }

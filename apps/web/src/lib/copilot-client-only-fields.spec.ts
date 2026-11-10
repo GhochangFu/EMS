@@ -70,6 +70,15 @@ export function theBatchExcludedRowsShowNoBox(): void {
   ]);
 }
 
+/** `E3.1` (ADR 0122 ruling P4): a work-order create shows no SLA box, and Confirm does not wait for one. */
+export function theWorkOrderSlaShowsNoBox(): void {
+  const entry = catalogEntry("workOrder.create");
+  if (!entry) throw new Error("workOrder.create");
+  expect(clientOnlyFieldsFor(entry, { title: "Replace bearing" }, null).map((field) => [field.path, field.shown, field.required])).toEqual([
+    ["slaMinutes", false, false],
+  ]);
+}
+
 /** Any other entry's `clientOnly` field is shown and required, as before. */
 export function anotherEntrysFieldIsRequired(): void {
   const entry = catalogEntry("notificationChannel.create");

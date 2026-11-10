@@ -210,6 +210,11 @@ export async function assertConvertStampsAndAdvancesUnderRealRls(
   expect(wo.rows[0]?.organization_id, "work_order.org = the asset's org").toBe(
     ctx.organizationId,
   );
+  // E3.1 (ADR 0122, plan D3): the convert goes through `insertWorkOrder`, so its ticket
+  // carries a reference and an SLA snapshot like one made by `POST /work-orders`.
+  expect(workOrder.reference, "a converted ticket carries a reference").toMatch(/^[A-Z0-9]{2,8}-[0-9]{6,}$/);
+  expect(workOrder.slaMinutes, "a converted ticket carries an SLA snapshot").toBeGreaterThan(0);
+  expect(workOrder.slaDueAt).not.toBeNull();
 
   const history = await ctx.ownerPool.query<{ organization_id: string | null }>(
     "SELECT organization_id FROM bms.maintenance_history WHERE work_order_id = $1",

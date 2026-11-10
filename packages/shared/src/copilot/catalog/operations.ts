@@ -110,7 +110,9 @@ export const OPERATIONS_ENTRIES: readonly CatalogEntry[] = [
     params: {},
     body: createWorkOrderBodySchema,
     bodyName: "createWorkOrderBodySchema",
-    clientOnly: [],
+    // `E3.1` (ADR 0122 ruling P4): the copilot never sends an SLA override; a person
+    // sets one on the page. The Confirm card shows no box for it.
+    clientOnly: ["slaMinutes"],
     risk: "create",
     target: { kind: "workOrder", field: "assetId" },
     refs: [

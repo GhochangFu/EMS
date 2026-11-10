@@ -67,7 +67,8 @@ describe("F4.300 U4b — the ups segment (static)", () => {
 
   it("S1 PACK_ASSET_DOMAINS declares ups / UPS, ordered after electrical (10) and before hvac (20)", () => {
     const row = PACK_ASSET_DOMAINS.find((d) => d.code === "ups");
-    expect(row).toEqual({ code: "ups", label: "UPS", sortOrder: 15 });
+    // E3.1 (ADR 0122 decision 2.4): the row also carries its work-order prefix.
+    expect(row).toEqual({ code: "ups", label: "UPS", sortOrder: 15, workOrderPrefix: "UPS" });
   });
 
   it("S2 point-keys-seed files CONTROL_ROOM_UPS_POINT_KEYS under ups, once", () => {

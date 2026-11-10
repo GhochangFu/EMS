@@ -104,6 +104,11 @@ export type DemoWaterClass = {
   readonly stockClass: string;
   readonly templateCode: string;
   readonly templateName: string;
+  /**
+   * `E3.1` (ADR 0122 decision 2.5, ruling R3): the work-order prefix this demo mirror
+   * overrides its domain's with. Only the STP and ETP mirrors carry one.
+   */
+  readonly workOrderPrefix?: string;
   readonly assetType: string;
   /** A `bms.water_balance_roles` code (migration `0080`). */
   readonly role: string;
@@ -200,6 +205,7 @@ export const DEMO_WATER_CLASSES: readonly DemoWaterClass[] = [
     stockClass: "water-stp",
     templateCode: "DEMO-WATER-STP",
     templateName: "Demo sewage treatment plant (balance mirror)",
+    workOrderPrefix: "STP",
     assetType: "stp",
     role: "reuse",
     measuredFlowKeys: ["influent_flow_klh", "effluent_flow_klh"],
@@ -222,6 +228,7 @@ export const DEMO_WATER_CLASSES: readonly DemoWaterClass[] = [
     stockClass: "water-etp",
     templateCode: "DEMO-WATER-ETP",
     templateName: "Demo effluent treatment plant (balance mirror)",
+    workOrderPrefix: "ETP",
     assetType: "etp",
     role: "discharge",
     measuredFlowKeys: ["influent_flow_klh", "discharge_flow_klh"],
@@ -278,14 +285,34 @@ export const DEMO_WATER_TEMPLATE_POINT_TOTAL = DEMO_WATER_CLASSES.reduce(
 export const DEMO_WATER_TEMPLATE_SQL = `
 INSERT INTO bms.asset_templates
   (organization_id, code, version, name, asset_type, domain, description, status,
-   content, published_at)
+   content, published_at, work_order_prefix)
 VALUES
   ($1::uuid, $2, 1, $3, $4, 'water',
    'Seeded demo mirror of the stock water class (E4.3, ADR 0073 decision 6): the flows the balance reads and the six volume rows, formulas held equal to the stock module by a drift test.',
    'published',
    '{"contentVersion":1}'::jsonb,
-   now())
+   now(), $5)
 ON CONFLICT (organization_id, code, version) DO NOTHING
+`;
+
+/**
+ * `E3.1` (ADR 0122 ruling R3) — a mirror seeded before migration `0140` exists already,
+ * so the insert above does nothing for it. This fills its prefix, and only while it is
+ * NULL: a value an administrator set is never written over, and a re-seed is a no-op.
+ * It touches no template content, so the mirror's formulas stay as published.
+ *
+ * THIS WRITES A COLUMN OF A PUBLISHED VERSION, ON PURPOSE. Ruling R2 keeps a published
+ * template immutable for an administrator; this is the seed completing its own demo
+ * row, as the approved plan (PR 1, ruling R3) states: "written on insert and filled
+ * where NULL". Do not copy it for a tenant's template.
+ */
+export const DEMO_WATER_TEMPLATE_PREFIX_FILL_SQL = `
+UPDATE bms.asset_templates
+   SET work_order_prefix = $3
+ WHERE organization_id = $1::uuid
+   AND code = $2
+   AND version = 1
+   AND work_order_prefix IS NULL
 `;
 
 /**
@@ -518,8 +545,12 @@ export async function seedWaterPlantDemo(
       c.templateCode,
       c.templateName,
       c.assetType,
+      c.workOrderPrefix ?? null,
     ]);
     templates += t.rowCount ?? 0;
+    if (c.workOrderPrefix !== undefined) {
+      await pool.query(DEMO_WATER_TEMPLATE_PREFIX_FILL_SQL, [organizationId, c.templateCode, c.workOrderPrefix]);
+    }
     const tp = await pool.query(DEMO_WATER_TEMPLATE_POINTS_SQL, demoWaterTemplatePointsParams(organizationId, c));
     templatePoints += tp.rowCount ?? 0;
     const ap = await pool.query(DEMO_WATER_FLOW_POINTS_SQL, [organizationId, c.assetCode, c.measuredFlowKeys]);

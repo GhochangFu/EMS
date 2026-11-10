@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, desc, eq, ilike, inArray, type SQL } from "drizzle-orm";
 
-import { alarms, assets, locations, rtus, workOrders } from "@bms/db";
+import { alarms, assets, workOrders } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   CloseWorkOrderBody,
@@ -15,7 +15,6 @@ import type {
   ReorderWorkOrdersBody,
   UpdateWorkOrderStatusBody,
   WorkOrderListItem,
-  WorkOrderPriority,
   WorkOrderStatus,
 } from "@bms/shared";
 
@@ -28,6 +27,8 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
 import { ASSIGNEE_REFUSAL, readActiveOrganizationUser } from "./assignee";
+import { insertWorkOrder } from "./work-order-create";
+import { mapWorkOrderRow, readWorkOrderListItem, selectWorkOrderList } from "./work-order-projection";
 
 const terminalStatuses = new Set<WorkOrderStatus>(["closed"]);
 
@@ -87,52 +88,6 @@ export class WorkOrdersService {
     @Inject(MasterDataAuditService)
     private readonly audit: MasterDataAuditService,
   ) {}
-
-  private mapRow(r: {
-    id: string;
-    assetId: string;
-    alarmId: string | null;
-    title: string;
-    description: string | null;
-    status: string;
-    priority: string;
-    sortOrder: number;
-    assignedTo: string | null;
-    createdBy: string | null;
-    dueAt: Date | null;
-    resolvedAt: Date | null;
-    closedAt: Date | null;
-    createdAt: Date;
-    updatedAt: Date;
-    assetCode: string;
-    assetRtuName: string | null;
-    assetLocationName: string | null;
-    assetName: string;
-    siteName: string;
-  }): WorkOrderListItem {
-    return {
-      id: r.id,
-      assetId: r.assetId,
-      alarmId: r.alarmId,
-      title: r.title,
-      description: r.description,
-      status: r.status as WorkOrderStatus,
-      priority: r.priority as WorkOrderPriority,
-      sortOrder: r.sortOrder,
-      assignedTo: r.assignedTo,
-      createdBy: r.createdBy,
-      dueAt: r.dueAt?.toISOString() ?? null,
-      resolvedAt: r.resolvedAt?.toISOString() ?? null,
-      closedAt: r.closedAt?.toISOString() ?? null,
-      createdAt: r.createdAt.toISOString(),
-      updatedAt: r.updatedAt.toISOString(),
-      assetCode: r.assetCode,
-      assetRtuName: r.assetRtuName,
-      assetLocationName: r.assetLocationName,
-      assetName: r.assetName,
-      siteName: r.siteName,
-    };
-  }
 
   /**
    * Resolves the acting user's row id. `bms.users` is a pre-tenant identity
@@ -203,49 +158,12 @@ export class WorkOrdersService {
    * (`readBackWorkOrder`) wraps it in `withTenant`, so a single-org write reads
    * its result back under the org GUC (ADR 0043 decision 1).
    */
-  private async readWorkOrderById(
+  private readWorkOrderById(
     tx: BmsTx,
     id: string,
     assetIds?: string[] | null,
   ): Promise<WorkOrderListItem> {
-    const [row] = await tx
-      .select({
-        id: workOrders.id,
-        assetId: workOrders.assetId,
-        alarmId: workOrders.alarmId,
-        title: workOrders.title,
-        description: workOrders.description,
-        status: workOrders.status,
-        priority: workOrders.priority,
-        sortOrder: workOrders.sortOrder,
-        assignedTo: workOrders.assignedTo,
-        createdBy: workOrders.createdBy,
-        dueAt: workOrders.dueAt,
-        resolvedAt: workOrders.resolvedAt,
-        closedAt: workOrders.closedAt,
-        createdAt: workOrders.createdAt,
-        updatedAt: workOrders.updatedAt,
-        assetCode: assets.code,
-        assetRtuName: rtus.displayName,
-        assetLocationName: locations.name,
-        assetName: assets.name,
-        siteName: assets.siteName,
-      })
-      .from(workOrders)
-      .innerJoin(assets, eq(workOrders.assetId, assets.id))
-      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
-      .leftJoin(locations, eq(assets.locationId, locations.id))
-      .where(
-        and(
-          eq(workOrders.id, id),
-          ...(assetIds ? [inArray(workOrders.assetId, assetIds)] : []),
-        ),
-      )
-      .limit(1);
-    if (!row) {
-      throw new NotFoundException("Work order not found");
-    }
-    return this.mapRow(row);
+    return readWorkOrderListItem(tx, id, assetIds);
   }
 
   /**
@@ -303,33 +221,9 @@ export class WorkOrdersService {
       opts.assetIds,
       () => ({ items: [] }),
       async (tx) => {
-        const base = tx
-          .select({
-            id: workOrders.id,
-            assetId: workOrders.assetId,
-            alarmId: workOrders.alarmId,
-            title: workOrders.title,
-            description: workOrders.description,
-            status: workOrders.status,
-            priority: workOrders.priority,
-            sortOrder: workOrders.sortOrder,
-            assignedTo: workOrders.assignedTo,
-            createdBy: workOrders.createdBy,
-            dueAt: workOrders.dueAt,
-            resolvedAt: workOrders.resolvedAt,
-            closedAt: workOrders.closedAt,
-            createdAt: workOrders.createdAt,
-            updatedAt: workOrders.updatedAt,
-            assetCode: assets.code,
-            assetRtuName: rtus.displayName,
-            assetLocationName: locations.name,
-            assetName: assets.name,
-            siteName: assets.siteName,
-          })
-          .from(workOrders)
-          .innerJoin(assets, eq(workOrders.assetId, assets.id))
-          .leftJoin(rtus, eq(assets.rtuId, rtus.id))
-          .leftJoin(locations, eq(assets.locationId, locations.id));
+        const base = selectWorkOrderList(tx);
+        // One clock for the page, so two rows never disagree about `slaState`.
+        const now = new Date();
         const rows = await base
           .where(filters.length > 0 ? and(...filters) : undefined)
           .orderBy(
@@ -339,7 +233,7 @@ export class WorkOrdersService {
             desc(workOrders.id),
           )
           .limit(limit);
-        return { items: rows.map((row) => this.mapRow(row)) };
+        return { items: rows.map((row) => mapWorkOrderRow(row, now)) };
       },
     );
   }
@@ -394,24 +288,21 @@ export class WorkOrdersService {
         await this.assertAssignee(tx, dto.assignedTo, organizationId);
       }
 
-      const [created] = await tx
-        .insert(workOrders)
-        .values({
-          organizationId,
-          assetId: dto.assetId,
-          alarmId: dto.alarmId,
-          title: dto.title,
-          description: dto.description,
-          status: dto.assignedTo ? "assigned" : "open",
-          priority: dto.priority,
-          assignedTo: dto.assignedTo,
-          createdBy: actorId,
-          dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
-        })
-        .returning({ id: workOrders.id });
-      if (!created) {
-        throw new BadRequestException("Could not create work order");
-      }
+      // E3.1 (ADR 0122, plan D3): the one insert path — it allocates the reference and
+      // snapshots the SLA inside this transaction.
+      const created = await insertWorkOrder(tx, {
+        organizationId,
+        assetId: dto.assetId,
+        alarmId: dto.alarmId,
+        title: dto.title,
+        description: dto.description,
+        status: dto.assignedTo ? "assigned" : "open",
+        priority: dto.priority,
+        assignedTo: dto.assignedTo,
+        createdBy: actorId,
+        dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
+        slaMinutes: dto.slaMinutes,
+      });
 
       // E7.1c (item D): folded into this transaction (was a separate
       // `this.db.insert` after it closed) so the stamped organizationId
@@ -425,6 +316,9 @@ export class WorkOrdersService {
           entityId: created.id,
           reason: "Work order created",
           payload: {
+            reference: created.reference,
+            slaMinutes: created.slaMinutes,
+            slaSource: created.slaSource,
             assetId: dto.assetId,
             alarmId: dto.alarmId ?? null,
             oidcSubject: actor.sub,
@@ -464,7 +358,10 @@ export class WorkOrdersService {
           status: dto.status,
           sortOrder: dto.sortOrder,
           assignedTo: dto.assignedTo === undefined ? undefined : dto.assignedTo,
-          resolvedAt: dto.status === "resolved" ? now : undefined,
+          // E3.1: stamp only on the real transition. The SLA state reads `resolvedAt`
+          // (ADR 0122 decision 3.4), so re-stamping a ticket that is already resolved
+          // would turn a `met` SLA into `missed`.
+          resolvedAt: dto.status === "resolved" && current.status !== "resolved" ? now : undefined,
           closedAt: dto.status === "closed" ? now : undefined,
           updatedAt: now,
         })
@@ -573,7 +470,9 @@ export class WorkOrdersService {
           .set({
             status: item.status,
             sortOrder: item.sortOrder,
-            resolvedAt: item.status === "resolved" ? now : undefined,
+            // E3.1: the board sends every row on every drag, so stamp only a ticket
+            // that is entering `resolved` — see `updateStatus`.
+            resolvedAt: item.status === "resolved" && currentStatus !== "resolved" ? now : undefined,
             updatedAt: now,
           })
           .where(eq(workOrders.id, item.id));

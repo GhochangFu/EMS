@@ -92,8 +92,8 @@ function insideAnyBracket(ranges: Array<[number, number]>, index: number): boole
  * too: writing `active` would give the seed a way back to `true`.
  */
 export function assertReSeedingIsIdempotentAndNeverOverwrites(): void {
-  expect(ASSET_DOMAIN_SQL).toContain("INSERT INTO bms.asset_domains (code, label, sort_order)");
-  expect(ASSET_DOMAIN_SQL).toContain("VALUES ($1, $2, $3)");
+  expect(ASSET_DOMAIN_SQL).toContain("INSERT INTO bms.asset_domains (code, label, sort_order, work_order_prefix)");
+  expect(ASSET_DOMAIN_SQL).toContain("VALUES ($1, $2, $3, $4)");
   expect(ASSET_DOMAIN_SQL).toContain("ON CONFLICT (code) DO NOTHING");
   expect(ASSET_DOMAIN_SQL).not.toContain("DO UPDATE");
   expect(ASSET_DOMAIN_SQL).not.toContain("active");
@@ -109,10 +109,30 @@ export function assertReSeedingIsIdempotentAndNeverOverwrites(): void {
  */
 export function assertThePackDeclaresExactlyTheRuledRow(): void {
   expect(PACK_ASSET_DOMAINS).toEqual([
-    { code: "mechanical", label: "Mechanical", sortOrder: 60 },
-    { code: "facility", label: "Facility", sortOrder: 70 },
-    { code: "ups", label: "UPS", sortOrder: 15 },
+    { code: "mechanical", label: "Mechanical", sortOrder: 60, workOrderPrefix: "MECH" },
+    { code: "facility", label: "Facility", sortOrder: 70, workOrderPrefix: "FAC" },
+    { code: "ups", label: "UPS", sortOrder: 15, workOrderPrefix: "UPS" },
   ]);
+}
+
+/**
+ * `E3.1` (ADR 0122 decision 2.4, plan D14) — the three seed-born domains do not exist
+ * when migration `0140` fills the prefixes on a fresh database, so the insert carries
+ * theirs. The seed never writes a prefix any other way: `DO NOTHING` leaves an existing
+ * row alone, so a prefix a global admin changed or cleared is not put back.
+ */
+export function assertThePrefixIsWrittenOnInsertOnly(): void {
+  for (const row of PACK_ASSET_DOMAINS) {
+    expect(row.workOrderPrefix, `${row.code} carries a prefix`).toMatch(/^[A-Z0-9]{2,8}$/);
+  }
+  const path = ["src/asset-domains-seed.ts", "packages/db/src/asset-domains-seed.ts"]
+    .map((candidate) => resolve(process.cwd(), candidate))
+    .find((candidate) => existsSync(candidate));
+  if (path === undefined) {
+    throw new Error(`asset-domains-seed.ts not found from ${process.cwd()}`);
+  }
+  expect(readFileSync(path, "utf8")).not.toMatch(/UPDATE\s+bms\.asset_domains/);
+  expect(ASSET_DOMAIN_SQL).toContain("ON CONFLICT (code) DO NOTHING");
 }
 
 /**

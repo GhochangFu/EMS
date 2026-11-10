@@ -153,6 +153,7 @@ import {
   closeWorkOrderBodySchema,
   convertMaintenanceBodySchema,
   createWorkOrderBodySchema,
+  putWorkOrderSlaPoliciesBodySchema,
   reorderWorkOrdersBodySchema,
   updateWorkOrderStatusBodySchema,
   createReportScheduleBodySchema,
@@ -472,6 +473,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   WorkOrdersController_create: createWorkOrderBodySchema,
   WorkOrdersController_reorder: reorderWorkOrdersBodySchema,
   WorkOrdersController_updateStatus: updateWorkOrderStatusBodySchema,
+  // `E3.1` (ADR 0122 decision 3.2, plan D8): the replace-all SLA policy set.
+  WorkOrderSlaPoliciesAdminController_put: putWorkOrderSlaPoliciesBodySchema,
 };
 
 /** Every operationId the registry describes. */

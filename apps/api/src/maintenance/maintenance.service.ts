@@ -23,7 +23,6 @@ import type {
   MaintenanceScheduleCategory,
   WorkOrderListItem,
   WorkOrderPriority,
-  WorkOrderStatus,
 } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
@@ -31,6 +30,8 @@ import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
+import { insertWorkOrder } from "../work-orders/work-order-create";
+import { readWorkOrderListItem } from "../work-orders/work-order-projection";
 import type {
   ConvertMaintenanceBody,
   CreateMaintenanceScheduleBody,
@@ -97,52 +98,6 @@ export class MaintenanceService {
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     @Inject(MasterDataAuditService) private readonly audit: MasterDataAuditService,
   ) {}
-
-  private mapWorkOrderRow(r: {
-    id: string;
-    assetId: string;
-    alarmId: string | null;
-    title: string;
-    description: string | null;
-    status: string;
-    priority: string;
-    sortOrder: number;
-    assignedTo: string | null;
-    createdBy: string | null;
-    dueAt: Date | null;
-    resolvedAt: Date | null;
-    closedAt: Date | null;
-    createdAt: Date;
-    updatedAt: Date;
-    assetCode: string;
-    assetRtuName: string | null;
-    assetLocationName: string | null;
-    assetName: string;
-    siteName: string;
-  }): WorkOrderListItem {
-    return {
-      id: r.id,
-      assetId: r.assetId,
-      alarmId: r.alarmId,
-      title: r.title,
-      description: r.description,
-      status: r.status as WorkOrderStatus,
-      priority: r.priority as WorkOrderPriority,
-      sortOrder: r.sortOrder,
-      assignedTo: r.assignedTo,
-      createdBy: r.createdBy,
-      dueAt: r.dueAt?.toISOString() ?? null,
-      resolvedAt: r.resolvedAt?.toISOString() ?? null,
-      closedAt: r.closedAt?.toISOString() ?? null,
-      createdAt: r.createdAt.toISOString(),
-      updatedAt: r.updatedAt.toISOString(),
-      assetCode: r.assetCode,
-      assetRtuName: r.assetRtuName,
-      assetLocationName: r.assetLocationName,
-      assetName: r.assetName,
-      siteName: r.siteName,
-    };
-  }
 
   private mapScheduleRow(
     r: {
@@ -693,24 +648,20 @@ export class MaintenanceService {
     );
 
     const createdWorkOrderId = await withTenant(this.db, organizationId, async (tx) => {
-      const [workOrder] = await tx
-        .insert(workOrders)
-        .values({
-          organizationId,
-          assetId: schedule.assetId,
-          title: `Maintenance: ${schedule.title}`,
-          description:
-            schedule.description ??
-            `Preventive maintenance generated from schedule ${scheduleId}.`,
-          status: "open",
-          priority: schedule.priority,
-          createdBy: actorId,
-          dueAt: schedule.nextDueAt,
-        })
-        .returning({ id: workOrders.id });
-      if (!workOrder) {
-        throw new BadRequestException("Could not create work order");
-      }
+      // E3.1 (ADR 0122, plan D3): the one insert path, shared with `POST /work-orders`,
+      // so a converted schedule's ticket carries a reference and an SLA snapshot too.
+      const workOrder = await insertWorkOrder(tx, {
+        organizationId,
+        assetId: schedule.assetId,
+        title: `Maintenance: ${schedule.title}`,
+        description:
+          schedule.description ??
+          `Preventive maintenance generated from schedule ${scheduleId}.`,
+        status: "open",
+        priority: schedule.priority as WorkOrderPriority,
+        createdBy: actorId,
+        dueAt: schedule.nextDueAt,
+      });
 
       await tx.insert(maintenanceHistory).values({
         organizationId,
@@ -761,48 +712,11 @@ export class MaintenanceService {
     return { workOrder };
   }
 
-  private async readWorkOrder(
+  private readWorkOrder(
     tx: BmsTx,
     id: string,
     assetIds?: string[] | null,
   ): Promise<WorkOrderListItem> {
-    const [row] = await tx
-      .select({
-        id: workOrders.id,
-        assetId: workOrders.assetId,
-        alarmId: workOrders.alarmId,
-        title: workOrders.title,
-        description: workOrders.description,
-        status: workOrders.status,
-        priority: workOrders.priority,
-        sortOrder: workOrders.sortOrder,
-        assignedTo: workOrders.assignedTo,
-        createdBy: workOrders.createdBy,
-        dueAt: workOrders.dueAt,
-        resolvedAt: workOrders.resolvedAt,
-        closedAt: workOrders.closedAt,
-        createdAt: workOrders.createdAt,
-        updatedAt: workOrders.updatedAt,
-        assetCode: assets.code,
-        assetRtuName: rtus.displayName,
-        assetLocationName: locations.name,
-        assetName: assets.name,
-        siteName: assets.siteName,
-      })
-      .from(workOrders)
-      .innerJoin(assets, eq(workOrders.assetId, assets.id))
-      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
-      .leftJoin(locations, eq(assets.locationId, locations.id))
-      .where(
-        and(
-          eq(workOrders.id, id),
-          ...(assetIds ? [inArray(workOrders.assetId, assetIds)] : []),
-        ),
-      )
-      .limit(1);
-    if (!row) {
-      throw new NotFoundException("Work order not found");
-    }
-    return this.mapWorkOrderRow(row);
+    return readWorkOrderListItem(tx, id, assetIds);
   }
 }

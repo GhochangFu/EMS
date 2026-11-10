@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { alarmSkillCodeSchema, workOrderPrioritySchema, workOrderStatusSchema } from "./operations";
+import { WORK_ORDER_SLA_MAX_MINUTES } from "../work-order-sla";
 
 /**
  * `F4.284` (ADR 0106 decision 7, ADR 0030) — the request bodies of the alarm
@@ -66,6 +67,9 @@ export const copilotAlarmEnrichmentModelBodySchema = z
 const workOrderReason = z.string().min(3).max(2000);
 const workOrderSortOrder = z.number().int().min(0).max(100_000);
 
+/** `E3.1` (ADR 0122 decision 3): an SLA in whole minutes, one minute to one year. */
+export const workOrderSlaMinutesSchema = z.number().int().min(1).max(WORK_ORDER_SLA_MAX_MINUTES);
+
 export const createWorkOrderBodySchema = z
   .object({
     assetId: z.string().uuid(),
@@ -75,6 +79,33 @@ export const createWorkOrderBodySchema = z
     priority: workOrderPrioritySchema.default("medium"),
     assignedTo: z.string().uuid().optional(),
     dueAt: z.string().datetime({ offset: true }).optional(),
+    /** `E3.1` (ADR 0122 decision 3.2): wins over the organization's policy for this one ticket. */
+    slaMinutes: workOrderSlaMinutesSchema.optional(),
+  })
+  .strict();
+
+/** One row of `PUT /admin/work-order-sla-policies` (`E3.1`, ADR 0122 decision 3.2). */
+export const workOrderSlaPolicyInputSchema = z
+  .object({
+    priority: workOrderPrioritySchema,
+    resolutionMinutes: workOrderSlaMinutesSchema,
+  })
+  .strict();
+
+/**
+ * `PUT /admin/work-order-sla-policies` — replaces the organization's whole set (plan D8):
+ * a priority left out goes back to the platform default. At most one row per priority.
+ */
+export const putWorkOrderSlaPoliciesBodySchema = z
+  .object({
+    organizationId: z.string().uuid(),
+    policies: z
+      .array(workOrderSlaPolicyInputSchema)
+      .max(4)
+      .refine((rows) => new Set(rows.map((row) => row.priority)).size === rows.length, {
+        message: "Each priority may appear once",
+      })
+      .describe("At most one row per priority; a priority left out goes back to the platform default."),
   })
   .strict();
 
@@ -129,6 +160,7 @@ export const reorderWorkOrdersBodySchema = z
 export type AlarmAckBody = z.infer<typeof alarmAckBodySchema>;
 export type AlarmEnrichmentUpsertBody = z.infer<typeof alarmEnrichmentUpsertBodySchema>;
 export type CreateWorkOrderBody = z.infer<typeof createWorkOrderBodySchema>;
+export type PutWorkOrderSlaPoliciesBody = z.infer<typeof putWorkOrderSlaPoliciesBodySchema>;
 /** What a caller sends: the defaulted `priority` may be left out. */
 export type CreateWorkOrderInput = z.input<typeof createWorkOrderBodySchema>;
 export type UpdateWorkOrderStatusBody = z.infer<typeof updateWorkOrderStatusBodySchema>;

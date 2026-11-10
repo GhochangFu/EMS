@@ -4,7 +4,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 import { sql } from "drizzle-orm";
 
-import { assets, createDb, locations, workOrders } from "@bms/db";
+import { allocateWorkOrderReference, assets, createDb, locations, workOrders } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
@@ -212,7 +212,8 @@ describe.skipIf(!connectionString)("F4.285 — the work-order routes refuse a ba
       assetId = asset.id;
       const [wo] = await tx
         .insert(workOrders)
-        .values({ organizationId: orgA, assetId, title: `${PREFIX}update`, status: "open", priority: "medium" })
+        // E3.1 (migration 0140): seq and reference are NOT NULL and come from the allocator.
+        .values({ organizationId: orgA, ...(await allocateWorkOrderReference(tx, orgA, assetId)), assetId, title: `${PREFIX}update`, status: "open", priority: "medium" })
         .returning({ id: workOrders.id });
       workOrderId = wo.id;
     });

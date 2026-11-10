@@ -93,6 +93,8 @@ import { UserGrantsAdminController } from "./users/user-grants.controller";
 import { UserGrantsService } from "./users/user-grants.service";
 import { UsersAdminController } from "./users/users.controller";
 import { UsersService } from "./users/users.service";
+import { WorkOrderSlaPoliciesAdminController } from "./work-order-sla-policies/work-order-sla-policies.controller";
+import { WorkOrderSlaPoliciesAdminService } from "./work-order-sla-policies/work-order-sla-policies.service";
 
 @Module({
   // `F2.9` — `CalcModule` is imported for the two services it exports:
@@ -147,9 +149,12 @@ import { UsersService } from "./users/users.service";
     UsersAdminController,
     // F3.78 / ADR 0089 decision 12 — /admin/users/:id/grants.
     UserGrantsAdminController,
+    // E3.1 / ADR 0122 decision 3.2 — GET and PUT admin/work-order-sla-policies.
+    WorkOrderSlaPoliciesAdminController,
   ],
   providers: [
     MasterDataAuditService,
+    WorkOrderSlaPoliciesAdminService,
     CredentialCryptoService,
     OnboardingValidateService,
     OnboardingProtocolService,

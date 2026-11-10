@@ -1,6 +1,12 @@
 export { createDb, type BmsDb, type BmsSchema } from "./client";
 export * from "./schema/index";
 export { refreshAggregatesFrom } from "./refresh-aggregates";
+/** `E3.1` (ADR 0122 decision 2): the one allocator of a work order's seq and reference. */
+export {
+  allocateWorkOrderReference,
+  type WorkOrderReference,
+  type WorkOrderReferenceExecutor,
+} from "./work-order-reference";
 /** Owner ruling 20: the admin location writes strip this key from a request. */
 export { SEED_LOCATION_KEY } from "./seed-location-key";
 /**

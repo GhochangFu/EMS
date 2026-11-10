@@ -8,6 +8,7 @@ import {
   assertReSeedingIsIdempotentAndNeverOverwrites,
   assertTheCallSitsOutsideAnyTenantBracket,
   assertThePackDeclaresExactlyTheRuledRow,
+  assertThePrefixIsWrittenOnInsertOnly,
 } from "./asset-domains-seed.spec";
 
 describe("E5.2 — the mechanical domain is the first a pack adds through the seed", () => {
@@ -17,6 +18,10 @@ describe("E5.2 — the mechanical domain is the first a pack adds through the se
 
   it("declares exactly the row ADR 0053 decision 2 rules", () => {
     assertThePackDeclaresExactlyTheRuledRow();
+  });
+
+  it("writes a work-order prefix on insert only, never over a row that exists (E3.1)", () => {
+    assertThePrefixIsWrittenOnInsertOnly();
   });
 
   it("seeds the domain before the point keys filed under it", () => {

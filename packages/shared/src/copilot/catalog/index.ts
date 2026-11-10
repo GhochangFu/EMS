@@ -322,5 +322,11 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...FILE_DATA_PENDING,
   // `F4.334` (ADR 0099 Amendment 17): only the test route stays out; the writes are entries.
   ...MQTT_PAYLOAD_FORMAT_PENDING,
+  // `E3.1` (ADR 0122): the work-order depth routes join the named exclusion list in that row.
+  {
+    method: "PUT",
+    path: "/admin/work-order-sla-policies",
+    reason: "E3.1 / ADR 0122: the organization's SLA policy set is set by hand, not proposed",
+  },
 ];
 
