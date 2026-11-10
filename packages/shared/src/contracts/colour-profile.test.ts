@@ -10,7 +10,7 @@ import {
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F4.310 — colour profile contracts (ADR 0110)", () => {
-  it("P1 — the nine profiles, nexus first", () => {
+  it("P1 — the thirteen profiles, nexus first", () => {
     runTheProfilesInOrder();
   });
 

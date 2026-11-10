@@ -138,7 +138,7 @@ describe.skipIf(!connectionString)("F4.310 — organization colour profile (ADR 
     await theOrganizationAdminSetsItsOwnAndMeFollows(ctx);
   });
 
-  it("C5 the CHECK refuses a name outside the nine", async () => {
+  it("C5 the CHECK refuses a name outside the list", async () => {
     await theCheckRefusesAnUnknownName(ctx);
   });
 
