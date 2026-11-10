@@ -1,4 +1,4 @@
-import { Logger } from "@nestjs/common";
+import { Logger, Optional } from "@nestjs/common";
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -11,6 +11,8 @@ import { Namespace, Socket } from "socket.io";
 import { AccessControlService } from "../auth/access-control.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { SocketRegistry } from "../auth/socket-registry";
+import { refuseRateLimitedHandshake } from "../rate-limit/handshake-limit";
+import { RateLimiterService } from "../rate-limit/rate-limiter.service";
 import { MetricsService } from "../observability/metrics.service";
 import { ExistingAssetIds } from "./existing-asset-ids";
 import { TelemetryBroadcastHub } from "./telemetry-broadcast.hub";
@@ -35,6 +37,9 @@ export class TelemetryGateway implements OnGatewayInit, OnGatewayConnection {
     private readonly accessControl: AccessControlService,
     private readonly existingAssets: ExistingAssetIds,
     private readonly sockets: SocketRegistry,
+    // `F4.17` / ADR 0125 decision 2 — Stage 1 on the handshake. Optional so a
+    // spec that builds the gateway by hand needs no limiter.
+    @Optional() private readonly rateLimiter?: RateLimiterService,
   ) {}
 
   /**
@@ -43,6 +48,9 @@ export class TelemetryGateway implements OnGatewayInit, OnGatewayConnection {
    * fresh `disabled_at` read after it.
    */
   async handleConnection(client: Socket): Promise<void> {
+    if (await refuseRateLimitedHandshake(this.rateLimiter, client)) {
+      return;
+    }
     const token = this.extractToken(client);
     if (!token) {
       client.disconnect(true);

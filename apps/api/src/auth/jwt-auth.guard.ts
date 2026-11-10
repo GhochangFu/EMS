@@ -3,8 +3,10 @@ import {
   type ExecutionContext,
   Inject,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
 import { createPublicKey } from "node:crypto";
 
@@ -13,12 +15,23 @@ import type { JwtPayload, UnauthorizedEnvelope, UserRole } from "@bms/shared";
 
 import { AUTH_DRIZZLE } from "../database/database.tokens";
 import { type AuthMode, resolveAuthMode } from "./auth-mode";
-import { linkIdentity, rememberIdentity, resolveIdentity } from "./identity-resolver";
+import { RATE_LIMIT_CLASS_METADATA, rateLimitClassFor } from "../rate-limit/rate-limit-class.decorator";
+import type { RateLimitClass } from "../rate-limit/rate-limit-config";
+import { RateLimiterService } from "../rate-limit/rate-limiter.service";
+import { rateLimitedException, rateLimitedHeaders } from "../rate-limit/rate-limited.exception";
+import { linkIdentity, recalledIdentity, rememberIdentity, resolveIdentity } from "./identity-resolver";
 
 type RequestWithUser = {
+  method?: string;
   headers: { authorization?: string };
   user?: JwtPayload;
 };
+
+type ResponseWithHeaders = {
+  setHeader(name: string, value: string): unknown;
+};
+
+const reflector = new Reflector();
 
 type JwtHeader = {
   kid?: string;
@@ -144,6 +157,7 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     @Inject(AUTH_DRIZZLE) private readonly authDb: BmsDb,
+    @Optional() private readonly rateLimiter?: RateLimiterService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -155,7 +169,46 @@ export class JwtAuthGuard implements CanActivate {
     const token = header.slice(7);
 
     req.user = await this.verifyToken(token);
+    await this.enforceIdentityLimit(context, req, req.user);
     return true;
+  }
+
+  /**
+   * `F4.17` / ADR 0125 decisions 1, 2 and 5 — **Stage 2**, per identity, at
+   * the end of the guard (Q3). One site covers every guarded controller, and
+   * because a guard runs before any interceptor it refuses an upload before
+   * the controller's `FileInterceptor` buffers it.
+   *
+   * The subject is the resolved `bms.users.id`; a principal with no row (the
+   * ADR 0044 path) counts as `sub:<subject>`. A request that fails
+   * authentication never reaches this line, so a 401 spends no budget.
+   *
+   * No limiter (a spec or module that does not import `RateLimitModule`)
+   * means no Stage 2 check; `AppModule` imports it, and
+   * `tests/f4.17-rate-limit-wiring.test.ts` pins that it does.
+   */
+  private async enforceIdentityLimit(
+    context: ExecutionContext,
+    req: RequestWithUser,
+    payload: JwtPayload,
+  ): Promise<void> {
+    const limiter = this.rateLimiter;
+    if (!limiter || limiter.mode === "off") {
+      return;
+    }
+    const explicit = reflector.getAllAndOverride<RateLimitClass | undefined>(
+      RATE_LIMIT_CLASS_METADATA,
+      [context.getHandler(), context.getClass()],
+    );
+    const subject = recalledIdentity(payload)?.id ?? `sub:${payload.sub}`;
+    const decision = await limiter.checkIdentity(rateLimitClassFor(req.method, explicit), subject);
+    if (decision.refuse) {
+      const res = context.switchToHttp().getResponse<ResponseWithHeaders>();
+      for (const [name, value] of Object.entries(rateLimitedHeaders(decision.refusal))) {
+        res.setHeader(name, value);
+      }
+      throw rateLimitedException(decision.refusal);
+    }
   }
 
   /** Verifies either a local JWT or OIDC token using the active auth mode. */

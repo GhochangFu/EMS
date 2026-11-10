@@ -3,6 +3,8 @@ import { Controller, Get, HttpStatus, Optional, Res } from "@nestjs/common";
 import type { Response } from "express";
 
 import { QueueHealthService } from "../queue/queue-health.service";
+import { RateLimiterService } from "../rate-limit/rate-limiter.service";
+import { withRateLimitVerdict } from "../rate-limit/rate-limit-health";
 import { withStorageVerdict } from "../storage/storage-health";
 import { StorageHealthService } from "../storage/storage-health.service";
 import { readinessFrom, withDatabaseVerdict } from "./database-health";
@@ -14,6 +16,7 @@ export class HealthController {
     private readonly queueHealth: QueueHealthService,
     private readonly databaseHealth: DatabaseHealthService,
     @Optional() private readonly storageHealth?: StorageHealthService,
+    @Optional() private readonly rateLimiter?: RateLimiterService,
   ) {}
 
   /**
@@ -51,6 +54,10 @@ export class HealthController {
    * database outage becomes a non-200. The queue and database reads run in
    * parallel; the storage read follows the `!this.storageHealth` guard, which
    * `tests/f3.3-object-storage-invariants.test.ts` pins by index order.
+   *
+   * **`rateLimit` since `F4.17`** (ADR 0125 decision 4): present on the API
+   * only — the worker resolves no `RateLimiterService` and its body carries no
+   * key. A store that fell back from Redis to memory reads `degraded`.
    */
   @Get()
   async getHealth(): Promise<LivenessResponse> {
@@ -60,9 +67,10 @@ export class HealthController {
     ]);
     const withDatabase = withDatabaseVerdict(base, database);
     if (!this.storageHealth) {
-      return withDatabase;
+      return withRateLimitVerdict(withDatabase, this.rateLimiter?.health());
     }
-    return withStorageVerdict(withDatabase, await this.storageHealth.read());
+    const withStorage = withStorageVerdict(withDatabase, await this.storageHealth.read());
+    return withRateLimitVerdict(withStorage, this.rateLimiter?.health());
   }
 
   /**

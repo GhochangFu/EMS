@@ -208,6 +208,21 @@ services:
       LLM_VISION_MODEL: ${LLM_VISION_MODEL:-}
       COPILOT_USER_DAILY_TURNS: ${COPILOT_USER_DAILY_TURNS:-}
       COPILOT_ORG_DAILY_TURNS: ${COPILOT_ORG_DAILY_TURNS:-}
+      # `F4.17` / ADR 0125 decisions 5, 7 and 8. Shadow first: counted and
+      # logged, never refused, until the owner reads a week of
+      # `bms_rate_limit_decisions_total` and sets RATE_LIMIT_MODE=enforce in
+      # the host `.env`. Empty = the code's default (decision 5's numbers).
+      # Hops 2: Caddy on the host, then the `web` nginx container, each append
+      # to X-Forwarded-For, so the client is the second address from the
+      # right. Confirm once on the host (plan §6) before trusting it.
+      RATE_LIMIT_MODE: ${RATE_LIMIT_MODE:-shadow}
+      RATE_LIMIT_READ_PER_MIN: ${RATE_LIMIT_READ_PER_MIN:-}
+      RATE_LIMIT_WRITE_PER_MIN: ${RATE_LIMIT_WRITE_PER_MIN:-}
+      RATE_LIMIT_HEAVY_PER_MIN: ${RATE_LIMIT_HEAVY_PER_MIN:-}
+      RATE_LIMIT_IP_PER_MIN: ${RATE_LIMIT_IP_PER_MIN:-}
+      RATE_LIMIT_LOGIN_PER_MIN: ${RATE_LIMIT_LOGIN_PER_MIN:-}
+      RATE_LIMIT_WS_HANDSHAKE_PER_MIN: ${RATE_LIMIT_WS_HANDSHAKE_PER_MIN:-}
+      API_TRUST_PROXY_HOPS: ${API_TRUST_PROXY_HOPS:-2}
       # ADR 0114 (`F4.326`): broker hosts an MQTT RTU with `tls: false` may reach
       # without TLS. Empty = none (the default). Set the SAME value on api, worker
       # and ingest — `tests/adr-0114-plaintext-hosts-invariants.test.ts` holds this.
