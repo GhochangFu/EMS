@@ -271,7 +271,8 @@ export async function aHungPostIsAbortedAtTwentySeconds(): Promise<void> {
   const pending = h.client.writerFor(ONE_DEVICE)(samples(1, new Date(T0)));
   await until(() => h.calls.length === 1, "the post");
   const timer = h.clock.timers.find((t) => t.ms === UPLINK_POST_TIMEOUT_MS);
-  assert(UPLINK_POST_TIMEOUT_MS === 20_000 && timer !== undefined, "a 20 s abort timer is armed");
+  assert(UPLINK_POST_TIMEOUT_MS === 20_000, "the abort is at 20 s");
+  if (timer === undefined) throw new Error("a 20 s abort timer is armed");
   assert(h.calls[0]?.init.signal.aborted === false, "not aborted before the timer");
   timer.fire();
   const error = await rejection(pending);
