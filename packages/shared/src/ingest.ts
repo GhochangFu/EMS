@@ -1,4 +1,5 @@
 import type { OnboardingProtocol } from "./index";
+import { INGEST_PROTOCOLS } from "./ingest-protocols";
 
 /**
  * Ingest data contracts (ADR 0016, backlog `F1.1`).
@@ -20,23 +21,9 @@ import type { OnboardingProtocol } from "./index";
  * for a new module either way — so the packaging cost buys a real boundary.
  */
 
-/**
- * Protocols an ingest adapter can serve.
- *
- * A protocol appears here only when an adapter could plausibly be written for
- * it; `modbus_rtu` and `dcs` are deliberately absent until `F1.6` needs them.
- * Adding one is a one-line change made by the adapter's own PR (ADR 0016 §7).
- */
-export const INGEST_PROTOCOLS = [
-  "mqtt",
-  "modbus_tcp",
-  "bacnet",
-  "opc_ua",
-  "snmp",
-  "rest_poller",
-] as const;
-
-export type IngestProtocol = (typeof INGEST_PROTOCOLS)[number];
+// The protocol union (ADR 0016 §7). A leaf module since `E7.2`, so the uplink
+// schema below can read it without importing this module back.
+export { INGEST_PROTOCOLS, type IngestProtocol } from "./ingest-protocols";
 
 // `F4.221`: the one MQTT wildcard predicate. A leaf module, so the MQTT schemas
 // below import it without importing this module back (`F3.24a` review).
@@ -52,6 +39,8 @@ export * from "./ingest-adapters/mqtt-payload-format";
 export * from "./ingest-adapters/mqtt-payload-format-binary";
 // `F3.24a` (ADR 0093 decisions 2, 3): the code-defined protocol catalog.
 export * from "./protocol-catalog";
+// `E7.2` (ADR 0123 decision 4): the edge-to-cloud uplink wire schema.
+export * from "./ingest-uplink";
 
 /**
  * Compile-time drift guard: every ingest protocol must be expressible in
