@@ -2,19 +2,15 @@
 
 ## Status
 
-**Proposed — 2026-11-10.** Drafted by an agent for backlog row `F4.5`
+**Accepted — 2026-11-10** (owner, in chat: "Accept ADR 0124, yes to the
+plan"; proposed the same day). Drafted by an agent for backlog row `F4.5`
 (*Integration tests w/ testcontainers: PG + Timescale + Redis*, P1), one of four
 P1 rows drafted in parallel overnight (0122 `E3.1`, 0123 `E7.2`, 0125 `F4.17`).
-Nothing here is decided. Every numbered decision below is the drafter's
-recommendation, and each one the owner must rule on is repeated as an open
-question at the end with its options. The plan is
-[`docs/plans/f4.5-testcontainers.md`](../plans/f4.5-testcontainers.md); no
-build starts before the owner accepts this record and says "yes" to the plan.
-
-**The owner answered all nine open questions in chat on 2026-11-10, one at a
-time, each with the recommended option** (listed under *Rulings*). The record
-stays Proposed: answering the questions is not acceptance, and the owner has
-not yet accepted it or said "yes" to the plan.
+The owner answered all nine open questions in chat the same day, one at a
+time, each with the recommended option (listed under *Rulings*), so decisions
+1–11 stand as written. The plan is
+[`docs/plans/f4.5-testcontainers.md`](../plans/f4.5-testcontainers.md), approved
+in the same message.
 
 No figure in this record was measured. The container daemon was not reachable
 in the drafting session, so clone times, template-build time, CI minutes and
@@ -92,7 +88,7 @@ copies a prepared database in one statement; roles are cluster-wide, grants and
 RLS policies travel with the copy. So the design is: prepare once, copy per
 worker.
 
-## Decision (recommended — each is open until the owner rules)
+## Decision
 
 1. **One server pair per test run, prepared once.** A Vitest `globalSetup`
    starts one TimescaleDB container and one Redis container through
@@ -233,7 +229,7 @@ the root `vitest.config.ts`); none ships in an image.
 
 ## Open questions for the owner (in order)
 
-*All nine answered 2026-11-10 — see *Rulings*. Kept as asked, for the record.*
+All nine answered 2026-11-10 (see *Rulings*). Kept as asked, for the record.
 
 1. **Package.** (a) `testcontainers` core only, `GenericContainer` — *recommended*;
    (b) core plus `@testcontainers/postgresql` and `@testcontainers/redis`;
