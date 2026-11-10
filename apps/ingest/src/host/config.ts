@@ -16,7 +16,12 @@ import {
   resolveCredentialKeys,
   type Base64Decoder,
 } from "@bms/shared/credential-keys";
-import { NOTIFY_LIVE_WINDOW_MS, parseMqttPlaintextHosts } from "@bms/shared/ingest";
+import {
+  MAX_NOTIFY_LIVE_WINDOW_MS,
+  MIN_NOTIFY_LIVE_WINDOW_MS,
+  NOTIFY_LIVE_WINDOW_MS,
+  parseMqttPlaintextHosts,
+} from "@bms/shared/ingest";
 
 export type HostConfig = {
   readonly databaseUrl: string;
@@ -177,9 +182,6 @@ function positiveInt(
   return value;
 }
 
-/** The bounds on `INGEST_NOTIFY_LIVE_WINDOW_MS` (plan P4, ruled as recommended). */
-export const MIN_NOTIFY_LIVE_WINDOW_MS: number = 60_000;
-export const MAX_NOTIFY_LIVE_WINDOW_MS: number = 900_000;
 
 /**
  * The live window `writeResolved` notifies inside, **bounded at both ends**.
@@ -274,12 +276,12 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   // bounded below, so there is no configuration that can run ingest with
   // realtime silently off — the failure mode commit 4 exists to remove.
   //
-  // Two things carry that guarantee, and neither is in this file: the positive
-  // `pg_notify` assertion in `normaliser.spec.ts`, which fails if any
-  // suppression path returns, and the `tests/repo-invariants.test.ts` check that
-  // nothing reads the variable. `config.spec.ts` only asserts the key is absent
-  // from what this function returns — it cannot reach a write path, and saying
-  // otherwise would credit it with a guarantee it does not carry.
+  // Four things carry that guarantee: the positive `pg_notify` assertion in
+  // `normaliser.spec.ts`, which fails if any suppression path returns; the
+  // `tests/repo-invariants.test.ts` check that nothing reads the deleted
+  // `INGEST_NOTIFY` variable; the floor in `readNotifyLiveWindowMs` above, held
+  // by `config.spec.ts`; and `writeResolved` refusing a window outside the same
+  // bounds, held by `normaliser-notify-window.spec.ts`.
   return {
     databaseUrl,
     healthPort: positiveInt(

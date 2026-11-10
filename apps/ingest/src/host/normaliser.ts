@@ -1,4 +1,8 @@
-import type { QualityPolicy } from "@bms/shared/ingest";
+import {
+  MAX_NOTIFY_LIVE_WINDOW_MS,
+  MIN_NOTIFY_LIVE_WINDOW_MS,
+  type QualityPolicy,
+} from "@bms/shared/ingest";
 
 import { chunkReadings, type NotifyReading } from "./chunk.js";
 import type { ReceivedSample } from "./received-sample.js";
@@ -546,8 +550,9 @@ export type WriteOptions = {
  * `now()` is written and not notified: an `F1.10` replay or an edge backlog is
  * history, and announcing it would raise live alarms on old values and move
  * live tiles backwards. Every *live* row is still notified, with no option,
- * environment value or default that can turn that off — the window is bounded
- * at start-up (`config.ts`) so it cannot be set to zero.
+ * environment value or default that can turn that off: a `liveWindowMs`
+ * outside `MIN_`/`MAX_NOTIFY_LIVE_WINDOW_MS` throws here before anything is
+ * written, and `config.ts` refuses the same range at start-up.
  *
  * The upsert runs inside a transaction and the notifications are sent **after**
  * `COMMIT`, exactly as the pilot did it — a listener must never be told about a
@@ -560,6 +565,18 @@ export async function writeResolved(
   rows: readonly PointValueRow[],
   options: WriteOptions,
 ): Promise<WriteResult> {
+  // `!(a >= min && a <= max)` rather than `a < min || a > max`: NaN fails it.
+  if (
+    !(
+      options.liveWindowMs >= MIN_NOTIFY_LIVE_WINDOW_MS &&
+      options.liveWindowMs <= MAX_NOTIFY_LIVE_WINDOW_MS
+    )
+  ) {
+    throw new Error(
+      `writeResolved: liveWindowMs must be between ${MIN_NOTIFY_LIVE_WINDOW_MS} and ` +
+        `${MAX_NOTIFY_LIVE_WINDOW_MS}, got ${options.liveWindowMs}`,
+    );
+  }
   if (rows.length === 0) {
     return { rowsWritten: 0, notificationsSent: 0, rowsNotNotified: 0 };
   }

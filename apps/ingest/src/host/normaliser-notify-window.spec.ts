@@ -133,3 +133,32 @@ export async function rowsNotNotifiedIsTheCount(): Promise<void> {
   const none = await writeResolved(empty.client, [], OPTIONS);
   assert(none.rowsNotNotified === 0, `an empty batch holds nothing back, got ${none.rowsNotNotified}`);
 }
+
+/** A row exactly `liveWindowMs` old is inside the window: the bound is inclusive. */
+export async function aRowExactlyAtTheWindowIsNotified(): Promise<void> {
+  const { client, calls } = makeFakeClient();
+  await writeResolved(client, [rowAt(NOTIFY_LIVE_WINDOW_MS)], OPTIONS);
+  assert(
+    notifiedAssets(calls).join(",") === "asset-a",
+    "a row exactly liveWindowMs old must be notified (the bound is inclusive, as in the API)",
+  );
+}
+
+/**
+ * A window outside the bounds is refused before anything is written. Without
+ * this a caller passing 0, a negative number or NaN writes every row and
+ * notifies none, which is the deleted `INGEST_NOTIFY` switch again.
+ */
+export async function aWindowOutsideTheBoundsIsRefused(): Promise<void> {
+  for (const liveWindowMs of [0, -1, Number.NaN, 59_999, 900_001]) {
+    const { client, calls } = makeFakeClient();
+    let threw = false;
+    try {
+      await writeResolved(client, [rowAt(0)], { now: () => NOW, liveWindowMs });
+    } catch {
+      threw = true;
+    }
+    assert(threw, `liveWindowMs ${liveWindowMs} must be refused`);
+    assert(calls.length === 0, `liveWindowMs ${liveWindowMs} must be refused before any query`);
+  }
+}

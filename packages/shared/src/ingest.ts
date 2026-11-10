@@ -79,6 +79,16 @@ void _ingestProtocolsAreOnboardable;
 export const NOTIFY_LIVE_WINDOW_MS = 5 * 60_000;
 
 /**
+ * The bounds on the ingest host's live window (plan P4, ruled as recommended).
+ * They live here, beside the default, because two things enforce them: the
+ * start-up read of `INGEST_NOTIFY_LIVE_WINDOW_MS` and `writeResolved` itself,
+ * so a caller that does not go through the host config cannot pass a window
+ * of zero and silence every notification.
+ */
+export const MIN_NOTIFY_LIVE_WINDOW_MS = 60_000;
+export const MAX_NOTIFY_LIVE_WINDOW_MS = 900_000;
+
+/**
  * Whether the host drives the adapter (`poll`) or the adapter drives the host
  * (`push`).
  *

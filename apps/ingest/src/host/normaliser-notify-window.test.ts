@@ -3,8 +3,10 @@ import { describe, it } from "vitest";
 import {
   aMixedBatchUpsertsAllAndNotifiesOnlyLiveRows,
   aRowAheadOfNowIsNotified,
+  aRowExactlyAtTheWindowIsNotified,
   aRowJustInsideTheWindowIsNotified,
   aRowJustOutsideTheWindowIsWrittenNotNotified,
+  aWindowOutsideTheBoundsIsRefused,
   anAllLateBatchCommitsAndSendsNoNotify,
   rowsNotNotifiedIsTheCount,
 } from "./normaliser-notify-window.spec.js";
@@ -33,5 +35,13 @@ describe("E7.2 — writeResolved notifies only rows inside the live window (ADR 
 
   it("reports rowsNotNotified as the count held back", async () => {
     await rowsNotNotifiedIsTheCount();
+  });
+
+  it("notifies a row exactly at the window bound", async () => {
+    await aRowExactlyAtTheWindowIsNotified();
+  });
+
+  it("refuses a window outside the bounds before any query", async () => {
+    await aWindowOutsideTheBoundsIsRefused();
   });
 });
