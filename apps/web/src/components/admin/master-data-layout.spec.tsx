@@ -80,6 +80,8 @@ export function marksTheDeepestLevelOfADrillDown(): void {
     "RTUs /admin/rtus",
     "Assets /admin/assets *",
     "Asset Points /admin/asset-points",
+    // `E7.2` (ADR 0123 decision 12): Edge Gateways, global `admin` only, last of the area.
+    "Edge Gateways /admin/edge-gateways",
   ]);
 }
 

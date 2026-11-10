@@ -23,7 +23,7 @@ export function groupsEveryTabIntoItsArea(): void {
     ]),
   );
   expect(grouped).toEqual({
-    "Sites & Equipment": ["Organizations", "Locations", "RTUs", "Assets", "Asset Points"],
+    "Sites & Equipment": ["Organizations", "Locations", "RTUs", "Assets", "Asset Points", "Edge Gateways"],
     "Reference Data": ["Asset Groups", "Point Keys", "State Labels", "Trend Points", "Location Types", "Unit Roles", "Payload Formats", "Calc Parameters", "Portal Appearance"],
     "Templates & Visuals": ["Asset Templates", "Dashboard Templates", "Mimic Layouts", "Symbol Libraries"],
     "Data Input": ["Manual Entry", "Import Telemetry"],
