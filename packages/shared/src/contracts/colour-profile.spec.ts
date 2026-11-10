@@ -10,7 +10,10 @@ import { COLOUR_PROFILES, colourProfileSchema, setOrganizationColourProfileBodyS
  * the `it()`s (ADR 0014).
  */
 
-/** P1 — the nine names (`F4.341` added the last three), in the order the chooser shows them; `nexus` first, the default. */
+/**
+ * P1 — the thirteen names (`F4.341` added forest, sand and navy-pop; `F4.346`, ADR 0118 Amendment 3,
+ * the last four), in the order the chooser shows them; `nexus` first, the default.
+ */
 export function runTheProfilesInOrder(): void {
   expect(COLOUR_PROFILES).toEqual([
     "nexus",
@@ -22,6 +25,10 @@ export function runTheProfilesInOrder(): void {
     "forest",
     "sand",
     "navy-pop",
+    "hmi-grey",
+    "moss",
+    "colour-safe",
+    "night-shift",
   ]);
   expect(colourProfileSchema.options).toEqual(COLOUR_PROFILES);
 }

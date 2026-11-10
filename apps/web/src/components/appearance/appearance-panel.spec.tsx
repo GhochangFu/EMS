@@ -91,7 +91,7 @@ export function thePortalLevelHasNoInherit(): void {
     <AppearancePanel levelLabel="Portal" initial={{ designSystem: "nexus-soft", colourProfile: "nexus" }} allowInherit={false} save={vi.fn()} onDone={vi.fn()} />,
   );
   expect(screen.queryByRole("radio", { name: /Inherit/ })).toBeNull();
-  expect(screen.getAllByRole("radio")).toHaveLength(5 + 9);
+  expect(screen.getAllByRole("radio")).toHaveLength(5 + 13);
 }
 
 export async function theOrganizationDialogWritesItsRowAndInheritsThePortal(): Promise<void> {

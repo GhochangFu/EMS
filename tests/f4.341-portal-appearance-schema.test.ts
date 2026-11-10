@@ -3,9 +3,14 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { COLOUR_PROFILES } from "../packages/shared/src/contracts/colour-profile";
 import { DESIGN_SYSTEMS } from "../packages/shared/src/contracts/design-system";
 import { repoRoot } from "./support/source-scan";
+
+/**
+ * The nine colour-profile names when 0134 was written. `F4.346` (migration 0137) widened its two
+ * colour-profile CHECKs to thirteen; 0134 is frozen, so it is held to the list it was written against.
+ */
+const NINE_PROFILES = ["nexus", "ocean", "lagoon", "indigo", "graphite", "high-contrast", "forest", "sand", "navy-pop"];
 
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
@@ -57,12 +62,12 @@ describe("F4.341 — appearance storage (migration 0134)", () => {
     expect(MIGRATION.trim().endsWith("RESET ROLE;")).toBe(true);
   });
 
-  it("every design-system CHECK equals designSystemSchema, every colour-profile CHECK colourProfileSchema", () => {
+  it("every design-system CHECK equals designSystemSchema, every colour-profile CHECK the nine names of its day", () => {
     for (const name of ["portal_settings_design_system_check", "organizations_design_system_check", "users_design_system_check"]) {
       expect(checkList(name), name).toEqual([...DESIGN_SYSTEMS]);
     }
     for (const name of ["portal_settings_colour_profile_check", "users_colour_profile_check"]) {
-      expect(checkList(name), name).toEqual([...COLOUR_PROFILES]);
+      expect(checkList(name), name).toEqual(NINE_PROFILES);
     }
   });
 

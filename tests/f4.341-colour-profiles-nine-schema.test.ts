@@ -3,8 +3,13 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { COLOUR_PROFILES } from "../packages/shared/src/contracts/colour-profile";
 import { repoRoot } from "./support/source-scan";
+
+/**
+ * The nine names of the contract when 0133 was written. `F4.346` (migration 0137) grew the contract
+ * to thirteen; 0133 is frozen, so it is held to the list it was written against.
+ */
+const NINE = ["nexus", "ocean", "lagoon", "indigo", "graphite", "high-contrast", "forest", "sand", "navy-pop"];
 
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
@@ -50,12 +55,11 @@ describe("F4.341 — the nine-name colour-profile CHECK (migration 0133)", () =>
     expect(migration).not.toMatch(/\bGRANT\b/i);
   });
 
-  it("the CHECK lists exactly the names of colourProfileSchema, in order", () => {
+  it("the CHECK lists exactly the nine names of colourProfileSchema as it was, in order", () => {
     const m = /CHECK \(colour_profile IN \(([^)]*)\)\)/.exec(sqlOnly(read(MIGRATION_REL)));
     expect(m, "a CHECK on colour_profile").not.toBeNull();
     const names = (m?.[1] ?? "").split(",").map((s) => s.trim().replace(/^'|'$/g, ""));
-    expect(names).toEqual([...COLOUR_PROFILES]);
-    expect(names).toHaveLength(9);
+    expect(names).toEqual(NINE);
   });
 
   it("drops the named CHECK before it adds it, so a re-run is safe, and touches no column", () => {

@@ -19,6 +19,7 @@ import {
   theTableHoldsOneValidRow,
   theUserCheckRefusesAnUnknownName,
   thePrivilegesAreTheMigrations,
+  theThirteenNamesPassEveryCheck,
   type AppearanceCtx,
 } from "./appearance.integration.spec";
 import { PortalSettingsService } from "./portal-settings.service";
@@ -119,5 +120,9 @@ describe.skipIf(!connectionString)("F4.341 — selectable appearance (ADR 0118)"
 
   it("A9 the privileges as installed are the migration's", async () => {
     await thePrivilegesAreTheMigrations(ctx);
+  });
+
+  it("A10 F4.346 night-shift through PUT /me/appearance is stored, an unknown name is a 400, and the four new names pass all three CHECKs", async () => {
+    await theThirteenNamesPassEveryCheck(ctx);
   });
 });

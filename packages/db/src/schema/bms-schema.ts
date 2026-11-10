@@ -52,7 +52,7 @@ export const organizations = bmsSchema.table("organizations", {
   // against the runtime zone list; UTC unless an administrator sets it.
   timezone: varchar("timezone", { length: 64 }).notNull().default("UTC"),
   // F4.310 / ADR 0110 decision 6 (migration 0125): one of the
-  // `colourProfileSchema` names, held by a CHECK (nine since 0133). F4.341 /
+  // `colourProfileSchema` names, held by a CHECK (thirteen since 0137). F4.341 /
   // ADR 0118 decision 9 (migration 0134): nullable with no default; NULL means
   // "use the portal default". The appearance route (and its colour-profile
   // alias) is the only writer.
