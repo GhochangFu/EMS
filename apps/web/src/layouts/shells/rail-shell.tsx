@@ -8,7 +8,8 @@ import { SurfaceSwitch } from "../../components/surface-switch";
 import { SystemStatusIndicator } from "../../components/system-status-indicator";
 import { ThemeSwitch } from "../../components/theme-switch";
 import { Wordmark } from "../../components/wordmark";
-import { shellGroups, topNav, useCollapsibleNav, useShellModel } from "./navigation-model";
+import { navIcon, shellGroups, topNav, useCollapsibleNav, useShellModel, type NavIconKey } from "./navigation-model";
+import { NavIcon } from "./nav-icon";
 import { ShellMain } from "./shell-footer";
 import { AppearanceButton } from "./shell-header";
 import type { AppShellProps } from "./shell-props";
@@ -16,10 +17,7 @@ import type { AppShellProps } from "./shell-props";
 /** `F4.346` — the store key of the rail's collapsed choice, apart from the sidebar's. */
 export const RAIL_COLLAPSED_STORAGE_KEY = "bms-rail-collapsed";
 
-/** `F4.346` — the collapsed codes of the rail's top entries (one word each, so two letters). */
-const TOP_CODES: Readonly<Record<string, string>> = { Overview: "OV", Sites: "SI", Energy: "EN", Settings: "SE" };
-
-type RailEntry = { readonly label: string; readonly path: string; readonly code: string; readonly selected: boolean };
+type RailEntry = { readonly label: string; readonly path: string; readonly icon: NavIconKey; readonly selected: boolean };
 
 /**
  * `F4.341` PR 5 (ADR 0118 decision 6, plan D7) — the `rail` shell (`control-room-dark`): a thin
@@ -29,8 +27,8 @@ type RailEntry = { readonly label: string; readonly path: string; readonly code:
  * in the same order and with the same rules. The wordmark and logout are in the header.
  *
  * `F4.346` (ADR 0118 Amendment 3 decision 2) — the rail collapses as the sidebar does
- * (`useCollapsibleNav`): it opens expanded with text labels, its button collapses it to 64 px codes
- * with the full label as each link's accessible name, the choice is stored under
+ * (`useCollapsibleNav`): it opens expanded with text labels, its button collapses it to 64 px icons
+ * (`F4.348`, Amendment 4; codes before) with the full label as each link's accessible name, the choice is stored under
  * `bms-rail-collapsed`, and at ≤ `SHELL_RAIL_MAX_WIDTH` it is a 64 px slot whose expanded rail lies
  * over the page and closes on navigation (`F4.318`).
  */
@@ -42,7 +40,7 @@ export function RailShell({ user, children, kpiRibbon }: AppShellProps) {
     ...(isMasterDataAdmin(user.role)
       ? [{ label: "Settings", path: "/admin", selected: model.location.pathname.startsWith("/admin") }]
       : []),
-  ].map((item) => ({ ...item, code: TOP_CODES[item.label] ?? item.label.slice(0, 2).toUpperCase() }));
+  ].map((item) => ({ ...item, icon: navIcon(item.label) }));
   const { collapsed, narrow, overlay, toggle } = useCollapsibleNav(
     RAIL_COLLAPSED_STORAGE_KEY,
     model.location.pathname,
@@ -56,14 +54,15 @@ export function RailShell({ user, children, kpiRibbon }: AppShellProps) {
         <Link
           to={item.path}
           title={item.label}
-          // F4.164 — WCAG 2.5.3: a collapsed name carries the visible code; expanded, the label is the name.
-          aria-label={collapsed ? `${item.label} (${item.code})` : undefined}
+          // F4.348 — collapsed, the icon replaces the code and the link is named by its label.
+          aria-label={collapsed ? item.label : undefined}
           aria-current={item.selected ? "page" : undefined}
-          className={`surface-nav-item block ${item.selected ? "surface-nav-item-selected" : ""} ${
-            collapsed ? "px-2 py-2 text-center font-bold" : "px-3 py-1.5"
+          className={`surface-nav-item flex items-center gap-2 ${item.selected ? "surface-nav-item-selected" : ""} ${
+            collapsed ? "justify-center px-2 py-2" : "px-3 py-1.5"
           }`}
         >
-          {collapsed ? item.code : item.label}
+          <NavIcon icon={item.icon} />
+          {collapsed ? null : item.label}
         </Link>
       </li>
     );

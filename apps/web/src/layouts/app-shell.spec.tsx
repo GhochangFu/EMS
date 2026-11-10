@@ -12,11 +12,12 @@ import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { useThemeStore } from "../stores/theme-store";
 import {
   AppShell,
-  COLLAPSED_LABEL_OVERRIDES,
+  NAV_ICONS,
   SETTINGS_LOCKED_REASON,
-  collapsedRailEntries,
+  navIconEntries,
 } from "./app-shell";
 import * as copilotApi from "../api/copilot";
+import { LUCIDE_SHAPES } from "../components/widgets/mimic-symbol-libraries/lucide.generated";
 
 /**
  * `F3.66` U6 (ADR 0076 decision 1, OQ4, plan D9) — one sidebar entry,
@@ -269,23 +270,17 @@ export function drawsTheLockedSettingsAtThreeToOne(): void {
 }
 
 /**
- * `F4.164` U3 — the collapsed rail. A collapsed sidebar link carries
- * `aria-label="<label> (<code>)"`, so it announces its full title and its
- * accessible name still contains the visible code (WCAG 2.5.3 Label in Name);
- * an expanded link has no `aria-label` and takes its name from the label it
- * shows. `COLLAPSED_LABEL_OVERRIDES` makes the codes unique.
+ * `F4.164` U3, as amended by `F4.348` (ADR 0118 Amendment 4) — the collapsed rail shows icons, not
+ * letter codes. A collapsed sidebar link shows its icon only and is named by its full label
+ * (`aria-label` and `title`); an expanded link shows the icon before its label and takes its name
+ * from the label. No two items share an icon.
  *
- * L1–L3 gate the data: `collapsedRailEntries()` is every item of both lists,
- * the temporarily hidden ones included, so a collision that only shows once an
- * item is un-hidden or once a role sees the admin group is still caught.
+ * L1–L3 gate the data: `navIconEntries()` is every item of every list, the temporarily hidden ones
+ * included, so a collision that only shows once an item is un-hidden or once a role sees the admin
+ * group is still caught.
  *
- * L4–L6 and L8 need one render only, `admin` with a `GLOBAL` scope. Every visibility
- * rule in `AppShell` only removes items (the hidden paths, `none`/`null` scope
- * for Control Room, the admin group for a non-admin, `catalogOnly` and
- * `globalOnly` for a lesser admin), and `admin` with `GLOBAL` passes all of
- * them, so that render shows the maximal set. Uniqueness of a set holds for
- * every subset of it, and an attribute present on every link of the maximal
- * set is present on every link of each role's subset.
+ * L4–L8 need one render only, `admin` with a `GLOBAL` scope: every visibility rule only removes
+ * items, and `admin` with `GLOBAL` passes all of them, so that render shows the maximal set.
  */
 function renderCollapsedShell(): void {
   window.localStorage.setItem("bms-sidebar-collapsed", "true");
@@ -296,92 +291,72 @@ function sidebarLinks(): HTMLElement[] {
   return within(sidebar()).getAllByRole("link");
 }
 
-function duplicateCodes(entries: { code: string; label: string; path: string }[]): string[] {
-  const byCode = new Map<string, string[]>();
-  for (const entry of entries) {
-    byCode.set(entry.code, [...(byCode.get(entry.code) ?? []), `${entry.label} (${entry.path})`]);
-  }
-  return [...byCode.entries()]
-    .filter(([, owners]) => owners.length > 1)
-    .map(([code, owners]) => `${code}: ${owners.join(" / ")}`);
-}
-
-/** L1 — no two rail items share a collapsed code; the message names each collision. */
+/** L1 (I1) — no two navigation items share an icon; the message names each collision. */
 export function givesEveryRailItemAUniqueCode(): void {
-  const duplicates = duplicateCodes(collapsedRailEntries());
-  expect(duplicates, `duplicate collapsed codes:\n${duplicates.join("\n")}`).toEqual([]);
+  const byIcon = new Map<string, string[]>();
+  for (const entry of navIconEntries()) byIcon.set(entry.icon, [...(byIcon.get(entry.icon) ?? []), `${entry.label} (${entry.path})`]);
+  const duplicates = [...byIcon.entries()].filter(([, owners]) => owners.length > 1).map(([icon, owners]) => `${icon}: ${owners.join(" / ")}`);
+  expect(duplicates, `duplicate navigation icons:\n${duplicates.join("\n")}`).toEqual([]);
 }
 
-/**
- * L2 — the gate reads the full list, hidden ones included: 24 items since
- * `F3.72` removed *Dashboard* (25 before it). `F3.76` replaced the eleven
- * Administration entries with the hub and five areas: 20 items, and the floor
- * moved from 23 to 20.
- */
+/** L2 — the gate reads the full list, hidden items and the rail's top entries included. */
 export function readsTheFullItemList(): void {
-  expect(collapsedRailEntries().length).toBeGreaterThanOrEqual(20);
+  expect(navIconEntries().length).toBeGreaterThanOrEqual(24);
 }
 
-/** L3 — every override key is the path of some rail item (a renamed key is dead). */
+/** L3 (I1) — every icon-table key is a real item's label, and every icon is a repo Lucide shape. */
 export function keysEveryOverrideByARealPath(): void {
-  const paths = new Set(collapsedRailEntries().map((entry) => entry.path));
-  const dead = Object.keys(COLLAPSED_LABEL_OVERRIDES).filter((key) => !paths.has(key));
-  expect(dead).toEqual([]);
+  const labels = new Set(navIconEntries().map((entry) => entry.label));
+  expect(Object.keys(NAV_ICONS).filter((label) => !labels.has(label))).toEqual([]);
+  const missing = Object.values(NAV_ICONS).filter((icon) => !(`lucide:${icon}` in LUCIDE_SHAPES));
+  expect(missing).toEqual([]);
 }
 
-/** L4 — collapsed, every sidebar link's `aria-label` is "<title> (<visible code>)". */
+/** L4 (I3) — collapsed, every sidebar link is named by its full label: `aria-label` equals `title`. */
 export function labelsEveryCollapsedLinkWithItsTitleAndCode(): void {
   renderCollapsedShell();
   const links = sidebarLinks();
   expect(links.length).toBeGreaterThan(0);
-  expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(
-    links.map((link) => `${link.getAttribute("title") ?? ""} (${link.textContent ?? ""})`),
-  );
+  expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(links.map((link) => link.getAttribute("title")));
 }
 
-/**
- * L5 — collapsed, "Dashboards (DS)" names exactly one link and "Dashboard (D)"
- * names none: `F3.72` removed *Dashboard* (plan D6). *Dashboards* keeps its
- * `DS` code, so the collapsed rail does not change under its users.
- */
+/** L5 — collapsed, "Dashboards" names exactly one link and "Dashboard" none (`F3.72`). */
 export function namesDashboardsAndNoDashboardWhenCollapsed(): void {
   renderCollapsedShell();
   expect({
-    Dashboard: within(sidebar()).queryAllByRole("link", { name: "Dashboard (D)" }).length,
-    Dashboards: within(sidebar()).queryAllByRole("link", { name: "Dashboards (DS)" }).length,
+    Dashboard: within(sidebar()).queryAllByRole("link", { name: "Dashboard" }).length,
+    Dashboards: within(sidebar()).queryAllByRole("link", { name: "Dashboards" }).length,
   }).toEqual({ Dashboard: 0, Dashboards: 1 });
 }
 
-/** L6a — collapsed, the visible codes are unique. */
+/** L6a (I3) — collapsed, every link shows exactly one icon and no text, and the icons are unique. */
 export function showsUniqueCodesWhenCollapsed(): void {
   renderCollapsedShell();
-  const codes = sidebarLinks().map((link) => link.textContent ?? "");
-  const repeated = codes.filter((code, index) => codes.indexOf(code) !== index);
-  expect(codes.length).toBeGreaterThan(0);
-  expect(repeated).toEqual([]);
+  const links = sidebarLinks();
+  for (const link of links) {
+    expect(link.textContent, link.getAttribute("title") ?? "").toBe("");
+    expect(link.querySelectorAll("svg.nav-icon")).toHaveLength(1);
+  }
+  const icons = links.map((link) => link.querySelector("svg.nav-icon")?.getAttribute("data-icon") ?? "");
+  expect(icons.filter((icon, i) => icons.indexOf(icon) !== i)).toEqual([]);
 }
 
-/** L6b — collapsed, "Dashboards" reads "DS". */
+/** L6b — collapsed, "Dashboards" shows the `layout-dashboard` icon. */
 export function showsDsForDashboardsWhenCollapsed(): void {
   renderCollapsedShell();
-  expect(within(sidebar()).getByRole("link", { name: "Dashboards (DS)" })).toHaveTextContent(
-    /^DS$/,
-  );
+  const link = within(sidebar()).getByRole("link", { name: "Dashboards" });
+  expect(link.querySelector("svg.nav-icon")?.getAttribute("data-icon")).toBe("layout-dashboard");
 }
 
-/** L7 — expanded, "Dashboards" reads its full label. */
+/** L7 (I2) — expanded, "Dashboards" reads its full label, after its decorative icon. */
 export function showsTheFullLabelWhenExpanded(): void {
   renderShell(GLOBAL, "/", "admin");
-  expect(within(sidebar()).getByRole("link", { name: "Dashboards" })).toHaveTextContent(
-    /^Dashboards$/,
-  );
+  const link = within(sidebar()).getByRole("link", { name: "Dashboards" });
+  expect(link).toHaveTextContent(/^Dashboards$/);
+  expect(link.firstElementChild?.matches('svg.nav-icon[aria-hidden="true"]')).toBe(true);
 }
 
-/**
- * L8 — collapsed, every link's accessible name contains its visible text (WCAG
- * 2.5.3). The name is the one Testing Library computes, read through the
- * `name` callback, so it is the name a query by role would match on.
- */
+/** L8 — collapsed, every link's accessible name is its full label (the icon is decorative). */
 export function keepsTheVisibleCodeInEveryCollapsedName(): void {
   renderCollapsedShell();
   const names = new Map<HTMLElement, string>();
@@ -391,11 +366,11 @@ export function keepsTheVisibleCodeInEveryCollapsedName(): void {
       return true;
     },
   });
-  const missing = [...names.entries()]
-    .filter(([link, name]) => !name.includes(link.textContent ?? " "))
-    .map(([link, name]) => `"${name}" lacks "${link.textContent ?? ""}"`);
+  const wrong = [...names.entries()]
+    .filter(([link, name]) => name !== link.getAttribute("title"))
+    .map(([link, name]) => `"${name}" is not "${link.getAttribute("title") ?? ""}"`);
   expect(names.size).toBeGreaterThan(0);
-  expect(missing).toEqual([]);
+  expect(wrong).toEqual([]);
 }
 
 /** L9 — expanded, the "Dashboards" link's accessible name is exactly "Dashboards". */

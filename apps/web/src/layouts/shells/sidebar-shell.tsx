@@ -2,13 +2,14 @@ import { Link } from "react-router-dom";
 
 import { isMasterDataAdmin } from "../../lib/admin-access";
 import { CopilotDock } from "../../components/copilot/copilot-dock";
+import { NavIcon } from "./nav-icon";
 import type { AppShellProps } from "./shell-props";
 import { ShellFooter, ShellMain } from "./shell-footer";
 import { ShellHeader, ShellTopNav } from "./shell-header";
 import {
   adminModuleGroup,
-  collapsedLabel,
   moduleGroups,
+  navIcon,
   useCollapsibleNav,
   useShellModel,
 } from "./navigation-model";
@@ -23,6 +24,9 @@ import {
  * `enterprise-flat`, `swiss-grid`, `bento-ops`); `swiss-grid` and `bento-ops` skin it in
  * `index.css` with tokens only, so the markup is the same in all four. The sidebar's slot is the
  * `nav[aria-label="Modules"]` landmark, outside the `<aside>`, so the fixture still holds.
+ *
+ * `F4.348` (ADR 0118 Amendment 4) — every item carries its icon (`NavIcon`) before its label;
+ * collapsed, the icon replaces the letter code. The markup fixture was re-captured for the icons.
  */
 export function SidebarShell({ user, children, kpiRibbon }: AppShellProps) {
   const { location, scope, locationScopeLabel, isVisible, handleLogout, isModuleSelected, isAdminSelected, visibleAreas, viewport, copilotPush } =
@@ -89,12 +93,13 @@ export function SidebarShell({ user, children, kpiRibbon }: AppShellProps) {
                         <Link
                           to={m.path}
                           title={m.label}
-                          // F4.164 — WCAG 2.5.3: a collapsed name carries the visible code; expanded, the label is the name.
-                          aria-label={collapsed ? `${m.label} (${collapsedLabel(m)})` : undefined}
+                          // F4.348 — collapsed, the icon replaces the code and the link is named by its label.
+                          aria-label={collapsed ? m.label : undefined}
                           aria-current={isModuleSelected(m) ? "page" : undefined}
-                          className={`surface-nav-item block ${isModuleSelected(m) ? "surface-nav-item-selected" : ""} ${collapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
+                          className={`surface-nav-item flex items-center gap-2 ${isModuleSelected(m) ? "surface-nav-item-selected" : ""} ${collapsed ? "justify-center px-2 py-2" : "px-3 py-1.5"}`}
                         >
-                          {collapsed ? collapsedLabel(m) : m.label}
+                          <NavIcon icon={navIcon(m.label)} />
+                          {collapsed ? null : m.label}
                         </Link>
                       </li>
                     ))}
@@ -119,11 +124,12 @@ export function SidebarShell({ user, children, kpiRibbon }: AppShellProps) {
                         <Link
                           to={item.path}
                           title={item.label}
-                          aria-label={collapsed ? `${item.label} (${collapsedLabel(item)})` : undefined}
+                          aria-label={collapsed ? item.label : undefined}
                           aria-current={isAdminSelected(item) ? "page" : undefined}
-                          className={`surface-nav-item block ${isAdminSelected(item) ? "surface-nav-item-selected" : ""} ${collapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
+                          className={`surface-nav-item flex items-center gap-2 ${isAdminSelected(item) ? "surface-nav-item-selected" : ""} ${collapsed ? "justify-center px-2 py-2" : "px-3 py-1.5"}`}
                         >
-                          {collapsed ? collapsedLabel(item) : item.label}
+                          <NavIcon icon={navIcon(item.label)} />
+                          {collapsed ? null : item.label}
                         </Link>
                       </li>
                     ))}

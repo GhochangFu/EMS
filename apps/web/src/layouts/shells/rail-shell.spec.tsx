@@ -16,8 +16,8 @@ import { RAIL_COLLAPSED_STORAGE_KEY } from "./rail-shell";
 
 /**
  * `F4.346` (ADR 0118 Amendment 3 decision 2, plan S4) — the rail (`control-room-dark`) collapses.
- * It opens expanded with text labels; its button collapses it to codes, each code link keeping the
- * full label in its accessible name; the choice is stored under its own key, `bms-rail-collapsed`.
+ * It opens expanded with text labels; its button collapses it to icons (`F4.348`, ADR 0118
+ * Amendment 4: codes before), each icon link named by its full label; the choice is stored under its own key, `bms-rail-collapsed`.
  * At ≤ `SHELL_RAIL_MAX_WIDTH` the rail is a 64 px slot, the stored choice is neither read nor
  * written, and the expanded rail is an overlay that closes on navigation (`F4.318`'s rules).
  */
@@ -66,8 +66,8 @@ export function theRailOpensExpanded(): void {
 }
 
 /**
- * S4b — the button collapses the rail to 64 px codes; each code link keeps its full label in its
- * accessible name; the choice is stored and read back at the next mount; the sidebar's key is not
+ * S4b — the button collapses the rail to 64 px icons (`F4.348`); each icon link is named by its full
+ * label; the choice is stored and read back at the next mount; the sidebar's key is not
  * touched.
  */
 export function theButtonCollapsesToCodesAndTheChoicePersists(): void {
@@ -75,13 +75,13 @@ export function theButtonCollapsesToCodesAndTheChoicePersists(): void {
   const unmount = renderRail();
   act(() => toggle("Collapse rail").click());
   expect(rail()).toHaveClass("w-16");
-  const alarm = within(nav()).getByRole("link", { name: /Alarm Centre/ });
-  expect(alarm.textContent).toBe("AC");
-  expect(alarm.getAttribute("aria-label")).toBe("Alarm Centre (AC)");
+  const alarm = within(nav()).getByRole("link", { name: "Alarm Centre" });
+  expect(alarm.textContent).toBe("");
+  expect(alarm.querySelector("svg.nav-icon")?.getAttribute("data-icon")).toBe("bell");
   for (const link of within(nav()).getAllByRole("link")) {
-    const name = link.getAttribute("aria-label") ?? "";
-    expect(name.length, link.getAttribute("href") ?? "").toBeGreaterThan((link.textContent ?? "").length);
-    expect(name).toContain(link.getAttribute("title") ?? "∅");
+    expect(link.textContent, link.getAttribute("href") ?? "").toBe("");
+    expect(link.querySelectorAll("svg.nav-icon"), link.getAttribute("href") ?? "").toHaveLength(1);
+    expect(link.getAttribute("aria-label")).toBe(link.getAttribute("title"));
   }
   expect(localStorage.getItem("bms-rail-collapsed")).toBe("true");
   expect(localStorage.getItem("bms-sidebar-collapsed")).toBeNull();

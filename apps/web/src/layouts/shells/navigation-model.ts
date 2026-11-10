@@ -90,17 +90,47 @@ export const adminModuleGroup = {
 export const temporarilyHiddenModulePaths = new Set(["/sld", "/crac"]);
 
 /**
- * `F4.164` (OQ-1) — the collapsed-rail code for an item whose `shortLabel`
- * collides with another item's, keyed by the item's path. The rule: on a
- * collision the later item in rail order (Operations, Maintenance,
- * Automation, then Administration) takes the override, and the earlier item
- * keeps its derived letters. `collapsedRailEntries()` is the uniqueness gate.
- * `/dashboards` kept `DS` when `F3.72` removed the *Dashboard* item it
- * collided with, so the collapsed rail does not change under its users.
+ * `F4.348` (ADR 0118 Amendment 4 decisions 1–2, plan's icon table) — each navigation item's icon,
+ * a key of the repo's Lucide shapes, keyed by the item's label: the module items (hidden ones
+ * included), the Administration hub and areas, and the rail's top entries. Collapsed, the icon
+ * replaces the letter code `F4.164` showed; `navIconEntries()` is the unique-icon gate.
  */
-export const COLLAPSED_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
-  "/dashboards": "DS",
-};
+export const NAV_ICONS = {
+  Overview: "house",
+  Sites: "building",
+  Energy: "zap",
+  Settings: "settings",
+  "Alarm Centre": "bell",
+  "Control Room": "monitor",
+  "Alarm Philosophy": "shield-alert",
+  Dashboards: "layout-dashboard",
+  Sustainability: "leaf",
+  Assets: "boxes",
+  "Sites Map": "map-pin",
+  "Electrical SLD": "plug-zap",
+  "HVAC · CRAC": "fan",
+  "Energy Analytics": "chart-line",
+  Maintenance: "wrench",
+  "Schedule Centre": "clock",
+  "Rule Engine": "cpu",
+  Reports: "activity",
+  "Master Data Hub": "database",
+  "Sites & Equipment": "factory",
+  "Reference Data": "key",
+  "Templates & Visuals": "package",
+  "Data Input": "plug",
+  Notifications: "bell-ring",
+  "Users & Access": "users",
+} as const;
+
+export type NavIconKey = (typeof NAV_ICONS)[keyof typeof NAV_ICONS];
+
+/** An item's icon; an item missing from the table fails loudly (the I1 gate keeps it total). */
+export function navIcon(label: string): NavIconKey {
+  const icon = (NAV_ICONS as Readonly<Record<string, NavIconKey>>)[label];
+  if (icon === undefined) throw new Error(`no navigation icon for "${label}"`);
+  return icon;
+}
 
 /**
  * `F4.164` (OQ-4) — why the top-nav Settings entry is locked. The button's
@@ -109,38 +139,22 @@ export const COLLAPSED_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
 export const SETTINGS_LOCKED_REASON =
   "Administration requires an admin, organization_admin or location_admin role";
 
-function shortLabel(label: string): string {
-  return label
-    .replace(/^CR · /, "")
-    .split(/\s+|·|&/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-}
-
-export function collapsedLabel(item: { readonly label: string; readonly path: string }): string {
-  return COLLAPSED_LABEL_OVERRIDES[item.path] ?? shortLabel(item.label);
-}
-
-export type CollapsedRailEntry = {
+export type NavIconEntry = {
   readonly path: string;
   readonly label: string;
-  readonly code: string;
+  readonly icon: NavIconKey;
 };
 
-/** Every rail item of both lists, hidden ones included, with the code the collapsed rail shows. */
-export function collapsedRailEntries(): CollapsedRailEntry[] {
-  type RailItem = { readonly label: string; readonly path: string };
-  const items: readonly RailItem[] = [
-    ...moduleGroups.flatMap((group): readonly RailItem[] => group.items),
+/** Every navigation item of every list, hidden ones included, with its icon (`F4.348`). */
+export function navIconEntries(): NavIconEntry[] {
+  type Item = { readonly label: string; readonly path: string };
+  const items: readonly Item[] = [
+    ...topNav.map((item) => ({ label: item.label, path: item.to })),
+    { label: "Settings", path: "/admin" },
+    ...moduleGroups.flatMap((group): readonly Item[] => group.items),
     ...adminModuleGroup.items,
   ];
-  return items.map((item) => ({
-    path: item.path,
-    label: item.label,
-    code: collapsedLabel(item),
-  }));
+  return items.map((item) => ({ path: item.path, label: item.label, icon: navIcon(item.label) }));
 }
 
 /**
@@ -151,7 +165,7 @@ export function collapsedRailEntries(): CollapsedRailEntry[] {
 export const SHELL_RAIL_MAX_WIDTH = 767;
 
 /** One module or administration entry, with its selection resolved for the current path. */
-export type ShellItem = { readonly label: string; readonly path: string; readonly code: string; readonly selected: boolean };
+export type ShellItem = { readonly label: string; readonly path: string; readonly icon: NavIconKey; readonly selected: boolean };
 export type ShellGroup = { readonly title: string; readonly items: readonly ShellItem[] };
 
 /**
@@ -253,7 +267,7 @@ export function shellGroups(model: ReturnType<typeof useShellModel>, showAdmin: 
       title: group.title,
       items: group.items
         .filter((m) => model.isVisible(m.path))
-        .map((m) => ({ label: m.label, path: m.path, code: collapsedLabel(m), selected: model.isModuleSelected(m) })),
+        .map((m) => ({ label: m.label, path: m.path, icon: navIcon(m.label), selected: model.isModuleSelected(m) })),
     }))
     .filter((group) => group.items.length > 0);
   if (showAdmin) {
@@ -261,7 +275,7 @@ export function shellGroups(model: ReturnType<typeof useShellModel>, showAdmin: 
       title: adminModuleGroup.title,
       items: adminModuleGroup.items
         .filter((item) => !("area" in item) || model.visibleAreas.has(item.area))
-        .map((item) => ({ label: item.label, path: item.path, code: collapsedLabel(item), selected: model.isAdminSelected(item) })),
+        .map((item) => ({ label: item.label, path: item.path, icon: navIcon(item.label), selected: model.isAdminSelected(item) })),
     });
   }
   return groups;

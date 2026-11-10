@@ -26,7 +26,7 @@ describe("F4.341 / F4.346 the sidebar and rail shells (ADR 0118 decision 6, Amen
   });
 
   it.each(["nexus-soft", "enterprise-flat", "swiss-grid", "bento-ops", "control-room-dark"] as const)(
-    "S2 %s at 1440 px: every item is a link in one vertical Modules nav, with no sideways scroller",
+    "S2/I2 %s at 1440 px: every item is a link with its icon in one vertical Modules nav, with no sideways scroller",
     (design) => everyItemIsInOneVerticalModulesNav(design),
   );
 

@@ -161,8 +161,8 @@ describe("F4.164 locked Settings entry", () => {
   });
 });
 
-describe("F4.164 collapsed rail", () => {
-  it("L1 gives every rail item a unique collapsed code", () => {
+describe("F4.164 / F4.348 collapsed rail: icons", () => {
+  it("L1 gives every navigation item a unique icon (F4.348)", () => {
     givesEveryRailItemAUniqueCode();
   });
 
@@ -170,31 +170,31 @@ describe("F4.164 collapsed rail", () => {
     readsTheFullItemList();
   });
 
-  it("L3 keys every override by the path of a rail item", () => {
+  it("L3 keys every icon by a real item and a repo Lucide shape", () => {
     keysEveryOverrideByARealPath();
   });
 
-  it("L4 labels every collapsed link with its title and its visible code", () => {
+  it("L4 names every collapsed link by its full label", () => {
     labelsEveryCollapsedLinkWithItsTitleAndCode();
   });
 
-  it("L5 names Dashboards (DS) and no Dashboard (D) when collapsed", () => {
+  it("L5 names Dashboards and no Dashboard when collapsed", () => {
     namesDashboardsAndNoDashboardWhenCollapsed();
   });
 
-  it("L6a shows unique codes when collapsed", () => {
+  it("L6a shows one icon and no text per collapsed link, icons unique", () => {
     showsUniqueCodesWhenCollapsed();
   });
 
-  it("L6b shows DS for Dashboards when collapsed", () => {
+  it("L6b shows the layout-dashboard icon for Dashboards when collapsed", () => {
     showsDsForDashboardsWhenCollapsed();
   });
 
-  it("L7 shows the full label when expanded", () => {
+  it("L7 shows the icon, then the full label, when expanded", () => {
     showsTheFullLabelWhenExpanded();
   });
 
-  it("L8 keeps the visible code in every collapsed link's accessible name (WCAG 2.5.3)", () => {
+  it("L8 names every collapsed link exactly by its label", () => {
     keepsTheVisibleCodeInEveryCollapsedName();
   });
 
