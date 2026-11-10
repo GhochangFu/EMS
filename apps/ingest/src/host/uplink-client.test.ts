@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   aHungPostIsAbortedAtTwentySeconds,
   anAllFutureRx200IsRetryLater,
+  aSplitBatchWithAFailedHalfIsResentWhole,
+  oneBadSampleNeverSinksTheBatch,
   onlyAValid200sDateIsTrusted,
   anOversizeBatchIsSplit,
   everyOutcomeIsHandled,
@@ -32,7 +34,7 @@ describe("E7.2 — the edge uplink client (ADR 0123 decisions 4 and 9, plan T5.4
     await theFloorRateWaitsTenSeconds();
   });
 
-  it("handles every row of the outcome table (C4)", async () => {
+  it("drops a batch only on the receiver's own 400/413 code; retries everything else (C4, Amendment 2)", async () => {
     await everyOutcomeIsHandled();
   });
 
@@ -58,5 +60,13 @@ describe("E7.2 — the edge uplink client (ADR 0123 decisions 4 and 9, plan T5.4
 
   it("treats a 200 that refused every sample as futureRx as retry-later", async () => {
     await anAllFutureRx200IsRetryLater();
+  });
+
+  it("sends a sample without a device time that does not fit, and drops only a sample that cannot be sent", async () => {
+    await oneBadSampleNeverSinksTheBatch();
+  });
+
+  it("re-sends both halves of a split batch, at the same rx, when the second half fails", async () => {
+    await aSplitBatchWithAFailedHalfIsResentWhole();
   });
 });

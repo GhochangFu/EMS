@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { anUnsyncedClockDegrades, theCloudHasNoEdgeLine, theEdgeLineRenders } from "./health-server-edge.spec.js";
+import { aRecentRefusalDegradesForTenMinutes, anUnsyncedClockDegrades, theCloudHasNoEdgeLine, theEdgeLineRenders } from "./health-server-edge.spec.js";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("E7.2 — the edge health line (plan T5.5, C12)", () => {
@@ -14,5 +14,9 @@ describe("E7.2 — the edge health line (plan T5.5, C12)", () => {
 
   it("is absent on the cloud host", () => {
     theCloudHasNoEdgeLine();
+  });
+
+  it("degrades for ten minutes after a batch is refused for good", () => {
+    aRecentRefusalDegradesForTenMinutes();
   });
 });

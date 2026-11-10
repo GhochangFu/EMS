@@ -92,7 +92,7 @@ function harness(answers: Answer[] | ((call: Call) => Answer), options: { rate?:
     return {
       status: answer.status,
       headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
-      text: async () => JSON.stringify(answer.body ?? { error: "x" }),
+      text: async () => (typeof answer.body === "string" ? answer.body : JSON.stringify(answer.body ?? { error: "x" })),
     };
   };
   const record = (level: string) => (message: string, fields?: Record<string, unknown>) =>
@@ -217,10 +217,15 @@ export async function theFloorRateWaitsTenSeconds(): Promise<void> {
 /** C4: every row of the outcome table. */
 export async function everyOutcomeIsHandled(): Promise<void> {
   const errors: Error[] = [];
-  for (const status of [400, 413, 422]) {
-    const h = harness([{ status, body: { error: "bad-schema" } }]);
+  for (const [status, code] of [
+    [400, "bad-schema"],
+    [400, "bad-json"],
+    [413, "too-large"],
+  ] as const) {
+    const h = harness([{ status, body: { error: code } }]);
     await h.client.writerFor(ONE_DEVICE)(samples(4, new Date(T0)));
     assert(h.client.stats().uplinkRefused === 4, `${status} is terminal for the batch and counted`);
+    assert(h.client.stats().lastRefusedAt?.getTime() === T0, "and stamped for the health window");
     assert(h.lines.some((l) => l.includes('"level":"error"') && l.includes(`"status":${status}`)), `${status} logged`);
     assertNoToken(h.lines);
   }
@@ -231,6 +236,13 @@ export async function everyOutcomeIsHandled(): Promise<void> {
   assert(stats.unresolved === 3 && stats.uplinkRefused === 0, "the 200 body's own units, never compared to the batch");
 
   const retry: Answer[] = [
+    { status: 422, body: { error: "bad-schema" } },
+    { status: 400, body: "<html><body>400 Bad Request</body></html>" },
+    { status: 413, body: "<html>413 Request Entity Too Large (nginx)</html>" },
+    { status: 413, body: { error: "bad-schema" } },
+    { status: 400, body: { error: "made-up-code" } },
+    { status: 200, body: "<html>captive portal</html>" },
+    { status: 200, body: { ok: true } },
     { status: 401 },
     { status: 403, body: { error: "ingest-disabled" } },
     { status: 429, headers: { "retry-after": "5" } },
@@ -246,6 +258,7 @@ export async function everyOutcomeIsHandled(): Promise<void> {
     errors.push(error);
     assert(error instanceof UplinkRetryLater, `retry later for ${JSON.stringify(answer)}: ${error.message}`);
     assert(h.client.stats().uplinkRefused === 0, "a retry-later outcome deletes nothing");
+    assert(h.client.stats().lastRefusedAt === undefined, "and is not a refusal");
     assertNoToken(h.lines, errors);
   }
 }
@@ -366,4 +379,38 @@ export async function anAllFutureRx200IsRetryLater(): Promise<void> {
   assert(error instanceof UplinkRetryLater, "every sample futureRx is a retry-later");
   await write(samples(3, new Date(T0)));
   assert(h.client.stats().futureRx === 5 && h.client.stats().batchesSent === 1, "a partial futureRx is delivered, and counted");
+}
+
+/** One sample whose device time does not fit is sent without it; one that cannot be sent is dropped alone. */
+export async function oneBadSampleNeverSinksTheBatch(): Promise<void> {
+  const h = harness([]);
+  const at = new Date(T0);
+  const batch: ReceivedSample[] = [
+    { sample: { sourceKey: "ok", value: 1, deviceKey: "RTU-1" }, receivedAt: at },
+    { sample: { sourceKey: "far", value: 2, deviceKey: "RTU-1", at: new Date(Date.UTC(10_000, 0, 1)) }, receivedAt: at },
+    { sample: { sourceKey: "nan", value: Number.NaN, deviceKey: "RTU-1" }, receivedAt: at },
+    { sample: { sourceKey: "", value: 3, deviceKey: "RTU-1" }, receivedAt: at },
+  ];
+  await h.client.writerFor(ONE_DEVICE)(batch);
+  const sent = h.calls[0]?.batch.samples ?? [];
+  assert(sent.map((s) => s.sourceKey).join(",") === "ok,far", `the good two are sent: ${sent.map((s) => s.sourceKey).join(",")}`);
+  assert(sent[1]?.at === undefined && sent[1]?.rx === at.toISOString(), "a device time that does not fit is left off");
+  const stats = h.client.stats();
+  assert(stats.deviceTimeDropped === 1 && stats.invalid === 2, `counted: ${JSON.stringify(stats)}`);
+}
+
+/** A split batch whose second body is retry-later rejects, and the retry re-sends both halves at the same rx. */
+export async function aSplitBatchWithAFailedHalfIsResentWhole(): Promise<void> {
+  const h = harness([{ status: 200, body: OK }, { status: 502 }]);
+  const big = Array.from({ length: 500 }, (_, i) => ({
+    sample: { sourceKey: randomBytes(750).toString("base64"), value: i, deviceKey: "RTU-1" },
+    receivedAt: new Date(T0 - i),
+  }));
+  const write = h.client.writerFor(ONE_DEVICE);
+  const error = await rejection(write(big));
+  assert(error instanceof UplinkRetryLater && h.calls.length === 2, "the second half's retry-later rejects the batch");
+  await write(big);
+  const keys = (call: Call | undefined) => (call?.batch.samples ?? []).map((s) => `${s.value}|${s.rx}`).join(",");
+  assert(h.calls.length === 4, `both halves re-sent: ${h.calls.length}`);
+  assert(keys(h.calls[2]) === keys(h.calls[0]) && keys(h.calls[3]) === keys(h.calls[1]), "with identical rx");
 }

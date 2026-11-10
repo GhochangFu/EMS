@@ -33,6 +33,8 @@ function edge(overrides: Partial<EdgeHealth> = {}): EdgeHealth {
       unresolved: 3,
       uplinkRefused: 4,
       unattributed: 5,
+      invalid: 6,
+      deviceTimeDropped: 7,
       lastOutcome: "200",
     },
     ...overrides,
@@ -48,8 +50,8 @@ export function theEdgeLineRenders(): void {
   const line = lineOf(body, "edge ");
   assert(
     line ===
-      "edge clock=synced lastUplink=200 notBefore=none batchesSent=12 accepted=40 uplinkRefused=4 " +
-        "unattributed=5 foreignDevice=1 futureRx=0 tooOld=2 unresolved=3",
+      "edge clock=synced lastUplink=200 notBefore=none lastRefused=never batchesSent=12 accepted=40 uplinkRefused=4 " +
+        "unattributed=5 invalid=6 deviceTimeDropped=7 foreignDevice=1 futureRx=0 tooOld=2 unresolved=3",
     `edge line was: ${line}`,
   );
   assert(body.startsWith("ingest-host ok "), `a synced edge with nothing else wrong is ok: ${body.split("\n")[0]}`);
@@ -79,4 +81,13 @@ export function theCloudHasNoEdgeLine(): void {
   const body = renderHealth(snapshot(), NOW);
   assert(lineOf(body, "edge ") === undefined, "no edge line on the cloud");
   assert(body.startsWith("ingest-host ok "), `the cloud verdict is unchanged: ${body.split("\n")[0]}`);
+}
+
+/** A batch refused for good degrades the verdict for ten minutes, then not: a window, not a counter. */
+export function aRecentRefusalDegradesForTenMinutes(): void {
+  const refused = (agoMs: number) =>
+    renderHealth(snapshot(edge({ uplink: { ...edge().uplink, lastRefusedAt: new Date(NOW.getTime() - agoMs) } })), NOW);
+  assert(refused(60_000).startsWith("ingest-host degraded "), "a refusal a minute ago degrades");
+  assert(refused(600_000).startsWith("ingest-host ok "), "ten minutes on it no longer does");
+  assert(refused(60_000).includes("lastRefused=2026-11-10T08:59:00.000Z"), "and the line says when");
 }

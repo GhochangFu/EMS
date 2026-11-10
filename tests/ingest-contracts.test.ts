@@ -126,6 +126,8 @@ describe("ADR 0016 ingest contracts", () => {
     expect(ingest.UPLINK_MAX_FUTURE_MS).toBe(60_000);
     expect(ingest.UPLINK_MAX_AGE_MS).toBe(561_600_000);
     expect(String(ingest.UPLINK_TOKEN_PATTERN)).toBe("/^bmsgw_[A-Za-z0-9_-]{43}$/");
+    // ADR 0123 Amendment 2: the edge drops a batch only on one of the receiver's own codes.
+    expect(ingest.UPLINK_REFUSAL_STATUS).toMatchObject({ "bad-schema": 400, "too-large": 413, unauthorized: 401 });
   });
 
   it("publishes the edge configuration file schema and its bounds through ./ingest", () => {

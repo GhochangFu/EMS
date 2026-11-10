@@ -6,8 +6,11 @@ import {
   UPLINK_MAX_BODY_BYTES,
   UPLINK_MAX_DECODED_BYTES,
   type UplinkBatch,
+  UPLINK_REFUSAL_STATUS,
+  type UplinkRefusal,
   uplinkResponseSchema,
   type UplinkSample,
+  uplinkSampleSchema,
 } from "@bms/shared/ingest";
 
 import type { AdapterLogger } from "../adapter/types.js";
@@ -69,8 +72,22 @@ export const LOCK_WAIT_MS = 20_000;
  */
 export const EDGE_WRITE_TIMEOUT_MS = 90_000;
 
-/** HTTP statuses that refuse the batch itself: retrying cannot help (C4). */
-const TERMINAL = new Set([400, 413, 422]);
+/**
+ * Final only when the **receiver** says so: a `400` or `413` whose body is
+ * `{ error }` with one of its own codes for that status. A proxy's page, a
+ * `422`, any other body is retried (ADR 0123 Amendment 2).
+ */
+function isTerminal(status: number, code: string | undefined): boolean {
+  if (status !== 400 && status !== 413) return false;
+  return (
+    code !== undefined &&
+    Object.prototype.hasOwnProperty.call(UPLINK_REFUSAL_STATUS, code) &&
+    UPLINK_REFUSAL_STATUS[code as UplinkRefusal] === status
+  );
+}
+
+/** How long a refused batch keeps the health verdict degraded — a recent window, not a lifetime counter. */
+export const REFUSED_RECENT_MS = 600_000;
 
 /** The request `fetch` is given. A narrow shape so a spec can capture it. */
 export type UplinkFetchInit = {
@@ -132,6 +149,12 @@ export type UplinkStats = {
   readonly uplinkRefused: number;
   /** Samples with no `deviceKey` on a multi-device endpoint: never sent. */
   readonly unattributed: number;
+  /** Samples the wire schema refused even without their device time (a non-finite value): never sent. */
+  readonly invalid: number;
+  /** Samples sent without `at` because their device time did not fit the wire; the cloud uses `rx`. */
+  readonly deviceTimeDropped: number;
+  /** When a batch was last refused for good; the health verdict degrades for `REFUSED_RECENT_MS` after it. */
+  readonly lastRefusedAt?: Date;
   /** The last outcome: an HTTP status, `network` or `timeout`; absent before the first post. */
   readonly lastOutcome?: string;
   /** Before this, nothing is posted (`Retry-After`). */
@@ -235,8 +258,25 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
     unresolved: 0,
     uplinkRefused: 0,
     unattributed: 0,
+    invalid: 0,
+    deviceTimeDropped: 0,
   };
   let lastOutcome: string | undefined;
+  let lastRefusedAt: Date | undefined;
+
+  /** At most one "not sent" line a minute, with the counts since the last one (nit: a busy endpoint must not flood the log). */
+  let unsentLoggedAtMs: number | undefined;
+  const unsentPending = { unattributed: 0, invalid: 0 };
+  const noteUnsent = (protocol: IngestProtocol, unattributed: number, invalid: number): void => {
+    unsentPending.unattributed += unattributed;
+    unsentPending.invalid += invalid;
+    const nowMs = scheduler.now().getTime();
+    if (unsentLoggedAtMs !== undefined && nowMs - unsentLoggedAtMs < 60_000) return;
+    unsentLoggedAtMs = nowMs;
+    logger.warn("samples not sent: no device key, or not valid on the wire", { protocol, ...unsentPending });
+    unsentPending.unattributed = 0;
+    unsentPending.invalid = 0;
+  };
 
   const deferred = (): boolean => notBeforeMs !== undefined && scheduler.now().getTime() < notBeforeMs;
 
@@ -267,6 +307,7 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
     if (samples.length === 1) {
       // One sample over 256 KiB compressed: the receiver would answer 413 for ever.
       totals.uplinkRefused += 1;
+      lastRefusedAt = scheduler.now();
       logger.error("uplink sample too large to send; dropped", { bytes: json.length });
       return [];
     }
@@ -321,10 +362,8 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
         parsed = uplinkResponseSchema.safeParse(undefined);
       }
       if (!parsed.success) {
-        logger.warn("uplink 200 body unreadable; the batch is stored, its counts are not known", {});
-        totals.batchesSent += 1;
-        lastOutcome = "200";
-        return;
+        // Not the receiver's answer (a proxy page with a 200): nothing says the rows are stored.
+        return retryLater("200-unreadable", "answered 200 with a body that is not the receiver's");
       }
       // Only a schema-valid body is the receiver's own answer, so only its Date is trusted.
       const serverMs = dateHeader === null ? Number.NaN : Date.parse(dateHeader);
@@ -350,21 +389,18 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
       }
       return;
     }
-    if (TERMINAL.has(status)) {
+    let code: string | undefined;
+    try {
+      const reason = (JSON.parse(text) as { error?: unknown } | null)?.error;
+      code = typeof reason === "string" && /^[a-z-]{1,40}$/.test(reason) ? reason : undefined;
+    } catch {
+      code = undefined;
+    }
+    if (isTerminal(status, code)) {
       totals.uplinkRefused += count;
       lastOutcome = String(status);
-      let code: string | undefined;
-      try {
-        const reason = (JSON.parse(text) as { error?: unknown }).error;
-        code = typeof reason === "string" && /^[a-z-]{1,40}$/.test(reason) ? reason : undefined;
-      } catch {
-        code = undefined;
-      }
-      logger.error("uplink refused a batch; it cannot be retried and is dropped", {
-        status,
-        samples: count,
-        ...(code === undefined ? {} : { error: code }),
-      });
+      lastRefusedAt = scheduler.now();
+      logger.error("uplink refused a batch; it cannot be retried and is dropped", { status, samples: count, error: code });
       return;
     }
     const wait = retryAfterMs(retryAfter, scheduler.now().getTime());
@@ -380,23 +416,36 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
       return async (received) => {
         const wire: UplinkSample[] = [];
         let unattributed = 0;
+        let invalid = 0;
         let oldestMs = Number.POSITIVE_INFINITY;
         for (const one of received) {
           // M5: the drain loop stamps a device key only on spill; the wire requires one.
           const deviceKey = one.sample.deviceKey ?? soleDeviceKey;
-          if (deviceKey === undefined || !Number.isFinite(one.sample.value)) {
+          if (deviceKey === undefined) {
             unattributed += 1;
             continue;
           }
+          // One bad sample must never make the whole batch schema-invalid (a 400
+          // would drop its neighbours): a device time that does not fit is left
+          // off, and a sample that still does not fit is dropped alone.
+          let sample = toWire(plan.protocol, one, deviceKey);
+          if (!Number.isFinite(sample.value) || !uplinkSampleSchema.safeParse(sample).success) {
+            const { at: _dropped, ...withoutAt } = sample;
+            if (sample.at !== undefined && Number.isFinite(sample.value) && uplinkSampleSchema.safeParse(withoutAt).success) {
+              totals.deviceTimeDropped += 1;
+              sample = withoutAt;
+            } else {
+              invalid += 1;
+              continue;
+            }
+          }
           oldestMs = Math.min(oldestMs, one.receivedAt.getTime());
-          wire.push(toWire(plan.protocol, one, deviceKey));
+          wire.push(sample);
         }
-        if (unattributed > 0) {
-          totals.unattributed += unattributed;
-          logger.warn("samples with no device key or no finite value were not sent", {
-            protocol: plan.protocol,
-            samples: unattributed,
-          });
+        totals.unattributed += unattributed;
+        totals.invalid += invalid;
+        if (unattributed + invalid > 0) {
+          noteUnsent(plan.protocol, unattributed, invalid);
         }
         if (wire.length === 0) {
           return;
@@ -430,6 +479,7 @@ export function createUplinkClient(deps: UplinkClientDeps): UplinkClient {
       return {
         ...totals,
         ...(lastOutcome === undefined ? {} : { lastOutcome }),
+        ...(lastRefusedAt === undefined ? {} : { lastRefusedAt }),
         ...(notBeforeMs === undefined || !deferred() ? {} : { notBefore: new Date(notBeforeMs) }),
       };
     },

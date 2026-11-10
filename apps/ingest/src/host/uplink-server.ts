@@ -4,7 +4,9 @@ import { createGunzip } from "node:zlib";
 import {
   UPLINK_MAX_BODY_BYTES,
   UPLINK_MAX_DECODED_BYTES,
+  UPLINK_REFUSAL_STATUS,
   uplinkBatchSchema,
+  type UplinkRefusal,
   type UplinkResponse,
 } from "@bms/shared/ingest";
 
@@ -151,36 +153,10 @@ function readGzipBody(request: http.IncomingMessage): Promise<BodyOutcome> {
   });
 }
 
-type Refusal =
-  | "not-found"
-  | "method"
-  | "unauthorized"
-  | "gateway-revoked"
-  | "ingest-disabled"
-  | "busy"
-  | "overloaded"
-  | "rate-limited"
-  | "bad-encoding"
-  | "too-large"
-  | "bad-gzip"
-  | "bad-json"
-  | "bad-schema";
+/** The refusal codes and their statuses are shared with the edge client (`@bms/shared/ingest`). */
+type Refusal = UplinkRefusal;
 
-const STATUS: Readonly<Record<Refusal, number>> = {
-  "not-found": 404,
-  method: 405,
-  unauthorized: 401,
-  "gateway-revoked": 403,
-  "ingest-disabled": 403,
-  busy: 429,
-  overloaded: 429,
-  "rate-limited": 429,
-  "bad-encoding": 400,
-  "too-large": 413,
-  "bad-gzip": 400,
-  "bad-json": 400,
-  "bad-schema": 400,
-};
+const STATUS: Readonly<Record<Refusal, number>> = UPLINK_REFUSAL_STATUS;
 
 const HEADERS = { "content-type": "application/json", "cache-control": "no-store" } as const;
 
