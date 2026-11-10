@@ -23,7 +23,7 @@ cloud-only modules.
 
 ```bash
 cd deploy/edge
-cp .env.example .env                       # token, uplink origin, EDGE_CRED_* values
+install -m 600 .env.example .env          # 0600 from the start: it holds the token and EDGE_CRED_* values
 cp edge-config.example.json edge-config.json
 docker compose up -d --build
 docker compose exec edge wget -qO- http://127.0.0.1:9103/
@@ -32,7 +32,8 @@ docker compose exec edge wget -qO- http://127.0.0.1:9103/
 `deploy/edge/docker-compose.yml` is its own file, not a profile of the root
 compose file (plan C14). It runs `command: ["node", "dist/edge-main.js"]`,
 keeps the buffer on the named volume `edge-buffer` at `/var/lib/bms-edge`,
-mounts the config read-only, publishes no port and sets no `DATABASE_URL`.
+mounts the config read-only, publishes no port, sets no `DATABASE_URL`, and
+gives shutdown 30 s (`stop_grace_period`) to spill and write the clock mark.
 
 **Owed to the owner:** a `start:edge` script (`node dist/edge-main.js`) in
 `apps/ingest/package.json`, as the plan's T5.6 asks. An agent may not edit a
@@ -77,6 +78,7 @@ might carry credentials, not a credential, not a config value.
 | `EDGE_REPLAY_MAX_SAMPLES_PER_S` | `500` | Floor `50`. Caps backlog batches only; live batches never wait. |
 | `INGEST_HOST_HEALTH_PORT` | `9103` | The health listener, as on the cloud. |
 | `INGEST_STALE_AFTER_MS` | `300000` | As on the cloud. |
+| `NODE_TLS_REJECT_UNAUTHORIZED` | unset | `0` refuses the start: the edge never lowers certificate verification. |
 | `MQTT_PLAINTEXT_HOSTS` | empty | Plain MQTT (`"tls": false`) only to a broker host listed here (ADR 0114, plan P6). |
 | `EDGE_CRED_<NAME>` | — | One per credential the config file names. |
 
@@ -122,45 +124,90 @@ misspelt key is refused by name. The shipped example is
 
 `src/host/uplink-client.ts` is the supervisor's `writeSamples`: a resolve is
 done, a reject is a spill to disk and a probe on the §5 backoff, exactly as a
-database failure is on the cloud.
+database failure is on the cloud. The rule is that **only the receiver itself
+can make the edge delete data** (ADR 0123 Amendment 2).
 
 | Answer | What the edge does |
 | --- | --- |
-| `200` | Done. The body's counts are added to the health line in their own units (`accepted` is rows, the rejections are samples). |
-| `400`, `413`, `422` | The batch can never be accepted: counted `uplinkRefused`, logged, **dropped**, so one poison batch cannot hold the queue (plan M4). |
-| `401`, `403` | Kept on disk and retried — a token being rotated or an organization switched off must not delete data. |
+| `200` with a body that passes `uplinkResponseSchema` | Done. The counts are added to the health line in their own units (`accepted` is rows, the rejections are samples). |
+| `200` in which every sample was refused `futureRx` | Kept and retried: the edge's clock is wrong, not the data. It waits on disk under the buffer bounds. |
+| `200` with any other body (a proxy or captive-portal page) | Kept and retried. |
+| `400` or `413` whose body is `{ "error": <code> }` with one of the receiver's own codes for that status (`UPLINK_REFUSAL_STATUS` in `@bms/shared/ingest`) | The batch can never be accepted: counted `uplinkRefused`, logged, **dropped**, so one poison batch cannot hold the queue (plan M4). Health is `degraded` for ten minutes after. |
+| `400`/`413` with any other body, `422` | Kept and retried — a proxy's error page is not the receiver refusing the data. |
+| `401`, `403` | Kept and retried — a token being rotated or an organization switched off must not delete data. |
 | `429`, `503` | Kept and retried; `Retry-After` (capped at 5 min) is a not-before time. |
-| network error, 20 s timeout, any other status | Kept and retried. |
+| network error, 20 s timeout, a response body over 64 KiB, any other status | Kept and retried. |
 
-One post is in flight at a time (the receiver answers `429` to a second), a
-waiting live batch ahead of a waiting backlog one. A batch is `backlog` when
-its oldest sample is more than 10 s old on the edge clock. A body over
-256 KiB compressed is split. Every batch carries `buffered` (samples on disk)
-and `clock`, which the cloud stores on the gateway row. The edge supervisor's
-write timeout is 90 s, above the throttle wait, the post-lock wait and two
-20 s posts.
+Before a batch is encoded, each sample is checked against the wire schema: a
+device time that does not fit is left off (the cloud uses `rx`;
+`deviceTimeDropped`), and a sample that still does not fit is dropped alone
+(`invalid`). One bad sample never sinks its batch.
+
+**One post at a time, gateway-wide.** The receiver answers `429` to a second
+batch in flight for one gateway, so every endpoint of the box shares one
+post slot (a waiting live batch goes before a waiting backlog one), and a
+`429` or `503` with `Retry-After` defers **every** endpoint of the gateway,
+not only the one that was answered. That is the box's throughput ceiling: one
+batch of up to 500 samples per round trip.
+
+A batch is `backlog` when its oldest sample is more than 10 s old on the edge
+clock; backlog batches wait on a schedule at `EDGE_REPLAY_MAX_SAMPLES_PER_S`.
+A wait past 30 s is refused at once without reserving, and a batch that never
+posts gives its share back, so many endpoints replaying at the floor cannot
+livelock. No post starts that could finish after the supervisor's 90 s write
+timeout. A body over 256 KiB compressed is split; if any half fails, the whole
+batch is retried at the same `rx`. Every batch carries `buffered` (samples on
+disk) and `clock`. On shutdown the client refuses new posts and aborts the
+one in flight, so the batches are spilled, not lost.
 
 ## The clock guard
 
-`src/host/edge-clock.ts` (ADR 0123 decision 8). The edge persists a
-high-water mark of the time it hands out to `clock-mark.json`, at most once a
-minute and on shutdown. If the wall clock at start is behind the mark, the
-edge stamps `rx` as mark plus monotonic elapsed time and reports
-`clock=unsynced`; once the wall clock passes that estimate it returns to it
-with no backward step. A wall clock that steps back while running is caught
-the same way. An unreadable mark is a warning and counts as none.
+`src/host/edge-clock.ts` (ADR 0123 decision 8 and Amendment 2). The edge
+persists a high-water mark of the time it hands out to `clock-mark.json`
+(written to a unique temp file, `fsync`ed, renamed; at most once a minute,
+and on shutdown with `"clean": true`).
+
+- **At start**, if the wall clock is behind the mark — plus 75 s (one persist
+  interval and one tick) unless the mark is from a clean shutdown, so a crash
+  can never re-issue an `rx` already sent — the edge stamps `rx` as mark plus
+  monotonic elapsed time and reports `clock=unsynced`. Order is kept across a
+  reboot with a reset clock.
+- **`unsynced` ends** when the wall clock reaches that estimate, or at the
+  first `200` with a schema-valid body whose `Date` header is within 30 s of
+  the wall clock: the cloud says the wall clock is right and the mark was
+  wrong. The edge returns to the wall clock and resets the mark — the one case
+  `rx` steps backwards, logged once at `warn` with the step size.
+- A wall clock that steps back while running goes `unsynced` the same way, and
+  returns at the next trusted response.
+- **While `synced`**, a trusted cloud time more than 60 s from the wall clock
+  shows `clock=skewed` on the health line (degraded). `rx` is never shifted by
+  the offset (ADR 0123 Q7a: the cloud rejects and counts instead).
+- A mark that is not a time within a four-digit year is a warning and counts
+  as none.
+
+**Manual reset:** stop the box, delete `clock-mark.json` from the buffer
+volume (`docker compose run --rm --entrypoint rm edge /var/lib/bms-edge/clock-mark.json`),
+start it. The segments are not touched.
 
 ## Health
 
-The same body as the cloud host, plus one line:
+The same body as the cloud host, with `notify=cloud` in the header (the edge
+notifies nothing; the cloud does), plus one line:
 
 ```
-edge clock=synced lastUplink=200 notBefore=none batchesSent=12 accepted=40 uplinkRefused=0 unattributed=0 foreignDevice=0 futureRx=0 tooOld=0 unresolved=0
+edge clock=synced lastUplink=200 notBefore=none lastRefused=never batchesSent=12 accepted=40 uplinkRefused=0 unattributed=0 invalid=0 deviceTimeDropped=0 foreignDevice=0 futureRx=0 tooOld=0 unresolved=0
 ```
 
-`clock=unsynced` degrades the verdict. An outage shows on the endpoint line
-as `buffered>0 writePath=buffering`, which degrades it too. The counters are
-lifetime counters and never part of the verdict.
+`clock=unsynced`, `clock=skewed` and a batch refused in the last ten minutes
+degrade the verdict. An outage shows on the endpoint line as `buffered>0
+writePath=buffering`, which degrades it too. The counters are lifetime
+counters and never part of the verdict.
+
+## Known limits
+
+- The container runs as root (the ingest image's default). Owed as a
+  follow-up backlog row: a non-root user that owns the buffer volume.
+- Throughput is one post at a time per gateway (see *The uplink*).
 
 ## What is not yet proved
 

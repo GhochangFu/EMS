@@ -532,3 +532,63 @@ the aggregates are not repaired.
 - Which RTUs a gateway may write is checked against the in-memory binding
   plan, so for up to one reload tick a gateway can still write an RTU that
   was just reassigned.
+
+## Amendment 2 — the edge clock guard and delete rules, as built in PR 5 (2026-11-10)
+
+**Drafted by the build session for the owner to confirm. It is not an owner
+ruling.** The semantics in (a) 1 — trusting the receiver's `Date` header —
+are a drafter's call, made because the owner was away during the review. No
+decision above is reworded; this records what PR 5 built where it adds to
+decisions 4 and 8.
+
+**Why.** The PR 5 code and security reviews reproduced two failures of the
+guard as first written (decision 8's text, read literally): a mark even
+slightly ahead of a correct wall clock (a 2 s chrony step back, a mark 30 s
+ahead at boot) **never** returned to `synced`, because the estimate and the
+wall clock advance at the same rate; and a mark far ahead (an RTC kept in
+local time and read as UTC) stamped every `rx` more than 60 s into the
+future, the cloud counted every sample `futureRx` and answered `200`, and the
+edge deleted the site's telemetry as delivered.
+
+**(a) Decision 8, the edge guard, as built** (`apps/ingest/src/host/edge-clock.ts`):
+
+1. `unsynced` ends when the wall clock reaches the estimate, **or** when a
+   trusted cloud time says the wall clock is right: on a `200` whose body
+   passes `uplinkResponseSchema`, the response's `Date` header, if it is
+   within 30 s of the wall clock. The guard then returns to the wall clock
+   and resets the mark to it. That is the one case `rx` steps backwards; it
+   is logged once at `warn` with the step size. An absent or unparseable
+   header changes nothing.
+2. While `synced`, a trusted cloud time more than 60 s from the wall clock
+   reports `clock=skewed` on the health line, which degrades the verdict.
+3. A wall clock that steps back while running goes `unsynced` as before and
+   converges at the next trusted response under 1.
+4. On load the estimate starts at `mark + 75 s` (one persist interval plus
+   one tick), so a crash with a stale mark can never re-issue an `rx` already
+   sent; a mark written by a clean shutdown (`"clean": true`) needs no
+   margin. The mark is written to a unique temp file, `fsync`ed, then
+   renamed. A mark that is not a finite time within a four-digit year is
+   refused with a warning and treated as none. Deleting `clock-mark.json` is
+   the manual reset.
+
+**What stays ruled:** Q7a. The edge never shifts `rx` by a measured offset;
+the cloud rejects and counts. `skewed` is reported, not corrected.
+
+**(b) Decision 4, the edge client's outcomes, as built**
+(`apps/ingest/src/host/uplink-client.ts`). Only the receiver itself can make
+the edge delete data:
+
+- A batch is dropped (counted `uplinkRefused`, health degraded for ten
+  minutes) **only** on a `400` or `413` whose body is `{ error }` with one of
+  the receiver's own codes for that status. The codes and statuses are one
+  constant, `UPLINK_REFUSAL_STATUS` in `packages/shared/src/ingest-uplink.ts`,
+  which the listener now answers from.
+- `422`, a `400`/`413` with any other body (a proxy or load-balancer page), a
+  `200` whose body fails `uplinkResponseSchema`, and a `200` in which
+  `rejected.futureRx` equals the samples sent are all **retry-later**: the
+  batch stays on disk under the buffer bounds. A wrong clock must not
+  silently delete a site's telemetry.
+- Before encoding, each sample is checked against `uplinkSampleSchema`: one
+  whose device time does not fit is sent without `at` (the cloud falls back
+  to `rx`), one that still does not fit is dropped alone and counted, so one
+  bad sample cannot make a batch schema-invalid.
