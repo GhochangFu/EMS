@@ -26,6 +26,7 @@ import {
   runLocationTypesTabShownToAdminTest,
   runUnitRolesTabIsGlobalAdminOnlyTest,
   runStateLabelsTabIsGlobalAdminOnlyTest,
+  runEdgeGatewaysTabIsGlobalAdminOnlyTest,
   runNotificationTabTests,
 } from "./admin-access.spec";
 
@@ -133,5 +134,9 @@ describe("admin-access", () => {
 
   it("hides the Trend Points tab from location_admin (F4.300)", () => {
     runTrendPointsTabHiddenFromLocationAdminTest();
+  });
+
+  it("shows the Edge Gateways tab to the global admin alone (E7.2)", () => {
+    runEdgeGatewaysTabIsGlobalAdminOnlyTest();
   });
 });

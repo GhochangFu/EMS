@@ -7,6 +7,7 @@ import {
   canWriteCalcParameters,
   canWriteOrganizationScopedCalcParameter,
   canCreateOrganizationWideDashboard,
+  canManageEdgeGateways,
   canManageLocationTypes,
   canManageMimicLayouts,
   canManageSymbolLibraries,
@@ -99,6 +100,8 @@ export function runAssetTemplateTabTests(): void {
         "/admin/rtus",
         "/admin/assets",
         "/admin/asset-points",
+        // `E7.2` (ADR 0123 decision 12) — Edge Gateways, `globalAdminOnly`, last of Sites & Equipment.
+        "/admin/edge-gateways",
         // Reference Data. `F3.37` (ADR 0049 decision 5) — Asset Groups;
         // `F4.162` (plan D7) — Location Types, the first `globalAdminOnly`
         // tab; `E4.1a` (ADR 0070 decision 2) — Calc Parameters, ungated like
@@ -174,7 +177,8 @@ export function runAssetTemplateTabTests(): void {
     // `F4.309` added State Labels as `globalAdminOnly`: `admin` alone goes 21 -> 22.
     // `F4.334` added Payload Formats as `globalAdminOnly`: `admin` alone goes 22 -> 23.
     // `F4.341` added Portal Appearance as `globalAdminOnly`: `admin` alone goes 23 -> 24.
-    const expected = role === "location_admin" ? 11 : role === "admin" ? 24 : 19;
+    // `E7.2` added Edge Gateways as `globalAdminOnly`: `admin` alone goes 24 -> 25.
+    const expected = role === "location_admin" ? 11 : role === "admin" ? 25 : 19;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
@@ -521,5 +525,27 @@ export function runTrendPointsTabHiddenFromLocationAdminTest(): void {
 export function runCanMoveLocationsOthersTest(): void {
   for (const role of ["location_admin", "asset_group_admin", "operator", "viewer"] as const) {
     assert(!canMoveLocations(role), `${role} must not move locations`);
+  }
+}
+
+/**
+ * `E7.2` (ADR 0123 decision 12, plan T6.3) — `canManageEdgeGateways` is the global `admin`'s
+ * alone, and so is the Edge Gateways tab, in Sites & Equipment right after Asset Points.
+ */
+export function runEdgeGatewaysTabIsGlobalAdminOnlyTest(): void {
+  assert(canManageEdgeGateways("admin"), "admin manages the edge gateways");
+  const tab = masterDataTabs.find((entry) => entry.path === "/admin/edge-gateways");
+  assert(tab?.label === "Edge Gateways", `the tab is labelled "Edge Gateways" — got ${tab?.label}`);
+  assert(tab?.area === "sites", "the tab is in Sites & Equipment");
+  const paths = masterDataTabs.map((entry) => entry.path);
+  assert(
+    paths.indexOf("/admin/edge-gateways") === paths.indexOf("/admin/asset-points") + 1,
+    "the tab comes right after Asset Points",
+  );
+  assert(visibleMasterDataTabs("admin").some((entry) => entry === tab), "admin must see the Edge Gateways tab");
+  for (const role of ["organization_admin", "location_admin", "asset_group_admin", "operator", "viewer"] as const) {
+    assert(!canManageEdgeGateways(role), `${role} does not manage the edge gateways`);
+    const visible = visibleMasterDataTabs(role).map((entry) => entry.path);
+    assert(!visible.includes("/admin/edge-gateways"), `${role} must not see the Edge Gateways tab`);
   }
 }
