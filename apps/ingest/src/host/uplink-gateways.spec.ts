@@ -150,6 +150,10 @@ export function twoGatewaysReturnTheRightOne(): void {
     const forB = authenticate(snapshot, `Bearer ${TOKEN_B}`);
     assert(forA.ok && forA.gateway.id === a.id, "token A must return gateway A");
     assert(forB.ok && forB.gateway.id === b.id, "token B must return gateway B");
+    assert(
+      forA.ok && forA.digest.toString("hex") === sha256(TOKEN_A).toString("hex"),
+      "the outcome carries the presented digest, for the write to bind its commit to (M1)",
+    );
   }
 }
 

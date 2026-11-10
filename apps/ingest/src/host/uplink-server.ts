@@ -8,9 +8,10 @@ import {
   type UplinkResponse,
 } from "@bms/shared/ingest";
 
-import type { HostLogger } from "./logger.js";
-import type { ReceiveBatch } from "./uplink-receiver.js";
+import { errorKind, type HostLogger } from "./logger.js";
 import type { AuthOutcome } from "./uplink-gateways.js";
+import type { SampleRateLimiter } from "./uplink-rate.js";
+import type { ReceiveBatch } from "./uplink-receiver.js";
 
 /**
  * The uplink listener (`E7.2`, ADR 0123 decision 4, plan T3.5) — the ingest
@@ -24,12 +25,15 @@ import type { AuthOutcome } from "./uplink-gateways.js";
  * 2. **authentication, before one byte of the body is read** (401 / 403) —
  *    from the in-memory snapshot, so an unauthenticated request costs a hash
  *    and never a query;
- * 3. one batch in flight per gateway (429, `Retry-After`);
+ * 3. one batch in flight per gateway, and at most `maxInFlight` (4) across
+ *    all gateways so the uplink can never take the whole `pg` pool from the
+ *    supervisors (429, `Retry-After`);
  * 4. `Content-Encoding: gzip` (400), then the declared `Content-Length`
  *    against the 256 KiB compressed cap (413);
  * 5. a streaming gunzip that aborts past 256 KiB read or 1 MiB decoded (413),
  *    so a gzip bomb stops at the cap rather than at the heap;
- * 6. strict UTF-8 and `JSON.parse`, then `uplinkBatchSchema` (400);
+ * 6. strict UTF-8 and `JSON.parse`, then `uplinkBatchSchema` (400), then the
+ *    gateway's sample-rate bucket (429, `Retry-After`; `uplink-rate.ts`);
  * 7. the write: `200 { accepted, rejected }` only after commit; a failed write
  *    is `503` with `Retry-After` and the edge keeps the batch (ruling P1 (b)).
  *
@@ -37,7 +41,16 @@ import type { AuthOutcome } from "./uplink-gateways.js";
  * no response and no log line carries the body, a parse message, the
  * `Authorization` header or the token (AGENTS.md §9.6). Refusals are logged
  * as one summary line at most once a minute, so an internet scanner cannot
- * turn the log into its megaphone.
+ * turn the log into its megaphone; the counts still pending are flushed by an
+ * `unref`'d timer and once on close, so a burst followed by silence is never
+ * lost.
+ *
+ * **Shutdown cannot hang on a client.** `close()` stops accepting, closes idle
+ * keep-alive sockets, marks every later reply `Connection: close`, and after
+ * `closeGraceMs` (2 s) destroys whatever is still open — a socket that never
+ * sent a byte, or one trickling headers, would otherwise hold `server.close()`
+ * open until its own timeout. `server.maxConnections` (256) bounds the sockets
+ * one host holds at all.
  */
 
 export const UPLINK_PATH = "/edge/v1/batches";
@@ -47,6 +60,12 @@ export const WRITE_RETRY_AFTER_SECONDS = 30;
 export const BUSY_RETRY_AFTER_SECONDS = 5;
 /** At most one refusal summary per this many ms. */
 export const REFUSAL_LOG_INTERVAL_MS = 60_000;
+/** Batches being handled at once across every gateway; below `pg.Pool`'s default `max` of 10. */
+export const DEFAULT_MAX_IN_FLIGHT = 4;
+/** How long `close()` lets open requests finish before it destroys their sockets. */
+export const CLOSE_GRACE_MS = 2_000;
+/** `server.maxConnections` unless the caller says otherwise (`INGEST_UPLINK_MAX_CONNECTIONS`). */
+export const DEFAULT_MAX_CONNECTIONS = 256;
 
 export type UplinkServerDeps = {
   /** `authenticate` over the current gateway snapshot. */
@@ -55,6 +74,12 @@ export type UplinkServerDeps = {
   readonly logger: HostLogger;
   /** Clock for the refusal-log throttle only. */
   readonly nowMs?: () => number;
+  /** Per-gateway sample bucket; absent means no rate limit (tests only — `main.ts` always passes one). */
+  readonly rateLimit?: SampleRateLimiter;
+  readonly maxInFlight?: number;
+  readonly maxConnections?: number;
+  readonly closeGraceMs?: number;
+  readonly refusalLogIntervalMs?: number;
 };
 
 export type UplinkServer = {
@@ -132,6 +157,8 @@ type Refusal =
   | "gateway-revoked"
   | "ingest-disabled"
   | "busy"
+  | "overloaded"
+  | "rate-limited"
   | "bad-encoding"
   | "too-large"
   | "bad-gzip"
@@ -145,6 +172,8 @@ const STATUS: Readonly<Record<Refusal, number>> = {
   "gateway-revoked": 403,
   "ingest-disabled": 403,
   busy: 429,
+  overloaded: 429,
+  "rate-limited": 429,
   "bad-encoding": 400,
   "too-large": 413,
   "bad-gzip": 400,
@@ -154,16 +183,6 @@ const STATUS: Readonly<Record<Refusal, number>> = {
 
 const HEADERS = { "content-type": "application/json", "cache-control": "no-store" } as const;
 
-/** Writes one fixed JSON reply. `close` asks the client to drop the connection (unread body). */
-function reply(
-  response: http.ServerResponse,
-  status: number,
-  body: unknown,
-  extra: Readonly<Record<string, string>> = {},
-): void {
-  response.writeHead(status, { ...HEADERS, ...extra });
-  response.end(JSON.stringify(body));
-}
 
 const strictUtf8 = new TextDecoder("utf-8", { fatal: true });
 
@@ -179,19 +198,44 @@ function parseJson(bytes: Buffer): { readonly value: unknown } | undefined {
 /** Serves `POST /edge/v1/batches` on `port`. Binding failures reject. */
 export function startUplinkServer(port: number, deps: UplinkServerDeps): Promise<UplinkServer> {
   const nowMs = deps.nowMs ?? Date.now;
+  const maxInFlight = deps.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
+  const closeGraceMs = deps.closeGraceMs ?? CLOSE_GRACE_MS;
+  const refusalLogIntervalMs = deps.refusalLogIntervalMs ?? REFUSAL_LOG_INTERVAL_MS;
   const inFlight = new Set<string>();
   const refused = new Map<Refusal, number>();
   let lastRefusalLogMs: number | undefined;
+  let closing = false;
+
+  const flushRefusals = (): void => {
+    if (refused.size === 0) {
+      return;
+    }
+    lastRefusalLogMs = nowMs();
+    deps.logger.warn("uplink requests refused", Object.fromEntries(refused));
+    refused.clear();
+  };
 
   const noteRefusal = (reason: Refusal): void => {
     refused.set(reason, (refused.get(reason) ?? 0) + 1);
     const now = nowMs();
-    if (lastRefusalLogMs !== undefined && now - lastRefusalLogMs < REFUSAL_LOG_INTERVAL_MS) {
+    if (lastRefusalLogMs !== undefined && now - lastRefusalLogMs < refusalLogIntervalMs) {
       return;
     }
-    lastRefusalLogMs = now;
-    deps.logger.warn("uplink requests refused", Object.fromEntries(refused));
-    refused.clear();
+    flushRefusals();
+  };
+  // A burst then silence: the counts pending since the last line still reach the log.
+  const refusalFlushTimer = setInterval(flushRefusals, refusalLogIntervalMs);
+  refusalFlushTimer.unref();
+
+  /** One fixed JSON reply; once closing, every reply also drops its connection. */
+  const reply = (
+    response: http.ServerResponse,
+    status: number,
+    body: unknown,
+    extra: Readonly<Record<string, string>> = {},
+  ): void => {
+    response.writeHead(status, { ...HEADERS, ...extra, ...(closing ? { connection: "close" } : {}) });
+    response.end(JSON.stringify(body));
   };
 
   const refuse = (
@@ -231,6 +275,10 @@ export function startUplinkServer(port: number, deps: UplinkServerDeps): Promise
       refuse(response, "busy", { "retry-after": String(BUSY_RETRY_AFTER_SECONDS), connection: "close" });
       return;
     }
+    if (inFlight.size >= maxInFlight) {
+      refuse(response, "overloaded", { "retry-after": String(BUSY_RETRY_AFTER_SECONDS), connection: "close" });
+      return;
+    }
     inFlight.add(gateway.id);
     try {
       if (request.headers["content-encoding"] !== "gzip") {
@@ -261,15 +309,17 @@ export function startUplinkServer(port: number, deps: UplinkServerDeps): Promise
         refuse(response, "bad-schema");
         return;
       }
+      const waitS = deps.rateLimit?.take(gateway.id, parsed.data.samples.length) ?? 0;
+      if (waitS > 0) {
+        refuse(response, "rate-limited", { "retry-after": String(waitS) });
+        return;
+      }
 
       let result: UplinkResponse;
       try {
-        result = await deps.receive(gateway, parsed.data);
+        result = await deps.receive(gateway, parsed.data, auth.digest);
       } catch (error) {
-        deps.logger.error("uplink batch write failed", {
-          gatewayId: gateway.id,
-          reason: error instanceof Error ? error.message : "unknown",
-        });
+        deps.logger.error("uplink batch write failed", { gatewayId: gateway.id, ...errorKind(error) });
         reply(response, 503, { error: "write-failed" }, { "retry-after": String(WRITE_RETRY_AFTER_SECONDS) });
         return;
       }
@@ -281,9 +331,7 @@ export function startUplinkServer(port: number, deps: UplinkServerDeps): Promise
 
   const server = http.createServer((request, response) => {
     handle(request, response).catch((error: unknown) => {
-      deps.logger.error("uplink request failed", {
-        reason: error instanceof Error ? error.message : "unknown",
-      });
+      deps.logger.error("uplink request failed", errorKind(error));
       if (!response.headersSent) {
         reply(response, 500, { error: "internal" }, { connection: "close" });
       } else {
@@ -294,19 +342,39 @@ export function startUplinkServer(port: number, deps: UplinkServerDeps): Promise
   // A slow client holds a socket, not the host: bound the headers and the body.
   server.headersTimeout = 10_000;
   server.requestTimeout = 30_000;
+  server.maxConnections = deps.maxConnections ?? DEFAULT_MAX_CONNECTIONS;
 
   return new Promise<UplinkServer>((resolve, reject) => {
-    server.once("error", reject);
+    const failToBind = (error: Error): void => {
+      clearInterval(refusalFlushTimer);
+      reject(error);
+    };
+    server.once("error", failToBind);
     server.listen(port, () => {
-      server.removeListener("error", reject);
+      server.removeListener("error", failToBind);
+      // After the bind, a listener error is logged, never thrown into the process.
+      server.on("error", (error: Error) => {
+        deps.logger.error("uplink listener error", errorKind(error));
+      });
       const address = server.address();
+      let closed: Promise<void> | undefined;
       resolve({
         port: typeof address === "object" && address !== null ? address.port : port,
-        close: () =>
-          new Promise<void>((done) => {
-            server.close(() => done());
+        close: () => {
+          closed ??= new Promise<void>((done) => {
+            closing = true;
+            clearInterval(refusalFlushTimer);
+            flushRefusals();
+            const force = setTimeout(() => server.closeAllConnections(), closeGraceMs);
+            force.unref();
+            server.close(() => {
+              clearTimeout(force);
+              done();
+            });
             server.closeIdleConnections();
-          }),
+          });
+          return closed;
+        },
       });
     });
   });

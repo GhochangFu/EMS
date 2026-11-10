@@ -8,6 +8,14 @@ import {
   aGzipBombIs413AndTheProcessLives,
   aSecondBatchInFlightIs429,
   aTakenPortRejects,
+  aReplyWhileClosingSaysConnectionClose,
+  aBurstThenSilenceIsStillLogged,
+  aKeepAliveClientCannotHoldClose,
+  aSilentSocketCannotHoldClose,
+  aTricklingClientCannotHoldClose,
+  aWriteFailureLogsTheCodeNotTheMessage,
+  overTheSampleRateIs429,
+  tooManyInFlightIs429,
   badBodiesAre400WithNoEcho,
   otherMethodsAre405,
   otherPathsAre404,
@@ -63,5 +71,37 @@ describe("E7.2 — the uplink listener (ADR 0123 decision 4, plan T3.5)", () => 
 
   it("rejects when the port is taken", async () => {
     await aTakenPortRejects();
+  });
+
+  it("cannot be held open on close by a silent socket (H1)", async () => {
+    await aSilentSocketCannotHoldClose();
+  });
+
+  it("cannot be held open on close by a client trickling headers (H1)", async () => {
+    await aTricklingClientCannotHoldClose();
+  });
+
+  it("cannot be held open on close by a keep-alive client that keeps posting (H1)", async () => {
+    await aKeepAliveClientCannotHoldClose();
+  });
+
+  it("answers past the in-flight cap 429 overloaded (L1)", async () => {
+    await tooManyInFlightIs429();
+  });
+
+  it("answers a gateway over its sample rate 429 rate-limited (M2)", async () => {
+    await overTheSampleRateIs429();
+  });
+
+  it("still logs a burst of refusals followed by silence", async () => {
+    await aBurstThenSilenceIsStillLogged();
+  });
+
+  it("logs a write failure by class and code, not message", async () => {
+    await aWriteFailureLogsTheCodeNotTheMessage();
+  });
+
+  it("marks a reply sent while closing Connection: close (H1)", async () => {
+    await aReplyWhileClosingSaysConnectionClose();
   });
 });

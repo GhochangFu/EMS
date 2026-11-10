@@ -4,7 +4,7 @@ import type { EdgeServed } from "./binding-targets.js";
 import { createHostLogger } from "./logger.js";
 import { assert } from "./normaliser.spec.js";
 import type { PointTarget } from "./normaliser.js";
-import { createUplinkReceiver, type ReceiverClient } from "./uplink-receiver.js";
+import { createUplinkReceiver, type ReceiverClient, UplinkWriteTimeout } from "./uplink-receiver.js";
 import { gateway } from "./uplink-gateways.spec.js";
 import { fakeTx } from "./uplink-write.spec.js";
 
@@ -58,24 +58,33 @@ function batch(...samples: UplinkSample[]): UplinkBatch {
   return { v: 1, sentAt: NOW.toISOString(), backlog: false, buffered: 7, clock: "synced", samples };
 }
 
-function harness(options: { failOn?: RegExp; served?: EdgeServed } = {}) {
+const DIGEST = Buffer.alloc(32, 9);
+
+function harness(
+  options: { failOn?: RegExp; served?: EdgeServed; hangOn?: RegExp; writeTimeoutMs?: number; now?: () => Date } = {},
+) {
   const tx = fakeTx(options.failOn === undefined ? {} : { failOn: options.failOn });
   let released = 0;
+  const releaseErrors: (Error | undefined)[] = [];
   const lines: string[] = [];
   const client: ReceiverClient = {
-    query: (text, values) => tx.client.query(text, values),
-    release: () => {
+    query: (text, values) =>
+      options.hangOn?.test(text) === true ? new Promise<never>(() => undefined) : tx.client.query(text, values),
+    release: (error) => {
       released += 1;
+      releaseErrors.push(error);
     },
   };
-  const receive = createUplinkReceiver({
-    now: () => NOW,
+  const receiveBatch = createUplinkReceiver({
+    now: options.now ?? (() => NOW),
     edgeServed: () => options.served ?? SERVED,
     connect: async () => client,
     liveWindowMs: NOTIFY_LIVE_WINDOW_MS,
     logger: createHostLogger({}, (line) => lines.push(line)),
+    ...(options.writeTimeoutMs === undefined ? {} : { writeTimeoutMs: options.writeTimeoutMs }),
   });
-  return { receive, calls: tx.calls, lines, released: () => released };
+  const receive = (gw: typeof GW, b: UplinkBatch) => receiveBatch(gw, b, DIGEST);
+  return { receive, calls: tx.calls, lines, released: () => released, releaseErrors };
 }
 
 /** A good sample is resolved through the gateway's own index and counted `accepted`. */
@@ -149,4 +158,52 @@ export async function lateRowsAreLoggedAsNotNotified(): Promise<void> {
     "a late row must be logged as not notified",
   );
   assert(!h.calls.some((c) => c.text.includes("pg_notify")), "a 4 h old row is not notified");
+}
+
+/** The gateway UPDATE binds the digest the request authenticated with (M1). */
+export async function theWriteBindsTheDigest(): Promise<void> {
+  const h = harness();
+  await h.receive(GW, batch(wire()));
+  const update = h.calls.find((c) => c.text.includes("UPDATE bms.edge_gateways"));
+  assert(update?.values?.[6] === DIGEST, "the report must bind the presented digest as $7");
+}
+
+/** A write that outlives the timeout rejects and destroys its client rather than pooling it (L1). */
+export async function aTimedOutWriteRejectsAndDestroysTheClient(): Promise<void> {
+  const h = harness({ hangOn: /INSERT INTO telemetry/, writeTimeoutMs: 20 });
+  let error: unknown;
+  try {
+    await h.receive(GW, batch(wire()));
+  } catch (caught) {
+    error = caught;
+  }
+  assert(error instanceof UplinkWriteTimeout, `a hung write must reject with UplinkWriteTimeout, got ${String(error)}`);
+  assert(h.released() === 1, "the client must be released exactly once");
+  assert(h.releaseErrors[0] instanceof Error, "a timed-out client must be released with an error, so pg destroys it");
+}
+
+/** A failed write also destroys its client; a good one returns it to the pool. */
+export async function aFailedWriteDestroysAGoodOneReturns(): Promise<void> {
+  const failed = harness({ failOn: /INSERT INTO telemetry/ });
+  await failed.receive(GW, batch(wire())).catch(() => undefined);
+  assert(failed.releaseErrors[0] instanceof Error, "a failed write's client is destroyed");
+  const good = harness();
+  await good.receive(GW, batch(wire()));
+  assert(good.releaseErrors.length === 1 && good.releaseErrors[0] === undefined, "a good write's client is pooled");
+}
+
+/** The rejection line is one per gateway a minute, carrying the counts summed since the last (M2). */
+export async function theRejectionWarnIsThrottled(): Promise<void> {
+  let now = NOW;
+  const h = harness({ now: () => now });
+  const foreign = batch(wire({ deviceKey: "RTU-OTHER" }));
+  await h.receive(GW, foreign);
+  await h.receive(GW, foreign);
+  await h.receive(GW, foreign);
+  const warns = () => h.lines.filter((l) => l.includes("uplink samples rejected"));
+  assert(warns().length === 1, `three rejecting batches inside a minute must log once, got ${warns().length}`);
+  now = new Date(NOW.getTime() + 60_000);
+  await h.receive(GW, foreign);
+  assert(warns().length === 2, "a minute later the next one logs");
+  assert(warns()[1].includes('"foreignDevice":3'), `the second line sums the held counts: ${warns()[1]}`);
 }

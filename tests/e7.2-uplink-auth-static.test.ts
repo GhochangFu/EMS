@@ -21,11 +21,13 @@ import { describe, expect, it } from "vitest";
  *    `.compare(` in the file;
  * 4. the presented token is hashed with SHA-256 before the compare, so the
  *    stored hash is never itself accepted as a credential;
- * 5. no other runtime file under `apps/ingest/src` reads the token hash.
+ * 5. no other runtime file under `apps/ingest/src` reads the token hash, but
+ *    `uplink-write.ts`, which names it once, as the commit's SQL predicate.
  */
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const AUTH_FILE = "apps/ingest/src/host/uplink-gateways.ts";
+const WRITE_FILE = "apps/ingest/src/host/uplink-write.ts";
 
 const BLOCK_COMMENT = new RegExp(["/", "\\*", "[\\s\\S]*?", "\\*", "/"].join(""), "g");
 const LINE_COMMENT = /\/\/.*$/gm;
@@ -109,6 +111,20 @@ describe("E7.2 — the uplink token compare is constant-time (ADR 0123 decision 
     const readers = files.filter((file) =>
       /token_hash|tokenHash|timingSafeEqual/.test(stripComments(readFileSync(join(repoRoot, file), "utf8"))),
     );
-    expect(readers).toEqual([AUTH_FILE]);
+    expect(readers).toEqual([AUTH_FILE, WRITE_FILE]);
+  });
+
+  /**
+   * Security review M1: the write binds its commit to the digest the request
+   * authenticated with. That compare runs in Postgres **after**
+   * `authenticate` has matched the same digest in constant time, so it can
+   * leak nothing a caller does not already know. It is the only other place
+   * the hash may be named, and only as that one SQL predicate.
+   */
+  it("uplink-write.ts names the hash only as the commit's `g.token_hash = $7` predicate", () => {
+    const write = stripComments(readFileSync(join(repoRoot, WRITE_FILE), "utf8"));
+    expect(write.match(/token_hash|tokenHash/g)).toEqual(["token_hash"]);
+    expect(write).toMatch(/AND g\.token_hash = \$7\b/);
+    expect(write).not.toMatch(/timingSafeEqual|\.equals\(|\.compare\(/);
   });
 });

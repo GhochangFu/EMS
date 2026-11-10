@@ -3,6 +3,7 @@ import pg from "pg";
 import { expect } from "vitest";
 
 import type { PointValueRow, QueryableClient } from "./normaliser.js";
+import { hashToken } from "./uplink-gateways.js";
 import { writeUplinkRows } from "./uplink-write.js";
 
 /**
@@ -30,6 +31,9 @@ const FIXTURE_ASSET_ID = "e7200000-0000-4000-8000-000000000072";
 const FIXTURE_POINT_KEY = "E7_2_UPLINK_FIXTURE";
 const FIXTURE_CODE = "E72-UPLINK-WRITE-FIXTURE";
 const HOUR = 3_600_000;
+/** The fixture gateway's token; the write binds its commit to this digest (security review M1). */
+const FIXTURE_DIGEST = hashToken(`bmsgw_${"E72uplinkWrite".padEnd(43, "w")}`);
+const OTHER_DIGEST = hashToken(`bmsgw_${"E72uplinkRotated".padEnd(43, "r")}`);
 
 /** `writeUplinkRows`'s transaction, as a savepoint inside the suite's own. */
 function savepointClient(client: pg.PoolClient): QueryableClient {
@@ -83,12 +87,18 @@ async function withFixtureGateway(
   try {
     await client.query("BEGIN");
     try {
-      const org = await client.query<{ id: string }>("SELECT id FROM bms.organizations WHERE code = 'ESKOM'");
+      const org = await client.query<{ id: string; ingest_enabled: boolean }>(
+        "SELECT id, ingest_enabled FROM bms.organizations WHERE code = 'ESKOM'",
+      );
       expect(org.rows.length, "needs the seeded ESKOM organization — run pnpm db:seed").toBe(1);
+      expect(
+        org.rows[0].ingest_enabled,
+        "the seeded ESKOM organization must have ingest on (ADR 0115 default): the write requires it",
+      ).toBe(true);
       const inserted = await client.query<{ id: string }>(
-        `INSERT INTO bms.edge_gateways (organization_id, code, name)
-         VALUES ($1, $2, 'E7.2 uplink write fixture') RETURNING id`,
-        [org.rows[0].id, FIXTURE_CODE],
+        `INSERT INTO bms.edge_gateways (organization_id, code, name, token_hash)
+         VALUES ($1, $2, 'E7.2 uplink write fixture', $3) RETURNING id`,
+        [org.rows[0].id, FIXTURE_CODE, FIXTURE_DIGEST],
       );
       await body(client, inserted.rows[0].id);
     } finally {
@@ -101,15 +111,19 @@ async function withFixtureGateway(
   }
 }
 
-function optionsFor(gatewayId: string, now: Date, buffered = 0) {
+function optionsFor(gatewayId: string, now: Date, buffered = 0, tokenDigest = FIXTURE_DIGEST) {
   return {
     now,
     liveWindowMs: NOTIFY_LIVE_WINDOW_MS,
-    report: { gatewayId, buffered, clock: "synced" as const },
+    report: { gatewayId, buffered, clock: "synced" as const, tokenDigest },
   };
 }
 
-/** The same batch twice leaves the same row count: `rx` is the key (decision 8). */
+/**
+ * The same rows twice leave the same row count: `time` is the key (decision 8).
+ * **Proves the upsert only** — the rows are handed in resolved, so the wire's
+ * `rx` becoming `time` is `uplink-receiver-screen.spec.ts`'s claim, not this.
+ */
 export async function assertARetriedBatchIsIdempotent(pool: pg.Pool): Promise<void> {
   await withFixtureGateway(pool, async (client, gatewayId) => {
     const now = new Date();
@@ -171,7 +185,43 @@ export async function assertARevokedGatewayRollsTheBatchBack(pool: pg.Pool): Pro
     const floor = new Date(now.getTime() - HOUR);
     await expect(
       writeUplinkRows(savepointClient(client), [row(new Date(now.getTime() - 1_000))], optionsFor(gatewayId, now)),
-    ).rejects.toThrow(/not active/);
+    ).rejects.toThrow(/rolled back/);
     expect(await fixtureRowCount(client, floor), "the batch's rows must roll back with the report").toBe(0);
+  });
+}
+
+/** A token rotated out after the snapshot no longer matches `token_hash`: the batch rolls back (M1). */
+export async function assertARotatedTokenRollsTheBatchBack(pool: pg.Pool): Promise<void> {
+  await withFixtureGateway(pool, async (client, gatewayId) => {
+    const now = new Date();
+    const floor = new Date(now.getTime() - HOUR);
+    await expect(
+      writeUplinkRows(
+        savepointClient(client),
+        [row(new Date(now.getTime() - 1_000))],
+        optionsFor(gatewayId, now, 0, OTHER_DIGEST),
+      ),
+    ).rejects.toThrow(/rolled back/);
+    expect(await fixtureRowCount(client, floor), "a stale token's rows must roll back").toBe(0);
+  });
+}
+
+/** `backfill_dirty_seq` counts every late batch, inside the window or not, and no live one (code review 2). */
+export async function assertEveryLateBatchBumpsTheSeq(pool: pg.Pool): Promise<void> {
+  await withFixtureGateway(pool, async (client, gatewayId) => {
+    const seq = async (): Promise<string> =>
+      (
+        await client.query<{ s: string }>("SELECT backfill_dirty_seq::text AS s FROM bms.edge_gateways WHERE id = $1", [
+          gatewayId,
+        ])
+      ).rows[0].s;
+    expect(await seq(), "a new gateway starts at 0").toBe("0");
+    const now = new Date();
+    await writeUplinkRows(savepointClient(client), [row(new Date(now.getTime() - 4 * HOUR))], optionsFor(gatewayId, now));
+    expect(await seq()).toBe("1");
+    await writeUplinkRows(savepointClient(client), [row(new Date(now.getTime() - 4 * HOUR), 5)], optionsFor(gatewayId, now));
+    expect(await seq(), "a late batch inside an unchanged window still bumps it").toBe("2");
+    await writeUplinkRows(savepointClient(client), [row(new Date(now.getTime() - 1_000))], optionsFor(gatewayId, now));
+    expect(await seq(), "a live-only batch leaves it").toBe("2");
   });
 }

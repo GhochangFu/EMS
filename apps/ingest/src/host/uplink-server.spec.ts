@@ -362,3 +362,207 @@ export async function aTakenPortRejects(): Promise<void> {
     await first.close();
   }
 }
+
+/** Resolves with how long `close()` took, or "pending" if it outlives `limitMs`. */
+async function closeWithin(server: { close(): Promise<void> }, limitMs: number): Promise<number | "pending"> {
+  const t0 = Date.now();
+  let timer: NodeJS.Timeout | undefined;
+  const result = await Promise.race([
+    server.close().then(() => Date.now() - t0),
+    new Promise<"pending">((resolve) => {
+      timer = setTimeout(() => resolve("pending"), limitMs);
+    }),
+  ]);
+  clearTimeout(timer);
+  return result;
+}
+
+const quietDeps = {
+  authenticate: (header: string | undefined) => authenticate({ gateways: [GW_A] }, header),
+  receive: accept,
+  logger: createHostLogger({}, () => undefined),
+};
+
+/** A socket that never sends a byte cannot hold `close()` past the grace (H1). */
+export async function aSilentSocketCannotHoldClose(): Promise<void> {
+  const server = await startUplinkServer(0, { ...quietDeps, closeGraceMs: 100 });
+  const socket = net.connect(server.port, "127.0.0.1");
+  socket.on("error", () => undefined);
+  await new Promise((r) => socket.once("connect", r));
+  const took = await closeWithin(server, 2_000);
+  socket.destroy();
+  assert(took !== "pending" && took < 1_000, `close() must resolve shortly after the 100 ms grace, took ${took}`);
+}
+
+/** A client trickling headers cannot hold `close()` past the grace (H1). */
+export async function aTricklingClientCannotHoldClose(): Promise<void> {
+  const server = await startUplinkServer(0, { ...quietDeps, closeGraceMs: 100 });
+  const socket = net.connect(server.port, "127.0.0.1", () => socket.write(`POST ${UPLINK_PATH} HTTP/1.1\r\n`));
+  socket.on("error", () => undefined);
+  const drip = setInterval(() => socket.write("X-A: b\r\n"), 20);
+  await new Promise((r) => setTimeout(r, 60));
+  const took = await closeWithin(server, 2_000);
+  clearInterval(drip);
+  socket.destroy();
+  assert(took !== "pending" && took < 1_000, `close() must resolve shortly after the grace, took ${took}`);
+}
+
+/** A keep-alive client that keeps posting is told to close, and cannot hold `close()` (H1). */
+export async function aKeepAliveClientCannotHoldClose(): Promise<void> {
+  const server = await startUplinkServer(0, { ...quietDeps, closeGraceMs: 100 });
+  const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+  let stop = false;
+  const loop = (async () => {
+    while (!stop) {
+      await new Promise<void>((resolve) => {
+        const body = gz(goodBatch());
+        const request = http.request(
+          {
+            host: "127.0.0.1",
+            port: server.port,
+            method: "POST",
+            path: UPLINK_PATH,
+            agent,
+            headers: {
+              "content-encoding": "gzip",
+              "content-length": String(body.length),
+              authorization: `Bearer ${TOKEN_A}`,
+            },
+          },
+          (response) => {
+            response.resume();
+            response.on("end", () => resolve());
+          },
+        );
+        request.on("error", () => resolve());
+        request.end(body);
+      });
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  })();
+  await new Promise((r) => setTimeout(r, 50));
+  const took = await closeWithin(server, 2_000);
+  stop = true;
+  await loop;
+  agent.destroy();
+  assert(took !== "pending" && took < 1_000, `close() must resolve despite a posting keep-alive client, took ${took}`);
+}
+
+/** Past `maxInFlight` batches across gateways, the next one is 429 `overloaded` (L1). */
+export async function tooManyInFlightIs429(): Promise<void> {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((done) => {
+    release = done;
+  });
+  let started = 0;
+  const server = await startUplinkServer(0, {
+    authenticate: (header) => authenticate({ gateways: [GW_A, GW_B] }, header),
+    receive: async () => {
+      started += 1;
+      await gate;
+      return OK;
+    },
+    logger: createHostLogger({}, () => undefined),
+    maxInFlight: 1,
+  });
+  try {
+    const first = send(server.port, { token: TOKEN_A });
+    while (started === 0) await new Promise((r) => setTimeout(r, 5));
+    const second = await send(server.port, { token: TOKEN_B });
+    expectError(second, 429, "overloaded", "over the in-flight cap");
+    assert(Number(second.headers["retry-after"]) > 0, "429 must carry Retry-After");
+    release();
+    assert((await first).status === 200, "the first batch completes");
+  } finally {
+    await server.close();
+  }
+}
+
+/** A gateway over its sample rate is 429 `rate-limited` with the bucket's Retry-After (M2). */
+export async function overTheSampleRateIs429(): Promise<void> {
+  const server = await startUplinkServer(0, {
+    ...quietDeps,
+    rateLimit: { take: (_id, samples) => (samples > 0 ? 3 : 0) },
+  });
+  try {
+    const reply = await send(server.port, {});
+    expectError(reply, 429, "rate-limited", "over the rate");
+    assert(reply.headers["retry-after"] === "3", `Retry-After must be the bucket's wait, got ${reply.headers["retry-after"]}`);
+  } finally {
+    await server.close();
+  }
+}
+
+/** A burst of refusals followed by silence is still logged, by the timer and by close (code review 3). */
+export async function aBurstThenSilenceIsStillLogged(): Promise<void> {
+  const lines: string[] = [];
+  let now = 0;
+  const server = await startUplinkServer(0, {
+    ...quietDeps,
+    logger: createHostLogger({}, (line) => lines.push(line)),
+    nowMs: () => now,
+    refusalLogIntervalMs: 40,
+  });
+  try {
+    for (let i = 0; i < 4; i += 1) await send(server.port, { path: "/nope" });
+    assert(lines.length === 1, `the first refusal logs at once, got ${lines.length}`);
+    now = 1;
+    await new Promise((r) => setTimeout(r, 120));
+    assert(lines.length === 2, `the timer must flush the three held refusals, got ${lines.length}`);
+    assert((JSON.parse(lines[1]) as Record<string, unknown>)["not-found"] === 3, `flushed counts: ${lines[1]}`);
+    await send(server.port, { path: "/nope" });
+    await send(server.port, { path: "/nope" });
+  } finally {
+    await server.close();
+  }
+  const last = JSON.parse(lines[lines.length - 1]) as Record<string, unknown>;
+  const total = lines.reduce((n, l) => n + Number((JSON.parse(l) as Record<string, unknown>)["not-found"] ?? 0), 0);
+  assert(total === 6, `every refusal must reach the log by close, got ${total}`);
+  assert(last.message === "uplink requests refused", "close flushes the last held counts");
+}
+
+/** The listener's write-failure line carries the error's class and code, never its message. */
+export async function aWriteFailureLogsTheCodeNotTheMessage(): Promise<void> {
+  const lines: string[] = [];
+  const server = await startUplinkServer(0, {
+    ...quietDeps,
+    receive: async () => {
+      throw Object.assign(new Error(`value "${MARKER}" out of range`), { code: "22003" });
+    },
+    logger: createHostLogger({}, (line) => lines.push(line)),
+  });
+  try {
+    await send(server.port, {});
+  } finally {
+    await server.close();
+  }
+  const line = lines.find((l) => l.includes("uplink batch write failed")) ?? "";
+  assert(line.includes('"code":"22003"') && line.includes('"kind":"Error"'), `the line names class and code: ${line}`);
+  assert(!line.includes(MARKER), "the line must not carry the error message");
+}
+
+/** A reply sent after `close()` began carries `Connection: close` (H1). */
+export async function aReplyWhileClosingSaysConnectionClose(): Promise<void> {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((done) => {
+    release = done;
+  });
+  let started = false;
+  const server = await startUplinkServer(0, {
+    ...quietDeps,
+    receive: async () => {
+      started = true;
+      await gate;
+      return OK;
+    },
+    closeGraceMs: 5_000,
+  });
+  const pending = send(server.port, {});
+  while (!started) await new Promise((r) => setTimeout(r, 5));
+  const closed = server.close();
+  release();
+  const reply = await pending;
+  await closed;
+  assert(reply.status === 200, `the in-flight batch still completes, got ${reply.status}`);
+  assert(reply.headers.connection === "close", `a reply while closing must say Connection: close, got ${reply.headers.connection}`);
+}

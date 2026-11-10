@@ -99,8 +99,25 @@ export function screenBatch(batch: UplinkBatch, deviceKeys: ReadonlySet<string>,
   return { samples, rejected };
 }
 
-/** The slice of a pooled `pg` client the receiver needs. */
-export type ReceiverClient = QueryableClient & { release(): void };
+/**
+ * The slice of a pooled `pg` client the receiver needs. `release(error)`
+ * destroys the connection rather than returning it to the pool — what a
+ * timed-out or failed write must do, since the statement may still be running
+ * on it.
+ */
+export type ReceiverClient = QueryableClient & { release(error?: Error): void };
+
+/**
+ * How long one uplink write may take before the listener answers `503`
+ * (security review L1). The supervisor's `writeTimeoutMs` (30 s) is too long
+ * here: the edge aborts a post at 20 s (plan C4), so the receiver must give up
+ * first and release its connection, or a stalled database holds one pool
+ * client per gateway per retry.
+ */
+export const UPLINK_WRITE_TIMEOUT_MS = 15_000;
+
+/** At most one "uplink samples rejected" line per gateway per this many ms. */
+export const REJECTED_LOG_INTERVAL_MS = 60_000;
 
 export type UplinkReceiverDeps = {
   /** This host's clock: the screening bound, the live window and `last_seen_at`. */
@@ -110,13 +127,29 @@ export type UplinkReceiverDeps = {
   readonly connect: () => Promise<ReceiverClient>;
   readonly liveWindowMs: number;
   readonly logger: HostLogger;
+  /** Defaults to `UPLINK_WRITE_TIMEOUT_MS`. */
+  readonly writeTimeoutMs?: number;
 };
 
-/** Accepts one authenticated batch; resolves to the `200` body, rejects on a failed write. */
-export type ReceiveBatch = (gateway: GatewayRecord, batch: UplinkBatch) => Promise<UplinkResponse>;
+/**
+ * Accepts one authenticated batch; resolves to the `200` body, rejects on a
+ * failed or timed-out write. `digest` is `AuthOutcome.digest`, which the
+ * write binds its commit to.
+ */
+export type ReceiveBatch = (gateway: GatewayRecord, batch: UplinkBatch, digest: Buffer) => Promise<UplinkResponse>;
 
 const NO_DEVICES: ReadonlySet<string> = new Set();
 const NO_POINTS: PointIndex = new Map();
+
+type Rejected = UplinkResponse["rejected"];
+
+/** Thrown when a write outlives `writeTimeoutMs`; the listener answers 503. */
+export class UplinkWriteTimeout extends Error {
+  constructor(ms: number) {
+    super(`uplink write exceeded ${ms} ms`);
+    this.name = "UplinkWriteTimeout";
+  }
+}
 
 /**
  * Builds the receiver: screen → `resolveSamples` → `writeUplinkRows`.
@@ -124,16 +157,40 @@ const NO_POINTS: PointIndex = new Map();
  * Resolves only after the rows and the gateway report have committed, so a
  * `200` means stored (decision 4). A rejection is a failed write and the
  * listener answers `503` with `Retry-After` (ruling P1 (b)): the edge keeps
- * the batch on its own disk and retries, and nothing is spilled here.
+ * the batch on its own disk and retries, and nothing is spilled here. A write
+ * that outlives `writeTimeoutMs` is abandoned and its client destroyed, so the
+ * pool gets a fresh connection rather than one still running the statement.
  *
  * `deviceKey` is required on the wire, so there is no sole-device fallback:
  * `resolveSamples` gets `undefined` for it. A sample that resolves to no point
  * is counted `unresolved` (`droppedCount`: unmapped key, bad quality,
  * non-finite, out of range). Logs carry counts and the gateway's id and code,
- * never a sample value or key.
+ * never a sample value or key; the rejection line is throttled to one per
+ * gateway a minute, with the counts summed since the last one.
  */
 export function createUplinkReceiver(deps: UplinkReceiverDeps): ReceiveBatch {
-  return async (gateway, batch) => {
+  const writeTimeoutMs = deps.writeTimeoutMs ?? UPLINK_WRITE_TIMEOUT_MS;
+  const pendingRejected = new Map<string, { lastLogMs: number | undefined; counts: Rejected }>();
+
+  const noteRejected = (gateway: GatewayRecord, rejected: Rejected, nowMs: number): void => {
+    const entry = pendingRejected.get(gateway.id) ?? {
+      lastLogMs: undefined,
+      counts: { foreignDevice: 0, futureRx: 0, tooOld: 0, unresolved: 0 },
+    };
+    entry.counts.foreignDevice += rejected.foreignDevice;
+    entry.counts.futureRx += rejected.futureRx;
+    entry.counts.tooOld += rejected.tooOld;
+    entry.counts.unresolved += rejected.unresolved;
+    pendingRejected.set(gateway.id, entry);
+    if (entry.lastLogMs !== undefined && nowMs - entry.lastLogMs < REJECTED_LOG_INTERVAL_MS) {
+      return;
+    }
+    deps.logger.warn("uplink samples rejected", { gatewayId: gateway.id, gatewayCode: gateway.code, ...entry.counts });
+    entry.lastLogMs = nowMs;
+    entry.counts = { foreignDevice: 0, futureRx: 0, tooOld: 0, unresolved: 0 };
+  };
+
+  return async (gateway, batch, digest) => {
     const now = deps.now();
     const served = deps.edgeServed().get(gateway.id);
     const screened = screenBatch(batch, served?.deviceKeys ?? NO_DEVICES, now);
@@ -141,20 +198,31 @@ export function createUplinkReceiver(deps: UplinkReceiverDeps): ReceiveBatch {
     const unresolved = droppedCount(counters);
 
     const client = await deps.connect();
+    const write = writeUplinkRows(client, rows, {
+      now,
+      liveWindowMs: deps.liveWindowMs,
+      report: { gatewayId: gateway.id, buffered: batch.buffered, clock: batch.clock, tokenDigest: digest },
+    });
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new UplinkWriteTimeout(writeTimeoutMs)), writeTimeoutMs);
+    });
     let written: WriteResult;
     try {
-      written = await writeUplinkRows(client, rows, {
-        now,
-        liveWindowMs: deps.liveWindowMs,
-        report: { gatewayId: gateway.id, buffered: batch.buffered, clock: batch.clock },
-      });
+      written = await Promise.race([write, timeout]);
+    } catch (error) {
+      // The abandoned write may still settle; it must not become an unhandled rejection.
+      write.catch(() => undefined);
+      client.release(error instanceof Error ? error : new Error("uplink write failed"));
+      throw error;
     } finally {
-      client.release();
+      clearTimeout(timer);
     }
+    client.release();
 
     const rejected = { ...screened.rejected, unresolved };
     if (rejected.foreignDevice + rejected.futureRx + rejected.tooOld + rejected.unresolved > 0) {
-      deps.logger.warn("uplink samples rejected", { gatewayId: gateway.id, gatewayCode: gateway.code, ...rejected });
+      noteRejected(gateway, rejected, now.getTime());
     }
     if (written.rowsNotNotified > 0) {
       deps.logger.info("uplink rows written outside the live window, not notified", {

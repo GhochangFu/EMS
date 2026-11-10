@@ -8,6 +8,7 @@ import {
   runHostConfigTests,
   runMqttPlaintextHostsConfigTests,
   runNotifyLiveWindowConfigTests,
+  runUplinkLimitsConfigTests,
   runUplinkPortConfigTests,
 } from "./config.spec.js";
 
@@ -43,5 +44,9 @@ describe("host config", () => {
 
   it("reads INGEST_UPLINK_PORT, unset meaning no listener (ADR 0123 decision 4)", () => {
     runUplinkPortConfigTests();
+  });
+
+  it("bounds the uplink sample rate and connection count (security review M2, L2)", () => {
+    runUplinkLimitsConfigTests();
   });
 });

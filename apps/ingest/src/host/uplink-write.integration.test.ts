@@ -6,6 +6,8 @@ import {
   assertALiveOnlyBatchLeavesTheWindowNull,
   assertARetriedBatchIsIdempotent,
   assertARevokedGatewayRollsTheBatchBack,
+  assertARotatedTokenRollsTheBatchBack,
+  assertEveryLateBatchBumpsTheSeq,
 } from "./uplink-write.integration.spec.js";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate.js";
 
@@ -19,7 +21,7 @@ const connectionString = requireIntegrationDb({
   label: "uplink write tests",
   because:
     "uplink-write.spec.ts reads the SQL as text against a fake client, so it is green if " +
-    "LEAST/GREATEST do not ignore NULL the way the window relies on, if migration 0140's CHECKs " +
+    "LEAST/GREATEST do not ignore NULL the way the window relies on, if migration 0141's CHECKs " +
     "refuse the UPDATE, or if a retried batch writes a second row.",
 });
 
@@ -48,5 +50,13 @@ describe.skipIf(!connectionString)("E7.2 — the uplink write on a real database
 
   it("rolls the rows back when the gateway was revoked after the snapshot", async () => {
     await assertARevokedGatewayRollsTheBatchBack(pool as pg.Pool);
+  });
+
+  it("rolls the rows back when the token was rotated after the snapshot (M1)", async () => {
+    await assertARotatedTokenRollsTheBatchBack(pool as pg.Pool);
+  });
+
+  it("bumps backfill_dirty_seq for every late batch and no live one", async () => {
+    await assertEveryLateBatchBumpsTheSeq(pool as pg.Pool);
   });
 });

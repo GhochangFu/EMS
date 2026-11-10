@@ -5,7 +5,11 @@ import {
   aGatewayWithNoRtusCountsEverythingForeign,
   aGoodSampleIsWrittenAndAccepted,
   everyRejectionIsCounted,
+  aFailedWriteDestroysAGoodOneReturns,
+  aTimedOutWriteRejectsAndDestroysTheClient,
   lateRowsAreLoggedAsNotNotified,
+  theRejectionWarnIsThrottled,
+  theWriteBindsTheDigest,
 } from "./uplink-receiver.spec.js";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -28,5 +32,21 @@ describe("E7.2 — the uplink receiver end to end on a fake client (ADR 0123 dec
 
   it("logs late rows as written and not notified", async () => {
     await lateRowsAreLoggedAsNotNotified();
+  });
+
+  it("binds the presented digest into the gateway UPDATE (M1)", async () => {
+    await theWriteBindsTheDigest();
+  });
+
+  it("rejects a write past the timeout and destroys its client (L1)", async () => {
+    await aTimedOutWriteRejectsAndDestroysTheClient();
+  });
+
+  it("destroys a failed write's client and pools a good one", async () => {
+    await aFailedWriteDestroysAGoodOneReturns();
+  });
+
+  it("throttles the rejected-samples line per gateway (M2)", async () => {
+    await theRejectionWarnIsThrottled();
   });
 });

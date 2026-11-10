@@ -27,7 +27,7 @@ import type { GatewayHealth } from "./health-gateways.js";
  * its id itself (`uplink-write.ts`, `aggregate-repair.ts`).
  */
 
-/** SHA-256 output length; also migration `0140`'s `octet_length(token_hash) = 32`. */
+/** SHA-256 output length; also migration `0141`'s `octet_length(token_hash) = 32`. */
 const SHA256_BYTES = 32;
 
 /** One gateway as the receiver holds it. `tokenHash` never leaves this module's callers' memory. */
@@ -149,7 +149,15 @@ export type AuthRefusal = {
   readonly reason: "unauthorized" | "gateway-revoked" | "ingest-disabled";
 };
 
-export type AuthOutcome = { readonly ok: true; readonly gateway: GatewayRecord } | AuthRefusal;
+/**
+ * `digest` is the presented token's SHA-256 — the value the snapshot matched.
+ * The write binds its commit to it (`uplink-write.ts`, security review M1),
+ * so a token rotated out after the last reload rolls back at commit. A
+ * `Buffer` that is never logged or rendered.
+ */
+export type AuthOutcome =
+  | { readonly ok: true; readonly gateway: GatewayRecord; readonly digest: Buffer }
+  | AuthRefusal;
 
 const UNAUTHORIZED: AuthRefusal = { ok: false, status: 401, reason: "unauthorized" };
 
@@ -194,7 +202,7 @@ export function authenticate(snapshot: GatewaySnapshot, header: string | undefin
   if (!matched.organizationIngestEnabled) {
     return { ok: false, status: 403, reason: "ingest-disabled" };
   }
-  return { ok: true, gateway: matched };
+  return { ok: true, gateway: matched, digest: presented };
 }
 
 /** The snapshot as the health body shows it: no hash, no token field. */

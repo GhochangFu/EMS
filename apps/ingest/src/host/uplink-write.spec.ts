@@ -20,7 +20,8 @@ import {
 
 const NOW = new Date("2026-11-10T09:00:00.000Z");
 const GATEWAY = "11111111-1111-4111-8111-111111111111";
-const REPORT = { gatewayId: GATEWAY, buffered: 42, clock: "unsynced" } as const;
+const DIGEST = Buffer.alloc(32, 7);
+const REPORT = { gatewayId: GATEWAY, buffered: 42, clock: "unsynced", tokenDigest: DIGEST } as const;
 const OPTIONS = { now: NOW, liveWindowMs: NOTIFY_LIVE_WINDOW_MS, report: REPORT };
 
 type Call = { text: string; values?: readonly unknown[] };
@@ -132,6 +133,7 @@ export async function theUpdateBindsTheReportAndTheWindow(): Promise<void> {
     values[5] instanceof Date && values[5].getTime() === newestLate.time.getTime(),
     "$6 must be the newest late row, not the live one",
   );
+  assert(values[6] === DIGEST, "$7 must be the presented token's digest (M1)");
 }
 
 /** A live-only batch binds NULL for both bounds, so the window is left as it was. */
@@ -153,9 +155,22 @@ export async function aHugeBufferedIsClamped(): Promise<void> {
 /** The SQL widens with LEAST / GREATEST and filters by id and active status. */
 export function theSqlWidensAndFiltersByGateway(): void {
   const sql = RECORD_GATEWAY_REPORT.replace(/\s+/g, " ");
-  assert(sql.includes("backfill_dirty_from = LEAST(backfill_dirty_from, $5::timestamptz)"), "from must widen with LEAST");
-  assert(sql.includes("backfill_dirty_to = GREATEST(backfill_dirty_to, $6::timestamptz)"), "to must widen with GREATEST");
-  assert(/WHERE id = \$1 AND status = 'active'/.test(sql), "the UPDATE must filter by its own gateway id and status");
+  assert(sql.includes("backfill_dirty_from = LEAST(g.backfill_dirty_from, $5::timestamptz)"), "from must widen with LEAST");
+  assert(sql.includes("backfill_dirty_to = GREATEST(g.backfill_dirty_to, $6::timestamptz)"), "to must widen with GREATEST");
+  assert(
+    /WHERE g\.id = \$1 AND g\.status = 'active' AND g\.token_hash = \$7 /.test(sql),
+    "the UPDATE must filter by its own gateway id, active status and the presented digest",
+  );
+  assert(
+    sql.includes("AND EXISTS ( SELECT 1 FROM bms.organizations o WHERE o.id = g.organization_id AND o.ingest_enabled = true )"),
+    "the UPDATE must require the organization's ingest switch (ADR 0115), so a stale snapshot rolls back",
+  );
+  assert(
+    sql.includes(
+      "backfill_dirty_seq = CASE WHEN $5::timestamptz IS NULL THEN g.backfill_dirty_seq ELSE g.backfill_dirty_seq + 1 END",
+    ),
+    "every late batch must bump backfill_dirty_seq, and no live-only one",
+  );
   const window = dirtyWindow([rowAt(1_000)], NOW);
   assert(window === null, "dirtyWindow of live rows is null");
 }

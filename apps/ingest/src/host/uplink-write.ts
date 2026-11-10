@@ -17,9 +17,15 @@ import {
  * the window on restart: it is a column, not a memory.
  *
  * The host connects as `bms_fleet` (BYPASSRLS), so the `UPDATE` filters by the
- * gateway's id itself, and by `status = 'active'`: a gateway revoked after the
- * last snapshot reload matches no row, the hook throws, and the whole batch
- * rolls back (the edge keeps it; the next reload answers 403).
+ * gateway's id itself. **The commit is bound to the credential and the switch,
+ * not only to the snapshot** (security review M1): it also requires
+ * `status = 'active'`, `token_hash` equal to the digest the request
+ * authenticated with, and the organization's `ingest_enabled`. A gateway
+ * revoked, a token rotated out, or an organization switched off after the
+ * last snapshot reload therefore matches no row, the hook throws, and the
+ * whole batch rolls back (`503`; the edge keeps it; the next reload answers
+ * 401 or 403). The digest compare here runs only after `authenticate` has
+ * already matched it in constant time, so it is no oracle.
  */
 
 /**
@@ -41,6 +47,8 @@ export type GatewayReport = {
   /** `buffered` from the wire: samples the edge holds on disk. */
   readonly buffered: number;
   readonly clock: "synced" | "unsynced";
+  /** SHA-256 of the presented token (`AuthOutcome.digest`). Never logged. */
+  readonly tokenDigest: Buffer;
 };
 
 /** The span of rows older than `DIRTY_AFTER_MS`, or `null` when there is none. */
@@ -66,19 +74,33 @@ export function dirtyWindow(
  * Records the report and widens the dirty window. `LEAST` and `GREATEST`
  * ignore a `NULL` argument in Postgres, so a batch with no late row (`$5`,
  * `$6` both `NULL`) leaves the window as it was, and a first late batch sets
- * it from `NULL`. Both bounds move together, which keeps migration `0140`'s
+ * it from `NULL`. Both bounds move together, which keeps migration `0141`'s
  * both-or-neither and ordered CHECK true.
+ *
+ * `backfill_dirty_seq` (migration `0143`) goes up by one for **every** batch
+ * that carries a late row, whether it widened the window or landed inside it.
+ * The repair pass clears only the generation it read, so a late row committed
+ * inside an unchanged window while a refresh ran is never cleared unrepaired
+ * (code review 2).
  */
 export const RECORD_GATEWAY_REPORT = `
-  UPDATE bms.edge_gateways
+  UPDATE bms.edge_gateways AS g
      SET last_seen_at = $2,
          reported_backlog = $3,
          clock_state = $4,
-         backfill_dirty_from = LEAST(backfill_dirty_from, $5::timestamptz),
-         backfill_dirty_to = GREATEST(backfill_dirty_to, $6::timestamptz),
+         backfill_dirty_from = LEAST(g.backfill_dirty_from, $5::timestamptz),
+         backfill_dirty_to = GREATEST(g.backfill_dirty_to, $6::timestamptz),
+         backfill_dirty_seq = CASE WHEN $5::timestamptz IS NULL THEN g.backfill_dirty_seq
+                                   ELSE g.backfill_dirty_seq + 1 END,
          updated_at = now()
-   WHERE id = $1
-     AND status = 'active'
+   WHERE g.id = $1
+     AND g.status = 'active'
+     AND g.token_hash = $7
+     AND EXISTS (
+       SELECT 1 FROM bms.organizations o
+        WHERE o.id = g.organization_id
+          AND o.ingest_enabled = true
+     )
 `;
 
 function rowCountOf(result: unknown): number | undefined {
@@ -103,9 +125,10 @@ export async function recordGatewayReport(
     report.clock,
     window?.from ?? null,
     window?.to ?? null,
+    report.tokenDigest,
   ]);
   if (rowCountOf(result) !== 1) {
-    throw new Error("edge gateway is not active; batch rolled back");
+    throw new Error("edge gateway is not active, its token was rotated, or its organization is off; batch rolled back");
   }
 }
 

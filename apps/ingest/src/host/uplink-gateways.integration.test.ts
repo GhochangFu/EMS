@@ -14,7 +14,7 @@ const connectionString = requireIntegrationDb({
   label: "uplink gateway snapshot tests",
   because:
     "uplink-gateways.spec.ts hashes with Node on both sides and never runs GATEWAY_QUERY, so it " +
-    "is green against a schema without migration 0140 and green if the stored hash and the " +
+    "is green against a schema without migration 0141 and green if the stored hash and the " +
     "presented token's digest are computed differently.",
 });
 

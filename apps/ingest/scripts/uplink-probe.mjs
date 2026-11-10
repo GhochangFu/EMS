@@ -14,6 +14,10 @@
  * with the same `--at` send the same `rx` values, so they must leave the same
  * row count: `rx` is the key (decision 8).
  *
+ * `--url` must be `https:` unless its host is loopback (`localhost`,
+ * `127.x.x.x`, `[::1]`): the token rides in a header, so plain HTTP to any
+ * other host would send it in the clear.
+ *
  * AGENTS.md §9.6: the token is read from the environment only — never from
  * argv, where `ps` would show it — and is never printed, not even its length.
  * The response body is counts only and is printed as received.
@@ -58,6 +62,22 @@ if (args.device === undefined) fail("--device <rtu_code> is required");
 
 const port = process.env.INGEST_UPLINK_PORT ?? "9110";
 const url = args.url ?? `http://127.0.0.1:${port}/edge/v1/batches`;
+// The token goes in a header, so a plain-HTTP URL sends it in the clear. Only
+// a loopback host — the receiver inside the same container or host — may use
+// http:; anything else must be https: (security review L5).
+let target;
+try {
+  target = new URL(url);
+} catch {
+  fail("--url is not a URL");
+}
+const loopback = /^(localhost|127(\.\d{1,3}){3}|\[::1\])$/i.test(target.hostname);
+if (target.protocol !== "https:" && !(target.protocol === "http:" && loopback)) {
+  fail(`--url must be https: unless the host is loopback, got ${target.protocol}//${target.hostname}`);
+}
+if (target.username !== "" || target.password !== "") {
+  fail("--url must not carry credentials");
+}
 const count = Number(args.count ?? "1");
 if (!Number.isInteger(count) || count < 1 || count > MAX_SAMPLES) fail(`--count must be 1..${MAX_SAMPLES}`);
 const value = Number(args.value ?? "1");

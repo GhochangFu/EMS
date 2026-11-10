@@ -117,6 +117,15 @@ export type HostConfig = {
    * health port.
    */
   readonly uplinkPort: number | undefined;
+  /**
+   * Samples per second one gateway may post (`INGEST_UPLINK_MAX_SAMPLES_PER_S`,
+   * security review M2). Default 2000, four times the edge's own replay cap.
+   * Floor 500 — one full batch — so a batch can always be admitted; ceiling
+   * 100 000.
+   */
+  readonly uplinkMaxSamplesPerS: number;
+  /** `server.maxConnections` on the uplink listener (`INGEST_UPLINK_MAX_CONNECTIONS`, L2). Default 256, 1–10 000. */
+  readonly uplinkMaxConnections: number;
 };
 
 /**
@@ -133,6 +142,10 @@ export const DEFAULT_STALE_AFTER_MS: number = 300_000;
 export const DEFAULT_BUFFER_DIR: string = "/var/lib/bms-ingest";
 export const DEFAULT_BUFFER_MAX_AGE_MS: number = 3_600_000;
 export const DEFAULT_BUFFER_MAX_BYTES: number = 268_435_456;
+export const DEFAULT_UPLINK_MAX_SAMPLES_PER_S: number = 2_000;
+export const DEFAULT_UPLINK_MAX_CONNECTIONS: number = 256;
+/** One full uplink batch (`UPLINK_MAX_SAMPLES`): a lower rate could never admit one. */
+const MIN_UPLINK_SAMPLES_PER_S = 500;
 
 /**
  * The largest delay `setInterval` honours.
@@ -263,6 +276,17 @@ function readUplinkPort(raw: string | undefined, healthPort: number): number | u
   return port;
 }
 
+/** `INGEST_UPLINK_MAX_SAMPLES_PER_S`, bounded at both ends. */
+function readUplinkRate(raw: string | undefined): number {
+  const value = positiveInt(raw, DEFAULT_UPLINK_MAX_SAMPLES_PER_S, "INGEST_UPLINK_MAX_SAMPLES_PER_S", 100_000);
+  if (value < MIN_UPLINK_SAMPLES_PER_S) {
+    throw new Error(
+      `INGEST_UPLINK_MAX_SAMPLES_PER_S must be between ${MIN_UPLINK_SAMPLES_PER_S} and 100000, got "${raw ?? ""}"`,
+    );
+  }
+  return value;
+}
+
 /** Pure over its input, so the parsing rules are testable without mutating `process.env`. */
 export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   const databaseUrl = env.DATABASE_URL;
@@ -348,5 +372,12 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
     mqttPlaintextHosts: parseMqttPlaintextHosts(env.MQTT_PLAINTEXT_HOSTS),
     notifyLiveWindowMs: readNotifyLiveWindowMs(env.INGEST_NOTIFY_LIVE_WINDOW_MS),
     uplinkPort: readUplinkPort(env.INGEST_UPLINK_PORT, healthPort),
+    uplinkMaxSamplesPerS: readUplinkRate(env.INGEST_UPLINK_MAX_SAMPLES_PER_S),
+    uplinkMaxConnections: positiveInt(
+      env.INGEST_UPLINK_MAX_CONNECTIONS,
+      DEFAULT_UPLINK_MAX_CONNECTIONS,
+      "INGEST_UPLINK_MAX_CONNECTIONS",
+      10_000,
+    ),
   };
 }

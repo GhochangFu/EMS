@@ -22,6 +22,7 @@ import { droppedCount, resolveSamples, writeResolved } from "./host/normaliser.j
 import { createEndpointRegistry } from "./host/reconcile.js";
 import { createSupervisor, realScheduler, type Supervisor } from "./host/supervisor.js";
 import { authenticate, gatewayHealth, type GatewaySnapshot, loadGateways } from "./host/uplink-gateways.js";
+import { createSampleRateLimiter } from "./host/uplink-rate.js";
 import { createUplinkReceiver } from "./host/uplink-receiver.js";
 import { startUplinkServer, type UplinkServer } from "./host/uplink-server.js";
 // The ADR 0012 seam (ADR 0016 §4, §6). It stopped being the *unmodified* pilot
@@ -51,6 +52,9 @@ import { decryptCredentials, resolveMqttConnection } from "./rtu-config.js";
  * Every row inside the live window is notified; an older row is written as
  * history (ADR 0016 Amendment 9, ADR 0123 decision 10).
  */
+
+/** The most shutdown waits for the uplink listener before stopping the supervisors. */
+const UPLINK_CLOSE_LIMIT_MS = 5_000;
 
 async function main(): Promise<void> {
   const pkgRoot = process.cwd();
@@ -294,6 +298,8 @@ async function main(): Promise<void> {
         liveWindowMs: hostConfig.notifyLiveWindowMs,
         logger: uplinkLogger,
       }),
+      rateLimit: createSampleRateLimiter(hostConfig.uplinkMaxSamplesPerS, Date.now),
+      maxConnections: hostConfig.uplinkMaxConnections,
       logger: uplinkLogger,
     });
     // ── AGGREGATE REPAIR: THE ONE WIRING POINT (ADR 0123 decision 11) ───────
@@ -305,8 +311,11 @@ async function main(): Promise<void> {
     //     now: realScheduler.now,
     //     logger: logger.child({ subsystem: "aggregate-repair" }),
     //   });
-    //   const repairTimer = setInterval(() => void repair.runOnce(), REPAIR_MIN_INTERVAL_MS);
-    // and `clearInterval(repairTimer)` in `shutdown` below. Until then a late
+    //   const repairTimer = setInterval(() => void repair.runOnce(), 10_000);
+    // — a 10 s tick: `runOnce` already holds each gateway to one pass a
+    // minute and never overlaps itself, so the tick only bounds how long a
+    // new window waits for its first pass — and `clearInterval(repairTimer)`
+    // in `shutdown` below. Until then a late
     // batch's window is recorded on `bms.edge_gateways` and stays there —
     // durable, so nothing is lost, only not yet folded into the aggregates.
     uplinkLogger.warn(
@@ -349,12 +358,20 @@ async function main(): Promise<void> {
     tickSkipLogged = false;
     void (async () => {
       try {
-        const rows = await loadBindingRows(pool);
-        const nextGateways = await loadGateways(pool);
-        const next = planEndpoints(rows, planOptions);
+        // The gateway snapshot reloads in its own try: a failing gateway
+        // query must not stop the binding reload and the sweep, and a failing
+        // binding reload must not stop revokes and rotations reaching the
+        // receiver (code review 6).
+        try {
+          gatewaySnapshot = await loadGateways(pool);
+        } catch (error) {
+          logger.error("gateway snapshot reload failed", {
+            reason: error instanceof Error ? error.message : "unknown",
+          });
+        }
+        const next = planEndpoints(await loadBindingRows(pool), planOptions);
         skipped = next.skipped;
         edgeServed = next.edgeServed;
-        gatewaySnapshot = nextGateways;
         // An RTU onboarded into a running host reaches the fallback here, not
         // at boot. Deduplicated per process by the set above.
         reportCredentialFallbacks(next.warnings);
@@ -409,7 +426,11 @@ async function main(): Promise<void> {
     void (async () => {
       clearInterval(reloadTimer);
       // Stop taking batches first: an edge whose post fails keeps it on disk.
-      await uplink?.close();
+      // Bounded, so no client can keep the supervisors from stopping (H1):
+      // `close()` itself destroys every socket after its 2 s grace.
+      if (uplink !== undefined) {
+        await Promise.race([uplink.close(), new Promise((done) => setTimeout(done, UPLINK_CLOSE_LIMIT_MS))]);
+      }
       await registry.stopAll();
       await health.close();
       await pool.end();

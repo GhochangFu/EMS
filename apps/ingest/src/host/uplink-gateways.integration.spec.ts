@@ -9,7 +9,7 @@ import { authenticate, hashToken, loadGateways } from "./uplink-gateways.js";
  *
  * **What `uplink-gateways.spec.ts` cannot reach.** That suite hashes with
  * Node on both sides, so it is green if `GATEWAY_QUERY` names a column
- * migration `0140` does not have, and green if the admin mint (PR 6) and the
+ * migration `0141` does not have, and green if the admin mint (PR 6) and the
  * receiver ever disagree on what "SHA-256 of the token" means — UTF-8 bytes or
  * not, raw digest or hex text. This plants a hash with Postgres's own
  * `sha256(convert_to(…, 'UTF8'))` and authenticates the token through the

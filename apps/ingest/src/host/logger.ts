@@ -66,3 +66,12 @@ export function createHostLogger(
     child: (fields) => createHostLogger({ ...base, ...fields }, write),
   };
 }
+
+/** A failure's class and SQLSTATE-style code — never its message, which may quote input. */
+export function errorKind(error: unknown): { readonly kind: string; readonly code?: string } {
+  if (!(error instanceof Error)) {
+    return { kind: typeof error };
+  }
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? { kind: error.name, code } : { kind: error.name };
+}
