@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { LUCIDE_SHAPES } from "../apps/web/src/components/widgets/mimic-symbol-libraries/lucide.generated";
-import { NAV_ICONS } from "../apps/web/src/layouts/shells/navigation-model";
+import { NAV_ICONS } from "../apps/web/src/layouts/shells/nav-icons";
 import { ICON_TOKENS } from "../apps/web/src/lib/design";
 import { parseTokenBlocks } from "./support/colour-tokens";
 import { parseDesignBlocks } from "./support/design-tokens";

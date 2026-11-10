@@ -13,6 +13,7 @@ import {
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { useCopilotSheet, useViewportSize } from "../../components/copilot/use-copilot-viewport";
 import { useCopilotPagePush } from "../../stores/copilot-window-store";
+import { navIcon, type NavIconKey } from "./nav-icons";
 
 /*
  * `F4.341` PR 5 (ADR 0118 decision 6) — the one navigation model every shell renders: the same
@@ -89,48 +90,7 @@ export const adminModuleGroup = {
 
 export const temporarilyHiddenModulePaths = new Set(["/sld", "/crac"]);
 
-/**
- * `F4.348` (ADR 0118 Amendment 4 decisions 1–2, plan's icon table) — each navigation item's icon,
- * a key of the repo's Lucide shapes, keyed by the item's label: the module items (hidden ones
- * included), the Administration hub and areas, and the rail's top entries. Collapsed, the icon
- * replaces the letter code `F4.164` showed; `navIconEntries()` is the unique-icon gate.
- */
-export const NAV_ICONS = {
-  Overview: "house",
-  Sites: "building",
-  Energy: "zap",
-  Settings: "settings",
-  "Alarm Centre": "bell",
-  "Control Room": "monitor",
-  "Alarm Philosophy": "shield-alert",
-  Dashboards: "layout-dashboard",
-  Sustainability: "leaf",
-  Assets: "boxes",
-  "Sites Map": "map-pin",
-  "Electrical SLD": "plug-zap",
-  "HVAC · CRAC": "fan",
-  "Energy Analytics": "chart-line",
-  Maintenance: "wrench",
-  "Schedule Centre": "clock",
-  "Rule Engine": "cpu",
-  Reports: "activity",
-  "Master Data Hub": "database",
-  "Sites & Equipment": "factory",
-  "Reference Data": "key",
-  "Templates & Visuals": "package",
-  "Data Input": "plug",
-  Notifications: "bell-ring",
-  "Users & Access": "users",
-} as const;
-
-export type NavIconKey = (typeof NAV_ICONS)[keyof typeof NAV_ICONS];
-
-/** An item's icon; an item missing from the table fails loudly (the I1 gate keeps it total). */
-export function navIcon(label: string): NavIconKey {
-  const icon = (NAV_ICONS as Readonly<Record<string, NavIconKey>>)[label];
-  if (icon === undefined) throw new Error(`no navigation icon for "${label}"`);
-  return icon;
-}
+export { NAV_ICONS, navIcon, type NavIconKey } from "./nav-icons";
 
 /**
  * `F4.164` (OQ-4) — why the top-nav Settings entry is locked. The button's

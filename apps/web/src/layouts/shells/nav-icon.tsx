@@ -1,7 +1,7 @@
 import { createElement } from "react";
 
 import { LUCIDE_SHAPES } from "../../components/widgets/mimic-symbol-libraries/lucide.generated";
-import type { NavIconKey } from "./navigation-model";
+import type { NavIconKey } from "./nav-icons";
 
 /** The geometry attributes a Lucide shape may carry; anything else never reaches React. */
 const SHAPE_ATTRS = ["d", "cx", "cy", "r", "rx", "ry", "x", "y", "width", "height", "x1", "y1", "x2", "y2", "points"] as const;
