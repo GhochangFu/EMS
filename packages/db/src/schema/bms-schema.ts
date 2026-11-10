@@ -204,6 +204,10 @@ export const rtus = bmsSchema.table("rtus", {
   mqttTopic: varchar("mqtt_topic", { length: 255 }),
   // 0131 (F4.339, ADR 0117 decision 8): the topic a deactivate released; restored on reactivate when free.
   releasedMqttTopic: varchar("released_mqtt_topic", { length: 255 }),
+  // 0138 (F4.350, ADR 0075 Amendment 3): seconds between the device's reports. NULL = not
+  // configured, so the freshness window follows the learned median gap. The CHECK
+  // (rtus_expected_interval_seconds_check, > 0) is SQL-only, like locations_org_code_idx.
+  expectedIntervalSeconds: integer("expected_interval_seconds"),
   stationCode: varchar("station_code", { length: 64 }),
   stationName: varchar("station_name", { length: 255 }),
   ingestEnabled: boolean("ingest_enabled").notNull().default(false),

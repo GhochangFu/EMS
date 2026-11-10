@@ -109,6 +109,7 @@ const COMMITTED_RTU = {
   rtuCode: null,
   mqttTopic: null,
   releasedMqttTopic: null,
+  expectedIntervalSeconds: null,
   stationCode: null,
   stationName: null,
   ingestEnabled: true,

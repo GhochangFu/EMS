@@ -41,6 +41,7 @@ const RTU: AdminRtuDto = {
   rtuCode: null,
   mqttTopic: "site-a/gw-1",
   releasedMqttTopic: null,
+  expectedIntervalSeconds: null,
   stationCode: null,
   stationName: null,
   ingestEnabled: true,

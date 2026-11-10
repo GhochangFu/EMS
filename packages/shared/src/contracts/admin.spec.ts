@@ -2,6 +2,7 @@ import {
   adminAssetGroupMemberDtoSchema,
   adminAssetPointDtoSchema,
   adminLocationDtoSchema,
+  adminRtuDtoSchema,
   calcParameterDtoSchema,
 } from "./admin";
 import { assetInstantiationResultDtoSchema, instantiatedAssetDtoSchema } from "./asset-templates";
@@ -364,4 +365,17 @@ export function runCalcParameterAcceptsNoAssetTest(): void {
     { ...validCalcParameter, assetId: null, assetCode: null, assetRtuName: null, assetLocationName: null },
     "calcParameterDto: an organization-scoped row",
   );
+}
+
+/**
+ * `F4.350` (ADR 0075 Amendment 3) — `expectedIntervalSeconds` is a nullable positive whole number
+ * of seconds. Mutation: allow `0`, drop `.int()`, or drop `.nullable()`.
+ */
+export function runAdminRtuExpectedIntervalTest(): void {
+  const field = adminRtuDtoSchema.shape.expectedIntervalSeconds;
+  expectAccepts(field, null, "an RTU with no configured interval");
+  expectAccepts(field, 60, "a 60 s device");
+  for (const bad of [0, -5, 1.5, "60", undefined]) {
+    expectRejects(field, bad, `expectedIntervalSeconds = ${String(bad)}`);
+  }
 }

@@ -96,6 +96,8 @@ export const adminRtuDtoSchema = z.object({
   mqttTopic: z.string().nullable(),
   /** F4.339 (ADR 0117 decision 8): the topic a deactivate released; restored on reactivate when still free. */
   releasedMqttTopic: z.string().nullable(),
+  /** F4.350 (ADR 0075 Amendment 3): seconds between the device's reports; `null` = learn it from the samples. */
+  expectedIntervalSeconds: z.number().int().positive().nullable(),
   stationCode: z.string().nullable(),
   stationName: z.string().nullable(),
   ingestEnabled: z.boolean(),
