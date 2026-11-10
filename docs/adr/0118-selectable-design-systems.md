@@ -598,3 +598,46 @@ departed from or read the plan:
 DB run of 0137 with the API integration case A10, and the `chore(agents):`
 sweep of AGENTS.md §5 (two shells, thirteen profiles) with the one owed by
 `F4.341`. These are local or AWS steps the cloud session could not run.
+
+## Amendment 4 — icons in the navigation (2026-11-10)
+
+**Status: Proposed — 2026-11-10. The merge of the PR that carries this
+amendment and the plan `docs/plans/f4.348-nav-icons.md` is its acceptance**
+(the owner's standing instruction of 2026-11-10: merge each PR of the session
+on green CI). Owner request, 2026-11-10, after `F4.346`: "in the left-hand
+collapsible menu, use icons with the menu names wherever applicable; the icons
+should match the theme that was chosen." The owner's two rulings: the icons
+**replace the letter codes** in the collapsed menu, and they match the theme
+in **both** senses — the chosen colours, and a style per design system.
+
+1. **An icon beside every navigation item (amends decision 6 and Amendment 3
+   decisions 1–2).** Every module, administration and rail top entry carries
+   one icon. Expanded, the icon sits before the text label (the label stays: A6
+   holds, no item is icon-only while expanded). Collapsed, in the sidebar and in
+   the rail, the icon **replaces** the letter code; the link's accessible name
+   is its full label, and its `title` is the label too.
+2. **The icons are the repo's Lucide shapes.** They are read from the
+   generated `LUCIDE_SHAPES` (`lucide-static` 1.48.0, ISC/MIT, ADR 0084
+   decision 5) by key, so no dependency, download or copy is added. Each item's
+   icon is fixed in one table in `navigation-model.ts`; no two visible items
+   share an icon (the gate replaces `F4.164`'s unique-code gate, whose codes and
+   overrides are retired).
+3. **The colour is the theme's.** An icon strokes `currentColor`, so it takes
+   the item's ink in every colour profile and theme: `ink-muted` at rest, `ink`
+   on hover, and the selected item's colour (`accent-strong`, or `surface` on
+   the `ink` fill of `swiss-grid` and `bento-ops`). It never paints a fill or a
+   role of its own, so A4 and A5 are untouched.
+4. **The style is the design system's.** Four design tokens join decision 4's
+   set and every design block (both variants): `--icon-size`, `--icon-stroke`,
+   `--icon-linecap`, `--icon-linejoin`.
+
+   | Design system | Size | Stroke | Caps / joins | Character |
+   |---|---|---|---|---|
+   | `nexus-soft` | 16px | 1.75 | round / round | today's soft line |
+   | `enterprise-flat` | 16px | 1.5 | round / round | a thin, quiet line for dense admin |
+   | `swiss-grid` | 16px | 2.25 | square / miter | a heavy, geometric line beside the ink rules |
+   | `bento-ops` | 18px | 2 | round / round | a larger, friendly line for the pills |
+   | `control-room-dark` | 20px | 2 | butt / miter | the largest, plainest line for a wall |
+
+**Not in this amendment:** icons anywhere but the module navigation (the top
+navigation bar of the sidebar shell keeps its text), and a second icon family.
