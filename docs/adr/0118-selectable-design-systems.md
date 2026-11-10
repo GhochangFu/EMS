@@ -495,9 +495,9 @@ and field after the next release tag.
 
 ## Amendment 3 — shells after the AWS check, and four more profiles (2026-11-09)
 
-**Status: Proposed — 2026-11-09. The merge of the PR that carries this
-amendment and the plan `docs/plans/f4.346-shells-and-four-profiles.md` is its
-acceptance.** After `F4.341` closed, the owner checked the live portal
+**Status: Accepted — 2026-11-09, by the merge of the PR that carried this
+amendment and the plan `docs/plans/f4.346-shells-and-four-profiles.md` (#1200).
+Built by `F4.346` (see *As built* below).** After `F4.341` closed, the owner checked the live portal
 (`bms.demosites.co.in`, deploy of `1d1efc26`) and found the Swiss Grid and
 Bento Ops top menu unusable. A DOM check of every design system on 15 pages at
 1440, 1024, 768 and 390 px measured the defects below (no console errors). The
@@ -553,3 +553,48 @@ owner chose all four.
 
 **Not in this amendment:** the chrome header overflows by 122 px at 390 px in
 every shell, `nexus-soft` included. It predates `F4.341` and is row `F4.347`.
+
+## As built (Amendment 3, `F4.346` closed, 2026-11-10)
+
+**Status: recorded with PR 3 of `F4.346`.** The plan's three PRs merged in
+order (the PR list is in `docs/BACKLOG.md`, row `F4.346`): #1201 the shells and
+the preview, #1202 the four profiles and migration 0137. Where the build
+departed from or read the plan:
+
+- **The page body is portalled across a shell swap.** Decision 3 as written
+  (`AppShell` picks the shell from `preview ?? design`) unmounted the page and
+  the header's Appearance dialog on a swap; the panel's unmount ended the
+  preview, so the shell flipped straight back (plan S5 caught it). `AppShell`
+  renders the page body once, through a portal into one element that each
+  shell's body slot adopts, and hosts the user's own Appearance dialog beside
+  the shell (its open state in a small store). Save now re-reads `/auth/me`
+  before it clears the preview, so the shell goes straight to the saved value.
+  `setDesign` clears the preview.
+- **The sidebar's slot is the `Modules` navigation landmark.** The sidebar had
+  no `nav[aria-label="Modules"]` (S2 asks for one). The slot around the
+  `<aside>` became that `nav`, outside the aside, so the S3 markup fixture is
+  unchanged byte for byte.
+- **One collapse behaviour.** The sidebar's collapse logic moved, unchanged,
+  into `useCollapsibleNav`, which the rail shares under its own key
+  (`bms-rail-collapsed`). The rail's top entries collapse to two-letter codes
+  (`OV`, `SI`, `EN`, `SE`).
+- **Skins.** `swiss-grid` reads its radius tokens (0), not a literal 0, to
+  keep the Z4 gate; the selected item in both skins is `surface` on `ink`,
+  now a `DS_TEXT_PAIRS` row held at 4.5:1 in every profile and theme.
+- **A profile sets 26 roles, not 27.** `PROFILE_ROLES` is 26 long; every block
+  sets all of them.
+- **Five values moved from the drafts** (the four accents did not):
+  `accent-on-chrome` of `hmi-grey`, `moss` and `colour-safe` (`#93A9AD`,
+  `#8DB86A`, `#A3A9B4`) sat within ΔE 20 of a light alarm wash or ΔE 12 of an
+  info wash; the light `surface` of `hmi-grey` (`#FCFCFC`) and `night-shift`
+  (`#FCFAF6`), the light `chrome` of `hmi-grey` (`#1B2022`) and its dark
+  `well` (`#25292B`) moved so the fixed `ok`, `critical` and `info` inks keep
+  their pairs. No gate was relaxed. The full table is in #1202's body.
+- **Frozen migrations keep their lists.** The static tests of 0133 and 0134
+  now hold those files to the nine names they shipped; 0137's test holds the
+  three live CHECKs to the contract.
+
+**Still owed:** the AWS DOM check of the plan's *Owed after the build*, the
+DB run of 0137 with the API integration case A10, and the `chore(agents):`
+sweep of AGENTS.md §5 (two shells, thirteen profiles) with the one owed by
+`F4.341`. These are local or AWS steps the cloud session could not run.
