@@ -441,3 +441,17 @@ export async function aSharedClaimAlsoStampsTheLocalWindow(): Promise<void> {
     `the shared key is namespaced, got ${keysSeen[0]?.[0]}`,
   );
 }
+
+/**
+ * Redis comes back mid-window: a press stamped locally while Redis was down
+ * still refuses, though Redis itself holds no key (PR 2 code review, 1).
+ */
+export async function aLocalStampTakenDuringAnOutageStillRefusesWhenRedisReturns(): Promise<void> {
+  let redisUp = false;
+  const throttle = throttleOver(async () => (redisUp ? 0 : null));
+  const organizationId = freshOrganizationId();
+  assert((await throttle.claim([organizationId], T)).allowed, "the fallback press runs");
+  redisUp = true;
+  const held = refusal(await throttle.claim([organizationId], T + 5_000), "the press after Redis returns");
+  assert(held.retryAfterSeconds === 25, `expected 25 s, got ${held.retryAfterSeconds}`);
+}

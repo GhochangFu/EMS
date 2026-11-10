@@ -9,6 +9,8 @@ import {
   assertAnIpFloodCannotResetAnIdentityCounter,
   assertAnUnexpectedReplyFallsBack,
   assertAnUpperCasePathIsStillCounted,
+  assertClaimAllFailsOpenToNullAndCounts,
+  assertClaimAllReturnsTheScriptReply,
   assertEachClassHasItsOwnBudget,
   assertEachIdentityHasItsOwnBudget,
   assertEnforceRefusesTheHitAfterTheLimit,
@@ -193,6 +195,14 @@ describe("F4.17 rate limiter (ADR 0125 Part A)", () => {
 
   it("no limiter admits every handshake", async () => {
     await assertNoLimiterAdmitsEveryHandshake();
+  });
+
+  it("claim all returns the script reply", async () => {
+    await assertClaimAllReturnsTheScriptReply();
+  });
+
+  it("claim all fails open to null and counts", async () => {
+    await assertClaimAllFailsOpenToNullAndCounts();
   });
 
 });

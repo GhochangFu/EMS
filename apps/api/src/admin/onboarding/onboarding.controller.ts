@@ -101,6 +101,7 @@ export class OnboardingController {
   }
 
   @Get("template.xlsx")
+  @RateLimitClassOf("heavy")
   async downloadTemplate(@CurrentUser() user: JwtPayload, @Res() res: Response) {
     const buffer = this.service.buildTemplate(user, "");
     res.setHeader(

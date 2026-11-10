@@ -223,23 +223,54 @@ export class EvaluateThrottle {
    * With no usable Redis (unset, down or slow) it falls back to {@link check},
    * the in-process window, and the bound is per process again for as long as
    * that lasts — the same fail-open rule as the request limiter (decision 4).
-   * An allowed shared claim also stamps the local `Map`, so a Redis outage
-   * that starts mid-window cannot hand this process a free press.
+   * Every claim first looks at the local window without stamping, and an
+   * allowed shared claim stamps it too, so **this process** never runs two
+   * sweeps inside one window across an outage's start or end. What the
+   * fallback cannot see is a press another process made through Redis just
+   * before the outage: at the edges of an outage the fleet may run one extra
+   * sweep per bucket per process, which is decision 4's fail-open cost.
    */
   async claim(keys: string[], now: number): Promise<EvaluateThrottleDecision> {
-    const remainingMs = this.shared
-      ? await this.shared.claimAll(keys.map(evaluateThrottleKey), EVALUATE_MIN_INTERVAL_MS)
-      : null;
+    // No shared store at all (a spec, a module without `RateLimitModule`):
+    // exactly `check`, as `F3.47` shipped it.
+    if (!this.shared) {
+      return this.check(keys, now);
+    }
+    // A non-stamping look at the local window first: a stamp taken here while
+    // Redis was down (or before a flap) must still refuse after Redis returns,
+    // or the process hands out a second press inside its own window (PR 2
+    // code review, correctness 1; security L3). Only stricter, never looser.
+    const heldLocally = this.longestRemainingMs(keys, now);
+    if (heldLocally > 0) {
+      return { allowed: false, retryAfterSeconds: Math.ceil(heldLocally / 1000) };
+    }
+    const remainingMs = await this.shared.claimAll(
+      keys.map(evaluateThrottleKey),
+      EVALUATE_MIN_INTERVAL_MS,
+    );
     if (remainingMs === null) {
       return this.check(keys, now);
     }
     if (remainingMs > 0) {
       return { allowed: false, retryAfterSeconds: Math.ceil(remainingMs / 1000) };
     }
+    // Redis allowed and stamped. `check` stamps the local window too — and if
+    // a concurrent fallback press stamped it during the `await`, refuses: a
+    // Redis stamp without a sweep is the safe direction.
+    return this.check(keys, now);
+  }
+
+  /** The longest time any of `keys` is still inside its local window; 0 when none is. Never stamps. */
+  private longestRemainingMs(keys: string[], now: number): number {
+    let longest = 0;
     for (const key of keys) {
-      this.lastSweepStartedAt.set(key, now);
+      const startedAt = this.lastSweepStartedAt.get(key);
+      if (startedAt === undefined) {
+        continue;
+      }
+      longest = Math.max(longest, EVALUATE_MIN_INTERVAL_MS - (now - startedAt));
     }
-    return { allowed: true };
+    return longest;
   }
 
   /**

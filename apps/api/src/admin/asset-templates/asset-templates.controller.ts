@@ -124,6 +124,7 @@ export class AssetTemplatesAdminController {
    * is a 400 rather than an echo of whatever arrived (`stockCodeParamSchema`).
    */
   @Post("stock/:code/import")
+  @RateLimitClassOf("heavy")
   async importStock(
     @Param("code") code: string,
     @Body() body: unknown,

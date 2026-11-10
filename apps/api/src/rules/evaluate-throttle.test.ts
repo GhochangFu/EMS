@@ -21,6 +21,7 @@ import {
   aStoreWithNoRedisFallsBackToTheInProcessWindow,
   aSharedRefusalReportsTheSharedRemainder,
   aSharedClaimAlsoStampsTheLocalWindow,
+  aLocalStampTakenDuringAnOutageStillRefusesWhenRedisReturns,
 } from "./evaluate-throttle.spec";
 
 /**
@@ -112,5 +113,9 @@ describe("EvaluateThrottle.claim — the shared window (F4.17, ADR 0125 Q9)", ()
 
   it("a shared claim also stamps the local window", async () => {
     await aSharedClaimAlsoStampsTheLocalWindow();
+  });
+
+  it("a local stamp taken during an outage still refuses when Redis returns", async () => {
+    await aLocalStampTakenDuringAnOutageStillRefusesWhenRedisReturns();
   });
 });

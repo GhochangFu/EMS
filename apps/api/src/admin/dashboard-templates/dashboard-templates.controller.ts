@@ -113,6 +113,7 @@ export class DashboardTemplatesController {
    * the order. Moved here from below `draft` in `F2.13`.
    */
   @Post("stock/:code/import")
+  @RateLimitClassOf("heavy")
   async importStock(
     @Param("code") code: string,
     @Body() body: unknown,

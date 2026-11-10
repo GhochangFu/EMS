@@ -49,6 +49,7 @@ export class AssetPointsAdminController {
    * against `:id/deactivate` is the pair that would bite first.
    */
   @Get("mapping-sheet.xlsx")
+  @RateLimitClassOf("heavy")
   async exportMappingSheet(
     @CurrentUser() user: JwtPayload,
     @Query("locationId") locationId: string,
