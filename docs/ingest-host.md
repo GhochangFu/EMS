@@ -61,6 +61,7 @@ still the only working credential path (ADR 0016 Amendment 3).
 | `INGEST_BUFFER_MAX_AGE_MS` | `3600000` | How long a spilled segment survives, by receipt minute, before the age bound erases it. Strictly older than the bound is erased; exactly the bound is kept. Ceiling `2^31-1`, the same timer limit `INGEST_RELOAD_MS` and `INGEST_STALE_AFTER_MS` share. |
 | `INGEST_BUFFER_MAX_BYTES` | `268435456` | Total bytes the on-disk buffer may hold, host-wide across every endpoint, before the byte bound erases the oldest segment. Ceiling `2^40` (1 TiB) — a fact about a disk, not about integers. |
 | `INGEST_NOTIFY_LIVE_WINDOW_MS` | `300000` | ADR 0123 decision 10 (`E7.2`). How old a written row's `time` may be and still be notified on `bms_telemetry`; an older row is written as history and not notified (see *Realtime has no switch* below). Defaults to the shared `NOTIFY_LIVE_WINDOW_MS`. Accepted from `60000` to `900000`; anything else, `0` included, refuses start-up with the variable and its bounds in the error. |
+| `INGEST_UPLINK_PORT` | unset (off) | ADR 0123 decision 4 (`E7.2`). The edge uplink receiver's port, `POST /edge/v1/batches` — see *The uplink receiver* below. Unset or blank starts no listener. Same digits-only rule as the health port, `1`–`65535`, and it must differ from `INGEST_HOST_HEALTH_PORT`; either mistake refuses start-up naming the variable. |
 
 `INGEST_BUFFER_MAX_AGE_MS` and `INGEST_BUFFER_MAX_BYTES` parse through the
 same digits-only, safe-integer rule as `INGEST_RELOAD_MS` and
@@ -541,6 +542,116 @@ them carrying a sample value or a credential:
   probing after backoff" with `{ delayMs, attempt, buffered }`.
 - The supervisor, on the first write after an outage: `info` "database write
   path recovered; replaying backlog".
+
+## The uplink receiver
+
+`E7.2`, ADR 0123 decisions 4–6, 8, 10 and 11; plan
+`docs/plans/e7.2-edge-store-and-forward.md` PR 3. A site edge gateway posts
+the samples it collected to this host, which writes them through the same
+`resolveSamples` → `writeResolved` path the supervisor uses. **Off unless
+`INGEST_UPLINK_PORT` is set.** The public route to it (a compose network and
+an nginx `location /edge/`) is PR 4; until then the listener is reachable only
+where the port is.
+
+**One route, checked in this order** (`src/host/uplink-server.ts`):
+
+| Check | Refusal |
+| --- | --- |
+| path is exactly `/edge/v1/batches` | `404 {"error":"not-found"}` |
+| method is `POST` | `405`, `Allow: POST` |
+| one `Authorization: Bearer <token>`, **before the body is read** | `401 unauthorized` (`WWW-Authenticate: Bearer`), `403 gateway-revoked`, `403 ingest-disabled` |
+| no other batch in flight for this gateway | `429 busy`, `Retry-After: 5` |
+| `Content-Encoding: gzip`; declared `Content-Length` ≤ 262 144 | `400 bad-encoding`, `413 too-large` |
+| streamed body ≤ 262 144 bytes, decoded ≤ 1 048 576 (the inflater is destroyed at the cap) | `413 too-large`, `400 bad-gzip` |
+| strict UTF-8 JSON, then `uplinkBatchSchema` (`@bms/shared/ingest`) | `400 bad-json`, `400 bad-schema` |
+| the write commits | `503 write-failed`, `Retry-After: 30` |
+
+A `200` carries `{ accepted, rejected: { foreignDevice, futureRx, tooOld,
+unresolved } }` and is sent only after the rows and the gateway's report have
+committed. Every refusal body is that fixed one-key JSON; no response and no
+log line carries the body, a parse error, the header or the token
+(AGENTS.md §9.6). Refusals are logged as one `warn` "uplink requests refused"
+summary of counts at most once a minute, so a scanner cannot flood the log.
+
+**Authentication** (`src/host/uplink-gateways.ts`, ruling P5 (a)). No
+database work happens before it: the host loads `bms.edge_gateways` (every
+row, revoked ones included, with the organization's `ingest_enabled` and the
+active RTU count) into memory at start and on every `INGEST_RELOAD_MS` tick,
+beside the binding plan. The presented token is hashed with SHA-256 and
+compared with `timingSafeEqual` against every row that holds a hash, with no
+early exit; the stored hash is never itself a credential.
+`tests/e7.2-uplink-auth-static.test.ts` holds the constant-time rule on the
+source. **Revoke and rotate take effect within one reload (60 s by
+default)**; a gateway revoked after the last reload is also refused at write
+time, because the report's `UPDATE` matches only an active row and an
+unmatched one rolls the batch back (`503`, then `403` after the reload).
+
+**Screening** (`src/host/uplink-receiver.ts`), each counted and none refusing
+the batch, so one bad sample cannot block a gateway's queue:
+
+- `foreignDevice` — the `deviceKey` is not the `rtu_code` of an RTU assigned
+  to this gateway. Dropped, never resolved. A box deployed before its RTUs are
+  assigned has **every** sample counted here and answered `200`, and the edge
+  deletes them (ruling P10 (a)): **assign the RTUs before the box goes live.**
+- `futureRx` — `rx` more than 60 s ahead of this host's clock.
+- `tooOld` — `rx` more than 6 d 12 h old.
+- `unresolved` — `resolveSamples`'s own drops (unmapped key, bad quality,
+  non-finite, out of range), as `droppedCount` sums them.
+
+`rx` becomes the row's `time` unchanged (ADR 0061 Amendment 4), so a retried
+batch writes the same rows. Rows older than the live window are written and
+not notified, as every ingest write is (ADR 0016 Amendment 9).
+
+**The gateway report and the dirty window** (`src/host/uplink-write.ts`).
+In the same transaction as the upsert, through `writeResolved`'s
+`beforeCommit` hook, the gateway's `last_seen_at`, `reported_backlog` (the
+wire's `buffered`, clamped to `integer`) and `clock_state` are set, and any
+row more than 2 h old widens `backfill_dirty_from` / `backfill_dirty_to` with
+`LEAST` / `GREATEST`. 2 h is one hour inside the `_1m` refresh policy's 3 h
+(migration `0027`; `tests/e7.2-uplink-dirty-window-static.test.ts`). A batch
+whose every sample was screened out still records the gateway.
+
+**Aggregate repair is owed — not wired in this build.** The repair pass
+(`src/host/aggregate-repair.ts`) is built and tested with its refresh
+injected: it lists each dirty window, refreshes it, and clears it only on
+success with a compare-and-clear on the stored bounds, at most once a minute
+per gateway. It is **not started**, because it needs `@bms/db`'s
+`refreshAggregatesFrom` and `apps/ingest/package.json` does not depend on
+`@bms/db` yet — an agent may not edit a manifest (plan P8, the owner's
+edit). `main.ts` carries the one marked wiring point, and a host started with
+`INGEST_UPLINK_PORT` logs `warn` "aggregate repair is not wired; dirty windows
+will accumulate on bms.edge_gateways until it is". The windows are columns,
+not memory, so nothing is lost: a late batch's rows are in
+`telemetry.point_values`, its window waits on the gateway row, and the first
+pass after the wiring lands repairs it. Until then the stored `_1m` … `_1d`
+buckets of a window older than each policy's reach are missing those rows.
+Owed with it: the `apps/ingest/Dockerfile` change (copy and build
+`packages/db`, plan T3.0) and the integration case that proves a 4 h old
+batch reaches `_1m` and `_1h` after one pass.
+
+**Health.** The body gains one line per gateway, after every other line:
+
+```
+gateway id=<uuid> code=<code> org=<org code> status=active|revoked ingest=on|off rtus=<n> lastSeen=<iso>|never backlog=<n>|unknown clock=synced|unsynced|unknown dirty=<from>..<to>|none
+revoked-gateway id=<uuid> code=<code> rtus=<n> note=assigned-rtus-are-silent
+```
+
+The second appears only for a revoked gateway that still has active RTUs
+assigned: the cloud dials none of them (decision 6) and the box is refused,
+so those RTUs are silent until they are unassigned. **Neither line changes
+the `ok`/`degraded` verdict** — a site's uplink is the site's state, and the
+edge keeps its backlog on its own disk. The values are as of the last reload.
+
+**Logs.** `warn` "uplink samples rejected" with the gateway's id and code and
+the four counts; `info` "uplink rows written outside the live window, not
+notified" with counts; `error` "uplink batch write failed" with the gateway
+id and the database's reason; the refusal summary above. `ingest host
+started` gains `uplinkPort` (`"off"` when unset).
+
+**Probe.** `apps/ingest/scripts/uplink-probe.mjs` posts one gzip batch:
+`UPLINK_PROBE_TOKEN=bmsgw_… node apps/ingest/scripts/uplink-probe.mjs
+--device <rtu_code> [--age 4h] [--count N] [--at <iso>]`. The token is read
+from the environment only and never printed.
 
 ## The ADR 0016 §6 commit 3 parallel verification (historical)
 

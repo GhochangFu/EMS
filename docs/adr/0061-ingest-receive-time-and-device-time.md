@@ -547,3 +547,68 @@ cancel the query"*, so a timed-out write can still land. A row landing at the
 attempted receive time beside a replayed row at the append instant is two rows,
 in exactly the failure the buffer exists for. The gate is its own assertion, and
 its mutation is to stamp at append.
+
+## Amendment 4 — an edge-forwarded sample's receive time is its arrival at the edge (2026-11-10)
+
+Carried by [ADR 0123](./0123-edge-store-and-forward.md) (`E7.2`, accepted
+2026-11-10), ruling Q7 (A) and decision 8, and landed with the code that
+changes the behaviour: plan `docs/plans/e7.2-edge-store-and-forward.md`
+PR 3, the cloud uplink receiver.
+
+### What changes
+
+Decision 2, as Amendment 2 narrowed it, says `time` is the receive time and
+that a **buffered** sample's receive time is its original arrival. It never
+had to say *whose* arrival, because until `E7.2` every sample arrived at the
+host that wrote it. An edge gateway breaks that: it receives the sample from
+the device, may hold it on its own disk for up to 6 days, and posts it to the
+cloud host, which writes it.
+
+**For an edge-forwarded sample, the receive time is its arrival at the edge**
+— the `rx` the edge stamped once when the sample arrived, carried unchanged on
+the segment line and on the wire (`uplinkSampleSchema.rx`), and written as
+`time` by the receiver (`apps/ingest/src/host/uplink-receiver.ts`,
+`screenBatch`). The cloud host's own arrival instant is not stored anywhere.
+
+### Why, and what it keeps
+
+- **Idempotency is preserved, exactly as Amendment 2 preserved it for
+  replay.** A retried or re-replayed batch carries the same `rx`, so it
+  upserts the same `(time, asset_id, point_key)`. Stamping at the cloud would
+  give every retry a fresh primary key — the duplicate-row failure Amendment 2
+  refused, one hop further out. ADR 0123 adds no batch ledger because this
+  holds.
+- **A backlog lands at its true times.** Stamping at the cloud would land a
+  multi-day backlog at "now", which defeats the edge (ADR 0123 Q7 C).
+- **The device's own clock is still excluded**, as decision 2 requires: `at`
+  is kept as the device's claim and goes to `device_time`, unclamped
+  (decision 3), or is absent (decision 4 case 2).
+
+### What it costs: the edge's clock is now in the key
+
+ADR 0061 moved `time` off device clocks because they were hours wrong. An edge
+box's clock is ours, but it can still be wrong — most plausibly a box with no
+battery-backed clock that reboots while offline. ADR 0123 decision 8 bounds
+this with two guards:
+
+- **Cloud** (built here): a sample whose `rx` is more than 60 s ahead of the
+  cloud host's clock (`futureRx`) or more than 6 d 12 h behind it (`tooOld`)
+  is counted and dropped; the batch still answers `200`, so one bad sample
+  cannot block a gateway's queue. Both bounds are inclusive.
+- **Edge** (PR 5): a persisted high-water mark of the edge's wall clock; a
+  clock found behind it stamps mark plus monotonic elapsed and reports
+  `clock=unsynced`, which the cloud stores on the gateway row.
+
+A wrong edge clock inside both bounds still writes rows at wrong times, in the
+correct order. That is stated, not repaired: ADR 0123 Q7a ruled against
+shifting by a measured offset, which assumes the offset was constant through
+the outage.
+
+### Verification this amendment adds
+
+- `uplink-receiver-screen.spec.ts`: `rx` becomes `receivedAt` unchanged (the
+  mutation is to stamp `now()` instead); `at` is kept and an absent `at` stays
+  absent; `rx` exactly 60 s ahead and exactly 6 d 12 h old pass, one
+  millisecond more is counted.
+- `uplink-write.integration.spec.ts`: the same batch written twice leaves the
+  same row count.
