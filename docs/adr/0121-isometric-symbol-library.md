@@ -121,7 +121,8 @@ used only by the offline scripts; nothing under `apps/*` imports it.
 
 ## Amendment 1 — eight more glyphs; the PHE RTU and network nodes draw a tower and a gateway in the isometric set (`F4.352`) (owner, 2026-11-10)
 
-**Status: Proposed — 2026-11-10.** The owner asked in chat on 2026-11-10
+**Status: Accepted — 2026-11-10** (owner, in chat: "Accept, merge on
+green"; proposed the same day). The owner asked in chat on 2026-11-10
 (1) whether the 50 glyphs cover the new WBLDC cold-chain site and (2) for the
 PHE mimic's RTU signal to draw a mobile-tower glyph, not the sensor glyph. The
 owner approved the gap list and asked for this amendment ("Yes, write the
