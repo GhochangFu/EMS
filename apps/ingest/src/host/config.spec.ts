@@ -592,3 +592,35 @@ export function runNotifyLiveWindowConfigTests(): void {
     );
   }
 }
+
+/**
+ * `E7.2` / ADR 0123 decision 4 — `INGEST_UPLINK_PORT`. Unset is "no
+ * listener", never a default port: the receiver is internet-facing once PR 4
+ * routes it, so it exists only where someone asked for it.
+ */
+export function runUplinkPortConfigTests(): void {
+  const unset = readHostConfig({ ...BASE }).uplinkPort;
+  assert(unset === undefined, `an unset INGEST_UPLINK_PORT means no listener, got ${String(unset)}`);
+  const blank = readHostConfig({ ...BASE, INGEST_UPLINK_PORT: "  " }).uplinkPort;
+  assert(blank === undefined, `a blank INGEST_UPLINK_PORT means no listener, got ${String(blank)}`);
+
+  const set = readHostConfig({ ...BASE, INGEST_UPLINK_PORT: "9110" }).uplinkPort;
+  assert(set === 9110, `INGEST_UPLINK_PORT=9110 must read 9110, got ${String(set)}`);
+
+  for (const raw of ["0", "65536", "abc", "9110.5", "-1", "1e4"]) {
+    const err = thrownBy(() => readHostConfig({ ...BASE, INGEST_UPLINK_PORT: raw }), `INGEST_UPLINK_PORT="${raw}"`);
+    assert(
+      messageOf(err).startsWith("INGEST_UPLINK_PORT must be"),
+      `INGEST_UPLINK_PORT="${raw}" must refuse start-up and name the variable; got: ${messageOf(err)}`,
+    );
+  }
+
+  const clash = thrownBy(
+    () => readHostConfig({ ...BASE, INGEST_HOST_HEALTH_PORT: "9102", INGEST_UPLINK_PORT: "9102" }),
+    "the same port twice",
+  );
+  assert(
+    messageOf(clash).includes("INGEST_UPLINK_PORT") && messageOf(clash).includes("INGEST_HOST_HEALTH_PORT"),
+    `an uplink port equal to the health port must refuse start-up naming both; got: ${messageOf(clash)}`,
+  );
+}

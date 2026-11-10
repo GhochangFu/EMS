@@ -8,6 +8,7 @@ import {
   runHostConfigTests,
   runMqttPlaintextHostsConfigTests,
   runNotifyLiveWindowConfigTests,
+  runUplinkPortConfigTests,
 } from "./config.spec.js";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -38,5 +39,9 @@ describe("host config", () => {
 
   it("bounds INGEST_NOTIFY_LIVE_WINDOW_MS to 60 s – 15 min and refuses to boot outside (ADR 0123)", () => {
     runNotifyLiveWindowConfigTests();
+  });
+
+  it("reads INGEST_UPLINK_PORT, unset meaning no listener (ADR 0123 decision 4)", () => {
+    runUplinkPortConfigTests();
   });
 });

@@ -109,6 +109,14 @@ export type HostConfig = {
    * anything else refuses start-up — see `readNotifyLiveWindowMs`.
    */
   readonly notifyLiveWindowMs: number;
+  /**
+   * The edge uplink receiver's port (`INGEST_UPLINK_PORT`, `E7.2`, ADR 0123
+   * decision 4). `undefined` — the default — means **no listener**: the
+   * receiver is the host's internet-facing surface once the public route
+   * exists, so it runs only where it was asked for. It must differ from the
+   * health port.
+   */
+  readonly uplinkPort: number | undefined;
 };
 
 /**
@@ -243,6 +251,18 @@ function readBufferDir(raw: string | undefined): string {
  */
 const decodeKey: Base64Decoder = (value) => Buffer.from(value, "base64");
 
+/** `INGEST_UPLINK_PORT`: unset or blank is no listener; otherwise a port that is not the health port. */
+function readUplinkPort(raw: string | undefined, healthPort: number): number | undefined {
+  if (raw === undefined || raw.trim() === "") {
+    return undefined;
+  }
+  const port = positiveInt(raw, 0, "INGEST_UPLINK_PORT", 65535);
+  if (port === healthPort) {
+    throw new Error(`INGEST_UPLINK_PORT must differ from INGEST_HOST_HEALTH_PORT, both are ${port}`);
+  }
+  return port;
+}
+
 /** Pure over its input, so the parsing rules are testable without mutating `process.env`. */
 export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   const databaseUrl = env.DATABASE_URL;
@@ -282,14 +302,15 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   // `INGEST_NOTIFY` variable; the floor in `readNotifyLiveWindowMs` above, held
   // by `config.spec.ts`; and `writeResolved` refusing a window outside the same
   // bounds, held by `normaliser-notify-window.spec.ts`.
+  const healthPort = positiveInt(
+    env.INGEST_HOST_HEALTH_PORT,
+    DEFAULT_HEALTH_PORT,
+    "INGEST_HOST_HEALTH_PORT",
+    65535,
+  );
   return {
     databaseUrl,
-    healthPort: positiveInt(
-      env.INGEST_HOST_HEALTH_PORT,
-      DEFAULT_HEALTH_PORT,
-      "INGEST_HOST_HEALTH_PORT",
-      65535,
-    ),
+    healthPort,
     reloadMs: positiveInt(
       env.INGEST_RELOAD_MS,
       DEFAULT_RELOAD_MS,
@@ -326,5 +347,6 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
     // and the host refuses to start, like the credential-key refusal above.
     mqttPlaintextHosts: parseMqttPlaintextHosts(env.MQTT_PLAINTEXT_HOSTS),
     notifyLiveWindowMs: readNotifyLiveWindowMs(env.INGEST_NOTIFY_LIVE_WINDOW_MS),
+    uplinkPort: readUplinkPort(env.INGEST_UPLINK_PORT, healthPort),
   };
 }

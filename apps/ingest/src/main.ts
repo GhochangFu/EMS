@@ -4,7 +4,7 @@ import { config as loadDotenv } from "dotenv";
 import pg from "pg";
 
 import { lookupAdapter } from "./adapter/registry.js";
-import { edgeServedCounts } from "./host/binding-targets.js";
+import { type EdgeServed, edgeServedCounts } from "./host/binding-targets.js";
 import {
   loadBindingRows,
   type EndpointPlan,
@@ -21,6 +21,9 @@ import type { PointIndex, WriteResult } from "./host/normaliser.js";
 import { droppedCount, resolveSamples, writeResolved } from "./host/normaliser.js";
 import { createEndpointRegistry } from "./host/reconcile.js";
 import { createSupervisor, realScheduler, type Supervisor } from "./host/supervisor.js";
+import { authenticate, gatewayHealth, type GatewaySnapshot, loadGateways } from "./host/uplink-gateways.js";
+import { createUplinkReceiver } from "./host/uplink-receiver.js";
+import { startUplinkServer, type UplinkServer } from "./host/uplink-server.js";
 // The ADR 0012 seam (ADR 0016 §4, §6). It stopped being the *unmodified* pilot
 // file at ADR 0062 decision 2, which moved its key selection into
 // `@bms/shared/credential-keys` while leaving its AES-GCM call where it is —
@@ -115,6 +118,11 @@ async function main(): Promise<void> {
 
   const initial = planEndpoints(await loadBindingRows(pool), planOptions);
   skipped = initial.skipped;
+  // E7.2 (ADR 0123): the uplink receiver reads both of these at request time,
+  // and the reload tick below swaps them — a revoke, a rotation or an RTU
+  // assignment bites within one INGEST_RELOAD_MS, with no query per request.
+  let edgeServed: EdgeServed = initial.edgeServed;
+  let gatewaySnapshot: GatewaySnapshot = await loadGateways(pool);
   for (const skip of initial.skipped) {
     // Once per RTU per process (§3) — this is the only place it is logged.
     logger.warn("rtu skipped", {
@@ -269,7 +277,43 @@ async function main(): Promise<void> {
     skipped,
     startedAt,
     staleAfterMs: hostConfig.staleAfterMs,
+    gateways: gatewayHealth(gatewaySnapshot),
   }));
+
+  // E7.2 (ADR 0123 decision 4): the edge uplink receiver, off unless
+  // INGEST_UPLINK_PORT is set. Every decision is in `host/uplink-*.ts`.
+  let uplink: UplinkServer | undefined;
+  if (hostConfig.uplinkPort !== undefined) {
+    const uplinkLogger = logger.child({ subsystem: "uplink" });
+    uplink = await startUplinkServer(hostConfig.uplinkPort, {
+      authenticate: (header) => authenticate(gatewaySnapshot, header),
+      receive: createUplinkReceiver({
+        now: realScheduler.now,
+        edgeServed: () => edgeServed,
+        connect: () => pool.connect(),
+        liveWindowMs: hostConfig.notifyLiveWindowMs,
+        logger: uplinkLogger,
+      }),
+      logger: uplinkLogger,
+    });
+    // ── AGGREGATE REPAIR: THE ONE WIRING POINT (ADR 0123 decision 11) ───────
+    // Owed: once `apps/ingest/package.json` depends on `@bms/db` (plan P8),
+    // replace this warning with
+    //   const repair = createAggregateRepair({
+    //     store: createRepairStore(pool),
+    //     refresh: (from, to) => refreshAggregatesFrom(pool, from, to),
+    //     now: realScheduler.now,
+    //     logger: logger.child({ subsystem: "aggregate-repair" }),
+    //   });
+    //   const repairTimer = setInterval(() => void repair.runOnce(), REPAIR_MIN_INTERVAL_MS);
+    // and `clearInterval(repairTimer)` in `shutdown` below. Until then a late
+    // batch's window is recorded on `bms.edge_gateways` and stays there —
+    // durable, so nothing is lost, only not yet folded into the aggregates.
+    uplinkLogger.warn(
+      "aggregate repair is not wired; dirty windows will accumulate on bms.edge_gateways until it is",
+      { owed: "E7.2 PR 3 follow-up: @bms/db dependency (plan P8)" },
+    );
+  }
 
   // E7.2 (ADR 0123 decision 6): RTUs the edge serves are in no endpoint and no
   // skip list, so without these counts they would vanish from the log silently.
@@ -279,6 +323,7 @@ async function main(): Promise<void> {
     skipped: skipped.length,
     ...edgeCounts,
     healthPort: health.port,
+    uplinkPort: uplink?.port ?? "off",
     bufferDir: hostConfig.bufferDir,
   });
 
@@ -304,8 +349,12 @@ async function main(): Promise<void> {
     tickSkipLogged = false;
     void (async () => {
       try {
-        const next = planEndpoints(await loadBindingRows(pool), planOptions);
+        const rows = await loadBindingRows(pool);
+        const nextGateways = await loadGateways(pool);
+        const next = planEndpoints(rows, planOptions);
         skipped = next.skipped;
+        edgeServed = next.edgeServed;
+        gatewaySnapshot = nextGateways;
         // An RTU onboarded into a running host reaches the fallback here, not
         // at boot. Deduplicated per process by the set above.
         reportCredentialFallbacks(next.warnings);
@@ -359,6 +408,8 @@ async function main(): Promise<void> {
     logger.info("shutting down", { signal });
     void (async () => {
       clearInterval(reloadTimer);
+      // Stop taking batches first: an edge whose post fails keeps it on disk.
+      await uplink?.close();
       await registry.stopAll();
       await health.close();
       await pool.end();
