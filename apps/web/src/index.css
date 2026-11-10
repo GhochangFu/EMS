@@ -1954,6 +1954,13 @@ html[data-design="bento-ops"][data-theme="dark"]:not([data-surface="flat"]) {
     border-style: solid;
     border-color: rgb(var(--ink));
   }
+  /*
+   * F4.349 — a dialog or drawer lies over the page, so it never takes the transparent card ground:
+   * it paints `surface`, `swiss-grid`'s page ground (the card rule above keeps its 3px ink top).
+   */
+  :where(html[data-design="swiss-grid"]) .surface-dialog {
+    background-color: rgb(var(--surface));
+  }
   :where(html[data-design="swiss-grid"]) .surface-raised-sm {
     border-width: 1px 0 0 0;
     border-style: solid;
