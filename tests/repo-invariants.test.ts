@@ -528,7 +528,7 @@ describe("repo invariants", () => {
     //     two-entrypoint window reopening is exactly the "duplication becoming
     //     permanent" that Resolved decision 4 named as the realistic failure mode
     //     of a strangler, and it would look like an addition, not a regression.
-    //   - `apps/ingest`'s own specs prove the *host* always notifies, but nothing
+    //   - `apps/ingest`'s own specs prove the *host* always notifies live rows, but nothing
     //     stops a new `INGEST_NOTIFY` branch being added somewhere else, and the
     //     symptom is silent: rows keep landing while every dashboard goes dead.
     //
