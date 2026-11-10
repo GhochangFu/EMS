@@ -1,0 +1,67 @@
+import { describe, it } from "vitest";
+
+import {
+  aBadTokenIs401BeforeTheBody,
+  aDeclaredOversizeBodyIs413,
+  aFailedWriteIs503WithRetryAfter,
+  aGoodBatchIs200,
+  aGzipBombIs413AndTheProcessLives,
+  aSecondBatchInFlightIs429,
+  aTakenPortRejects,
+  badBodiesAre400WithNoEcho,
+  otherMethodsAre405,
+  otherPathsAre404,
+  refusalsAreThrottled,
+  revokedAndDisabledAre403,
+} from "./uplink-server.spec.js";
+
+/** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
+describe("E7.2 — the uplink listener (ADR 0123 decision 4, plan T3.5)", () => {
+  it("answers a good batch 200 with no-store", async () => {
+    await aGoodBatchIs200();
+  });
+
+  it("answers any other path 404", async () => {
+    await otherPathsAre404();
+  });
+
+  it("answers GET and other methods 405", async () => {
+    await otherMethodsAre405();
+  });
+
+  it("answers a bad token 401 before reading the body", async () => {
+    await aBadTokenIs401BeforeTheBody();
+  });
+
+  it("answers a revoked gateway and a switched-off organization 403", async () => {
+    await revokedAndDisabledAre403();
+  });
+
+  it("answers a body over the compressed cap 413", async () => {
+    await aDeclaredOversizeBodyIs413();
+  });
+
+  it("answers a gzip bomb 413 and keeps serving", async () => {
+    await aGzipBombIs413AndTheProcessLives();
+  });
+
+  it("answers bad encoding, gzip, JSON and schema 400 with no echo", async () => {
+    await badBodiesAre400WithNoEcho();
+  });
+
+  it("answers a failed write 503 with Retry-After", async () => {
+    await aFailedWriteIs503WithRetryAfter();
+  });
+
+  it("answers a second batch in flight for one gateway 429", async () => {
+    await aSecondBatchInFlightIs429();
+  });
+
+  it("logs refusals at most once a minute", async () => {
+    await refusalsAreThrottled();
+  });
+
+  it("rejects when the port is taken", async () => {
+    await aTakenPortRejects();
+  });
+});
