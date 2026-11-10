@@ -31,6 +31,10 @@ export const createRtuBodySchema = z
       .optional(),
     stationCode: z.string().max(64).optional(),
     stationName: z.string().max(255).optional(),
+    // F4.350 (ADR 0075 Amendment 3): seconds between the device's reports; the freshness window is
+    // 2.5 x this, clamped to 25-900 s. `null` clears it (the window then follows the learned
+    // interval); 86,400 (a day) is a sanity bound, the window's own cap being 900 s.
+    expectedIntervalSeconds: z.number().int().min(1).max(86_400).nullable().optional(),
     ingestEnabled: z.boolean().optional(),
     meta: z.record(z.unknown()).optional(),
   })

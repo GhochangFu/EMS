@@ -7,7 +7,7 @@ const RTU = { kind: "rtu", param: "id" } as const;
 const SOURCE = {
   id: "source",
   title: "Source",
-  fields: ["mqttTopic", "externalRtuId", "rtuCode", "stationCode", "stationName", "ingestEnabled"],
+  fields: ["mqttTopic", "externalRtuId", "rtuCode", "stationCode", "stationName", "expectedIntervalSeconds", "ingestEnabled"],
 } as const;
 const METADATA = { id: "metadata", title: "Metadata", fields: ["meta"] } as const;
 

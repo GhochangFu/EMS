@@ -17,6 +17,7 @@ import {
   pointRawQuerySchema,
   type PointRawRecordsResponse,
   type PointValuesAtInstantResponse,
+  type AssetWindowsResponse,
   type PointsLatestResponse,
 } from "@bms/shared";
 import { z } from "zod";
@@ -26,6 +27,7 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { AssetHistoryExportService } from "./asset-history-export.service";
 import {
+  assetWindowsQuerySchema,
   pointsLatestQuerySchema,
   pointValuesAtQuerySchema,
 } from "./telemetry.schema";
@@ -161,6 +163,35 @@ export class TelemetryController {
     }
 
     return { items: await this.telemetry.latestPointValues(assetIds, pointKeys, windowMinutes) };
+  }
+
+  /**
+   * `F4.350` (ADR 0075 Amendment 3) — each asset's freshness window, for the views that hold only
+   * point references. The query contract is checked first (400, UUID shape included); the ids
+   * are then narrowed to the ones the caller may read, and only those are read. **A foreign id is
+   * left out, not a 403** (unlike `latest`): an organization-wide dashboard can bind assets at
+   * sites a location-scoped viewer cannot read, and refusing the whole request would put every
+   * readable widget back on the 25 s floor. Nothing is said about an omitted id, so a foreign
+   * asset and a missing one look the same. An id with no answer falls back to the floor on the web.
+   */
+  @Get("asset-windows")
+  async assetWindows(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: Record<string, unknown>,
+  ): Promise<AssetWindowsResponse> {
+    const parsed = assetWindowsQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid query");
+    }
+    const { assetIds } = parsed.data;
+
+    const readable = await this.accessControl.readableAssetIds(user);
+    const allowed = readable === null ? assetIds : assetIds.filter((id) => readable.includes(id));
+    if (allowed.length === 0) {
+      return { items: [] };
+    }
+
+    return { items: await this.telemetry.assetWindows(allowed) };
   }
 
   /**

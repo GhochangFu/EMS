@@ -463,6 +463,16 @@ export const pointValuesAtInstantResponseSchema = z.object({
  */
 export const pointsLatestResponseSchema = itemsOf(telemetryReadingSchema);
 
+/**
+ * `GET /telemetry/asset-windows` (`F4.350`, ADR 0075 Amendment 3) — each asset's freshness window
+ * in seconds, `clamp(2.5 x its RTU's interval, 25 s, 900 s)`, for the views that hold only point
+ * references (dashboard widgets, the wall bar) and so have no asset row to read
+ * `freshnessWindowSeconds` from. The API judged liveness on these same numbers.
+ */
+export const assetWindowsResponseSchema = itemsOf(
+  z.object({ assetId: z.string(), freshnessWindowSeconds: z.number().int().positive() }),
+);
+
 export const energySourceMixResponseSchema = z.object({
   points: z.array(energySourceMixPointSchema),
 });

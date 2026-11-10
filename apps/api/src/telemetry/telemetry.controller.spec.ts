@@ -907,3 +907,58 @@ export function assertTheHistoryExportKeysAreRegistered(): void {
   expect(REQUEST_SCHEMAS.TelemetryController_historyCsv).toBe(assetHistoryExportQuerySchema);
   expect(REQUEST_SCHEMAS.TelemetryController_historyXlsx).toBe(assetHistoryExportQuerySchema);
 }
+
+// ---------------------------------------------------------------------------
+// `F4.350` (ADR 0075 Amendment 3) — `GET /telemetry/asset-windows`.
+// ---------------------------------------------------------------------------
+
+function windowStubs(readable: string[] | null) {
+  const calls: (readonly string[])[] = [];
+  const service = {
+    assetWindows: async (assetIds: readonly string[]) => {
+      calls.push(assetIds);
+      return assetIds.map((assetId, i) => ({ assetId, freshnessWindowSeconds: i === 0 ? 150 : 25 }));
+    },
+  } as unknown as TelemetryService;
+  const access = { readableAssetIds: async () => readable } as unknown as AccessControlService;
+  return { controller: new TelemetryController(service, access, {} as never), calls };
+}
+
+/**
+ * One of two ids is foreign → it is left out, not a 403: the service reads only the readable id, and the
+ * answer holds only that one. A scope with no readable id reads nothing at all.
+ */
+export async function assertAssetWindowsLeavesAForeignIdOut(): Promise<void> {
+  const { controller, calls } = windowStubs([ASSET_ID]);
+  const out = await controller.assetWindows(USER, { assetIds: [FOREIGN_ASSET_ID, ASSET_ID] });
+  expect(calls).toEqual([[ASSET_ID]]);
+  expect(out.items.map((item) => item.assetId)).toEqual([ASSET_ID]);
+
+  const none = windowStubs([ASSET_ID]);
+  expect(await none.controller.assetWindows(USER, { assetIds: [FOREIGN_ASSET_ID] })).toEqual({ items: [] });
+  assert(none.calls.length === 0, "an all-foreign request must not reach the service");
+}
+
+/** A non-UUID id is a 400 before the scope check, and no read. */
+export async function assertAssetWindowsRefusesANonUuid(): Promise<void> {
+  const { controller, calls } = windowStubs(null);
+  await rejects(
+    () => controller.assetWindows(USER, { assetIds: ["not-a-uuid"] }),
+    (err) => err instanceof BadRequestException,
+    "a non-UUID id must be a 400",
+  );
+  assert(calls.length === 0, "a malformed query must not reach the service");
+}
+
+/** An in-scope request returns `{ items }` with the service's windows, in order. */
+export async function assertAssetWindowsReturnsTheItems(): Promise<void> {
+  const { controller, calls } = windowStubs([ASSET_ID, FOREIGN_ASSET_ID]);
+  const out = await controller.assetWindows(USER, { assetIds: [ASSET_ID, FOREIGN_ASSET_ID] });
+  expect(out).toEqual({
+    items: [
+      { assetId: ASSET_ID, freshnessWindowSeconds: 150 },
+      { assetId: FOREIGN_ASSET_ID, freshnessWindowSeconds: 25 },
+    ],
+  });
+  expect(calls).toEqual([[ASSET_ID, FOREIGN_ASSET_ID]]);
+}

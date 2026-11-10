@@ -1,7 +1,7 @@
 import { HEADLINE_POINT_COUNT } from "@bms/shared/contracts";
 import { encodePointRef, type GeneratedSitePointDto, type GeneratedSiteViewDto } from "@bms/shared";
 
-import { isStale, readingTimestampMs, STALE_VALUE } from "./schematic-telemetry";
+import { FRESH_MS, isStale, readingTimestampMs, STALE_VALUE } from "./schematic-telemetry";
 
 /**
  * `F3.68` U6 — the pure half of `GeneratedSiteView` (ADR 0076 decision 7).
@@ -127,11 +127,11 @@ export function clampSeeded(
  * is `none`, and otherwise the shared gate decides — `isStale` is the only
  * freshness rule in the web client (ADR 0027).
  */
-export function assetStatus(lastSeenMs: number | null, nowMs: number): AssetStatus {
+export function assetStatus(lastSeenMs: number | null, nowMs: number, windowMs: number = FRESH_MS): AssetStatus {
   if (lastSeenMs === null) {
     return "none";
   }
-  return isStale(lastSeenMs, nowMs) ? "stale" : "live";
+  return isStale(lastSeenMs, nowMs, windowMs) ? "stale" : "live";
 }
 
 /** A point value for a card row: the shared dash for no sample, else at most two decimals. */

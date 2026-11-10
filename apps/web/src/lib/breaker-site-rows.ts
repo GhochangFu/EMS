@@ -9,7 +9,7 @@ import {
 import type { BreakerTableRow, BreakerVisualStatus } from "../components/control-room/breaker-table";
 import type { SiteLiveReadings } from "../hooks/use-site-live-readings";
 import { mimicAlarmTone } from "./mimic";
-import { freshValue, isStale, STALE_VALUE } from "./schematic-telemetry";
+import { freshValue, freshWindowMs, isStale, STALE_VALUE } from "./schematic-telemetry";
 
 /**
  * `F3.74` Task 4.3 (ADR 0088 decision 10, plan D8, D12) — the breaker table's rows.
@@ -73,7 +73,7 @@ function tripCauseOf(state: BreakerState, row: BreakerRow): string {
 export function breakerSiteRows(data: SiteWidgetsResponse, readings: SiteLiveReadings): readonly BreakerTableRow[] {
   return data.breakers.map((row) => {
     const { asset } = row;
-    const stale = isStale(readings.assetLastSeenMs(asset), readings.nowMs);
+    const stale = isStale(readings.assetLastSeenMs(asset), readings.nowMs, freshWindowMs(asset.freshnessWindowSeconds));
     const points = asset.points.map((point) => ({ pointKey: point.pointKey, latest: readings.pointLatest(asset.id, point) }));
     const state = deriveBreakerState({ stale, points }, data.stateMaps);
     const reading = (pointKey: string): number | null => {

@@ -117,3 +117,17 @@ export const pointsLatestQuerySchema = z
   .strict();
 
 export type PointsLatestQuery = z.infer<typeof pointsLatestQuerySchema>;
+
+/**
+ * `GET /telemetry/asset-windows` (`F4.350`) — up to `MAX_LATEST_ASSET_IDS` asset ids, each a UUID
+ * (a non-UUID would reach a `::uuid[]` cast and be a 500 where the caller made an ordinary
+ * mistake). Nothing else: no window, no point keys.
+ */
+export const assetWindowsQuerySchema = z
+  .object({
+    assetIds: z.preprocess(
+      foldRepeatedQueryValue,
+      z.array(z.string().uuid()).min(1).max(MAX_LATEST_ASSET_IDS),
+    ),
+  })
+  .strict();

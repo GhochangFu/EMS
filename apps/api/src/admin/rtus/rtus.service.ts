@@ -159,6 +159,7 @@ export class RtusAdminService {
           mqttTopic: emptyTopicAsNull(body.mqttTopic ?? null),
           stationCode: body.stationCode ?? null,
           stationName: body.stationName ?? null,
+          expectedIntervalSeconds: body.expectedIntervalSeconds ?? null,
           // `F4.59` — `update` moves the RTU's assets' `meta.telemetrySource`
           // with this column, and `create` needs no counterpart: `assets.rtu_id`
           // references `rtus.id`, and the id an asset would have to carry is
@@ -291,6 +292,8 @@ export class RtusAdminService {
           body.stationCode !== undefined ? body.stationCode : existing.stationCode,
         stationName:
           body.stationName !== undefined ? body.stationName : existing.stationName,
+        expectedIntervalSeconds:
+          body.expectedIntervalSeconds !== undefined ? body.expectedIntervalSeconds : existing.expectedIntervalSeconds,
         ingestEnabled: nextIngestEnabled,
         // Merged, not replaced. A PATCH carrying `meta` used to swap the whole
         // object, and `bms.rtus.meta` is a shared bag holding keys this caller

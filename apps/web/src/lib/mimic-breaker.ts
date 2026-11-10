@@ -21,7 +21,7 @@ import {
   type MimicAlarmTone,
 } from "./mimic";
 import type { MimicGeometry } from "./mimic-geometry";
-import { isStale } from "./schematic-telemetry";
+import { freshWindowMs, isStale } from "./schematic-telemetry";
 
 /**
  * `F3.74` Task 3.1 (ADR 0088 decisions 4–6, plan D6, D12) — the pure half of the breaker drawing.
@@ -70,7 +70,7 @@ export function switchStatesOf(
   nowMs: number,
 ): readonly MimicBreakerMember[] {
   return membersOf(node).map((member) => {
-    const stale = isStale(readings.assetLastSeenMs(member.asset), nowMs);
+    const stale = isStale(readings.assetLastSeenMs(member.asset), nowMs, freshWindowMs(member.asset.freshnessWindowSeconds));
     const points = member.statePoints.map((point) => ({
       pointKey: point.pointKey,
       latest: readings.pointLatest(member.asset.id, point),

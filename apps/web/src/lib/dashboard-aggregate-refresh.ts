@@ -34,7 +34,10 @@ import { FRESH_MS, STALE_TICK_MS } from "./schematic-telemetry";
  * The number is derived rather than measured:
  *
  * - **Below `FRESH_MS`** (25,000), so a bucketed chart cannot cross its own
- *   staleness threshold on refetch latency alone.
+ *   staleness threshold on refetch latency alone. `F4.350` (ADR 0075 Amendment 3) re-derived
+ *   this: a chart is now aged on its assets' own windows, each at least the floor, so the bound
+ *   that holds for every chart is the *smallest* window — still `FRESH_MS`. A wider window only
+ *   adds slack; the ceiling is unchanged.
  * - **Above `STALE_TICK_MS`** (5,000). That constant drives a re-render for
  *   staleness re-evaluation; reusing it would fire a query of up to 2,880 rows
  *   three times per staleness tick. It is deliberately not reused, so nobody

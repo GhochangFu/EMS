@@ -30,19 +30,30 @@ import type { LiveSvgStatus } from "../components/live-svg/types";
  */
 
 /**
- * How long a reading stays fresh before its asset reads as offline.
+ * The **smallest** window a reading can have: how long it stays fresh before its asset reads as
+ * offline when nothing says otherwise.
  *
- * Unchanged at 25 s by `F4.37` — the defect was the arithmetic, not the window.
+ * Unchanged at 25 s by `F4.37` — the defect was the arithmetic, not the window. Since `F4.350`
+ * (ADR 0075 Amendment 3) it is the **floor**, not the rule: each asset is fresh inside its own
+ * RTU's window, `clamp(2.5 x interval, 25 s, 900 s)`, which the API states as
+ * `freshnessWindowSeconds` and {@link freshWindowMs} turns into the `windowMs` argument of
+ * {@link isStale}. A caller with no window (the seven SMOC pages, which read hard-coded 1-5 s
+ * simulator assets) keeps this one. `tests/f3.28-offline-bound-single-source.test.ts` holds it
+ * equal to the API's `FRESHNESS_FLOOR_SECONDS`.
  */
 export const FRESH_MS = 25_000;
 
 /**
- * `F4.260` (ADR 0075 Amendment 2) — the window that decides whether a **site** is live: the
- * location cards, `/` Sites online and the map pins. The API's `REPORTING_WINDOW_SECONDS`;
- * `tests/f3.28-offline-bound-single-source.test.ts` holds the two equal. A reading's own
- * freshness keeps `FRESH_MS`.
+ * An asset's freshness window in milliseconds: the API's `freshnessWindowSeconds` (ADR 0075
+ * Amendment 3) when it sent one, else the {@link FRESH_MS} floor. Never narrower than the floor,
+ * so a malformed or missing value cannot make an asset staler than before.
  */
-export const SITE_REPORTING_MS = 150_000;
+export function freshWindowMs(freshnessWindowSeconds: number | null | undefined): number {
+  if (typeof freshnessWindowSeconds !== "number" || !Number.isFinite(freshnessWindowSeconds)) {
+    return FRESH_MS;
+  }
+  return Math.max(FRESH_MS, freshnessWindowSeconds * 1000);
+}
 
 /**
  * How often the provider forces a re-evaluation of staleness.
@@ -403,10 +414,13 @@ export function applyReading(
  * The clause cannot fire spuriously *because* of the write-time clamp: after
  * it, `lastSeenMs <= nowMs` at the moment of the write, and renders happen
  * after writes, so `lastSeenMs > nowMs` can only mean the clock moved back.
+ *
+ * `windowMs` (`F4.350`, ADR 0075 Amendment 3) is the asset's own window, {@link freshWindowMs} of
+ * the API's `freshnessWindowSeconds`; it defaults to the {@link FRESH_MS} floor.
  */
-export function isStale(lastSeenMs: number | null, nowMs: number): boolean {
+export function isStale(lastSeenMs: number | null, nowMs: number, windowMs: number = FRESH_MS): boolean {
   return (
-    lastSeenMs === null || lastSeenMs > nowMs || nowMs - lastSeenMs > FRESH_MS
+    lastSeenMs === null || lastSeenMs > nowMs || nowMs - lastSeenMs > windowMs
   );
 }
 
