@@ -1603,8 +1603,7 @@ here.
 2026-11-10; ADR 0123 decision 10 is the decision and this amendment records
 what it changes here. Parts (b) (the public uplink route, amending Amendment 8
 decision 2) and (c) (the edge entry point, amending §6 commit 4's "one entry
-point") are owed by `E7.2` PR 4 and PR 5, and are appended to this section
-when those PRs land. This is part (a) only.
+point") are `E7.2` PR 4 and PR 5.
 
 **(a) "Unconditional" now reads "every row inside the live window".** Two
 sentences of this ADR say every written row is notified:
@@ -1646,9 +1645,25 @@ window itself.
 Amendment 3 item 4 and Amendment 4 decision 5 are read through this
 amendment, not rewritten.
 
-**(b) The public uplink route (amending Amendment 8 decision 2)** is owed by
-`E7.2` PR 4 and is appended here when that PR lands. Part (c) below was
-written first because PR 5 does not depend on the route to build or test.
+**(b) The public uplink route (amending Amendment 8 decision 2)** (`E7.2`
+PR 4, ADR 0123 Q3b, owner ruling 2026-11-10). Amendment 8 decision 2 said
+nothing reaches `ingest` but `postgres`, over the one network `ingest`. It now
+reads: **`ingest` is reachable from `postgres` over `ingest`, and from the
+public nginx container (`web`) over a second network, `edge-uplink`, and from
+nothing else.** `ingest` joins exactly `ingest` and `edge-uplink` (still not
+`default`); `web` joins `default` and `edge-uplink`; `postgres` never joins
+`edge-uplink`. Both compose files carry it, and
+`tests/f4.61-ingest-network-isolation.test.ts` and
+`tests/e7.2-edge-uplink-route.test.ts` hold it statically.
+
+What keeps the body Amendment 8 protected away from the new network is the
+bind: **`startHealthServer` listens on `127.0.0.1` only**, so a container on
+`edge-uplink` cannot reach it, and `Host` gating (decision 1) stays as the
+second wall. The uplink listener is the one socket meant to be reached, so it
+binds every interface and answers only `/edge/v1/batches` behind a bearer
+token. Decision 3 (no `ports:` on `ingest`) is unchanged: the route is
+`web`'s `location /edge/` in `deploy/aws/nginx.conf`, not a host publication.
+Part (c) below was written first because PR 5 does not depend on the route.
 
 **(c) "One entry point" becomes "exactly `main.ts` and `edge-main.ts`, and
 only `main.ts` reaches Postgres"** (`E7.2` PR 5, ADR 0123 decision 2). §6
