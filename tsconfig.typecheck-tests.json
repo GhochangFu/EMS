@@ -188,6 +188,7 @@
     "tests/f4.346-nav-skins.test.ts",
     "tests/f4.346-colour-profiles-thirteen-schema.test.ts",
     "tests/f4.346-colour-safe-series.test.ts",
+    "tests/f4.348-nav-icon-tokens.test.ts",
     "tests/f4.349-dialog-ground.test.ts",
     "tests/f4.341-fonts.test.ts",
     "tests/f4.341-accent-allowlist.test.ts",

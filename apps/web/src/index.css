@@ -923,6 +923,10 @@ html {
   --card-ground: rgb(var(--canvas));
   --page-ground: rgb(var(--canvas));
   --button-edge: rgb(var(--ink-faint));
+  --icon-size: 16px;
+  --icon-stroke: 1.75;
+  --icon-linecap: round;
+  --icon-linejoin: round;
 }
 
 html:not([data-design])[data-surface="flat"] {
@@ -975,6 +979,10 @@ html:not([data-design])[data-surface="flat"] {
   --card-ground: rgb(var(--surface));
   --page-ground: rgb(var(--canvas));
   --button-edge: rgb(var(--ink-faint));
+  --icon-size: 16px;
+  --icon-stroke: 1.75;
+  --icon-linecap: round;
+  --icon-linejoin: round;
 }
 
 /*
@@ -1034,6 +1042,10 @@ html[data-design="enterprise-flat"] {
   --card-ground: rgb(var(--surface));
   --page-ground: rgb(var(--canvas));
   --button-edge: rgb(var(--ink-faint));
+  --icon-size: 16px;
+  --icon-stroke: 1.5;
+  --icon-linecap: round;
+  --icon-linejoin: round;
 }
 
 html[data-design="enterprise-flat"][data-surface="flat"] {
@@ -1086,6 +1098,10 @@ html[data-design="enterprise-flat"][data-surface="flat"] {
   --card-ground: rgb(var(--surface));
   --page-ground: rgb(var(--canvas));
   --button-edge: rgb(var(--ink-faint));
+  --icon-size: 16px;
+  --icon-stroke: 1.5;
+  --icon-linecap: round;
+  --icon-linejoin: round;
 }
 
 
@@ -1147,6 +1163,10 @@ html[data-design="control-room-dark"] {
   --card-ground: rgb(var(--surface));
   --page-ground: rgb(var(--canvas));
   --button-edge: rgb(var(--ink-faint));
+  --icon-size: 20px;
+  --icon-stroke: 2;
+  --icon-linecap: square;
+  --icon-linejoin: miter;
 }
 
 html[data-design="control-room-dark"][data-surface="flat"] {
@@ -1199,6 +1219,10 @@ html[data-design="control-room-dark"][data-surface="flat"] {
   --card-ground: rgb(var(--surface));
   --page-ground: rgb(var(--canvas));
   --button-edge: rgb(var(--ink-faint));
+  --icon-size: 20px;
+  --icon-stroke: 2;
+  --icon-linecap: square;
+  --icon-linejoin: miter;
 }
 
 
@@ -1260,6 +1284,10 @@ html[data-design="swiss-grid"] {
   --card-ground: transparent;
   --page-ground: rgb(var(--surface));
   --button-edge: rgb(var(--ink-faint));
+  --icon-size: 16px;
+  --icon-stroke: 2.25;
+  --icon-linecap: square;
+  --icon-linejoin: miter;
 }
 
 html[data-design="swiss-grid"][data-surface="flat"] {
@@ -1312,6 +1340,10 @@ html[data-design="swiss-grid"][data-surface="flat"] {
   --card-ground: transparent;
   --page-ground: rgb(var(--surface));
   --button-edge: rgb(var(--ink-faint));
+  --icon-size: 16px;
+  --icon-stroke: 2.25;
+  --icon-linecap: square;
+  --icon-linejoin: miter;
 }
 
 
@@ -1372,6 +1404,10 @@ html[data-design="bento-ops"] {
   --card-ground: rgb(var(--surface));
   --page-ground: rgb(var(--canvas));
   --button-edge: rgb(var(--ink-faint));
+  --icon-size: 18px;
+  --icon-stroke: 2;
+  --icon-linecap: round;
+  --icon-linejoin: round;
 }
 
 html[data-design="bento-ops"][data-surface="flat"] {
@@ -1424,6 +1460,10 @@ html[data-design="bento-ops"][data-surface="flat"] {
   --card-ground: rgb(var(--surface));
   --page-ground: rgb(var(--canvas));
   --button-edge: rgb(var(--ink-faint));
+  --icon-size: 18px;
+  --icon-stroke: 2;
+  --icon-linecap: round;
+  --icon-linejoin: round;
 }
 
 
@@ -1925,6 +1965,20 @@ html[data-design="bento-ops"][data-theme="dark"]:not([data-surface="flat"]) {
     border-width: 1px 0 0 0;
     border-style: solid;
     border-color: rgb(var(--ink));
+  }
+
+  /*
+   * F4.348 (ADR 0118 Amendment 4 decisions 3–4) — a navigation item's icon: the item's ink
+   * (`currentColor`, set on the element), and the design system's size and line from its four
+   * `--icon-*` tokens.
+   */
+  .nav-icon {
+    flex-shrink: 0;
+    width: var(--icon-size);
+    height: var(--icon-size);
+    stroke-width: var(--icon-stroke);
+    stroke-linecap: var(--icon-linecap);
+    stroke-linejoin: var(--icon-linejoin);
   }
 
   /*

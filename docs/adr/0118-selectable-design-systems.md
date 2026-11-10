@@ -601,8 +601,8 @@ sweep of AGENTS.md §5 (two shells, thirteen profiles) with the one owed by
 
 ## Amendment 4 — icons in the navigation (2026-11-10)
 
-**Status: Proposed — 2026-11-10. The merge of the PR that carries this
-amendment and the plan `docs/plans/f4.348-nav-icons.md` is its acceptance**
+**Status: Accepted — 2026-11-10, by the merge of the PR that carried this
+amendment and the plan `docs/plans/f4.348-nav-icons.md` (#1204)**
 (the owner's standing instruction of 2026-11-10: merge each PR of the session
 on green CI). Owner request, 2026-11-10, after `F4.346`: "in the left-hand
 collapsible menu, use icons with the menu names wherever applicable; the icons
@@ -637,7 +637,35 @@ in **both** senses — the chosen colours, and a style per design system.
    | `enterprise-flat` | 16px | 1.5 | round / round | a thin, quiet line for dense admin |
    | `swiss-grid` | 16px | 2.25 | square / miter | a heavy, geometric line beside the ink rules |
    | `bento-ops` | 18px | 2 | round / round | a larger, friendly line for the pills |
-   | `control-room-dark` | 20px | 2 | butt / miter | the largest, plainest line for a wall |
+   | `control-room-dark` | 20px | 2 | square / miter (butt as proposed; see *As built*) | the largest, plainest line for a wall |
 
 **Not in this amendment:** icons anywhere but the module navigation (the top
 navigation bar of the sidebar shell keeps its text), and a second icon family.
+
+## As built (Amendment 4, `F4.348` closed, 2026-11-10)
+
+**Status: recorded with the build PR of `F4.348`.** Where the build read the
+plan:
+
+- **`NAV_ICONS` is keyed by label, not path.** Two items share a path (the
+  rail's *Sites* and the module *Sites Map* both open `/map`), so a path key
+  could not give them different icons. Labels are unique across every list;
+  `navIconEntries()` reads them all, hidden items included, and the unique-icon
+  gate runs over it.
+- **The icon type is checked at compile time.** `NavIcon` indexes
+  `LUCIDE_SHAPES` with `` `lucide:${icon}` ``, so a key outside the generated
+  set does not type-check; a test also holds each drawn element to its Lucide
+  shape, attribute for attribute.
+- **`COLLAPSED_LABEL_OVERRIDES`, `collapsedLabel` and `collapsedRailEntries` are
+  retired** with the codes; `app-shell.tsx` re-exports `NAV_ICONS` and
+  `navIconEntries` in their place. `F4.164`'s L1–L9 now hold the icons.
+- **`control-room-dark` uses square caps, not butt.** Lucide draws a dot as a
+  0.01-unit stroke that only a round or square cap makes visible; under `butt`
+  the window dots of `building` (Sites), the "!" of `shield-alert` (Alarm
+  Philosophy) and the dots of `factory` and `fan` vanished (found in review).
+  Square keeps the plain look; a gate (I5b) refuses a butt cap.
+- **The sidebar markup fixture was re-captured.** The only differences are the
+  31 icons and each link's `block` becoming `flex items-center gap-2`.
+
+**Still owed:** the AWS DOM check of the icons in each design system,
+collapsed and expanded, at 1440 and 390 px.

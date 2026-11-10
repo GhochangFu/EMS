@@ -130,6 +130,11 @@ export function everyItemIsInOneVerticalModulesNav(design: DesignSystem): void {
     .getAllByRole("link")
     .map((a) => a.getAttribute("title") ?? a.textContent ?? "");
   for (const label of ADMIN_ITEMS) expect(names, `${design} ${label}`).toContain(label);
+  // F4.348 (I2): expanded, every item shows its decorative icon before its text label.
+  for (const link of within(nav).getAllByRole("link")) {
+    expect(link.firstElementChild?.matches('svg.nav-icon[aria-hidden="true"]'), `${design} ${link.textContent}`).toBe(true);
+    expect((link.textContent ?? "").trim().length, `${design} ${link.getAttribute("href")}`).toBeGreaterThan(0);
+  }
   for (const list of nav.querySelectorAll("ul")) expect(list.className, design).not.toMatch(/\bflex\b/);
   const main = screen.getByRole("main");
   const scrollers = [...document.body.querySelectorAll<HTMLElement>("*")].filter(

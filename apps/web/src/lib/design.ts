@@ -26,6 +26,9 @@ export const LEADING_STEPS = ["xs", "sm", "base", "lg", "xl", "2xl", "3xl", "4xl
 /** The spacing steps that read a token; the half steps `0.5`, `1.5`, `2.5` are their midpoints. */
 export const SPACE_STEPS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
+/** `F4.348` (ADR 0118 Amendment 4 decision 4) — the navigation-icon tokens every design block sets. */
+export const ICON_TOKENS = ["--icon-size", "--icon-stroke", "--icon-linecap", "--icon-linejoin"] as const;
+
 export const DESIGN_TOKENS = [
   "--font-body",
   "--font-head",
@@ -49,6 +52,8 @@ export const DESIGN_TOKENS = [
   "--card-ground",
   "--page-ground",
   "--button-edge",
+  // `F4.348` (ADR 0118 Amendment 4 decision 4) — each design system's navigation-icon line.
+  ...ICON_TOKENS,
 ] as const;
 
 export type DesignToken = (typeof DESIGN_TOKENS)[number];

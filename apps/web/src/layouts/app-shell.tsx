@@ -16,11 +16,11 @@ import { SidebarShell } from "./shells/sidebar-shell";
  * import from here are re-exported unchanged.
  */
 export {
-  COLLAPSED_LABEL_OVERRIDES,
+  NAV_ICONS,
   SETTINGS_LOCKED_REASON,
   SHELL_RAIL_MAX_WIDTH,
-  collapsedRailEntries,
-  type CollapsedRailEntry,
+  navIconEntries,
+  type NavIconEntry,
 } from "./shells/navigation-model";
 
 const SHELLS = { sidebar: SidebarShell, rail: RailShell } as const;
