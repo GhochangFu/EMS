@@ -486,3 +486,49 @@ No npm package. One new workspace edge: `apps/ingest` → `@bms/db`, for
 - **Not decided here:** the cloud host's database role (`bms_fleet` stopgap),
   the compose `restart:` policy `F1.10` left open, and device health /
   last-seen (`F3.16`), which will want the per-gateway counters this adds.
+
+## Amendment 1 — as built in PR 2 and PR 3 (2026-11-10)
+
+**Drafted by the build session for the owner to confirm. It is not an owner
+ruling.** It records what PR 2 and PR 3 built where that differs from, or
+adds to, the text above. No decision above is reworded.
+
+**(a) Three migrations, not one.** The plan's `0140` was taken by another row,
+so the numbers moved:
+
+- `0141_edge_gateways.sql` — the table and `bms.rtus.edge_gateway_id`, as
+  sketched, plus the plan's C8 keys and CHECKs.
+- `0142_edge_gateways_tenant_read_only.sql` — `REVOKE INSERT, UPDATE, DELETE`
+  on the table from `bms_tenant` (PR 2 security review). "No `GRANT` is
+  written" still holds: a REVOKE narrows the default privileges, it grants
+  nothing.
+- `0143_edge_gateways_backfill_seq.sql` — `backfill_dirty_seq`, a generation
+  counter, so decision 11's clear cannot miss a late write that lands inside
+  the window while a refresh runs.
+
+**(b) Decision 4, additions from the PR 3 security review.**
+
+- The write transaction re-checks, at commit, the presented token's hash, the
+  gateway's `status` and the organization's ingest switch. A revoke, rotation
+  or switch-off then takes effect at once, not only at the next snapshot
+  reload.
+- A per-gateway sample-rate bucket (`INGEST_UPLINK_MAX_SAMPLES_PER_S`) and a
+  global cap on concurrent writes answer `429` with `Retry-After`.
+- The write transaction sets a server-side `statement_timeout` and
+  `lock_timeout`, so Postgres cancels a stalled write rather than leaving a
+  backend running after the receiver gives up.
+
+**(c) Decision 11 is built but not started.** `apps/ingest` does not yet
+depend on `@bms/db`, because only the owner may edit a `package.json` (plan
+P8). The repair pass exists and is tested with its refresh injected. Until the
+dependency line is added and the loop is wired in `main.ts`, dirty windows
+accumulate on `bms.edge_gateways`. They are durable, so nothing is lost, but
+the aggregates are not repaired.
+
+**(d) Accepted risk, as built.**
+
+- A stolen token can overwrite up to 6.5 days of its own gateway's points,
+  with no audit trail of the overwrite.
+- Which RTUs a gateway may write is checked against the in-memory binding
+  plan, so for up to one reload tick a gateway can still write an RTU that
+  was just reassigned.
