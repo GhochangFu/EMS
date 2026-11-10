@@ -16,7 +16,8 @@ import { AppShell } from "../app-shell";
  * `F4.341` PR 5 (plan §5 PR 5) — the sidebar shell is today's shell, moved: the chrome header, the
  * top navigation bar and the module sidebar render byte for byte as they did before the shells
  * were split (the fixture was captured from `app-shell.tsx` at `F4.341` PR 4, before the move). The
- * footer is left out because its clock ticks.
+ * footer is left out because its clock ticks. `F4.347` changed one class by hand: the subtitle
+ * shows from `xl` (was `sm`), so the header controls fit at 768 to 1279 px.
  */
 const GLOBAL: AccessibleScope = { kind: "global", locations: [], assetGroups: [], assetIds: [] };
 

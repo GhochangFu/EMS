@@ -43,7 +43,14 @@ export function SidebarShell({ user, children, kpiRibbon }: AppShellProps) {
 
   return (
     <div className="flex min-h-screen flex-col surface-page text-ink" style={{ paddingRight: `${copilotPush}px` }}>
-      <ShellHeader user={user} locationScopeLabel={locationScopeLabel} onLogout={handleLogout} />
+      <ShellHeader
+        user={user}
+        locationScopeLabel={locationScopeLabel}
+        onLogout={handleLogout}
+        // F4.347 — the header's own width: the docked Copilot pushes the page in from the right.
+        viewportWidth={viewport.width - copilotPush}
+        pathname={location.pathname}
+      />
 
       <ShellTopNav user={user} pathname={location.pathname} />
 
