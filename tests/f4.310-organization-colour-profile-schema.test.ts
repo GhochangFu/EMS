@@ -57,8 +57,8 @@ describe("F4.310 — bms.organizations.colour_profile (migration 0125)", () => {
     );
   });
 
-  // `F4.341`: frozen at the six names 0125 shipped. The live list (nine names) is migration 0133's,
-  // held to `colourProfileSchema` by `tests/f4.341-colour-profiles-nine-schema.test.ts`.
+  // `F4.341`: frozen at the six names 0125 shipped. The live list (thirteen names, `F4.346`) is
+  // migration 0137's, held to `colourProfileSchema` by `tests/f4.346-colour-profiles-thirteen-schema.test.ts`.
   it("the CHECK lists exactly the six names migration 0125 shipped, in order (frozen)", () => {
     const migration = sqlOnly(read(MIGRATION_REL));
     const m = /CHECK \(colour_profile IN \(([^)]*)\)\)/.exec(migration);

@@ -675,10 +675,12 @@ const DS_TEXT_PAIRS: Record<string, Pair[]> = {
   "swiss-grid": [
     { fg: "ink-faint", bg: "surface" },
     { fg: "ink-muted", bg: "surface" },
+    // F4.346 (Amendment 3 decision 1): the selected sidebar item, `surface` text on an `ink` fill.
+    { fg: "surface", bg: "ink" },
   ],
   // PR 11: tiles on `surface` and the page on `canvas`, the base grounds; the large alarms tile is
-  // neutral (A5), so it adds none.
-  "bento-ops": [],
+  // neutral (A5), so it adds none. F4.346: the selected sidebar pill, `surface` text on `ink`.
+  "bento-ops": [{ fg: "surface", bg: "ink" }],
 };
 const DS_UI_PAIRS: Record<string, Pair[]> = {
   "enterprise-flat": [],

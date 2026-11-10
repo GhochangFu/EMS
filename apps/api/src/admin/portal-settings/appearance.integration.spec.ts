@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { expect } from "vitest";
 import type pg from "pg";
 
@@ -11,6 +11,7 @@ import {
 import type { JwtPayload } from "@bms/shared";
 
 import type { AccessControlService } from "../../auth/access-control.service";
+import { MeController } from "../../me/me.controller";
 import type { OrganizationsAdminService } from "../organizations/organizations.service";
 import type { PortalSettingsService } from "./portal-settings.service";
 
@@ -229,6 +230,55 @@ export async function theUserCheckRefusesAnUnknownName(ctx: AppearanceCtx): Prom
   await expect(ctx.fleetPool.query("UPDATE bms.users SET colour_profile = 'teal' WHERE id = $1", [ctx.memberId])).rejects.toThrow(
     /users_colour_profile_check/,
   );
+}
+
+/**
+ * A10 — `F4.346` (ADR 0118 Amendment 3 decision 5, plan P4): migration `0137` widened the three
+ * `colour_profile` CHECKs to thirteen names. `PUT /me/appearance` (the controller) stores
+ * `night-shift` and refuses an unknown name with a 400; each of the four new names passes the
+ * user, organization and portal CHECKs as installed. Every row written is put back.
+ */
+export async function theThirteenNamesPassEveryCheck(ctx: AppearanceCtx): Promise<void> {
+  const ownBefore = await memberRow(ctx);
+  const portalBefore = await portalRow(ctx);
+  const { rows } = await ctx.fleetPool.query<Stored>("SELECT design_system, colour_profile FROM bms.organizations WHERE id = $1", [
+    ctx.memberOrgId,
+  ]);
+  const orgBefore = rows[0] as Stored;
+  const me = new MeController(ctx.portal);
+  try {
+    expect(await me.setAppearance({ designSystem: null, colourProfile: "night-shift" }, ctx.member)).toEqual({
+      designSystem: null,
+      colourProfile: "night-shift",
+    });
+    expect(await memberRow(ctx)).toEqual({ design_system: null, colour_profile: "night-shift" });
+    await expect(me.setAppearance({ designSystem: null, colourProfile: "teal" }, ctx.member)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    for (const name of ["hmi-grey", "moss", "colour-safe", "night-shift"]) {
+      await ctx.fleetPool.query("UPDATE bms.users SET colour_profile = $2 WHERE id = $1", [ctx.memberId, name]);
+      await ctx.fleetPool.query("UPDATE bms.organizations SET colour_profile = $2 WHERE id = $1", [ctx.memberOrgId, name]);
+      await ctx.fleetPool.query("UPDATE bms.portal_settings SET colour_profile = $1 WHERE id = 1", [name]);
+    }
+    await expect(ctx.fleetPool.query("UPDATE bms.organizations SET colour_profile = 'teal' WHERE id = $1", [ctx.memberOrgId])).rejects.toThrow(
+      /organizations_colour_profile_check/,
+    );
+    await expect(ctx.fleetPool.query("UPDATE bms.portal_settings SET colour_profile = 'teal' WHERE id = 1")).rejects.toThrow(
+      /portal_settings_colour_profile_check/,
+    );
+  } finally {
+    await ctx.fleetPool.query("UPDATE bms.users SET design_system = $2, colour_profile = $3 WHERE id = $1", [
+      ctx.memberId,
+      ownBefore.design_system,
+      ownBefore.colour_profile,
+    ]);
+    await ctx.fleetPool.query("UPDATE bms.organizations SET design_system = $2, colour_profile = $3 WHERE id = $1", [
+      ctx.memberOrgId,
+      orgBefore.design_system,
+      orgBefore.colour_profile,
+    ]);
+    await restorePortal(ctx, portalBefore);
+  }
 }
 
 /**

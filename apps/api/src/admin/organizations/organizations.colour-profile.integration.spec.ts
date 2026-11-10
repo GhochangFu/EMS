@@ -107,7 +107,7 @@ export async function theOrganizationAdminSetsItsOwnAndMeFollows(ctx: ColourProf
   }
 }
 
-/** C5 — the CHECK refuses a name outside the nine (Postgres, not only the API). */
+/** C5 — the CHECK refuses a name outside the list (Postgres, not only the API). */
 export async function theCheckRefusesAnUnknownName(ctx: ColourProfileCtx): Promise<void> {
   await expect(
     ctx.fleetPool.query("UPDATE bms.organizations SET colour_profile = 'teal' WHERE id = $1", [ctx.fixtureId]),
