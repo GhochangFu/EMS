@@ -530,6 +530,22 @@ export type WriteOptions = {
    * `now` is always inside (an edge clock running fast is still live).
    */
   readonly liveWindowMs: number;
+  /**
+   * Runs inside the transaction, after the upsert and before `COMMIT` (`E7.2`,
+   * ADR 0123 decision 11): the uplink receiver records the gateway's report
+   * and dirty window here, so the rows and the window commit together or not
+   * at all. A throw rolls the whole write back and nothing is notified. When
+   * set, it runs even for zero rows — a batch whose every sample was screened
+   * out still records that the gateway spoke.
+   */
+  readonly beforeCommit?: (client: QueryableClient) => Promise<void>;
+  /**
+   * Runs first inside the transaction, right after `BEGIN` (`E7.2` security
+   * review, round two): the uplink receiver sets `SET LOCAL statement_timeout`
+   * and `lock_timeout` here so Postgres itself cancels a stalled write. Absent
+   * — the supervisor path — the statements are exactly what they were.
+   */
+  readonly afterBegin?: (client: QueryableClient) => Promise<void>;
 };
 
 /**
@@ -577,16 +593,22 @@ export async function writeResolved(
         `${MAX_NOTIFY_LIVE_WINDOW_MS}, got ${options.liveWindowMs}`,
     );
   }
-  if (rows.length === 0) {
+  if (rows.length === 0 && options.beforeCommit === undefined) {
     return { rowsWritten: 0, notificationsSent: 0, rowsNotNotified: 0 };
   }
 
   await client.query("BEGIN");
   try {
+    if (options.afterBegin !== undefined) {
+      await options.afterBegin(client);
+    }
     for (let i = 0; i < rows.length; i += MAX_ROWS_PER_STATEMENT) {
       const batch = rows.slice(i, i + MAX_ROWS_PER_STATEMENT);
       const { text, values } = buildUpsert(batch);
       await client.query(text, values);
+    }
+    if (options.beforeCommit !== undefined) {
+      await options.beforeCommit(client);
     }
     await client.query("COMMIT");
   } catch (error) {

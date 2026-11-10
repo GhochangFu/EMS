@@ -1,6 +1,7 @@
 import http from "node:http";
 
 import type { SkippedBinding } from "./bindings.js";
+import { type GatewayHealth, renderGatewayLines } from "./health-gateways.js";
 import type { StoppedEndpoint } from "./reconcile.js";
 import type { SupervisorHealth } from "./supervisor.js";
 
@@ -33,6 +34,12 @@ export type HealthSnapshot = {
   readonly startedAt: Date;
   /** Silence longer than this marks one RTU stale (`F1.7`, `INGEST_STALE_AFTER_MS`). */
   readonly staleAfterMs: number;
+  /**
+   * The edge gateways the cloud receiver knows (`E7.2`, ADR 0123 decision 12).
+   * One line each, after everything else; **never part of the verdict** — see
+   * `health-gateways.ts`. Absent on a host that has not loaded them.
+   */
+  readonly gateways?: readonly GatewayHealth[];
 };
 
 /** One RTU that has stopped publishing, with the endpoint it sits on. */
@@ -305,6 +312,11 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
       `skipped rtu=${skip.rtuCode === null ? "(no rtu_code)" : token(skip.rtuCode)} reason=${skip.reason}` +
         (skip.detail === undefined ? "" : ` detail=${token(skip.detail)}`),
     );
+  }
+
+  // Edge gateways last, and after the verdict was fixed in the header above.
+  if (snapshot.gateways !== undefined) {
+    lines.push(...renderGatewayLines(snapshot.gateways, token));
   }
 
   return `${lines.join("\n")}\n`;

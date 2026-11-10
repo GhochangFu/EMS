@@ -1,4 +1,4 @@
-import { foreignKey, integer, timestamp, unique, uuid, varchar } from "drizzle-orm/pg-core";
+import { bigint, foreignKey, integer, timestamp, unique, uuid, varchar } from "drizzle-orm/pg-core";
 
 import { bmsSchema, locations, organizations } from "./bms-schema";
 import { bytea } from "./column-types";
@@ -40,6 +40,12 @@ export const edgeGateways = bmsSchema.table("edge_gateways", {
   clockState: varchar("clock_state", { length: 16 }),
   backfillDirtyFrom: timestamp("backfill_dirty_from", { withTimezone: true }),
   backfillDirtyTo: timestamp("backfill_dirty_to", { withTimezone: true }),
+  /**
+   * The dirty window's generation (migration `0143`): bumped by every uplink
+   * batch that carries a late row, so the repair pass clears only the window
+   * generation it refreshed. `mode: "number"` is safe — one bump per batch.
+   */
+  backfillDirtySeq: bigint("backfill_dirty_seq", { mode: "number" }).notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => {

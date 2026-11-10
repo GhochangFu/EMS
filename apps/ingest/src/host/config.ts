@@ -109,6 +109,23 @@ export type HostConfig = {
    * anything else refuses start-up — see `readNotifyLiveWindowMs`.
    */
   readonly notifyLiveWindowMs: number;
+  /**
+   * The edge uplink receiver's port (`INGEST_UPLINK_PORT`, `E7.2`, ADR 0123
+   * decision 4). `undefined` — the default — means **no listener**: the
+   * receiver is the host's internet-facing surface once the public route
+   * exists, so it runs only where it was asked for. It must differ from the
+   * health port.
+   */
+  readonly uplinkPort: number | undefined;
+  /**
+   * Samples per second one gateway may post (`INGEST_UPLINK_MAX_SAMPLES_PER_S`,
+   * security review M2). Default 2000, four times the edge's own replay cap.
+   * Floor 500 — one full batch — so a batch can always be admitted; ceiling
+   * 100 000.
+   */
+  readonly uplinkMaxSamplesPerS: number;
+  /** `server.maxConnections` on the uplink listener (`INGEST_UPLINK_MAX_CONNECTIONS`, L2). Default 256, 1–10 000. */
+  readonly uplinkMaxConnections: number;
 };
 
 /**
@@ -125,6 +142,10 @@ export const DEFAULT_STALE_AFTER_MS: number = 300_000;
 export const DEFAULT_BUFFER_DIR: string = "/var/lib/bms-ingest";
 export const DEFAULT_BUFFER_MAX_AGE_MS: number = 3_600_000;
 export const DEFAULT_BUFFER_MAX_BYTES: number = 268_435_456;
+export const DEFAULT_UPLINK_MAX_SAMPLES_PER_S: number = 2_000;
+export const DEFAULT_UPLINK_MAX_CONNECTIONS: number = 256;
+/** One full uplink batch (`UPLINK_MAX_SAMPLES`): a lower rate could never admit one. */
+const MIN_UPLINK_SAMPLES_PER_S = 500;
 
 /**
  * The largest delay `setInterval` honours.
@@ -243,6 +264,29 @@ function readBufferDir(raw: string | undefined): string {
  */
 const decodeKey: Base64Decoder = (value) => Buffer.from(value, "base64");
 
+/** `INGEST_UPLINK_PORT`: unset or blank is no listener; otherwise a port that is not the health port. */
+function readUplinkPort(raw: string | undefined, healthPort: number): number | undefined {
+  if (raw === undefined || raw.trim() === "") {
+    return undefined;
+  }
+  const port = positiveInt(raw, 0, "INGEST_UPLINK_PORT", 65535);
+  if (port === healthPort) {
+    throw new Error(`INGEST_UPLINK_PORT must differ from INGEST_HOST_HEALTH_PORT, both are ${port}`);
+  }
+  return port;
+}
+
+/** `INGEST_UPLINK_MAX_SAMPLES_PER_S`, bounded at both ends. */
+function readUplinkRate(raw: string | undefined): number {
+  const value = positiveInt(raw, DEFAULT_UPLINK_MAX_SAMPLES_PER_S, "INGEST_UPLINK_MAX_SAMPLES_PER_S", 100_000);
+  if (value < MIN_UPLINK_SAMPLES_PER_S) {
+    throw new Error(
+      `INGEST_UPLINK_MAX_SAMPLES_PER_S must be between ${MIN_UPLINK_SAMPLES_PER_S} and 100000, got "${raw ?? ""}"`,
+    );
+  }
+  return value;
+}
+
 /** Pure over its input, so the parsing rules are testable without mutating `process.env`. */
 export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   const databaseUrl = env.DATABASE_URL;
@@ -282,14 +326,15 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   // `INGEST_NOTIFY` variable; the floor in `readNotifyLiveWindowMs` above, held
   // by `config.spec.ts`; and `writeResolved` refusing a window outside the same
   // bounds, held by `normaliser-notify-window.spec.ts`.
+  const healthPort = positiveInt(
+    env.INGEST_HOST_HEALTH_PORT,
+    DEFAULT_HEALTH_PORT,
+    "INGEST_HOST_HEALTH_PORT",
+    65535,
+  );
   return {
     databaseUrl,
-    healthPort: positiveInt(
-      env.INGEST_HOST_HEALTH_PORT,
-      DEFAULT_HEALTH_PORT,
-      "INGEST_HOST_HEALTH_PORT",
-      65535,
-    ),
+    healthPort,
     reloadMs: positiveInt(
       env.INGEST_RELOAD_MS,
       DEFAULT_RELOAD_MS,
@@ -326,5 +371,13 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
     // and the host refuses to start, like the credential-key refusal above.
     mqttPlaintextHosts: parseMqttPlaintextHosts(env.MQTT_PLAINTEXT_HOSTS),
     notifyLiveWindowMs: readNotifyLiveWindowMs(env.INGEST_NOTIFY_LIVE_WINDOW_MS),
+    uplinkPort: readUplinkPort(env.INGEST_UPLINK_PORT, healthPort),
+    uplinkMaxSamplesPerS: readUplinkRate(env.INGEST_UPLINK_MAX_SAMPLES_PER_S),
+    uplinkMaxConnections: positiveInt(
+      env.INGEST_UPLINK_MAX_CONNECTIONS,
+      DEFAULT_UPLINK_MAX_CONNECTIONS,
+      "INGEST_UPLINK_MAX_CONNECTIONS",
+      10_000,
+    ),
   };
 }
