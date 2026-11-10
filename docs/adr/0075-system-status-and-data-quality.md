@@ -440,6 +440,18 @@ device whose cadence is neither 1–5 s nor about 60 s.
    (migration 0138, forward-only, idempotent, no backfill). `PR 3` adds an
    optional "Expected interval (s)" field to the admin RTU form.
 
+7. **A read for views that hold only point references** (`F4.350` PR 3). Dashboard
+   widgets and the wall bar are bound to `(asset, point)` references and have no asset
+   row to read `freshnessWindowSeconds` from. `GET /api/v1/telemetry/asset-windows?assetIds=…`
+   (up to 50 asset ids, each a UUID; ids outside the caller's scope are left out of
+   the read and the answer, not refused, because an organization-wide dashboard can bind
+   assets at sites a location-scoped viewer cannot read and a 403 would put every
+   readable widget back on the floor) returns each asset's window from the same
+   SQL the liveness counts use (`assetWindowsCteSql`), and the web's `useAssetWindows`
+   reads it. A widget over several assets is aged on the widest of their windows. The
+   seven SMOC control-room pages keep the 25 s floor: they read hard-coded 1–5 s
+   simulator assets and have no window source.
+
 **Consequences.**
 
 - **Simulator devices (1–5 s) keep the 25 s floor:** 2.5 × 5 s is below it, so

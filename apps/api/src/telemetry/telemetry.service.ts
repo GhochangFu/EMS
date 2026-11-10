@@ -35,6 +35,7 @@ import {
   windowBoundsFor,
 } from "./point-aggregate-window";
 import { bucketSeconds } from "./point-aggregates";
+import { assetIdsScopeSql, assetWindowsCteSql } from "./telemetry-cadence";
 
 /**
  * `float8` reaches `node-postgres` as a JS number, but `to_jsonb` can hand back a
@@ -525,6 +526,19 @@ export class TelemetryService {
       value: Number(row.value),
       unit: row.unit,
     }));
+  }
+
+  /**
+   * `F4.350` (ADR 0075 Amendment 3) — each asset's freshness window, from `assetWindowsCteSql`,
+   * the SQL the liveness counts use. `FLEET_POOL`: the controller's scope check has placed every
+   * id, and `bms.assets` / `bms.rtus` carry row-level security a tenant connection without a
+   * bound organization would answer with nothing.
+   */
+  async assetWindows(assetIds: readonly string[]): Promise<{ assetId: string; freshnessWindowSeconds: number }[]> {
+    const result = await this.fleetPool.query<{ asset_id: string; window_seconds: number | string }>(
+      `WITH ${assetWindowsCteSql(assetIdsScopeSql(assetIds))} SELECT asset_id, window_seconds FROM asset_windows`,
+    );
+    return result.rows.map((row) => ({ assetId: row.asset_id, freshnessWindowSeconds: Number(row.window_seconds) }));
   }
 
   /**

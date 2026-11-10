@@ -130,6 +130,7 @@ import {
   healthSummaryQuerySchema,
 } from "../asset-health/asset-health.schema";
 import {
+  assetWindowsQuerySchema,
   pointsLatestQuerySchema,
   pointValuesAtQuerySchema,
 } from "../telemetry/telemetry.schema";
@@ -451,6 +452,7 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F4.176` (ADR 0074 Amendment 2) — the batched latest-value read: bounded
   // `assetIds` and `pointKeys` arrays and a bounded `windowMinutes`, no body.
   TelemetryController_latest: pointsLatestQuerySchema,
+  TelemetryController_assetWindows: assetWindowsQuerySchema,
   // `F4.297` (ADR 0108 decision 1.6) — the raw records page: a bounded `limit`
   // and an optional `before` cursor, `.strict()`, no body.
   TelemetryController_raw: pointRawQuerySchema,

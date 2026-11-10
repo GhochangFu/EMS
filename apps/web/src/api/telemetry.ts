@@ -1,4 +1,5 @@
 import {
+  assetWindowsResponseSchema,
   pointAggregateResponseSchema,
   pointRawRecordsResponseSchema,
   pointValuesAtInstantResponseSchema,
@@ -6,6 +7,7 @@ import {
   recentTelemetryResponseSchema,
 } from "@bms/shared/contracts";
 import type {
+  AssetWindowsResponse,
   PointAggregateFunction,
   PointAggregateResponse,
   PointRawRecordsResponse,
@@ -62,6 +64,22 @@ export async function fetchPointsLatest(
     throw new Error(`telemetry latest ${res.status}`);
   }
   return checkResponse(pointsLatestResponseSchema, await res.json(), "telemetry/points/latest");
+}
+
+/**
+ * `GET /api/v1/telemetry/asset-windows` (`F4.350`, ADR 0075 Amendment 3) — each asset's freshness
+ * window in seconds, for up to 50 assets per call, for the views that hold only point references.
+ */
+export async function fetchAssetWindows(assetIds: readonly string[]): Promise<AssetWindowsResponse> {
+  const query = new URLSearchParams();
+  for (const id of assetIds) {
+    query.append("assetIds", id);
+  }
+  const res = await fetch(`${base}/api/v1/telemetry/asset-windows?${query.toString()}`, withAuth());
+  if (!res.ok) {
+    throw new Error(`telemetry asset-windows ${res.status}`);
+  }
+  return checkResponse(assetWindowsResponseSchema, await res.json(), "telemetry/asset-windows");
 }
 
 /**

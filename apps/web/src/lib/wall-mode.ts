@@ -1,5 +1,5 @@
 import type { LatestByRef } from "./dashboard-widget-data";
-import { isStale, readingTimestampMs } from "./schematic-telemetry";
+import { FRESH_MS, isStale, readingTimestampMs } from "./schematic-telemetry";
 
 /**
  * `F3.77` (ADR 0087 Amendment 3 ruling 7, plan D7) — the pure rules of the site view's wall mode.
@@ -93,17 +93,17 @@ export type WallBarState =
   | { readonly kind: "paused"; readonly since: number | null };
 
 /**
- * The top bar's data line: live while the newest read passes `isStale` (`FRESH_MS`, the one
- * stale rule of the web client), else "Live data paused since <the newest read>". No read at all
+ * The top bar's data line: live while the newest read passes `isStale` on `windowMs` (the widest
+ * window of the canvas's assets, `F4.350`; the 25 s `FRESH_MS` floor when none is given), else "Live data paused since <the newest read>". No read at all
  * is paused with no time.
  *
  * The read is clamped to `nowMs` here too: the canvas reports it clamped to its own render-time
  * clock, and the frame judges it on a one-second tick that can be up to a second behind — so an
  * honest read can still be ahead of `nowMs`, and must not read as paused until the next tick.
  */
-export function wallBar(newestMs: number | null, nowMs: number): WallBarState {
+export function wallBar(newestMs: number | null, nowMs: number, windowMs: number = FRESH_MS): WallBarState {
   const read = newestMs === null ? null : Math.min(newestMs, nowMs);
-  if (read === null || isStale(read, nowMs)) {
+  if (read === null || isStale(read, nowMs, windowMs)) {
     return { kind: "paused", since: read };
   }
   return { kind: "live", updatedAt: read };

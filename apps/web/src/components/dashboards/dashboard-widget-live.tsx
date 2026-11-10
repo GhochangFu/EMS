@@ -2,6 +2,7 @@ import type { DashboardWidgetDto } from "@bms/shared";
 
 import {
   widgetDataFor,
+  type AssetWindowMs,
   type AggregateByKey,
   type CatalogResolution,
   type HistoryByRef,
@@ -35,6 +36,8 @@ type DashboardWidgetLiveProps = {
   /** `F3.35` Stage C — the resolved catalog bindings. `undefined` for a dashboard binding none. */
   catalog?: CatalogResolution;
   now?: number;
+  /** `F4.350`: an asset's freshness window in ms (`useAssetWindows`); absent = the 25 s floor for every asset. */
+  windowMsFor?: AssetWindowMs;
 };
 
 /**
@@ -60,6 +63,7 @@ export function DashboardWidgetLive({
   aggregateByKey,
   catalog,
   now,
+  windowMsFor,
 }: DashboardWidgetLiveProps) {
   if (widget.widgetType === "mimic") {
     return <MimicWidgetLive widget={widget} dashboardId={dashboardId} />;
@@ -73,6 +77,6 @@ export function DashboardWidgetLive({
   // Resolved ONCE and reused for both the staleness gate and the chart's rolling window — two
   // clock reads in one render pass could otherwise disagree by the render's own duration.
   const resolvedNow = now ?? Date.now();
-  const data = widgetDataFor(widget, latestByRef, historyByRef, resolvedNow, aggregateByKey, catalog);
+  const data = widgetDataFor(widget, latestByRef, historyByRef, resolvedNow, aggregateByKey, catalog, windowMsFor);
   return <DashboardWidget widget={widget} data={data} now={resolvedNow} />;
 }

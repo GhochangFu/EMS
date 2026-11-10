@@ -10,7 +10,7 @@ import {
   headlinePoints,
   type AssetStatus,
 } from "../../lib/generated-site-view";
-import { isStale } from "../../lib/schematic-telemetry";
+import { freshWindowMs, isStale } from "../../lib/schematic-telemetry";
 import { AssetHistoryLink } from "../assets/asset-history-link";
 import { AssetWhere } from "../assets/asset-where";
 import { StatusPill } from "../status-pill";
@@ -43,7 +43,9 @@ export function GeneratedSiteAssetCard({
   readings: SiteLiveReadings;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const status = assetStatus(readings.assetLastSeenMs(asset), readings.nowMs);
+  // `F4.350`: the asset is judged on its own RTU's window, the same one the API judged `freshness` on.
+  const windowMs = freshWindowMs(asset.freshnessWindowSeconds);
+  const status = assetStatus(readings.assetLastSeenMs(asset), readings.nowMs, windowMs);
   const shown = headlinePoints(asset.points, expanded);
 
   return (
@@ -70,7 +72,7 @@ export function GeneratedSiteAssetCard({
           <tbody>
             {shown.map((point) => {
               const latest = readings.pointLatest(asset.id, point);
-              const rowStale = latest !== null && isStale(latest.atMs, readings.nowMs);
+              const rowStale = latest !== null && isStale(latest.atMs, readings.nowMs, windowMs);
               return (
                 <tr key={point.pointKey} className="border-t border-well-deep">
                   <th scope="row" className="py-1 pr-2 text-left font-normal text-ink-muted">

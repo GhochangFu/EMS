@@ -14,6 +14,7 @@ import type {
 } from "@bms/shared";
 
 import { assetStatus, type AssetStatus } from "./generated-site-view";
+import { FRESH_MS, freshWindowMs } from "./schematic-telemetry";
 
 /**
  * `F3.32` U4 — the pure half of the plant mimic widget (ADR 0079, plan §3 U4).
@@ -725,7 +726,7 @@ export function mimicNodeStatus(
   if (node.activeAlarms > 0) {
     return "alarm";
   }
-  return assetStatus(lastSeenMs, nowMs);
+  return assetStatus(lastSeenMs, nowMs, freshWindowMs(node.asset.freshnessWindowSeconds));
 }
 
 /**
@@ -734,11 +735,16 @@ export function mimicNodeStatus(
  * reading is fresh (an alarm is not a stopped plant); `stale`, `none` and `unassigned` do not.
  * `lastSeenMs` is the same clamped instant `mimicNodeStatus` reads.
  */
-export function mimicNodeFlows(status: MimicNodeStatus, lastSeenMs: number | null, nowMs: number): boolean {
+export function mimicNodeFlows(
+  status: MimicNodeStatus,
+  lastSeenMs: number | null,
+  nowMs: number,
+  windowMs: number = FRESH_MS,
+): boolean {
   if (status === "live") {
     return true;
   }
-  return status === "alarm" && assetStatus(lastSeenMs, nowMs) === "live";
+  return status === "alarm" && assetStatus(lastSeenMs, nowMs, windowMs) === "live";
 }
 
 /**

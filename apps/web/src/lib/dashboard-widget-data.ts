@@ -13,7 +13,7 @@ import type {
   WidgetType,
 } from "@bms/shared";
 
-import { STALE_TICK_MS, isStale, readingTimestampMs } from "./schematic-telemetry";
+import { FRESH_MS, STALE_TICK_MS, isStale, readingTimestampMs } from "./schematic-telemetry";
 import { chartDrawsWindowValues, type ChartConfig, type DatasetRow, type WidgetSeries, type WidgetSeriesPoint } from "./widget-catalog";
 import type { WidgetData } from "../components/widgets/dashboard-widget";
 
@@ -207,6 +207,10 @@ export const CATALOG_REFRESH_MS = 60_000;
  * Two missed refreshes, plus one tick of slack. One missed refresh is not evidence of failure
  * — a slow query or a re-render can eat it — and two consecutive misses is the first thing
  * that cannot be explained by ordinary jitter.
+ *
+ * `F4.350` (ADR 0075 Amendment 3) re-derived this and left it: it never read a device window.
+ * A catalog value is something the API resolved, so its age is the age of the resolve, not of
+ * any one sample.
  */
 export const CATALOG_STALE_MS = CATALOG_REFRESH_MS * 2 + STALE_TICK_MS;
 
@@ -504,6 +508,7 @@ export function widgetDataFor(
   nowMs: number,
   aggregateByKey?: AggregateByKey,
   catalog?: CatalogResolution,
+  windowMsFor: AssetWindowMs = floorWindow,
 ): WidgetData {
   // **`F3.35` Stage C widened this condition, and reverting it is a silent regression.** The
   // paragraph above justifies the `"empty"` branch by a CASCADED POINT binding — a retired
@@ -575,9 +580,11 @@ export function widgetDataFor(
       // reading it through `freshestSeriesMs` would mark every bucketed chart
       // "Offline" by arithmetic while live data flowed. The raw branch keeps
       // `freshestSeriesMs`, where `t` genuinely is a sample time.
+      // `F4.350`: aged on the WIDEST window among the chart's assets, so a chart over a fast and a
+      // slow device is stale only when even the slow one would be.
       stale: config.aggregate
-        ? isStale(freshestReadingMs(ordered, latestByRef, nowMs), nowMs)
-        : isStale(freshestSeriesMs(series, nowMs), nowMs),
+        ? isStale(freshestReadingMs(ordered, latestByRef, nowMs), nowMs, widestWindowMs(ordered, windowMsFor))
+        : isStale(freshestSeriesMs(series, nowMs), nowMs, widestWindowMs(ordered, windowMsFor)),
       stats: lead?.stats ?? null,
       bucketSeconds: lead?.bucketSeconds ?? null,
       // `F4.323` PR 2 — the zone a heatmap draws its hours in (the asset's site, else its
@@ -608,10 +615,28 @@ export function widgetDataFor(
       status: "ready",
       primary: answer ? statFor(answer.stats, fn) : null,
       series: [],
-      stale: isStale(lastSeenMs, nowMs),
+      stale: isStale(lastSeenMs, nowMs, point ? windowMsFor(point.assetId) : FRESH_MS),
       compareValue: answer?.compare ? statFor(answer.compare.stats, fn) : null,
     };
   }
 
-  return { status: "ready", primary: reading ? reading.value : null, series: [], stale: isStale(lastSeenMs, nowMs) };
+  return {
+    status: "ready",
+    primary: reading ? reading.value : null,
+    series: [],
+    stale: isStale(lastSeenMs, nowMs, point ? windowMsFor(point.assetId) : FRESH_MS),
+  };
+}
+
+/**
+ * `F4.350` (ADR 0075 Amendment 3) — an asset's freshness window in ms, from `useAssetWindows`. The
+ * default gives every asset the {@link FRESH_MS} floor, the rule before the amendment.
+ */
+export type AssetWindowMs = (assetId: string) => number;
+
+const floorWindow: AssetWindowMs = () => FRESH_MS;
+
+/** The widest window among a chart's bound assets (the floor when it binds none). */
+function widestWindowMs(points: readonly DashboardWidgetPointDto[], windowMsFor: AssetWindowMs): number {
+  return points.reduce((widest, point) => Math.max(widest, windowMsFor(point.assetId)), FRESH_MS);
 }

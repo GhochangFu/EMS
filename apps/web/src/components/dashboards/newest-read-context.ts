@@ -1,7 +1,11 @@
 import { createContext, useContext } from "react";
 
-/** Receives the canvas's newest read in epoch ms, or `null` when it holds none. */
-export type ReportNewestRead = (newestMs: number | null) => void;
+/**
+ * Receives the canvas's newest read in epoch ms, or `null` when it holds none, and (`F4.350`) the
+ * widest freshness window among the canvas's assets in ms, which the wall bar judges the read on.
+ * Absent = the 25 s floor.
+ */
+export type ReportNewestRead = (newestMs: number | null, windowMs?: number) => void;
 
 const ignore: ReportNewestRead = () => undefined;
 

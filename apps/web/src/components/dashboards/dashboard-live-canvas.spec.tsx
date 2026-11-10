@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   fetchPointAggregate: vi.fn(),
   fetchDashboardCatalogValues: vi.fn(),
   fetchSiteTrendStrip: vi.fn(),
+  fetchAssetWindows: vi.fn(),
 }));
 
 // `F4.305` — the trend strip widget's one read, mocked like the canvas's other reads.
@@ -42,6 +43,7 @@ vi.mock("socket.io-client", () => ({ io: mocks.io }));
 vi.mock("../../api/telemetry", () => ({
   fetchTelemetryRecent: mocks.fetchTelemetryRecent,
   fetchPointAggregate: mocks.fetchPointAggregate,
+  fetchAssetWindows: mocks.fetchAssetWindows,
 }));
 
 vi.mock("../../api/dashboards", () => ({
@@ -113,6 +115,7 @@ function renderCanvas(dto: DashboardDto, tabKey?: string): ReturnType<typeof ren
   mocks.fetchTelemetryRecent.mockResolvedValue([]);
   mocks.fetchPointAggregate.mockResolvedValue({ stats: null, buckets: [] });
   mocks.fetchDashboardCatalogValues.mockResolvedValue({ values: [], resolvedAt: null });
+  mocks.fetchAssetWindows.mockResolvedValue({ items: [] });
   useAuthStore.setState({ accessToken: TOKEN });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -211,6 +214,8 @@ async function reportedNewestRead(sampleAt: number, catalogAt: number): Promise<
   ]);
   mocks.fetchPointAggregate.mockResolvedValue({ stats: null, buckets: [] });
   mocks.fetchDashboardCatalogValues.mockResolvedValue({ values: [], resolvedAt: new Date(catalogAt).toISOString() });
+  // `F4.350`: the bound asset is a 60 s device, so the canvas reports a 150 s window with the newest read.
+  mocks.fetchAssetWindows.mockResolvedValue({ items: [{ assetId: ASSET_ID, freshnessWindowSeconds: 150 }] });
   useAuthStore.setState({ accessToken: TOKEN });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -225,7 +230,7 @@ async function reportedNewestRead(sampleAt: number, catalogAt: number): Promise<
   await waitFor(() => {
     expect(mocks.fetchTelemetryRecent).toHaveBeenCalledWith(REF, expect.any(String));
     expect(mocks.fetchDashboardCatalogValues).toHaveBeenCalledWith("dash-1");
-    expect(report).toHaveBeenCalledWith(sampleAt > catalogAt ? sampleAt : catalogAt);
+    expect(report).toHaveBeenCalledWith(sampleAt > catalogAt ? sampleAt : catalogAt, 150_000);
   });
   return report;
 }
@@ -233,13 +238,13 @@ async function reportedNewestRead(sampleAt: number, catalogAt: number): Promise<
 /** L7 — `F3.77` D9: a catalog read newer than the sample is the reported newest read. */
 export async function theCanvasReportsTheNewerCatalogRead(): Promise<void> {
   const report = await reportedNewestRead(SAMPLE_AT, CATALOG_AT);
-  expect(report.mock.calls.at(-1)).toEqual([CATALOG_AT]);
+  expect(report.mock.calls.at(-1)).toEqual([CATALOG_AT, 150_000]);
 }
 
 /** L8 — `F3.77` D9: a sample newer than the catalog read is the reported newest read. */
 export async function theCanvasReportsTheNewerSample(): Promise<void> {
   const report = await reportedNewestRead(CATALOG_AT, SAMPLE_AT);
-  expect(report.mock.calls.at(-1)).toEqual([CATALOG_AT]);
+  expect(report.mock.calls.at(-1)).toEqual([CATALOG_AT, 150_000]);
 }
 
 /**
@@ -266,7 +271,7 @@ export async function theCanvasReportsTheSiteWidgetsRead(): Promise<void> {
   expect(mocks.fetchTelemetryRecent, "control: no sample on this tab").not.toHaveBeenCalled();
   expect(mocks.fetchDashboardCatalogValues, "control: no catalog read on this tab").not.toHaveBeenCalled();
   await waitFor(() => {
-    expect(report).toHaveBeenCalledWith(CATALOG_AT);
+    expect(report).toHaveBeenCalledWith(CATALOG_AT, 25_000);
   });
 }
 

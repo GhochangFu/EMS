@@ -27,6 +27,9 @@ import {
   assertAtInstantRefusalRunsBeforeTheRead,
   assertAtInstantRefusesMoreThanFiftyRefs,
   assertAtInstantRefusesWhenOneRefIsForeign,
+  assertAssetWindowsLeavesAForeignIdOut,
+  assertAssetWindowsRefusesANonUuid,
+  assertAssetWindowsReturnsTheItems,
   assertLatestAdminPasses,
   assertLatestHandsTheParsedQueryToTheService,
   assertLatestPassesAnExplicitWindow,
@@ -212,4 +215,18 @@ describe("F4.303 — the asset history export routes (ADR 0108 Amendment 6 item 
   it("a refused XLSX export sends nothing", () => assertARefusedHistoryXlsxSendsNothing());
   it("the registry holds both keys on assetHistoryExportQuerySchema by identity", () =>
     assertTheHistoryExportKeysAreRegistered());
+});
+
+describe("F4.350 — the asset-windows endpoint (ADR 0075 Amendment 3)", () => {
+  it("leaves a foreign id out of the read and the answer", async () => {
+    await assertAssetWindowsLeavesAForeignIdOut();
+  });
+
+  it("refuses a non-UUID id with a 400", async () => {
+    await assertAssetWindowsRefusesANonUuid();
+  });
+
+  it("returns { items } with the service's windows", async () => {
+    await assertAssetWindowsReturnsTheItems();
+  });
 });

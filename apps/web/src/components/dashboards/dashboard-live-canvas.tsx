@@ -1,8 +1,10 @@
 import type { DashboardDto, DashboardWidgetDto } from "@bms/shared";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
+import { useAssetWindows } from "../../hooks/use-asset-windows";
 import { useDashboardTelemetry } from "../../hooks/use-dashboard-telemetry";
+import { FRESH_MS } from "../../lib/schematic-telemetry";
 import { siteWidgetsQueryPrefix, useSiteWidgetsAlarmRefresh } from "../../hooks/use-site-widgets";
 import { newestReadMs } from "../../lib/wall-mode";
 import { DashboardCanvas, type CanvasTile } from "./dashboard-canvas";
@@ -59,6 +61,15 @@ export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey }: Dashbo
   }, [fullDashboard, tabKey]);
   const { latestByRef, historyByRef, aggregateByKey, catalog } = useDashboardTelemetry(dashboard);
   const now = Date.now();
+  // `F4.350` (ADR 0075 Amendment 3): each bound asset is aged on its own RTU's window. Until the
+  // read answers (or if it fails) every asset keeps the 25 s floor.
+  const boundAssetIds = useMemo(
+    () => [...new Set(dashboard.widgets.flatMap((widget) => widget.points.map((point) => point.assetId)))],
+    [dashboard.widgets],
+  );
+  const assetWindows = useAssetWindows(boundAssetIds);
+  const windowMsFor = useCallback((assetId: string) => assetWindows.get(assetId) ?? FRESH_MS, [assetWindows]);
+  const widestWindowMs = boundAssetIds.reduce((widest, id) => Math.max(widest, windowMsFor(id)), FRESH_MS);
   // `F3.77` plan D9 — the newest read on this canvas, for the wall frame's "Updated" line. The
   // site-widgets key is the one the tab's widgets read with (`null` for no tab). Not a
   // subscription: the canvas re-renders every `STALE_TICK_MS` (the telemetry hook's tick), which
@@ -81,8 +92,8 @@ export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey }: Dashbo
   // Reported from an effect keyed on the number, never during render: the reporter sets the
   // frame's state, and a render-time update of another component is a React error.
   useEffect(() => {
-    reportNewestRead(newestMs);
-  }, [reportNewestRead, newestMs]);
+    reportNewestRead(newestMs, widestWindowMs);
+  }, [reportNewestRead, newestMs, widestWindowMs]);
   // `F3.73` — a widget's tab key, read through the dashboard's own tabs (`dashboardRowsFromDto`'s rule).
   const tabKeyById = new Map(dashboard.tabs.map((tab) => [tab.id, tab.key]));
 
@@ -124,6 +135,7 @@ export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey }: Dashbo
             aggregateByKey={aggregateByKey}
             catalog={catalog}
             now={now}
+            windowMsFor={windowMsFor}
           />
         )}
       />

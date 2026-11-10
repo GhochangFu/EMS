@@ -44,8 +44,8 @@ export type WidgetData =
       status: Extract<WidgetStatus, "ready">;
       primary: number | null;
       series: readonly WidgetSeries[];
-      /** Computed by `dashboard-widget-data.ts`'s `widgetDataFor` from the SAME `isStale`/
-       * `FRESH_MS` gate the seven control-room pages use — never a second threshold. */
+      /** Computed by `dashboard-widget-data.ts`'s `widgetDataFor` from the SAME `isStale` gate the
+       * seven control-room pages use, on the asset's own window since `F4.350` — never a second threshold. */
       stale: boolean;
       /**
        * `F3.35` — the preceding window's number, for a `value_tile` whose config

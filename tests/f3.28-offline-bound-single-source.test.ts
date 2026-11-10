@@ -92,6 +92,13 @@ describe("F4.350 — the freshness window has one source (ADR 0075 Amendment 3)"
     expect(numericExport(CADENCE, "FRESHNESS_FLOOR_SECONDS") * 1000).toBe(numericExport(WEB_TELEMETRY, "FRESH_MS"));
   });
 
+  it("the web has no fixed 150 s site window left (SITE_REPORTING_MS is gone) and isStale takes the asset's window", () => {
+    const web = code(WEB_TELEMETRY);
+    expect(web).not.toContain("SITE_REPORTING_MS");
+    expect(web).toMatch(/export function isStale\(lastSeenMs: number \| null, nowMs: number, windowMs: number = FRESH_MS\)/);
+    expect(web).toMatch(/export function freshWindowMs\(/);
+  });
+
   it("declares the floor, the cap and the factor as literals of 25, 900 and 2.5", () => {
     expect(numericExport(CADENCE, "FRESHNESS_FLOOR_SECONDS")).toBe(25);
     expect(numericExport(CADENCE, "FRESHNESS_CAP_SECONDS")).toBe(900);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useWallFit } from "../../hooks/use-wall-fit";
@@ -13,6 +13,7 @@ import {
   wallTabPath,
   type WallIntervalS,
 } from "../../lib/wall-mode";
+import { FRESH_MS } from "../../lib/schematic-telemetry";
 import { CanvasFitContext } from "../dashboards/dashboard-canvas";
 import { NewestReadContext } from "../dashboards/newest-read-context";
 import { StatusBarClock } from "../status-bar-clock";
@@ -45,7 +46,7 @@ const controlClass = `surface-button px-3 py-1 text-sm font-semibold ${FOCUS_OUT
  * banner landmark.
  *
  * **The newest read (plan D9, OQ5).** The canvas inside reports it through
- * {@link NewestReadContext}; the bar judges it with `isStale` (`FRESH_MS`) every second on its own
+ * {@link NewestReadContext}; the bar judges it with `isStale` on the canvas's widest asset window (`FRESH_MS` floor, `F4.350`) every second on its own
  * clock, so a silent socket and a dead API still turn the line to "Live data paused since …".
  *
  * **The zoom is computed (`F3.77` follow-up, plan D5, OQ4 refined).** `useWallFit` sets CSS `zoom`
@@ -64,7 +65,11 @@ const controlClass = `surface-button px-3 py-1 text-sm font-semibold ${FOCUS_OUT
 export function WallFrame({ siteName, sitePath, tabKeys, currentKey, everyS, children }: WallFrameProps) {
   const navigate = useNavigate();
   const { paused, resume } = useWallRotation({ sitePath, tabKeys, currentKey, everyS });
-  const [newestMs, setNewestMs] = useState<number | null>(null);
+  const [newest, setNewest] = useState<{ ms: number | null; windowMs: number }>({ ms: null, windowMs: FRESH_MS });
+  const reportNewest = useCallback(
+    (ms: number | null, windowMs: number = FRESH_MS) => setNewest({ ms, windowMs }),
+    [],
+  );
   const [nowMs, setNowMs] = useState(() => Date.now());
   // Keyed on the tab: a rotation does not remount the frame, so the fit's overflow ceiling resets here.
   const { zoom, viewportHeight, barRef, contentRef } = useWallFit(currentKey);
@@ -77,7 +82,7 @@ export function WallFrame({ siteName, sitePath, tabKeys, currentKey, everyS, chi
     return () => window.clearInterval(id);
   }, []);
 
-  const bar = wallBar(newestMs, nowMs);
+  const bar = wallBar(newest.ms, nowMs, newest.windowMs);
   const readLine =
     bar.kind === "live"
       ? `Updated ${formatWallTime(bar.updatedAt)}`
@@ -132,7 +137,7 @@ export function WallFrame({ siteName, sitePath, tabKeys, currentKey, everyS, chi
         <main className="flex-1">
           <div ref={contentRef} data-wall-content className="p-3">
             <CanvasFitContext.Provider value={canvasFit}>
-              <NewestReadContext.Provider value={setNewestMs}>{children}</NewestReadContext.Provider>
+              <NewestReadContext.Provider value={reportNewest}>{children}</NewestReadContext.Provider>
             </CanvasFitContext.Provider>
           </div>
         </main>

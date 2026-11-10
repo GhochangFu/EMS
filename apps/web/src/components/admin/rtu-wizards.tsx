@@ -42,6 +42,8 @@ export type RtuForm = {
   rtuCode: string;
   stationCode: string;
   stationName: string;
+  /** `F4.350`: seconds between the device's reports. Kept as text; a number on submit, `""` = not set. */
+  expectedIntervalSeconds: string;
   ingestEnabled: boolean;
   /** Only a copilot fill sets it (`MetadataStep`). */
   meta?: Record<string, unknown>;
@@ -65,6 +67,7 @@ export function emptyRtuForm(locationId: string): RtuForm {
     rtuCode: "",
     stationCode: "",
     stationName: "",
+    expectedIntervalSeconds: "",
     ingestEnabled: false,
   };
 }
@@ -82,8 +85,16 @@ export function rtuFormOf(row: AdminRtuDto): RtuForm {
     rtuCode: row.rtuCode ?? "",
     stationCode: row.stationCode ?? "",
     stationName: row.stationName ?? "",
+    expectedIntervalSeconds: row.expectedIntervalSeconds === null ? "" : String(row.expectedIntervalSeconds),
     ingestEnabled: row.ingestEnabled,
   };
+}
+
+/** `F4.350`: the update value for the expected interval: `undefined` unchanged, `null` cleared, else the number. */
+export function expectedIntervalChange(text: string, stored: number | null): number | null | undefined {
+  const next = numberOf(text);
+  if (next === undefined) return stored === null ? undefined : null;
+  return next === stored ? undefined : next;
 }
 
 /** An optional text: `undefined` (not sent) when empty. */
@@ -109,6 +120,7 @@ export function createRtuValues(form: RtuForm): Record<string, unknown> {
     rtuCode: optional(form.rtuCode.trim()),
     stationCode: optional(form.stationCode),
     stationName: optional(form.stationName),
+    expectedIntervalSeconds: numberOf(form.expectedIntervalSeconds),
     ingestEnabled: form.ingestEnabled,
     meta: form.meta,
   };
@@ -133,6 +145,8 @@ export function updateRtuValues(form: RtuForm, editing: AdminRtuDto): Record<str
     rtuCode: changed(form.rtuCode.trim(), editing.rtuCode),
     stationCode: changed(form.stationCode, editing.stationCode),
     stationName: changed(form.stationName, editing.stationName),
+    // `F4.350`: sent only when it changed; an emptied field clears it (`null`).
+    expectedIntervalSeconds: expectedIntervalChange(form.expectedIntervalSeconds, editing.expectedIntervalSeconds),
     ingestEnabled: form.ingestEnabled,
     meta: form.meta,
   };
@@ -148,6 +162,9 @@ export function rtuFormWithValues(form: RtuForm, values: Readonly<Record<string,
   }
   if (SOURCE_TYPES.includes(values.sourceType as SourceType)) next.sourceType = values.sourceType as SourceType;
   if (typeof values.externalRtuId === "number") next.externalRtuId = String(values.externalRtuId);
+  // `F4.350`: a number sets the expected interval, `null` empties it.
+  if (typeof values.expectedIntervalSeconds === "number") next.expectedIntervalSeconds = String(values.expectedIntervalSeconds);
+  else if (values.expectedIntervalSeconds === null) next.expectedIntervalSeconds = "";
   if (typeof values.ingestEnabled === "boolean") next.ingestEnabled = values.ingestEnabled;
   const meta = metaOf(values.meta);
   if (meta !== undefined) next.meta = meta;
@@ -254,6 +271,19 @@ export function RtuWizard(props: RtuWizardProps) {
       </label>
       {text("Station code", "stationCode")}
       {text("Station name", "stationName")}
+      <label className={labelClass}>
+        Expected interval (s)
+        <input
+          className={fieldClass}
+          inputMode="numeric"
+          value={form.expectedIntervalSeconds}
+          placeholder="Learned from the device"
+          onChange={(event) => setForm({ ...form, expectedIntervalSeconds: event.target.value })}
+        />
+        <span className="text-2xs font-normal text-ink-muted">
+          How often the device sends. Online/offline is judged on 2.5 times this (25 s to 15 min). Leave empty to learn it.
+        </span>
+      </label>
       <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
         <input
           type="checkbox"
@@ -299,6 +329,7 @@ export function RtuWizard(props: RtuWizardProps) {
             rtuCode: editing.rtuCode,
             stationCode: editing.stationCode,
             stationName: editing.stationName,
+            expectedIntervalSeconds: editing.expectedIntervalSeconds,
             ingestEnabled: editing.ingestEnabled,
           }}
           summary={wizardEntry("rtu.update").summary({

@@ -49,7 +49,7 @@ import {
   type MimicNodeStatus,
 } from "../../lib/mimic";
 import { unitScale, type MimicGeometry, type MimicGeometryUnit } from "../../lib/mimic-geometry";
-import { isStale } from "../../lib/schematic-telemetry";
+import { freshWindowMs, isStale } from "../../lib/schematic-telemetry";
 import { BreakerSwitch } from "./mimic-breaker-switch";
 import { FanOutMembers } from "./mimic-fanout-members";
 import { FlowDash } from "./mimic-flow-dash";
@@ -194,7 +194,12 @@ export function MimicScene({
   );
   const flows = (key: string): boolean =>
     statusOf.has(key) &&
-    mimicNodeFlows(statusOf.get(key) ?? "unassigned", lastSeenOf.get(key) ?? null, readings.nowMs);
+    mimicNodeFlows(
+      statusOf.get(key) ?? "unassigned",
+      lastSeenOf.get(key) ?? null,
+      readings.nowMs,
+      freshWindowMs(byKey.get(key)?.asset?.freshnessWindowSeconds),
+    );
   /** A unit's drawn callout alarm: only an assigned, roled unit draws one. */
   const calloutOf = (key: string) => {
     const node = statusOf.has(key) ? byKey.get(key) : undefined;
@@ -434,7 +439,7 @@ export function MimicScene({
           ? null
           : mimicNodePoints(asset).map((point, i) => {
               const latest = readings.pointLatest(asset.id, point);
-              const rowStale = latest !== null && isStale(latest.atMs, readings.nowMs);
+              const rowStale = latest !== null && isStale(latest.atMs, readings.nowMs, freshWindowMs(asset.freshnessWindowSeconds));
               const pointUnit = latest === null ? "" : (point.unit ?? "");
               const y = ROW_Y[i] ?? ROW_Y[ROW_Y.length - 1];
               return (

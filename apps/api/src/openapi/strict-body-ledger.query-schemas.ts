@@ -49,6 +49,7 @@ import {
   healthSummaryQuerySchema,
 } from "../asset-health/asset-health.schema";
 import {
+  assetWindowsQuerySchema,
   pointsLatestQuerySchema,
   pointValuesAtQuerySchema,
 } from "../telemetry/telemetry.schema";
@@ -173,4 +174,7 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   healthSummaryQuerySchema,
   pointAggregateQuerySchema,
   templateStatusQuerySchema,
+  // 33 -> 34: `F4.350` registered `assetWindowsQuerySchema` (`GET /telemetry/asset-windows?assetIds=`,
+  // ADR 0075 Amendment 3 decision 7) — `.strict()`, no body, no ledger entry, the same precedent.
+  assetWindowsQuerySchema,
 };
