@@ -2,13 +2,16 @@
 
 ## Status
 
-**Proposed — 2026-11-10.** Drafted by an agent for backlog row `F4.17`, as one
-of four overnight scope drafts (E3.1 → ADR 0122, E7.2 → ADR 0123, F4.5 → ADR
-0124). Nothing here is ruled. Every line marked *(recommended)* is the
-drafter's recommendation for a numbered open question below; the owner rules
-each one at the scope gate. The step-3 plan is
-[`docs/plans/f4.17-rate-limits-service-tokens.md`](../plans/f4.17-rate-limits-service-tokens.md),
-and no code is written before the owner approves it.
+**Accepted — 2026-11-10** (owner, in chat: "Accept ADR 0125 as
+recommended"; proposed the same day). Drafted by an agent for backlog row
+`F4.17`, as one of four overnight scope drafts (E3.1 → ADR 0122, E7.2 → ADR
+0123, F4.5 → ADR 0124). **All thirteen open questions are ruled as
+recommended**, so every line marked *(recommended)* below is now a ruling,
+and each question under *Open questions* carries its ruling. The step-3 plan
+is
+[`docs/plans/f4.17-rate-limits-service-tokens.md`](../plans/f4.17-rate-limits-service-tokens.md).
+Accepting this record does not approve the plan: no code is written before
+the owner says "yes" to the plan.
 
 ## Context
 
@@ -103,7 +106,7 @@ outbound: `KeycloakIdentityAdminClient` as `bms-api-admin`, which holds
   limiting at Traefik per IP and at API per user / IP". Traefik is not in the
   stack: `F4.24` narrowed it out under ADR 0063.
 
-## Decision (proposed)
+## Decision
 
 ### Part A — rate limiting
 
@@ -307,7 +310,7 @@ outbound: `KeycloakIdentityAdminClient` as `bms-api-admin`, which holds
     All are set in both compose files, and in `api-replica` identically to
     `api`.
 
-## Open questions for the owner (rule each before the plan is built)
+## Open questions — all ruled as recommended (owner, 2026-11-10)
 
 1. **Q1 — Limiter implementation and store.**
    - (A) In-repo limiter: one Lua fixed-window script over the existing
@@ -316,7 +319,7 @@ outbound: `KeycloakIdentityAdminClient` as `bms-api-admin`, which holds
      `ThrottlerStorage` over `redis@^5`. One new dependency.
    - (C) `@nestjs/throttler` plus `@nest-lab/throttler-storage-redis` plus a
      direct `ioredis`. Three new dependencies.
-   - **Recommend A.** The two-stage design (pre-auth middleware, post-auth
+   - **Recommend A. Ruled as recommended.** The two-stage design (pre-auth middleware, post-auth
      check inside `JwtAuthGuard`, and the Socket.IO handshake) does not fit
      `ThrottlerGuard`'s one-guard model, and B would need a custom store
      anyway. The algorithm is a sub-choice: fixed window (recommended; it
@@ -327,7 +330,7 @@ outbound: `KeycloakIdentityAdminClient` as `bms-api-admin`, which holds
      host.
    - (B) A trusted-CIDR list.
    - (C) Read nginx's `X-Real-IP`.
-   - **Recommend A.** C is spoofable on any path that bypasses nginx, and B
+   - **Recommend A. Ruled as recommended.** C is spoofable on any path that bypasses nginx, and B
      breaks whenever the Docker bridge subnet changes. The owner's step is to
      confirm Caddy's `X-Forwarded-For` behaviour on the host, because its
      config is outside the repo.
@@ -335,21 +338,21 @@ outbound: `KeycloakIdentityAdminClient` as `bms-api-admin`, which holds
    - (A) Inside `JwtAuthGuard` after identity resolution.
    - (B) A global interceptor reading `req.user`.
    - (C) A decorator plus guard on each of the 67 controllers.
-   - **Recommend A.** It needs one edit and runs before the multer buffer. B
+   - **Recommend A. Ruled as recommended.** It needs one edit and runs before the multer buffer. B
      also works but couples to interceptor ordering. C is 67 edits that a new
      controller can forget.
 4. **Q4 — Classes, numbers and rollout.**
    - Approve the three classes and the starting numbers in decision 5.
    - Approve `shadow` on the first AWS deploy, with `enforce` after the owner
      reviews about a week of counts.
-   - **Recommend yes to both.** The SPA's real polling rate (dashboards with
+   - **Recommend yes to both. Ruled as recommended.** The SPA's real polling rate (dashboards with
      many widgets, Control Room screens) is not measured yet, and a wrong
      `read` number would 429 the demo.
 5. **Q5 — Redis unavailable.**
    - (A) Fail open to per-process memory, counted and reported on `/health`.
    - (B) Fail closed with 503.
    - (C) Fail open with no limit.
-   - **Recommend A.**
+   - **Recommend A. Ruled as recommended.**
    - **Also rule** whether the store waits for `F3.12`'s `--requirepass`.
      Recommend it does not: a counter is not a secret. The cost is that
      anything on the compose network can reset a bucket, the same exposure
@@ -359,7 +362,7 @@ outbound: `KeycloakIdentityAdminClient` as `bms-api-admin`, which holds
    - (B) Keycloak client-credentials: one confidential client per service
      account, with the guard's `azp` check widened to an allow-list.
    - (C) Long-lived app-signed JWTs.
-   - **Recommend A.** It works under both `AUTH_MODE`s, revocation is
+   - **Recommend A. Ruled as recommended.** It works under both `AUTH_MODE`s, revocation is
      immediate, and it does not widen Keycloak's approved use. B needs
      `bms-api-admin` to gain `manage-clients`, a realm-wide power far beyond
      `manage-users`, and so a §6 promotion of Keycloak scope. C cannot be
@@ -368,7 +371,7 @@ outbound: `KeycloakIdentityAdminClient` as `bms-api-admin`, which holds
    - (A) A `bms.users` row with `kind = 'service'`.
    - (B) A separate `bms.service_accounts` table, plus a new
      `audit_log.actor_service_account_id` column and parallel grant tables.
-   - **Recommend A.** It reuses grants, audit, RLS and `disabled_at`
+   - **Recommend A. Ruled as recommended.** It reuses grants, audit, RLS and `disabled_at`
      unchanged. Its costs are a synthetic `.invalid` email and a
      `kind = 'human'` filter on the ADR 0089 user screens and on the
      report-schedule owner picker.
@@ -377,35 +380,35 @@ outbound: `KeycloakIdentityAdminClient` as `bms-api-admin`, which holds
      per-token `read_only`.
    - (B) Any role up to `organization_admin`.
    - (C) A new per-route scope vocabulary (`telemetry:read`, `alarms:ack`, …).
-   - **Recommend A.** B lets a leaked token administer users. C is a second
+   - **Recommend A. Ruled as recommended.** B lets a leaked token administer users. C is a second
      authorization model beside ADR 0017 and §4.7.
    - **Also rule** whether `location_admin` and `organization_admin` may hold
      a service account later (recommend: not in this row).
-9. **Q9 — Move `F3.47`'s evaluate throttle onto the shared store.** Recommend
-   yes, in the same PR as the store. Its own ADR 0033 discharge note then
+9. **Q9 — Move `F3.47`'s evaluate throttle onto the shared store.** **Recommend
+   yes, in the same PR as the store. Ruled as recommended.** Its own ADR 0033 discharge note then
    gains a line, and the `api-replica` compose comment about two sweeps per
    30 s becomes false and is rewritten.
 10. **Q10 — Lifecycle numbers.** The proposal is 90-day default expiry, 365
     maximum, 2 live tokens per account, a verify cache of at most 30 s, and
-    `last_used_at` at most once per minute. **Recommend as drafted.** Also
+    `last_used_at` at most once per minute. **Recommend as drafted. Ruled as recommended.** Also
     rule whether the expiry warning is in this row: recommend no; it is a
     notifications follow-up.
 11. **Q11 — Audit depth.**
     - (A) Lifecycle events plus the actor on every write, as today.
     - (B) Also log every authenticated request a token makes.
-    - **Recommend A.** B is an access log, which `bms.audit_log` is not, and
+    - **Recommend A. Ruled as recommended.** B is an access log, which `bms.audit_log` is not, and
       its volume would dwarf the table.
 12. **Q12 — Socket.IO.**
     - (A) Accept service tokens on the handshake.
     - (B) HTTP only.
-    - **Recommend A.** Live subscription is the main reason an integration
+    - **Recommend A. Ruled as recommended.** Live subscription is the main reason an integration
       wants a token.
 13. **Q13 — The §6 boundary.**
     - Confirm that app-issued service-account tokens with expiry and
       revocation fall outside the §6 "identity governance" deferral. That
       deferral covers access reviews, approval workflows and SCIM.
     - Confirm that the limiter's Redis use is promoted by this ADR.
-    - **Recommend confirming both.** The catch-up `chore(agents):` sweep then
+    - **Recommend confirming both. Ruled as recommended.** The catch-up `chore(agents):` sweep then
       records each in AGENTS.md §2 and §9.7. If the owner reads service
       accounts as identity governance, Part B is deferred and the row ships
       Part A alone.
