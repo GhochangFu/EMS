@@ -15,9 +15,22 @@
  * the receiver, at nginx (PR 4), where the client address is known.
  */
 
+/**
+ * The least one batch costs, however few samples it carries (round-two review
+ * Low-2): a batch is a request, a decode and a transaction, so a flood of
+ * one-sample batches must not cost a tenth of a full one.
+ */
+export const MIN_BATCH_CHARGE = 50;
+
 export type SampleRateLimiter = {
   /**
-   * Takes `samples` tokens from the gateway's bucket. Returns `0` when the
+   * The cheap pre-check before a body is read: `0` when the bucket holds at
+   * least `MIN_BATCH_CHARGE`, otherwise the whole seconds (at least 1) until it
+   * would. Takes nothing.
+   */
+  wait(gatewayId: string): number;
+  /**
+   * Takes `max(samples, MIN_BATCH_CHARGE)` tokens from the gateway's bucket. Returns `0` when the
    * batch is admitted, otherwise the whole seconds (at least 1) after which it
    * would be, and takes nothing.
    */
@@ -27,19 +40,30 @@ export type SampleRateLimiter = {
 /** Builds the limiter. `nowMs` is injected so the spec needs no real time. */
 export function createSampleRateLimiter(samplesPerSecond: number, nowMs: () => number): SampleRateLimiter {
   const buckets = new Map<string, { tokens: number; atMs: number }>();
+  const refilled = (gatewayId: string): { tokens: number; atMs: number } => {
+    const now = nowMs();
+    const bucket = buckets.get(gatewayId) ?? { tokens: samplesPerSecond, atMs: now };
+    const elapsedS = Math.max(0, now - bucket.atMs) / 1000;
+    bucket.tokens = Math.min(samplesPerSecond, bucket.tokens + elapsedS * samplesPerSecond);
+    bucket.atMs = now;
+    buckets.set(gatewayId, bucket);
+    return bucket;
+  };
+  const secondsUntil = (tokens: number, needed: number): number =>
+    Math.max(1, Math.ceil((needed - tokens) / samplesPerSecond));
   return {
+    wait(gatewayId) {
+      const bucket = refilled(gatewayId);
+      return bucket.tokens >= MIN_BATCH_CHARGE ? 0 : secondsUntil(bucket.tokens, MIN_BATCH_CHARGE);
+    },
     take(gatewayId, samples) {
-      const now = nowMs();
-      const bucket = buckets.get(gatewayId) ?? { tokens: samplesPerSecond, atMs: now };
-      const elapsedS = Math.max(0, now - bucket.atMs) / 1000;
-      bucket.tokens = Math.min(samplesPerSecond, bucket.tokens + elapsedS * samplesPerSecond);
-      bucket.atMs = now;
-      buckets.set(gatewayId, bucket);
-      if (bucket.tokens >= samples) {
-        bucket.tokens -= samples;
+      const charge = Math.max(samples, MIN_BATCH_CHARGE);
+      const bucket = refilled(gatewayId);
+      if (bucket.tokens >= charge) {
+        bucket.tokens -= charge;
         return 0;
       }
-      return Math.max(1, Math.ceil((samples - bucket.tokens) / samplesPerSecond));
+      return secondsUntil(bucket.tokens, charge);
     },
   };
 }

@@ -15,6 +15,8 @@ import {
   aTricklingClientCannotHoldClose,
   aWriteFailureLogsTheCodeNotTheMessage,
   overTheSampleRateIs429,
+  anEmptyBucketIsRefusedBeforeTheBody,
+  slowUploadsDoNotHoldTheWriteSlots,
   tooManyInFlightIs429,
   badBodiesAre400WithNoEcho,
   otherMethodsAre405,
@@ -103,5 +105,13 @@ describe("E7.2 — the uplink listener (ADR 0123 decision 4, plan T3.5)", () => 
 
   it("marks a reply sent while closing Connection: close (H1)", async () => {
     await aReplyWhileClosingSaysConnectionClose();
+  });
+
+  it("refuses an empty bucket before reading the body (Low-2)", async () => {
+    await anEmptyBucketIsRefusedBeforeTheBody();
+  });
+
+  it("does not let four slow uploads hold off a fifth gateway's batch (Low-1)", async () => {
+    await slowUploadsDoNotHoldTheWriteSlots();
   });
 });

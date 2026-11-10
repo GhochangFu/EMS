@@ -45,3 +45,24 @@ export function theBucketCapsAtOneSecond(): void {
   assert(limiter.take("g", 1000) === 0, "a full second after an idle hour");
   assert(limiter.take("g", 1) > 0, "but not more than one second");
 }
+
+/** A batch costs at least `MIN_BATCH_CHARGE`, however few samples it carries (Low-2). */
+export function aSmallBatchCostsTheMinimumCharge(): void {
+  const limiter = createSampleRateLimiter(1000, () => 0);
+  for (let i = 0; i < 20; i += 1) {
+    assert(limiter.take("g", 1) === 0, `one-sample batch ${i + 1} of 20 fits (20 × 50 = 1000)`);
+  }
+  assert(limiter.take("g", 1) > 0, "the 21st one-sample batch must be refused: each cost 50");
+}
+
+/** `wait` is free, and says 0 only while a minimum charge is left (Low-2). */
+export function waitIsAFreePreCheck(): void {
+  let now = 0;
+  const limiter = createSampleRateLimiter(1000, () => now);
+  assert(limiter.wait("g") === 0, "a full bucket has no wait");
+  limiter.take("g", 960);
+  assert(limiter.wait("g") === 1, "40 left is under the minimum charge: wait");
+  assert(limiter.wait("g") === 1, "wait took nothing");
+  now = 10;
+  assert(limiter.wait("g") === 0, "10 ms refills 10: 50 left, no wait");
+}

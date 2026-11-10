@@ -17,9 +17,11 @@ import { errorKind, type HostLogger } from "./logger.js";
  * backfill_dirty_seq = $4`). A later batch that widened the window moves a
  * bound; one whose late rows fell **inside** it moves only
  * `backfill_dirty_seq` (migration `0143`, code review 2). Either way the
- * clear no longer matches and the window survives for the next pass. The keys
- * are the columns' own text, read in the same query, so a microsecond the
- * JavaScript `Date` cannot hold can never make a window un-clearable.
+ * clear no longer matches and the window survives for the next pass. The
+ * bound keys are `extract(epoch FROM …)` as `numeric` text, read in the same
+ * query: exact to the microsecond on PostgreSQL 14+ (a `Date` is not), and
+ * unlike `timestamptz::text` independent of the session's `DateStyle` and
+ * `TimeZone` (round-two review N3).
  *
  * **At most one pass a minute per gateway**, and never two passes at once:
  * `refreshAggregatesFrom` takes `bms_rollup` locks and retries `55P03` only
@@ -41,7 +43,7 @@ export type DirtyWindow = {
   readonly to: Date;
   readonly fromKey: string;
   readonly toKey: string;
-  /** `backfill_dirty_seq` as text: the generation this pass read. */
+  /** `backfill_dirty_seq` as text: the generation this pass read. `fromKey`/`toKey` are epoch seconds, numeric text. */
   readonly seqKey: string;
 };
 
@@ -56,8 +58,8 @@ export const DIRTY_WINDOWS_QUERY = `
   SELECT id,
          backfill_dirty_from,
          backfill_dirty_to,
-         backfill_dirty_from::text AS from_key,
-         backfill_dirty_to::text AS to_key,
+         extract(epoch FROM backfill_dirty_from)::text AS from_key,
+         extract(epoch FROM backfill_dirty_to)::text AS to_key,
          backfill_dirty_seq::text AS seq_key
     FROM bms.edge_gateways
    WHERE backfill_dirty_from IS NOT NULL
@@ -72,8 +74,8 @@ export const CLEAR_DIRTY_WINDOW = `
          backfill_dirty_to = NULL,
          updated_at = now()
    WHERE id = $1
-     AND backfill_dirty_from = $2::timestamptz
-     AND backfill_dirty_to = $3::timestamptz
+     AND extract(epoch FROM backfill_dirty_from) = $2::numeric
+     AND extract(epoch FROM backfill_dirty_to) = $3::numeric
      AND backfill_dirty_seq = $4::bigint
 `;
 

@@ -38,6 +38,21 @@ import {
  */
 export const DIRTY_AFTER_MS = 2 * 3_600_000;
 
+/**
+ * Server-side bounds on the uplink transaction (security review round two).
+ * The receiver's own 15 s bound (`UPLINK_WRITE_TIMEOUT_MS`) destroys the `pg`
+ * client, but the Postgres backend would keep running its statement; these
+ * make the server cancel it first, so a stall cannot pile up backends against
+ * `max_connections`. `SET LOCAL`, so nothing outlives the transaction on the
+ * pooled connection.
+ */
+export const UPLINK_STATEMENT_TIMEOUT = "14s";
+export const UPLINK_LOCK_TIMEOUT = "5s";
+export const UPLINK_TRANSACTION_SETTINGS: readonly string[] = [
+  `SET LOCAL statement_timeout = '${UPLINK_STATEMENT_TIMEOUT}'`,
+  `SET LOCAL lock_timeout = '${UPLINK_LOCK_TIMEOUT}'`,
+];
+
 /** `reported_backlog` is an `integer`; a larger report is clamped, never a failed write. */
 const MAX_INT4 = 2_147_483_647;
 
@@ -152,6 +167,11 @@ export function writeUplinkRows(
   return writeResolved(client, rows, {
     now: () => options.now,
     liveWindowMs: options.liveWindowMs,
+    afterBegin: async (tx) => {
+      for (const statement of UPLINK_TRANSACTION_SETTINGS) {
+        await tx.query(statement);
+      }
+    },
     beforeCommit: (tx) => recordGatewayReport(tx, options.report, options.now, window),
   });
 }

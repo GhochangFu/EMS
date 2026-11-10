@@ -8,6 +8,7 @@ import {
   assertARevokedGatewayRollsTheBatchBack,
   assertARotatedTokenRollsTheBatchBack,
   assertEveryLateBatchBumpsTheSeq,
+  assertTheStatementTimeoutIsLocalToTheTransaction,
 } from "./uplink-write.integration.spec.js";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate.js";
 
@@ -58,5 +59,9 @@ describe.skipIf(!connectionString)("E7.2 — the uplink write on a real database
 
   it("bumps backfill_dirty_seq for every late batch and no live one", async () => {
     await assertEveryLateBatchBumpsTheSeq(pool as pg.Pool);
+  });
+
+  it("runs the uplink transaction under a 14 s statement_timeout that does not leak", async () => {
+    await assertTheStatementTimeoutIsLocalToTheTransaction(pool as pg.Pool);
   });
 });

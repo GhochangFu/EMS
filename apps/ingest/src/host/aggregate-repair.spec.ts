@@ -3,6 +3,7 @@ import { assert } from "./normaliser.spec.js";
 import {
   CLEAR_DIRTY_WINDOW,
   createAggregateRepair,
+  DIRTY_WINDOWS_QUERY,
   createRepairStore,
   type DirtyWindow,
   type RepairStore,
@@ -185,10 +186,16 @@ export async function aFailingListIsOneLine(): Promise<void> {
 export async function theClearComparesBothBoundsByGateway(): Promise<void> {
   const sql = CLEAR_DIRTY_WINDOW.replace(/\s+/g, " ");
   assert(
-    /WHERE id = \$1 AND backfill_dirty_from = \$2::timestamptz AND backfill_dirty_to = \$3::timestamptz AND backfill_dirty_seq = \$4::bigint/.test(
+    /WHERE id = \$1 AND extract\(epoch FROM backfill_dirty_from\) = \$2::numeric AND extract\(epoch FROM backfill_dirty_to\) = \$3::numeric AND backfill_dirty_seq = \$4::bigint/.test(
       sql,
     ),
     "the clear must compare both bounds and the generation, and filter by gateway id",
+  );
+  const read = DIRTY_WINDOWS_QUERY.replace(/\s+/g, " ");
+  assert(
+    read.includes("extract(epoch FROM backfill_dirty_from)::text AS from_key") &&
+      read.includes("extract(epoch FROM backfill_dirty_to)::text AS to_key"),
+    "the keys must be epoch numerics, not timestamptz text that depends on DateStyle (N3)",
   );
   const calls: { text: string; values?: unknown[] }[] = [];
   const store = createRepairStore({
@@ -202,8 +209,8 @@ export async function theClearComparesBothBoundsByGateway(): Promise<void> {
               id: "gw-1",
               backfill_dirty_from: new Date("2026-11-10T03:00:00.000Z"),
               backfill_dirty_to: new Date("2026-11-10T05:00:00.000Z"),
-              from_key: "2026-11-10 03:00:00.000001+00",
-              to_key: "2026-11-10 05:00:00+00",
+              from_key: "1794279600.000001",
+              to_key: "1794286800.000000",
               seq_key: "9007199254740993",
             },
             { id: "gw-bad", backfill_dirty_from: null, backfill_dirty_to: null, from_key: null, to_key: null },
@@ -220,9 +227,9 @@ export async function theClearComparesBothBoundsByGateway(): Promise<void> {
   const values = calls[1]?.values ?? [];
   assert(
     values[0] === "gw-1" &&
-      values[1] === "2026-11-10 03:00:00.000001+00" &&
-      values[2] === "2026-11-10 05:00:00+00" &&
+      values[1] === "1794279600.000001" &&
+      values[2] === "1794286800.000000" &&
       values[3] === "9007199254740993",
-    "the clear binds the stored text keys, so a microsecond is never lost",
+    "the clear binds the stored epoch keys, so a microsecond is never lost",
   );
 }

@@ -539,6 +539,13 @@ export type WriteOptions = {
    * out still records that the gateway spoke.
    */
   readonly beforeCommit?: (client: QueryableClient) => Promise<void>;
+  /**
+   * Runs first inside the transaction, right after `BEGIN` (`E7.2` security
+   * review, round two): the uplink receiver sets `SET LOCAL statement_timeout`
+   * and `lock_timeout` here so Postgres itself cancels a stalled write. Absent
+   * — the supervisor path — the statements are exactly what they were.
+   */
+  readonly afterBegin?: (client: QueryableClient) => Promise<void>;
 };
 
 /**
@@ -592,6 +599,9 @@ export async function writeResolved(
 
   await client.query("BEGIN");
   try {
+    if (options.afterBegin !== undefined) {
+      await options.afterBegin(client);
+    }
     for (let i = 0; i < rows.length; i += MAX_ROWS_PER_STATEMENT) {
       const batch = rows.slice(i, i + MAX_ROWS_PER_STATEMENT);
       const { text, values } = buildUpsert(batch);

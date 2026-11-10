@@ -562,11 +562,12 @@ where the port is.
 | path is exactly `/edge/v1/batches` | `404 {"error":"not-found"}` |
 | method is `POST` | `405`, `Allow: POST` |
 | one `Authorization: Bearer <token>`, **before the body is read** | `401 unauthorized` (`WWW-Authenticate: Bearer`), `403 gateway-revoked`, `403 ingest-disabled` |
-| no other batch in flight for this gateway, and fewer than 4 in flight across all gateways (the `pg` pool's default `max` is 10; the supervisors keep the rest) | `429 busy` / `429 overloaded`, `Retry-After: 5` |
+| no other batch in flight for this gateway; its sample bucket not already empty | `429 busy`, `Retry-After: 5`; `429 rate-limited` |
 | `Content-Encoding: gzip`; declared `Content-Length` ≤ 262 144 | `400 bad-encoding`, `413 too-large` |
 | streamed body ≤ 262 144 bytes, decoded ≤ 1 048 576 (the inflater is destroyed at the cap) | `413 too-large`, `400 bad-gzip` |
 | strict UTF-8 JSON, then `uplinkBatchSchema` (`@bms/shared/ingest`) | `400 bad-json`, `400 bad-schema` |
-| the gateway's sample bucket (`INGEST_UPLINK_MAX_SAMPLES_PER_S`, one second's worth, refilling continuously) | `429 rate-limited`, `Retry-After: <s>` |
+| the gateway's sample bucket (`INGEST_UPLINK_MAX_SAMPLES_PER_S`, one second's worth, refilling; a batch costs at least 50) | `429 rate-limited`, `Retry-After: <s>` |
+| one of 4 write slots across all gateways, taken after the upload (the pool's default `max` is 10) | `429 overloaded`, `Retry-After: 5` |
 | the write commits within 15 s | `503 write-failed`, `Retry-After: 30` |
 
 A `200` carries `{ accepted, rejected: { foreignDevice, futureRx, tooOld,
@@ -585,8 +586,11 @@ shutdown. **Per-source limiting of unauthenticated requests is not here** —
 the receiver knows a gateway, not a client address — and is owed at nginx with
 the public route (PR 4).
 
-**A write over 15 s** is abandoned with `503` and its `pg` client destroyed,
-not pooled (the edge aborts at 20 s). **Shutdown cannot hang on a client:**
+**The write is bounded on the server:** the transaction opens with `SET LOCAL
+statement_timeout = '14s'` and `lock_timeout = '5s'`, so Postgres cancels a
+stalled statement itself; destroying the client alone would leave the backend
+running it. A write still over 15 s is answered `503` and its `pg` client
+destroyed, not pooled (the edge aborts at 20 s). **Shutdown cannot hang on a client:**
 `close()` stops accepting, sends `Connection: close` on every later reply, and
 after 2 s destroys every socket still open; `main.ts` waits at most 5 s.
 
@@ -666,6 +670,9 @@ batch reaches `_1m` and `_1h` after one pass.
   The token cannot reach another gateway's RTUs (`foreignDevice`), and a
   revoke or rotation stops it at once, because every commit re-checks status
   and token hash. An audit of late overwrites is owed.
+- **The device binding is read from memory.** Which RTUs a gateway may write
+  comes from the binding plan of the last reload, so for up to one
+  `INGEST_RELOAD_MS` tick a gateway can still write an RTU just reassigned.
 
 **Health.** The body gains one line per gateway, after every other line:
 
@@ -680,19 +687,15 @@ so those RTUs are silent until they are unassigned. **Neither line changes
 the `ok`/`degraded` verdict** — a site's uplink is the site's state, and the
 edge keeps its backlog on its own disk. The values are as of the last reload.
 
-**Logs.** `warn` "uplink samples rejected" with the gateway's id and code and
-the four counts, at most once a minute per gateway with the counts summed
-since the last line; `info` "uplink rows written outside the live window, not
-notified" with counts; `error` "uplink batch write failed" with the gateway
-id and the error's `kind` and `code`; `error` "uplink listener error";
-`error` "gateway snapshot reload failed"; the refusal summary above. `ingest host
-started` gains `uplinkPort` (`"off"` when unset).
-
-**Probe.** `apps/ingest/scripts/uplink-probe.mjs` posts one gzip batch:
-`UPLINK_PROBE_TOKEN=bmsgw_… node apps/ingest/scripts/uplink-probe.mjs
---device <rtu_code> [--age 4h] [--count N] [--at <iso>]`. The token is read
-from the environment only and never printed. `--url` must be `https:` unless
-its host is loopback.
+**Logs** (counts and ids, never values or messages): `warn` "uplink samples
+rejected" (once a minute per gateway, counts summed); `info` "uplink rows
+written outside the live window, not notified"; `error` "uplink batch write
+failed", "uplink listener error", "gateway snapshot reload failed" (each with
+`kind` and `code`); the refusal summary; `uplinkPort` on `ingest host started`.
+**Probe:** `UPLINK_PROBE_TOKEN=bmsgw_… node apps/ingest/scripts/uplink-probe.mjs
+--device <rtu_code> [--age 4h] [--count N] [--at <iso>]` posts one gzip batch;
+the token comes from the environment, is never printed, and `--url` must be
+`https:` unless loopback.
 
 ## The ADR 0016 §6 commit 3 parallel verification (historical)
 

@@ -64,6 +64,8 @@ function kinds(calls: readonly Call[]): string[] {
     if (c.text.startsWith("INSERT INTO telemetry.point_values")) return "upsert";
     if (c.text.includes("UPDATE bms.edge_gateways")) return "gateway";
     if (c.text.includes("pg_notify")) return "notify";
+    if (c.text === "SET LOCAL statement_timeout = '14s'") return "stmt14s";
+    if (c.text === "SET LOCAL lock_timeout = '5s'") return "lock5s";
     return c.text.trim();
   });
 }
@@ -73,7 +75,7 @@ export async function theOrderIsBeginUpsertUpdateCommitNotify(): Promise<void> {
   const { client, calls } = fakeTx();
   const result = await writeUplinkRows(client, [rowAt(1_000)], OPTIONS);
   const order = kinds(calls).join(",");
-  assert(order === "BEGIN,upsert,gateway,COMMIT,notify", `statement order was ${order}`);
+  assert(order === "BEGIN,stmt14s,lock5s,upsert,gateway,COMMIT,notify", `statement order was ${order}`);
   assert(result.rowsWritten === 1 && result.notificationsSent === 1, "one row written and notified");
 }
 
@@ -88,7 +90,7 @@ export async function aFailingUpdateRollsBackAndNotifiesNothing(): Promise<void>
   }
   assert(threw, "a failed gateway UPDATE must reject, so the receiver answers 503");
   const order = kinds(calls).join(",");
-  assert(order === "BEGIN,upsert,gateway,ROLLBACK", `statement order was ${order}`);
+  assert(order === "BEGIN,stmt14s,lock5s,upsert,gateway,ROLLBACK", `statement order was ${order}`);
 }
 
 /** A gateway revoked since the last reload matches no row: the batch rolls back. */
@@ -101,7 +103,7 @@ export async function anInactiveGatewayRollsBack(): Promise<void> {
     threw = true;
   }
   assert(threw, "an UPDATE that moved no row must reject");
-  assert(kinds(calls).join(",") === "BEGIN,upsert,gateway,ROLLBACK", "it must roll back, never commit");
+  assert(kinds(calls).join(",") === "BEGIN,stmt14s,lock5s,upsert,gateway,ROLLBACK", "it must roll back, never commit");
 }
 
 /** Zero rows still records the gateway: BEGIN, UPDATE, COMMIT, no notify. */
@@ -109,7 +111,7 @@ export async function zeroRowsStillRecordsTheGateway(): Promise<void> {
   const { client, calls } = fakeTx();
   const result = await writeUplinkRows(client, [], OPTIONS);
   const order = kinds(calls).join(",");
-  assert(order === "BEGIN,gateway,COMMIT", `statement order was ${order}`);
+  assert(order === "BEGIN,stmt14s,lock5s,gateway,COMMIT", `statement order was ${order}`);
   assert(result.rowsWritten === 0 && result.notificationsSent === 0, "nothing written, nothing notified");
   // And writeResolved without the hook keeps its early return.
   const plain = fakeTx();
@@ -173,4 +175,13 @@ export function theSqlWidensAndFiltersByGateway(): void {
   );
   const window = dirtyWindow([rowAt(1_000)], NOW);
   assert(window === null, "dirtyWindow of live rows is null");
+}
+
+/** The supervisor path (no `afterBegin`) sends exactly today's statements: no SET LOCAL. */
+export async function theSupervisorPathSendsNoSetLocal(): Promise<void> {
+  const { client, calls } = fakeTx();
+  await writeResolved(client, [rowAt(1_000)], { now: () => NOW, liveWindowMs: NOTIFY_LIVE_WINDOW_MS });
+  const order = kinds(calls).join(",");
+  assert(order === "BEGIN,upsert,COMMIT,notify", `the supervisor path's statements were ${order}`);
+  assert(!calls.some((c) => c.text.startsWith("SET")), "the supervisor path must send no SET statement");
 }

@@ -225,3 +225,52 @@ export async function assertEveryLateBatchBumpsTheSeq(pool: pg.Pool): Promise<vo
     expect(await seq(), "a live-only batch leaves it").toBe("2");
   });
 }
+
+/**
+ * The uplink transaction runs under `statement_timeout = 14s`, and the setting
+ * does not outlive it on the pooled connection (round-two review M-new).
+ *
+ * **This one case commits**, on purpose: under the savepoint shim a plain `SET`
+ * and a `SET LOCAL` both vanish at the outer `ROLLBACK`, so only a real
+ * `COMMIT` can show the setting did not leak. It writes **zero** telemetry rows
+ * (nothing to delete, no aggregate to refresh), commits one fixture gateway
+ * row, and deletes it by id in `finally`.
+ */
+export async function assertTheStatementTimeoutIsLocalToTheTransaction(pool: pg.Pool): Promise<void> {
+  const client = await pool.connect();
+  let gatewayId: string | undefined;
+  try {
+    const before = (await client.query<{ statement_timeout: string }>("SHOW statement_timeout")).rows[0]
+      .statement_timeout;
+    expect(before, "control: the pool's default must differ from the uplink's bound").not.toBe("14s");
+    const org = await client.query<{ id: string }>("SELECT id FROM bms.organizations WHERE code = 'ESKOM'");
+    expect(org.rows.length, "needs the seeded ESKOM organization — run pnpm db:seed").toBe(1);
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO bms.edge_gateways (organization_id, code, name, token_hash)
+       VALUES ($1, $2, 'E7.2 uplink timeout fixture', $3) RETURNING id`,
+      [org.rows[0].id, "E72-UPLINK-TIMEOUT-FIXTURE", FIXTURE_DIGEST],
+    );
+    gatewayId = inserted.rows[0].id;
+
+    let inside: string | undefined;
+    const spy: QueryableClient = {
+      async query(text, values) {
+        if (text.includes("UPDATE bms.edge_gateways")) {
+          inside = (await client.query<{ statement_timeout: string }>("SHOW statement_timeout")).rows[0]
+            .statement_timeout;
+        }
+        return values === undefined ? client.query(text) : client.query(text, [...values]);
+      },
+    };
+    await writeUplinkRows(spy, [], optionsFor(gatewayId, new Date()));
+    expect(inside, "inside the uplink transaction statement_timeout must be 14s").toBe("14s");
+    const after = (await client.query<{ statement_timeout: string }>("SHOW statement_timeout")).rows[0]
+      .statement_timeout;
+    expect(after, "SET LOCAL must not leak past COMMIT onto the pooled connection").toBe(before);
+  } finally {
+    if (gatewayId !== undefined) {
+      await client.query("DELETE FROM bms.edge_gateways WHERE id = $1", [gatewayId]);
+    }
+    client.release();
+  }
+}

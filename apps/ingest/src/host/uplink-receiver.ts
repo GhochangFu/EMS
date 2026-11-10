@@ -159,7 +159,9 @@ export class UplinkWriteTimeout extends Error {
  * listener answers `503` with `Retry-After` (ruling P1 (b)): the edge keeps
  * the batch on its own disk and retries, and nothing is spilled here. A write
  * that outlives `writeTimeoutMs` is abandoned and its client destroyed, so the
- * pool gets a fresh connection rather than one still running the statement.
+ * pool gets a fresh connection; the backend's own statement is cancelled by
+ * the transaction's `SET LOCAL statement_timeout` (`uplink-write.ts`), not by
+ * destroying the client.
  *
  * `deviceKey` is required on the wire, so there is no sole-device fallback:
  * `resolveSamples` gets `undefined` for it. A sample that resolves to no point

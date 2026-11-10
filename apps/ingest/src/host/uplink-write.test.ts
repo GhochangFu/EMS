@@ -7,13 +7,14 @@ import {
   anInactiveGatewayRollsBack,
   theOrderIsBeginUpsertUpdateCommitNotify,
   theSqlWidensAndFiltersByGateway,
+  theSupervisorPathSendsNoSetLocal,
   theUpdateBindsTheReportAndTheWindow,
   zeroRowsStillRecordsTheGateway,
 } from "./uplink-write.spec.js";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("E7.2 — the uplink write and the gateway report share a transaction (ADR 0123 decision 11)", () => {
-  it("runs BEGIN, upsert, gateway UPDATE, COMMIT, then notify", async () => {
+  it("runs BEGIN, the two SET LOCAL bounds, upsert, gateway UPDATE, COMMIT, then notify", async () => {
     await theOrderIsBeginUpsertUpdateCommitNotify();
   });
 
@@ -43,5 +44,9 @@ describe("E7.2 — the uplink write and the gateway report share a transaction (
 
   it("widens with LEAST / GREATEST and filters by gateway id", () => {
     theSqlWidensAndFiltersByGateway();
+  });
+
+  it("leaves the supervisor path's statements unchanged: no SET LOCAL", async () => {
+    await theSupervisorPathSendsNoSetLocal();
   });
 });

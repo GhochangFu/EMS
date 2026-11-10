@@ -25,15 +25,16 @@ import type { ReceiveBatch } from "./uplink-receiver.js";
  * 2. **authentication, before one byte of the body is read** (401 / 403) —
  *    from the in-memory snapshot, so an unauthenticated request costs a hash
  *    and never a query;
- * 3. one batch in flight per gateway, and at most `maxInFlight` (4) across
- *    all gateways so the uplink can never take the whole `pg` pool from the
- *    supervisors (429, `Retry-After`);
+ * 3. one batch in flight per gateway (429, `Retry-After`), and a free
+ *    pre-check of the gateway's sample bucket (429, `Connection: close`);
  * 4. `Content-Encoding: gzip` (400), then the declared `Content-Length`
  *    against the 256 KiB compressed cap (413);
  * 5. a streaming gunzip that aborts past 256 KiB read or 1 MiB decoded (413),
  *    so a gzip bomb stops at the cap rather than at the heap;
  * 6. strict UTF-8 and `JSON.parse`, then `uplinkBatchSchema` (400), then the
- *    gateway's sample-rate bucket (429, `Retry-After`; `uplink-rate.ts`);
+ *    gateway's sample-rate charge (429, `Retry-After`; `uplink-rate.ts`), then
+ *    one of `maxInFlight` (4) write slots, so the uplink can never take the
+ *    whole `pg` pool from the supervisors (429, `Retry-After`);
  * 7. the write: `200 { accepted, rejected }` only after commit; a failed write
  *    is `503` with `Retry-After` and the edge keeps the batch (ruling P1 (b)).
  *
@@ -201,7 +202,10 @@ export function startUplinkServer(port: number, deps: UplinkServerDeps): Promise
   const maxInFlight = deps.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
   const closeGraceMs = deps.closeGraceMs ?? CLOSE_GRACE_MS;
   const refusalLogIntervalMs = deps.refusalLogIntervalMs ?? REFUSAL_LOG_INTERVAL_MS;
+  /** Gateways with a batch anywhere in the handler, upload included. */
   const inFlight = new Set<string>();
+  /** Batches in `deps.receive` — the slots that hold a `pg` client. */
+  let receiving = 0;
   const refused = new Map<Refusal, number>();
   let lastRefusalLogMs: number | undefined;
   let closing = false;
@@ -275,8 +279,11 @@ export function startUplinkServer(port: number, deps: UplinkServerDeps): Promise
       refuse(response, "busy", { "retry-after": String(BUSY_RETRY_AFTER_SECONDS), connection: "close" });
       return;
     }
-    if (inFlight.size >= maxInFlight) {
-      refuse(response, "overloaded", { "retry-after": String(BUSY_RETRY_AFTER_SECONDS), connection: "close" });
+    // Cheap pre-check, before the body is read: an empty bucket is refused
+    // without paying for the upload and the decode (round-two Low-2).
+    const preWaitS = deps.rateLimit?.wait(gateway.id) ?? 0;
+    if (preWaitS > 0) {
+      refuse(response, "rate-limited", { "retry-after": String(preWaitS), connection: "close" });
       return;
     }
     inFlight.add(gateway.id);
@@ -311,10 +318,19 @@ export function startUplinkServer(port: number, deps: UplinkServerDeps): Promise
       }
       const waitS = deps.rateLimit?.take(gateway.id, parsed.data.samples.length) ?? 0;
       if (waitS > 0) {
-        refuse(response, "rate-limited", { "retry-after": String(waitS) });
+        refuse(response, "rate-limited", { "retry-after": String(waitS), connection: "close" });
         return;
       }
 
+      // The global slot covers the write only, not the upload (round-two
+      // Low-1): four slow uploads must not hold off a fifth gateway whose
+      // batch is already here. It is what keeps the pool's other clients for
+      // the supervisors.
+      if (receiving >= maxInFlight) {
+        refuse(response, "overloaded", { "retry-after": String(BUSY_RETRY_AFTER_SECONDS) });
+        return;
+      }
+      receiving += 1;
       let result: UplinkResponse;
       try {
         result = await deps.receive(gateway, parsed.data, auth.digest);
@@ -322,6 +338,8 @@ export function startUplinkServer(port: number, deps: UplinkServerDeps): Promise
         deps.logger.error("uplink batch write failed", { gatewayId: gateway.id, ...errorKind(error) });
         reply(response, 503, { error: "write-failed" }, { "retry-after": String(WRITE_RETRY_AFTER_SECONDS) });
         return;
+      } finally {
+        receiving -= 1;
       }
       reply(response, 200, result);
     } finally {

@@ -16,7 +16,7 @@ import {
 import { readHostConfig } from "./host/config.js";
 import { openDiskBufferStore } from "./host/disk-buffer.js";
 import { startHealthServer } from "./host/health-server.js";
-import { createHostLogger } from "./host/logger.js";
+import { createHostLogger, errorKind } from "./host/logger.js";
 import type { PointIndex, WriteResult } from "./host/normaliser.js";
 import { droppedCount, resolveSamples, writeResolved } from "./host/normaliser.js";
 import { createEndpointRegistry } from "./host/reconcile.js";
@@ -365,9 +365,7 @@ async function main(): Promise<void> {
         try {
           gatewaySnapshot = await loadGateways(pool);
         } catch (error) {
-          logger.error("gateway snapshot reload failed", {
-            reason: error instanceof Error ? error.message : "unknown",
-          });
+          logger.error("gateway snapshot reload failed", errorKind(error));
         }
         const next = planEndpoints(await loadBindingRows(pool), planOptions);
         skipped = next.skipped;

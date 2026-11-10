@@ -482,12 +482,13 @@ export async function tooManyInFlightIs429(): Promise<void> {
 export async function overTheSampleRateIs429(): Promise<void> {
   const server = await startUplinkServer(0, {
     ...quietDeps,
-    rateLimit: { take: (_id, samples) => (samples > 0 ? 3 : 0) },
+    rateLimit: { wait: () => 0, take: (_id, samples) => (samples > 0 ? 3 : 0) },
   });
   try {
     const reply = await send(server.port, {});
     expectError(reply, 429, "rate-limited", "over the rate");
     assert(reply.headers["retry-after"] === "3", `Retry-After must be the bucket's wait, got ${reply.headers["retry-after"]}`);
+    assert(reply.headers.connection === "close", "429 rate-limited must carry Connection: close (Low-2)");
   } finally {
     await server.close();
   }
@@ -565,4 +566,70 @@ export async function aReplyWhileClosingSaysConnectionClose(): Promise<void> {
   await closed;
   assert(reply.status === 200, `the in-flight batch still completes, got ${reply.status}`);
   assert(reply.headers.connection === "close", `a reply while closing must say Connection: close, got ${reply.headers.connection}`);
+}
+
+/** An already-empty bucket is refused before the body is read: an over-size body gets 429, not 413 (Low-2). */
+export async function anEmptyBucketIsRefusedBeforeTheBody(): Promise<void> {
+  let charged = 0;
+  const server = await startUplinkServer(0, {
+    ...quietDeps,
+    rateLimit: {
+      wait: () => 7,
+      take: () => {
+        charged += 1;
+        return 0;
+      },
+    },
+  });
+  try {
+    const reply = await send(server.port, { body: randomBytes(UPLINK_MAX_BODY_BYTES + 50_000) });
+    expectError(reply, 429, "rate-limited", "empty bucket, oversize body");
+    assert(reply.headers["retry-after"] === "7", "the pre-check's wait is the Retry-After");
+    assert(reply.headers.connection === "close", "the pre-check refusal drops the connection");
+    assert(charged === 0, "the pre-check charges nothing");
+  } finally {
+    await server.close();
+  }
+}
+
+/** Four slow uploads do not hold the write slots: a fifth gateway's complete batch is 200 (Low-1). */
+export async function slowUploadsDoNotHoldTheWriteSlots(): Promise<void> {
+  const tokens = [0, 1, 2, 3, 4].map((i) => `bmsgw_${String(i).repeat(43)}`);
+  const gateways = tokens.map((t, i) =>
+    gateway({ id: `5555555${i}-5555-4555-8555-555555555555`, code: `GW-${i}`, tokenHash: hashToken(t) }),
+  );
+  const server = await startUplinkServer(0, {
+    authenticate: (header) => authenticate({ gateways }, header),
+    receive: accept,
+    logger: createHostLogger({}, () => undefined),
+    closeGraceMs: 100,
+  });
+  const sockets: net.Socket[] = [];
+  try {
+    for (const token of tokens.slice(0, 4)) {
+      // Headers and the first two bytes of a gzip stream, as bytes, then nothing.
+      const socket = net.connect(server.port, "127.0.0.1", () =>
+        socket.write(
+          Buffer.concat([
+            Buffer.from(
+              `POST ${UPLINK_PATH} HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer ${token}\r\n` +
+                "Content-Encoding: gzip\r\nContent-Length: 1000\r\n\r\n",
+            ),
+            Buffer.from([0x1f, 0x8b]),
+          ]),
+        ),
+      );
+      socket.on("error", () => undefined);
+      sockets.push(socket);
+    }
+    await new Promise((r) => setTimeout(r, 100));
+    // Positive control: the four uploads are still open, so their gateways are busy.
+    const busy = await send(server.port, { token: tokens[0] });
+    expectError(busy, 429, "busy", "a gateway whose upload is still open");
+    const fifth = await send(server.port, { token: tokens[4] });
+    assert(fifth.status === 200, `a complete batch must not wait behind four uploads, got ${fifth.status} ${fifth.body}`);
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await server.close();
+  }
 }
