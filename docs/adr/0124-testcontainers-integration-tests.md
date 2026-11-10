@@ -11,10 +11,39 @@ question at the end with its options. The plan is
 [`docs/plans/f4.5-testcontainers.md`](../plans/f4.5-testcontainers.md); no
 build starts before the owner accepts this record and says "yes" to the plan.
 
+**The owner answered all nine open questions in chat on 2026-11-10, one at a
+time, each with the recommended option** (listed under *Rulings*). The record
+stays Proposed: answering the questions is not acceptance, and the owner has
+not yet accepted it or said "yes" to the plan.
+
 No figure in this record was measured. The container daemon was not reachable
 in the drafting session, so clone times, template-build time, CI minutes and
 memory are estimates and are labelled so. PR 1 of the plan measures them before
 any suite moves.
+
+## Rulings
+
+Given by the owner in chat on 2026-11-10, one question at a time. Each picked
+the recommended option, so decisions 1–10 below stand as written.
+
+1. **Package** — `testcontainers` core only, `GenericContainer`, pinned
+   exactly `12.2.1` (no caret). Not the `@testcontainers/postgresql` or
+   `@testcontainers/redis` modules.
+2. **Containers** — one TimescaleDB and one Redis container per test run.
+3. **Databases** — one database per Vitest worker, copied from
+   `bms_template`.
+4. **CI** — the test step uses the container mode; the `services:` and the
+   migrate/seed/refresh/Keycloak validation steps stay.
+5. **Image** — `timescale/timescaledb:2.29.1-pg16`, the tag CI and compose
+   pin.
+6. **Fallback** — a set `DATABASE_URL` wins and still gets per-worker copies
+   on that server; no Docker and no `DATABASE_URL` skips locally and refuses
+   under `CI`; no container reuse between local runs in the first version.
+7. **Rollout** — batches behind the `NOT_YET_ISOLATED` ratchet.
+8. **Absorbed rows** — after the last PR re-measures them, close `F4.66`,
+   `F4.70` and `F4.242` as absorbed; keep `F4.65` open for the external mode.
+9. **`maxWorkers`** — `F4.71`'s rule: raise to 4 only if every measured run
+   at 4 is green, `F4.271`'s timeouts counted.
 
 ## Context
 
@@ -203,6 +232,8 @@ the root `vitest.config.ts`); none ships in an image.
   row is taken, removing the CI `services:`.
 
 ## Open questions for the owner (in order)
+
+*All nine answered 2026-11-10 — see *Rulings*. Kept as asked, for the record.*
 
 1. **Package.** (a) `testcontainers` core only, `GenericContainer` — *recommended*;
    (b) core plus `@testcontainers/postgresql` and `@testcontainers/redis`;
