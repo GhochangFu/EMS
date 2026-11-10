@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertNullIsNone,
   assertTheBoundaryIsLive,
+  assertTheWindowIsTheCallers,
   assertThirtySecondsIsStale,
   assertTwentyTwoSecondsIsLive,
 } from "./telemetry-freshness.spec";
@@ -23,5 +24,9 @@ describe("F3.68 — telemetryFreshnessAt", () => {
 
   it("F4 a sample exactly 25 s old is live (the window is inclusive)", () => {
     assertTheBoundaryIsLive();
+  });
+
+  it("F5 the window is the caller's own, not a fixed 25 s", () => {
+    assertTheWindowIsTheCallers();
   });
 });

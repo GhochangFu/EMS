@@ -46,7 +46,7 @@ const HEADLINE: GeneratedSitePointDto = {
 
 /** P1 — a unit listing only a key the asset lacks reads the headline sample's freshness, and shows only its list. */
 export function listedUnitFreshnessFollowsTheAssetsHeadlinePoints(): void {
-  const asset = assetOf(MEMBER, [MISSING], [], NOW, [HEADLINE]);
+  const asset = assetOf(MEMBER, [MISSING], [], NOW, [HEADLINE], 25);
   expect({
     latestTelemetryAt: asset.latestTelemetryAt,
     freshness: asset.freshness,
@@ -56,6 +56,6 @@ export function listedUnitFreshnessFollowsTheAssetsHeadlinePoints(): void {
 
 /** P2 — with no liveness input and no sampled row, the asset reads `none` (the control). */
 export function noSampleAnywhereReadsNone(): void {
-  const asset = assetOf(MEMBER, [MISSING], [], NOW, []);
+  const asset = assetOf(MEMBER, [MISSING], [], NOW, [], 25);
   expect([asset.latestTelemetryAt, asset.freshness]).toEqual([null, "none"]);
 }

@@ -9,10 +9,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withReadScope } from "../database/tenant-read-scope";
 import { QueueHealthService } from "../queue/queue-health.service";
 import { StorageHealthService } from "../storage/storage-health.service";
-import {
-  REPORTING_ASSETS_CTE_SQL,
-  REPORTING_WINDOW_SECONDS,
-} from "../telemetry/telemetry-freshness";
+import { FRESHNESS_FLOOR_SECONDS, liveAssetsCteSql } from "../telemetry/telemetry-cadence";
 import {
   dataQualityPercent,
   fieldDataState,
@@ -53,17 +50,15 @@ const EMPTY_COUNTS: StatusCountsRow = {
  *
  * **The query.** `scoped` is every asset in scope with an RTU (the streaming
  * denominator, decision 1 — no `active` filter, plan decision 1);
- * `reporting` is the any-point CTE {@link REPORTING_ASSETS_CTE_SQL}, whose
- * window is the plan-time interval literal built from
- * `REPORTING_WINDOW_SECONDS` (150 s, ADR 0075 Amendment 1) — never a restated
- * number and never a bound parameter, which would plan every `point_values`
- * chunk. The one window drives both `dataQuality` and `field_data`, and is
- * returned as `windowSeconds`. It is wider than the 25 s live window the
- * class strip and the widgets use, because the real MQTT devices report every
- * 60 s: this read asks "is data arriving?", not "is this reading live?". Since
- * `F4.260` (ADR 0075 Amendment 2) the location cards, `/` Sites online and the
- * map read this same window. `tests/f3.28-offline-bound-single-source.test.ts` pins this
- * file to the reporting CTE and forbids the live one. The SQL is unaliased so
+ * `live` is the any-point CTE `liveAssetsCteSql` (`telemetry-cadence.ts`,
+ * `F4.350`, ADR 0075 Amendment 3), narrowed to `scoped`: each asset is fresh
+ * inside its own RTU's window, `clamp(2.5 x interval, 25 s, 900 s)` — never a
+ * restated number and never a bound parameter, which would plan every
+ * `point_values` chunk. The one rule drives both `dataQuality` and
+ * `field_data`; `windowSeconds` reports the 25 s floor, the smallest window
+ * any asset has. The fixed 150 s reporting window of Amendments 1-2 is gone.
+ * `tests/f3.28-offline-bound-single-source.test.ts` pins this file to the
+ * shared CTE. The SQL is unaliased so
  * Drizzle's `inArray(assets.id, …)` renders against `bms.assets`.
  *
  * **Scope.** `assetIds` is `readableAssetIds(user)` (`null` = unrestricted),
@@ -72,7 +67,7 @@ const EMPTY_COUNTS: StatusCountsRow = {
  * scopes `bms.assets` and `bms.rtus`; on the fleet branch (an admin or a
  * multi-organization scope) the `inArray` on `scoped` is the only isolation
  * control. `telemetry.point_values` has no RLS policy on either branch, and
- * `reporting` reads it fleet-wide, so the `scoped` join is what keeps another
+ * `live` reads it fleet-wide, so the `scoped` join is what keeps another
  * tenant's assets out of both counts. An empty scope runs no query (plan
  * decision 7).
  */
@@ -104,14 +99,14 @@ export class SystemStatusService {
               JOIN bms.rtus ON rtus.id = assets.rtu_id
               WHERE ${scopeFilter}
             ),
-            ${sql.raw(REPORTING_ASSETS_CTE_SQL)}
+            ${sql.raw(liveAssetsCteSql("SELECT id FROM scoped"))}
             SELECT
               COUNT(*)::int AS streaming_assets,
               COUNT(r.asset_id)::int AS fresh_assets,
               COUNT(*) FILTER (WHERE s.source_type = 'mqtt')::int AS mqtt_assets,
               COUNT(r.asset_id) FILTER (WHERE s.source_type = 'mqtt')::int AS mqtt_fresh
             FROM scoped s
-            LEFT JOIN reporting r ON r.asset_id = s.id
+            LEFT JOIN live r ON r.asset_id = s.id
           `);
           return result.rows[0] ?? EMPTY_COUNTS;
         },
@@ -139,7 +134,7 @@ export class SystemStatusService {
         percent: dataQualityPercent(fresh, streaming),
         freshAssets: fresh,
         streamingAssets: streaming,
-        windowSeconds: REPORTING_WINDOW_SECONDS,
+        windowSeconds: FRESHNESS_FLOOR_SECONDS,
       },
       checkedAt: new Date().toISOString(),
     };

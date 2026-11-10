@@ -14,6 +14,7 @@ import {
 // interpolation (the `mimic-nodes.service.ts` idiom).
 import * as generatedSiteView from "../control-room/generated-site-view.service";
 import type { BmsTx } from "../database/tenant-context";
+import { assetIdsScopeSql, assetWindowsCteSql, FRESHNESS_FLOOR_SECONDS, windowsByAsset } from "../telemetry/telemetry-cadence";
 import { telemetryFreshnessAt } from "../telemetry/telemetry-freshness";
 
 /** What the site-widgets read adds for the `breaker_table` widget (`F3.74`, plan D8). */
@@ -190,6 +191,12 @@ export async function readBreakerRows(
     ORDER BY sa.id, p.point_key ASC
   `);
 
+  // `F4.350` (ADR 0075 Amendment 3): each breaker is judged on its own RTU's window.
+  const windows = await tx.execute<{ asset_id: string; window_seconds: number }>(
+    sql`WITH ${sql.raw(assetWindowsCteSql(assetIdsScopeSql(shownIds)))} SELECT asset_id, window_seconds FROM asset_windows`,
+  );
+  const windowByAsset = windowsByAsset(windows.rows);
+
   const pointsByAsset = new Map<string, GeneratedSitePointDto[]>();
   const stateKeys = new Set<string>();
   for (const row of points.rows) {
@@ -222,7 +229,7 @@ export async function readBreakerRows(
   }
 
   return {
-    breakers: members.rows.map((row) => breakerRowOf(row, pointsByAsset.get(row.asset_id) ?? [], nowMs)),
+    breakers: members.rows.map((row) => breakerRowOf(row, pointsByAsset.get(row.asset_id) ?? [], nowMs, windowByAsset.get(row.asset_id) ?? FRESHNESS_FLOOR_SECONDS)),
     stateMaps,
   };
 }
@@ -232,7 +239,12 @@ export async function readBreakerRows(
  * among the points statement (2) SELECTED — the table keys and the state keys — not from every
  * point the asset reports, so a breaker that reports only an unselected key reads `none`.
  */
-function breakerRowOf(member: MemberRow, points: GeneratedSitePointDto[], nowMs: number): BreakerRow {
+function breakerRowOf(
+  member: MemberRow,
+  points: GeneratedSitePointDto[],
+  nowMs: number,
+  freshnessWindowSeconds: number,
+): BreakerRow {
   let latestTelemetryAt: string | null = null;
   for (const point of points) {
     if (point.latest !== null && (latestTelemetryAt === null || Date.parse(point.latest.time) > Date.parse(latestTelemetryAt))) {
@@ -248,7 +260,8 @@ function breakerRowOf(member: MemberRow, points: GeneratedSitePointDto[], nowMs:
       assetLocationName: member.location_name,
       domain: member.domain,
       latestTelemetryAt,
-      freshness: telemetryFreshnessAt(latestTelemetryAt, nowMs),
+      freshness: telemetryFreshnessAt(latestTelemetryAt, nowMs, freshnessWindowSeconds),
+      freshnessWindowSeconds,
       points,
     },
     roleCode: member.role,

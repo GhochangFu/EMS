@@ -11,6 +11,7 @@ import type {
 
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_POOL } from "../database/database.tokens";
+import { assetIdsScopeSql, assetWindowsCteSql, FRESHNESS_FLOOR_SECONDS, windowsByAsset } from "../telemetry/telemetry-cadence";
 import { telemetryFreshnessAt } from "../telemetry/telemetry-freshness";
 
 const NOT_FOUND = "Location not found or outside your access scope";
@@ -186,6 +187,12 @@ export class GeneratedSiteViewService {
       [ids],
     );
 
+    // `F4.350` (ADR 0075 Amendment 3): each asset is judged on its own RTU's window.
+    const windows = await this.pool.query<{ asset_id: string; window_seconds: number }>(
+      `WITH ${assetWindowsCteSql(assetIdsScopeSql(ids))} SELECT asset_id, window_seconds FROM asset_windows`,
+    );
+    const windowByAsset = windowsByAsset(windows.rows);
+
     const pointsByAsset = new Map<string, GeneratedSitePointDto[]>();
     const newestByAsset = new Map<string, string>();
     for (const row of points.rows) {
@@ -218,6 +225,7 @@ export class GeneratedSiteViewService {
         domains.set(code, domain);
       }
       const latestTelemetryAt = newestByAsset.get(row.asset_id) ?? null;
+      const freshnessWindowSeconds = windowByAsset.get(row.asset_id) ?? FRESHNESS_FLOOR_SECONDS;
       const asset: GeneratedSiteAssetDto = {
         id: row.asset_id,
         code: row.asset_code ?? "",
@@ -226,7 +234,8 @@ export class GeneratedSiteViewService {
         assetLocationName: row.location_name,
         domain: code,
         latestTelemetryAt,
-        freshness: telemetryFreshnessAt(latestTelemetryAt, nowMs),
+        freshness: telemetryFreshnessAt(latestTelemetryAt, nowMs, freshnessWindowSeconds),
+        freshnessWindowSeconds,
         points: pointsByAsset.get(row.asset_id) ?? [],
       };
       domain.assets.push(asset);

@@ -454,7 +454,7 @@ export const assetRoleWorstSeveritySchema = z.object({
  * - `worstCount`: how many of them sit at that worst severity (OQ4) — `0`
  *   when `worstSeverity` is `null`.
  * - `offlineCount`: how many have no sample of any point in the last
- *   `LIVE_TELEMETRY_MAX_AGE_SECONDS` (OQ1).
+ *   the asset's own RTU window (`telemetry-cadence.ts`, ADR 0075 Amendment 3; was a fixed 25 s, OQ1).
  *
  * `label` is `asset_roles.label` verbatim (OQ6). A retired role that an asset
  * still holds is included (plan decision 7).

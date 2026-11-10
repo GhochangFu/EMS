@@ -271,7 +271,8 @@ export function layoutNodeOf(row: LayoutNodeRow): MimicLayoutNodeDto | null {
  * A shown member as F3.68's asset shape: freshness from the newest sample among its shown points,
  * (`F3.74` plan D4) its state points — a breaker reporting only its state is live — and
  * (`F4.307`) `liveness`, the asset's headline points: a unit listing only keys the asset lacks is
- * still as fresh as its asset. `liveness` never joins `points`.
+ * still as fresh as its asset. `liveness` never joins `points`. `F4.350`: the freshness is judged on
+ * `freshnessWindowSeconds`, the asset's own RTU window, which the caller must pass.
  */
 export function assetOf(
   member: MemberRow,
@@ -279,6 +280,7 @@ export function assetOf(
   statePoints: GeneratedSitePointDto[],
   nowMs: number,
   liveness: readonly GeneratedSitePointDto[] = [],
+  freshnessWindowSeconds: number,
 ): GeneratedSiteAssetDto {
   let latestTelemetryAt: string | null = null;
   for (const point of [...points, ...statePoints, ...liveness]) {
@@ -294,7 +296,8 @@ export function assetOf(
     assetLocationName: member.location_name,
     domain: member.domain,
     latestTelemetryAt,
-    freshness: telemetryFreshnessAt(latestTelemetryAt, nowMs),
+    freshness: telemetryFreshnessAt(latestTelemetryAt, nowMs, freshnessWindowSeconds),
+    freshnessWindowSeconds,
     points,
   };
 }

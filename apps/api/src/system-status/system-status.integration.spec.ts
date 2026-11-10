@@ -93,6 +93,8 @@ async function buildScene(tx: Tx): Promise<Scene> {
         code: `F330SS-${run}-M`,
         displayName: `F330SS ${run} mqtt RTU`,
         sourceType: "mqtt",
+        // F4.350 (ADR 0075 Amendment 3): the real MQTT devices report every 60 s, so the window is 150 s.
+        expectedIntervalSeconds: 60,
       },
       {
         organizationId: location.organizationId,
@@ -149,16 +151,16 @@ export async function assertOneFreshOfTwoStreaming(db: BmsDb): Promise<void> {
       r.dataQuality.streamingAssets === 2 &&
         r.dataQuality.freshAssets === 1 &&
         r.dataQuality.percent === 50 &&
-        r.dataQuality.windowSeconds === 150 &&
+        r.dataQuality.windowSeconds === 25 &&
         fieldData(r) === "ok" &&
         r.status === "operational",
-      `expected streaming 2, fresh 1, 50 %, window 150, field_data ok, operational; got ${summary(r)}`,
+      `expected streaming 2, fresh 1, 50 %, window 25 (the floor), field_data ok, operational; got ${summary(r)}`,
     );
   });
 }
 
 /**
- * Case 2 — A's only sample is 200 s old, beyond the 150 s reporting window
+ * Case 2 — A's only sample is 200 s old, beyond the 150 s window of a 60 s device
  * (ADR 0075 Amendment 1): no mqtt asset is reporting, so field data is
  * degraded.
  */
@@ -303,11 +305,10 @@ export async function assertThreeSamplesCountOneFreshAsset(db: BmsDb): Promise<v
 }
 
 /**
- * Case 10 — ADR 0075 Amendment 1: A's only sample is 60 s old, one real MQTT
- * reporting interval. It is outside the 25 s live window but inside the 150 s
- * reporting window, so the status read counts A as reporting. The window is
- * not asserted here: case 1 holds `windowSeconds`, so a mutation of the
- * constant reddens this case only through the SQL.
+ * Case 10 — ADR 0075 Amendment 3: A's only sample is 60 s old, one real MQTT
+ * reporting interval, and A's RTU is configured `expectedIntervalSeconds: 60`.
+ * It is outside the 25 s floor but inside A's own 150 s window, so the status
+ * read counts A as reporting. Case 1 holds `windowSeconds` (the floor).
  */
 export async function assertSixtySecondMqttSampleIsReporting(db: BmsDb): Promise<void> {
   await withScene(db, async (scene) => {

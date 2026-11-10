@@ -22,6 +22,7 @@ import { orgSymbolsOf, type OrgSymbolRow } from "../mimic-layouts/mimic-org-symb
 // A namespace import, so the window constant's name appears in this file once: at the one
 // place it is interpolated (`tests/f3.32-mimic-widget.test.ts` counts it in the raw text).
 import * as generatedSiteView from "../control-room/generated-site-view.service";
+import { assetIdsScopeSql, assetWindowsCteSql, FRESHNESS_FLOOR_SECONDS, windowsByAsset } from "../telemetry/telemetry-cadence";
 import { FLEET_DRIZZLE, FLEET_POOL } from "../database/database.tokens";
 
 import {
@@ -295,6 +296,7 @@ export class MimicNodesService {
     const statePointsByAsset = new Map<string, GeneratedSitePointDto[]>();
     /** `F4.307` (plan C4): per shown asset, the keys a unit lists for it, by key. */
     const listedByAsset = new Map<string, Map<string, GeneratedSitePointDto>>();
+    const windowByAsset = new Map<string, number>();
     let stateMaps: PointKeyStateMapDto[] = [];
 
     if (groupIds.length > 0 && (readableAssetIds === null || readableAssetIds.length > 0)) {
@@ -460,6 +462,14 @@ export class MimicNodesService {
           byAsset.set(row.asset_id, [...(byAsset.get(row.asset_id) ?? []), point]);
         }
 
+        // `F4.350` (ADR 0075 Amendment 3): each member is judged on its own RTU's window.
+        const windowRows = await this.pool.query<{ asset_id: string; window_seconds: number }>(
+          `WITH ${assetWindowsCteSql(assetIdsScopeSql(shownIds))} SELECT asset_id, window_seconds FROM asset_windows`,
+        );
+        for (const [assetId, seconds] of windowsByAsset(windowRows.rows)) {
+          windowByAsset.set(assetId, seconds);
+        }
+
         // Statement (4): the maps of the state keys seen, and only those — `bms.point_key_states`
         // is global master data (0097, no `organization_id`), so the key list is the filter.
         const stateKeys = [
@@ -513,7 +523,14 @@ export class MimicNodesService {
       const memberOf = (row: MemberRow): MimicNodeMemberDto => {
         const statePoints = statePointsByAsset.get(row.asset_id) ?? [];
         return {
-          asset: assetOf(row, pointsOf(row.asset_id), statePoints, nowMs, pointsByAsset.get(row.asset_id) ?? []),
+          asset: assetOf(
+            row,
+            pointsOf(row.asset_id),
+            statePoints,
+            nowMs,
+            pointsByAsset.get(row.asset_id) ?? [],
+            windowByAsset.get(row.asset_id) ?? FRESHNESS_FLOOR_SECONDS,
+          ),
           activeAlarms: Number(row.active_alarms),
           topAlarm: topAlarmOf(row),
           statePoints,

@@ -6,7 +6,7 @@ import type { MapSiteDto, MapSiteLive } from "@bms/shared";
 
 import { expandLocationSubtrees } from "../auth/location-tree";
 import { FLEET_DRIZZLE, FLEET_POOL } from "../database/database.tokens";
-import { REPORTING_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
+import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-cadence";
 
 /**
  * `F2.10` / ADR 0098 decision 11 — a location is a pin when it has no active child node or holds
@@ -169,13 +169,13 @@ export class MapService {
       asset_count: string;
       fresh_count: string;
     }>(
-      // F4.260 (ADR 0075 Amendment 2): the same 150 s site window as the location cards.
-      `WITH ${REPORTING_ASSETS_CTE_SQL}
+      // F4.350 (ADR 0075 Amendment 3): each asset is fresh inside its own RTU's window, as on the location cards.
+      `WITH ${LIVE_ASSETS_CTE_SQL}
        SELECT a.location_id,
               COUNT(a.id)::int AS asset_count,
               COUNT(l.asset_id)::int AS fresh_count
        FROM bms.assets a
-       LEFT JOIN reporting l ON l.asset_id = a.id
+       LEFT JOIN live l ON l.asset_id = a.id
        WHERE a.location_id IS NOT NULL
          AND ($1::uuid[] IS NULL OR a.id = ANY($1::uuid[]))
        GROUP BY a.location_id`,

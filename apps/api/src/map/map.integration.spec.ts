@@ -7,17 +7,17 @@ import { createDb } from "@bms/db";
 import type { MapSiteDto } from "@bms/shared";
 
 import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
-import { REPORTING_WINDOW_SECONDS } from "../telemetry/telemetry-freshness";
+import { FRESHNESS_FLOOR_SECONDS } from "../telemetry/telemetry-cadence";
 import { MapService } from "./map.service";
 
-/** `F4.260` — ages just outside and just inside the 150 s site window (ADR 0075 Amendment 2). */
-const PAST_SITE_WINDOW_S = REPORTING_WINDOW_SECONDS + 10;
-const INSIDE_SITE_WINDOW_S = REPORTING_WINDOW_SECONDS - 10;
+/** `F4.350` (ADR 0075 Amendment 3) — ages just outside and just inside the 25 s floor: the fixture assets have no RTU interval, so they take the floor. The 60 s-device cases are in `telemetry-cadence.integration.spec.ts`. */
+const PAST_SITE_WINDOW_S = FRESHNESS_FLOOR_SECONDS + 10;
+const INSIDE_SITE_WINDOW_S = FRESHNESS_FLOOR_SECONDS - 10;
 
 /**
  * `F3.30` (ADR 0075 decision 2) — `sitesLive`'s comm-status counts move to
  * the any-point rule through a shared CTE, the same as `dashboard.service.ts`
- * (`F3.30` U2) — since `F4.260` the 150 s `reporting` one. A second fixture asset (no alarms of
+ * (`F3.30` U2) — since `F4.260` the `live` one (F4.350). A second fixture asset (no alarms of
  * its own) carries a non-`kw` sample; scoping `assetIds` to only that asset
  * keeps `insertFixture`'s alarmed asset out of both the alarm and comm counts,
  * so `assetsTotal` and `status` read off this asset alone.
@@ -798,9 +798,9 @@ export async function assertNoF210MapFixtureRowsRemain(pool: pg.Pool): Promise<v
 }
 
 /**
- * `F4.260` (ADR 0075 Amendment 2) — a pin whose only asset's newest sample is 140 s old is
- * `healthy`: inside the 150 s site window, though outside the 25 s reading window. A second
- * site whose only asset is 160 s old is `offline`, the control that the window is not unbounded.
+ * `F4.260` (ADR 0075 Amendment 2) — a pin whose only asset's newest sample is 15 s old is
+ * `healthy`: inside the 25 s floor window (F4.350), though outside the 25 s reading window. A second
+ * site whose only asset is 35 s old is `offline`, the control that the window is not unbounded.
  */
 export async function assertThePinUsesTheReportingWindow(pool: pg.Pool): Promise<void> {
   await withRolledBackClient(pool, async (client) => {
@@ -823,7 +823,7 @@ export async function assertThePinUsesTheReportingWindow(pool: pg.Pool): Promise
       const site = sites.find((candidate) => candidate.slug === slug);
       return { status: site?.live.status, fresh: site?.live.assetsFresh, total: site?.live.assetsTotal };
     };
-    expect(got(inside.slug), "a 140 s sample keeps the pin green").toEqual({ status: "healthy", fresh: 1, total: 1 });
-    expect(got(outside.slug), "a 160 s sample leaves the pin offline").toEqual({ status: "offline", fresh: 0, total: 1 });
+    expect(got(inside.slug), "a 15 s sample keeps the pin green").toEqual({ status: "healthy", fresh: 1, total: 1 });
+    expect(got(outside.slug), "a 35 s sample leaves the pin offline").toEqual({ status: "offline", fresh: 0, total: 1 });
   });
 }

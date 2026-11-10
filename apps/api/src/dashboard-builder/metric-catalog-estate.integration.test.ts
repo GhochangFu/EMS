@@ -324,7 +324,7 @@ describe.skipIf(!connectionString)("F4.317 — the organization strip's catalog 
   }, 60_000);
 
   it("sites.live.count counts locations: two at L1 and one at L2, L1 reporting → 1 of 2", async () => {
-    // Written here, a moment before the read, so it is inside the 150 s reporting window.
+    // Written here, a moment before the read, so it is inside the 25 s floor window (F4.350).
     await superuserPool.query(
       `INSERT INTO telemetry.point_values (time, asset_id, point_key, value)
        VALUES (now() - make_interval(secs => 1), $1, 'temp_c', 21)`,

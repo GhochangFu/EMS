@@ -80,6 +80,8 @@ function scriptedPool(): { pool: Pool; sent: Sent[] } {
       if (sql.includes("bms.mimic_layout_pipes")) return { rows: [] };
       if (sql.includes("bms.asset_group_members")) return { rows: [memberRow] };
       if (sql.includes("AS sa(id)")) return { rows: [] };
+      // F4.350: each shown member's window, from its own RTU.
+      if (sql.includes("asset_windows")) return { rows: [{ asset_id: WTP, window_seconds: 150 }] };
       throw new Error(`unscripted statement: ${sql.slice(0, 80)}`);
     },
   } as unknown as Pool;
@@ -138,7 +140,7 @@ export async function previewReadsNoDashboardAndWritesNothing(): Promise<void> {
     dashboards: sent.filter((entry) => /bms\.dashboard/.test(entry.sql)).length,
     writes: sent.filter((entry) => /\b(INSERT|UPDATE|DELETE)\b/i.test(entry.sql)).length,
     statements: sent.length,
-  }).toEqual({ dashboards: 0, writes: 0, statements: 4 });
+  }).toEqual({ dashboards: 0, writes: 0, statements: 5 });
 }
 
 /** U4 — `readableAssetIds = []`: every unit unassigned, and no members statement (only 1b and 1c run). */

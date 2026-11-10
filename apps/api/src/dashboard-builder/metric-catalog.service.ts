@@ -31,7 +31,7 @@ import { CalcParametersService } from "../calc/calc-parameters.service";
 import { priorInstant } from "../dashboard/kpi-prior";
 import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
-import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
+import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-cadence";
 import {
   resolveAssetScope,
   type DashboardAssetScope,
