@@ -62,6 +62,8 @@ still the only working credential path (ADR 0016 Amendment 3).
 | `INGEST_BUFFER_MAX_BYTES` | `268435456` | Total bytes the on-disk buffer may hold, host-wide across every endpoint, before the byte bound erases the oldest segment. Ceiling `2^40` (1 TiB) — a fact about a disk, not about integers. |
 | `INGEST_NOTIFY_LIVE_WINDOW_MS` | `300000` | ADR 0123 decision 10 (`E7.2`). How old a written row's `time` may be and still be notified on `bms_telemetry`; an older row is written as history and not notified (see *Realtime has no switch* below). Defaults to the shared `NOTIFY_LIVE_WINDOW_MS`. Accepted from `60000` to `900000`; anything else, `0` included, refuses start-up with the variable and its bounds in the error. |
 | `INGEST_UPLINK_PORT` | unset (off) | ADR 0123 decision 4 (`E7.2`). The edge uplink receiver's port, `POST /edge/v1/batches` — see *The uplink receiver* below. Unset or blank starts no listener. Same digits-only rule as the health port, `1`–`65535`, and it must differ from `INGEST_HOST_HEALTH_PORT`; either mistake refuses start-up naming the variable. |
+| `INGEST_UPLINK_MAX_SAMPLES_PER_S` | `2000` | Security review M2. Samples per second one edge gateway may post; a batch that would overdraw its bucket is `429 rate-limited` with `Retry-After`. `500`–`100000`: the floor is one full batch, so a batch can always be admitted. Four times the edge's own replay cap (`EDGE_REPLAY_MAX_SAMPLES_PER_S`, 500). |
+| `INGEST_UPLINK_MAX_CONNECTIONS` | `256` | Security review L2. `server.maxConnections` on the uplink listener. `1`–`10000`. |
 
 `INGEST_BUFFER_MAX_AGE_MS` and `INGEST_BUFFER_MAX_BYTES` parse through the
 same digits-only, safe-integer rule as `INGEST_RELOAD_MS` and
@@ -560,18 +562,33 @@ where the port is.
 | path is exactly `/edge/v1/batches` | `404 {"error":"not-found"}` |
 | method is `POST` | `405`, `Allow: POST` |
 | one `Authorization: Bearer <token>`, **before the body is read** | `401 unauthorized` (`WWW-Authenticate: Bearer`), `403 gateway-revoked`, `403 ingest-disabled` |
-| no other batch in flight for this gateway | `429 busy`, `Retry-After: 5` |
+| no other batch in flight for this gateway, and fewer than 4 in flight across all gateways (the `pg` pool's default `max` is 10; the supervisors keep the rest) | `429 busy` / `429 overloaded`, `Retry-After: 5` |
 | `Content-Encoding: gzip`; declared `Content-Length` ≤ 262 144 | `400 bad-encoding`, `413 too-large` |
 | streamed body ≤ 262 144 bytes, decoded ≤ 1 048 576 (the inflater is destroyed at the cap) | `413 too-large`, `400 bad-gzip` |
 | strict UTF-8 JSON, then `uplinkBatchSchema` (`@bms/shared/ingest`) | `400 bad-json`, `400 bad-schema` |
-| the write commits | `503 write-failed`, `Retry-After: 30` |
+| the gateway's sample bucket (`INGEST_UPLINK_MAX_SAMPLES_PER_S`, one second's worth, refilling continuously) | `429 rate-limited`, `Retry-After: <s>` |
+| the write commits within 15 s | `503 write-failed`, `Retry-After: 30` |
 
 A `200` carries `{ accepted, rejected: { foreignDevice, futureRx, tooOld,
 unresolved } }` and is sent only after the rows and the gateway's report have
-committed. Every refusal body is that fixed one-key JSON; no response and no
+committed. **The units differ:** `accepted` is rows written (one sample that
+fans out to two points is 2; two samples collapsed onto one key are 1);
+`foreignDevice`, `futureRx` and `tooOld` are samples; `unresolved` is refused
+writes as `droppedCount` sums them, so a sample refused for two of its targets
+counts 2. Every refusal body is that fixed one-key JSON; no response and no
 log line carries the body, a parse error, the header or the token
-(AGENTS.md §9.6). Refusals are logged as one `warn` "uplink requests refused"
-summary of counts at most once a minute, so a scanner cannot flood the log.
+(AGENTS.md §9.6), and a database failure is logged by its class and SQLSTATE
+code, never its message. Refusals are logged as one `warn` "uplink requests
+refused" summary of counts at most once a minute, so a scanner cannot flood
+the log; counts still held are flushed by a timer each minute and once at
+shutdown. **Per-source limiting of unauthenticated requests is not here** —
+the receiver knows a gateway, not a client address — and is owed at nginx with
+the public route (PR 4).
+
+**A write over 15 s** is abandoned with `503` and its `pg` client destroyed,
+not pooled (the edge aborts at 20 s). **Shutdown cannot hang on a client:**
+`close()` stops accepting, sends `Connection: close` on every later reply, and
+after 2 s destroys every socket still open; `main.ts` waits at most 5 s.
 
 **Authentication** (`src/host/uplink-gateways.ts`, ruling P5 (a)). No
 database work happens before it: the host loads `bms.edge_gateways` (every
@@ -582,9 +599,13 @@ compared with `timingSafeEqual` against every row that holds a hash, with no
 early exit; the stored hash is never itself a credential.
 `tests/e7.2-uplink-auth-static.test.ts` holds the constant-time rule on the
 source. **Revoke and rotate take effect within one reload (60 s by
-default)**; a gateway revoked after the last reload is also refused at write
-time, because the report's `UPDATE` matches only an active row and an
-unmatched one rolls the batch back (`503`, then `403` after the reload).
+default)**, and at commit even before it: the report's `UPDATE` matches only
+an active row whose `token_hash` is the digest this request authenticated with
+and whose organization has `ingest_enabled`, and an unmatched one rolls the
+whole batch back (`503`, then `401`/`403` after the reload). A failing gateway
+query on a reload is logged ("gateway snapshot reload failed") and keeps the
+previous snapshot; it never stops the binding reload, and a failing binding
+reload never stops the snapshot refreshing.
 
 **Screening** (`src/host/uplink-receiver.ts`), each counted and none refusing
 the batch, so one bad sample cannot block a gateway's queue:
@@ -608,14 +629,18 @@ In the same transaction as the upsert, through `writeResolved`'s
 wire's `buffered`, clamped to `integer`) and `clock_state` are set, and any
 row more than 2 h old widens `backfill_dirty_from` / `backfill_dirty_to` with
 `LEAST` / `GREATEST`. 2 h is one hour inside the `_1m` refresh policy's 3 h
-(migration `0027`; `tests/e7.2-uplink-dirty-window-static.test.ts`). A batch
-whose every sample was screened out still records the gateway.
+(migration `0027`; `tests/e7.2-uplink-dirty-window-static.test.ts` scans every
+migration for a later change to that policy). Every batch carrying a late row
+also bumps `backfill_dirty_seq` (migration `0143`), even when its rows fall
+inside the window and move neither bound, so the repair's compare-and-clear
+never clears a generation it did not refresh. A batch whose every sample was
+screened out still records the gateway.
 
 **Aggregate repair is owed — not wired in this build.** The repair pass
 (`src/host/aggregate-repair.ts`) is built and tested with its refresh
 injected: it lists each dirty window, refreshes it, and clears it only on
-success with a compare-and-clear on the stored bounds, at most once a minute
-per gateway. It is **not started**, because it needs `@bms/db`'s
+success with a compare-and-clear on the stored bounds and generation, at most
+once a minute per gateway; the prescribed tick is 10 s. It is **not started**, because it needs `@bms/db`'s
 `refreshAggregatesFrom` and `apps/ingest/package.json` does not depend on
 `@bms/db` yet — an agent may not edit a manifest (plan P8, the owner's
 edit). `main.ts` carries the one marked wiring point, and a host started with
@@ -628,6 +653,19 @@ buckets of a window older than each policy's reach are missing those rows.
 Owed with it: the `apps/ingest/Dockerfile` change (copy and build
 `packages/db`, plan T3.0) and the integration case that proves a 4 h old
 batch reaches `_1m` and `_1h` after one pass.
+
+**Known limits, owed when the repair is wired** (security review L3, L4):
+
+- **One refresh per gateway window, not per pass.** Each gateway's window is
+  refreshed on its own, so many sites returning from one outage refresh
+  overlapping ranges many times. Merging the windows of a pass into one
+  refresh range is owed with the wiring.
+- **A token can overwrite its own history.** A valid token may post any value
+  for its own gateway's points with an `rx` up to 6 d 12 h old, and the upsert
+  replaces what was stored at that key, with no audit trail of the overwrite.
+  The token cannot reach another gateway's RTUs (`foreignDevice`), and a
+  revoke or rotation stops it at once, because every commit re-checks status
+  and token hash. An audit of late overwrites is owed.
 
 **Health.** The body gains one line per gateway, after every other line:
 
@@ -643,15 +681,18 @@ the `ok`/`degraded` verdict** — a site's uplink is the site's state, and the
 edge keeps its backlog on its own disk. The values are as of the last reload.
 
 **Logs.** `warn` "uplink samples rejected" with the gateway's id and code and
-the four counts; `info` "uplink rows written outside the live window, not
+the four counts, at most once a minute per gateway with the counts summed
+since the last line; `info` "uplink rows written outside the live window, not
 notified" with counts; `error` "uplink batch write failed" with the gateway
-id and the database's reason; the refusal summary above. `ingest host
+id and the error's `kind` and `code`; `error` "uplink listener error";
+`error` "gateway snapshot reload failed"; the refusal summary above. `ingest host
 started` gains `uplinkPort` (`"off"` when unset).
 
 **Probe.** `apps/ingest/scripts/uplink-probe.mjs` posts one gzip batch:
 `UPLINK_PROBE_TOKEN=bmsgw_… node apps/ingest/scripts/uplink-probe.mjs
 --device <rtu_code> [--age 4h] [--count N] [--at <iso>]`. The token is read
-from the environment only and never printed.
+from the environment only and never printed. `--url` must be `https:` unless
+its host is loopback.
 
 ## The ADR 0016 §6 commit 3 parallel verification (historical)
 

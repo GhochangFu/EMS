@@ -610,5 +610,8 @@ the outage.
   mutation is to stamp `now()` instead); `at` is kept and an absent `at` stays
   absent; `rx` exactly 60 s ahead and exactly 6 d 12 h old pass, one
   millisecond more is counted.
-- `uplink-write.integration.spec.ts`: the same batch written twice leaves the
-  same row count.
+- `uplink-write.integration.spec.ts`: the same rows written twice leave the
+  same row count. **That case proves the upsert only:** it drives
+  `writeUplinkRows` with rows already resolved, so the step from the wire's
+  `rx` to the row's `time` is proved by the unit case above, not against a
+  database.

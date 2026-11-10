@@ -75,7 +75,13 @@ export type UplinkBatch = z.infer<typeof uplinkBatchSchema>;
 
 const count = z.number().int().nonnegative();
 
-/** The `200` body: written rows, and each refused sample counted by its reason. */
+/**
+ * The `200` body. **The units differ:** `accepted` is rows written (a sample
+ * that fans out to two points counts 2, two samples collapsed onto one stored
+ * key count 1); `foreignDevice`, `futureRx` and `tooOld` are samples;
+ * `unresolved` is refused writes as the normaliser's `droppedCount` sums them,
+ * so a sample refused for two of its targets counts 2.
+ */
 export const uplinkResponseSchema = z.object({
   accepted: count,
   rejected: z.object({

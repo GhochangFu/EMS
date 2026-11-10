@@ -1,6 +1,7 @@
 import type { GatewayHealth } from "./health-gateways.js";
 import { renderHealth, type HealthSnapshot } from "./health-server.js";
 import { assert } from "./normaliser.spec.js";
+import type { SupervisorHealth } from "./supervisor.js";
 import { gatewayHealth } from "./uplink-gateways.js";
 import { gateway } from "./uplink-gateways.spec.js";
 
@@ -89,6 +90,29 @@ export function gatewaysNeverChangeTheVerdict(): void {
   const withGateways = renderHealth(snapshot(worst), NOW).split("\n")[0];
   assert(plain.startsWith("ingest-host ok "), `control: the plain body is ok, got ${plain}`);
   assert(withGateways === plain, `the header must not move: ${withGateways} vs ${plain}`);
+
+  // And from a degraded body: healthy gateways must not lift it to ok (code review 9).
+  const buffering: SupervisorHealth = {
+    protocol: "mqtt",
+    endpointKey: "broker:8883",
+    state: "connected",
+    devices: [],
+    restarts: 0,
+    consecutivePollFailures: 0,
+    queueDepth: 0,
+    droppedSamples: 0,
+    writeFailures: 1,
+    buffered: 10,
+    writePath: "buffering",
+    bufferDropped: 0,
+    replayed: 0,
+    samplesWritten: 0,
+  };
+  const degraded = { ...snapshot(), endpoints: [buffering] };
+  const degradedPlain = renderHealth(degraded, NOW).split("\n")[0];
+  const degradedWith = renderHealth({ ...degraded, gateways: [health(), ...worst] }, NOW).split("\n")[0];
+  assert(degradedPlain.startsWith("ingest-host degraded "), `control: a buffering endpoint degrades, got ${degradedPlain}`);
+  assert(degradedWith === degradedPlain, `the degraded header must not move: ${degradedWith} vs ${degradedPlain}`);
 }
 
 /** A revoked gateway with RTUs assigned gets a `revoked-gateway` line; one with none does not. */
