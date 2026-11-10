@@ -7,8 +7,9 @@ import {
   assertEveryRowCarriesResolvedMetadata,
   assertEveryRowCarriesTheOrganizationSwitch,
   assertKeyVersionArrivesAsAnInteger,
-  assertThePayloadFormatJoin,
+  assertTheEdgeGatewayIsSelectedNotFiltered,
   assertTheOrganizationSwitchIsSelectedNotFiltered,
+  assertThePayloadFormatJoin,
 } from "./bindings.integration.spec.js";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate.js";
 
@@ -74,5 +75,10 @@ describe.skipIf(!connectionString)("F2.7 — resolved point metadata on the bind
   // `F4.339` / ADR 0117 decision 8.
   it("plans no row for an inactive RTU, and rows for the same RTU active", async () => {
     await assertAnInactiveRtuIsNotPlanned(pool as pg.Pool);
+  });
+
+  // `E7.2` / ADR 0123 decision 6.
+  it("selects rtus.edge_gateway_id rather than filtering on it", async () => {
+    await assertTheEdgeGatewayIsSelectedNotFiltered(pool as pg.Pool);
   });
 });

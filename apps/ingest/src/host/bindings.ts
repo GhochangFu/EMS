@@ -6,13 +6,17 @@ import {
   MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION,
   mqttPayloadFormatDefinitionSchema,
   mqttPlaintextDecision,
-  QUALITY_POLICIES,
   type IngestProtocol,
   type MqttPayloadFormatDefinition,
-  type QualityPolicy,
 } from "@bms/shared/ingest";
 
 import type { IngestAdapterFactory, RtuBinding } from "../adapter/types.js";
+import {
+  addEdgeServed,
+  indexPointRows,
+  type EdgeServed,
+  type EdgeServedAccumulator,
+} from "./binding-targets.js";
 import type { PointIndex, PointTarget } from "./normaliser.js";
 
 /**
@@ -90,6 +94,11 @@ export type BindingRow = {
   readonly payload_format_code: string | null;
   /** `mqtt_payload_formats.definition`, unparsed; `planEndpoints` validates it. */
   readonly payload_format_definition: unknown;
+  /**
+   * `rtus.edge_gateway_id` (ADR 0123 decision 6, migration `0141`). Set: the edge
+   * box serves the RTU and the cloud plan dials nothing for it (`edgeServed`).
+   */
+  readonly edge_gateway_id: string | null;
 };
 
 /**
@@ -150,6 +159,9 @@ export type BindingRow = {
  *
  * `F4.339` (ADR 0117 decision 8): `r.active = true` — an inactive RTU released
  * its MQTT topic, so it is not planned at all and has no skip reason.
+ *
+ * `E7.2` (ADR 0123 decision 6): `r.edge_gateway_id` is selected, never
+ * filtered — `planEndpoints` moves an edge-served RTU into `edgeServed`.
  */
 export const BINDING_QUERY = `
   SELECT
@@ -157,6 +169,7 @@ export const BINDING_QUERY = `
     r.rtu_code,
     r.source_type,
     r.mqtt_topic,
+    r.edge_gateway_id,
     a.id AS asset_id,
     a.meta->>'telemetrySource' AS telemetry_source,
     ap.point_key,
@@ -192,19 +205,6 @@ export const BINDING_QUERY = `
     AND r.active = true
   ORDER BY r.id, ap.point_key
 `;
-
-/**
- * Narrows a stored `quality_policy` to the vocabulary this build knows.
- *
- * The column is a `varchar(16)` with a CHECK, so a row can carry a value a newer
- * API wrote and this host has never heard of. An unknown string resolves to
- * `null`, which is `discard_bad` — the safe reading, and the one that keeps the
- * host's branch set closed. Declared here rather than in `packages/shared`
- * because the host is the only thing that acts on the value.
- */
-function isQualityPolicy(value: string | null): value is QualityPolicy {
-  return value !== null && (QUALITY_POLICIES as readonly string[]).includes(value);
-}
 
 /** Why an RTU or a point was left out, so nothing is dropped silently. */
 export type SkippedBinding = {
@@ -258,6 +258,12 @@ export type PlanResult = {
   readonly endpoints: readonly EndpointPlan[];
   readonly skipped: readonly SkippedBinding[];
   readonly warnings: readonly PlanWarning[];
+  /**
+   * RTUs whose `edge_gateway_id` is set, by gateway (ADR 0123 decision 6, plan
+   * C5). In no endpoint and in no `skipped` list: nothing was dropped, the edge
+   * writes them. The cloud receiver accepts a sample only for these device keys.
+   */
+  readonly edgeServed: EdgeServed;
 };
 
 /**
@@ -473,6 +479,7 @@ function decoderFingerprint(protocol: IngestProtocol, bindings: readonly RtuBind
 export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions): PlanResult {
   const skipped: SkippedBinding[] = [];
   const warnings: PlanWarning[] = [];
+  const edgeServed: EdgeServedAccumulator = new Map();
   const byRtu = new Map<string, BindingRow[]>();
   for (const row of rows) {
     const existing = byRtu.get(row.rtu_id);
@@ -572,6 +579,16 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         : rtuRows;
     if (pointRows.length === 0) {
       skipped.push({ rtuId, rtuCode: deviceKey, reason: "no-mqtt-owned-points" });
+      continue;
+    }
+
+    // ADR 0123 decision 6, plan C5: one writer per RTU. An edge-served RTU is
+    // decided here — after the organization switch, the protocol, `rtu_code` and
+    // the `telemetrySource` filter, so those still skip it by name; before config
+    // and credentials, so the cloud never decrypts a blob or dials a broker for
+    // a device the edge serves.
+    if (head.edge_gateway_id !== null) {
+      addEdgeServed(edgeServed, head.edge_gateway_id, deviceKey, pointRows);
       continue;
     }
 
@@ -888,29 +905,7 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       sourceKeys,
     });
 
-    let bySourceKey = group.index.get(deviceKey);
-    if (bySourceKey === undefined) {
-      bySourceKey = new Map();
-      group.index.set(deviceKey, bySourceKey);
-    }
-    for (const row of pointRows) {
-      const targets = bySourceKey.get(row.source_data_key);
-      const target: PointTarget = {
-        assetId: row.asset_id,
-        pointKey: row.point_key,
-        unit: row.unit,
-        scaleMultiplier: row.scale_multiplier,
-        scaleOffset: row.scale_offset,
-        engMin: row.eng_min,
-        engMax: row.eng_max,
-        qualityPolicy: isQualityPolicy(row.quality_policy) ? row.quality_policy : null,
-      };
-      if (targets === undefined) {
-        bySourceKey.set(row.source_data_key, [target]);
-      } else {
-        targets.push(target);
-      }
-    }
+    indexPointRows(group.index, deviceKey, pointRows);
   }
 
   return {
@@ -925,6 +920,7 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
     })),
     skipped,
     warnings,
+    edgeServed,
   };
 }
 

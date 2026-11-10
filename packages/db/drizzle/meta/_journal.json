@@ -981,6 +981,20 @@
       "when": 1794333317950,
       "tag": "0140_work_order_reference_sla",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1794341154207,
+      "tag": "0141_edge_gateways",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1794341155207,
+      "tag": "0142_edge_gateways_tenant_read_only",
+      "breakpoints": true
     }
   ]
 }

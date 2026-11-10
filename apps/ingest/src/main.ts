@@ -4,6 +4,7 @@ import { config as loadDotenv } from "dotenv";
 import pg from "pg";
 
 import { lookupAdapter } from "./adapter/registry.js";
+import { edgeServedCounts } from "./host/binding-targets.js";
 import {
   loadBindingRows,
   type EndpointPlan,
@@ -270,9 +271,13 @@ async function main(): Promise<void> {
     staleAfterMs: hostConfig.staleAfterMs,
   }));
 
+  // E7.2 (ADR 0123 decision 6): RTUs the edge serves are in no endpoint and no
+  // skip list, so without these counts they would vanish from the log silently.
+  let edgeCounts = edgeServedCounts(initial.edgeServed);
   logger.info("ingest host started", {
     endpoints: registry.health().endpoints.length,
     skipped: skipped.length,
+    ...edgeCounts,
     healthPort: health.port,
     bufferDir: hostConfig.bufferDir,
   });
@@ -304,6 +309,14 @@ async function main(): Promise<void> {
         // An RTU onboarded into a running host reaches the fallback here, not
         // at boot. Deduplicated per process by the set above.
         reportCredentialFallbacks(next.warnings);
+        const nextEdgeCounts = edgeServedCounts(next.edgeServed);
+        if (
+          nextEdgeCounts.edgeGateways !== edgeCounts.edgeGateways ||
+          nextEdgeCounts.edgeServedRtus !== edgeCounts.edgeServedRtus
+        ) {
+          edgeCounts = nextEdgeCounts;
+          logger.info("edge-served set changed", { ...edgeCounts });
+        }
         // Stops and replaces before starts, never two reloads at once (plan
         // R6). The tick flag above already serialises ticks; the registry's own
         // "busy" refusal is the second guard, for any other caller.
