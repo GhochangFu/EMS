@@ -24,6 +24,7 @@
     "tests/e7.2-edge-gateways-schema.integration.test.ts",
     "tests/e7.2-uplink-auth-static.test.ts",
     "tests/e7.2-uplink-dirty-window-static.test.ts",
+    "tests/e7.2-edge-gateways-backfill-seq.test.ts",
     "tests/adr-0024-retention-bounds.test.ts",
     "tests/adr-0025-level-selector.test.ts",
     "tests/adr-0029-openapi-contract.test.ts",

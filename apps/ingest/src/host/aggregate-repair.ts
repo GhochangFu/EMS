@@ -1,4 +1,4 @@
-import type { HostLogger } from "./logger.js";
+import { errorKind, type HostLogger } from "./logger.js";
 
 /**
  * The cloud host's aggregate repair (`E7.2`, ADR 0123 decision 11, plan T3.4,
@@ -12,12 +12,14 @@ import type { HostLogger } from "./logger.js";
  * success**, so a host that crashes between write and refresh finds the
  * window again on restart.
  *
- * **Compare-and-clear.** The clear names the exact window it refreshed
- * (`WHERE … backfill_dirty_from = $2 AND backfill_dirty_to = $3`), so a window
- * a later batch widened while the refresh ran no longer matches and survives
- * for the next pass. The keys are the columns' own text, read in the same
- * query, so a microsecond the JavaScript `Date` cannot hold can never make a
- * window un-clearable.
+ * **Compare-and-clear.** The clear names the exact window and generation it
+ * refreshed (`WHERE … backfill_dirty_from = $2 AND backfill_dirty_to = $3 AND
+ * backfill_dirty_seq = $4`). A later batch that widened the window moves a
+ * bound; one whose late rows fell **inside** it moves only
+ * `backfill_dirty_seq` (migration `0143`, code review 2). Either way the
+ * clear no longer matches and the window survives for the next pass. The keys
+ * are the columns' own text, read in the same query, so a microsecond the
+ * JavaScript `Date` cannot hold can never make a window un-clearable.
  *
  * **At most one pass a minute per gateway**, and never two passes at once:
  * `refreshAggregatesFrom` takes `bms_rollup` locks and retries `55P03` only
@@ -39,6 +41,8 @@ export type DirtyWindow = {
   readonly to: Date;
   readonly fromKey: string;
   readonly toKey: string;
+  /** `backfill_dirty_seq` as text: the generation this pass read. */
+  readonly seqKey: string;
 };
 
 /** Where windows are read and cleared. `clear` resolves `false` when the window moved. */
@@ -53,7 +57,8 @@ export const DIRTY_WINDOWS_QUERY = `
          backfill_dirty_from,
          backfill_dirty_to,
          backfill_dirty_from::text AS from_key,
-         backfill_dirty_to::text AS to_key
+         backfill_dirty_to::text AS to_key,
+         backfill_dirty_seq::text AS seq_key
     FROM bms.edge_gateways
    WHERE backfill_dirty_from IS NOT NULL
      AND backfill_dirty_to IS NOT NULL
@@ -69,6 +74,7 @@ export const CLEAR_DIRTY_WINDOW = `
    WHERE id = $1
      AND backfill_dirty_from = $2::timestamptz
      AND backfill_dirty_to = $3::timestamptz
+     AND backfill_dirty_seq = $4::bigint
 `;
 
 /** The slice of a `pg` pool or client the store needs. */
@@ -93,13 +99,14 @@ export function createRepairStore(db: RepairQueryable): RepairStore {
             to: row.backfill_dirty_to,
             fromKey: String(row.from_key),
             toKey: String(row.to_key),
+            seqKey: String(row.seq_key),
           });
         }
       }
       return windows;
     },
     async clear(window) {
-      const result = await db.query(CLEAR_DIRTY_WINDOW, [window.gatewayId, window.fromKey, window.toKey]);
+      const result = await db.query(CLEAR_DIRTY_WINDOW, [window.gatewayId, window.fromKey, window.toKey, window.seqKey]);
       return result.rowCount === 1;
     },
   };
@@ -122,10 +129,6 @@ export type AggregateRepair = {
   runOnce(): Promise<void>;
 };
 
-function reasonOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /** Builds the repair pass. The caller owns the timer (`main.ts`, once wired). */
 export function createAggregateRepair(deps: AggregateRepairDeps): AggregateRepair {
   const minIntervalMs = deps.minIntervalMs ?? REPAIR_MIN_INTERVAL_MS;
@@ -137,10 +140,7 @@ export function createAggregateRepair(deps: AggregateRepairDeps): AggregateRepai
       await deps.refresh(window.from, window.to);
     } catch (error) {
       // The window stays: it is cleared only on success, so the next pass retries it.
-      deps.logger.warn("aggregate repair failed; window kept", {
-        gatewayId: window.gatewayId,
-        reason: reasonOf(error),
-      });
+      deps.logger.warn("aggregate repair failed; window kept", { gatewayId: window.gatewayId, ...errorKind(error) });
       return;
     }
     const cleared = await deps.store.clear(window);
@@ -175,7 +175,7 @@ export function createAggregateRepair(deps: AggregateRepairDeps): AggregateRepai
           await repairOne(window);
         }
       } catch (error) {
-        deps.logger.error("aggregate repair pass failed", { reason: reasonOf(error) });
+        deps.logger.error("aggregate repair pass failed", errorKind(error));
       } finally {
         running = false;
       }

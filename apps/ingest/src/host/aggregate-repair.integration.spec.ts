@@ -5,8 +5,9 @@ import { createRepairStore } from "./aggregate-repair.js";
 
 /**
  * `E7.2` / ADR 0123 decision 11, plan T3.4 — the repair store's SQL against
- * real Postgres: compare-and-clear keeps a window that moved, and clears one
- * that did not, even at a microsecond a JavaScript `Date` cannot hold.
+ * real Postgres: compare-and-clear keeps a window whose bounds or generation
+ * (`backfill_dirty_seq`, migration `0143`) moved, and clears one that did not,
+ * even at a microsecond a JavaScript `Date` cannot hold.
  *
  * **The refresh itself is not here.** The plan's case "rows 4 h old → one pass
  * → `_1m` and `_1h` hold the bucket" needs `@bms/db`'s `refreshAggregatesFrom`,
@@ -52,7 +53,16 @@ export async function assertCompareAndClearOnTheRealTable(pool: pg.Pool): Promis
       const again = (await store.listDirty()).find((w) => w.gatewayId === id);
       expect(again).toBeDefined();
       if (again === undefined) return;
-      expect(await store.clear(again), "an unmoved window must clear, microseconds and all").toBe(true);
+      // A late batch inside the same bounds moves only the generation (code review 2).
+      await client.query(
+        "UPDATE bms.edge_gateways SET backfill_dirty_seq = backfill_dirty_seq + 1 WHERE id = $1",
+        [id],
+      );
+      expect(await store.clear(again), "a window whose generation moved must not be cleared").toBe(false);
+      const latest = (await store.listDirty()).find((w) => w.gatewayId === id);
+      expect(latest).toBeDefined();
+      if (latest === undefined) return;
+      expect(await store.clear(latest), "an unmoved window must clear, microseconds and all").toBe(true);
       const cleared = await client.query(
         "SELECT backfill_dirty_from, backfill_dirty_to FROM bms.edge_gateways WHERE id = $1",
         [id],

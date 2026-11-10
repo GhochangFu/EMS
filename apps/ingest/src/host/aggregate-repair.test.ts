@@ -5,6 +5,7 @@ import {
   aFailingListIsOneLine,
   aSuccessfulRefreshClearsTheWindow,
   aWindowWidenedDuringTheRefreshSurvives,
+  anInWindowWriteDuringTheRefreshKeepsTheWindow,
   atMostOnePassAMinutePerGateway,
   passesNeverOverlap,
   theClearComparesBothBoundsByGateway,
@@ -38,5 +39,9 @@ describe("E7.2 — aggregate repair over dirty windows (ADR 0123 decision 11, pl
 
   it("clears by gateway id and both stored bounds", async () => {
     await theClearComparesBothBoundsByGateway();
+  });
+
+  it("keeps a window a late row landed inside during the refresh (code review 2)", async () => {
+    await anInWindowWriteDuringTheRefreshKeepsTheWindow();
   });
 });

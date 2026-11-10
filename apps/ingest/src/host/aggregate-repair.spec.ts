@@ -19,11 +19,11 @@ import {
 
 const T0 = new Date("2026-11-10T09:00:00.000Z");
 
-function windowOf(gatewayId: string, fromIso: string, toIso: string): DirtyWindow {
-  return { gatewayId, from: new Date(fromIso), to: new Date(toIso), fromKey: fromIso, toKey: toIso };
+function windowOf(gatewayId: string, fromIso: string, toIso: string, seqKey = "1"): DirtyWindow {
+  return { gatewayId, from: new Date(fromIso), to: new Date(toIso), fromKey: fromIso, toKey: toIso, seqKey };
 }
 
-/** A fake store: one window per gateway, cleared only when the keys still match. */
+/** A fake store: one window per gateway, cleared only when the bounds and the generation still match. */
 function fakeStore(initial: readonly DirtyWindow[]): RepairStore & {
   readonly windows: Map<string, DirtyWindow>;
   clears: number;
@@ -38,7 +38,12 @@ function fakeStore(initial: readonly DirtyWindow[]): RepairStore & {
     async clear(window: DirtyWindow) {
       store.clears += 1;
       const current = windows.get(window.gatewayId);
-      if (current === undefined || current.fromKey !== window.fromKey || current.toKey !== window.toKey) {
+      if (
+        current === undefined ||
+        current.fromKey !== window.fromKey ||
+        current.toKey !== window.toKey ||
+        current.seqKey !== window.seqKey
+      ) {
         return false;
       }
       windows.delete(window.gatewayId);
@@ -85,13 +90,14 @@ export async function aSuccessfulRefreshClearsTheWindow(): Promise<void> {
 export async function aFailedRefreshKeepsTheWindowAndLogsOnce(): Promise<void> {
   const store = fakeStore([W1]);
   const h = harness(store, async () => {
-    throw new Error("could not obtain lock (55P03)");
+    throw Object.assign(new Error("could not obtain lock"), { code: "55P03" });
   });
   await h.repair.runOnce();
   assert(store.windows.has("gw-1"), "a failed refresh must leave the window");
   assert(store.clears === 0, "nothing may be cleared after a failed refresh");
   assert(h.lines.length === 1, `exactly one line for the failure, got ${h.lines.length}`);
-  assert(h.lines[0].includes("aggregate repair failed") && h.lines[0].includes("55P03"), "the line names the reason");
+  assert(h.lines[0].includes("aggregate repair failed") && h.lines[0].includes('"code":"55P03"'), "the line names the code");
+  assert(!h.lines[0].includes("could not obtain lock"), "the line carries the class and code, not the message");
 }
 
 /** A window widened while the refresh ran is not cleared. */
@@ -104,6 +110,20 @@ export async function aWindowWidenedDuringTheRefreshSurvives(): Promise<void> {
   await h.repair.runOnce();
   assert(store.windows.get("gw-1") === wider, "the widened window must survive for the next pass");
   assert(h.lines.some((l) => l.includes("kept for the next pass")), "the kept window is logged");
+}
+
+/** A late row landing inside the unchanged window during the refresh keeps the window (code review 2). */
+export async function anInWindowWriteDuringTheRefreshKeepsTheWindow(): Promise<void> {
+  const store = fakeStore([W1]);
+  const sameBoundsNextGeneration = { ...W1, seqKey: "2" };
+  const h = harness(store, async () => {
+    store.windows.set("gw-1", sameBoundsNextGeneration);
+  });
+  await h.repair.runOnce();
+  assert(
+    store.windows.get("gw-1") === sameBoundsNextGeneration,
+    "a window whose generation moved must survive, even with the same bounds",
+  );
 }
 
 /** At most one pass a minute per gateway; other gateways are not held up. */
@@ -165,8 +185,10 @@ export async function aFailingListIsOneLine(): Promise<void> {
 export async function theClearComparesBothBoundsByGateway(): Promise<void> {
   const sql = CLEAR_DIRTY_WINDOW.replace(/\s+/g, " ");
   assert(
-    /WHERE id = \$1 AND backfill_dirty_from = \$2::timestamptz AND backfill_dirty_to = \$3::timestamptz/.test(sql),
-    "the clear must compare both bounds and filter by gateway id",
+    /WHERE id = \$1 AND backfill_dirty_from = \$2::timestamptz AND backfill_dirty_to = \$3::timestamptz AND backfill_dirty_seq = \$4::bigint/.test(
+      sql,
+    ),
+    "the clear must compare both bounds and the generation, and filter by gateway id",
   );
   const calls: { text: string; values?: unknown[] }[] = [];
   const store = createRepairStore({
@@ -182,6 +204,7 @@ export async function theClearComparesBothBoundsByGateway(): Promise<void> {
               backfill_dirty_to: new Date("2026-11-10T05:00:00.000Z"),
               from_key: "2026-11-10 03:00:00.000001+00",
               to_key: "2026-11-10 05:00:00+00",
+              seq_key: "9007199254740993",
             },
             { id: "gw-bad", backfill_dirty_from: null, backfill_dirty_to: null, from_key: null, to_key: null },
           ],
@@ -196,7 +219,10 @@ export async function theClearComparesBothBoundsByGateway(): Promise<void> {
   assert(!cleared, "rowCount 0 means the window moved");
   const values = calls[1]?.values ?? [];
   assert(
-    values[0] === "gw-1" && values[1] === "2026-11-10 03:00:00.000001+00" && values[2] === "2026-11-10 05:00:00+00",
+    values[0] === "gw-1" &&
+      values[1] === "2026-11-10 03:00:00.000001+00" &&
+      values[2] === "2026-11-10 05:00:00+00" &&
+      values[3] === "9007199254740993",
     "the clear binds the stored text keys, so a microsecond is never lost",
   );
 }
