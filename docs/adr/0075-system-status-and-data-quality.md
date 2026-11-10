@@ -376,3 +376,85 @@ map follows the site read:** while that read fails, the map does not re-read
 either, so the pins and the cards stay at the same moment. The wider window
 costs little: the map's count query took 2.1 ms at 150 s against 1.9 ms at
 25 s on the dev database (`EXPLAIN ANALYZE`, 2026-10-14).
+
+## Amendment 3 (2026-11-10) — an asset is fresh on its own RTU's send interval (`F4.350`)
+
+**Found by the owner on `bms.demosites.co.in` and ruled the same day.**
+The Wellness Centre (WBLDC) organization strip read "Rooms offline 19" while 18
+of its 19 rooms had a sample less than 61 s old (measured about 11:50 IST,
+2026-11-10). Boundary: this amendment changes how long an asset stays *live*;
+it does not touch `assets.health.score`, which reads a 60-minute in-range window
+and not the window below.
+
+**Cause.** One number, 25 s (`LIVE_TELEMETRY_MAX_AGE_SECONDS` in
+`telemetry-freshness.ts`, and the web `FRESH_MS`), judges every device. WBLDC and
+PHE devices report about once a minute, and BCPL devices "in seconds" (owner;
+earlier notes said about 160 s — the two disagree, see *Open numbers*). A 60 s
+device is therefore inside 25 s for about 25 s of every minute, and the class
+strip, the dashboard offline counts and each asset's Live/Stale pill show it
+offline for the rest. Amendment 1 and Amendment 2 patched the *status bar* and
+the *site* counts with a second, fixed 150 s window. That fixed the two surfaces
+the owner had seen and left a third number in the product that is wrong for any
+device whose cadence is neither 1–5 s nor about 60 s.
+
+**Rulings (owner, 2026-11-10).**
+
+1. *What sets an asset's window?* — **Its own RTU's send interval.**
+   `window = clamp(2.5 × interval, FLOOR, CAP)` with `FLOOR = 25 s`.
+2. *Where does `interval` come from?* — **Configured wins.** A new nullable
+   `bms.rtus.expected_interval_seconds` (CHECK `> 0`), when set; else the
+   **learned median gap** between the RTU's samples over the last 24 h; else the
+   25 s floor.
+3. *The cap.* — **900 s proposed**, to be confirmed against the measured gaps.
+   It is the largest window the product will accept as "live"; a device that
+   reports less often than every 360 s reads stale between reports by design.
+
+**Decision.**
+
+1. **Supersedes Amendment 2 decision 2** (a reading's freshness keeps 25 s) and
+   Amendment 1 decision 3. One rule, one source (`telemetry-cadence.ts`, `F4.350`
+   PR 2): an asset is live when its newest sample of any point is at most its
+   window old. `windowSecondsFor(interval)` is the pure rule; a per-asset SQL
+   form with plan-time literals serves the readers; the JS form
+   `telemetryFreshnessAt(latestIso, nowMs, windowSeconds)` takes the asset's
+   window.
+2. **Every reader moves to it:** the F3.28 class strip, the dashboard builder's
+   `assets.offline.count` and `assets.list` status, `site-widgets`, the asset and
+   telemetry DTOs, and the web (`isStale(lastSeen, now, windowMs)`).
+3. **Both reporting-window readers move too** — the status read
+   (`system-status`), the site counts in `dashboard.service.ts`, the map and
+   `sitesLiveCount` judge an asset on its own window.
+4. **The 150 s reporting window is removed, not kept as a fallback.** An RTU
+   with no configured interval and too few samples to learn one falls to the
+   **25 s floor**, the same as before this amendment. `REPORTING_WINDOW_SECONDS`,
+   `REPORTING_ASSETS_CTE_SQL` and the web `SITE_REPORTING_MS` are deleted;
+   `LIVE_TELEMETRY_MAX_AGE_SECONDS` stays as the floor.
+5. **`freshnessWindowSeconds`** is added to the asset and telemetry DTOs
+   (additive, `z.infer`red per ADR 0030), so the web judges each reading on the
+   same window the API used and states no number of its own.
+6. **Schema:** `bms.rtus.expected_interval_seconds integer NULL`, CHECK `> 0`
+   (migration 0138, forward-only, idempotent, no backfill). `PR 3` adds an
+   optional "Expected interval (s)" field to the admin RTU form.
+
+**Consequences.**
+
+- **Simulator devices (1–5 s) keep the 25 s floor:** 2.5 × 5 s is below it, so
+  nothing changes for ESKOM sim data.
+- **A stopped device takes up to its window to read offline** — 150 s for a 60 s
+  device (was 25 s), up to the cap for a slower one. That is the price of not
+  flickering, and the same trade Amendment 2 made for sites.
+- **A learned interval follows the device.** If a device slows down, its window
+  widens after the median moves; a configured value pins it. A device that
+  reports in bursts can learn a short median and then read stale between bursts;
+  set `expected_interval_seconds` for it.
+- **Cost.** The learned median is a bounded 24 h read per RTU; `EXPLAIN ANALYZE`
+  on a large dataset decides whether `F4.350` PR 2 caches it in a table refreshed
+  by the BullMQ worker.
+- The "Assets fresh" tile and an asset row's pill now use the same window, which
+  removes the disagreement Amendment 2 recorded.
+
+**Open numbers.** The cadences are owner statements, not yet measured: the
+cloud session that drafted this had no route to AWS (the proxy refuses it) or a
+dev database. The measurement — median and maximum sample gap per RTU over 24 h
+for PHE, WBLDC, BCPL and the ESKOM simulator — is owed in the `F4.350` PR 1
+body, and the 900 s cap and the BCPL cadence stay proposals until it is in.

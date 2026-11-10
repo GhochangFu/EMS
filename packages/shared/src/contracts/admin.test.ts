@@ -10,6 +10,7 @@ import {
   runAdminLocationDtoAcceptsPumpStationTest,
   runAdminLocationDtoParentIdTests,
   runAdminLocationDtoRequiresTypeLabelTest,
+  runAdminRtuExpectedIntervalTest,
   runAssetInstantiationResultDashboardFieldsTests,
   runAssetInstantiationResultSeededRulesTests,
   runSeededRuleAssetLabelTests,
@@ -92,5 +93,9 @@ describe("F4.316 PR 5 — the admin rows name the asset's RTU and location (ADR 
   });
   it("calcParameterDto accepts an organization-scoped row with every asset field null", () => {
     runCalcParameterAcceptsNoAssetTest();
+  });
+
+  it("F4.350 — expectedIntervalSeconds is a nullable positive integer", () => {
+    runAdminRtuExpectedIntervalTest();
   });
 });

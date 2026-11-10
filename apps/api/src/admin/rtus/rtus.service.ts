@@ -712,6 +712,7 @@ export class RtusAdminService {
       rtuCode: rtu.rtuCode,
       mqttTopic: rtu.mqttTopic,
       releasedMqttTopic: rtu.releasedMqttTopic,
+      expectedIntervalSeconds: rtu.expectedIntervalSeconds,
       stationCode: rtu.stationCode,
       stationName: rtu.stationName,
       ingestEnabled: rtu.ingestEnabled,

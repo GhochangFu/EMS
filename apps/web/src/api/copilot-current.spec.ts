@@ -98,6 +98,7 @@ const RTU_ROW = {
   rtuCode: "R1",
   mqttTopic: "phe/lot/1",
   releasedMqttTopic: null,
+  expectedIntervalSeconds: null,
   stationCode: "S1",
   stationName: "Station 1",
   ingestEnabled: true,
