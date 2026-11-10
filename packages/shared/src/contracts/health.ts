@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { rateLimitHealthSchema } from "./rate-limit";
+
 /**
  * `E1.3` — the asset health score contract (ADR 0050 + Amendment 1).
  *
@@ -350,6 +352,9 @@ export const livenessResponseSchema = z
     queue: queueHealthSchema,
     storage: storageHealthSchema.optional(),
     database: databaseHealthSchema.optional(),
+    // `F4.17` / ADR 0125 decision 4 — present on the API only: the worker
+    // serves no `/api/v1` route and imports no limiter.
+    rateLimit: rateLimitHealthSchema.optional(),
   })
   .strict();
 
