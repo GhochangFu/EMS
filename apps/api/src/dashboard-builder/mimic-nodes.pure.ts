@@ -112,6 +112,8 @@ export interface MemberRow {
   location_name: string | null;
   domain: string;
   member_count: number;
+  /** `F4.350`: the window the member was judged on, seconds (the 25 s floor when a fixture omits it). */
+  freshness_window_seconds?: number | string;
   active_alarms: number;
   /**
    * The shown asset's most severe open alarm (`F3.32b`), with its severity's vocabulary tone and

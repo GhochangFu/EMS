@@ -11,7 +11,7 @@ import type {
 
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_POOL } from "../database/database.tokens";
-import { assetIdsScopeSql, assetWindowsCteSql, FRESHNESS_FLOOR_SECONDS, windowsByAsset } from "../telemetry/telemetry-cadence";
+import { assetWindowsCteSql, FRESHNESS_FLOOR_SECONDS } from "../telemetry/telemetry-cadence";
 import { telemetryFreshnessAt } from "../telemetry/telemetry-freshness";
 
 const NOT_FOUND = "Location not found or outside your access scope";
@@ -44,6 +44,8 @@ interface AssetRow {
   location_name: string | null;
   domain_code: string | null;
   domain_label: string | null;
+  /** `F4.350`: the asset's own RTU window, seconds. */
+  window_seconds?: number | string | null;
 }
 
 /** Statement (2)'s row: one active registered point of one asset, with its latest sample. */
@@ -128,8 +130,14 @@ export class GeneratedSiteViewService {
 
     const assets = await this.pool.query<AssetRow>(
       `
+      -- F4.350 (ADR 0075 Amendment 3): each asset's window, from its own RTU, folded into this
+      -- statement so the read keeps its two statements.
+      WITH ${assetWindowsCteSql(
+        "SELECT wa.id FROM bms.assets wa WHERE wa.location_id = $1 AND ($2::uuid[] IS NULL OR wa.id = ANY($2::uuid[]))",
+      )}
       SELECT
         a.id AS asset_id,
+        COALESCE(aw.window_seconds, ${FRESHNESS_FLOOR_SECONDS})::int AS window_seconds,
         a.code AS asset_code,
         a.name AS asset_name,
         r.display_name AS rtu_display_name,
@@ -141,6 +149,7 @@ export class GeneratedSiteViewService {
         ON a.location_id = l.id
        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
       LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+      LEFT JOIN asset_windows aw ON aw.asset_id = a.id
       LEFT JOIN bms.asset_domains d ON d.code = a.domain
       WHERE l.id = $1
       ORDER BY d.sort_order, a.domain, a.code
@@ -187,12 +196,6 @@ export class GeneratedSiteViewService {
       [ids],
     );
 
-    // `F4.350` (ADR 0075 Amendment 3): each asset is judged on its own RTU's window.
-    const windows = await this.pool.query<{ asset_id: string; window_seconds: number }>(
-      `WITH ${assetWindowsCteSql(assetIdsScopeSql(ids))} SELECT asset_id, window_seconds FROM asset_windows`,
-    );
-    const windowByAsset = windowsByAsset(windows.rows);
-
     const pointsByAsset = new Map<string, GeneratedSitePointDto[]>();
     const newestByAsset = new Map<string, string>();
     for (const row of points.rows) {
@@ -225,7 +228,7 @@ export class GeneratedSiteViewService {
         domains.set(code, domain);
       }
       const latestTelemetryAt = newestByAsset.get(row.asset_id) ?? null;
-      const freshnessWindowSeconds = windowByAsset.get(row.asset_id) ?? FRESHNESS_FLOOR_SECONDS;
+      const freshnessWindowSeconds = Number(row.window_seconds ?? FRESHNESS_FLOOR_SECONDS);
       const asset: GeneratedSiteAssetDto = {
         id: row.asset_id,
         code: row.asset_code ?? "",

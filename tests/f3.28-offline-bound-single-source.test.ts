@@ -227,7 +227,7 @@ describe.each(WINDOW_SOURCES)("F4.350 — %s reads each asset's window from asse
   });
 
   it("reads the window back per asset and passes it on", () => {
-    expect(source).toMatch(/windowsByAsset\(|freshness_window_seconds/);
+    expect(source).toMatch(/windowsByAsset\(|freshness_window_seconds|window_seconds/);
   });
 });
 

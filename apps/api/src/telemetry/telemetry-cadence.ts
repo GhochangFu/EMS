@@ -17,7 +17,7 @@
 /** The window no asset gets less than; also the window of an RTU with no known interval. */
 export const FRESHNESS_FLOOR_SECONDS = 25;
 
-/** The window no asset gets more than (proposed 900 s; to be confirmed against the measured gaps). */
+/** The window no asset gets more than (900 s, confirmed by the owner 2026-11-10; ADR 0075 Amendment 3). */
 export const FRESHNESS_CAP_SECONDS = 900;
 
 /** Window = this x the interval: one missed report counts, two do not. */
