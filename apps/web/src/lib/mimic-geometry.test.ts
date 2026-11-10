@@ -11,6 +11,8 @@ import {
   domainPresetsDrawNoPump,
   domainPresetsDrawNoSink,
   domainPresetsDrawTheirGlyphs,
+  theCoreSetStillDrawsTheSensor,
+  theIsoSetDrawsTheTowerAndTheGateway,
   layoutUnitsCarryFlagsAndSwitchingFollowsTheSymbol,
   lvSingleLineUnitsCarryTheirFlags,
   presetsWithoutFlagsCarryFalse,
@@ -80,6 +82,12 @@ describe("F3.32c U4 — mimic geometry", () => {
   });
   it("G17 a domain preset's units draw their glyphs", () => {
     domainPresetsDrawTheirGlyphs();
+  });
+  it("G26 the iso set draws the PHE tower and gateway (F4.352)", () => {
+    theIsoSetDrawsTheTowerAndTheGateway();
+  });
+  it("G26b the core set still draws the sensor; the sets are memoised apart (F4.352)", () => {
+    theCoreSetStillDrawsTheSensor();
   });
   it("G18 a layout carries the organization symbols it embeds (F3.32f slice 3)", () => {
     layoutCarriesItsOrgSymbols();

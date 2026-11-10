@@ -1,4 +1,4 @@
-import { MIMIC_LAYOUT_BOUNDS } from "@bms/shared/contracts";
+import { MIMIC_LAYOUT_BOUNDS, type MimicGlyphSet } from "@bms/shared/contracts";
 import {
   MIMIC_PRESETS,
   isSwitchingSymbol,
@@ -14,6 +14,7 @@ import {
 import {
   MIMIC_LAYOUTS,
   MIMIC_NODE_GLYPHS,
+  MIMIC_NODE_ISO_GLYPHS,
   MIMIC_NODE_SIZE,
   MIMIC_PANELS,
   MIMIC_PIPE_Y,
@@ -193,13 +194,16 @@ function viewBoxSize(viewBox: string): { width: number; height: number } {
  * decision 3): a preset without one draws no sink and widens no panel, and `water_train`, which
  * has one, draws exactly as before.
  */
-function buildPresetGeometry(preset: MimicPreset): MimicGeometry {
+function buildPresetGeometry(preset: MimicPreset, glyphSet: MimicGlyphSet | undefined): MimicGeometry {
   const def: MimicPresetDef = MIMIC_PRESETS[preset];
   const layout = MIMIC_LAYOUTS[preset];
   const at = layout.nodes as Readonly<Record<string, MimicPoint>>;
   const sinkAt = def.sink !== undefined && layout.sink !== undefined ? layout.sink : null;
   const sinkFromKey = sinkAt === null ? null : (def.sink?.from ?? null);
   const glyphs = MIMIC_NODE_GLYPHS[preset] as Readonly<Record<string, MimicSymbol>>;
+  // `F4.352`: the isometric set's own node glyphs (the PHE tower and gateway); none in `core`.
+  const isoGlyphs =
+    glyphSet === "iso" ? (MIMIC_NODE_ISO_GLYPHS[preset] as Readonly<Record<string, MimicSymbol>> | undefined) : undefined;
   const presetPanels = MIMIC_PANELS[preset];
   const panelOf = new Map<string, { key: string; tone: MimicPanelTone }>(
     presetPanels.flatMap((p) => p.nodes.map((k) => [k, { key: p.key, tone: p.tone }] as const)),
@@ -213,7 +217,7 @@ function buildPresetGeometry(preset: MimicPreset): MimicGeometry {
       return [];
     }
     const panel = panelOf.get(n.key);
-    const symbol = glyphs[n.key] ?? "vessel";
+    const symbol = isoGlyphs?.[n.key] ?? glyphs[n.key] ?? "vessel";
     return [
       {
         key: n.key,
@@ -271,16 +275,22 @@ function buildPresetGeometry(preset: MimicPreset): MimicGeometry {
   };
 }
 
-const PRESET_GEOMETRY = new Map<MimicPreset, MimicGeometry>();
+const PRESET_GEOMETRY = new Map<string, MimicGeometry>();
 
-/** A preset's drawing — computed once per preset; the `F3.32b` drawing, unchanged. */
-export function presetGeometry(preset: MimicPreset): MimicGeometry {
-  const cached = PRESET_GEOMETRY.get(preset);
+/**
+ * A preset's drawing — computed once per preset and glyph set; the `F3.32b` drawing, unchanged
+ * for `core` or no glyph set. With `iso` a node in `MIMIC_NODE_ISO_GLYPHS` draws its own
+ * isometric glyph (`F4.352`); every other unit is the same as in `core`.
+ */
+export function presetGeometry(preset: MimicPreset, glyphSet?: MimicGlyphSet): MimicGeometry {
+  const set = glyphSet === "iso" ? "iso" : "core";
+  const memo = `${preset}:${set}`;
+  const cached = PRESET_GEOMETRY.get(memo);
   if (cached !== undefined) {
     return cached;
   }
-  const built = buildPresetGeometry(preset);
-  PRESET_GEOMETRY.set(preset, built);
+  const built = buildPresetGeometry(preset, set === "iso" ? "iso" : undefined);
+  PRESET_GEOMETRY.set(memo, built);
   return built;
 }
 

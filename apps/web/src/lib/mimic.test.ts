@@ -4,6 +4,7 @@ import {
   aKindWithoutATwinIsUnchanged,
   alarmWinsOverFreshness,
   coreOrAbsentIsTheIdentity,
+  theIsoNodeOverrideNamesRealNodesAndIsoKeys,
   everyCoreKeyDrawsItsIsoTwin,
   calloutTextIsCutByCodePoint,
   everyBreakerRoleFanOutNodeDrawsTheBreakerGlyph,
@@ -185,5 +186,8 @@ describe("F3.32 U4 — the plant mimic's pure half", () => {
   });
   it("MG-S3 core or no glyph set is the identity (F4.345)", () => {
     coreOrAbsentIsTheIdentity();
+  });
+  it("MG-S4 the iso node override names real nodes and non-twin iso keys (F4.352)", () => {
+    theIsoNodeOverrideNamesRealNodesAndIsoKeys();
   });
 });

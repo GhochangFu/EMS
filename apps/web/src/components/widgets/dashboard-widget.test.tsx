@@ -20,6 +20,7 @@ import {
   aValueTileWithAShortfallRendersTheCoverageNote,
   aValueTileWithFullCoverageRendersNoNote,
   aMimicDispatchedWithoutItsReadDrawsThePresetUnresolved,
+  anIsoPheMimicDispatchedWithoutItsReadDrawsTheTower,
   aLayoutMimicDispatchedWithoutItsReadDrawsNothing,
   aNonReadySiteWidgetDrawsThePlaceholderNotItsBody,
   theFiveSiteWidgetsDispatchedWithoutTheirReadDrawTheirOwnEmptyState,
@@ -87,6 +88,9 @@ describe("F3.1c widget rendering", () => {
 
   it("F3.32 draws a mimic dispatched without its node read as the preset, every node unresolved", () => {
     aMimicDispatchedWithoutItsReadDrawsThePresetUnresolved();
+  });
+  it("an iso PHE mimic dispatched without its read draws the tower and gateway (F4.352)", () => {
+    anIsoPheMimicDispatchedWithoutItsReadDrawsTheTower();
   });
 
   it("F3.32c draws a layout mimic dispatched without its node read as an empty drawing, without throwing", () => {

@@ -431,6 +431,26 @@ export function aMimicDispatchedWithoutItsReadDrawsThePresetUnresolved(): void {
 }
 
 /**
+ * `F4.352` (ADR 0121 Amendment 1 decision 3) — the static arm passes the widget's glyph set to the
+ * preset drawing: an isometric PHE environment preset draws the RTU as the telemetry tower and the
+ * network as the gateway. Mutation: drop `glyphSet` from the arm's `presetGeometry` call → this
+ * reddens.
+ */
+export function anIsoPheMimicDispatchedWithoutItsReadDrawsTheTower(): void {
+  const widget: DashboardWidgetDto = {
+    ...IDENTITY,
+    title: "PHE station",
+    widgetType: "mimic",
+    config: { source: "preset", preset: "pump_station_environment", glyphSet: "iso" },
+  };
+  render(<DashboardWidget widget={widget} data={READY_AT_750} />);
+  const glyphOf = (key: string): string | null | undefined =>
+    document.querySelector(`[data-testid=mimic-node][data-node-key=${key}] [data-testid=mimic-glyph]`)?.getAttribute("data-glyph");
+  expect(glyphOf("rtu")).toBe("iso:telemetry-tower");
+  expect(glyphOf("network")).toBe("iso:gateway");
+}
+
+/**
  * `F3.32c` — a layout `mimic` dispatched without its read draws the frame and an empty drawing:
  * the layout's geometry arrives only with the node read. It must not throw.
  */

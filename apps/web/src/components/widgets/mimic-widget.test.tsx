@@ -4,6 +4,7 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   anIsoTileExpandsIntoAnIsoDialogAndKeepsTheMarkersCore,
+  anIsoPheTileExpandsIntoTheSameTower,
   alarmedNodeDrawsOneCallout,
   alarmNodeIsAlarm,
   everyNodeDrawsItsSymbol,
@@ -151,5 +152,8 @@ describe("F4.321 — MimicWidget, Expand to a full view", () => {
   });
   it("E-ISO an iso tile expands into an iso dialog; the markers stay core (F4.345)", () => {
     anIsoTileExpandsIntoAnIsoDialogAndKeepsTheMarkersCore();
+  });
+  it("E-ISO2 an iso PHE tile expands into a dialog with the same tower and gateway (F4.352)", () => {
+    anIsoPheTileExpandsIntoTheSameTower();
   });
 });

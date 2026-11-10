@@ -19,6 +19,7 @@ import {
   MIMIC_GLYPH_MOTION_CLASS,
   MIMIC_LAYOUTS,
   MIMIC_NODE_GLYPHS,
+  MIMIC_NODE_ISO_GLYPHS,
   MIMIC_NODE_SIZE,
   MIMIC_PANELS,
   MIMIC_PIPE_Y,
@@ -621,4 +622,33 @@ export function coreOrAbsentIsTheIdentity(): void {
     expect(mimicGlyphKindFor(k, undefined)).toBe(k);
     expect(mimicGlyphKindFor(k, "core")).toBe(k);
   }
+}
+
+/**
+ * MG-S4 — `F4.352` (ADR 0121 Amendment 1 decision 3): the isometric node override names real
+ * preset nodes and real `iso` keys that are not a core key's twin, exactly the PHE `rtu` (tower)
+ * and `network` (gateway) nodes, and `mimicGlyphKindFor` passes the tower through unchanged.
+ * Mutation: point an override at `iso:sensor` (a twin) → this reddens.
+ */
+export function theIsoNodeOverrideNamesRealNodesAndIsoKeys(): void {
+  const presets = mimicPresetSchema.options as readonly string[];
+  const twins = new Set(mimicCoreSymbolSchema.options.map((k) => `iso:${k}`));
+  const entries: Array<[string, string, string]> = [];
+  for (const [preset, table] of Object.entries(MIMIC_NODE_ISO_GLYPHS)) {
+    expect(presets, preset).toContain(preset);
+    const nodes = Object.keys(MIMIC_LAYOUTS[preset as MimicPreset].nodes);
+    for (const [key, symbol] of Object.entries(table as Record<string, string>)) {
+      expect(nodes, `${preset}.${key}`).toContain(key);
+      expect(ISO_SYMBOL_KEYS as readonly string[], symbol).toContain(symbol);
+      expect(twins.has(symbol), `${symbol} is a core twin`).toBe(false);
+      entries.push([preset, key, symbol]);
+    }
+  }
+  expect(entries).toEqual([
+    ["pump_station_overview", "rtu", "iso:telemetry-tower"],
+    ["pump_station_environment", "rtu", "iso:telemetry-tower"],
+    ["pump_station_environment", "network", "iso:gateway"],
+  ]);
+  expect(mimicGlyphKindFor("iso:telemetry-tower", "iso")).toBe("iso:telemetry-tower");
+  expect(mimicGlyphKindFor("iso:gateway", undefined)).toBe("iso:gateway");
 }
