@@ -585,7 +585,7 @@ refused" summary of counts at most once a minute, so a scanner cannot flood
 the log; counts still held are flushed by a timer each minute and once at
 shutdown. **Per-source limiting of unauthenticated requests is not here** —
 the receiver knows a gateway, not a client address — it is nginx's `limit_req`
-(10 r/s per address, burst 20, 429) on `location /edge/`.
+per client (right-most X-Forwarded-For), dry-run until confirmed: `docs/edge-gateway.md`.
 
 **The write is bounded on the server:** the transaction opens with `SET LOCAL
 statement_timeout = '14s'` and `lock_timeout = '5s'`, so Postgres cancels a

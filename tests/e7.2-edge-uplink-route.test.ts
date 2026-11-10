@@ -157,19 +157,42 @@ describe("E7.2 PR 4 — deploy/aws/nginx.conf `location /edge/` (ADR 0123 decisi
     expect(DOCUMENTED_UPLINK_PORT).not.toBe("9102"); // the compose health port
   });
 
-  it("buffers the request body, so a slow upload never holds the receiver's in-flight slot", () => {
+  it("buffers the request body, so a slow upload never holds the receiver's per-gateway entry or socket", () => {
+    // Protects the receiver's per-gateway in-flight entry and its sockets and
+    // 30 s request timeout; the global write slot is taken only after the body
+    // is read, so it was never what a slow upload held.
     expect(block).toMatch(/proxy_request_buffering\s+on\s*;/);
   });
 
-  it("limits requests per source address, with 429", () => {
-    const zone = /limit_req_zone\s+\$binary_remote_addr\s+zone=([a-z_]+):\d+[km]\s+rate=\d+r\/s\s*;/.exec(conf);
-    expect(zone, "a limit_req_zone keyed on $binary_remote_addr").not.toBeNull();
+  it("limits requests per client, keyed on the right-most X-Forwarded-For entry, with 429", () => {
+    // Behind Caddy `$binary_remote_addr` is one address for the fleet, so the
+    // key is a map over X-Forwarded-For that falls back to it.
+    const map = /map\s+\$http_x_forwarded_for\s+\$edge_client\s*\{([^}]*)\}/.exec(conf);
+    expect(map, "a map $http_x_forwarded_for $edge_client").not.toBeNull();
+    expect(map?.[1]).toMatch(/"~\(\?<edge_xff_last>\[\^, \]\+\) \*\$"\s+\$edge_xff_last;/);
+    expect(map?.[1]).toMatch(/default\s+\$binary_remote_addr;/);
+    const zone = /limit_req_zone\s+\$edge_client\s+zone=([a-z_]+):\d+[km]\s+rate=\d+r\/s\s*;/.exec(conf);
+    expect(zone, "a limit_req_zone keyed on $edge_client").not.toBeNull();
     // Defined at http level (outside every server/location brace), where the
     // image's conf.d include puts this file's top level.
     const before = conf.slice(0, zone?.index ?? 0);
     expect(before.split("{").length - before.split("}").length).toBe(0);
     expect(block).toMatch(new RegExp(`limit_req\\s+zone=${zone?.[1]}\\b[^;]*;`));
     expect(block).toMatch(/limit_req_status\s+429\s*;/);
+  });
+
+  it("is in dry run: enforcement is a deliberate, reviewed edit", () => {
+    // Off until the owner confirms Caddy's X-Forwarded-For ends with the real
+    // client address (docs/edge-gateway.md checklist). Remove this assertion
+    // together with the directive in that edit.
+    expect(block).toMatch(/limit_req_dry_run\s+on\s*;/);
+  });
+
+  it("sets short timeouts: connect 5s, read and send 30s, client body 10s", () => {
+    expect(block).toMatch(/proxy_connect_timeout\s+5s\s*;/);
+    expect(block).toMatch(/proxy_read_timeout\s+30s\s*;/);
+    expect(block).toMatch(/proxy_send_timeout\s+30s\s*;/);
+    expect(block).toMatch(/client_body_timeout\s+10s\s*;/);
   });
 
   it("does not pass a URI to proxy_pass, so /edge/v1/batches arrives unchanged", () => {
