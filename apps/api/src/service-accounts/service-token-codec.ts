@@ -49,6 +49,7 @@ export function parseServiceToken(value: string): ParsedServiceToken | null {
   return { tokenId: match[1], secret: match[2] };
 }
 
+/** SHA-256 of a token's secret half — the value `token_hash` stores (32 bytes). */
 export function hashServiceTokenSecret(secret: string): Buffer {
   return createHash("sha256").update(secret, "utf8").digest();
 }

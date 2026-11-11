@@ -54,7 +54,14 @@ describe("F4.17 — service-account tokens are wired where ADR 0125 puts them", 
   it.each(["apps/api/src/telemetry/telemetry.gateway.ts", "apps/api/src/alarms/alarms.gateway.ts"])(
     "%s tags a token's socket so a revoke can close it",
     (rel) => {
-      expect(code(rel)).toMatch(/client\.data\.serviceTokenId = serviceTokenOf\(payload\)\?\.tokenId;/);
+      const gateway = code(rel);
+      const tag = gateway.indexOf("tagServiceTokenSocket(client, token);");
+      const verify = gateway.indexOf("await this.jwtAuth.verifyToken(token)");
+      const hold = gateway.indexOf("holdServiceTokenSocket(client, serviceTokenOf(payload), this.serviceTokens)");
+      // Tagged before the first await of verification, re-checked after it.
+      expect(tag).toBeGreaterThan(-1);
+      expect(verify).toBeGreaterThan(tag);
+      expect(hold).toBeGreaterThan(verify);
     },
   );
 });

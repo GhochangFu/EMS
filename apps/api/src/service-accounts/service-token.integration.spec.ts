@@ -103,10 +103,13 @@ export async function assertARevokeNotificationReachesTheListener(suite: TokenSu
   const issued = await insertToken(suite);
   const forgotten: string[] = [];
   let connected = false;
+  let forgotAll = 0;
   const listener = createServiceTokenRevokedListener({
     createClient: () => new Client({ connectionString: suite.authUrl }) as unknown as ListenerClient,
     forget: (id) => forgotten.push(id),
-    forgetAll: () => undefined,
+    forgetAll: () => {
+      forgotAll += 1;
+    },
     disconnectServiceToken: () => 0,
     connectedServiceTokenIds: () => [],
     readLiveTokenIds: async () => [],
@@ -120,6 +123,9 @@ export async function assertARevokeNotificationReachesTheListener(suite: TokenSu
   try {
     for (let i = 0; i < 50 && !connected; i += 1) await new Promise((resolve) => setTimeout(resolve, 50));
     expect(connected).toBe(true);
+    // The catch-up on connect ran (F2): a NOTIFY missed while disconnected is covered.
+    for (let i = 0; i < 20 && forgotAll === 0; i += 1) await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(forgotAll).toBeGreaterThanOrEqual(1);
     // Committed: a NOTIFY is delivered only when its transaction commits.
     await createDb(suite.superPool).transaction(async (tx) => {
       await notifyServiceTokenRevoked(tx, issued.tokenId);

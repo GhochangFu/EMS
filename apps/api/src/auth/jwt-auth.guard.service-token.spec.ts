@@ -35,6 +35,7 @@ function principalFor(tokenId: string, readOnly = false): ServicePrincipal {
     },
     tokenId,
     readOnly,
+    expiresAt: Date.UTC(2027, 0, 1),
   };
 }
 
@@ -73,7 +74,11 @@ export async function assertAValidTokenAuthenticatesAsItsServiceAccount(): Promi
   expect(req.user).toEqual(principalFor("AAAAAAAAAAAA").payload);
   // The identity memo the rest of the request reads, and the token facts.
   expect(recalledIdentity(req.user as { sub: string })?.kind).toBe("service");
-  expect(serviceTokenOf(req.user as object)).toEqual({ tokenId: "AAAAAAAAAAAA", readOnly: false });
+  expect(serviceTokenOf(req.user as object)).toEqual({
+    tokenId: "AAAAAAAAAAAA",
+    readOnly: false,
+    expiresAt: Date.UTC(2027, 0, 1),
+  });
   expect(verify).toHaveBeenCalledWith(TOKEN_A);
   // A token never reaches the JWT path.
   expect(jwtVerify).not.toHaveBeenCalled();
@@ -96,7 +101,10 @@ export async function assertAnyRefusedTokenIsTheOneGeneric401(): Promise<void> {
 export async function assertWithoutAVerifierATokenIsRefusedNotAccepted(): Promise<void> {
   const guard = new JwtAuthGuard(new JwtService({ secret: "x" }), authDbNeverRead);
   const { ctx } = context("GET", `Bearer ${TOKEN_A}`);
-  await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(UnauthorizedException);
+  const err = await guard.canActivate(ctx).catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(UnauthorizedException);
+  // The token path's own refusal, not a JWT parse failure that also happens to 401.
+  expect((err as HttpException).getResponse()).toEqual(expect.objectContaining({ code: "token_invalid" }));
 }
 
 export async function assertAJwtNeverReachesTheVerifier(): Promise<void> {

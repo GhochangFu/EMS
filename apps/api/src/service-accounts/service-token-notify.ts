@@ -54,6 +54,7 @@ export type ServiceTokenRevokedDeps = {
   logger: ListenerLogger;
 };
 
+/** One `bms_service_token_revoked` notification: forget that token and close its sockets. */
 export function handleServiceTokenRevoked(raw: string | undefined, deps: ServiceTokenRevokedDeps): void {
   const tokenId = decodeServiceTokenRevoked(raw);
   if (tokenId === null) {
@@ -93,6 +94,7 @@ export type ServiceTokenListenerDeps = ServiceTokenRevokedDeps & {
   onStateChange?(state: ListenerState): void;
 };
 
+/** The LISTEN client for revokes, with the catch-up on every (re)connect. */
 export function createServiceTokenRevokedListener(deps: ServiceTokenListenerDeps): NotifyListener {
   return createNotifyListener({
     ...deps,

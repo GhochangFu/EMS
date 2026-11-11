@@ -13,6 +13,8 @@ import { JwtAuthGuard, serviceTokenOf } from "../auth/jwt-auth.guard";
 import { SocketRegistry } from "../auth/socket-registry";
 import { refuseRateLimitedHandshake } from "../rate-limit/handshake-limit";
 import { RateLimiterService } from "../rate-limit/rate-limiter.service";
+import { holdServiceTokenSocket, tagServiceTokenSocket } from "../service-accounts/service-token-socket";
+import { ServiceTokenVerifier } from "../service-accounts/service-token-verifier.service";
 import { MetricsService } from "../observability/metrics.service";
 import { ExistingAssetIds } from "./existing-asset-ids";
 import { TelemetryBroadcastHub } from "./telemetry-broadcast.hub";
@@ -40,6 +42,9 @@ export class TelemetryGateway implements OnGatewayInit, OnGatewayConnection {
     // `F4.17` / ADR 0125 decision 2 — Stage 1 on the handshake. Optional so a
     // spec that builds the gateway by hand needs no limiter.
     @Optional() private readonly rateLimiter?: RateLimiterService,
+    // F4.17 / ADR 0125: the post-registration liveness read. Absent, a token
+    // socket is closed (fail closed), never kept.
+    @Optional() private readonly serviceTokens?: ServiceTokenVerifier,
   ) {}
 
   /**
@@ -57,12 +62,17 @@ export class TelemetryGateway implements OnGatewayInit, OnGatewayConnection {
       return;
     }
     try {
+      // F4.17 / ADR 0125 decision 13: tagged before the first await, so a
+      // revoke that lands during verification still closes this socket.
+      tagServiceTokenSocket(client, token);
       const payload = await this.jwtAuth.verifyToken(token);
-      // F4.17 / ADR 0125 decision 13: a revoke closes this token's sockets.
-      client.data.serviceTokenId = serviceTokenOf(payload)?.tokenId;
       const userId = this.accessControl.resolveUserId(payload);
       client.data.userId = userId;
       client.data.assetIds = await this.accessControl.readableAssetIds(payload);
+      // A fresh liveness read once registered, and the expiry timer (PR 4 review M1, L2).
+      if (!(await holdServiceTokenSocket(client, serviceTokenOf(payload), this.serviceTokens))) {
+        return;
+      }
       if (userId !== null && (await this.accessControl.isUserDisabled(userId))) {
         client.disconnect(true);
       }

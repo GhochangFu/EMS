@@ -17,10 +17,12 @@ import {
   handleServiceTokenRevoked,
   type ServiceTokenRevokedDeps,
 } from "./service-token-notify";
+import { holdServiceTokenSocket, tagServiceTokenSocket, type TokenSocket } from "./service-token-socket";
 import {
   LAST_USED_TOUCH_INTERVAL_MS,
   SERVICE_TOKEN_CACHE_TTL_MS,
   ServiceTokenVerifier,
+  UNKNOWN_TOKEN_CACHE_MS,
 } from "./service-token-verifier.service";
 
 /**
@@ -175,6 +177,7 @@ export async function assertAValidTokenResolvesToItsServiceAccount(): Promise<vo
     identity: expect.objectContaining({ id: ACCOUNT, organizationId: ORG, kind: "service", role: "operator" }),
     tokenId: issued.tokenId,
     readOnly: false,
+    expiresAt: T0 + 86_400_000,
   });
 }
 
@@ -274,4 +277,123 @@ export async function assertTheCatchUpClearsTheCacheAndClosesDeadTokensSockets()
   });
   expect(await catchUpServiceTokens(d)).toBe(1);
   expect(calls).toEqual(["forgetAll", "disconnect BBBBBBBBBBBB"]);
+}
+
+// ── PR 4 security review: L1, L4, M1, L2 ────────────────────────────────────
+
+/** L4: an unknown id costs one read per id per 5 s, not one per request. */
+export async function assertAnUnknownIdIsRememberedBrieflyAndForgetClearsIt(): Promise<void> {
+  const { verifier, state, issued, setNow } = setup({ token: null });
+  expect(await verifier.verify(issued.token)).toBeNull();
+  expect(await verifier.verify(issued.token)).toBeNull();
+  expect(state.tokenReads).toBe(1);
+  setNow(T0 + UNKNOWN_TOKEN_CACHE_MS);
+  expect(await verifier.verify(issued.token)).toBeNull();
+  expect(state.tokenReads).toBe(2);
+  // A wrong secret under a real id is never remembered: the real token still works.
+  const real = setup();
+  const wrong = `${real.issued.token.slice(0, -2)}${real.issued.token.endsWith("AA") ? "BB" : "AA"}`;
+  expect(await real.verifier.verify(wrong)).toBeNull();
+  expect(await real.verifier.verify(real.issued.token)).not.toBeNull();
+}
+
+/** L1: a forget that lands while a verify is reading is not undone by the read finishing. */
+export async function assertAForgetDuringAReadIsNotUndoneByTheCache(): Promise<void> {
+  const { verifier, state, issued } = setup();
+  const realSelect = (verifier as unknown as { authDb: BmsDb }).authDb.select;
+  let forgotOnce = false;
+  (verifier as unknown as { authDb: { select: typeof realSelect } }).authDb.select = ((...args: unknown[]) => {
+    if (!forgotOnce) {
+      forgotOnce = true;
+      verifier.forget(issued.tokenId); // the revoke NOTIFY arrives mid-read
+    }
+    return (realSelect as (...a: unknown[]) => unknown)(...args);
+  }) as typeof realSelect;
+  expect(await verifier.verify(issued.token)).not.toBeNull();
+  // Not cached: the next verify reads again and sees the revoke.
+  state.tokenRow = null;
+  expect(await verifier.verify(issued.token)).toBeNull();
+}
+
+function fakeSocket(): TokenSocket & { closed: boolean; onDisconnect?: () => void } {
+  const socket = {
+    data: {} as { serviceTokenId?: unknown },
+    closed: false,
+    onDisconnect: undefined as undefined | (() => void),
+    disconnect() {
+      socket.closed = true;
+      socket.onDisconnect?.();
+      return socket;
+    },
+    once(_event: "disconnect", listener: () => void) {
+      socket.onDisconnect = listener;
+      return socket;
+    },
+  };
+  return socket;
+}
+
+/** M1: tagged before verifying; re-checked live once registered; a JWT socket is untouched. */
+export async function assertATokenSocketIsTaggedEarlyAndReCheckedLive(): Promise<void> {
+  const issued = issueServiceToken();
+  const socket = fakeSocket();
+  tagServiceTokenSocket(socket, issued.token);
+  expect(socket.data.serviceTokenId).toBe(issued.tokenId);
+  const facts = { tokenId: issued.tokenId, expiresAt: Date.now() + 60_000 };
+  expect(await holdServiceTokenSocket(socket, facts, { isLive: async () => false })).toBe(false);
+  expect(socket.closed).toBe(true);
+  const kept = fakeSocket();
+  expect(await holdServiceTokenSocket(kept, facts, { isLive: async () => true })).toBe(true);
+  expect(kept.closed).toBe(false);
+  kept.disconnect(); // clears the expiry timer
+  const noVerifier = fakeSocket();
+  expect(await holdServiceTokenSocket(noVerifier, facts, undefined)).toBe(false);
+  const jwtSocket = fakeSocket();
+  tagServiceTokenSocket(jwtSocket, "eyJhbGciOiJIUzI1NiJ9.e30.x");
+  expect(jwtSocket.data.serviceTokenId).toBeUndefined();
+  expect(await holdServiceTokenSocket(jwtSocket, null, undefined)).toBe(true);
+}
+
+/** L2: a token socket closes when its token expires. */
+export async function assertATokenSocketClosesAtExpiry(): Promise<void> {
+  vi.useFakeTimers();
+  try {
+    const socket = fakeSocket();
+    const start = Date.now();
+    await holdServiceTokenSocket(socket, { tokenId: "AAAAAAAAAAAA", expiresAt: start + 1_000 }, { isLive: async () => true });
+    expect(socket.closed).toBe(false);
+    vi.advanceTimersByTime(1_001);
+    expect(socket.closed).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+/** F1 (code review): a token that expires inside its 30 s cache window stops at its expiry, not at the TTL. */
+export async function assertACachedTokenStopsAtItsOwnExpiry(): Promise<void> {
+  const { verifier, setNow, issued } = setup({ token: { expiresAt: new Date(T0 + 10_000) } });
+  expect(await verifier.verify(issued.token)).not.toBeNull();
+  setNow(T0 + 9_999);
+  expect(await verifier.verify(issued.token)).not.toBeNull();
+  setNow(T0 + 10_000);
+  expect(await verifier.verify(issued.token)).toBeNull();
+}
+
+/** F4: the touch-failure warning is latched — once per outage, not once per request. */
+export async function assertATouchFailureIsLoggedOncePerOutage(): Promise<void> {
+  const { verifier, state, issued, setNow } = setup();
+  state.touchFails = true;
+  const warn = vi.spyOn((verifier as unknown as { logger: { warn: (m: string) => void } }).logger, "warn");
+  warn.mockImplementation(() => undefined);
+  for (let i = 0; i < 3; i += 1) {
+    setNow(T0 + i * LAST_USED_TOUCH_INTERVAL_MS);
+    await verifier.verify(issued.token);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  expect(state.touches).toBe(3);
+  expect(warn).toHaveBeenCalledTimes(1);
+  // Just inside the interval: no touch at all.
+  setNow(T0 + 2 * LAST_USED_TOUCH_INTERVAL_MS + LAST_USED_TOUCH_INTERVAL_MS - 1);
+  await verifier.verify(issued.token);
+  expect(state.touches).toBe(3);
 }

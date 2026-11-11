@@ -1,10 +1,16 @@
 import { describe, it } from "vitest";
 
 import {
+  assertACachedTokenStopsAtItsOwnExpiry,
+  assertAForgetDuringAReadIsNotUndoneByTheCache,
   assertAMalformedTokenNeverReachesTheDatabase,
   assertARevokeNotificationForgetsAndDisconnectsThatToken,
+  assertATokenSocketClosesAtExpiry,
+  assertATokenSocketIsTaggedEarlyAndReCheckedLive,
+  assertATouchFailureIsLoggedOncePerOutage,
   assertAValidTokenResolvesToItsServiceAccount,
   assertAnIssuedTokenHasTheFormatAndHashesItsSecret,
+  assertAnUnknownIdIsRememberedBrieflyAndForgetClearsIt,
   assertEveryRefusalIsNull,
   assertForgetDropsTheCacheSoARevokeTakesEffect,
   assertLastUsedIsTouchedOncePerMinuteAndAFailureServesTheRequest,
@@ -63,6 +69,30 @@ describe("F4.17 service-account tokens (ADR 0125 decisions 11–13)", () => {
 
   it("the catch up clears the cache and closes dead tokens sockets", async () => {
     await assertTheCatchUpClearsTheCacheAndClosesDeadTokensSockets();
+  });
+
+  it("an unknown id is remembered briefly and forget clears it", async () => {
+    await assertAnUnknownIdIsRememberedBrieflyAndForgetClearsIt();
+  });
+
+  it("a forget during a read is not undone by the cache", async () => {
+    await assertAForgetDuringAReadIsNotUndoneByTheCache();
+  });
+
+  it("a token socket is tagged early and re checked live", async () => {
+    await assertATokenSocketIsTaggedEarlyAndReCheckedLive();
+  });
+
+  it("a token socket closes at expiry", async () => {
+    await assertATokenSocketClosesAtExpiry();
+  });
+
+  it("a cached token stops at its own expiry", async () => {
+    await assertACachedTokenStopsAtItsOwnExpiry();
+  });
+
+  it("a touch failure is logged once per outage", async () => {
+    await assertATouchFailureIsLoggedOncePerOutage();
   });
 
 });

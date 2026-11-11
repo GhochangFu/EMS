@@ -41,7 +41,7 @@ const reflector = new Reflector();
  * principal, kept beside the payload object (the identity memo's pattern) so
  * the guard, the gateways and the limiter read it without a second lookup.
  */
-type ServiceTokenFacts = Readonly<{ tokenId: string; readOnly: boolean }>;
+type ServiceTokenFacts = Readonly<{ tokenId: string; readOnly: boolean; expiresAt: number }>;
 const serviceTokens = new WeakMap<object, ServiceTokenFacts>();
 
 /** The token facts of a principal that authenticated with a `bms_sat_` token, or `null` for a JWT. */
@@ -309,7 +309,11 @@ export class JwtAuthGuard implements CanActivate {
     // The identity memo the rest of the request reads (`resolveDbUser`,
     // `resolveActorId`): a service row has no OIDC subject to resolve by.
     rememberIdentity(principal.payload, principal.identity);
-    serviceTokens.set(principal.payload, { tokenId: principal.tokenId, readOnly: principal.readOnly });
+    serviceTokens.set(principal.payload, {
+      tokenId: principal.tokenId,
+      readOnly: principal.readOnly,
+      expiresAt: principal.expiresAt,
+    });
     return principal.payload;
   }
 

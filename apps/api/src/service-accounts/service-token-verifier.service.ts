@@ -33,6 +33,13 @@ import { parseServiceToken, secretMatches } from "./service-token-codec";
 
 export const SERVICE_TOKEN_CACHE_TTL_MS = 30_000;
 export const LAST_USED_TOUCH_INTERVAL_MS = 60_000;
+/**
+ * An unknown token id is remembered as unknown this long, so a flood of
+ * well-formed forgeries costs one `bms_auth` read per id, not one per request
+ * (security review of PR 4, L4). Only "no such live row" is remembered — never
+ * a wrong secret, which would let anyone lock a real token out.
+ */
+export const UNKNOWN_TOKEN_CACHE_MS = 5_000;
 const MAX_CACHED_TOKENS = 10_000;
 
 export type ServicePrincipal = Readonly<{
@@ -42,6 +49,8 @@ export type ServicePrincipal = Readonly<{
   identity: ResolvedIdentity;
   tokenId: string;
   readOnly: boolean;
+  /** Epoch ms. A socket opened with this token closes when it passes (L2). */
+  expiresAt: number;
 }>;
 
 type CacheEntry = {
@@ -67,6 +76,15 @@ export class ServiceTokenVerifier {
   private readonly logger = new Logger(ServiceTokenVerifier.name);
   private readonly cache = new Map<string, CacheEntry>();
   private readonly lastTouch = new Map<string, number>();
+  private readonly unknown = new Map<string, number>();
+  /**
+   * Bumped by every `forget` (per id) and `forgetAll` (global). A verify notes
+   * both before its reads and caches its result only if neither moved, so a
+   * revoke NOTIFY that lands mid-read cannot be undone by the read finishing
+   * (security review of PR 4, L1).
+   */
+  private readonly forgotten = new Map<string, number>();
+  private forgottenAll = 0;
   private touchFailureLogged = false;
 
   /** The clock — a field, not a constructor parameter, so Nest injects nothing for it. */
@@ -90,9 +108,21 @@ export class ServiceTokenVerifier {
       return this.principal(parsed.tokenId, cached);
     }
     this.cache.delete(parsed.tokenId);
+    const unknownUntil = this.unknown.get(parsed.tokenId);
+    if (unknownUntil !== undefined && unknownUntil > now) {
+      return null;
+    }
+    const generation = this.generationOf(parsed.tokenId);
 
     const row = await this.readToken(parsed.tokenId);
-    if (!row || row.revokedAt !== null || row.expiresAt.getTime() <= now) {
+    if (!row) {
+      if (this.unknown.size >= MAX_CACHED_TOKENS) {
+        this.unknown.clear();
+      }
+      this.unknown.set(parsed.tokenId, now + UNKNOWN_TOKEN_CACHE_MS);
+      return null;
+    }
+    if (row.revokedAt !== null || row.expiresAt.getTime() <= now) {
       return null;
     }
     if (!secretMatches(parsed.secret, row.tokenHash)) {
@@ -109,6 +139,11 @@ export class ServiceTokenVerifier {
       expiresAt: row.expiresAt.getTime(),
       cachedAt: now,
     };
+    if (this.generationOf(parsed.tokenId) !== generation) {
+      // Forgotten while we read: the token may have been revoked. Answer from
+      // the read (it was live when read) but do not cache it.
+      return this.principal(parsed.tokenId, entry);
+    }
     if (this.cache.size >= MAX_CACHED_TOKENS) {
       this.cache.clear();
     }
@@ -120,11 +155,32 @@ export class ServiceTokenVerifier {
   /** Drops one cached token (a revoke NOTIFY). */
   forget(tokenId: string): void {
     this.cache.delete(tokenId);
+    this.unknown.delete(tokenId);
+    if (this.forgotten.size >= MAX_CACHED_TOKENS) {
+      this.forgotten.clear();
+      this.forgottenAll += 1;
+    }
+    this.forgotten.set(tokenId, (this.forgotten.get(tokenId) ?? 0) + 1);
   }
 
   /** Drops every cached token (the LISTEN connection reconnected and may have missed a NOTIFY). */
   forgetAll(): void {
     this.cache.clear();
+    this.unknown.clear();
+    this.forgottenAll += 1;
+  }
+
+  /**
+   * Whether `tokenId` is live **now**, read fresh on `bms_auth` (whose policy
+   * sees live tokens only) — the socket handshake's post-registration check,
+   * the `isUserDisabled` pattern (security review of PR 4, M1).
+   */
+  async isLive(tokenId: string): Promise<boolean> {
+    return (await this.readToken(tokenId)) !== null;
+  }
+
+  private generationOf(tokenId: string): string {
+    return `${this.forgottenAll}:${this.forgotten.get(tokenId) ?? 0}`;
   }
 
   private principal(tokenId: string, entry: CacheEntry): ServicePrincipal {
@@ -139,6 +195,7 @@ export class ServiceTokenVerifier {
       identity,
       tokenId,
       readOnly: entry.readOnly,
+      expiresAt: entry.expiresAt,
     };
   }
 
