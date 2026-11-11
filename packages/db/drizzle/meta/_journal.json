@@ -1016,6 +1016,13 @@
       "when": 1794357696714,
       "tag": "0145_work_order_checklists",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1794363184606,
+      "tag": "0146_work_order_root_cause_snapshot_approval_cancel",
+      "breakpoints": true
     }
   ]
 }
