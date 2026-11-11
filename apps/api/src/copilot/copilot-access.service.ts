@@ -75,7 +75,8 @@ export class CopilotAccessService {
     const [row] = await this.authDb
       .select({ organizationId: users.organizationId, role: users.role })
       .from(users)
-      .where(eq(users.id, userId))
+      // F4.17 / ADR 0125: the copilot is for people; a service account takes no override.
+      .where(and(eq(users.id, userId), eq(users.kind, "human")))
       .limit(1);
     return row ?? null;
   };

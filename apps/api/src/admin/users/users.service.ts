@@ -288,10 +288,11 @@ export class UsersService {
   /** `GET /admin/users` — the users the caller may manage. Works in local mode and unconfigured. */
   async list(jwt: JwtPayload): Promise<AdminUsersListResponse> {
     const manager = await this.requireManager(jwt);
+    // F4.17 / ADR 0125: service accounts have their own screen; this one lists people.
     const conditions =
       manager.role === "admin"
-        ? []
-        : [ne(users.role, "admin"), inArray(users.organizationId, manager.writable ?? [])];
+        ? [eq(users.kind, "human")]
+        : [eq(users.kind, "human"), ne(users.role, "admin"), inArray(users.organizationId, manager.writable ?? [])];
     if (manager.role !== "admin" && (manager.writable ?? []).length === 0) {
       return { items: [] };
     }
@@ -710,7 +711,11 @@ export class UsersService {
   }
 
   private async readUser(id: string): Promise<UserRow> {
-    const [row] = (await this.fleetDb.select(USER_COLUMNS).from(users).where(eq(users.id, id)).limit(1)) as UserRow[];
+    const [row] = (await this.fleetDb
+      .select(USER_COLUMNS)
+      .from(users)
+      .where(and(eq(users.id, id), eq(users.kind, "human")))
+      .limit(1)) as UserRow[];
     if (!row) {
       throw new NotFoundException(USER_NOT_FOUND);
     }
@@ -723,7 +728,13 @@ export class UsersService {
    * same body as a nonexistent id.
    */
   async requireManageableTarget(manager: Manager, id: string): Promise<UserRow> {
-    const [row] = (await this.fleetDb.select(USER_COLUMNS).from(users).where(eq(users.id, id)).limit(1)) as UserRow[];
+    // F4.17 / ADR 0125: a service account is managed on its own screen, never
+    // here — it has no Keycloak account to edit, deactivate or reset.
+    const [row] = (await this.fleetDb
+      .select(USER_COLUMNS)
+      .from(users)
+      .where(and(eq(users.id, id), eq(users.kind, "human")))
+      .limit(1)) as UserRow[];
     if (!row) {
       throw new NotFoundException(USER_NOT_FOUND);
     }
