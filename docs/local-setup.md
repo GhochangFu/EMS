@@ -672,7 +672,7 @@ whether Docker answers:
 | You have | The run uses |
 |---|---|
 | Docker running, no `DATABASE_URL` | its own TimescaleDB and Redis containers (`testcontainers`), prepared with `db:roles`, `db:migrate` and `db:seed` — about 15 s before the first test (measured 2026-11-11: container start plus a ~7 s template build), stopped at the end |
-| `DATABASE_URL` set (for example the compose database) | that database. Suites still on the shared list run on it as before; a suite that has moved off the list gets a run-prefixed copy there (`bms_t<run id>_w<n>`), dropped when the run ends |
+| `DATABASE_URL` set (for example the compose database) | that server: every database suite gets a run-prefixed copy there (`bms_t<run id>_w<n>`), built from a fresh template and dropped when the run ends; the database `DATABASE_URL` names is not written to. Template builds on one server take turns (an advisory lock), so two runs against it at once are safe |
 | neither | nothing: the database suites skip locally (and refuse under `CI`) |
 | `BMS_TEST_DB=none` | the harness starts and changes nothing; suites still use `DATABASE_URL` if it is set — for a quick unit-only loop |
 
@@ -681,10 +681,10 @@ A run that selects only projects without database suites (`--project web`,
 `containers` (always the containers; CI's test step from PR 6 of the plan),
 `external` and `shared` — see ADR 0124.
 
-Database suites still share one database inside the run until they move,
-in the batches of
-[`docs/plans/f4.5-testcontainers.md`](./plans/f4.5-testcontainers.md), onto a
-database per Vitest worker. The exports in the end-to-end section below set
+Every database suite runs on its own Vitest worker's database copy and Redis
+index; none shares a database with another worker (`NOT_YET_ISOLATED` in
+`tests/harness/not-yet-isolated.ts` is empty and must stay so). `BMS_TEST_DB=shared`
+restores the old single shared database for a deliberate comparison. The exports in the end-to-end section below set
 `DATABASE_URL`, so a `pnpm test` in that same shell runs against the compose
 database.
 

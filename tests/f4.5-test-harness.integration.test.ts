@@ -7,6 +7,7 @@ import {
   buildTemplate,
   copyDatabase,
   dropRunDatabases,
+  TEMPLATE_BUILD_LOCK,
   TEMPLATE_DATABASE,
 } from "./harness/template-database";
 import { testInfraMode } from "./harness/test-infra-mode";
@@ -175,5 +176,48 @@ describe.runIf(run)("F4.5 harness against real containers", () => {
     const names = left.rows.map((row) => row.datname);
     expect(names.filter((name) => name.startsWith(prefix))).toEqual([]);
     expect(names).toEqual(expect.arrayContaining([TEMPLATE_DATABASE, "bms_w1", "bms_w2"]));
+  }, 180_000);
+
+  /**
+   * The template-build lock (PR 7). Two runs building on one server at once collide on
+   * cluster-wide catalog rows (`XX000`); one process cannot reproduce that, so this case holds the
+   * property that prevents it: a build waits while another session holds the lock. Removing the
+   * lock from `buildTemplate` reddens the first assertion below (the build runs at once).
+   */
+  it("makes a template build wait while another run holds the build lock", async () => {
+    const server = (postgres as StartedServer).url;
+    const prefix = "bms_tf45lock01";
+    const owner = new URL(server);
+    owner.username = "bms_owner";
+    owner.password = "bms_owner_dev";
+    const holder = new pg.Client({ connectionString: withDatabase(server, "postgres") });
+    await holder.connect();
+    try {
+      await holder.query("SELECT pg_advisory_lock(hashtext($1))", [TEMPLATE_BUILD_LOCK]);
+      const build = buildTemplate(server, {
+        server: "external",
+        database: `${prefix}_template`,
+        ownerUrl: owner.toString(),
+      });
+      let waiting = 0;
+      for (let attempt = 0; attempt < 50 && waiting === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const blocked = await holder.query<{ n: string }>(
+          "SELECT count(*) AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted",
+        );
+        waiting = Number(blocked.rows[0]?.n);
+      }
+      expect(waiting, "the build should be waiting on the advisory lock").toBe(1);
+      const exists = await holder.query("SELECT 1 FROM pg_database WHERE datname = $1", [`${prefix}_template`]);
+      expect(exists.rowCount, "the build must not start before the lock is free").toBe(0);
+
+      await holder.query("SELECT pg_advisory_unlock(hashtext($1))", [TEMPLATE_BUILD_LOCK]);
+      await build;
+      const built = await holder.query("SELECT 1 FROM pg_database WHERE datname = $1", [`${prefix}_template`]);
+      expect(built.rowCount).toBe(1);
+    } finally {
+      await holder.end();
+      await dropRunDatabases(server, prefix);
+    }
   }, 180_000);
 });

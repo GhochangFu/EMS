@@ -16,7 +16,10 @@ export type PgQueryable = {
   end(): Promise<void>;
 };
 
-export type PgClient = PgQueryable & { connect(): Promise<void> };
+export type PgClient = PgQueryable & {
+  connect(): Promise<void>;
+  on(event: "error", listener: (err: Error) => void): unknown;
+};
 
 type PgModule = {
   Client: new (config: { connectionString: string }) => PgClient;
