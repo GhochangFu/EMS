@@ -19,6 +19,7 @@ import {
   anAckTheUserDidNotAskForIsRefused,
   anAckWithNoAlarmReadFailsClosed,
   anInactiveScheduleConvertIsRefused,
+  aReorderIntoResolvedIsRefused,
   aReorderStoresItsMovesOutsideTheHash,
   aReorderThatClosesIsRefused,
   aReorderThatReopensIsRefused,
@@ -52,6 +53,7 @@ describe("F4.284 — the operations propose tools (ADR 0106 decisions 2-4, DC2, 
   it("The status card says where the work order moves from and to.", () => theStatusSummaryNamesFromAndTo());
   it("DC6: a reorder that reopens a closed work order is refused with the route's sentence.", () => aReorderThatReopensIsRefused());
   it("DC6: a reorder that closes by drag is refused with the route's sentence.", () => aReorderThatClosesIsRefused());
+  it("E3.1: a reorder into resolved is refused with the route's sentence, before the card.", () => aReorderIntoResolvedIsRefused());
   it("A reorder naming one work order twice is refused with the route's sentence.", () => aReorderWithADuplicateIsRefused());
   it("DC2: a good reorder stores the moves beside the body, and the hash leaves them out.", () => aReorderStoresItsMovesOutsideTheHash());
   it("DC6: an inactive schedule's convert is refused with the route's sentence.", () => anInactiveScheduleConvertIsRefused());

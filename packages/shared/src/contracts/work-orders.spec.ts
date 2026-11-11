@@ -45,6 +45,8 @@ const ITEM = {
   slaMinutes: 60,
   slaDueAt: "2026-11-05T01:00:00.000Z",
   slaState: "on_track",
+  checklistDone: 0,
+  checklistTotal: 0,
   createdAt: "2026-11-05T00:00:00.000Z",
   updatedAt: "2026-11-05T00:00:00.000Z",
   assetCode: "CR-Q1",
@@ -177,11 +179,11 @@ export function eventRowRoundTrips(): void {
 /** The detail is an intersection with the list item, so it follows the item; it is not a flattened copy. */
 export function detailIsAnIntersectionWithTheListItem(): void {
   assert(workOrderDetailSchema instanceof ZodIntersection, "workOrderDetailSchema is a z.intersection");
-  const detail = { ...ITEM, events: [EVENT], alarm: { id: "a1", severity: "critical", message: "Breaker tripped", raisedAt: "2026-11-05T00:00:00.000Z" } };
+  const detail = { ...ITEM, tasks: [], events: [EVENT], alarm: { id: "a1", severity: "critical", message: "Breaker tripped", raisedAt: "2026-11-05T00:00:00.000Z" } };
   const parsed = workOrderDetailSchema.safeParse(detail);
   assert(parsed.success, "the detail parses");
   assert(parsed.success && parsed.data.reference === ITEM.reference && parsed.data.events.length === 1, "it carries the item and the events");
   assert(workOrderDetailSchema.safeParse({ ...detail, alarm: null, events: [] }).success, "no alarm and no events parses");
   assert(!workOrderDetailSchema.safeParse({ ...ITEM, alarm: null }).success, "a detail without events is refused");
-  assert(!workOrderDetailSchema.safeParse({ ...without("reference"), events: [], alarm: null }).success, "the item's own rule still holds");
+  assert(!workOrderDetailSchema.safeParse({ ...without("reference"), events: [], alarm: null, tasks: [] }).success, "the item's own rule still holds");
 }

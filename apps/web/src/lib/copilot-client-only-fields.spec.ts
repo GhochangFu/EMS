@@ -76,7 +76,20 @@ export function theWorkOrderSlaShowsNoBox(): void {
   if (!entry) throw new Error("workOrder.create");
   expect(clientOnlyFieldsFor(entry, { title: "Replace bearing" }, null).map((field) => [field.path, field.shown, field.required])).toEqual([
     ["slaMinutes", false, false],
+    ["checklistTemplateId", false, false],
   ]);
+}
+
+/** `E3.1` (ruling P4): a schedule's checklist template has no box on any of its three entries. */
+export function aChecklistTemplateHasNoBoxOnAScheduleEntry(): void {
+  for (const id of ["maintenanceSchedule.create", "maintenanceSchedule.activate", "maintenanceSchedule.deactivate"]) {
+    const entry = catalogEntry(id);
+    if (!entry) throw new Error(id);
+    expect(
+      clientOnlyFieldsFor(entry, {}, null).map((field) => [field.path, field.shown, field.required]),
+      id,
+    ).toEqual([["checklistTemplateId", false, false]]);
+  }
 }
 
 /** Any other entry's `clientOnly` field is shown and required, as before. */

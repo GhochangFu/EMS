@@ -9,7 +9,7 @@ import { repoRoot, walk } from "./support/source-scan";
  * `E3.1` (ADR 0122 decisions 9 and 10, plan T1.6) — two static invariants on the
  * work-order write surface. Assertions inline (§4.6 carves out `tests/`).
  *
- * (a) Every write handler of the SLA policy admin controller calls
+ * (a) Every write handler of the SLA policy and checklist template admin controllers calls
  *     `assertOperationsWriteRole(…, "configuration")` as its **first** `await`
  *     (ADR 0017): a role refusal must not depend on the body parse or on scope
  *     resolution, so an `operator` sending a malformed body reads 403, never 400.
@@ -22,7 +22,11 @@ import { repoRoot, walk } from "./support/source-scan";
  * insert is not read as code.
  */
 
-const GATED_CONTROLLERS = ["apps/api/src/admin/work-order-sla-policies/work-order-sla-policies.controller.ts"];
+const GATED_CONTROLLERS = [
+  "apps/api/src/admin/work-order-sla-policies/work-order-sla-policies.controller.ts",
+  // PR 3 (decision 4.2): the checklist template admin writes.
+  "apps/api/src/admin/work-order-checklist-templates/work-order-checklist-templates.controller.ts",
+];
 
 const THE_ONE_INSERTER = "apps/api/src/work-orders/work-order-create.ts";
 
@@ -70,7 +74,7 @@ function offendersOf(source: string): string[] {
 }
 
 describe("E3.1 — work-order write gates", () => {
-  it("every SLA policy write handler awaits the configuration role gate first", () => {
+  it("every SLA policy and checklist template write handler awaits the configuration role gate first", () => {
     for (const file of GATED_CONTROLLERS) {
       const source = readFileSync(join(repoRoot, file), "utf8");
       const handlers = firstAwaits(source);

@@ -104,14 +104,77 @@ export const workOrderAlarmSummarySchema = z.object({
   raisedAt: z.string(),
 });
 
+// ---------------------------------------------------------------------------
+// Checklists (ADR 0122 decision 4) — `bms.work_order_tasks` and the templates
+// ---------------------------------------------------------------------------
+
+/**
+ * Where one checklist item stands. A closed vocabulary the resolve gate branches on:
+ * the same three values are a `CHECK` on `bms.work_order_tasks.result` (migration
+ * `0145`). A `mandatory` item that is still `pending` blocks the move to `resolved`;
+ * `not_applicable` does not.
+ */
+export const WORK_ORDER_TASK_RESULTS = ["pending", "done", "not_applicable"] as const;
+export const workOrderTaskResultSchema = z.enum(WORK_ORDER_TASK_RESULTS);
+
+/**
+ * One item of a ticket's checklist. `completedBy` is a user id, like the item's
+ * `assignedTo`; the name of who did it is on the ticket's `task_updated` event.
+ * `templateItemId` is where the item was copied from, or null for one added by hand
+ * (and after its template's items were replaced: an edit that sends `items` replaces them all).
+ */
+export const workOrderTaskDtoSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  mandatory: z.boolean(),
+  result: workOrderTaskResultSchema,
+  note: z.string().nullable(),
+  sortOrder: z.number().int(),
+  completedAt: z.string().nullable(),
+  completedBy: z.string().nullable(),
+  templateItemId: z.string().nullable(),
+});
+
+/** One line of a checklist template. */
+export const workOrderChecklistTemplateItemDtoSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  mandatory: z.boolean(),
+  sortOrder: z.number().int(),
+});
+
+/**
+ * A reusable checklist: per organization, and for one asset domain or (`domain` null)
+ * for every domain. Create copies its items onto the ticket; a later edit never changes
+ * an open ticket (decision 4.3).
+ */
+export const workOrderChecklistTemplateDtoSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  name: z.string(),
+  domain: z.string().nullable(),
+  active: z.boolean(),
+  items: z.array(workOrderChecklistTemplateItemDtoSchema),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+/** `GET /admin/work-order-checklist-templates` and `GET /work-orders/checklist-templates`. */
+export const workOrderChecklistTemplatesResponseSchema = z.object({
+  items: z.array(workOrderChecklistTemplateDtoSchema),
+});
+
 const workOrderDetailExtrasSchema = z.object({
   /** Oldest first: `created_at`, then `id`. Empty for a ticket older than the events table (ruling P10). */
   events: z.array(workOrderEventDtoSchema),
   alarm: workOrderAlarmSummarySchema.nullable(),
+  /** The checklist, in `sortOrder`. Empty for a ticket with none. */
+  tasks: z.array(workOrderTaskDtoSchema),
 });
 
 /**
- * `GET /work-orders/:id` — the list item plus the timeline and the alarm summary.
+ * `GET /work-orders/:id` — the list item plus the timeline, the alarm summary and the
+ * checklist.
  *
  * `z.intersection`, on purpose (ADR 0030 Amendment 1 rule 2): never `.merge()` or
  * `.extend()`. A flattened copy would still typecheck and would silently stop following

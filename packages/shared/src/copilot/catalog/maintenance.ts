@@ -36,7 +36,9 @@ const ON_A_SCHEDULE = {
   params: { id: uuidParam },
   body: updateMaintenanceScheduleBodySchema,
   bodyName: "updateMaintenanceScheduleBodySchema",
-  clientOnly: [],
+  // `E3.1` (ADR 0122 ruling P4): a schedule's checklist template is set on the page,
+  // never through the copilot. The Confirm card shows no box for it.
+  clientOnly: ["checklistTemplateId"],
   target: { kind: "maintenanceSchedule", param: "id" },
   refs: [],
   formulas: [],
@@ -70,7 +72,8 @@ export const MAINTENANCE_ENTRIES: readonly CatalogEntry[] = [
     params: {},
     body: createMaintenanceScheduleBodySchema,
     bodyName: "createMaintenanceScheduleBodySchema",
-    clientOnly: [],
+    // `E3.1` (ADR 0122 ruling P4): see `ON_A_SCHEDULE`.
+    clientOnly: ["checklistTemplateId"],
     risk: "create",
     target: { kind: "maintenanceSchedule", field: "assetId" },
     refs: [],

@@ -12,6 +12,7 @@ import {
   SCHEDULE_HAS_WORK_ORDER,
   SCHEDULE_NOT_CONVERTIBLE,
   WORK_ORDER_CLOSE_BY_DRAG,
+  WORK_ORDER_RESOLVE_BY_DRAG,
   WORK_ORDER_CLOSED,
   WORK_ORDER_DUPLICATE,
   WORK_ORDER_REOPEN,
@@ -173,6 +174,19 @@ export async function aReorderThatClosesIsRefused(): Promise<void> {
   const h = proposeHarness({ target: BATCH_TARGET });
   const items = [{ id: WO_1, status: "closed", sortOrder: 0 }];
   expect((await h.call("propose_workOrder_reorder", { body: { items } })).error).toBe(WORK_ORDER_CLOSE_BY_DRAG);
+}
+
+/**
+ * `E3.1` (ADR 0122 ruling P1): a reorder that moves a card into `resolved` is refused
+ * before the card, with the route's sentence — resolve goes through its form.
+ */
+export async function aReorderIntoResolvedIsRefused(): Promise<void> {
+  const h = proposeHarness({ target: BATCH_TARGET });
+  const items = [{ id: WO_1, status: "resolved", sortOrder: 0 }];
+  const outcome = await h.call("propose_workOrder_reorder", { body: { items } });
+  expect(outcome.error).toBe(WORK_ORDER_RESOLVE_BY_DRAG);
+  expect(outcome.error).toBe("Use the status workflow for Resolved");
+  expect(h.stored, "no card is stored").toHaveLength(0);
 }
 
 /** A reorder naming one work order twice is refused with the route's sentence. */

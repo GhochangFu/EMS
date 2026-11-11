@@ -29,6 +29,7 @@ import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
+import { CHECKLIST_TEMPLATE_REFUSAL, isUsableChecklistTemplate } from "../work-orders/work-order-checklist";
 import { insertWorkOrder } from "../work-orders/work-order-create";
 import { resolveWorkOrderActor } from "../work-orders/work-order-events";
 import { readWorkOrderListItem } from "../work-orders/work-order-projection";
@@ -386,11 +387,17 @@ export class MaintenanceService {
 
     const firstDueAt = new Date(dto.firstDueAt);
     const item = await withTenant(this.db, organizationId, async (tx) => {
+      // E3.1 (ADR 0122 decision 4.3): a schedule may name the checklist its work orders
+      // start with. It must be usable for this asset now; the convert copies it later.
+      if (dto.checklistTemplateId) {
+        await this.assertChecklistTemplate(tx, organizationId, dto.assetId, dto.checklistTemplateId);
+      }
       const [template] = await tx
         .insert(maintenanceTaskTemplates)
         .values({
           organizationId,
           assetId: dto.assetId,
+          checklistTemplateId: dto.checklistTemplateId,
           title: dto.title,
           description: dto.description,
           category: dto.category,
@@ -436,6 +443,7 @@ export class MaintenanceService {
             generationMode: dto.generationMode,
             intervalDays: dto.intervalDays,
             firstDueAt: firstDueAt.toISOString(),
+            checklistTemplateId: dto.checklistTemplateId ?? null,
             oidcSubject: actor.sub,
             actorEmail: actor.email,
           },
@@ -537,9 +545,17 @@ export class MaintenanceService {
         .update(maintenanceSchedules)
         .set({ active: dto.active, updatedAt: now })
         .where(eq(maintenanceSchedules.id, id));
+      // E3.1 (ADR 0122 decision 4.3): `checklistTemplateId` sets the schedule's checklist
+      // template, `null` clears it, and leaving it out keeps it.
+      if (typeof dto.checklistTemplateId === "string") {
+        await this.assertChecklistTemplate(tx, organizationId, existing.assetId, dto.checklistTemplateId);
+      }
       await tx
         .update(maintenanceTaskTemplates)
-        .set({ active: dto.active })
+        .set({
+          active: dto.active,
+          ...(dto.checklistTemplateId === undefined ? {} : { checklistTemplateId: dto.checklistTemplateId }),
+        })
         .where(eq(maintenanceTaskTemplates.id, existing.templateId));
       await this.audit.write(
         {
@@ -558,6 +574,7 @@ export class MaintenanceService {
           payload: {
             templateId: existing.templateId,
             assetId: existing.assetId,
+            ...(dto.checklistTemplateId === undefined ? {} : { checklistTemplateId: dto.checklistTemplateId }),
             oidcSubject: actor.sub,
             actorEmail: actor.email,
           },
@@ -568,6 +585,17 @@ export class MaintenanceService {
       return this.readScheduleItem(tx, id, assetIds);
     });
     return item;
+  }
+
+  /**
+   * E3.1: a schedule's checklist template must be one the asset can use — the same
+   * organization, active, and for the asset's domain or for every domain. Read inside
+   * the write's tenant transaction; one fixed sentence whatever the reason.
+   */
+  private async assertChecklistTemplate(tx: BmsTx, organizationId: string, assetId: string, templateId: string): Promise<void> {
+    if (!(await isUsableChecklistTemplate(tx, { organizationId, assetId, templateId }))) {
+      throw new BadRequestException(CHECKLIST_TEMPLATE_REFUSAL);
+    }
   }
 
   /** Converts a maintenance schedule occurrence into an audited work order. */
@@ -592,6 +620,7 @@ export class MaintenanceService {
         title: maintenanceTaskTemplates.title,
         description: maintenanceTaskTemplates.description,
         priority: maintenanceTaskTemplates.priority,
+        checklistTemplateId: maintenanceTaskTemplates.checklistTemplateId,
       })
       .from(maintenanceSchedules)
       .innerJoin(
@@ -655,6 +684,10 @@ export class MaintenanceService {
         actor: who,
         origin: "schedule",
         dueAt: schedule.nextDueAt,
+        // E3.1 (ADR 0122 decision 4.3): the schedule's checklist comes with the ticket.
+        // A template retired or re-scoped since the schedule named it is skipped, not
+        // refused: retiring a template must not stop scheduled maintenance.
+        checklist: schedule.checklistTemplateId ? { templateId: schedule.checklistTemplateId, ifUnusable: "skip" } : undefined,
       });
 
       await tx.insert(maintenanceHistory).values({
@@ -685,6 +718,8 @@ export class MaintenanceService {
             workOrderId: workOrder.id,
             templateId: schedule.templateId,
             assetId: schedule.assetId,
+            checklistTemplateId: workOrder.checklistTemplateId,
+            checklistItems: workOrder.checklistItems,
             oidcSubject: actor.sub,
             actorEmail: actor.email,
           },

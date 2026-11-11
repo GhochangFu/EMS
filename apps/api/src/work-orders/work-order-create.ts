@@ -6,6 +6,7 @@ import type { WorkOrderOrigin, WorkOrderPriority } from "@bms/shared";
 import { BadRequestException } from "@nestjs/common";
 
 import type { BmsTx } from "../database/tenant-context";
+import { CHECKLIST_TEMPLATE_REFUSAL, copyChecklistOntoWorkOrder, isUsableChecklistTemplate } from "./work-order-checklist";
 import { type WorkOrderActor, writeWorkOrderEvent } from "./work-order-events";
 
 /**
@@ -13,9 +14,9 @@ import { type WorkOrderActor, writeWorkOrderEvent } from "./work-order-events";
  *
  * Two routes create a work order: `POST /work-orders` and the maintenance convert. Both
  * call this, inside their own tenant transaction, so everything a new ticket must carry
- * is decided once: its reference (decision 2), its SLA snapshot (decision 3) and its
- * first timeline events (decision 7). Later PRs add the checklist copy and the alarm
- * snapshot here too.
+ * is decided once: its reference (decision 2), its SLA snapshot (decision 3), its
+ * checklist copy (decision 4.3) and its first timeline events (decision 7). A later PR
+ * adds the alarm snapshot here too.
  *
  * Do not insert into `bms.work_orders` anywhere else in `apps/api`:
  * `tests/e3.1-work-order-write-gates.test.ts` holds that line.
@@ -36,6 +37,14 @@ export type InsertWorkOrderInput = {
   readonly dueAt?: Date | null;
   /** The create body's override; wins over the organization's policy (decision 3.2). */
   readonly slaMinutes?: number;
+  /**
+   * The checklist template to copy onto the ticket (decision 4.3). `ifUnusable` says what
+   * a template that is missing, retired or for another domain does: `refuse` fails the
+   * create (the person chose it just now, on the form); `skip` creates the ticket with
+   * no checklist (a schedule named it some time ago, and retiring a template must not
+   * stop scheduled maintenance).
+   */
+  readonly checklist?: { readonly templateId: string; readonly ifUnusable: "refuse" | "skip" };
 };
 
 /** Where a ticket's SLA minutes came from; recorded in the create audit row. */
@@ -46,6 +55,10 @@ export type InsertedWorkOrder = {
   readonly reference: string;
   readonly slaMinutes: number;
   readonly slaSource: WorkOrderSlaSource;
+  /** The template whose items were copied, or null when none was. */
+  readonly checklistTemplateId: string | null;
+  /** How many checklist items the ticket starts with. */
+  readonly checklistItems: number;
 };
 
 /**
@@ -84,6 +97,21 @@ export async function insertWorkOrder(tx: BmsTx, input: InsertWorkOrderInput): P
     input.priority,
     input.slaMinutes,
   );
+  // Decided before the reference is allocated, so a refused template never takes the
+  // organization's counter lock. (A refusal rolls the transaction back either way.)
+  let checklistTemplateId: string | null = null;
+  if (input.checklist) {
+    const usable = await isUsableChecklistTemplate(tx, {
+      organizationId: input.organizationId,
+      assetId: input.assetId,
+      templateId: input.checklist.templateId,
+    });
+    if (usable) {
+      checklistTemplateId = input.checklist.templateId;
+    } else if (input.checklist.ifUnusable === "refuse") {
+      throw new BadRequestException(CHECKLIST_TEMPLATE_REFUSAL);
+    }
+  }
   const { seq, reference } = await allocateWorkOrderReference(tx, input.organizationId, input.assetId);
 
   const [created] = await tx
@@ -112,6 +140,18 @@ export async function insertWorkOrder(tx: BmsTx, input: InsertWorkOrderInput): P
     throw new BadRequestException("Could not create work order");
   }
 
+  // The checklist is a frozen copy, made in the same transaction as the row (decision
+  // 4.3). It is the ticket's starting state, not a change to it, so it writes no
+  // `task_updated` event.
+  const checklistItems =
+    checklistTemplateId === null
+      ? 0
+      : await copyChecklistOntoWorkOrder(tx, {
+          organizationId: input.organizationId,
+          workOrderId: created.id,
+          templateId: checklistTemplateId,
+        });
+
   // The timeline starts here, in the same transaction as the row (decision 7.3).
   const event = { organizationId: input.organizationId, workOrderId: created.id, actor: input.actor };
   await writeWorkOrderEvent(tx, {
@@ -130,5 +170,5 @@ export async function insertWorkOrder(tx: BmsTx, input: InsertWorkOrderInput): P
       detail: { assignedTo: input.assignedTo },
     });
   }
-  return { id: created.id, reference, slaMinutes, slaSource };
+  return { id: created.id, reference, slaMinutes, slaSource, checklistTemplateId, checklistItems };
 }

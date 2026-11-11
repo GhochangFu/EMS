@@ -197,6 +197,12 @@ export const workOrderListItemSchema = z.object({
   slaMinutes: z.number().int().nullable(),
   slaDueAt: z.string().nullable(),
   slaState: workOrderSlaStateSchema,
+  /**
+   * `E3.1` (ADR 0122 decision 4): the ticket's checklist in two numbers. `checklistDone`
+   * counts the items that are no longer `pending` (`done` or `not_applicable`).
+   */
+  checklistDone: z.number().int(),
+  checklistTotal: z.number().int(),
   createdAt: z.string(),
   updatedAt: z.string(),
   assetCode: z.string(),

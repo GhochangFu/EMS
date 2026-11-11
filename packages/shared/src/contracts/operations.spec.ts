@@ -255,6 +255,8 @@ const WORK_ORDER_LIST_ITEM = {
   slaMinutes: null,
   slaDueAt: null,
   slaState: "none",
+  checklistDone: 0,
+  checklistTotal: 0,
   createdAt: "2026-11-05T00:00:00.000Z",
   updatedAt: "2026-11-05T00:00:00.000Z",
   assetCode: "CR-Q1",

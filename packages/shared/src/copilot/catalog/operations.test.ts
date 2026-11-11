@@ -24,7 +24,7 @@ import {
 /** `F4.284` — Vitest entry point for the alarm and work-order catalog entries. Assertions live in the sibling `.spec` (§4.6). */
 describe("F4.284 — alarm and work-order catalog entries (ADR 0106)", () => {
   it("the six routes are entries (decision 2)", () => theSixRoutesAreEntries());
-  it("no alarm or work-order route is excluded", () => noOperationsRouteIsExcluded());
+  it("no alarm or work-order route is excluded but the E3.1 checklist task routes", () => noOperationsRouteIsExcluded());
   it("each body is the route's own export by name", () => theBodyNamesAreTheRoutesExports());
   it("the risks are as ruled (decision 4)", () => theRisksAreAsRuled());
   it("only the ack and the close are operational in the catalog", () => onlyTheAckAndTheCloseAreOperational());

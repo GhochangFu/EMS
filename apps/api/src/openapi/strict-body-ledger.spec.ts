@@ -123,8 +123,12 @@ import {
   closeWorkOrderBodySchema,
   convertMaintenanceBodySchema,
   createWorkOrderBodySchema,
+  createWorkOrderChecklistTemplateBodySchema,
+  createWorkOrderTaskBodySchema,
   putWorkOrderSlaPoliciesBodySchema,
   reorderWorkOrdersBodySchema,
+  updateWorkOrderChecklistTemplateBodySchema,
+  updateWorkOrderTaskBodySchema,
   updateWorkOrderStatusBodySchema,
   createReportScheduleBodySchema,
   saveEnergyReportFileBodySchema,
@@ -307,6 +311,13 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `E3.1` (ADR 0122 decision 3.2, plan D8). `.strict()` at both levels: a replace-all set, so a
   // misspelt key dropped silently would reset that priority to its default at 200.
   putWorkOrderSlaPoliciesBodySchema,
+  // `E3.1` (ADR 0122 decision 4). `.strict()`: a checklist item and a template are closed shapes; a
+  // stray `mandatory` on a task update, or a stray `organizationId` on a template update, dropped
+  // silently would answer 200 for a change that never happened.
+  createWorkOrderTaskBodySchema,
+  updateWorkOrderTaskBodySchema,
+  createWorkOrderChecklistTemplateBodySchema,
+  updateWorkOrderChecklistTemplateBodySchema,
   // `E7.2` (ADR 0123 decision 12). `.strict()`: closed shapes, so an unknown key is a caller error.
   createEdgeGatewayBodySchema,
   updateEdgeGatewayBodySchema,

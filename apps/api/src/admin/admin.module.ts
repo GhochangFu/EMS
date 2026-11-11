@@ -95,6 +95,8 @@ import { UserGrantsAdminController } from "./users/user-grants.controller";
 import { UserGrantsService } from "./users/user-grants.service";
 import { UsersAdminController } from "./users/users.controller";
 import { UsersService } from "./users/users.service";
+import { WorkOrderChecklistTemplatesAdminController } from "./work-order-checklist-templates/work-order-checklist-templates.controller";
+import { WorkOrderChecklistTemplatesAdminService } from "./work-order-checklist-templates/work-order-checklist-templates.service";
 import { WorkOrderSlaPoliciesAdminController } from "./work-order-sla-policies/work-order-sla-policies.controller";
 import { WorkOrderSlaPoliciesAdminService } from "./work-order-sla-policies/work-order-sla-policies.service";
 
@@ -155,10 +157,13 @@ import { WorkOrderSlaPoliciesAdminService } from "./work-order-sla-policies/work
     UserGrantsAdminController,
     // E3.1 / ADR 0122 decision 3.2 — GET and PUT admin/work-order-sla-policies.
     WorkOrderSlaPoliciesAdminController,
+    // E3.1 / ADR 0122 decision 4.2 — GET, POST and PATCH admin/work-order-checklist-templates.
+    WorkOrderChecklistTemplatesAdminController,
   ],
   providers: [
     MasterDataAuditService,
     WorkOrderSlaPoliciesAdminService,
+    WorkOrderChecklistTemplatesAdminService,
     CredentialCryptoService,
     OnboardingValidateService,
     OnboardingProtocolService,

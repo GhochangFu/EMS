@@ -46,3 +46,20 @@ export function operationsWriteDenialReason(
     ? "Changing rules and maintenance schedules requires an administrator role"
     : "Recording operations activity requires an operator or administrator role";
 }
+
+/**
+ * `E3.1` (ADR 0122 decision 3.2, owner ruling of 2026-11-11) — who may send `slaMinutes`
+ * on `POST /work-orders`, the SLA override of one ticket: the four admin roles. An
+ * `operator` creates tickets (`operational`) but may not choose their own deadline; an
+ * operator's ticket takes the organization's policy or the platform default.
+ *
+ * It is exactly the roles that hold `configuration`, and it is stated through that
+ * class on purpose: a role added to the matrix must decide `configuration` there, and
+ * this follows it.
+ */
+export function canOverrideWorkOrderSla(role: UserRole): boolean {
+  return canPerformOperationsWrite(role, "configuration");
+}
+
+/** The 403 body of a refused SLA override. Never includes user data. */
+export const WORK_ORDER_SLA_OVERRIDE_DENIAL = "Setting the SLA of a single work order requires an administrator role";
