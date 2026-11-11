@@ -8,6 +8,8 @@
   },
   "files": [
     "vitest.config.ts",
+    "vitest.global-setup.ts",
+    "vitest.worker-setup.ts",
     "apps/api/vitest.config.ts",
     "apps/web/vitest.config.ts",
     "apps/ingest/vitest.config.ts",
@@ -56,6 +58,7 @@
     "tests/integration-fixture-isolation.test.ts",
     "tests/f4.5-test-harness.test.ts",
     "tests/f4.5-test-harness.integration.test.ts",
+    "tests/f4.5-isolation-ratchet.test.ts",
     "tests/integration-fixture-sharing.test.ts",
     "tests/adr-0045-owner-and-superuser-url.test.ts",
     "tests/pre-commit-gate.test.ts",

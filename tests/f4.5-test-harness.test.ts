@@ -4,9 +4,10 @@ import {
   assertDatabaseName,
   buildTemplate,
   copyDatabase,
+  databaseScopedProvisioning,
   dropRunDatabases,
 } from "./harness/template-database";
-import { testInfraMode } from "./harness/test-infra-mode";
+import { dockerDecides, testInfraMode } from "./harness/test-infra-mode";
 import {
   resolveRoleUrls,
   withDatabase,
@@ -76,12 +77,47 @@ describe("testInfraMode (ADR 0124 decision 5)", () => {
     expect(testInfraMode({ BMS_TEST_DB: "shared" }, true).kind).toBe("refuse");
   });
 
+  it("starts nothing for BMS_TEST_DB=none, even with Docker and under CI (the docs-only job)", () => {
+    expect(testInfraMode({ BMS_TEST_DB: "none", CI: "true" }, true)).toEqual({ kind: "none" });
+    expect(testInfraMode({ BMS_TEST_DB: "none", DATABASE_URL: COMPOSE }, true)).toEqual({ kind: "none" });
+  });
+
   it("refuses an unknown BMS_TEST_DB value rather than guessing", () => {
     expect(testInfraMode({ BMS_TEST_DB: "container" }, true).kind).toBe("refuse");
   });
 
   it("treats a whitespace-only DATABASE_URL as unset", () => {
     expect(testInfraMode({ DATABASE_URL: "   " }, true)).toEqual({ kind: "containers" });
+  });
+});
+
+describe("dockerDecides", () => {
+  it("probes Docker when nothing else decides the mode", () => {
+    expect(dockerDecides({})).toBe(true);
+  });
+
+  it("probes Docker for BMS_TEST_DB=containers even beside a set DATABASE_URL (CI's test step)", () => {
+    expect(dockerDecides({ BMS_TEST_DB: "containers", DATABASE_URL: COMPOSE })).toBe(true);
+  });
+
+  it("skips the probe when DATABASE_URL or another mode decides", () => {
+    expect(dockerDecides({ DATABASE_URL: COMPOSE })).toBe(false);
+    expect(dockerDecides({ BMS_TEST_DB: "none" })).toBe(false);
+    expect(dockerDecides({ BMS_TEST_DB: "shared", DATABASE_URL: COMPOSE })).toBe(false);
+  });
+
+  it("never changes a verdict: where it skips the probe, Docker's answer is irrelevant", () => {
+    const envs = [
+      { DATABASE_URL: COMPOSE },
+      { BMS_TEST_DB: "none" },
+      { BMS_TEST_DB: "shared", DATABASE_URL: COMPOSE },
+      { BMS_TEST_DB: "external" },
+      { CI: "true", DATABASE_URL: COMPOSE },
+    ];
+    for (const env of envs) {
+      expect(dockerDecides(env), JSON.stringify(env)).toBe(false);
+      expect(testInfraMode(env, true), JSON.stringify(env)).toEqual(testInfraMode(env, false));
+    }
   });
 });
 
@@ -220,5 +256,11 @@ describe("database-name guards", () => {
 
   it("refuses to drop databases by the plain bms prefix", async () => {
     await expect(dropRunDatabases(NOWHERE, "bms")).rejects.toThrow(/plain bms/);
+  });
+});
+
+describe("databaseScopedProvisioning", () => {
+  it("takes db:roles' database-scoped statements, which an external template still needs", () => {
+    expect(databaseScopedProvisioning()).toEqual(["CREATE EXTENSION IF NOT EXISTS btree_gist"]);
   });
 });

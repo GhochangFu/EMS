@@ -75,6 +75,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run the repo-invariant tests
+        # F4.5 (ADR 0124): none of these needs a database, so the test harness starts no
+        # containers here (Docker is present on the runner and would otherwise be used).
+        env:
+          BMS_TEST_DB: none
         run: pnpm exec vitest run --project repo --exclude "**/*.integration.test.ts"
 
   build-and-migrate:

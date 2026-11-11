@@ -50,6 +50,13 @@ export default defineConfig({
      * without re-running the measurement above (`docs/plans/f4.71-shared-db-flakes.md`, U7).
      */
     maxWorkers: 2,
+    /**
+     * `F4.5` (ADR 0124). One global setup decides the run's database — containers, an external
+     * server, or nothing — and `vitest.worker-setup.ts` applies it before each test file of the
+     * three projects that hold database suites (`api`, `ingest`, `repo`).
+     * `tests/f4.5-isolation-ratchet.test.ts` holds both wirings in place.
+     */
+    globalSetup: ["./vitest.global-setup.ts"],
     projects: [
       "apps/api",
       "apps/web",
@@ -61,6 +68,7 @@ export default defineConfig({
           name: "repo",
           environment: "node",
           include: ["tests/**/*.test.ts"],
+          setupFiles: ["./vitest.worker-setup.ts"],
         },
       },
     ],

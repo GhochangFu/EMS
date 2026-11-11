@@ -28,5 +28,7 @@ export default defineProject({
     name: "api",
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // `F4.5` (ADR 0124): the run's database for this file, before the file imports.
+    setupFiles: ["../../vitest.worker-setup.ts"],
   },
 });
