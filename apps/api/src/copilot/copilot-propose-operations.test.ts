@@ -27,6 +27,8 @@ import {
   aReorderWithADuplicateIsRefused,
   aScheduleWithAWorkOrderIsRefused,
   aStoredAckIsOperationalWithItsReason,
+  aCancelledWorkOrderIsRefused,
+  aCloseOfAnUnresolvedWorkOrderIsRefused,
   aStoredCloseIsOperational,
   fillStepRefusesAnUnaskedAck,
   theAckSummaryNamesTheAlarm,
@@ -50,6 +52,8 @@ describe("F4.284 — the operations propose tools (ADR 0106 decisions 2-4, DC2, 
   it("DC6: a closed work order's status change is refused with the route's sentence.", () => aClosedWorkOrderStatusChangeIsRefused());
   it("DC6: a closed work order's close is refused with the route's sentence.", () => aClosedWorkOrderCloseIsRefused());
   it("A stored close is operational, with the reason in the body.", () => aStoredCloseIsOperational());
+  it("E3.1: a close of a work order that is not resolved is refused with the approval's sentence", () => aCloseOfAnUnresolvedWorkOrderIsRefused());
+  it("E3.1: a cancelled work order takes no status change and no close", () => aCancelledWorkOrderIsRefused());
   it("Decision 2: the status tool refuses closed — a close carries a reason through its own route.", () => theStatusToolRefusesClosed());
   it("The status card says where the work order moves from and to.", () => theStatusSummaryNamesFromAndTo());
   it("DC6: a reorder that reopens a closed work order is refused with the route's sentence.", () => aReorderThatReopensIsRefused());

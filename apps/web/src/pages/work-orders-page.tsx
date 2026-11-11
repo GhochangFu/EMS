@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ASSET_LABEL_SEPARATOR,
   assetLabelParts,
+  type BoardWorkOrderStatus,
   type WorkOrderListItem,
   type WorkOrderPriority,
   type WorkOrderStatus,
@@ -15,8 +16,9 @@ import { fetchWorkOrders, reorderWorkOrders, type ReorderWorkOrderItem } from ".
 import { PageHeader } from "../components/page-header";
 import { WorkOrderCloseWizard } from "../components/work-orders/work-order-close-wizard";
 import { WorkOrderStatusWizard } from "../components/work-orders/work-order-status-wizard";
-import { priorities, priorityLabels, statusLabels } from "../components/work-orders/work-order-labels";
+import { APPROVE_AND_CLOSE_LABEL, priorities, priorityLabels, statusLabels } from "../components/work-orders/work-order-labels";
 import { WorkOrderWizard } from "../components/work-orders/work-order-wizard";
+import { canApproveWorkOrders } from "../lib/admin-access";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
@@ -28,27 +30,40 @@ type WorkOrdersPageProps = {
 type StatusFilter = WorkOrderStatus | "all";
 type PriorityFilter = WorkOrderPriority | "all";
 type KanbanColumn = {
-  key: WorkOrderStatus;
+  key: BoardWorkOrderStatus;
   label: string;
   kpiLabel: string;
   kpiTone?: "warning" | "info" | "success";
 };
 type DragState = {
   id: string;
-  fromStatus: WorkOrderStatus;
+  fromStatus: BoardWorkOrderStatus;
 };
 type DropTarget = {
-  status: WorkOrderStatus;
+  status: BoardWorkOrderStatus;
   index: number;
 };
 
-const statuses: WorkOrderStatus[] = [
+/** The five columns, in board order: what a reorder body may carry (ADR 0122 decision 6.8). */
+const boardStatuses: BoardWorkOrderStatus[] = [
   "open",
   "assigned",
   "in_progress",
   "resolved",
   "closed",
 ];
+
+/** The status filter's choices: the five columns, then *Cancelled*, which is on no column. */
+const filterStatuses: WorkOrderStatus[] = [...boardStatuses, "cancelled"];
+
+/** A cancelled ticket is on no column: it is neither dragged nor sent in a reorder. */
+function isOnBoard(row: WorkOrderListItem): row is WorkOrderListItem & { status: BoardWorkOrderStatus } {
+  return row.status !== "cancelled";
+}
+
+/** Exported for `work-orders-page.spec.tsx`: why a drop on Done was not taken. */
+export const APPROVE_NEEDS_RESOLVED = "Only a resolved work order can be approved and closed";
+export const APPROVE_NEEDS_ADMIN = "Approving and closing a work order requires an administrator role";
 
 const kanbanColumns: KanbanColumn[] = [
   { key: "open", label: "Open", kpiLabel: "Open WO", kpiTone: "warning" },
@@ -89,6 +104,7 @@ function WhereSpan({ where }: { where: string | null }) {
 function statusStyle(status: WorkOrderStatus): string {
   switch (status) {
     case "closed":
+    case "cancelled":
       return "border-line bg-well-deep text-neutral-ink";
     case "resolved":
       return "border-accent/20 bg-ok-wash text-ok-ink";
@@ -254,7 +270,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
   );
   const rowsByStatus = useMemo(
     () =>
-      kanbanColumns.reduce<Record<WorkOrderStatus, WorkOrderListItem[]>>(
+      kanbanColumns.reduce<Record<BoardWorkOrderStatus, WorkOrderListItem[]>>(
         (acc, column) => {
           acc[column.key] = filteredRows.filter(
             (row) => row.status === column.key,
@@ -271,6 +287,10 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
       ),
     [filteredRows],
   );
+  // `E3.1` (ADR 0122 decision 6.8): cancelled tickets are on no column; the *Cancelled*
+  // filter lists them below the filters, in place of the board.
+  const cancelledRows = useMemo(() => filteredRows.filter((row) => row.status === "cancelled"), [filteredRows]);
+  const mayApprove = canApproveWorkOrders(user.role);
 
   function openCreate(): void {
     setCreateInitial(assetOptions[0] ? { assetId: assetOptions[0].id } : {});
@@ -293,9 +313,9 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
 
   function buildReorderItems(
     order: string[],
-    overrides: Map<string, WorkOrderStatus>,
+    overrides: Map<string, BoardWorkOrderStatus>,
   ): ReorderWorkOrderItem[] {
-    const nextByStatus: Record<WorkOrderStatus, ReorderWorkOrderItem[]> = {
+    const nextByStatus: Record<BoardWorkOrderStatus, ReorderWorkOrderItem[]> = {
       open: [],
       assigned: [],
       in_progress: [],
@@ -304,13 +324,15 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
     };
     for (const id of order) {
       const row = rowById.get(id);
-      if (!row) {
+      // A cancelled row is never sent: the reorder route refuses the whole batch for one
+      // `cancelled` item (400), which would break every drag on the board.
+      if (!row || !isOnBoard(row)) {
         continue;
       }
       const status = overrides.get(id) ?? row.status;
       nextByStatus[status].push({ id, status, sortOrder: 0 });
     }
-    return statuses.flatMap((status) =>
+    return boardStatuses.flatMap((status) =>
       nextByStatus[status].map((item, index) => ({
         ...item,
         sortOrder: index * 1000,
@@ -320,7 +342,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
 
   function nextLocalOrder(
     draggedId: string,
-    targetStatus: WorkOrderStatus,
+    targetStatus: BoardWorkOrderStatus,
     targetIndex: number,
   ): string[] {
     const targetRows = rowsByStatus[targetStatus];
@@ -348,13 +370,16 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
   }
 
   function handleDragStart(row: WorkOrderListItem): void {
+    if (!isOnBoard(row)) {
+      return;
+    }
     setDragState({ id: row.id, fromStatus: row.status });
     setDropTarget({ status: row.status, index: 0 });
   }
 
   function handleDragOver(
     e: DragEvent<HTMLElement>,
-    status: WorkOrderStatus,
+    status: BoardWorkOrderStatus,
     index: number,
   ): void {
     if (!dragState) {
@@ -365,18 +390,30 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
     setDropTarget({ status, index });
   }
 
-  function handleDrop(status: WorkOrderStatus, index: number): void {
+  function handleDrop(status: BoardWorkOrderStatus, index: number): void {
     if (!dragState) {
       return;
     }
     const dragged = rowById.get(dragState.id);
     setDragState(null);
     setDropTarget(null);
-    if (!dragged) {
+    if (!dragged || !isOnBoard(dragged)) {
       return;
     }
 
+    // `E3.1` (ADR 0122 decisions 6.2 and 6.5): a drop on Done is the approval. Only an
+    // approver may make it and only a resolved ticket takes it; the route would refuse
+    // anything else, so the drop says why and opens nothing.
     if (status === "closed" && dragged.status !== "closed") {
+      if (!mayApprove) {
+        setDragError(APPROVE_NEEDS_ADMIN);
+        return;
+      }
+      if (dragged.status !== "resolved") {
+        setDragError(APPROVE_NEEDS_RESOLVED);
+        return;
+      }
+      setDragError(null);
       setCloseTarget(dragged);
       setCloseSortOrder(index * 1000);
       return;
@@ -393,7 +430,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
     }
 
     const nextOrder = nextLocalOrder(dragged.id, status, index);
-    const overrides = new Map<string, WorkOrderStatus>([[dragged.id, status]]);
+    const overrides = new Map<string, BoardWorkOrderStatus>([[dragged.id, status]]);
     setLocalOrder(nextOrder);
     setDragError(null);
     reorderM.mutate(buildReorderItems(nextOrder, overrides));
@@ -476,7 +513,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
               onChange={(ev) => setStatusFilter(ev.target.value as StatusFilter)}
             >
               <option value="all">All statuses</option>
-              {statuses.map((status) => (
+              {filterStatuses.map((status) => (
                 <option key={status} value={status}>
                   {statusLabels[status]}
                 </option>
@@ -527,6 +564,29 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           <p className="text-sm text-ink-muted">Loading work orders…</p>
         ) : workOrdersQ.isError ? (
           <p className="text-sm text-critical-ink">Could not load work orders.</p>
+        ) : statusFilter === "cancelled" ? (
+          <section aria-label="Cancelled work orders" className="surface-raised p-3">
+            {cancelledRows.length === 0 ? (
+              <p className="text-sm text-ink-muted">No cancelled work orders.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {cancelledRows.map((row) => (
+                  <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                    <div>
+                      <div className="font-mono text-3xs text-ink-muted">{row.reference}</div>
+                      <div className="text-sm font-semibold text-ink">{row.title}</div>
+                      <div className="text-3xs text-ink-muted">
+                        {row.assetName} · {row.siteName}
+                      </div>
+                    </div>
+                    <span className={`rounded border px-2 py-0.5 text-3xs font-bold uppercase ${statusStyle(row.status)}`}>
+                      {statusLabels[row.status]}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         ) : (
           <div className="grid gap-3 xl:grid-cols-5">
             {kanbanColumns.map((column) => (
@@ -633,9 +693,18 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                             type="button"
                             className="surface-button-primary bg-accent px-2 py-1 text-2xs font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
                             onClick={() => openClose(row)}
-                            disabled={row.status === "closed"}
+                            // `E3.1` (ADR 0122 decision 6.2): the approval, for an approver, on a resolved ticket.
+                            disabled={!mayApprove || row.status !== "resolved"}
+                            title={
+                              // A closed card needs no reason: it is already approved.
+                              row.status === "closed" || (mayApprove && row.status === "resolved")
+                                ? undefined
+                                : mayApprove
+                                  ? APPROVE_NEEDS_RESOLVED
+                                  : APPROVE_NEEDS_ADMIN
+                            }
                           >
-                            Close
+                            {APPROVE_AND_CLOSE_LABEL}
                           </button>
                         </div>
                       </article>
@@ -648,7 +717,9 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
         )}
         {dragError ? (
           <p className="text-xs text-critical-ink" role="alert">
-            Kanban order was not saved: {dragError}
+            {dragError === APPROVE_NEEDS_ADMIN || dragError === APPROVE_NEEDS_RESOLVED
+              ? dragError
+              : `Kanban order was not saved: ${dragError}`}
           </p>
         ) : null}
       </div>

@@ -7,6 +7,7 @@ import {
   theAckHasAReasonStep,
   theAckSummaryNamesTheAlarm,
   theBodyNamesAreTheRoutesExports,
+  theCloseCardSaysApproveAndClose,
   theCloseSummaryQuotesItsReason,
   theEnrichmentChecksItsSkillCodeAsARef,
   theEnrichmentModelBodyCarriesSkillCode,
@@ -24,7 +25,7 @@ import {
 /** `F4.284` — Vitest entry point for the alarm and work-order catalog entries. Assertions live in the sibling `.spec` (§4.6). */
 describe("F4.284 — alarm and work-order catalog entries (ADR 0106)", () => {
   it("the six routes are entries (decision 2)", () => theSixRoutesAreEntries());
-  it("no alarm or work-order route is excluded but the E3.1 checklist task routes", () => noOperationsRouteIsExcluded());
+  it("no alarm or work-order route is excluded but the E3.1 hand-typed routes (checklist, root cause, reject, cancel)", () => noOperationsRouteIsExcluded());
   it("each body is the route's own export by name", () => theBodyNamesAreTheRoutesExports());
   it("the risks are as ruled (decision 4)", () => theRisksAreAsRuled());
   it("only the ack and the close are operational in the catalog", () => onlyTheAckAndTheCloseAreOperational());
@@ -41,4 +42,5 @@ describe("F4.284 — alarm and work-order catalog entries (ADR 0106)", () => {
   it("the status summary names from and to", () => theStatusSummaryNamesFromAndTo());
   it("the reorder summary counts the work orders", () => theReorderSummaryCountsTheWorkOrders());
   it("the close summary quotes its reason", () => theCloseSummaryQuotesItsReason());
+  it("E3.1: the close card says approve and close, on the approval target", () => theCloseCardSaysApproveAndClose());
 });

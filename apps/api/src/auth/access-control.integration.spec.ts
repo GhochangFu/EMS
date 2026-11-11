@@ -622,7 +622,7 @@ export async function assertUngrantedRolesFailClosed(
 
   // ADR 0017's gate, resolved through the same path the controllers use.
   const viewer = jwtForUnprovisioned("no-grants-viewer@integration.invalid", "viewer");
-  for (const writeClass of ["configuration", "operational"] as const) {
+  for (const writeClass of ["configuration", "operational", "approval"] as const) {
     await expectForbidden(
       () => svc.assertOperationsWriteRole(viewer, writeClass),
       `viewer performing an ${writeClass} write (ADR 0017)`,
@@ -633,6 +633,11 @@ export async function assertUngrantedRolesFailClosed(
   await expectForbidden(
     () => svc.assertOperationsWriteRole(operator, "configuration"),
     "operator performing a configuration write (ADR 0017)",
+  );
+  // E3.1 (ADR 0122 decision 6.2): an operator may not approve, reject or cancel a work order…
+  await expectForbidden(
+    () => svc.assertOperationsWriteRole(operator, "approval"),
+    "operator performing an approval write (ADR 0122)",
   );
   // …but keeps today's work.
   await svc.assertOperationsWriteRole(operator, "operational");

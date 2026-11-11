@@ -212,6 +212,11 @@ const workOrderDetailExtrasSchema = z.object({
   preventiveAction: z.string().nullable(),
   /** Who resolved it, as a user id; null while it is not resolved, and on an older ticket. */
   resolvedBy: z.string().nullable(),
+  /** Who approved (closed) it, as a user id; null until then, and on a ticket closed before approval existed. */
+  approvedBy: z.string().nullable(),
+  /** Who cancelled it and when; both null on a ticket that is not cancelled (decision 6.8). */
+  cancelledBy: z.string().nullable(),
+  cancelledAt: z.string().nullable(),
   /** Null for a ticket with no alarm, an alarm with no enrichment, or one older than the snapshot. */
   alarmSnapshot: workOrderAlarmSnapshotSchema.nullable(),
 });

@@ -45,8 +45,8 @@ const typed = (values: Record<string, unknown>, key: string): string => (typeof 
 
 /**
  * `F4.284` (ADR 0099 decision 6; ADR 0106 decision 2) — a work order's Edit status on
- * the shared `WizardShell`: Status → Review. The status list leaves out `closed`: a
- * close has its own wizard and a reason. Used by operators too; Submit sends the plain
+ * the shared `WizardShell`: Status → Review. The status list leaves out `closed` and
+ * `cancelled` (ADR 0122 decision 6.5): the approval has its own wizard and a reason. Used by operators too; Submit sends the plain
  * `PATCH /work-orders/:id/status`.
  *
  * `E3.1` (ADR 0122 decision 5, plan T4.4): choosing `resolved` shows a **Root cause**
@@ -60,7 +60,7 @@ const typed = (values: Record<string, unknown>, key: string): string => (typeof 
  */
 export function WorkOrderStatusWizard({ row, initialStatus, onCancel, onDone }: WorkOrderStatusWizardProps) {
   const [values, setValues] = useState<Record<string, unknown>>({
-    status: initialStatus ?? (row.status === "closed" ? "open" : row.status),
+    status: initialStatus ?? (row.status === "closed" || row.status === "cancelled" ? "open" : row.status),
   });
   const queryClient = useQueryClient();
   const save = useMutation({

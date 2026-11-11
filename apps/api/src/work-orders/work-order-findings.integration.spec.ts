@@ -170,15 +170,6 @@ export async function assertAPlannedTicketResolvesWithoutFindings(ctx: FindingsF
   expect((await rowOf(ctx.fleetPool, created.id)).resolved_by).toBe(ctx.actorUserId);
 }
 
-/** A close that skips `resolved` is gated the same way on an alarm ticket. */
-export async function assertACloseThatSkipsResolvedNeedsTheFindingsToo(ctx: FindingsFixtures): Promise<void> {
-  const created = await fromAlarm(ctx);
-  const attempt = ctx.svc.close(created.id, ctx.actor, { reason: "Closing without findings" }, null);
-  await expect(attempt).rejects.toBeInstanceOf(ConflictException);
-  await expect(attempt).rejects.toThrow(WORK_ORDER_ROOT_CAUSE_REQUIRED_REFUSAL);
-  expect((await rowOf(ctx.fleetPool, created.id)).status).toBe("open");
-}
-
 /** `resolved` back to `in_progress` clears both resolve stamps and restarts the SLA clock; the findings stay (ruling P3). */
 export async function assertGoingBackToWorkClearsTheResolveStamps(ctx: FindingsFixtures): Promise<void> {
   const created = await fromAlarm(ctx);
@@ -282,10 +273,14 @@ export async function assertFindingsAreKeptWhileResolvedAndFrozenAtClosed(ctx: F
   const edited = await ctx.findings.putRootCause(created.id, { ...FULL, rootCause: "Contacts pitted by arcing" }, ctx.actor, null);
   expect(edited.rootCause).toBe("Contacts pitted by arcing");
 
-  await ctx.svc.close(created.id, ctx.actor, { reason: "Work complete" }, null);
-  const frozen = ctx.findings.putRootCause(created.id, FULL, ctx.actor, null);
-  await expect(frozen).rejects.toBeInstanceOf(ConflictException);
-  await expect(frozen).rejects.toThrow(WORK_ORDER_FINDINGS_FROZEN_REFUSAL);
+  // Set straight in the table: `closed` and `cancelled` are reached only through the approval
+  // service (`work-orders.approval.integration.spec.ts`), and this suite is about the freeze.
+  for (const terminal of ["closed", "cancelled"]) {
+    await ctx.fleetPool.query("UPDATE bms.work_orders SET status = $2 WHERE id = $1", [created.id, terminal]);
+    const frozen = ctx.findings.putRootCause(created.id, FULL, ctx.actor, null);
+    await expect(frozen, terminal).rejects.toBeInstanceOf(ConflictException);
+    await expect(frozen, terminal).rejects.toThrow(WORK_ORDER_FINDINGS_FROZEN_REFUSAL);
+  }
   expect((await rowOf(ctx.fleetPool, created.id)).root_cause).toBe("Contacts pitted by arcing");
 }
 
@@ -391,18 +386,16 @@ export async function assertTheListItemCarriesTheCauseCode(ctx: FindingsFixtures
 /**
  * The status route holds the same rule as the root-cause route: a blank finding sent
  * with a status write cannot overwrite what a resolved alarm ticket resolved with, by a
- * no-op move or on the way to `closed`. (The body schema refuses a blank first; this is
+ * no-op move. (The body schema refuses a blank first; this is
  * the service's own line.)
  */
 export async function assertAStatusWriteCannotBlankAResolvedTicketsFindings(ctx: FindingsFixtures): Promise<void> {
   const created = await fromAlarm(ctx);
   await ctx.svc.updateStatus(created.id, { status: "resolved", ...FULL }, ctx.actor, null);
 
-  for (const status of ["resolved", "closed"] as const) {
-    const attempt = ctx.svc.updateStatus(created.id, { status, rootCause: "   ", correctiveAction: "   " }, ctx.actor, null);
-    await expect(attempt, `to ${status}`).rejects.toBeInstanceOf(ConflictException);
-    await expect(attempt).rejects.toThrow(WORK_ORDER_FINDINGS_KEPT_REFUSAL);
-  }
+  const attempt = ctx.svc.updateStatus(created.id, { status: "resolved", rootCause: "   ", correctiveAction: "   " }, ctx.actor, null);
+  await expect(attempt).rejects.toBeInstanceOf(ConflictException);
+  await expect(attempt).rejects.toThrow(WORK_ORDER_FINDINGS_KEPT_REFUSAL);
   const row = await rowOf(ctx.fleetPool, created.id);
   expect([row.status, row.root_cause, row.corrective_action]).toEqual(["resolved", FULL.rootCause, FULL.correctiveAction]);
 

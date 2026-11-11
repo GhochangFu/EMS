@@ -111,7 +111,7 @@ export function taskRowRoundTrips(): void {
 /** The detail carries `tasks`, and is still an intersection with the list item. */
 export function detailCarriesTheChecklist(): void {
   assert(workOrderDetailSchema instanceof ZodIntersection, "workOrderDetailSchema is still a z.intersection");
-  const detail = { ...ITEM, events: [], alarm: null, tasks: [TASK], rootCause: null, correctiveAction: null, preventiveAction: null, resolvedBy: null, alarmSnapshot: null };
+  const detail = { ...ITEM, events: [], alarm: null, tasks: [TASK], rootCause: null, correctiveAction: null, preventiveAction: null, resolvedBy: null, approvedBy: null, cancelledBy: null, cancelledAt: null, alarmSnapshot: null };
   const parsed = workOrderDetailSchema.safeParse(detail);
   assert(parsed.success, "the detail parses");
   assert(parsed.success && parsed.data.tasks.length === 1 && parsed.data.checklistTotal === 3, "it carries the tasks and the item's counters");

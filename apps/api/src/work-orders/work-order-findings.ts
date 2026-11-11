@@ -77,12 +77,15 @@ export async function readAlarmEnrichmentForSnapshot(
   return row ?? null;
 }
 
-/** What the detail read adds from the ticket's own row: the findings, who resolved it, and the alarm snapshot. */
+/** What the detail read adds from the ticket's own row: the findings, who resolved, approved or cancelled it, and the alarm snapshot. */
 export type WorkOrderFindingsRead = {
   readonly rootCause: string | null;
   readonly correctiveAction: string | null;
   readonly preventiveAction: string | null;
   readonly resolvedBy: string | null;
+  readonly approvedBy: string | null;
+  readonly cancelledBy: string | null;
+  readonly cancelledAt: string | null;
   readonly alarmSnapshot: WorkOrderAlarmSnapshot | null;
 };
 
@@ -91,6 +94,9 @@ const NO_FINDINGS: WorkOrderFindingsRead = {
   correctiveAction: null,
   preventiveAction: null,
   resolvedBy: null,
+  approvedBy: null,
+  cancelledBy: null,
+  cancelledAt: null,
   alarmSnapshot: null,
 };
 
@@ -106,6 +112,9 @@ export async function readWorkOrderFindings(tx: BmsTx, workOrderId: string): Pro
       correctiveAction: workOrders.correctiveAction,
       preventiveAction: workOrders.preventiveAction,
       resolvedBy: workOrders.resolvedBy,
+      approvedBy: workOrders.approvedBy,
+      cancelledBy: workOrders.cancelledBy,
+      cancelledAt: workOrders.cancelledAt,
       snapshotRootCause: workOrders.alarmRootCause,
       snapshotCorrectiveActions: workOrders.alarmCorrectiveActions,
       snapshotSkillCode: workOrders.alarmSkillCode,
@@ -127,6 +136,9 @@ export async function readWorkOrderFindings(tx: BmsTx, workOrderId: string): Pro
     correctiveAction: row.correctiveAction,
     preventiveAction: row.preventiveAction,
     resolvedBy: row.resolvedBy,
+    approvedBy: row.approvedBy,
+    cancelledBy: row.cancelledBy,
+    cancelledAt: row.cancelledAt?.toISOString() ?? null,
     alarmSnapshot: hasSnapshot
       ? {
           rootCause: row.snapshotRootCause,

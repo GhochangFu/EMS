@@ -333,6 +333,9 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   { method: "PATCH", path: "/work-orders/:id/tasks/:taskId", reason: "E3.1 / ADR 0122: a checklist item is ticked on the ticket, by hand" },
   // PR 4 (decision 5): the findings are typed on the ticket.
   { method: "PUT", path: "/work-orders/:id/root-cause", reason: "E3.1 / ADR 0122: a ticket's root cause is typed on the ticket, by hand" },
+  // PR 5 (decisions 6.4 and 6.8): an approver's own decisions, each with a typed reason.
+  { method: "POST", path: "/work-orders/:id/reject", reason: "E3.1 / ADR 0122: an approver rejects a resolved ticket on the ticket, by hand" },
+  { method: "POST", path: "/work-orders/:id/cancel", reason: "E3.1 / ADR 0122: an approver cancels a ticket on the ticket, by hand; it cannot be undone" },
   { method: "POST", path: "/admin/work-order-checklist-templates", reason: "E3.1 / ADR 0122: a checklist template is authored on its page" },
   { method: "PATCH", path: "/admin/work-order-checklist-templates/:id", reason: "E3.1 / ADR 0122: a checklist template is authored on its page" },
 ];

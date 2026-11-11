@@ -4,6 +4,11 @@ import { expect } from "vitest";
 import type { WorkOrderStatus } from "@bms/shared";
 
 import {
+  approvalRefusal,
+  cancelRefusal,
+  isSelfApproval,
+  isTerminalWorkOrderStatus,
+  rejectRefusal,
   needsChecklistGate,
   clearsResolveStamps,
   reorderMoveRefusal,
@@ -13,8 +18,13 @@ import {
   taskAddRefusal,
   taskWriteRefusal,
   throwIfRefused,
+  WORK_ORDER_APPROVE_NOT_RESOLVED_REFUSAL,
+  WORK_ORDER_CANCEL_BY_STATUS_REFUSAL,
+  WORK_ORDER_CANCELLED_REFUSAL,
   WORK_ORDER_CLOSED_REFUSAL,
   WORK_ORDER_CLOSE_BY_DRAG_REFUSAL,
+  WORK_ORDER_CLOSE_BY_STATUS_REFUSAL,
+  WORK_ORDER_REJECT_NOT_RESOLVED_REFUSAL,
   WORK_ORDER_FINDINGS_FROZEN_REFUSAL,
   WORK_ORDER_FINDINGS_KEPT_REFUSAL,
   WORK_ORDER_LEAVE_RESOLVED_REFUSAL,
@@ -28,14 +38,16 @@ import {
 } from "./work-order-transitions";
 
 /**
- * `E3.1` (ADR 0122, plan D9 and T3.2) — the transition table, as far as PR 3 builds it.
+ * `E3.1` (ADR 0122, plan D9, T3.2 and T5.2) — the whole transition table.
  * Pure: no database. Assertions live here; `work-order-transitions.test.ts` runs them
  * (ADR 0014). The integration suite proves the service asks these functions under the
  * row lock.
  */
 
 const LIVE: readonly WorkOrderStatus[] = ["open", "assigned", "in_progress"];
-const ALL: readonly WorkOrderStatus[] = ["open", "assigned", "in_progress", "resolved", "closed"];
+const ALL: readonly WorkOrderStatus[] = ["open", "assigned", "in_progress", "resolved", "closed", "cancelled"];
+const TERMINAL: readonly WorkOrderStatus[] = ["closed", "cancelled"];
+const TERMINAL_SENTENCE = { closed: WORK_ORDER_CLOSED_REFUSAL, cancelled: WORK_ORDER_CANCELLED_REFUSAL } as const;
 
 /** D9 row 1: the three live statuses move freely among themselves, whatever the checklist says. */
 export function liveStatusesMoveFreely(): void {
@@ -70,42 +82,79 @@ export function aTicketAlreadyResolvedIsNotGatedAgain(): void {
 }
 
 /**
- * Until close is limited to a resolved ticket (PR 5), `closed` can be reached straight
- * from a live status. That path must not step around the checklist, so it is gated too;
- * closing a ticket that is already resolved is not.
+ * D9 row 4 (decision 6.5): the status route never closes and never cancels. Whatever the
+ * ticket's status, `closed` and `cancelled` as a target answer 400 with their own
+ * sentence — a resolved ticket included, which only the approval may close.
  */
-export function closingAnUnresolvedTicketIsGatedToo(): void {
-  for (const from of LIVE) {
-    expect(statusChangeRefusal({ from, to: "closed", pendingMandatory: 1, rootCauseMissing: false }), `${from} -> closed`).toEqual({
-      status: 409,
-      message: WORK_ORDER_MANDATORY_PENDING_REFUSAL,
+export function theStatusRouteNeverClosesOrCancels(): void {
+  for (const from of [...LIVE, "resolved"] as const) {
+    expect(statusChangeRefusal({ from, to: "closed", pendingMandatory: 0, rootCauseMissing: false }), `${from} -> closed`).toEqual({
+      status: 400,
+      message: WORK_ORDER_CLOSE_BY_STATUS_REFUSAL,
     });
-    expect(statusChangeRefusal({ from, to: "closed", pendingMandatory: 0, rootCauseMissing: false }), `${from} -> closed, clean`).toBeNull();
+    expect(statusChangeRefusal({ from, to: "cancelled", pendingMandatory: 0, rootCauseMissing: false }), `${from} -> cancelled`).toEqual({
+      status: 400,
+      message: WORK_ORDER_CANCEL_BY_STATUS_REFUSAL,
+    });
   }
-  expect(statusChangeRefusal({ from: "resolved", to: "closed", pendingMandatory: 1, rootCauseMissing: false })).toBeNull();
 }
 
-/** The gate reads the checklist exactly when it must: entering `resolved`, or `closed` from a live status. */
+/** The gate reads the checklist exactly when it must: entering `resolved` from a live status. */
 export function theChecklistIsReadOnlyWhenItDecides(): void {
   const gated = ALL.flatMap((from) => ALL.filter((to) => needsChecklistGate(from, to)).map((to) => `${from}>${to}`));
-  expect(gated).toEqual([
-    "open>resolved",
-    "open>closed",
-    "assigned>resolved",
-    "assigned>closed",
-    "in_progress>resolved",
-    "in_progress>closed",
-  ]);
+  expect(gated).toEqual(["open>resolved", "assigned>resolved", "in_progress>resolved"]);
 }
 
-/** D9 row 5: any status write on a `closed` ticket is refused with 400, before the checklist is considered. */
-export function aClosedTicketRefusesEveryStatusWrite(): void {
-  for (const to of ALL) {
-    expect(statusChangeRefusal({ from: "closed", to, pendingMandatory: 0, rootCauseMissing: false }), `closed -> ${to}`).toEqual({
-      status: 400,
-      message: WORK_ORDER_CLOSED_REFUSAL,
-    });
+/** D9 row 5: any status write on a `closed` or `cancelled` ticket is refused with 400, before anything else is considered. */
+export function aTerminalTicketRefusesEveryStatusWrite(): void {
+  for (const from of ["closed", "cancelled"] as const) {
+    for (const to of ALL) {
+      expect(statusChangeRefusal({ from, to, pendingMandatory: 3, rootCauseMissing: true }), `${from} -> ${to}`).toEqual({
+        status: 400,
+        message: TERMINAL_SENTENCE[from],
+      });
+    }
   }
+  expect(ALL.filter((status) => isTerminalWorkOrderStatus(status))).toEqual(TERMINAL);
+}
+
+/** D9 row 6 (decision 6.5, ruling P2): the approval takes a `resolved` ticket only — 409 from a live status, 400 from a terminal one. */
+export function onlyAResolvedTicketIsApproved(): void {
+  expect(approvalRefusal("resolved")).toBeNull();
+  for (const from of LIVE) {
+    expect(approvalRefusal(from), from).toEqual({ status: 409, message: WORK_ORDER_APPROVE_NOT_RESOLVED_REFUSAL });
+  }
+  for (const from of ["closed", "cancelled"] as const) {
+    expect(approvalRefusal(from), from).toEqual({ status: 400, message: TERMINAL_SENTENCE[from] });
+  }
+}
+
+/** D9 row 7 (decision 6.4): a reject takes a `resolved` ticket only — 409 from a live status, 400 from a terminal one. */
+export function onlyAResolvedTicketIsRejected(): void {
+  expect(rejectRefusal("resolved")).toBeNull();
+  for (const from of LIVE) {
+    expect(rejectRefusal(from), from).toEqual({ status: 409, message: WORK_ORDER_REJECT_NOT_RESOLVED_REFUSAL });
+  }
+  for (const from of ["closed", "cancelled"] as const) {
+    expect(rejectRefusal(from), from).toEqual({ status: 400, message: TERMINAL_SENTENCE[from] });
+  }
+}
+
+/** D9 row 8 (decision 6.8): a cancel takes any live or resolved ticket; a terminal one answers 400. */
+export function aCancelTakesAnyLiveOrResolvedTicket(): void {
+  for (const from of [...LIVE, "resolved"] as const) {
+    expect(cancelRefusal(from), from).toBeNull();
+  }
+  for (const from of ["closed", "cancelled"] as const) {
+    expect(cancelRefusal(from), from).toEqual({ status: 400, message: TERMINAL_SENTENCE[from] });
+  }
+}
+
+/** Ruling Q11: self-approval is the approver being the resolver; a ticket with no recorded resolver is never marked. */
+export function selfApprovalIsTheApproverBeingTheResolver(): void {
+  expect(isSelfApproval("user-a", "user-a")).toBe(true);
+  expect(isSelfApproval("user-a", "user-b")).toBe(false);
+  expect(isSelfApproval(null, "user-a"), "resolved before resolved_by existed").toBe(false);
 }
 
 /** D9 row 9 (ruling P1): a reorder may not move a card into `resolved`; it answers 400. */
@@ -137,12 +186,21 @@ export function aReorderStillRefusesDone(): void {
   expect(reorderMoveRefusal({ from: "closed", to: "closed" })).toBeNull();
 }
 
-/** A checklist write is refused with 409 once the ticket is `resolved` or `closed`. */
+/** Decision 6.8: a cancelled ticket is on no column — a reorder neither moves it nor moves a card into it (400). */
+export function aReorderNeverTouchesACancelledTicket(): void {
+  const refused = { status: 400, message: WORK_ORDER_CANCELLED_REFUSAL };
+  for (const other of ALL) {
+    expect(reorderMoveRefusal({ from: "cancelled", to: other }), `cancelled -> ${other}`).toEqual(refused);
+    expect(reorderMoveRefusal({ from: other, to: "cancelled" }), `${other} -> cancelled`).toEqual(refused);
+  }
+}
+
+/** A checklist write is refused with 409 once the ticket is `resolved`, `closed` or `cancelled`. */
 export function aResolvedOrClosedTicketFreezesItsChecklist(): void {
   for (const status of LIVE) {
     expect(taskWriteRefusal(status), status).toBeNull();
   }
-  for (const status of ["resolved", "closed"] as const) {
+  for (const status of ["resolved", "closed", "cancelled"] as const) {
     expect(taskWriteRefusal(status), status).toEqual({ status: 409, message: WORK_ORDER_TASKS_FROZEN_REFUSAL });
   }
 }
@@ -183,13 +241,9 @@ export function aMissingRootCauseBlocksResolve(): void {
       message: WORK_ORDER_ROOT_CAUSE_REQUIRED_REFUSAL,
     });
     expect(statusChangeRefusal({ from, to: "resolved", pendingMandatory: 0, rootCauseMissing: false })).toBeNull();
-    // A close that skips resolved is gated the same way, until close is limited to a resolved ticket.
-    expect(statusChangeRefusal({ from, to: "closed", pendingMandatory: 0, rootCauseMissing: true })?.message).toBe(
-      WORK_ORDER_ROOT_CAUSE_REQUIRED_REFUSAL,
-    );
   }
   expect(statusChangeRefusal({ from: "open", to: "in_progress", pendingMandatory: 0, rootCauseMissing: true }), "a live move owes nothing").toBeNull();
-  expect(statusChangeRefusal({ from: "resolved", to: "closed", pendingMandatory: 0, rootCauseMissing: true }), "already resolved").toBeNull();
+  expect(statusChangeRefusal({ from: "resolved", to: "resolved", pendingMandatory: 0, rootCauseMissing: true }), "already resolved").toBeNull();
 }
 
 /** With both gates failing, the checklist's sentence is the one the caller reads first. */
@@ -215,13 +269,15 @@ export function theResolveStampsClearOnTheWayBack(): void {
   expect(cleared).toEqual(["resolved>in_progress"]);
 }
 
-/** Decision 5.3: findings are editable up to `resolved` and frozen at `closed` (409). */
+/** Decision 5.3: findings are editable up to `resolved` and frozen at `closed` and `cancelled` (409). */
 export function findingsAreFrozenAtClosed(): void {
   const none = { hasAlarm: true, missingAfter: false };
   for (const status of ["open", "assigned", "in_progress", "resolved"] as const) {
     expect(rootCauseWriteRefusal({ status, ...none }), status).toBeNull();
   }
-  expect(rootCauseWriteRefusal({ status: "closed", ...none })).toEqual({ status: 409, message: WORK_ORDER_FINDINGS_FROZEN_REFUSAL });
+  for (const status of ["closed", "cancelled"] as const) {
+    expect(rootCauseWriteRefusal({ status, ...none }), status).toEqual({ status: 409, message: WORK_ORDER_FINDINGS_FROZEN_REFUSAL });
+  }
 }
 
 /** A resolved alarm ticket must keep the findings it resolved with; before `resolved` they may be cleared. */

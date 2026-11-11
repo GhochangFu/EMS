@@ -17,7 +17,9 @@ import {
   aViewerIsRefusedTheAlarm,
   aViewerIsRefusedTheWorkOrder,
   everyCopilotRoleResolvesTheAlarm,
+  anOperatorIsRefusedTheCloseAndAllowedTheStatus,
   everyCopilotRoleResolvesTheWorkOrder,
+  theCloseTargetAsksForTheApprovalClass,
   theAlarmTargetCarriesTheAlarm,
   theAssigneeIsNamed,
   theConvertRunsTheOperationalGate,
@@ -41,6 +43,8 @@ describe("F4.284 — the alarm and work-order targets mirror the routes' gate (A
   it("refuses an enrichment naming a retired skill code", () => anEnrichmentWithARetiredSkillIsRefused());
   it("resolves an enrichment that clears the skill code", () => anEnrichmentClearingTheSkillResolves());
   it("resolves each copilot role on a work order, with its title, status and asset", () => everyCopilotRoleResolvesTheWorkOrder());
+  it("E3.1: resolves the close through the approval class, then the scope", () => theCloseTargetAsksForTheApprovalClass());
+  it("E3.1: refuses an operator the close target and allows the status target", () => anOperatorIsRefusedTheCloseAndAllowedTheStatus());
   it("refuses a viewer a work order", () => aViewerIsRefusedTheWorkOrder());
   it("resolves a work-order create on the body's asset, in scope only", () => theCreateResolvesTheBodysAsset());
   it("carries a reorder's work orders as they are now", () => theReorderCarriesTheBatch());

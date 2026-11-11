@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runAdminAccessTests,
+  runCanApproveWorkOrdersTruthTableTest,
   runCanMoveLocationsAdminsTest,
   runCanMoveLocationsOthersTest,
   runCanEditTrendPointsAdminsTest,
@@ -138,5 +139,9 @@ describe("admin-access", () => {
 
   it("shows the Edge Gateways tab to the global admin alone (E7.2)", () => {
     runEdgeGatewaysTabIsGlobalAdminOnlyTest();
+  });
+
+  it("canApproveWorkOrders admits the four admin roles and refuses operator and viewer (E3.1)", () => {
+    runCanApproveWorkOrdersTruthTableTest();
   });
 });

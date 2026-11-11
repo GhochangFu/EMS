@@ -3,7 +3,14 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aCancelledRowIsOnNoColumnAndUnderItsFilter,
+  aDragWithACancelledRowSendsNoCancelledItem,
+  aDropOnDoneByAnApproverOpensTheApproval,
+  aDropOnDoneByAnOperatorIsRefused,
+  aDropOnDoneIsTheApproval,
   aDropOnReviewOpensTheWizardAndCallsNoReorder,
+  anAdminApprovesAResolvedRowOnly,
+  anOperatorSeesNoEnabledApprove,
   aFailedListReadSettles,
   anAlarmTicketCannotLeaveTheStepWithoutItsFindings,
   aPlannedTicketResolvesWithoutFindings,
@@ -157,5 +164,41 @@ describe("E3.1 the status wizard's Root cause section and the drop on Review (AD
 
   it("opens the status wizard on a drop on Review and calls no reorder", async () => {
     await aDropOnReviewOpensTheWizardAndCallsNoReorder();
+  });
+});
+
+describe("E3.1 the board with approval and a cancelled ticket (ADR 0122 decision 6)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("enables Approve and close for an admin on a resolved row only", async () => {
+    await anAdminApprovesAResolvedRowOnly();
+  });
+
+  it("shows an operator no enabled Approve and close", async () => {
+    await anOperatorSeesNoEnabledApprove();
+  });
+
+  it("sends a reorder body with no cancelled item when a cancelled row is in the list", async () => {
+    await aDragWithACancelledRowSendsNoCancelledItem();
+  });
+
+  it("keeps a cancelled row off every column and lists it under the Cancelled filter", async () => {
+    await aCancelledRowIsOnNoColumnAndUnderItsFilter();
+  });
+
+  it("says why a drop on Done of an unresolved card is not taken", async () => {
+    await aDropOnDoneIsTheApproval();
+  });
+
+  it("opens the approval wizard on a drop on Done of a resolved card by an approver", async () => {
+    await aDropOnDoneByAnApproverOpensTheApproval();
+  });
+
+  it("refuses an operator's drop on Done", async () => {
+    await aDropOnDoneByAnOperatorIsRefused();
   });
 });

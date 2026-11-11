@@ -1,7 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  aBadApprovalRequestIs400,
   aBadRootCauseBodyIs400,
+  aReorderItemMayNotBeCancelled,
   aMalformedSlaIsA400BeforeTheSlaGate,
   aViewerIsRefusedOnTheChecklistRoutesBeforeTheBodyIsParsed,
   anAdminRoleMaySendSlaMinutes,
@@ -9,7 +11,11 @@ import {
   anOperatorSendingSlaMinutesIsRefused,
   anOperatorWithoutSlaMinutesCreatesTheTicket,
   onlyTheFourAdminRolesMayOverrideTheSla,
+  theApprovalRoutesAreWhereTheAdrSays,
+  theApprovalRoutesAskForApprovalBeforeAnythingElse,
   theCauseCodeListIsAPlainRead,
+  theFourAdminRolesMayApproveRejectAndCancel,
+  theStatusRouteRefusesClosedAndCancelled,
   theChecklistRoutesAreWhereTheAdrSays,
   theLiteralReadIsDeclaredAboveTheIdRead,
   theRootCauseRouteIsOperational,
@@ -73,6 +79,32 @@ describe("E3.1 — WorkOrdersController (stubbed gates and services)", () => {
 
     it("serves the cause codes as a plain read", async () => {
       await theCauseCodeListIsAPlainRead();
+    });
+  });
+
+  describe("approval, reject and cancel (PR 5)", () => {
+    it("asks close, reject and cancel for the approval class before the id, the body and the scope", async () => {
+      await theApprovalRoutesAskForApprovalBeforeAnythingElse();
+    });
+
+    it("lets each of the four admin roles close, reject and cancel", async () => {
+      await theFourAdminRolesMayApproveRejectAndCancel();
+    });
+
+    it("answers 400 for a bad id, a missing reason or a stray key", async () => {
+      await aBadApprovalRequestIs400();
+    });
+
+    it("declares POST :id/close, :id/reject and :id/cancel, each answering 200", () => {
+      theApprovalRoutesAreWhereTheAdrSays();
+    });
+
+    it("answers 400 for PATCH status with closed or cancelled", async () => {
+      await theStatusRouteRefusesClosedAndCancelled();
+    });
+
+    it("answers 400 for a reorder item with cancelled", async () => {
+      await aReorderItemMayNotBeCancelled();
     });
   });
 });

@@ -489,3 +489,52 @@ the pre-commit guard refuses; the owner authorised that one commit to bypass it.
 `GET /work-orders/cause-codes` answers the active codes to every signed-in user.
 The detail read also answers `resolvedBy` (a user id). `approvedAt` on the list
 item reads null until PR 5.
+
+**As built, 2026-11-11 (PR 5, no migration).** Approval, reject and cancel landed
+as decision 6 says. What the plan did not fix, or fixed differently:
+
+*The copilot's gate mirror is a target kind.* `workOrder.close` keeps its id,
+route and body (so a stored change keeps its hash); its target is the new kind
+`workOrderApproval`, which reads the same row as `workOrder` and asks for the
+`approval` class. The plan put the choice in `copilot-operations-targets.ts`
+keyed by entry; a kind follows the `assetTemplateDeploy` precedent and adds two
+`case` lines to the resolver.
+
+*Terminal refusals.* A status write, an approval, a reject or a cancel on a
+`closed` or `cancelled` ticket answers 400 with *Closed work orders cannot be
+updated* or *Cancelled work orders cannot be updated*. A checklist write or a
+root-cause write on one answers 409, as it already did for `closed`; the two
+sentences now name `cancelled` too. A reorder that names a cancelled ticket
+answers 400.
+
+*A caller with no `bms.users` row is refused (403)* on all three approval-class
+writes: each stamps who did it (`approved_by`, `cancelled_by`), and the
+self-approval mark compares that id with `resolved_by`.
+
+*A cancel keeps the resolve stamps.* `resolved_at` and `resolved_by` stay on a
+ticket cancelled from `resolved`, as history; `cancelled` alone makes the SLA
+read `none`.
+
+*A drop on Done is the approval.* On the board, a card dropped on Done opens the
+approval form only for an approver and only when the card is `resolved`;
+otherwise the page says why and sends nothing. The Close button reads *Approve
+and close* and is enabled on the same condition. Until PR 6 an approver can
+reject or cancel only through the API (plan risk 4).
+
+*The Cancelled filter shows a list.* A cancelled ticket is on no column, so
+choosing *Cancelled* replaces the board with a plain list of those tickets
+(reference, title, asset). PR 6's drawer opens from it.
+
+*Audit actions.* The three writes audit as `work_order_approve`,
+`work_order_reject` and `work_order_cancel`, each with `reference`, `fromStatus`
+and `toStatus`; a close no longer writes `work_order_status_update`. The typed
+reason is the audit row's `reason` and the event's `detail.reason`.
+
+*The detail read* also answers `approvedBy`, `cancelledBy` (user ids) and
+`cancelledAt`.
+
+*One shared constant.* `TERMINAL_WORK_ORDER_STATUSES` (`closed`, `cancelled`) is
+what the schedule's "active work order" test, the copilot's copy of it and the
+metric catalog's open count exclude; the dashboard's two raw SQL counts name the
+same two values. A ticket resolved before migration `0148` has no findings and
+is still approved: the approval reads neither resolve gate again.

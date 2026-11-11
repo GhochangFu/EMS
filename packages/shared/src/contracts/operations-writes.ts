@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-import { alarmSkillCodeSchema, assetDomainCodeSchema, workOrderPrioritySchema, workOrderStatusSchema } from "./operations";
+import {
+  alarmSkillCodeSchema,
+  assetDomainCodeSchema,
+  boardWorkOrderStatusSchema,
+  settableWorkOrderStatusSchema,
+  workOrderPrioritySchema,
+} from "./operations";
 import { WORK_ORDER_SLA_MAX_MINUTES } from "../work-order-sla";
 import { workOrderCauseCodeSchema, workOrderTaskResultSchema } from "./work-orders";
 
@@ -66,6 +72,12 @@ export const copilotAlarmEnrichmentModelBodySchema = z
   .strict();
 
 const workOrderReason = z.string().min(3).max(2000);
+/**
+ * The reason of a reject or a cancel (`E3.1`, ADR 0122 decisions 6.4 and 6.8): required,
+ * and trimmed before it is measured, so three spaces are not a reason for a write that
+ * cannot be undone.
+ */
+const requiredWorkOrderReason = z.string().trim().min(3).max(2000);
 const workOrderSortOrder = z.number().int().min(0).max(100_000);
 
 /** `E3.1` (ADR 0122 decision 3): an SLA in whole minutes, one minute to one year. */
@@ -196,7 +208,8 @@ const workOrderFinding = z.string().trim().min(WORK_ORDER_FINDING_MIN_LENGTH).ma
 
 export const updateWorkOrderStatusBodySchema = z
   .object({
-    status: workOrderStatusSchema,
+    // Four values: `closed` and `cancelled` have their own routes (ADR 0122 decision 6.5).
+    status: settableWorkOrderStatusSchema,
     reason: workOrderReason.optional(),
     sortOrder: workOrderSortOrder.optional(),
     assignedTo: z.string().uuid().nullable().optional(),
@@ -240,12 +253,28 @@ export const copilotWorkOrderSetStatusModelBodySchema = z
   })
   .strict();
 
+/**
+ * `POST /work-orders/:id/close` — since `E3.1` (ADR 0122 decision 6.2) the APPROVAL of a
+ * `resolved` ticket, by a role that holds the `approval` class.
+ */
 export const closeWorkOrderBodySchema = z
   .object({
     reason: workOrderReason,
     sortOrder: workOrderSortOrder.optional(),
   })
   .strict();
+
+/**
+ * `POST /work-orders/:id/reject` (`E3.1`, ADR 0122 decision 6.4): the approver sends a
+ * `resolved` ticket back to `in_progress`, and says why.
+ */
+export const rejectWorkOrderBodySchema = z.object({ reason: requiredWorkOrderReason }).strict();
+
+/**
+ * `POST /work-orders/:id/cancel` (`E3.1`, ADR 0122 decision 6.8): the ticket ends
+ * without being done, and the reason is required.
+ */
+export const cancelWorkOrderBodySchema = z.object({ reason: requiredWorkOrderReason }).strict();
 
 export const reorderWorkOrdersBodySchema = z
   .object({
@@ -254,7 +283,8 @@ export const reorderWorkOrdersBodySchema = z
         z
           .object({
             id: z.string().uuid(),
-            status: workOrderStatusSchema,
+            // Five values: a cancelled ticket is on no column (ADR 0122 decision 6.8).
+            status: boardWorkOrderStatusSchema,
             sortOrder: workOrderSortOrder,
           })
           .strict(),
@@ -278,4 +308,6 @@ export type UpdateWorkOrderChecklistTemplateBody = z.infer<typeof updateWorkOrde
 export type CreateWorkOrderInput = z.input<typeof createWorkOrderBodySchema>;
 export type UpdateWorkOrderStatusBody = z.infer<typeof updateWorkOrderStatusBodySchema>;
 export type CloseWorkOrderBody = z.infer<typeof closeWorkOrderBodySchema>;
+export type RejectWorkOrderBody = z.infer<typeof rejectWorkOrderBodySchema>;
+export type CancelWorkOrderBody = z.infer<typeof cancelWorkOrderBodySchema>;
 export type ReorderWorkOrdersBody = z.infer<typeof reorderWorkOrdersBodySchema>;

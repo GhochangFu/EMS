@@ -112,6 +112,9 @@ const CATALOG_WRITERS = [
   "apps/api/src/alarms/alarms.service.ts",
   "apps/api/src/alarms/alarm-enrichment.service.ts",
   "apps/api/src/work-orders/work-orders.service.ts",
+  // `E3.1` (ADR 0122 decision 6): `workOrder.close` is the approval and reaches this service. Its
+  // excluded reject and cancel audit through the same funnel.
+  "apps/api/src/work-orders/work-order-approval.service.ts",
 ] as const;
 
 /**

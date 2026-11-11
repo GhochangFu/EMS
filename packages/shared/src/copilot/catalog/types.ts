@@ -213,8 +213,10 @@ export type CatalogTarget =
    *   one organization, each asset in the read scope.
    * - `maintenanceScheduleConvert` (DC5): the schedule the path names, with the convert route's
    *   `operational` gate (the `maintenanceSchedule` kind mirrors the `configuration` one).
+   * - `workOrderApproval` (`E3.1`, ADR 0122 decision 6.2): the same work-order row, with the close
+   *   route's `approval` gate — the four admin roles, never an `operator`.
    */
-  | { readonly kind: "alarm" | "workOrder" | "maintenanceScheduleConvert"; readonly param: "id" }
+  | { readonly kind: "alarm" | "workOrder" | "workOrderApproval" | "maintenanceScheduleConvert"; readonly param: "id" }
   | { readonly kind: "workOrder"; readonly field: "assetId" }
   | { readonly kind: "workOrderBatch"; readonly field: "items" }
   | { readonly kind: "onboardingSession"; readonly param: "id" }

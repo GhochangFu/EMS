@@ -34,16 +34,18 @@ export type WorkOrderSlaInput = {
   readonly slaMinutes: number | null;
   readonly slaDueAt: Date | null;
   readonly resolvedAt: Date | null;
+  /** A cancelled ticket was never owed a resolution: it reads `none` (ADR 0122 decision 6.8). */
+  readonly cancelled: boolean;
   readonly now: Date;
 };
 
 /**
  * A resolved ticket is `met` or `missed` for good; an open one moves from `on_track`
  * through `at_risk` to `breached` as `now` advances. Resolving exactly on the due
- * instant is `met`.
+ * instant is `met`. A cancelled ticket reads `none`, whatever it held before.
  */
 export function workOrderSlaState(input: WorkOrderSlaInput): WorkOrderSlaStateName {
-  if (input.slaMinutes === null || input.slaDueAt === null) {
+  if (input.cancelled || input.slaMinutes === null || input.slaDueAt === null) {
     return "none";
   }
   const dueMs = input.slaDueAt.getTime();

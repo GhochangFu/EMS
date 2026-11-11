@@ -31,7 +31,7 @@ export function bothKindsAskForBoth(): void {
 
 /** The ruled list, exactly. */
 export function theWordsAreTheRuledList(): void {
-  expect([...OPERATIONAL_WORDS]).toEqual(["acknowledge", "acknowledged", "ack", "acked", "close", "closed", "closing"]);
+  expect([...OPERATIONAL_WORDS]).toEqual(["acknowledge", "acknowledged", "ack", "acked", "close", "closed", "closing", "approve", "approved", "approving"]);
 }
 
 /** Whole words only: "disclose" and "enclosed" hold "close" inside them. */

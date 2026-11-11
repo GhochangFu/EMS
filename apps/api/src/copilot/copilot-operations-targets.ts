@@ -1,8 +1,9 @@
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 
 import { alarms, alarmSkills, assets, maintenanceHistory, maintenanceSchedules, maintenanceTaskTemplates, workOrders } from "@bms/db";
 
 import type { BmsDb } from "@bms/db";
+import { TERMINAL_WORK_ORDER_STATUSES } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
@@ -48,7 +49,7 @@ export type OperationsConvertible = {
   readonly convertible: {
     /** The schedule and its template are both active (the route's 404 otherwise). */
     readonly active: boolean;
-    /** A not-closed work order already made from the schedule (the route's 400 otherwise). */
+    /** A work order already made from the schedule that is neither closed nor cancelled (the route's 400 otherwise). */
     readonly hasActiveWorkOrder: boolean;
   };
 };
@@ -67,6 +68,21 @@ export async function mayWriteOperationalAssets(
   const readable = await access.readableAssetIds(user);
   if (readable === null) return true;
   return assetIds.every((assetId) => assetId !== null && readable.includes(assetId));
+}
+
+/**
+ * `E3.1` (ADR 0122 decision 6.2): `POST /work-orders/:id/close`'s gate — the `approval` class
+ * (a throw, as for an `operator`, is the resolver's refusal through `safely`), then the
+ * ticket's asset in the caller's read scope. The same shape as the gate above, one class up.
+ */
+export async function mayApproveWorkOrderAsset(
+  access: Pick<AccessControlService, "assertOperationsWriteRole" | "readableAssetIds">,
+  user: JwtPayload,
+  assetId: string | null,
+): Promise<boolean> {
+  await access.assertOperationsWriteRole(user, "approval");
+  const readable = await access.readableAssetIds(user);
+  return readable === null || (assetId !== null && readable.includes(assetId));
 }
 
 /**
@@ -200,7 +216,8 @@ export async function readConvertibleSchedule(tx: BmsTx, id: string, organizatio
     .select({ workOrderId: maintenanceHistory.workOrderId })
     .from(maintenanceHistory)
     .innerJoin(workOrders, eq(maintenanceHistory.workOrderId, workOrders.id))
-    .where(and(eq(maintenanceHistory.scheduleId, id), ne(workOrders.status, "closed")))
+    // A cancelled work order frees its schedule, as a closed one does (`E3.1`, plan D20).
+    .where(and(eq(maintenanceHistory.scheduleId, id), notInArray(workOrders.status, [...TERMINAL_WORK_ORDER_STATUSES])))
     .orderBy(desc(maintenanceHistory.createdAt))
     .limit(1);
   return {

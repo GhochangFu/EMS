@@ -249,13 +249,45 @@ export async function anEnrichmentClearingTheSkillResolves(): Promise<void> {
 export async function everyCopilotRoleResolvesTheWorkOrder(): Promise<void> {
   for (const role of COPILOT_ROLES) {
     const asked: string[] = [];
-    const resolved = await resolveAs("workOrder.close", role, [ASSET], { asked });
+    const resolved = await resolveAs("workOrder.setStatus", role, [ASSET], { asked, body: { status: "in_progress" } });
     expect({ name: resolved?.targetName, workOrder: resolved?.workOrder }, role).toEqual({
       name: "Check the breaker",
       workOrder: { title: "Check the breaker", status: "open", assetName: "MCC-1" },
     });
     expect(asked, role).toEqual(["role:operational", "readableAssetIds"]);
   }
+}
+
+/**
+ * `E3.1` (ADR 0122 decision 6.2): the close is the approval. Each of the four admin
+ * roles resolves it through the `approval` class — never `operational` — then the scope.
+ */
+export async function theCloseTargetAsksForTheApprovalClass(): Promise<void> {
+  for (const role of COPILOT_ROLES) {
+    const asked: string[] = [];
+    const resolved = await resolveAs("workOrder.close", role, [ASSET], { asked });
+    expect({ name: resolved?.targetName, workOrder: resolved?.workOrder }, role).toEqual({
+      name: "Check the breaker",
+      workOrder: { title: "Check the breaker", status: "open", assetName: "MCC-1" },
+    });
+    expect(asked, role).toEqual(["role:approval", "readableAssetIds"]);
+  }
+  // A work order outside the read scope is refused the same way as on the status target.
+  expect(await resolveAs("workOrder.close", "admin", [OTHER_ASSET])).toBeNull();
+}
+
+/**
+ * An `operator` is refused the close target and still allowed the status target: the
+ * mirror follows the route, where an operator resolves a ticket and does not approve it.
+ */
+export async function anOperatorIsRefusedTheCloseAndAllowedTheStatus(): Promise<void> {
+  const asked: string[] = [];
+  expect(await resolveAs("workOrder.close", "operator", [ASSET], { asked })).toBeNull();
+  expect(asked, "refused at the role, before the scope").toEqual(["role:approval"]);
+
+  const status = await resolveAs("workOrder.setStatus", "operator", [ASSET], { body: { status: "resolved" } });
+  expect(status?.targetName).toBe("Check the breaker");
+  expect(await resolveAs("workOrder.close", "viewer", [ASSET])).toBeNull();
 }
 
 /** A viewer is refused a work order. */

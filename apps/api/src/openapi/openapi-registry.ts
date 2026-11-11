@@ -161,6 +161,8 @@ import {
   createWorkOrderTaskBodySchema,
   putWorkOrderRootCauseBodySchema,
   putWorkOrderSlaPoliciesBodySchema,
+  rejectWorkOrderBodySchema,
+  cancelWorkOrderBodySchema,
   updateWorkOrderChecklistTemplateBodySchema,
   updateWorkOrderTaskBodySchema,
   reorderWorkOrdersBodySchema,
@@ -492,6 +494,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   WorkOrdersController_updateTask: updateWorkOrderTaskBodySchema,
   // `E3.1` (ADR 0122 decision 5): the findings, replaced whole.
   WorkOrdersController_putRootCause: putWorkOrderRootCauseBodySchema,
+  // `E3.1` (ADR 0122 decisions 6.4 and 6.8): the approver's reject and cancel, each with its reason.
+  WorkOrdersController_reject: rejectWorkOrderBodySchema,
+  WorkOrdersController_cancel: cancelWorkOrderBodySchema,
   WorkOrderChecklistTemplatesAdminController_create: createWorkOrderChecklistTemplateBodySchema,
   WorkOrderChecklistTemplatesAdminController_update: updateWorkOrderChecklistTemplateBodySchema,
   // `E3.1` (ADR 0122 decision 3.2, plan D8): the replace-all SLA policy set.

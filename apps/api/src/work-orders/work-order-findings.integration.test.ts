@@ -13,7 +13,6 @@ import { asRole } from "../testing/role-urls";
 import { SEEDED, jwtFor, primeSeededSubjects } from "../testing/seeded-subjects";
 import { deleteWorkOrderEvents } from "../testing/work-order-events-cleanup";
 import {
-  assertACloseThatSkipsResolvedNeedsTheFindingsToo,
   assertAFailedAuditLeavesNoFindings,
   assertAPlannedTicketResolvesWithoutFindings,
   assertAReorderBackToWorkClearsTheResolveStamps,
@@ -246,9 +245,6 @@ describe.skipIf(!connectionString)("E3.1 — work-order findings and the resolve
       await assertAPlannedTicketResolvesWithoutFindings(ctx);
     });
 
-    it("gates a close that skips resolved the same way", async () => {
-      await assertACloseThatSkipsResolvedNeedsTheFindingsToo(ctx);
-    });
   });
 
   describe("leaving resolved (ruling P3)", () => {

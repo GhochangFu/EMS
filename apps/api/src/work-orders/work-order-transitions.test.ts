@@ -1,7 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
-  aClosedTicketRefusesEveryStatusWrite,
+  aCancelTakesAnyLiveOrResolvedTicket,
   aMissingRootCauseBlocksResolve,
   aResolvedAlarmTicketKeepsItsFindings,
   aResolvedTicketGoesBackToInProgressOnly,
@@ -13,18 +13,23 @@ import {
   aPendingMandatoryItemBlocksResolve,
   aRefusalThrowsTheErrorOfItsStatus,
   aReorderIntoResolvedIsRefused,
+  aReorderNeverTouchesACancelledTicket,
   aReorderStillRefusesDone,
   aReorderWithinOrOutOfResolvedIsAllowed,
   aResolvedOrClosedTicketFreezesItsChecklist,
+  aTerminalTicketRefusesEveryStatusWrite,
   aTicketAlreadyResolvedIsNotGatedAgain,
-  closingAnUnresolvedTicketIsGatedToo,
   liveStatusesMoveFreely,
+  onlyAResolvedTicketIsApproved,
+  onlyAResolvedTicketIsRejected,
   resolvePassesWhenNoMandatoryItemIsPending,
+  selfApprovalIsTheApproverBeingTheResolver,
   theChecklistIsReadOnlyWhenItDecides,
+  theStatusRouteNeverClosesOrCancels,
 } from "./work-order-transitions.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
-describe("E3.1 — work-order transitions (ADR 0122, plan D9, the rows PRs 3 and 4 build)", () => {
+describe("E3.1 — work-order transitions (ADR 0122, plan D9)", () => {
   it("lets open, assigned and in_progress move freely among themselves", () => {
     liveStatusesMoveFreely();
   });
@@ -41,16 +46,32 @@ describe("E3.1 — work-order transitions (ADR 0122, plan D9, the rows PRs 3 and
     aTicketAlreadyResolvedIsNotGatedAgain();
   });
 
-  it("gates a close that skips resolved, and not a close of a resolved ticket", () => {
-    closingAnUnresolvedTicketIsGatedToo();
+  it("never closes or cancels through the status route (400)", () => {
+    theStatusRouteNeverClosesOrCancels();
   });
 
   it("reads the checklist only for the moves it decides", () => {
     theChecklistIsReadOnlyWhenItDecides();
   });
 
-  it("refuses every status write on a closed ticket (400)", () => {
-    aClosedTicketRefusesEveryStatusWrite();
+  it("refuses every status write on a closed or cancelled ticket (400)", () => {
+    aTerminalTicketRefusesEveryStatusWrite();
+  });
+
+  it("approves a resolved ticket only (409 from a live status, 400 from a terminal one)", () => {
+    onlyAResolvedTicketIsApproved();
+  });
+
+  it("rejects a resolved ticket only (409 from a live status, 400 from a terminal one)", () => {
+    onlyAResolvedTicketIsRejected();
+  });
+
+  it("cancels any live or resolved ticket, and no terminal one (400)", () => {
+    aCancelTakesAnyLiveOrResolvedTicket();
+  });
+
+  it("marks self-approval only when the approver is the recorded resolver", () => {
+    selfApprovalIsTheApproverBeingTheResolver();
   });
 
   it("refuses a reorder into resolved (400, ruling P1)", () => {
@@ -65,7 +86,11 @@ describe("E3.1 — work-order transitions (ADR 0122, plan D9, the rows PRs 3 and
     aReorderStillRefusesDone();
   });
 
-  it("freezes the checklist of a resolved or closed ticket (409)", () => {
+  it("never moves a cancelled ticket, or a card into cancelled, by reorder (400)", () => {
+    aReorderNeverTouchesACancelledTicket();
+  });
+
+  it("freezes the checklist of a resolved, closed or cancelled ticket (409)", () => {
     aResolvedOrClosedTicketFreezesItsChecklist();
   });
 

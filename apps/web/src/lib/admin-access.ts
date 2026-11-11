@@ -306,6 +306,16 @@ export function canManageServiceAccounts(role: UserRole): boolean {
 }
 
 /**
+ * `E3.1` (ADR 0122 decision 6.2) — who may approve and close, reject or cancel a work
+ * order: the four admin roles. Mirrors the API's `approval` write class
+ * (`apps/api/src/auth/operations-write.ts`); an `operator` resolves a ticket and does not
+ * approve it. The server decides: this only keeps a button the route would refuse disabled.
+ */
+export function canApproveWorkOrders(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin" || role === "location_admin" || role === "asset_group_admin";
+}
+
+/**
  * Where `AdminRoute` sends a master-data role it refuses. Not the landing page:
  * `/admin` renders the Master Data Hub since `F3.76`.
  */

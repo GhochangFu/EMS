@@ -492,6 +492,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   putOrgTrendPointsBodySchema: STRICT(CALLER_ERROR),
   // `E3.1` (ADR 0122 decision 5): the findings replace-all; a stray snapshot key must not be dropped at 200.
   putWorkOrderRootCauseBodySchema: STRICT(CALLER_ERROR),
+  // `E3.1` (ADR 0122 decisions 6.4 and 6.8): a reason and nothing else; a stray `status` must not be dropped at 200.
+  rejectWorkOrderBodySchema: STRICT(CALLER_ERROR),
+  cancelWorkOrderBodySchema: STRICT(CALLER_ERROR),
   // `E3.1` (ADR 0122 decision 3.2, plan D8): the replace-all SLA set and each of its rows.
   putWorkOrderSlaPoliciesBodySchema: STRICT(CALLER_ERROR),
   "putWorkOrderSlaPoliciesBodySchema/policies[]": STRICT(CALLER_ERROR),

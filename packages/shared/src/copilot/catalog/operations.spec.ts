@@ -58,7 +58,14 @@ export function noOperationsRouteIsExcluded(): void {
     EXCLUDED_ROUTES.filter((route) => route.path.startsWith("/alarms") || route.path.startsWith("/work-orders")).map(
       (route) => `${route.method} ${route.path}`,
     ),
-  ).toEqual(["POST /work-orders/:id/tasks", "PATCH /work-orders/:id/tasks/:taskId", "PUT /work-orders/:id/root-cause"]);
+  ).toEqual([
+    "POST /work-orders/:id/tasks",
+    "PATCH /work-orders/:id/tasks/:taskId",
+    "PUT /work-orders/:id/root-cause",
+    // `E3.1` PR 5 (ADR 0122 decisions 6.4 and 6.8): an approver's own decisions.
+    "POST /work-orders/:id/reject",
+    "POST /work-orders/:id/cancel",
+  ]);
 }
 
 /** Each body is the route's own export by name. */
@@ -93,7 +100,8 @@ export function theTargetsMirrorTheRoutes(): void {
     { kind: "alarm", param: "id" },
     { kind: "workOrder", field: "assetId" },
     { kind: "workOrder", param: "id" },
-    { kind: "workOrder", param: "id" },
+    // `E3.1` (ADR 0122 decision 6.2): the close is the approval — its own target kind, the `approval` class.
+    { kind: "workOrderApproval", param: "id" },
     { kind: "workOrderBatch", field: "items" },
   ]);
 }
@@ -180,4 +188,16 @@ export function theReorderSummaryCountsTheWorkOrders(): void {
 /** The close card quotes its reason. */
 export function theCloseSummaryQuotesItsReason(): void {
   expect(summary("workOrder.close", { body: { reason: "Repaired and tested" } })).toContain('Reason: "Repaired and tested".');
+}
+
+/** `E3.1` (ADR 0122 decisions 6.2 and 10): the close card says it approves; its id, route and body are unchanged. */
+export function theCloseCardSaysApproveAndClose(): void {
+  const close = entry("workOrder.close");
+  expect(close.title).toBe("Approve and close a work order");
+  expect(summary("workOrder.close", { body: { reason: "Repaired and tested" } }).startsWith("Approve and close the work order ")).toBe(true);
+  expect([close.method, close.path, close.bodyName]).toEqual(["POST", "/work-orders/:id/close", "closeWorkOrderBodySchema"]);
+  // The only entry gated on the `approval` class.
+  expect(COPILOT_CATALOG.filter((candidate) => candidate.target.kind === "workOrderApproval").map((candidate) => candidate.id)).toEqual([
+    "workOrder.close",
+  ]);
 }

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, ilike, inArray, lte, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, lte, notInArray, or } from "drizzle-orm";
 
 import {
   assets,
@@ -24,6 +24,7 @@ import type {
   WorkOrderListItem,
   WorkOrderPriority,
 } from "@bms/shared";
+import { TERMINAL_WORK_ORDER_STATUSES } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
@@ -244,7 +245,8 @@ export class MaintenanceService {
       .where(
         and(
           inArray(maintenanceHistory.scheduleId, scheduleIds),
-          ne(workOrders.status, "closed"),
+          // A cancelled work order frees its schedule, as a closed one does (`E3.1`, plan D20).
+          notInArray(workOrders.status, [...TERMINAL_WORK_ORDER_STATUSES]),
         ),
       )
       .orderBy(desc(maintenanceHistory.createdAt));
