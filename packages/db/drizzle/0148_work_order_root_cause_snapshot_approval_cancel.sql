@@ -98,7 +98,7 @@ DECLARE
 BEGIN
   IF NOT (SELECT r.rolsuper OR r.rolbypassrls FROM pg_roles r WHERE r.rolname = current_user) THEN
     RAISE EXCEPTION
-      'migration 0146: the work_orders status check must run as a role that bypasses row security, not as %', current_user;
+      'migration 0148: the work_orders status check must run as a role that bypasses row security, not as %', current_user;
   END IF;
 
   SELECT string_agg(DISTINCT quote_literal(w.status), ', ') INTO bad
@@ -106,7 +106,7 @@ BEGIN
    WHERE w.status NOT IN ('open','assigned','in_progress','resolved','closed','cancelled');
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION
-      'migration 0146: bms.work_orders holds a status outside the vocabulary: %. Correct those rows, then run the migration again.', bad;
+      'migration 0148: bms.work_orders holds a status outside the vocabulary: %. Correct those rows, then run the migration again.', bad;
   END IF;
 END
 $$;
@@ -131,28 +131,28 @@ BEGIN
        AND c.relowner = 'bms_owner'::regrole
        AND NOT c.relrowsecurity
   ) THEN
-    RAISE EXCEPTION 'migration 0146: bms.work_order_cause_codes must be owned by bms_owner and carry no row security';
+    RAISE EXCEPTION 'migration 0148: bms.work_order_cause_codes must be owned by bms_owner and carry no row security';
   END IF;
 
   -- One call per privilege: has_table_privilege with a comma list answers true when the
   -- role holds ANY ONE of them, which would prove nothing here.
   IF NOT has_table_privilege('bms_tenant', 'bms.work_order_cause_codes', 'SELECT') THEN
-    RAISE EXCEPTION 'migration 0146: bms_tenant cannot read bms.work_order_cause_codes';
+    RAISE EXCEPTION 'migration 0148: bms_tenant cannot read bms.work_order_cause_codes';
   END IF;
   FOREACH priv IN ARRAY ARRAY['INSERT', 'UPDATE', 'DELETE'] LOOP
     IF has_table_privilege('bms_tenant', 'bms.work_order_cause_codes', priv) THEN
-      RAISE EXCEPTION 'migration 0146: bms_tenant can still % bms.work_order_cause_codes; the vocabulary is read-only there', priv;
+      RAISE EXCEPTION 'migration 0148: bms_tenant can still % bms.work_order_cause_codes; the vocabulary is read-only there', priv;
     END IF;
   END LOOP;
   IF has_table_privilege('bms_auth', 'bms.work_order_cause_codes', 'SELECT')
      OR has_table_privilege('bms_rollup', 'bms.work_order_cause_codes', 'SELECT') THEN
-    RAISE EXCEPTION 'migration 0146: bms_auth or bms_rollup can read bms.work_order_cause_codes';
+    RAISE EXCEPTION 'migration 0148: bms_auth or bms_rollup can read bms.work_order_cause_codes';
   END IF;
 
   IF (SELECT count(*) FROM bms.work_order_cause_codes
        WHERE code = ANY (ARRAY['equipment_failure', 'wear_and_tear', 'power_quality', 'sensor_fault', 'configuration_error',
                                'operator_error', 'external_event', 'no_fault_found', 'other'])) <> 9 THEN
-    RAISE EXCEPTION 'migration 0146: the nine cause codes of ruling P5 are not all present';
+    RAISE EXCEPTION 'migration 0148: the nine cause codes of ruling P5 are not all present';
   END IF;
 
   IF (SELECT count(*) FROM pg_attribute a
@@ -160,7 +160,7 @@ BEGIN
          AND a.attname IN ('root_cause', 'corrective_action', 'preventive_action', 'cause_code',
                            'alarm_root_cause', 'alarm_corrective_actions', 'alarm_skill_code', 'alarm_etr_at',
                            'resolved_by', 'approved_by', 'approved_at', 'cancelled_by', 'cancelled_at')) <> 13 THEN
-    RAISE EXCEPTION 'migration 0146: bms.work_orders must carry the thirteen new columns, all nullable';
+    RAISE EXCEPTION 'migration 0148: bms.work_orders must carry the thirteen new columns, all nullable';
   END IF;
 
   IF (SELECT count(*) FROM pg_constraint k
@@ -168,7 +168,7 @@ BEGIN
         JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = k.conkey[1]
        WHERE k.conrelid = 'bms.work_orders'::regclass AND k.contype = 'f' AND array_length(k.conkey, 1) = 1
          AND (a.attname, f.relname) IN (('cause_code', 'work_order_cause_codes'), ('alarm_skill_code', 'alarm_skills'))) <> 2 THEN
-    RAISE EXCEPTION 'migration 0146: cause_code and alarm_skill_code must each carry their foreign key';
+    RAISE EXCEPTION 'migration 0148: cause_code and alarm_skill_code must each carry their foreign key';
   END IF;
 
   IF NOT EXISTS (
@@ -178,7 +178,7 @@ BEGIN
        AND (SELECT bool_and(position(quote_literal(v) IN pg_get_constraintdef(k.oid)) > 0)
               FROM unnest(ARRAY['open', 'assigned', 'in_progress', 'resolved', 'closed', 'cancelled']) AS v)
   ) THEN
-    RAISE EXCEPTION 'migration 0146: the six-value status CHECK is missing on bms.work_orders';
+    RAISE EXCEPTION 'migration 0148: the six-value status CHECK is missing on bms.work_orders';
   END IF;
 END
 $$;

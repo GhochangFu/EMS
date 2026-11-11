@@ -27,7 +27,7 @@ import { alarmSkills, alarms } from "./alarms-schema";
  */
 
 /**
- * E3.1 (ADR 0122 decision 5.1, migration 0146) — the coded causes a work order's root
+ * E3.1 (ADR 0122 decision 5.1, migration 0148) — the coded causes a work order's root
  * cause may carry. Platform vocabulary in the ADR 0031 / 0034 shape: data, not an enum;
  * retired with `active = false`, never deleted. No tenant column and no row security;
  * `bms_tenant` may only read it. Declared above `workOrders`, which references it.
@@ -72,13 +72,13 @@ export const workOrders = bmsSchema.table("work_orders", {
   slaDueAt: timestamp("sla_due_at", { withTimezone: true }),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   closedAt: timestamp("closed_at", { withTimezone: true }),
-  // E3.1 (ADR 0122 decision 5, migration 0146): the technician's own findings. Editable
+  // E3.1 (ADR 0122 decision 5, migration 0148): the technician's own findings. Editable
   // while `resolved`, frozen at `closed`. Required to resolve a ticket raised from an alarm.
   rootCause: text("root_cause"),
   correctiveAction: text("corrective_action"),
   preventiveAction: text("preventive_action"),
   causeCode: varchar("cause_code", { length: 64 }).references(() => workOrderCauseCodes.code),
-  // E3.4 (ADR 0122 decision 5a, migration 0146): the alarm's enrichment as it stood when
+  // E3.4 (ADR 0122 decision 5a, migration 0148): the alarm's enrichment as it stood when
   // the ticket was created. Written ONCE, by `insertWorkOrder`, and never updated: a
   // later edit of the enrichment does not reach the ticket.
   // `tests/e3.1-alarm-snapshot-single-writer.test.ts` holds the single writer.
@@ -86,7 +86,7 @@ export const workOrders = bmsSchema.table("work_orders", {
   alarmCorrectiveActions: text("alarm_corrective_actions"),
   alarmSkillCode: varchar("alarm_skill_code", { length: 64 }).references(() => alarmSkills.code),
   alarmEtrAt: timestamp("alarm_etr_at", { withTimezone: true }),
-  // E3.1 (ADR 0122 decision 6, migration 0146): who resolved it; cleared when the ticket
+  // E3.1 (ADR 0122 decision 6, migration 0148): who resolved it; cleared when the ticket
   // goes back to work. The approval and cancel stamps have no writer until the next PR.
   resolvedBy: uuid("resolved_by").references(() => users.id),
   approvedBy: uuid("approved_by").references(() => users.id),

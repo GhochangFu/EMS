@@ -449,7 +449,7 @@ spell out, each small:
 `not_applicable`). No read returns a schedule's `checklistTemplateId` yet, and
 no screen sets it; the schedule item contract was left alone in PR 3.
 
-**As built, 2026-11-11 (PR 4, migration `0146`).** Migration D landed whole, as
+**As built, 2026-11-11 (PR 4, migration `0148`).** Migration D landed whole, as
 plan D15 says: the approval and cancel columns and the `cancelled` value of the
 status `CHECK` have no writer until PR 5. Six things the plan did not spell out:
 
@@ -480,14 +480,11 @@ status `CHECK` have no writer until PR 5. Six things the plan did not spell out:
 - *The copilot's status and close pre-check follows the route's rule:* a
   resolved ticket moved back to Open or Assigned is refused before the card.
 
-*The migration's number.* Its file is `0146_work_order_root_cause_snapshot_approval_cancel.sql`,
-but it runs AFTER `0147_service_account_token_guard`: `F4.17` merged its own `0146`
-and `0147` while this PR was in review, and a committed migration file may not be
-renamed or edited (the pre-commit guard, AGENTS.md section 9.11). Drizzle applies
-migrations in journal order, not file-name order, so the journal entry (idx 149)
-is what places it. Two files therefore begin with `0146_`; an owner who wants the
-file renamed to `0148_…` can do it with a human `--no-verify` commit before any
-shared database has applied it.
+*The migration's number.* It was first pushed as `0146_…`; `F4.17` merged its own
+`0146` and `0147` while this PR was in review, so the file was renamed to
+`0148_work_order_root_cause_snapshot_approval_cancel.sql` before any shared
+database had applied it. The rename is a change to a committed migration, which
+the pre-commit guard refuses; the owner authorised that one commit to bypass it.
 
 `GET /work-orders/cause-codes` answers the active codes to every signed-in user.
 The detail read also answers `resolvedBy` (a user id). `approvedAt` on the list

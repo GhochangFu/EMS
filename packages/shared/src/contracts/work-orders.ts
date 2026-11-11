@@ -169,7 +169,7 @@ export const workOrderChecklistTemplatesResponseSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /**
- * One coded cause (`bms.work_order_cause_codes`, migration `0146`). An OPEN vocabulary
+ * One coded cause (`bms.work_order_cause_codes`, migration `0148`). An OPEN vocabulary
  * in the ADR 0031 shape: the set is data, so this is a shape and not an enum, and the
  * route checks a code against the table.
  */

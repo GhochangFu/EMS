@@ -7,8 +7,8 @@ import { describe, expect, it } from "vitest";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
-const MIGRATION_REL = "packages/db/drizzle/0146_work_order_root_cause_snapshot_approval_cancel.sql";
-const TAG = "0146_work_order_root_cause_snapshot_approval_cancel";
+const MIGRATION_REL = "packages/db/drizzle/0148_work_order_root_cause_snapshot_approval_cancel.sql";
+const TAG = "0148_work_order_root_cause_snapshot_approval_cancel";
 const CODES = "work_order_cause_codes";
 const CAUSE_CODES = [
   "equipment_failure",
@@ -42,7 +42,7 @@ const firstBracket = (migration: string): string => {
 };
 
 /**
- * `E3.1` / ADR 0122 decisions 5, 5a, 6 and 9 — the static half of migration `0146`
+ * `E3.1` / ADR 0122 decisions 5, 5a, 6 and 9 — the static half of migration `0148`
  * (migration D, whole: plan D15). The cause-code vocabulary, the four findings columns,
  * the four alarm-snapshot columns (`E3.4`), the five stamps of resolve, approval and
  * cancel, and the six-value status `CHECK`. The approval and cancel columns and the
@@ -50,7 +50,7 @@ const firstBracket = (migration: string): string => {
  * `apps/api/src/work-orders/work-order-findings.integration.spec.ts` asserts what
  * Postgres enforces. Assertions inline (section 4.6, top-level `tests/`).
  */
-describe("E3.1 — root cause, alarm snapshot, approval and cancel columns (migration 0146)", () => {
+describe("E3.1 — root cause, alarm snapshot, approval and cancel columns (migration 0148)", () => {
   it("is not scanning an empty or misnamed file", () => {
     expect(existsSync(join(repoRoot, MIGRATION_REL)), `${MIGRATION_REL} must exist`).toBe(true);
     const migration = migrationSql();
@@ -68,9 +68,7 @@ describe("E3.1 — root cause, alarm snapshot, approval and cancel columns (migr
     expect(entry?.idx).toBe(149);
     expect(entry?.version).toBe("7");
     expect(entry?.breakpoints).toBe(true);
-    // The file is numbered 0146 and runs after 0147: main took 0146 and 0147 (F4.17) while this
-    // branch was in review, and a committed migration file may not be renamed. Drizzle orders by
-    // the journal, so its `when` must be later than 0147's — the F4.94 class.
+    // 0147's `when` — the F4.94 class.
     expect(entry?.when as number).toBeGreaterThan(1794358690830);
     expect(entry?.when as number).toBeLessThan(Date.now());
   });
