@@ -217,7 +217,7 @@ async function main(): Promise<void> {
         // loop stamped a live batch, and a replayed one keeps the `rx` the disk
         // buffer wrote at spill (ADR 0016 Amendment 5) — which is what keeps a
         // re-replayed segment on the same primary key.
-        const { rows, counters } = resolveSamples(samples, index(), soleDeviceKey);
+        const { rows, counters, firstDropped } = resolveSamples(samples, index(), soleDeviceKey);
         // `droppedCount`, not a list summed here: this file summed five buckets
         // by hand and `F2.7`'s `outOfRange` would have been the sixth and the
         // one nobody added, leaving a batch that dropped readings logging
@@ -225,7 +225,9 @@ async function main(): Promise<void> {
         const discarded = droppedCount(counters);
         if (discarded > 0) {
           // Rule 9 in host form: a discarded reading always has a stated reason.
-          logger.warn("samples discarded", { endpointKey: plan.endpointKey, ...counters });
+          // `F3.16` (ADR 0127 decision 8): the first point per reason. Its
+          // device-supplied strings are already cut and cleaned (`cleanLabel`).
+          logger.warn("samples discarded", { endpointKey: plan.endpointKey, ...counters, firstDropped });
         }
         if (rows.length === 0) {
           return;

@@ -43,6 +43,9 @@ export * from "./protocol-catalog";
 export * from "./ingest-uplink";
 // `E7.2` (ADR 0123 decision 3): the edge gateway's configuration file schema.
 export * from "./ingest-edge-config";
+// `F3.16` (ADR 0127 decision 8): the six drop reasons, so the host counts the
+// same list migration `0149`'s CHECKs hold. A leaf module with no zod.
+export { DROP_REASONS, type DropReason } from "./device-health";
 
 /**
  * Compile-time drift guard: every ingest protocol must be expressible in
