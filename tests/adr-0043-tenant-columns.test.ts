@@ -120,6 +120,8 @@ const NO_COLUMN = [
   "location_types",
   "point_key_states",
   "mqtt_payload_formats", // F4.334 / ADR 0116 decision 1: a platform catalog
+  "ingest_hosts", // F3.16 / ADR 0127 decision 7: platform host state, no tenant data
+  "ingest_endpoint_drop_hours", // F3.16 / ADR 0127 decision 17: platform, global admin only
   "map_locations",
   "user_location_access",
   "user_asset_group_access",

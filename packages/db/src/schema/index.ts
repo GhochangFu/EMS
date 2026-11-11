@@ -14,4 +14,5 @@ export * from "./copilot-schema";
 export * from "./trend-points-schema";
 export * from "./calc-backfill-schema";
 export * from "./edge-gateways-schema";
+export * from "./device-health-schema";
 export * from "./service-account-schema";

@@ -1037,6 +1037,13 @@
       "when": 1794369290116,
       "tag": "0148_work_order_root_cause_snapshot_approval_cancel",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1794414988066,
+      "tag": "0149_device_health",
+      "breakpoints": true
     }
   ]
 }
