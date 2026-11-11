@@ -414,7 +414,8 @@ async function readUserRowsFrom(url: string): Promise<UserRowSummary[]> {
   const pool = new pg.Pool({ connectionString: url, max: 1 });
   try {
     const result = await pool.query<{ email: string; oidc_subject: string | null }>(
-      "SELECT email, oidc_subject FROM bms.users",
+      // F4.17 / ADR 0125: a service account has no Keycloak account, never one to link.
+      "SELECT email, oidc_subject FROM bms.users WHERE kind = 'human'",
     );
     return result.rows.map((row) => ({ email: row.email, subject: row.oidc_subject }));
   } finally {

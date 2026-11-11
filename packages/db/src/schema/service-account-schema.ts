@@ -16,7 +16,14 @@ import { bytea } from "./column-types";
  * 365 days of creation), the kind guard trigger and the three policies live in
  * the migration and are not mirrored, the `report-files-schema.ts` convention.
  * **No pool role can `SELECT token_hash` except `bms_auth`**: a tenant read of
- * this table must never name the column (it would fail with `42501`).
+ * this table must never name the column (it would fail with `42501`) — and
+ * that includes `RETURNING`: use `.returning({ id: … })` and explicit select
+ * lists, never a bare `.returning()` or `select().from(serviceAccountTokens)`.
+ * `bms_auth` (the verifier) reads only `id`, `organization_id`,
+ * `service_account_id`, `token_id`, `token_hash`, `read_only`, `expires_at`,
+ * `revoked_at` and `last_used_at`, and only for live tokens.
+ * The guard trigger stamps `created_at`, a revoke's `revoked_at` and
+ * `last_used_at` with `now()` and makes revocation final.
  */
 export const serviceAccountTokens = bmsSchema.table(
   "service_account_tokens",

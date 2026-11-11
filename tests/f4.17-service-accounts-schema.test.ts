@@ -21,7 +21,16 @@ const tsCode = (rel: string): string =>
     .replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
 
 const MIGRATION = "packages/db/drizzle/0144_service_accounts.sql";
-const migration = sqlCode(MIGRATION);
+const FOLLOW_UP = "packages/db/drizzle/0145_service_account_token_guard.sql";
+const created = sqlCode(MIGRATION);
+const followUp = sqlCode(FOLLOW_UP);
+/**
+ * Both files, in apply order. 0145 replaces 0144's guard, policies and
+ * service-row CHECK (the PR 3 review findings, forward-only); the integration
+ * test is what proves the effective state, so these text checks only pin that
+ * each statement exists.
+ */
+const migration = `${created}\n${followUp}`;
 
 describe("F4.17 — migration 0144 (service accounts)", () => {
   it("is in the journal, after 0143", () => {
@@ -31,6 +40,7 @@ describe("F4.17 — migration 0144 (service accounts)", () => {
     const tags = journal.entries.map((e) => e.tag);
     expect(tags).toContain("0144_service_accounts");
     expect(tags.indexOf("0144_service_accounts")).toBe(tags.indexOf("0143_edge_gateways_backfill_seq") + 1);
+    expect(tags.indexOf("0145_service_account_token_guard")).toBe(tags.indexOf("0144_service_accounts") + 1);
   });
 
   it("creates the table as bms_owner and forces row level security", () => {
@@ -43,7 +53,7 @@ describe("F4.17 — migration 0144 (service accounts)", () => {
     expect(migration).toMatch(/ADD COLUMN IF NOT EXISTS kind varchar\(16\) NOT NULL DEFAULT 'human'/);
     expect(migration).toMatch(/users_kind_check CHECK \(kind IN \('human', 'service'\)\)/);
     expect(migration).toMatch(
-      /users_service_account_check CHECK \(\s*kind <> 'service'\s*OR \(\s*password_hash IS NULL\s*AND oidc_subject IS NULL\s*AND organization_id IS NOT NULL\s*AND role IN \('viewer', 'operator'\)/,
+      /users_service_account_check CHECK \(\s*kind <> 'service'\s*OR \(\s*password_hash IS NULL\s*AND oidc_subject IS NULL\s*AND email LIKE 'svc-%@service-account\.invalid'\s*AND organization_id IS NOT NULL\s*AND role IN \('viewer', 'operator'\)/,
     );
     expect(migration).toMatch(/users_id_organization_id_key UNIQUE \(id, organization_id\)/);
   });
@@ -52,8 +62,22 @@ describe("F4.17 — migration 0144 (service accounts)", () => {
     expect(migration).toMatch(
       /FOREIGN KEY \(service_account_id, organization_id\)\s*REFERENCES bms\.users \(id, organization_id\)/,
     );
-    expect(migration).toMatch(/BEFORE INSERT ON bms\.service_account_tokens/);
-    expect(migration).toMatch(/u\.kind = 'service'/);
+    expect(migration).toMatch(/BEFORE INSERT OR UPDATE ON bms\.service_account_tokens/);
+    expect(migration).toMatch(/u\.kind = 'service'\s*AND u\.disabled_at IS NULL/);
+  });
+
+  it("0145 replaces the guard, the bms_auth policies and the service-row CHECK", () => {
+    expect(followUp).toMatch(/CREATE OR REPLACE FUNCTION bms\.service_account_tokens_guard_kind\(\)/);
+    expect(followUp).toMatch(/DROP TRIGGER IF EXISTS service_account_tokens_guard_kind/);
+    expect(followUp).toMatch(/DROP POLICY IF EXISTS auth_token_lookup/);
+    expect(followUp).toMatch(/DROP CONSTRAINT IF EXISTS users_service_account_check/);
+    expect(followUp).toMatch(/RAISE EXCEPTION 'migration 0145: the guard trigger does not fire on both INSERT and UPDATE'/);
+  });
+
+  it("the guard stamps created_at and makes revocation final (review M1, M2)", () => {
+    expect(migration).toMatch(/NEW\.created_at := now\(\);/);
+    expect(migration).toMatch(/NEW\.revoked_at := NULL;/);
+    expect(migration).toMatch(/OLD\.revoked_at IS NOT NULL\s*AND \(NEW\.revoked_at IS DISTINCT FROM OLD\.revoked_at OR NEW\.revoked_by IS DISTINCT FROM OLD\.revoked_by\)/);
   });
 
   it("grants no pool role DELETE and keeps token_hash from bms_tenant and bms_fleet", () => {
@@ -67,7 +91,10 @@ describe("F4.17 — migration 0144 (service accounts)", () => {
   });
 
   it("gives bms_auth the verifier's read and last_used_at only, through role-scoped policies", () => {
-    expect(migration).toMatch(/CREATE POLICY auth_token_lookup ON bms\.service_account_tokens\s*FOR SELECT TO bms_auth USING \(true\);/);
+    // Scoped to live tokens, so a verifier that forgot a test still finds nothing.
+    expect(migration).toMatch(
+      /CREATE POLICY auth_token_lookup ON bms\.service_account_tokens\s*FOR SELECT TO bms_auth USING \(revoked_at IS NULL AND expires_at > now\(\)\);/,
+    );
     expect(migration).toMatch(/CREATE POLICY auth_token_touch ON bms\.service_account_tokens\s*FOR UPDATE TO bms_auth/);
     expect(migration).toMatch(/GRANT UPDATE \(last_used_at\) ON bms\.service_account_tokens TO bms_auth;/);
     const authSelect = /GRANT SELECT \(([^)]*)\) ON bms\.service_account_tokens TO bms_auth;/.exec(migration);
@@ -97,8 +124,11 @@ const HUMAN_ONLY_SITES: ReadonlyArray<readonly [string, number]> = [
 
 describe("F4.17 — human-only users queries (plan U9)", () => {
   it.each(HUMAN_ONLY_SITES)("%s filters kind = human (%i site(s))", (rel, count) => {
+    // Exact, so a new occurrence elsewhere in the file cannot hide a removed
+    // one (code review, false green 4). The behaviour is in the DB-backed
+    // apps/api/src/auth/service-account-identity.integration.spec.ts.
     const matches = tsCode(rel).match(/eq\(users\.kind, "human"\)/g) ?? [];
-    expect(matches.length).toBeGreaterThanOrEqual(count);
+    expect(matches.length).toBe(count);
   });
 
   it("the guard refuses a JWT whose row is a service account", () => {

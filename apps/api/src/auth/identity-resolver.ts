@@ -80,8 +80,10 @@ function toIdentity(row: IdentityRow): ResolvedIdentity {
   return {
     ...rest,
     role: row.role as UserRole,
-    // Every real row carries `kind`; only a hand-built fixture omits it.
-    ...(kind === undefined ? {} : { kind: kind === "service" ? ("service" as const) : ("human" as const) }),
+    // Every real row carries `kind`; only a hand-built fixture omits it. A
+    // value outside the vocabulary (unreachable under users_kind_check) reads
+    // as `service`, the direction the guard refuses (security review, L3).
+    ...(kind === undefined ? {} : { kind: kind === "human" ? ("human" as const) : ("service" as const) }),
   };
 }
 

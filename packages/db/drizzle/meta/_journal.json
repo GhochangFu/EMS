@@ -1009,6 +1009,13 @@
       "when": 1794353926221,
       "tag": "0144_service_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1794355249663,
+      "tag": "0145_service_account_token_guard",
+      "breakpoints": true
     }
   ]
 }

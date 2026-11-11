@@ -54,6 +54,7 @@ async function withLocalMode(fn: () => Promise<void>): Promise<void> {
 
 const token = () => jwt.sign({ sub: ID, email: "svc@service-account.invalid", name: "svc", role: "operator" });
 
+/** A local JWT whose `sub` resolves to a `kind = 'service'` row is a 401. */
 export async function assertAJwtNamingAServiceRowIsRefused(): Promise<void> {
   await withLocalMode(async () => {
     const guard = new JwtAuthGuard(jwt, authDbAnswering("service"));
@@ -62,6 +63,7 @@ export async function assertAJwtNamingAServiceRowIsRefused(): Promise<void> {
   });
 }
 
+/** Positive control: the same token over a `kind = 'human'` row verifies. */
 export async function assertTheSameJwtNamingAHumanRowIsAccepted(): Promise<void> {
   await withLocalMode(async () => {
     const guard = new JwtAuthGuard(jwt, authDbAnswering("human"));

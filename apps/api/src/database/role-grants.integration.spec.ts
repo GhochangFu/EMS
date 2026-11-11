@@ -200,8 +200,9 @@ export async function assertTenantAndFleetCannotUpdateEmailOrSubject(pool: pg.Po
  * `0047` therefore dropped `bms_auth`'s SELECT on `user_organization_access`,
  * `user_location_access` and `locations` (0039:122-124) — the standing removal
  * Amendment 1 promised. This asserts the narrowed set *positively* (exactly
- * `bms.users`, nothing more), so a future migration that re-widens `bms_auth`
- * fails here rather than silently.
+ * `bms.users` and, since `F4.17`, `bms.service_account_tokens`, nothing more),
+ * so a future migration that re-widens `bms_auth` fails here rather than
+ * silently.
  */
 export async function assertAuthReachesOnlyIdentityTables(pool: pg.Pool): Promise<void> {
   const { rows } = await pool.query<{ table_schema: string; table_name: string }>(
