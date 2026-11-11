@@ -1,6 +1,8 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   integer,
+  jsonb,
   primaryKey,
   text,
   timestamp,
@@ -104,6 +106,41 @@ export const workOrderSlaPolicies = bmsSchema.table(
   },
   (table) => [primaryKey({ columns: [table.organizationId, table.priority] })],
 );
+
+/**
+ * E3.1 (ADR 0122 decision 7, migration 0144) — a work order's timeline: one row per
+ * thing that happened to it, written in the same transaction as the change.
+ *
+ * Append-only by privilege: `UPDATE` and `DELETE` are revoked from `bms_tenant` and
+ * `bms_fleet`, so only `insert` and `select` work from the API. `actorName` is the
+ * actor's display name SAVED at write time (ruling P7), never an email or a subject;
+ * `detail` is the closed shape `workOrderEventDetailSchema` (`@bms/shared`).
+ * `eventType` is a `CHECK` over `WORK_ORDER_EVENT_TYPES`. Tenant table under FORCE row
+ * security, with a policy that also checks the parent work order's organization — and
+ * a composite foreign key `(organization_id, work_order_id)` to
+ * `work_orders(organization_id, id)` that says the same for a role the policy does not
+ * bind (`bms_fleet`). The key lives in the migration; Drizzle declares the simple one.
+ */
+export const workOrderEvents = bmsSchema.table("work_order_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  workOrderId: uuid("work_order_id")
+    .notNull()
+    .references(() => workOrders.id),
+  eventType: varchar("event_type", { length: 32 }).notNull(),
+  actorId: uuid("actor_id").references(() => users.id),
+  actorName: varchar("actor_name", { length: 255 }),
+  fromStatus: varchar("from_status", { length: 32 }),
+  toStatus: varchar("to_status", { length: 32 }),
+  detail: jsonb("detail").notNull().default({}),
+  // `clock_timestamp()`, not `now()`: two events of one transaction must not share a
+  // timestamp, or the timeline orders them by their random ids (migration 0144).
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .default(sql`clock_timestamp()`),
+});
 
 export const workOrderTasks = bmsSchema.table("work_order_tasks", {
   id: uuid("id").primaryKey().defaultRandom(),

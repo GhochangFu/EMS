@@ -215,6 +215,14 @@ export async function assertConvertStampsAndAdvancesUnderRealRls(
   expect(workOrder.reference, "a converted ticket carries a reference").toMatch(/^[A-Z0-9]{2,8}-[0-9]{6,}$/);
   expect(workOrder.slaMinutes, "a converted ticket carries an SLA snapshot").toBeGreaterThan(0);
   expect(workOrder.slaDueAt).not.toBeNull();
+  // E3.1 (ADR 0122 decision 7): the convert starts the ticket's timeline, and says the
+  // ticket came from a schedule.
+  const timeline = await ctx.ownerPool.query<{ event_type: string; detail: Record<string, unknown>; actor_name: string | null }>(
+    "SELECT event_type, detail, actor_name FROM bms.work_order_events WHERE work_order_id = $1 ORDER BY created_at, id",
+    [workOrder.id],
+  );
+  expect(timeline.rows.map((row) => [row.event_type, row.detail])).toEqual([["created", { origin: "schedule" }]]);
+  expect(timeline.rows[0]?.actor_name, "the convert saves the actor's display name").toBeTruthy();
 
   const history = await ctx.ownerPool.query<{ organization_id: string | null }>(
     "SELECT organization_id FROM bms.maintenance_history WHERE work_order_id = $1",

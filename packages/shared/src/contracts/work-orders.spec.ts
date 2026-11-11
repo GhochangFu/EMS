@@ -1,7 +1,16 @@
+import { ZodIntersection } from "zod";
+
 import { COPILOT_CATALOG } from "../copilot/catalog";
 import { workOrderListItemSchema } from "./operations";
 import { createWorkOrderBodySchema, putWorkOrderSlaPoliciesBodySchema } from "./operations-writes";
-import { workOrderPrefixSchema, workOrderSlaPoliciesResponseSchema } from "./work-orders";
+import {
+  WORK_ORDER_EVENT_TYPES,
+  workOrderDetailSchema,
+  workOrderEventDetailSchema,
+  workOrderEventDtoSchema,
+  workOrderPrefixSchema,
+  workOrderSlaPoliciesResponseSchema,
+} from "./work-orders";
 
 /**
  * `E3.1` (ADR 0122) — the work-order depth contracts of PR 1: the item's reference and
@@ -125,4 +134,54 @@ export function copilotNeverSendsSlaMinutes(): void {
   const entry = COPILOT_CATALOG.find((candidate) => candidate.id === "workOrder.create");
   assert(entry !== undefined, "workOrder.create is catalogued");
   assert(entry?.clientOnly.includes("slaMinutes") === true, "slaMinutes is clientOnly on workOrder.create");
+}
+
+const EVENT = {
+  id: "e1",
+  eventType: "created",
+  actorName: "Asha Rao",
+  fromStatus: null,
+  toStatus: "open",
+  detail: { origin: "alarm" },
+  createdAt: "2026-11-05T00:00:00.000Z",
+};
+
+/** The ten event types of ADR 0122 decision 7.1, `cancelled` among them. */
+export function eventTypesAreTheTenRuled(): void {
+  assert(
+    JSON.stringify(WORK_ORDER_EVENT_TYPES) ===
+      JSON.stringify(["created", "assigned", "status_changed", "task_updated", "root_cause_set", "resolved", "approved", "rejected", "cancelled", "sla_changed"]),
+    `event types are ${JSON.stringify(WORK_ORDER_EVENT_TYPES)}`,
+  );
+}
+
+/** An event's detail is a closed shape: an unknown key — an email, a subject — is refused. */
+export function eventDetailIsAClosedShape(): void {
+  assert(workOrderEventDetailSchema.safeParse({}).success, "an empty detail parses");
+  assert(workOrderEventDetailSchema.safeParse({ reason: "Bearing replaced", assignedTo: null, selfApproved: true }).success, "known keys parse");
+  for (const smuggled of [{ actorEmail: "a@example.test" }, { oidcSubject: "sub-1" }, { email: "a@example.test" }, { note: "x" }]) {
+    assert(!workOrderEventDetailSchema.safeParse(smuggled).success, `${JSON.stringify(smuggled)} is refused`);
+  }
+  assert(!workOrderEventDetailSchema.safeParse({ origin: "copilot" }).success, "an unknown origin is refused");
+  assert(!workOrderEventDtoSchema.safeParse({ ...EVENT, detail: { actorEmail: "a@example.test" } }).success, "the event row refuses it too");
+}
+
+/** An event row parses, takes a null actor name, and refuses an unknown type. */
+export function eventRowRoundTrips(): void {
+  assert(workOrderEventDtoSchema.safeParse(EVENT).success, "an event parses");
+  assert(workOrderEventDtoSchema.safeParse({ ...EVENT, actorName: null }).success, "a null actor name parses");
+  assert(!workOrderEventDtoSchema.safeParse({ ...EVENT, eventType: "deleted" }).success, "an unknown event type is refused");
+  assert(!workOrderEventDtoSchema.safeParse({ ...EVENT, toStatus: "done" }).success, "an unknown status is refused");
+}
+
+/** The detail is an intersection with the list item, so it follows the item; it is not a flattened copy. */
+export function detailIsAnIntersectionWithTheListItem(): void {
+  assert(workOrderDetailSchema instanceof ZodIntersection, "workOrderDetailSchema is a z.intersection");
+  const detail = { ...ITEM, events: [EVENT], alarm: { id: "a1", severity: "critical", message: "Breaker tripped", raisedAt: "2026-11-05T00:00:00.000Z" } };
+  const parsed = workOrderDetailSchema.safeParse(detail);
+  assert(parsed.success, "the detail parses");
+  assert(parsed.success && parsed.data.reference === ITEM.reference && parsed.data.events.length === 1, "it carries the item and the events");
+  assert(workOrderDetailSchema.safeParse({ ...detail, alarm: null, events: [] }).success, "no alarm and no events parses");
+  assert(!workOrderDetailSchema.safeParse({ ...ITEM, alarm: null }).success, "a detail without events is refused");
+  assert(!workOrderDetailSchema.safeParse({ ...without("reference"), events: [], alarm: null }).success, "the item's own rule still holds");
 }

@@ -9,9 +9,10 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { withTenant } from "../database/tenant-context";
-import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { openIntegrationPool, requireIntegrationDb, resolveIntegrationRoleUrl } from "../testing/integration-db-gate";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { asRole } from "../testing/role-urls";
+import { deleteWorkOrderEvents } from "../testing/work-order-events-cleanup";
 import { WorkOrdersService } from "./work-orders.service";
 import {
   assertReorderReadsBackInOneTenantTransaction,
@@ -85,6 +86,8 @@ const LOCATION_NAME = "E7.1b WO Location";
 async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
   const staleFamily = `${WO_FAMILY}%`;
   try {
+    // E3.1 (migration 0144): events first, as the superuser — the fleet role cannot delete them.
+    await deleteWorkOrderEvents(resolveIntegrationRoleUrl(connectionString as string, "superuser", process.env), { assetCodeLike: staleFamily, olderThanMinutes: 30 });
     await pool.query(
       `DELETE FROM bms.work_orders
         WHERE asset_id IN (
@@ -305,6 +308,8 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
           [actorUserId, SUITE_START],
         );
       }
+      // E3.1 (migration 0144): events first, as the superuser — the fleet role cannot delete them.
+      await deleteWorkOrderEvents(resolveIntegrationRoleUrl(connectionString as string, "superuser", process.env), { assetCodeLike: `${PREFIX}%` });
       await ownerPool.query(
         `DELETE FROM bms.work_orders
           WHERE asset_id IN (SELECT id FROM bms.assets WHERE code LIKE $1)`,
