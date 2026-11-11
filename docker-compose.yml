@@ -611,6 +611,13 @@ services:
         VITE_OIDC_REDIRECT_URI: http://localhost:5173/auth/callback
     ports:
       - "5173:80"
+    # `E7.2` PR 4, ADR 0123 Q3b: `web` is the nginx container, so it shares the
+    # `edge-uplink` network with `ingest`. `apps/web/nginx.conf` carries no
+    # `/edge/` route; the public one is `deploy/aws/nginx.conf`. Naming any
+    # network drops the implicit `default`, so it is listed.
+    networks:
+      - default
+      - edge-uplink
     depends_on:
       api:
         condition: service_started
@@ -691,6 +698,10 @@ services:
       # Setting them here would have looked like configuration while doing
       # nothing.
       INGEST_HOST_HEALTH_PORT: 9102
+      # `E7.2` PR 4: the cloud uplink receiver stays off unless the operator
+      # sets this (the host reads empty as unset). The AWS demo's nginx
+      # forwards `/edge/` to port 9103.
+      INGEST_UPLINK_PORT: ${INGEST_UPLINK_PORT:-}
       # ADR 0016 Amendment 4 ruling 4: the host refuses to start if this
       # directory cannot be created and written, and the container's own
       # writable layer would not survive a container replace — the named
@@ -733,8 +744,14 @@ services:
     # `GET http://ingest:9102/` unreachable from every container but `postgres`.
     # `tests/f4.61-ingest-network-isolation.test.ts` holds this, and the
     # absence of `ports:` above, statically.
+    #
+    # `E7.2` PR 4 amends it (ADR 0123 Q3b, ADR 0016 Amendment 9 (b)): `ingest`
+    # also joins `edge-uplink`, shared with the nginx container `web` alone, so
+    # the uplink receiver can be routed. The health listener binds to loopback
+    # (`startHealthServer`), so that second network cannot reach it.
     networks:
       - ingest
+      - edge-uplink
     depends_on:
       postgres:
         condition: service_healthy
@@ -835,3 +852,4 @@ volumes:
 # holds this shape statically, since CI never runs `docker compose`.
 networks:
   ingest: {}
+  edge-uplink: {}

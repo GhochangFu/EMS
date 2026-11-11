@@ -145,9 +145,31 @@ describe("F4.61 — the ingest network topology (ADR 0016 Amendment 8, Decisions
     expect(networks).not.toMatch(/internal:\s*true/);
   });
 
-  it("the ingest service joins only the `ingest` network", () => {
-    // T3
-    expect(networksOf(serviceBlock(compose, "ingest"))).toEqual(["ingest"]);
+  it("the ingest service joins exactly `ingest` and `edge-uplink`", () => {
+    // T3 — ADR 0123 Q3b amends Decision 2: the public nginx container reaches
+    // the uplink receiver over `edge-uplink`; the health listener binds to
+    // loopback, so that second network cannot reach it. `default` stays out.
+    expect([...networksOf(serviceBlock(compose, "ingest"))].sort()).toEqual(["edge-uplink", "ingest"]);
+  });
+
+  it("declares a top-level `edge-uplink` network", () => {
+    // T3b
+    expect(topLevelSection(compose, "networks")).toMatch(/^ {2}edge-uplink:/m);
+  });
+
+  it("only `ingest` and `web` join `edge-uplink`, and `postgres` never does", () => {
+    // T3c — ADR 0123 Q3b: the network is for the public nginx container and
+    // ingest. A third member would be a new path to the uplink listener.
+    const members = serviceNames(compose).filter((name) =>
+      networksOf(serviceBlock(compose, name)).includes("edge-uplink"),
+    );
+    expect(members.sort()).toEqual(["ingest", "web"]);
+    expect(networksOf(serviceBlock(compose, "postgres"))).not.toContain("edge-uplink");
+  });
+
+  it("the web service joins `default` and `edge-uplink`", () => {
+    // T3d — naming any network drops the implicit `default`.
+    expect([...networksOf(serviceBlock(compose, "web"))].sort()).toEqual(["default", "edge-uplink"]);
   });
 
   it("the postgres service joins `default` and `ingest`", () => {
@@ -158,11 +180,13 @@ describe("F4.61 — the ingest network topology (ADR 0016 Amendment 8, Decisions
     expect(networks).toEqual(["default", "ingest"]);
   });
 
-  it("no service other than ingest and postgres declares `networks:`", () => {
+  it("no service other than ingest, postgres and web declares `networks:`", () => {
     // T5 — every other service stays on `default` alone, so the key has no use
     // there, and refusing the key itself holds in every YAML form: a map, an
     // alias or a quoted item would each slip past a parse of the list.
-    const others = serviceNames(compose).filter((name) => name !== "postgres" && name !== "ingest");
+    const others = serviceNames(compose).filter(
+      (name) => name !== "postgres" && name !== "ingest" && name !== "web",
+    );
     const declaring = others.filter((name) => /^ {4}networks:/m.test(serviceBlock(compose, name)));
     expect(declaring).toEqual([]);
   });

@@ -552,9 +552,9 @@ them carrying a sample value or a credential:
 `docs/plans/e7.2-edge-store-and-forward.md` PR 3. A site edge gateway posts
 the samples it collected to this host, which writes them through the same
 `resolveSamples` → `writeResolved` path the supervisor uses. **Off unless
-`INGEST_UPLINK_PORT` is set.** The public route to it (a compose network and
-an nginx `location /edge/`) is PR 4; until then the listener is reachable only
-where the port is.
+`INGEST_UPLINK_PORT` is set.** The public route is the AWS demo nginx's
+`location /edge/` over the compose network `edge-uplink` (ADR 0016 Amendment 9
+(b)); set `INGEST_UPLINK_PORT=9103` to match it; health binds `127.0.0.1`.
 
 **One route, checked in this order** (`src/host/uplink-server.ts`):
 
@@ -584,8 +584,8 @@ code, never its message. Refusals are logged as one `warn` "uplink requests
 refused" summary of counts at most once a minute, so a scanner cannot flood
 the log; counts still held are flushed by a timer each minute and once at
 shutdown. **Per-source limiting of unauthenticated requests is not here** —
-the receiver knows a gateway, not a client address — and is owed at nginx with
-the public route (PR 4).
+the receiver knows a gateway, not a client address — it is nginx's `limit_req`
+per client (right-most X-Forwarded-For), dry-run until confirmed: `docs/edge-gateway.md`.
 
 **The write is bounded on the server:** the transaction opens with `SET LOCAL
 statement_timeout = '14s'` and `lock_timeout = '5s'`, so Postgres cancels a

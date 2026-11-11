@@ -230,6 +230,17 @@ export async function runBoundPortTests(): Promise<void> {
   });
 }
 
+/**
+ * `E7.2` PR 4 (ADR 0123 Q3b): the container also joins `edge-uplink`, which the
+ * public nginx container shares. The health body is unauthenticated, so the
+ * listener must be bound to loopback and not to every interface.
+ */
+export async function runLoopbackBindTests(): Promise<void> {
+  await withServer(async (server) => {
+    assert(server.address === "127.0.0.1", `the health listener binds 127.0.0.1 only, got ${server.address}`);
+  });
+}
+
 /** The operator's in-container `wget 127.0.0.1:9102` and ADR 0075's `/health` still work. */
 export async function runServedRequestTests(): Promise<void> {
   await withServer(async (server) => {
