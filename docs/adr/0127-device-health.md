@@ -138,7 +138,8 @@ Read from `main` at `037e0fa8`:
     full window. An RTU the host does not serve is "Not monitored". One pure
     function in the API holds the rule, so the RTUs page, system status, the
     worker sweep and the lifecycle clear cannot disagree.
-12. **Device alarms in `bms.alarms` (Q7).** Migration `0150` makes `asset_id`
+12. **Device alarms in `bms.alarms` (Q7).** Migration `0151` (renumbered from
+    `0150`, see *Build notes*) makes `asset_id`
     nullable and adds `source` (`rule`, `rtu_comms`, `ingest_host`) and
     `rtu_id`, with a CHECK on the shape per source and a second partial unique
     index for the dedupe. `AlarmRaiser` gains `raiseDevice` and stays the one
@@ -227,9 +228,12 @@ unless noted.
 - `bms.alarms` stops being asset-only. Every reader of `alarms.asset_id` is
   re-read once; `tsc` finds them when the column type becomes nullable.
 - The host writes every 10 s: one row for itself and one per RTU that spoke.
-- State compares the ingest host's clock with itself; host staleness compares
-  it with the database clock, the assumption every freshness window already
-  makes.
+- State compares the ingest host's last beat, stamped on the **database**
+  clock since PR A's code review (see *Build notes*), with RTU last-seen and
+  `monitored_since`, stamped on the ingest host's clock. The two clocks must
+  agree to well under the 25 s window floor (NTP), the assumption every
+  freshness window already makes; host staleness compares the beat with the
+  database clock.
 - Machine writes carry no audit row, like `edge_gateways.last_seen_at`. No
   user write route is added.
 - Limits kept: no alarm on clock skew, on drop rate, for an edge gateway
@@ -238,6 +242,35 @@ unless noted.
 - Owed after merge, as a separate `chore(agents):` sweep: AGENTS.md §4.4's
   platform-table list and its ingest description; a dated note on ADR 0075.
 - A new backlog row: the "Edge gateway not reporting" alarm (decision 18).
+
+## Build notes (PR A, 2026-11-11)
+
+Facts the build settled; none changes a ruling.
+
+- **Migration `0150_device_health_utc_bucket`.** `0149`'s whole-hour CHECK
+  used `date_trunc('hour', bucket)`, which follows the session time zone and
+  refused every bucket in a half-hour zone (`Asia/Kolkata`). Committed
+  migrations are never edited, so `0150` replaces both checks with the UTC
+  form. Decision 12's alarm migration is therefore `0151`.
+- **Clocks (decision 10).** The host row's `started_at`, `healthy_since` and
+  `last_beat_at` are the database's `now()`; RTU `last_seen_at` and
+  `monitored_since` stay on the ingest host's clock (Consequences).
+- **A missed beat (decision 10)** is a gap above `INGEST_HOST_STALE_SECONDS`
+  (30 s) since the last committed beat — the bound at which the API freezes
+  states — not two flush intervals, so one failed flush cannot make an Offline
+  RTU read Online.
+- **Edge-served (decision 18)** is derived from `rtus.edge_gateway_id IS NOT
+  NULL`; the ingest host does not store it.
+- **Foreign keys.** The tenant tables' composite keys to `bms.rtus` are
+  `ON DELETE CASCADE` (derived rows never block an RTU delete) and
+  `ON UPDATE NO ACTION`, so an RTU cannot move organization while it has
+  health rows; no route moves one today.
+- **Reason CHECKs** accept all six reasons on both bucket tables, wider than
+  decisions 8 and 17 use; deliberate, so a later attribution change needs no
+  migration.
+- **A first dropped asset** is labelled only while it is still on the bucket's
+  RTU, and device-supplied strings also lose Unicode format characters
+  (security review).
 
 ## Dependencies
 
