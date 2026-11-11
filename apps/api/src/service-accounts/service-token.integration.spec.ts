@@ -15,7 +15,7 @@ import { ServiceTokenVerifier } from "./service-token-verifier.service";
 /**
  * `F4.17` / ADR 0125 decisions 11–13 against a real database: the verifier on
  * the real `bms_auth` pool (its column grants and its live-only policies from
- * migrations 0144/0145), and one real NOTIFY round trip to the revoke
+ * migrations 0146/0147), and one real NOTIFY round trip to the revoke
  * listener. Fixtures are committed through the superuser pool — the verifier
  * reads on its own connection — and removed in `closeTokenSuite`.
  */

@@ -16,7 +16,7 @@ import { parseServiceToken, secretMatches } from "./service-token-codec";
  * tell an unknown id from a revoked, expired or mistyped token.
  *
  * - **Lookup** on the `bms_auth` pool, by the public `token_id`, before any
- *   organization is known. Migration `0145` scopes `bms_auth`'s policy to
+ *   organization is known. Migration `0147` scopes `bms_auth`'s policy to
  *   **live** tokens (not revoked, not expired), so a revoked or expired token
  *   is simply not found; the expiry and revocation tests below repeat it in
  *   code, so neither layer relies on the other.
@@ -255,7 +255,7 @@ export class ServiceTokenVerifier {
       this.lastTouch.clear();
     }
     this.lastTouch.set(tokenId, now);
-    // The guard stamps now() whatever is written (migration 0145).
+    // The guard stamps now() whatever is written (migration 0147).
     void this.authDb
       .update(serviceAccountTokens)
       .set({ lastUsedAt: new Date(now) })

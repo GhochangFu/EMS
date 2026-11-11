@@ -24,7 +24,7 @@ const connectionString = requireIntegrationDb({
   label: "service-account token verification on a real bms_auth connection",
   because:
     "the verifier reads bms.service_account_tokens and bms.users on the auth pool, whose column grants " +
-    "and live-only policies (migrations 0144/0145) only a real database enforces; a fake proves neither, " +
+    "and live-only policies (migrations 0146/0147) only a real database enforces; a fake proves neither, " +
     "and a missing grant would refuse every token in production.",
 });
 

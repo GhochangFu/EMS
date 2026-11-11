@@ -38,7 +38,7 @@ export class ServiceTokenListenerService implements OnModuleInit, OnModuleDestro
       disconnectServiceToken: (tokenId) => this.registry.disconnectServiceToken(tokenId),
       connectedServiceTokenIds: () => this.registry.connectedServiceTokenIds(),
       readLiveTokenIds: async (ids) => {
-        // `bms_auth`'s policy sees live tokens only (migration 0145).
+        // `bms_auth`'s policy sees live tokens only (migration 0147).
         const rows = await this.authDb
           .select({ tokenId: serviceAccountTokens.tokenId })
           .from(serviceAccountTokens)
