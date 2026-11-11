@@ -448,3 +448,38 @@ spell out, each small:
 `checklistDone` counts the items that are no longer `pending` (`done` or
 `not_applicable`). No read returns a schedule's `checklistTemplateId` yet, and
 no screen sets it; the schedule item contract was left alone in PR 3.
+
+**As built, 2026-11-11 (PR 4, migration `0146`).** Migration D landed whole, as
+plan D15 says: the approval and cancel columns and the `cancelled` value of the
+status `CHECK` have no writer until PR 5. Six things the plan did not spell out:
+
+- *The Root cause "step" is a section of the Status step.* The four findings
+  fields are `clientOnly` on `workOrder.setStatus` (ruling P4), and a
+  `clientOnly` field may not sit in a catalog step, which is where the shared
+  wizard takes its steps from. So the status wizard shows a **Root cause**
+  section when `resolved` is chosen, and its values ride the same `PATCH`.
+- *A resolved ticket goes back to `in_progress` only on the board too.* A drag
+  from Review to Open or Assigned answers 409, as the status route does (ruling
+  P3); a drag back to In progress clears the resolve stamps.
+- *A close that skips `resolved` owes the root cause too* on a ticket raised
+  from an alarm, for the reason given for the checklist in PR 3, until PR 5.
+- *A resolved ticket raised from an alarm keeps its three findings.* They stay
+  editable (decision 5.3), but `PUT /work-orders/:id/root-cause` answers 409 if
+  it would clear one of them while the ticket is `resolved`.
+- *The status body sets a finding and never clears one;* the root-cause route
+  clears. A ticket keeps a cause code that is retired after it was given; a
+  retired code cannot be given to another ticket (400).
+- *No typed finding reaches the timeline or the audit log.* The `root_cause_set`
+  event carries the coded cause only. The root-cause route's audit row carries
+  the coded cause and which texts are filled; the status route's carries the
+  coded cause and that the findings changed.
+- *A finding is trimmed before it is measured*, so three spaces are not a
+  finding (400), and the status route holds the same "a resolved alarm ticket
+  keeps its findings" rule as the root-cause route (409) — from the security
+  review.
+- *The copilot's status and close pre-check follows the route's rule:* a
+  resolved ticket moved back to Open or Assigned is refused before the card.
+
+`GET /work-orders/cause-codes` answers the active codes to every signed-in user.
+The detail read also answers `resolvedBy` (a user id). `approvedAt` on the list
+item reads null until PR 5.
