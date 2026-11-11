@@ -1,4 +1,16 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Header,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 
 import type {
   CreateServiceTokenResponse,
@@ -47,7 +59,10 @@ export class ServiceAccountsAdminController {
     return this.service.update(user, parseId(id), body);
   }
 
+  // The one response that carries a secret: no cache may keep it (security review of PR 5, L1;
+  // the edge-gateway token route's rule).
   @Post(":id/tokens")
+  @Header("Cache-Control", "no-store")
   async createToken(
     @Param("id") id: string,
     @Body() body: unknown,

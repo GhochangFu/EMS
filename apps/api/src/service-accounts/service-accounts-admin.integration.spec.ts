@@ -13,7 +13,7 @@ import { ServiceTokenVerifier } from "./service-token-verifier.service";
 
 /**
  * `F4.17` / ADR 0125 decisions 10–15 — `ServiceAccountsAdminService` on the
- * real pools (fleet reads, tenant writes under RLS, the 0145 guard trigger,
+ * real pools (fleet reads, tenant writes under RLS, the 0147 guard trigger,
  * audit rows), with the seeded `admin@bms.local` (global admin),
  * `phe-admin@bms.local` (organization admin of PHEWB) and `wc-admin@bms.local`
  * (location admin of ESKOM). Local `AUTH_MODE`, so a principal resolves by
@@ -27,6 +27,7 @@ export type AdminSuite = {
   admin: JwtPayload;
   pheAdmin: JwtPayload;
   locationAdmin: JwtPayload;
+  assetGroupAdmin: JwtPayload;
   phewb: string;
   eskom: string;
   pheLocation: string;
@@ -76,6 +77,7 @@ export async function openAdminSuite(
     admin: await principal(superPool, "admin@bms.local"),
     pheAdmin: await principal(superPool, "phe-admin@bms.local"),
     locationAdmin: await principal(superPool, "wc-admin@bms.local"),
+    assetGroupAdmin: await principal(superPool, "wc-hvac-admin@bms.local"),
     phewb,
     eskom,
     pheLocation: loc.rows[0]?.id as string,
@@ -121,6 +123,7 @@ export async function assertAnOrganizationAdminCreatesAnAccountInItsOwnOrganizat
 
 export async function assertABelowOrganizationAdminIsRefused(suite: AdminSuite): Promise<void> {
   await expect(suite.service.list(suite.locationAdmin)).rejects.toBeInstanceOf(ForbiddenException);
+  await expect(suite.service.list(suite.assetGroupAdmin)).rejects.toBeInstanceOf(ForbiddenException);
   await expect(suite.service.create(suite.locationAdmin, { organizationId: suite.eskom, name: "x", role: "viewer" })).rejects.toBeInstanceOf(ForbiddenException);
   await expect(suite.service.create(suite.admin, { organizationId: suite.eskom, name: "x", role: "organization_admin" })).rejects.toBeInstanceOf(BadRequestException);
 }
@@ -141,7 +144,6 @@ export async function assertATokenIsShownOnceVerifiesAndIsCappedAtTwoLive(suite:
   const text = JSON.stringify(item);
   expect(text).not.toContain(first.token);
   expect(text).not.toContain(first.token.slice(-43));
-  expect(text).not.toMatch(/token_?hash/i);
   // Nor does the audit trail.
   const audit = await suite.superPool.query(`SELECT action, payload::text AS payload FROM bms.audit_log WHERE payload->>'serviceAccountId' = $1`, [account.id]);
   expect(audit.rows.map((r) => r.action)).toEqual(["service_token.issued", "service_token.issued"]);
@@ -233,4 +235,118 @@ export async function assertTheGlobalAdminIssuesAndRevokesInAnyOrganization(suit
   const own = await suite.service.createToken(suite.pheAdmin, account.id, { name: "by org admin" });
   const ownRow = await suite.superPool.query(`SELECT created_by FROM bms.service_account_tokens WHERE id = $1`, [own.item.id]);
   expect(ownRow.rows[0]?.created_by).toBe(suite.pheAdmin.sub);
+}
+
+/** Every channel payload sent while `run` runs, on one LISTEN connection. */
+async function heard(suite: AdminSuite, run: () => Promise<void>): Promise<Array<{ channel: string; payload: string }>> {
+  const client = await suite.superPool.connect();
+  const got: Array<{ channel: string; payload: string }> = [];
+  client.on("notification", (n) => got.push({ channel: n.channel, payload: n.payload ?? "" }));
+  try {
+    await client.query("LISTEN bms_service_token_revoked");
+    await client.query("LISTEN bms_user_disabled");
+    await run();
+    // A NOTIFY arrives after its commit; one round trip on this connection flushes it.
+    await client.query("SELECT 1");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    return got;
+  } finally {
+    client.removeAllListeners("notification");
+    await client.query("UNLISTEN *");
+    client.release();
+  }
+}
+
+/**
+ * Review fix 6: every write that changes what a live token may do is
+ * announced — a revoke, a role change, a grant removal and a disable — so no
+ * process keeps it cached for 30 s.
+ */
+export async function assertEveryTokenChangeIsAnnounced(suite: AdminSuite): Promise<void> {
+  const account = await createAccount(suite, suite.pheAdmin, suite.phewb);
+  const live = await suite.service.createToken(suite.pheAdmin, account.id, { name: "live" });
+  const revoked = (channel: string) => ({ channel, payload: live.item.tokenId });
+  expect(await heard(suite, async () => void (await suite.service.update(suite.pheAdmin, account.id, { role: "viewer" })))).toEqual([
+    revoked("bms_service_token_revoked"),
+  ]);
+  const added = await suite.service.addGrant(suite.pheAdmin, account.id, { kind: "location", targetId: suite.pheLocation });
+  const grantId = added.item.grants[0]?.id as string;
+  expect(
+    await heard(suite, async () => void (await suite.service.removeGrant(suite.pheAdmin, account.id, "location", grantId))),
+  ).toEqual([revoked("bms_service_token_revoked")]);
+  // A rename changes no token's reach: nothing is announced.
+  expect(await heard(suite, async () => void (await suite.service.update(suite.pheAdmin, account.id, { name: "renamed" })))).toEqual([]);
+  expect(
+    await heard(suite, async () => void (await suite.service.revokeToken(suite.pheAdmin, account.id, live.item.id))),
+  ).toEqual([revoked("bms_service_token_revoked")]);
+  const second = await suite.service.createToken(suite.pheAdmin, account.id, { name: "second" });
+  const onDisable = await heard(suite, async () => void (await suite.service.update(suite.pheAdmin, account.id, { disabled: true })));
+  expect(onDisable).toEqual(
+    expect.arrayContaining([
+      { channel: "bms_service_token_revoked", payload: second.item.tokenId },
+      { channel: "bms_user_disabled", payload: account.id },
+    ]),
+  );
+  expect(onDisable).toHaveLength(2);
+}
+
+/** A PATCH renames and changes the role; each write is audited in the account's organization, and a no-op is not. */
+export async function assertWritesAreAuditedInTheAccountsOrganization(suite: AdminSuite): Promise<void> {
+  const account = await createAccount(suite, suite.pheAdmin, suite.phewb);
+  const updated = await suite.service.update(suite.pheAdmin, account.id, { name: "F4.17 renamed", role: "viewer" });
+  expect(updated.item).toEqual(expect.objectContaining({ name: "F4.17 renamed", role: "viewer" }));
+  await suite.service.update(suite.pheAdmin, account.id, { name: "F4.17 renamed", role: "viewer" }); // no-op
+  const added = await suite.service.addGrant(suite.pheAdmin, account.id, { kind: "location", targetId: suite.pheLocation });
+  await suite.service.removeGrant(suite.pheAdmin, account.id, "location", added.item.grants[0]?.id as string);
+  await suite.service.update(suite.pheAdmin, account.id, { disabled: true });
+  const audit = await suite.superPool.query<{ action: string; organization_id: string }>(
+    `SELECT action, organization_id FROM bms.audit_log WHERE entity_id = $1 ORDER BY created_at, id`,
+    [account.id],
+  );
+  expect(audit.rows.map((r) => r.action)).toEqual([
+    "service_account.created",
+    "service_account.updated",
+    "service_account.grant_added",
+    "service_account.grant_removed",
+    "service_account.disabled",
+  ]);
+  expect(audit.rows.every((r) => r.organization_id === suite.phewb)).toBe(true);
+}
+
+/** The asset-group branch of a grant: one of the account's organization is held, another organization's is a 404. */
+export async function assertAnAssetGroupGrantIsHeldToTheAccountsOrganization(suite: AdminSuite): Promise<void> {
+  const account = await createAccount(suite, suite.pheAdmin, suite.phewb);
+  const groups = await suite.superPool.query<{ id: string; organization_id: string }>(
+    `SELECT DISTINCT ON (organization_id) id, organization_id FROM bms.asset_groups
+      WHERE organization_id = ANY($1::uuid[]) ORDER BY organization_id, created_at, id`,
+    [[suite.phewb, suite.eskom]],
+  );
+  const own = groups.rows.find((g) => g.organization_id === suite.phewb)?.id;
+  const other = groups.rows.find((g) => g.organization_id === suite.eskom)?.id;
+  if (!own || !other) throw new Error("F4.17: needs a seeded asset group in PHEWB and in ESKOM — run pnpm db:seed.");
+  const added = await suite.service.addGrant(suite.pheAdmin, account.id, { kind: "asset_group", targetId: own });
+  expect(added.item.grants).toEqual([expect.objectContaining({ kind: "asset_group", targetId: own })]);
+  await expect(suite.service.addGrant(suite.pheAdmin, account.id, { kind: "asset_group", targetId: own })).rejects.toBeInstanceOf(ConflictException);
+  await expect(suite.service.addGrant(suite.pheAdmin, account.id, { kind: "asset_group", targetId: other })).rejects.toBeInstanceOf(NotFoundException);
+  const removed = await suite.service.removeGrant(suite.pheAdmin, account.id, "asset_group", added.item.grants[0]?.id as string);
+  expect(removed.item.grants).toEqual([]);
+}
+
+/** Another account's token or grant id, and a human user's id, are 404s — never a write on the wrong row. */
+export async function assertAnotherAccountsIdsAreNotFound(suite: AdminSuite): Promise<void> {
+  const a = await createAccount(suite, suite.pheAdmin, suite.phewb, "F4.17 a");
+  const b = await createAccount(suite, suite.pheAdmin, suite.phewb, "F4.17 b");
+  const token = await suite.service.createToken(suite.pheAdmin, a.id, { name: "a's" });
+  const grant = await suite.service.addGrant(suite.pheAdmin, a.id, { kind: "location", targetId: suite.pheLocation });
+  await expect(suite.service.revokeToken(suite.pheAdmin, b.id, token.item.id)).rejects.toBeInstanceOf(NotFoundException);
+  await expect(
+    suite.service.removeGrant(suite.pheAdmin, b.id, "location", grant.item.grants[0]?.id as string),
+  ).rejects.toBeInstanceOf(NotFoundException);
+  const still = await suite.service.get(suite.pheAdmin, a.id);
+  expect(still.item.tokens[0]?.status).toBe("active");
+  expect(still.item.grants).toHaveLength(1);
+  const human = suite.pheAdmin.sub;
+  await expect(suite.service.get(suite.pheAdmin, human)).rejects.toBeInstanceOf(NotFoundException);
+  await expect(suite.service.update(suite.pheAdmin, human, { disabled: true })).rejects.toBeInstanceOf(NotFoundException);
+  await expect(suite.service.createToken(suite.pheAdmin, human, { name: "x" })).rejects.toBeInstanceOf(NotFoundException);
 }

@@ -77,6 +77,7 @@ export async function removeServiceAccountGrant(id: string, kind: string, grantI
   );
 }
 
+/** Refetches the service-account list after any write. */
 export async function invalidateServiceAccountReads(queryClient: QueryClient): Promise<void> {
   await queryClient.invalidateQueries({ queryKey: serviceAccountsQueryKey });
 }

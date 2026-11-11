@@ -9,6 +9,10 @@ import {
 import { asRole } from "../testing/role-urls";
 import {
   assertABelowOrganizationAdminIsRefused,
+  assertAnAssetGroupGrantIsHeldToTheAccountsOrganization,
+  assertAnotherAccountsIdsAreNotFound,
+  assertEveryTokenChangeIsAnnounced,
+  assertWritesAreAuditedInTheAccountsOrganization,
   assertAnOrganizationAdminCreatesAnAccountInItsOwnOrganizationOnly,
   assertARevokeIsFinalAndStopsTheToken,
   assertAServiceAccountCannotManageServiceAccounts,
@@ -25,7 +29,7 @@ const connectionString = requireIntegrationDb({
   item: "F4.17",
   label: "the service-account admin service on the real pools",
   because:
-    "every write runs on bms_tenant under RLS and migration 0145's guard trigger, the two-live-token cap " +
+    "every write runs on bms_tenant under RLS and migration 0147's guard trigger, the two-live-token cap " +
     "rests on a row lock, and the audit rows must carry no secret — none of which a fake can show.",
 });
 
@@ -82,5 +86,21 @@ describe.skipIf(!connectionString)("F4.17 — /admin/service-accounts on a real 
 
   it("a service account cannot manage service accounts", async () => {
     await assertAServiceAccountCannotManageServiceAccounts(suite);
+  });
+
+  it("every write that changes a live token's reach is announced", async () => {
+    await assertEveryTokenChangeIsAnnounced(suite);
+  });
+
+  it("each write is audited in the account's organization, and a no-op is not", async () => {
+    await assertWritesAreAuditedInTheAccountsOrganization(suite);
+  });
+
+  it("an asset-group grant is held to the account's organization", async () => {
+    await assertAnAssetGroupGrantIsHeldToTheAccountsOrganization(suite);
+  });
+
+  it("another account's token or grant id, and a human's id, are not found", async () => {
+    await assertAnotherAccountsIdsAreNotFound(suite);
   });
 });

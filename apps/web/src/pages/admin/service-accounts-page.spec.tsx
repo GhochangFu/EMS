@@ -119,7 +119,7 @@ export async function aNewTokenShowsOnce(): Promise<void> {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
   const issue = vi.spyOn(api, "createServiceToken").mockResolvedValue({ token: TOKEN, item: token("00000000-0000-4000-8000-0000000000e9", "ABCDEFGHIJKL") });
-  renderPage(orgAdmin);
+  const client = renderPage(orgAdmin);
   await user.click(within(await cardOf("SCADA bridge")).getByRole("button", { name: "New token" }));
   const dialog = await screen.findByRole("dialog", { name: "New token for SCADA bridge" });
   await user.type(within(dialog).getByLabelText("Name"), "primary");
@@ -129,9 +129,13 @@ export async function aNewTokenShowsOnce(): Promise<void> {
   expect(issue).toHaveBeenCalledWith(SA1.id, { name: "primary", expiresInDays: 90, readOnly: false });
   await user.click(within(dialog).getByRole("button", { name: "Copy token" }));
   expect(writeText).toHaveBeenCalledWith(TOKEN);
+  const cached = () => JSON.stringify(client.getMutationCache().getAll().map((m) => m.state));
+  expect(cached()).toContain(TOKEN); // the check below is not vacuous
   await user.click(within(dialog).getByRole("button", { name: "Done" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(document.body.innerHTML).not.toContain(TOKEN);
+  // Nor does the query client keep it: no mutation in the cache still holds the response.
+  await waitFor(() => expect(cached()).not.toContain(TOKEN));
 }
 
 /** S4 — revoke asks first, then revokes that token. */

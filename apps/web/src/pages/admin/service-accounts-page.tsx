@@ -67,7 +67,8 @@ function escapeAsCancel(event: KeyboardEvent<HTMLDivElement>): void {
   if (event.key !== "Escape") return;
   event.preventDefault();
   const buttons = [...event.currentTarget.querySelectorAll("button")];
-  buttons.find((button) => button.textContent === "Cancel" || button.textContent === "Done")?.click();
+  // A disabled Cancel (a token being issued) is not pressed: the token must reach the dialog.
+  buttons.find((button) => !button.disabled && (button.textContent === "Cancel" || button.textContent === "Done"))?.click();
 }
 
 /**
@@ -277,10 +278,18 @@ function ErrorLine({ error }: { error: unknown }) {
   ) : null;
 }
 
-function Buttons({ onCancel, children }: { onCancel: () => void; children: ReactNode }) {
+function Buttons({
+  onCancel,
+  cancelDisabled = false,
+  children,
+}: {
+  onCancel: () => void;
+  cancelDisabled?: boolean;
+  children: ReactNode;
+}) {
   return (
     <div className="flex justify-end gap-2">
-      <button type="button" className={secondaryClass} onClick={onCancel}>
+      <button type="button" className={secondaryClass} disabled={cancelDisabled} onClick={onCancel}>
         Cancel
       </button>
       {children}
@@ -384,7 +393,8 @@ function TokenDialog({ account, onClose }: { account: ServiceAccountDto; onClose
             Read-only (every write is refused)
           </label>
           <ErrorLine error={issueM.error} />
-          <Buttons onCancel={done}>
+          {/* Not cancellable while issuing (code review, 4): the server would issue a token nobody sees. */}
+          <Buttons onCancel={done} cancelDisabled={issueM.isPending}>
             <button
               type="button"
               className={primaryClass}
@@ -492,12 +502,17 @@ function GrantsDialog({ accountId, onClose }: { accountId: string; onClose: () =
     enabled: organizationId !== "",
   });
   const groupsQ = useQuery({ queryKey: ["admin", "asset-groups", "all"], queryFn: () => fetchAdminAssetGroups() });
-  const groups = (groupsQ.data?.items ?? []).filter((group) => group.organizationId === organizationId);
+  const held = new Set((account?.grants ?? []).map((grant) => grant.targetId));
+  // Only the account's organization, and only what it does not hold yet (code review, quality).
+  const locations = (locationsQ.data?.items ?? []).filter((location) => !held.has(location.id));
+  const groups = (groupsQ.data?.items ?? []).filter((group) => group.organizationId === organizationId && !held.has(group.id));
+  const [removing, setRemoving] = useState<string | null>(null);
   const addM = useMutation({
     mutationFn: async () => {
       const [kind, targetId] = target.split(":") as ["location" | "asset_group", string];
       return addServiceAccountGrant(accountId, { kind, targetId });
     },
+    onMutate: () => removeM.reset(),
     onSuccess: async () => {
       setTarget("");
       await invalidateServiceAccountReads(queryClient);
@@ -505,6 +520,11 @@ function GrantsDialog({ accountId, onClose }: { accountId: string; onClose: () =
   });
   const removeM = useMutation({
     mutationFn: async ({ kind, id }: { kind: string; id: string }) => removeServiceAccountGrant(accountId, kind, id),
+    onMutate: ({ id }) => {
+      setRemoving(id);
+      addM.reset();
+    },
+    onSettled: () => setRemoving(null),
     onSuccess: async () => invalidateServiceAccountReads(queryClient),
   });
   return (
@@ -516,13 +536,13 @@ function GrantsDialog({ accountId, onClose }: { accountId: string; onClose: () =
             <span>{`${grant.kind === "location" ? "Location" : "Asset group"}: ${grant.targetName}`}</span>
             <button
               type="button"
-              aria-label={`${removeM.isPending ? "Removing" : "Remove"} grant ${grant.targetName}`}
+              aria-label={`${removing === grant.id ? "Removing" : "Remove"} grant ${grant.targetName}`}
               className="text-xs font-semibold text-critical-ink"
-              disabled={removeM.isPending}
-              aria-busy={removeM.isPending}
+              disabled={removing === grant.id}
+              aria-busy={removing === grant.id}
               onClick={() => removeM.mutate({ kind: grant.kind, id: grant.id })}
             >
-              {removeM.isPending ? "Removing…" : "Remove"}
+              {removing === grant.id ? "Removing…" : "Remove"}
             </button>
           </li>
         ))}
@@ -531,7 +551,7 @@ function GrantsDialog({ accountId, onClose }: { accountId: string; onClose: () =
         Add a grant
         <select className={fieldClass} value={target} onChange={(event) => setTarget(event.target.value)}>
           <option value="">Choose a location or asset group</option>
-          {(locationsQ.data?.items ?? []).map((location) => (
+          {locations.map((location) => (
             <option key={location.id} value={`location:${location.id}`}>
               {`Location — ${location.name}`}
             </option>
