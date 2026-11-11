@@ -58,18 +58,20 @@ describe("E3.1 — root cause, alarm snapshot, approval and cancel columns (migr
     expect(migration.split(";").filter((s) => s.trim().length > 0).length).toBeGreaterThan(12);
   });
 
-  it("registers migration 0146 in the journal, after 0145 and before now", () => {
+  it("registers the migration in the journal AFTER 0147_service_account_token_guard, and before now", () => {
     const journal = JSON.parse(read("packages/db/drizzle/meta/_journal.json")) as {
       entries: Array<Record<string, unknown>>;
     };
     const entry = journal.entries.find((e) => e.tag === TAG);
 
-    expect(entry, "migration 0146 must have a journal entry, or drizzle never runs it").toBeDefined();
-    expect(entry?.idx).toBe(147);
+    expect(entry, "the migration must have a journal entry, or drizzle never runs it").toBeDefined();
+    expect(entry?.idx).toBe(149);
     expect(entry?.version).toBe("7");
     expect(entry?.breakpoints).toBe(true);
-    // 0145's `when` — the F4.94 class.
-    expect(entry?.when as number).toBeGreaterThan(1794357696714);
+    // The file is numbered 0146 and runs after 0147: main took 0146 and 0147 (F4.17) while this
+    // branch was in review, and a committed migration file may not be renamed. Drizzle orders by
+    // the journal, so its `when` must be later than 0147's — the F4.94 class.
+    expect(entry?.when as number).toBeGreaterThan(1794358690830);
     expect(entry?.when as number).toBeLessThan(Date.now());
   });
 

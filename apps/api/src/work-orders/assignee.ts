@@ -27,7 +27,8 @@ export async function readActiveOrganizationUser(
   const [row] = await tx
     .select({ id: users.id, displayName: users.displayName })
     .from(users)
-    .where(and(eq(users.id, id), eq(users.organizationId, organizationId), isNull(users.disabledAt)))
+    // F4.17 / ADR 0125: work is assigned to people, never to a service account.
+    .where(and(eq(users.id, id), eq(users.organizationId, organizationId), isNull(users.disabledAt), eq(users.kind, "human")))
     .limit(1);
   return row ?? null;
 }
