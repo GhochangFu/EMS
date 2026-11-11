@@ -626,14 +626,14 @@ const uniqueBy = <T>(
  * Poor / Critical); the cap exists so a pack cannot author a band per percent
  * and turn a legend into a scrollbar.
  */
-const MAX_HEALTH_BANDS = 10;
+export const MAX_HEALTH_BANDS = 10;
 
 /**
  * The largest weight a tag may carry. A weight is relative, so the ratio is
  * what matters and the absolute bound only stops an author expressing "this one
  * matters" as `1e9` and making every other tag round to nothing in a float sum.
  */
-const MAX_HEALTH_WEIGHT = 1000;
+export const MAX_HEALTH_WEIGHT = 1000;
 
 const templateHealthBandSchema = z
   .object({
@@ -647,6 +647,24 @@ const templateHealthBandSchema = z
     minScore: z.number().min(0).max(1),
   })
   .strict();
+
+/**
+ * The five standard bands — Excellent / Good / Fair / Poor / Critical — as
+ * ordered cut-points, `minScore` the inclusive lower bound in `0..1`.
+ *
+ * **The one declaration** (ADR 0038 Amendment 7 B3, ADR 0050 Amendment 4). The
+ * template Health tab's "Use the standard five bands" button fills from it, and
+ * `packages/db`'s baseline seed re-exports it as `HEALTH_BANDS`. It is a preset
+ * an author chooses, **not a default**: a template with no `health.bands` stays
+ * unbanded, and no read path falls back to this list.
+ */
+export const STANDARD_HEALTH_BANDS = [
+  { code: "excellent", label: "Excellent", minScore: 0.95 },
+  { code: "good", label: "Good", minScore: 0.85 },
+  { code: "fair", label: "Fair", minScore: 0.7 },
+  { code: "poor", label: "Poor", minScore: 0.5 },
+  { code: "critical", label: "Critical", minScore: 0 },
+] as const;
 
 /**
  * `health` — weights and bands, and nothing that computes.

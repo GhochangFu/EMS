@@ -1,4 +1,4 @@
-import type { TemplateContent } from "@bms/shared";
+import { STANDARD_HEALTH_BANDS, type TemplateContent } from "@bms/shared";
 import type pg from "pg";
 
 /**
@@ -102,6 +102,10 @@ import type pg from "pg";
 /**
  * The client's five names (ADR 0050 Context), as ordered cut-points.
  *
+ * **Declared once, in `@bms/shared`** as `STANDARD_HEALTH_BANDS` (`F4.355`,
+ * ADR 0038 Amendment 7 B3, ADR 0050 Amendment 4), so the template Health tab's
+ * preset and this seed are the same object. The name stays for its importers.
+ *
  * `minScore` is the **inclusive lower bound in `0..1`**, and the list descends
  * strictly with the last band at `0` — the two rules `templateHealthSchema`
  * enforces on the write path, so that every score in `0..1` lands in exactly one
@@ -117,13 +121,7 @@ import type pg from "pg";
  * selects, so any figure written down would be a number nobody can reproduce
  * from the seed alone.
  */
-export const HEALTH_BANDS = [
-  { code: "excellent", label: "Excellent", minScore: 0.95 },
-  { code: "good", label: "Good", minScore: 0.85 },
-  { code: "fair", label: "Fair", minScore: 0.7 },
-  { code: "poor", label: "Poor", minScore: 0.5 },
-  { code: "critical", label: "Critical", minScore: 0 },
-] as const;
+export const HEALTH_BANDS = STANDARD_HEALTH_BANDS;
 
 /**
  * The `content` every baseline template carries.

@@ -1,3 +1,4 @@
+import { STANDARD_HEALTH_BANDS } from "@bms/shared";
 import type pg from "pg";
 import { expect } from "vitest";
 
@@ -47,6 +48,15 @@ export function assertTheClientsFiveBandsAreSeeded(): void {
     "Critical",
   ]);
   expect(HEALTH_BASELINE_CONTENT.health?.bands).toHaveLength(5);
+}
+
+/**
+ * The seed reads the five bands from `@bms/shared` rather than restating them
+ * (ADR 0038 Amendment 7 B3, ADR 0050 Amendment 4): the same object, not a copy,
+ * so the template Health tab's preset and the seeded baselines cannot drift.
+ */
+export function assertTheSeedBandsAreTheSharedDeclaration(): void {
+  expect(HEALTH_BANDS).toBe(STANDARD_HEALTH_BANDS);
 }
 
 /**
