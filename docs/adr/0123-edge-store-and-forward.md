@@ -489,9 +489,14 @@ No npm package. One new workspace edge: `apps/ingest` → `@bms/db`, for
 
 ## Amendment 1 — as built in PR 2 and PR 3 (2026-11-10)
 
-**Drafted by the build session for the owner to confirm. It is not an owner
-ruling.** It records what PR 2 and PR 3 built where that differs from, or
-adds to, the text above. No decision above is reworded.
+**Confirmed by the owner — 2026-11-11** (in chat, delegating the review: "Do
+item number 3 and item number 4 fast. You do it from your side."). Drafted by
+the build session; confirmed as written after a review of (a)–(d): (a) and (b)
+record facts and only tighten decision 4, (c) is closed by #1241 and #1243,
+and (d) stays accepted risk, with the audit of late overwrites still owed
+(`docs/ingest-host.md` *Known limits*). It records what PR 2 and PR 3 built
+where that differs from, or adds to, the text above. No decision above is
+reworded.
 
 **(a) Three migrations, not one.** The plan's `0140` was taken by another row,
 so the numbers moved:
@@ -547,11 +552,17 @@ pass's windows into one refresh range (security review L3) is still owed.
 
 ## Amendment 2 — the edge clock guard and delete rules, as built in PR 5 (2026-11-10)
 
-**Drafted by the build session for the owner to confirm. It is not an owner
-ruling.** The semantics in (a) 1 — trusting the receiver's `Date` header —
-are a drafter's call, made because the owner was away during the review. No
-decision above is reworded; this records what PR 5 built where it adds to
-decisions 4 and 8.
+**Confirmed by the owner — 2026-11-11** (in chat, delegating the review: "Do
+item number 3 and item number 4 fast. You do it from your side."). Drafted by
+the build session; confirmed as written. The semantics in (a) 1 — trusting
+the receiver's `Date` header, only on a schema-valid `200` over the verified
+TLS connection and only within 30 s of the wall clock — were a drafter's call
+and are now ruled: they fix the two failures the PR 5 reviews reproduced, and
+the one weak case (a TLS-inspecting proxy that stamps `Date` from the same
+wrong clock) is recorded under *Known limits*. The follow-up at the end of
+this amendment (a cloud-disciplined clock while `skewed`) is **not ruled and
+not built**. No decision above is reworded; this records what PR 5 built
+where it adds to decisions 4 and 8.
 
 **Why.** The PR 5 code and security reviews reproduced two failures of the
 guard as first written (decision 8's text, read literally): a mark even
