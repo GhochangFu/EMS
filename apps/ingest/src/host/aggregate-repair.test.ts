@@ -1,6 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  aFailedMergedRefreshKeepsEveryMember,
+  aMovedMemberOfAMergedRangeIsKept,
+  overlappingWindowsShareOneRefresh,
+  theMergeGapDecidesWhetherWindowsJoin,
   aFailedRefreshKeepsTheWindowAndLogsOnce,
   aFailingListIsOneLine,
   aSuccessfulRefreshClearsTheWindow,
@@ -43,5 +47,21 @@ describe("E7.2 — aggregate repair over dirty windows (ADR 0123 decision 11, pl
 
   it("keeps a window a late row landed inside during the refresh (code review 2)", async () => {
     await anInWindowWriteDuringTheRefreshKeepsTheWindow();
+  });
+
+  it("refreshes overlapping windows once, as one range (security review L3)", async () => {
+    await overlappingWindowsShareOneRefresh();
+  });
+
+  it("joins windows at most an hour apart and keeps wider gaps apart", async () => {
+    await theMergeGapDecidesWhetherWindowsJoin();
+  });
+
+  it("keeps every member of a failed merged range and spares the other ranges", async () => {
+    await aFailedMergedRefreshKeepsEveryMember();
+  });
+
+  it("keeps a member that moved during a merged refresh and clears the rest", async () => {
+    await aMovedMemberOfAMergedRangeIsKept();
   });
 });

@@ -6,6 +6,8 @@ import {
   DIRTY_WINDOWS_QUERY,
   createRepairStore,
   type DirtyWindow,
+  mergeDirtyWindows,
+  REPAIR_MERGE_GAP_MS,
   type RepairStore,
 } from "./aggregate-repair.js";
 
@@ -232,4 +234,103 @@ export async function theClearComparesBothBoundsByGateway(): Promise<void> {
       values[3] === "9007199254740993",
     "the clear binds the stored epoch keys, so a microsecond is never lost",
   );
+}
+
+/**
+ * Security review L3 — many sites returning from one outage record overlapping
+ * windows. One refresh per merged range, not one per gateway: windows that
+ * overlap or sit within {@link REPAIR_MERGE_GAP_MS} of each other share a
+ * refresh; a distant window gets its own.
+ */
+export async function overlappingWindowsShareOneRefresh(): Promise<void> {
+  const store = fakeStore([
+    windowOf("gw-a", "2026-11-10T03:00:00.000Z", "2026-11-10T05:00:00.000Z"),
+    windowOf("gw-b", "2026-11-10T04:00:00.000Z", "2026-11-10T06:00:00.000Z"),
+    windowOf("gw-c", "2026-11-10T05:30:00.000Z", "2026-11-10T07:00:00.000Z"),
+    windowOf("gw-d", "2026-11-08T01:00:00.000Z", "2026-11-08T02:00:00.000Z"),
+  ]);
+  const seen: string[] = [];
+  const h = harness(store, async (from, to) => {
+    seen.push(`${from.toISOString()}..${to.toISOString()}`);
+  });
+  await h.repair.runOnce();
+  assert(
+    seen.join(";") ===
+      "2026-11-08T01:00:00.000Z..2026-11-08T02:00:00.000Z;2026-11-10T03:00:00.000Z..2026-11-10T07:00:00.000Z",
+    `three overlapping windows share one refresh and the distant one has its own, got ${seen.join(";")}`,
+  );
+  assert(store.windows.size === 0, "every window of a refreshed range is cleared");
+}
+
+/** A gap of at most the merge gap joins two windows; a wider gap does not. */
+export async function theMergeGapDecidesWhetherWindowsJoin(): Promise<void> {
+  assert(REPAIR_MERGE_GAP_MS === 3_600_000, "the merge gap is one hour, the _1h bucket");
+  const joined = mergeDirtyWindows(
+    [
+      windowOf("gw-a", "2026-11-10T03:00:00.000Z", "2026-11-10T04:00:00.000Z"),
+      windowOf("gw-b", "2026-11-10T05:00:00.000Z", "2026-11-10T05:30:00.000Z"),
+    ],
+    REPAIR_MERGE_GAP_MS,
+  );
+  assert(joined.length === 1, `a one-hour gap joins, got ${joined.length} ranges`);
+  assert(
+    joined[0].from.toISOString() === "2026-11-10T03:00:00.000Z" &&
+      joined[0].to.toISOString() === "2026-11-10T05:30:00.000Z" &&
+      joined[0].windows.length === 2,
+    "the joined range spans both windows and keeps both",
+  );
+  const apart = mergeDirtyWindows(
+    [
+      windowOf("gw-b", "2026-11-10T05:00:00.001Z", "2026-11-10T06:00:00.000Z"),
+      windowOf("gw-a", "2026-11-10T03:00:00.000Z", "2026-11-10T04:00:00.000Z"),
+    ],
+    REPAIR_MERGE_GAP_MS,
+  );
+  assert(apart.length === 2, `a gap a millisecond over an hour stays apart, got ${apart.length}`);
+  assert(apart[0].windows[0].gatewayId === "gw-a", "ranges come out oldest first whatever the input order");
+  const nested = mergeDirtyWindows(
+    [
+      windowOf("gw-a", "2026-11-10T01:00:00.000Z", "2026-11-10T09:00:00.000Z"),
+      windowOf("gw-b", "2026-11-10T02:00:00.000Z", "2026-11-10T03:00:00.000Z"),
+    ],
+    REPAIR_MERGE_GAP_MS,
+  );
+  assert(
+    nested.length === 1 && nested[0].to.toISOString() === "2026-11-10T09:00:00.000Z",
+    "a window inside another never shortens the range",
+  );
+}
+
+/** A failed merged refresh keeps every window in it, logs one line naming them, and spares other ranges. */
+export async function aFailedMergedRefreshKeepsEveryMember(): Promise<void> {
+  const store = fakeStore([
+    windowOf("gw-a", "2026-11-10T03:00:00.000Z", "2026-11-10T05:00:00.000Z"),
+    windowOf("gw-b", "2026-11-10T04:00:00.000Z", "2026-11-10T06:00:00.000Z"),
+    windowOf("gw-d", "2026-11-08T01:00:00.000Z", "2026-11-08T02:00:00.000Z"),
+  ]);
+  const h = harness(store, async (from) => {
+    if (from.toISOString().startsWith("2026-11-10")) {
+      throw Object.assign(new Error("could not obtain lock"), { code: "55P03" });
+    }
+  });
+  await h.repair.runOnce();
+  assert(store.windows.has("gw-a") && store.windows.has("gw-b"), "both members of the failed range stay");
+  assert(!store.windows.has("gw-d"), "the other range is still repaired");
+  const failures = h.lines.filter((l) => l.includes("aggregate repair failed"));
+  assert(failures.length === 1, `one line for the failed range, got ${failures.length}`);
+  assert(failures[0].includes("gw-a") && failures[0].includes("gw-b"), "the line names every gateway in the range");
+}
+
+/** A member that moved during a merged refresh is kept; the others are cleared. */
+export async function aMovedMemberOfAMergedRangeIsKept(): Promise<void> {
+  const a = windowOf("gw-a", "2026-11-10T03:00:00.000Z", "2026-11-10T05:00:00.000Z");
+  const b = windowOf("gw-b", "2026-11-10T04:00:00.000Z", "2026-11-10T06:00:00.000Z");
+  const store = fakeStore([a, b]);
+  const bNext = { ...b, seqKey: "2" };
+  const h = harness(store, async () => {
+    store.windows.set("gw-b", bNext);
+  });
+  await h.repair.runOnce();
+  assert(!store.windows.has("gw-a"), "the unmoved member is cleared");
+  assert(store.windows.get("gw-b") === bNext, "the moved member survives for the next pass");
 }

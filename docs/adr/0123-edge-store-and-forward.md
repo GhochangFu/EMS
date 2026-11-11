@@ -542,6 +542,12 @@ and `refreshAggregatesFrom(pool, from, to)`, and clears the timer on
 shutdown. Decision 11 is now started, and the warning is gone. Merging a
 pass's windows into one refresh range (security review L3) is still owed.
 
+*2026-11-11, L3:* a pass now merges its due windows that overlap or lie
+within one hour of each other into one range, refreshes each range once, and
+clears each window on its own compare-and-clear. Decision 11's guarantees are
+unchanged: a window is cleared only after a refresh that covered it succeeded,
+and one that moved during the refresh is kept.
+
 **(d) Accepted risk, as built.**
 
 - A stolen token can overwrite up to 6.5 days of its own gateway's points,
