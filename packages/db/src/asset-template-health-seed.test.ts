@@ -21,6 +21,7 @@ import {
   assertTheReleaseFreesOnlyACrossDomainSeedBaselinePin,
   assertTheRepinMovesOnlyADomainBaselineV1Pin,
   assertTheResultCountsEachWriteOnce,
+  assertTheSeedBandsAreTheSharedDeclaration,
   assertTheStatementsRunInTheirLoadBearingOrder,
   assertTheVerifyCountsRoledAssetsLeftOnTheDomainBaseline,
   assertTheVerifyReadsBackWhatMakesABandNull,
@@ -29,6 +30,10 @@ import {
 describe("F4.75 — a seeded health baseline per domain", () => {
   it("seeds the client's five bands", () => {
     assertTheClientsFiveBandsAreSeeded();
+  });
+
+  it("F4.355 — reads the five bands from @bms/shared, not a copy", () => {
+    assertTheSeedBandsAreTheSharedDeclaration();
   });
 
   it("weights nothing, so every ruled tag counts equally", () => {
