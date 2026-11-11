@@ -9,6 +9,7 @@ import type { AdminRtuDto } from "@bms/shared";
 import * as locationsApi from "../../api/admin/locations";
 import * as organizationsApi from "../../api/admin/organizations";
 import * as rtusApi from "../../api/admin/rtus";
+import * as deviceHealthApi from "../../api/device-health";
 import * as systemStatusApi from "../../api/system-status";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ApiError } from "../../lib/api-error";
@@ -84,6 +85,8 @@ function stubAll(items: AdminRtuDto[] = [ROUTED, UNROUTED]): void {
   } as never);
   vi.spyOn(locationsApi, "fetchAdminLocationSummary").mockResolvedValue({} as never);
   vi.spyOn(rtusApi, "fetchAdminRtus").mockResolvedValue({ items } as never);
+  // `F3.16` — the device-health read is not under test here; refused, so the health cells read "—".
+  vi.spyOn(deviceHealthApi, "fetchDeviceHealth").mockRejectedValue(new Error("not under test"));
   vi.spyOn(rtusApi, "createAdminRtu").mockResolvedValue(ROUTED);
   vi.spyOn(rtusApi, "updateAdminRtu").mockResolvedValue(ROUTED);
 }
@@ -150,7 +153,9 @@ export async function listShowsTheDeviceIdAndADashWhenUnset(): Promise<void> {
   const routed = await rowOf(ROUTED.code);
   expect(within(routed).getByText("861736076081915")).toBeInTheDocument();
   const unrouted = await rowOf(UNROUTED.code);
-  expect(within(unrouted).getByText("—")).toBeInTheDocument();
+  // `F3.16` added health cells that also read "—" without a health answer: read the Device ID cell itself.
+  const column = Array.from(header.parentElement?.children ?? []).indexOf(header);
+  expect((unrouted as HTMLTableRowElement).cells[column]?.textContent).toBe("—");
 }
 
 /** R2 — create sends the typed device ID, trimmed: a pasted space never matches a `dev_id`. */

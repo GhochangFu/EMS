@@ -59,7 +59,11 @@ export const ASSET_WINDOW_SECONDS_SQL =
  * {@link liveAssetsCteSql}).
  */
 function learnedIntervalsCteSql(scope: string | null): string {
-  const rtuScope = scope === null ? "" : `AND la.rtu_id IN (SELECT sa.rtu_id FROM bms.assets sa WHERE sa.id IN (${scope}))`;
+  return learnedCteSql(scope === null ? "" : `AND la.rtu_id IN (SELECT sa.rtu_id FROM bms.assets sa WHERE sa.id IN (${scope}))`);
+}
+
+/** The `learned` CTE body with its RTU predicate (`""`, or an `AND la.rtu_id IN (...)` of this module's own text). */
+function learnedCteSql(rtuScope: string): string {
   return `learned AS (
   SELECT x.rtu_id, percentile_cont(0.5) WITHIN GROUP (ORDER BY 3600.0 / x.n) AS interval_seconds
   FROM (
@@ -128,6 +132,23 @@ asset_windows AS (
   LEFT JOIN bms.rtus r ON r.id = a.rtu_id
   LEFT JOIN learned l ON l.rtu_id = a.rtu_id
   WHERE a.id IN (${scopeAssetIdsSql})
+)`;
+}
+
+/**
+ * `F3.16` (ADR 0127 decision 11) — the `learned` and `rtu_windows` CTEs for a reader that judges
+ * an RTU, not an asset: `rtu_windows(rtu_id, window_seconds)` has one row per scoped RTU, with the
+ * window of {@link ASSET_WINDOW_SECONDS_SQL} — the same `clamp(2.5 x interval, 25 s, 900 s)` an
+ * asset of that RTU gets, since an asset's window is its RTU's. `learned` reads only the scoped
+ * RTUs. `scopeRtuIdsSql` is the caller's own subquery returning RTU ids (never request input, §4.4).
+ */
+export function rtuWindowsCteSql(scopeRtuIdsSql: string): string {
+  return `${learnedCteSql(`AND la.rtu_id IN (${scopeRtuIdsSql})`)},
+rtu_windows AS (
+  SELECT r.id AS rtu_id, ${ASSET_WINDOW_SECONDS_SQL} AS window_seconds
+  FROM bms.rtus r
+  LEFT JOIN learned l ON l.rtu_id = r.id
+  WHERE r.id IN (${scopeRtuIdsSql})
 )`;
 }
 

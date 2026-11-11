@@ -190,6 +190,50 @@ describe.each(SQL_READERS)("F4.350 — $file builds the live CTE from telemetry-
   });
 });
 
+/**
+ * `F3.16` (ADR 0127 decision 11) — every reader of an **RTU's** window builds it with
+ * `rtuWindowsCteSql`, which states the window with `ASSET_WINDOW_SECONDS_SQL` over the module's own
+ * `learned` CTE, so an RTU's window is its assets' window and no reader restates a number.
+ */
+describe("F3.16 — the RTU window is the asset window", () => {
+  it("rtuWindowsCteSql builds rtu_windows from ASSET_WINDOW_SECONDS_SQL and the shared learned CTE", () => {
+    const source = code(CADENCE);
+    expect(source).toMatch(/export function rtuWindowsCteSql\(scopeRtuIdsSql: string\): string/);
+    expect(source).toMatch(/rtu_windows AS \(\s*SELECT r\.id AS rtu_id, \$\{ASSET_WINDOW_SECONDS_SQL\} AS window_seconds/);
+    // One `learned AS (` body in the module: the asset and RTU forms share it.
+    expect((source.match(/learned AS \(/g) ?? []).length).toBe(1);
+  });
+});
+
+const RTU_WINDOW_READERS: ReadonlyArray<{ readonly file: string; readonly count: number }> = [
+  // `F3.16` A5 — the admin device-health list.
+  { file: "apps/api/src/device-health/device-health.reads.ts", count: 1 },
+  // `F3.16` A5 — the `devices { monitored, offline }` block of the status read.
+  { file: "apps/api/src/system-status/system-status.service.ts", count: 1 },
+];
+
+describe.each(RTU_WINDOW_READERS)("F3.16 — $file builds RTU windows from telemetry-cadence.ts", ({ file, count }) => {
+  const path = join(repoRoot, file);
+
+  it("restates no interval 'N seconds' literal", () => {
+    expect(code(path).match(/interval\s+'\d+\s+seconds'/gi) ?? []).toEqual([]);
+  });
+
+  it(`builds rtu_windows exactly ${count} time(s), never by hand`, () => {
+    expect((code(path).match(/rtuWindowsCteSql\(/g) ?? []).length).toBe(count);
+    expect(code(path)).not.toMatch(/rtu_windows AS \(/);
+  });
+
+  it("imports it from telemetry-cadence", () => {
+    expect(code(path)).toMatch(/from "\.\.\/telemetry\/telemetry-cadence"/);
+  });
+
+  it("judges the state with rtuStateAt from device-state.ts, not in SQL", () => {
+    expect(code(path)).toMatch(/rtuStateAt\(/);
+    expect(code(path)).not.toMatch(/STALE_BAND_FRACTION/);
+  });
+});
+
 /** Every JS reader of `telemetryFreshnessAt`: each call passes the asset's window as a third argument. */
 const JS_READERS = [
   "apps/api/src/dashboard/dashboard.service.ts",

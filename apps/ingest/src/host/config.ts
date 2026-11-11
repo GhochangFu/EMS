@@ -126,6 +126,18 @@ export type HostConfig = {
   readonly uplinkMaxSamplesPerS: number;
   /** `server.maxConnections` on the uplink listener (`INGEST_UPLINK_MAX_CONNECTIONS`, L2). Default 256, 1–10 000. */
   readonly uplinkMaxConnections: number;
+  /**
+   * How often the device-health heartbeat and counters are flushed
+   * (`INGEST_HEALTH_FLUSH_MS`, `F3.16`, ADR 0127 decision 16). Default 10 s;
+   * 1 s to 15 s, so at least two beats land inside the API's 30 s
+   * `INGEST_HOST_STALE_SECONDS` and one late flush never reads as a dead host.
+   */
+  readonly healthFlushMs: number;
+  /**
+   * This host's row in `bms.ingest_hosts` (`INGEST_HOST_KEY`, ADR 0127
+   * decision 10). Default `cloud`; `[a-z0-9-]{1,64}` after trimming.
+   */
+  readonly hostKey: string;
 };
 
 /**
@@ -144,6 +156,11 @@ export const DEFAULT_BUFFER_MAX_AGE_MS: number = 3_600_000;
 export const DEFAULT_BUFFER_MAX_BYTES: number = 268_435_456;
 export const DEFAULT_UPLINK_MAX_SAMPLES_PER_S: number = 2_000;
 export const DEFAULT_UPLINK_MAX_CONNECTIONS: number = 256;
+export const DEFAULT_HEALTH_FLUSH_MS: number = 10_000;
+export const DEFAULT_HOST_KEY: string = "cloud";
+const MIN_HEALTH_FLUSH_MS = 1_000;
+const MAX_HEALTH_FLUSH_MS = 15_000;
+const HOST_KEY_PATTERN = /^[a-z0-9-]{1,64}$/;
 /** One full uplink batch (`UPLINK_MAX_SAMPLES`): a lower rate could never admit one. */
 const MIN_UPLINK_SAMPLES_PER_S = 500;
 
@@ -287,6 +304,29 @@ function readUplinkRate(raw: string | undefined): number {
   return value;
 }
 
+/** `INGEST_HEALTH_FLUSH_MS`, bounded at both ends (ADR 0127 decision 16). */
+function readHealthFlushMs(raw: string | undefined): number {
+  const value = positiveInt(raw, DEFAULT_HEALTH_FLUSH_MS, "INGEST_HEALTH_FLUSH_MS", MAX_HEALTH_FLUSH_MS);
+  if (value < MIN_HEALTH_FLUSH_MS) {
+    throw new Error(
+      `INGEST_HEALTH_FLUSH_MS must be between ${MIN_HEALTH_FLUSH_MS} and ${MAX_HEALTH_FLUSH_MS}, got "${raw ?? ""}"`,
+    );
+  }
+  return value;
+}
+
+/** `INGEST_HOST_KEY`: trimmed, defaulted, and refused unless `[a-z0-9-]{1,64}` (the `varchar(64)` key). */
+function readHostKey(raw: string | undefined): string {
+  const trimmed = raw === undefined ? "" : raw.trim();
+  if (trimmed === "") {
+    return DEFAULT_HOST_KEY;
+  }
+  if (!HOST_KEY_PATTERN.test(trimmed)) {
+    throw new Error(`INGEST_HOST_KEY must be 1 to 64 of a-z, 0-9 and '-', got ${JSON.stringify(trimmed)}`);
+  }
+  return trimmed;
+}
+
 /**
  * The plain-MQTT broker allow-list (ADR 0114 decision 1). Exported so the edge
  * entry point reads the variable through this module too (`E7.2` plan M16, P6):
@@ -389,5 +429,7 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
       "INGEST_UPLINK_MAX_CONNECTIONS",
       10_000,
     ),
+    healthFlushMs: readHealthFlushMs(env.INGEST_HEALTH_FLUSH_MS),
+    hostKey: readHostKey(env.INGEST_HOST_KEY),
   };
 }

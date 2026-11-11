@@ -22,6 +22,7 @@ function body(
     status: states.includes("degraded") ? "degraded" : "operational",
     components,
     dataQuality: { percent: 100, freshAssets: 1, streamingAssets: 1, windowSeconds: 25 },
+    devices: { monitored: 0, offline: 0 },
     checkedAt: "2026-09-25T00:00:00.000Z",
   };
 }
@@ -67,9 +68,27 @@ export function summaryLineListsDegradedLabelsInOrder(): void {
 }
 
 export function titleLineJoinsLabelAndStateWithSpacedUnderscore(): void {
-  const line = titleLine(body(["ok", "not_configured", "degraded"]));
+  const line = titleLine(body(["ok", "not_configured", "not_monitored"]));
   assert(
-    line === "Job queue: ok · Object storage: not configured · Field data: degraded",
+    line === "Job queue: ok · Object storage: not configured · Field data: not monitored",
     `expected the middle-dot-joined title with underscore turned to space, got ${JSON.stringify(line)}`,
+  );
+}
+
+/**
+ * `F3.16` / ADR 0127 decision 21 — `field_data` follows the ingest host's
+ * heartbeat, so its title line says what a degraded state now means and what
+ * an ok one is measured against.
+ */
+export function titleLineNamesTheIngestHeartbeatForFieldData(): void {
+  const degraded = titleLine(body(["ok", "ok", "degraded"]));
+  assert(
+    degraded === "Job queue: ok · Object storage: ok · Field data: degraded (ingest host not reporting)",
+    `expected a degraded field_data to name the silent ingest host, got ${JSON.stringify(degraded)}`,
+  );
+  const ok = titleLine(body(["ok", "ok", "ok"]));
+  assert(
+    ok === "Job queue: ok · Object storage: ok · Field data: ok (ingest heartbeat fresh)",
+    `expected an ok field_data to name the fresh heartbeat, got ${JSON.stringify(ok)}`,
   );
 }

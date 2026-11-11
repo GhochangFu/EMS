@@ -4,7 +4,7 @@ import { z } from "zod";
  * `F3.30` — the system status read (ADR 0075 decisions 3, 4).
  *
  * `GET /api/v1/system/status`. Three components, one verdict, one data
- * quality figure — nothing else. This is a plain-object encoding: no
+ * quality figure and, since `F3.16`, the device-offline counts — nothing else. This is a plain-object encoding: no
  * `z.intersection`, no `.readonly()`, because the API builds a mutable
  * object and no `A & B` shape exists here (ADR 0030 Amendment 1 does not
  * bind a plain field set).
@@ -17,7 +17,7 @@ import { z } from "zod";
  * |---|---|---|---|---|
  * | `queue` | `QueueHealthService.read()` | connected, heartbeat fresh | disconnected, or `heartbeatStale` | `not_configured` — no `REDIS_URL` |
  * | `storage` | `StorageHealthService.read()` | reachable | configured, unreachable | `not_configured` |
- * | `field_data` | mqtt-sourced assets in scope | at least one fresh | mqtt assets exist, none fresh | `not_monitored` — no mqtt asset in scope |
+ * | `field_data` | the ingest host heartbeat (`bms.ingest_hosts`, `F3.16` / ADR 0127 decision 21) | heartbeat fresh (≤ 30 s) | heartbeat stale or no host row | `not_monitored` — no mqtt asset in scope |
  *
  * `not_configured` and `not_monitored` never degrade `status` — the same
  * rule `/health` uses for an unconfigured queue.
@@ -63,6 +63,15 @@ export const systemDataQualitySchema = z.object({
 });
 
 /**
+ * `F3.16` / ADR 0127 decision 19 — the "N devices offline" KPI: monitored RTUs
+ * in the caller's scope, and how many of them are Offline. Required.
+ */
+export const systemDevicesSchema = z.object({
+  monitored: z.number().int().nonnegative(),
+  offline: z.number().int().nonnegative(),
+});
+
+/**
  * `GET /api/v1/system/status`. `status` is `operational` when no component
  * is `degraded`, otherwise `degraded` (ADR 0075 decision 3) — `checkedAt` is
  * when the read ran, not a cache instant.
@@ -75,5 +84,6 @@ export const systemStatusResponseSchema = z.object({
   status: z.enum(["operational", "degraded"]),
   components: z.array(systemComponentSchema),
   dataQuality: systemDataQualitySchema,
+  devices: systemDevicesSchema,
   checkedAt: z.string(),
 });

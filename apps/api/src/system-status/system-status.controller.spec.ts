@@ -45,6 +45,7 @@ const BODY: SystemStatusResponse = {
     { key: "field_data", state: "not_monitored" },
   ],
   dataQuality: { percent: null, freshAssets: 0, streamingAssets: 0, windowSeconds: 25 },
+  devices: { monitored: 0, offline: 0 },
   checkedAt: "2026-09-25T00:00:00.000Z",
 };
 

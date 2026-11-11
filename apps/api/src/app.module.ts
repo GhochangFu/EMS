@@ -13,6 +13,7 @@ import { CopilotModule } from "./copilot/copilot.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { DashboardBuilderModule } from "./dashboard-builder/dashboard-builder.module";
 import { DatabaseModule } from "./database/database.module";
+import { DeviceHealthModule } from "./device-health/device-health.module";
 import { AssetHealthModule } from "./asset-health/asset-health.module";
 import { HealthModule } from "./health/health.module";
 import { pinoHttpOptions } from "./logger.options";
@@ -48,6 +49,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     StorageModule,
     HealthModule,
     SystemStatusModule,
+    DeviceHealthModule,
     AuthModule,
     AdminModule,
     // `F4.341` / ADR 0118 — the portal and user appearance routes, and the public sign-in read.

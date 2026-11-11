@@ -10,6 +10,7 @@ import {
   summaryLineAllOperational,
   summaryLineListsDegradedLabelsInOrder,
   titleLineJoinsLabelAndStateWithSpacedUnderscore,
+  titleLineNamesTheIngestHeartbeatForFieldData,
 } from "./system-status-bands.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/alarm-severity.test.ts` (ADR 0014). */
@@ -48,5 +49,9 @@ describe("system-status-bands", () => {
 
   it("joins label and state with a middle dot, underscore turned to space", () => {
     titleLineJoinsLabelAndStateWithSpacedUnderscore();
+  });
+
+  it("names the ingest heartbeat in the field-data title (F3.16)", () => {
+    titleLineNamesTheIngestHeartbeatForFieldData();
   });
 });

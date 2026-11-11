@@ -37,6 +37,13 @@ import { SystemStatusService } from "./system-status.service";
  * Each case adds only its own samples. Queue and storage are fakes with fixed
  * bodies; both read `ok` unless the case says otherwise, so the verdict turns
  * on `field_data` alone.
+ *
+ * **The ingest host** (`F3.16`, ADR 0127 decision 21). The scene inserts its
+ * own `bms.ingest_hosts` row (`f330ss-<run>`, beating at `now()`, healthy for
+ * an hour) and a `bms.rtu_health` row that has the mqtt RTU monitored by it
+ * for an hour and never heard. So `field_data` follows that host, never any
+ * other host row the database holds, and `devices` reads `{ 1, 1 }` for a
+ * scope holding A. A case moves the beat with {@link setHostBeat}.
  */
 
 function assert(condition: boolean, message: string): void {
@@ -49,6 +56,8 @@ type Tx = Parameters<Parameters<BmsDb["transaction"]>[0]>[0];
 
 interface Scene {
   readonly tx: Tx;
+  readonly hostKey: string;
+  readonly mqttRtuId: string;
   readonly a: string;
   readonly b: string;
   readonly c: string;
@@ -116,7 +125,23 @@ async function buildScene(tx: Tx): Promise<Scene> {
     .update(assets)
     .set({ rtuId: simRtu?.id as string })
     .where(inArray(assets.id, [b]));
-  return { tx, a, b, c };
+  const hostKey = `f330ss-${run}`;
+  await tx.execute(sql`
+    INSERT INTO bms.ingest_hosts (host_key, started_at, healthy_since, last_beat_at)
+    VALUES (${hostKey}, now() - interval '1 hour', now() - interval '1 hour', now())
+  `);
+  await tx.execute(sql`
+    INSERT INTO bms.rtu_health (rtu_id, organization_id, host_key, monitored_since)
+    VALUES (${mqttRtu?.id as string}, ${location.organizationId}, ${hostKey}, now() - interval '1 hour')
+  `);
+  return { tx, hostKey, mqttRtuId: mqttRtu?.id as string, a, b, c };
+}
+
+/** Moves the scene host's last beat to `ageSeconds` before the transaction's `now()`. */
+async function setHostBeat(scene: Scene, ageSeconds: number): Promise<void> {
+  await scene.tx.execute(sql`
+    UPDATE bms.ingest_hosts SET last_beat_at = now() - make_interval(secs => ${ageSeconds}) WHERE host_key = ${scene.hostKey}
+  `);
 }
 
 /** Inserts one sample `ageSeconds` old, relative to the transaction's `now()` — `temp_c` unless a key is given. */
@@ -139,7 +164,12 @@ function fieldData(response: SystemStatusResponse): string | undefined {
 }
 
 function summary(response: SystemStatusResponse): string {
-  return JSON.stringify({ status: response.status, components: response.components, dq: response.dataQuality });
+  return JSON.stringify({
+    status: response.status,
+    components: response.components,
+    dq: response.dataQuality,
+    devices: response.devices,
+  });
 }
 
 /** Case 1 — A (mqtt) fresh, B (simulator) silent, C not streaming. */
@@ -160,17 +190,27 @@ export async function assertOneFreshOfTwoStreaming(db: BmsDb): Promise<void> {
 }
 
 /**
- * Case 2 — A's only sample is 200 s old, beyond the 150 s window of a 60 s device
- * (ADR 0075 Amendment 1): no mqtt asset is reporting, so field data is
- * degraded.
+ * Case 2 — `F3.16` (ADR 0127 decision 21): the ingest host last beat 31 s ago,
+ * past the 30 s stale bound, so `field_data` is degraded although A's sample
+ * is fresh; with the host's row gone (`never`) it is degraded too.
  */
-export async function assertStaleMqttIsDegraded(db: BmsDb): Promise<void> {
+export async function assertStaleHostIsDegraded(db: BmsDb): Promise<void> {
   await withScene(db, async (scene) => {
-    await addSample(scene, scene.a, 200);
-    const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.a, scene.b, scene.c]);
+    await addSample(scene, scene.a, 5);
+    await setHostBeat(scene, 30);
+    const atBound = await serviceOver(scene.tx as unknown as BmsDb).read([scene.a, scene.b, scene.c]);
+    await setHostBeat(scene, 31);
+    const stale = await serviceOver(scene.tx as unknown as BmsDb).read([scene.a, scene.b, scene.c]);
+    await scene.tx.execute(sql`DELETE FROM bms.ingest_hosts WHERE host_key = ${scene.hostKey}`);
+    const absent = await serviceOver(scene.tx as unknown as BmsDb).read([scene.a, scene.b, scene.c]);
     assert(
-      r.dataQuality.freshAssets === 0 && fieldData(r) === "degraded" && r.status === "degraded",
-      `expected fresh 0, field_data degraded, status degraded; got ${summary(r)}`,
+      fieldData(atBound) === "ok" &&
+        stale.dataQuality.freshAssets === 1 &&
+        fieldData(stale) === "degraded" &&
+        stale.status === "degraded" &&
+        fieldData(absent) === "degraded",
+      `expected ok at 30 s, degraded at 31 s with A fresh, degraded with no host row; got ` +
+        `${summary(atBound)} / ${summary(stale)} / ${summary(absent)}`,
     );
   });
 }
@@ -180,9 +220,14 @@ export async function assertNoMqttInScopeIsNotMonitored(db: BmsDb): Promise<void
   await withScene(db, async (scene) => {
     await addSample(scene, scene.b, 5);
     const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.b]);
+    // F3.16: B's simulator RTU is not monitored and A's monitored RTU is out of scope, so no device counts.
     assert(
-      fieldData(r) === "not_monitored" && r.dataQuality.percent === 100 && r.status === "operational",
-      `expected field_data not_monitored, 100 %, operational; got ${summary(r)}`,
+      fieldData(r) === "not_monitored" &&
+        r.dataQuality.percent === 100 &&
+        r.status === "operational" &&
+        r.devices.monitored === 0 &&
+        r.devices.offline === 0,
+      `expected field_data not_monitored, 100 %, operational, devices 0/0; got ${summary(r)}`,
     );
   });
 }
@@ -249,19 +294,52 @@ export async function assertStaleQueueDegradesTheVerdict(db: BmsDb): Promise<voi
 }
 
 /**
- * Case 7 — A (mqtt) silent, B (simulator) fresh 5 s: half the fleet is fresh,
- * but the fresh half is not mqtt, so `field_data` is degraded. Only the
- * `FILTER (WHERE s.source_type = 'mqtt')` on `mqtt_fresh` keeps B's sample out
- * of the field-data count (code review 2).
+ * Case 7 — `F3.16` (ADR 0127 decision 21): the host beats, A (mqtt) is silent
+ * and B (simulator) is fresh. Silent devices no longer degrade `field_data`:
+ * it reads ok, data quality is 50 %, and the silent monitored RTU is the one
+ * offline device (never heard, monitored for an hour, window 150 s).
  */
-export async function assertFreshSimulatorDoesNotMakeFieldDataOk(db: BmsDb): Promise<void> {
+export async function assertFreshHostWithSilentDevicesIsOk(db: BmsDb): Promise<void> {
   await withScene(db, async (scene) => {
     await addSample(scene, scene.b, 5);
     const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.a, scene.b, scene.c]);
     assert(
-      r.dataQuality.percent === 50 && fieldData(r) === "degraded" && r.status === "degraded",
-      `expected 50 %, field_data degraded, status degraded; got ${summary(r)}`,
+      r.dataQuality.percent === 50 &&
+        fieldData(r) === "ok" &&
+        r.status === "operational" &&
+        r.devices.monitored === 1 &&
+        r.devices.offline === 1,
+      `expected 50 %, field_data ok, operational, devices 1/1; got ${summary(r)}`,
     );
+  });
+}
+
+/**
+ * Case 7b — `F3.16`: the monitored RTU heard 60 s ago is Online in its 150 s
+ * window (60 <= 0.6 x 150), so `devices` reads 1 monitored, 0 offline.
+ */
+export async function assertRecentlyHeardRtuIsNotOffline(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    await scene.tx.execute(sql`
+      UPDATE bms.rtu_health SET last_seen_at = now() - make_interval(secs => 60) WHERE rtu_id = ${scene.mqttRtuId}
+    `);
+    const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.a]);
+    assert(
+      r.devices.monitored === 1 && r.devices.offline === 0,
+      `expected devices 1/0; got ${summary(r)}`,
+    );
+  });
+}
+
+/**
+ * Case 7c — `F3.16`: with its host's row gone the monitored RTU is Not monitored under
+ * `rtuStateAt`, so the one state rule makes it count in neither `monitored` nor `offline`.
+ */
+export async function assertAMissingHostMonitorsNothing(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    await scene.tx.execute(sql`DELETE FROM bms.ingest_hosts WHERE host_key = ${scene.hostKey}`);
+    const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.a]);
+    assert(r.devices.monitored === 0 && r.devices.offline === 0, `expected devices 0/0; got ${summary(r)}`);
   });
 }
 

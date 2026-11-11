@@ -237,6 +237,8 @@ export const rtus = bmsSchema.table("rtus", {
   // Block body so the text slices still end at the first `});`.
   return {
     idLocationKey: unique("rtus_id_location_key").on(t.id, t.locationId),
+    // Only the target of the F3.16 composite keys (migration 0149); never refuses a row.
+    idOrganizationKey: unique("rtus_id_organization_id_key").on(t.id, t.organizationId),
     locationOrganizationFk: foreignKey({
       name: "rtus_location_id_organization_id_fkey",
       columns: [t.locationId, t.organizationId],

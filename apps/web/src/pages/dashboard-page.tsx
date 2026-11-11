@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 
 import { fetchLocationKpis } from "../api/locations";
 import { useExecutiveDashboard } from "../hooks/use-executive-dashboard";
+import { useSystemStatus } from "../hooks/use-system-status";
 import { kpiRibbonHints } from "../lib/kpi-ribbon";
 import { pueTileProps } from "../lib/pue-tile";
 import {
@@ -100,6 +101,14 @@ export function DashboardPage({ user }: DashboardPageProps) {
         ? "empty"
         : "ready";
 
+  /**
+   * `F3.16` / ADR 0127 decision 19 — "Offline devices", from the footer's own
+   * `["system","status"]` poll (one request for both). Hidden while it has not
+   * answered and when no monitored RTU is in scope (a simulator-only estate).
+   */
+  const devices = useSystemStatus().data?.devices;
+  const showDevices = devices !== undefined && devices.monitored > 0;
+
   const fmtKw = (v: number | null) =>
     v === null || Number.isNaN(v) ? null : v.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
@@ -133,7 +142,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
           subtitle="Choose an organization or a site · live KPIs · asset health · load trend"
         />
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className={`grid gap-3 sm:grid-cols-2 ${showDevices ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
           <KpiTile
             label="Total load"
             status={kpiStatus}
@@ -184,6 +193,15 @@ export function DashboardPage({ user }: DashboardPageProps) {
             icon={WidgetIconGlyph("gauge")}
             stale={stale && pueProps.status === "ready"}
           />
+          {showDevices ? (
+            <KpiTile
+              label="Offline devices"
+              status="ready"
+              value={`${devices.offline} of ${devices.monitored}`}
+              hint="Monitored RTUs past their offline window"
+              tone={devices.offline > 0 ? "warning" : "default"}
+            />
+          ) : null}
         </div>
 
         {/*

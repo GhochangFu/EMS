@@ -1,4 +1,5 @@
 import {
+  type DropReason,
   MAX_NOTIFY_LIVE_WINDOW_MS,
   MIN_NOTIFY_LIVE_WINDOW_MS,
   type QualityPolicy,
@@ -196,10 +197,158 @@ export function droppedCount(counters: SampleCounters): number {
  */
 const KEY_SEPARATOR = "\u0000";
 
+/**
+ * The first drop of one reason (`F3.16`, ADR 0127 decision 8). `assetId` and
+ * `pointKey` are set when a point existed (`badQuality`, `outOfRange`, a
+ * post-scale `nonFinite`); `sourceKey` always, and `deviceKey` unless the
+ * sample named none. The two device-supplied strings are cut and cleaned
+ * ({@link cleanLabel}) before they are stored here.
+ */
+export type DropFirst = {
+  readonly assetId: string | null;
+  readonly pointKey: string | null;
+  readonly sourceKey: string | null;
+  readonly deviceKey: string | null;
+};
+
+/** A count, with its first drop and that drop's receive time. */
+export type HourTally = {
+  readonly count: number;
+  readonly first: DropFirst;
+  readonly firstAt: Date;
+};
+
+/**
+ * One reason's count in a batch, with its first drop and that drop's receive
+ * time. `hours` splits it by the whole UTC hour of each drop's own receive
+ * time, in first-drop order (a replayed batch can cross an hour): their counts
+ * sum to `count`, each names the first drop in its hour, and `hours[0]` is the
+ * tally's own first.
+ */
+export type DropTally = HourTally & { readonly hours: readonly HourTally[] };
+
+/** Per reason; a reason with no drop has no key. */
+export type DropTallies = Readonly<Partial<Record<DropReason, DropTally>>>;
+
+/**
+ * One bound device's activity in a batch (ADR 0127 decision 9).
+ *
+ * `lastReceivedAt` is the newest receive time of any of its samples, written or
+ * dropped. `skew` is the newest sample with a storable device time, or `null`
+ * when none had one; the accumulator turns it into seconds.
+ */
+export type DeviceActivity = {
+  readonly lastReceivedAt: Date;
+  readonly skew: { readonly deviceTime: Date; readonly receivedAt: Date } | null;
+  readonly drops: DropTallies;
+};
+
 export type ResolveResult = {
   readonly rows: readonly PointValueRow[];
+  /** Unchanged by `F3.16`: the attribution below sits beside it, never inside it. */
   readonly counters: SampleCounters;
+  /** The batch's first drop per reason, for the `samples discarded` log line. */
+  readonly firstDropped: Readonly<Partial<Record<DropReason, DropFirst>>>;
+  /** `deviceKey →` activity, for every device the index binds that sent a sample. */
+  readonly devices: ReadonlyMap<string, DeviceActivity>;
+  /**
+   * Drops with no bound device (ADR 0127 decision 17): `unknownDevice`,
+   * `ambiguousDevice`, and a raw `nonFinite` from a device the index does not
+   * bind — counted per endpoint rather than per RTU.
+   */
+  readonly unattributed: DropTallies;
 };
+
+/** The longest device-supplied label kept: migration `0149`'s `varchar(128)`. */
+export const MAX_LABEL_CHARS = 128;
+
+/** C0 and C1 control characters, DEL included, and Unicode format characters (`\p{Cf}`: bidi overrides, zero-width, BOM) so a key cannot spoof another (security review L2). */
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\p{Cf}]/gu;
+
+/**
+ * A device-supplied string made safe to log and store (ADR 0127 decision 8):
+ * control characters stripped, then cut to {@link MAX_LABEL_CHARS} code
+ * points, so the cut never splits a surrogate pair. Idempotent.
+ */
+export function cleanLabel(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const stripped = value.replace(CONTROL_CHARS, "");
+  const points = Array.from(stripped);
+  return points.length <= MAX_LABEL_CHARS ? stripped : points.slice(0, MAX_LABEL_CHARS).join("");
+}
+
+type MutableHour = { count: number; first: DropFirst; firstAt: Date };
+type MutableTally = MutableHour & { hours: MutableHour[] };
+
+const HOUR_MS = 3_600_000;
+const hourIndex = (at: Date): number => Math.floor(at.getTime() / HOUR_MS);
+type MutableTallies = Partial<Record<DropReason, MutableTally>>;
+type MutableActivity = {
+  lastReceivedAt: Date;
+  skew: { deviceTime: Date; receivedAt: Date } | null;
+  drops: MutableTallies;
+};
+
+/** The attribution `resolveSamples` builds beside its counters. */
+class Attribution {
+  readonly firstDropped: Partial<Record<DropReason, DropFirst>> = {};
+  readonly devices = new Map<string, MutableActivity>();
+  readonly unattributed: MutableTallies = {};
+
+  /** A sample from a bound device reached the normaliser: last-seen and skew. */
+  seen(deviceKey: string, receivedAt: Date, at: Date | undefined): MutableActivity {
+    let activity = this.devices.get(deviceKey);
+    if (activity === undefined) {
+      activity = { lastReceivedAt: receivedAt, skew: null, drops: {} };
+      this.devices.set(deviceKey, activity);
+    } else if (receivedAt.getTime() > activity.lastReceivedAt.getTime()) {
+      activity.lastReceivedAt = receivedAt;
+    }
+    if (
+      at instanceof Date &&
+      isStorableTime(at.getTime()) &&
+      (activity.skew === null || receivedAt.getTime() >= activity.skew.receivedAt.getTime())
+    ) {
+      activity.skew = { deviceTime: at, receivedAt };
+    }
+    return activity;
+  }
+
+  /** One refused write, to a device's tallies or (`activity` undefined) to `unattributed`. */
+  drop(
+    reason: DropReason,
+    activity: MutableActivity | undefined,
+    receivedAt: Date,
+    first: { assetId: string | null; pointKey: string | null; sourceKey: string; deviceKey: string | undefined },
+  ): void {
+    const tallies = activity === undefined ? this.unattributed : activity.drops;
+    const name = (): DropFirst => ({
+      assetId: first.assetId,
+      pointKey: first.pointKey,
+      sourceKey: cleanLabel(first.sourceKey),
+      deviceKey: cleanLabel(first.deviceKey),
+    });
+    const existing = tallies[reason];
+    if (existing !== undefined) {
+      existing.count += 1;
+      const hour = hourIndex(receivedAt);
+      const inHour = existing.hours.find((h) => hourIndex(h.firstAt) === hour);
+      if (inHour !== undefined) {
+        inHour.count += 1;
+      } else {
+        existing.hours.push({ count: 1, first: name(), firstAt: receivedAt });
+      }
+      return;
+    }
+    const named = name();
+    tallies[reason] = { count: 1, first: named, firstAt: receivedAt, hours: [{ count: 1, first: named, firstAt: receivedAt }] };
+    if (this.firstDropped[reason] === undefined) {
+      this.firstDropped[reason] = named;
+    }
+  }
+}
 
 /**
  * Applies the target's scale rule to one raw value (ADR 0056 decision 4, step 2).
@@ -350,27 +499,44 @@ export function resolveSamples(
   // second silently updates the first. It preserves nothing, order-dependently.
   const deduped = new Map<string, PointValueRow>();
 
+  // `F3.16` (ADR 0127 decisions 8, 9): who each drop belongs to, beside the
+  // counters and never inside them. Every `counters.<drop> += 1` below has its
+  // `attribution.drop` next to it, so the two sums agree by construction.
+  const attribution = new Attribution();
+
   for (const { sample, receivedAt } of samples) {
+    // Resolved before the raw check so a raw non-finite is still attributed to
+    // its device. The counters' order of tests is unchanged.
+    const deviceKey = sample.deviceKey ?? soleDeviceKey;
+    const bySourceKey = deviceKey === undefined ? undefined : index.get(deviceKey);
+    const activity =
+      deviceKey === undefined || bySourceKey === undefined
+        ? undefined
+        : attribution.seen(deviceKey, receivedAt, sample.at);
+    const unnamed = { assetId: null, pointKey: null, sourceKey: sample.sourceKey, deviceKey };
+
     if (typeof sample.value !== "number" || !Number.isFinite(sample.value)) {
       counters.nonFinite += 1;
+      attribution.drop("nonFinite", activity, receivedAt, unnamed);
       continue;
     }
 
-    const deviceKey = sample.deviceKey ?? soleDeviceKey;
     if (deviceKey === undefined) {
       counters.ambiguousDevice += 1;
+      attribution.drop("ambiguousDevice", undefined, receivedAt, unnamed);
       continue;
     }
 
-    const bySourceKey = index.get(deviceKey);
     if (bySourceKey === undefined) {
       counters.unknownDevice += 1;
+      attribution.drop("unknownDevice", undefined, receivedAt, unnamed);
       continue;
     }
 
     const targets = bySourceKey.get(sample.sourceKey);
     if (targets === undefined || targets.length === 0) {
       counters.unmappedSourceKey += 1;
+      attribution.drop("unmappedSourceKey", activity, receivedAt, unnamed);
       continue;
     }
 
@@ -401,6 +567,7 @@ export function resolveSamples(
       // 1. Quality policy. A null policy is `discard_bad` — today's rule.
       if (sample.good === false && target.qualityPolicy !== "accept_bad") {
         counters.badQuality += 1;
+        attribution.drop("badQuality", activity, receivedAt, { ...unnamed, assetId: target.assetId, pointKey: target.pointKey });
         continue;
       }
 
@@ -411,12 +578,14 @@ export function resolveSamples(
       //    stored rather than on what arrived.
       if (!Number.isFinite(value)) {
         counters.nonFinite += 1;
+        attribution.drop("nonFinite", activity, receivedAt, { ...unnamed, assetId: target.assetId, pointKey: target.pointKey });
         continue;
       }
 
       // 4. Range, on the scaled value.
       if (!isInEngineeringRange(value, target)) {
         counters.outOfRange += 1;
+        attribution.drop("outOfRange", activity, receivedAt, { ...unnamed, assetId: target.assetId, pointKey: target.pointKey });
         continue;
       }
 
@@ -440,7 +609,13 @@ export function resolveSamples(
     }
   }
 
-  return { rows: [...deduped.values()], counters };
+  return {
+    rows: [...deduped.values()],
+    counters,
+    firstDropped: attribution.firstDropped,
+    devices: attribution.devices,
+    unattributed: attribution.unattributed,
+  };
 }
 
 /** The slice of a `pg` client this module needs; a fake satisfies it in tests. */

@@ -7,6 +7,7 @@ import {
 } from "@bms/shared/ingest";
 
 import type { EdgeServed } from "./binding-targets.js";
+import type { HealthRecord } from "./device-health.js";
 import type { HostLogger } from "./logger.js";
 import {
   droppedCount,
@@ -127,6 +128,13 @@ export type UplinkReceiverDeps = {
   readonly connect: () => Promise<ReceiverClient>;
   readonly liveWindowMs: number;
   readonly logger: HostLogger;
+  /**
+   * `F3.16` (ADR 0127 decisions 9, 18): called once per batch, **after** the
+   * write committed — a failed batch stays on the edge's disk and is retried,
+   * so recording it at the first attempt would count it twice. Required: an
+   * optional hook here would be a path that silently records nothing.
+   */
+  readonly recordHealth: (record: HealthRecord) => void;
   /** Defaults to `UPLINK_WRITE_TIMEOUT_MS`. */
   readonly writeTimeoutMs?: number;
 };
@@ -196,7 +204,8 @@ export function createUplinkReceiver(deps: UplinkReceiverDeps): ReceiveBatch {
     const now = deps.now();
     const served = deps.edgeServed().get(gateway.id);
     const screened = screenBatch(batch, served?.deviceKeys ?? NO_DEVICES, now);
-    const { rows, counters } = resolveSamples(screened.samples, served?.pointIndex ?? NO_POINTS, undefined);
+    const resolved = resolveSamples(screened.samples, served?.pointIndex ?? NO_POINTS, undefined);
+    const { rows, counters } = resolved;
     const unresolved = droppedCount(counters);
 
     const client = await deps.connect();
@@ -221,6 +230,13 @@ export function createUplinkReceiver(deps: UplinkReceiverDeps): ReceiveBatch {
       clearTimeout(timer);
     }
     client.release();
+    // Committed: last-seen and drops for the gateway's RTUs. The endpoint key
+    // is the gateway's id, never its code or a device key (ADR 0123 logs).
+    deps.recordHealth({
+      endpointKey: `edge:${gateway.id}`,
+      rtuIdOf: (deviceKey) => served?.rtuIdByDeviceKey.get(deviceKey),
+      result: resolved,
+    });
 
     const rejected = { ...screened.rejected, unresolved };
     if (rejected.foreignDevice + rejected.futureRx + rejected.tooOld + rejected.unresolved > 0) {

@@ -5,6 +5,7 @@ import {
   runCredentialKeyShortPreviousRefusedTests,
   runCredentialKeyUnsetTests,
   runCredentialKeyVersionZeroRefusedTests,
+  runDeviceHealthConfigTests,
   runHostConfigTests,
   runMqttPlaintextHostsConfigTests,
   runNotifyLiveWindowConfigTests,
@@ -48,5 +49,9 @@ describe("host config", () => {
 
   it("bounds the uplink sample rate and connection count (security review M2, L2)", () => {
     runUplinkLimitsConfigTests();
+  });
+
+  it("bounds INGEST_HEALTH_FLUSH_MS and validates INGEST_HOST_KEY (F3.16, ADR 0127 decision 16)", () => {
+    runDeviceHealthConfigTests();
   });
 });

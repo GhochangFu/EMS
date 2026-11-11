@@ -89,6 +89,12 @@ export const FORCED_TABLES = [
   // `tests/e7.2-edge-gateways-schema.integration.test.ts` holds the
   // non-vacuous half (organization B neither reads nor writes A's gateway).
   "edge_gateways",
+  // `F3.16` (ADR 0127 decision 7, migration `0149`). Strict tenant tables. The
+  // count-0 check below is VACUOUS for them (the seed writes no health row);
+  // `tests/f3.16-device-health-schema.integration.test.ts` holds the non-vacuous
+  // half (organization B reads none of A's rows, the tenant pool cannot write).
+  "rtu_health",
+  "rtu_drop_hours",
 ] as const;
 
 function assert(condition: boolean, message: string): void {

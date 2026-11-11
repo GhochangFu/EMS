@@ -40,6 +40,7 @@ const validBody = {
     streamingAssets: 150,
     windowSeconds: 25,
   },
+  devices: { monitored: 12, offline: 1 },
   checkedAt: "2026-09-25T00:00:00.000Z",
 };
 
@@ -93,4 +94,12 @@ export function runUnknownKeyRejectedTest(): void {
  */
 export function runExtraTopLevelKeyToleratedTest(): void {
   expectAccepts({ ...validBody, futureField: "anything" }, "an extra top-level key");
+}
+
+/** `F3.16` / ADR 0127 decision 19 — `devices` is required, not optional. */
+export function runDevicesRequiredTest(): void {
+  const { devices: _devices, ...withoutDevices } = validBody;
+  expectRejects(withoutDevices, "a body without devices");
+  expectRejects({ ...validBody, devices: { monitored: 1 } }, "devices without offline");
+  expectRejects({ ...validBody, devices: { monitored: -1, offline: 0 } }, "a negative count");
 }

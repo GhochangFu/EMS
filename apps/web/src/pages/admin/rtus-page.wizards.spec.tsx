@@ -9,6 +9,7 @@ import { catalogEntry } from "@bms/shared/copilot";
 import * as locationsApi from "../../api/admin/locations";
 import * as organizationsApi from "../../api/admin/organizations";
 import * as rtusApi from "../../api/admin/rtus";
+import * as deviceHealthApi from "../../api/device-health";
 import * as copilotApi from "../../api/copilot";
 import * as systemStatusApi from "../../api/system-status";
 import { useWizardStore } from "../../stores/wizard-store";
@@ -65,6 +66,8 @@ function stubApi(rows: AdminRtuDto[] = [RTU]): void {
   } as never);
   vi.spyOn(locationsApi, "fetchAdminLocationSummary").mockResolvedValue({} as never);
   vi.spyOn(rtusApi, "fetchAdminRtus").mockResolvedValue({ items: rows } as never);
+  // `F3.16` — the device-health read is not under test here; refused, so the health cells read "—".
+  vi.spyOn(deviceHealthApi, "fetchDeviceHealth").mockRejectedValue(new Error("not under test"));
   vi.spyOn(rtusApi, "createAdminRtu").mockResolvedValue(RTU);
   vi.spyOn(rtusApi, "updateAdminRtu").mockResolvedValue(RTU);
   vi.spyOn(rtusApi, "deactivateAdminRtu").mockResolvedValue({ ...RTU, active: false });

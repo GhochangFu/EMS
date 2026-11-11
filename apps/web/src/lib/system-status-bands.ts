@@ -1,4 +1,4 @@
-import type { SystemComponentKey, SystemStatusResponse } from "@bms/shared";
+import type { SystemComponentKey, SystemComponentState, SystemStatusResponse } from "@bms/shared";
 
 /**
  * `F3.30` (ADR 0075 decision 5) — Good/Fair/Poor bands for `dataQuality.percent`,
@@ -51,12 +51,26 @@ export function summaryLine(body: SystemStatusResponse): string {
 }
 
 /**
- * `"Job queue: ok · Object storage: not configured · Field data: degraded"`
- * — every component, in the contract's fixed order, underscore in the state
- * replaced by a space.
+ * `F3.16` / ADR 0127 decision 21 — `field_data` follows the ingest host's
+ * heartbeat, not device freshness, so its `ok` and `degraded` say what they
+ * were judged against. Silent devices show in the offline-devices count.
+ */
+const FIELD_DATA_REASON: Partial<Record<SystemComponentState, string>> = {
+  ok: "ingest heartbeat fresh",
+  degraded: "ingest host not reporting",
+};
+
+/**
+ * `"Job queue: ok · Object storage: not configured · Field data: degraded
+ * (ingest host not reporting)"` — every component, in the contract's fixed
+ * order, underscore in the state replaced by a space.
  */
 export function titleLine(body: SystemStatusResponse): string {
   return body.components
-    .map((c) => `${SYSTEM_COMPONENT_LABELS[c.key]}: ${c.state.replace(/_/g, " ")}`)
+    .map((c) => {
+      const reason = c.key === "field_data" ? FIELD_DATA_REASON[c.state] : undefined;
+      const state = c.state.replace(/_/g, " ");
+      return `${SYSTEM_COMPONENT_LABELS[c.key]}: ${reason ? `${state} (${reason})` : state}`;
+    })
     .join(" · ");
 }

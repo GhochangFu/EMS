@@ -114,6 +114,7 @@ const STATUS_OK: StatusAnswer = {
     { key: "field_data", state: "ok" },
   ],
   dataQuality: { percent: 100, freshAssets: 2, streamingAssets: 2, windowSeconds: 150 },
+  devices: { monitored: 0, offline: 0 },
   checkedAt: NOW.toISOString(),
   internalNote: "not in the contract",
 };
