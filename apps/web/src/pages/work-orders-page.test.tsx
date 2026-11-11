@@ -3,7 +3,14 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aDropOnReviewOpensTheWizardAndCallsNoReorder,
   aFailedListReadSettles,
+  anAlarmTicketCannotLeaveTheStepWithoutItsFindings,
+  aPlannedTicketResolvesWithoutFindings,
+  choosingResolvedShowsTheRootCauseSection,
+  findingsAlreadySavedAreNotAskedForAgain,
+  findingsAreNotSentWithAnotherStatus,
+  theFindingsAreSentWithTheResolve,
   aRefusedCloseShowsTheSentence,
   aRefusedCreateShowsTheSentence,
   aRefusedReorderShowsTheSentence,
@@ -114,5 +121,41 @@ describe("F4.284 the work-order wizards (ADR 0106 decisions 2, 4)", () => {
 
   it("WO11 the card's where part wraps instead of truncating", async () => {
     await theCardsWherePartWraps();
+  });
+});
+
+describe("E3.1 the status wizard's Root cause section and the drop on Review (ADR 0122 decision 5, ruling P1)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the Root cause section when resolved is chosen, and not for another status", async () => {
+    await choosingResolvedShowsTheRootCauseSection();
+  });
+
+  it("keeps an alarm ticket on the Status step until it has its three findings", async () => {
+    await anAlarmTicketCannotLeaveTheStepWithoutItsFindings();
+  });
+
+  it("sends the findings with the resolve", async () => {
+    await theFindingsAreSentWithTheResolve();
+  });
+
+  it("does not ask again for findings the ticket already holds", async () => {
+    await findingsAlreadySavedAreNotAskedForAgain();
+  });
+
+  it("drops the typed findings when the status moves off resolved", async () => {
+    await findingsAreNotSentWithAnotherStatus();
+  });
+
+  it("lets a planned ticket resolve with no findings", async () => {
+    await aPlannedTicketResolvesWithoutFindings();
+  });
+
+  it("opens the status wizard on a drop on Review and calls no reorder", async () => {
+    await aDropOnReviewOpensTheWizardAndCallsNoReorder();
   });
 });

@@ -1,10 +1,14 @@
 import {
+  workOrderCauseCodesResponseSchema,
+  workOrderDetailSchema,
   workOrderListItemSchema,
   workOrdersListResponseSchema,
 } from "@bms/shared/contracts";
 import type {
   CreateWorkOrderInput as SharedCreateWorkOrderInput,
   UpdateWorkOrderStatusBody,
+  WorkOrderCauseCodesResponse,
+  WorkOrderDetail,
   WorkOrderListItem,
   WorkOrderStatus,
 } from "@bms/shared";
@@ -128,4 +132,26 @@ export async function closeWorkOrder(
     throw new Error(text || `work-order-close ${res.status}`);
   }
   return checkResponse(workOrderListItemSchema, await res.json(), "work-orders/:id/close");
+}
+
+/** GET /api/v1/work-orders/:id — the ticket with its timeline, checklist, findings and alarm snapshot (`E3.1`). */
+export async function fetchWorkOrderDetail(id: string): Promise<WorkOrderDetail> {
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/work-orders/${id}`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new Error(`work-order ${res.status}`);
+  }
+  return checkResponse(workOrderDetailSchema, await res.json(), "work-orders/:id");
+}
+
+/** GET /api/v1/work-orders/cause-codes — the active coded causes for the root-cause form (`E3.1`). */
+export async function fetchWorkOrderCauseCodes(): Promise<WorkOrderCauseCodesResponse> {
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/work-orders/cause-codes`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new Error(`work-order-cause-codes ${res.status}`);
+  }
+  return checkResponse(workOrderCauseCodesResponseSchema, await res.json(), "work-orders/cause-codes");
 }

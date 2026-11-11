@@ -5,13 +5,14 @@ import { Profiler } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { WorkOrderListItem } from "@bms/shared";
+import type { WorkOrderDetail, WorkOrderListItem } from "@bms/shared";
 
 import * as assetsApi from "../api/assets";
 import * as workOrdersApi from "../api/work-orders";
 import type { AuthUser } from "../stores/auth-store";
 import { priorityRailStyle, priorityStyle, WorkOrdersPage } from "./work-orders-page";
 import * as copilotApi from "../api/copilot";
+import { ROOT_CAUSE_REQUIRED } from "../components/work-orders/work-order-status-wizard";
 
 /**
  * `F3.65b` owner ruling R-f (2026-09-28) — priority `high` and `medium` must not
@@ -94,6 +95,8 @@ const ROW: WorkOrderListItem = {
   slaState: "none",
   checklistDone: 0,
   checklistTotal: 0,
+  causeCode: null,
+  approvedAt: null,
   createdAt: "2026-10-01T09:00:00.000Z",
   updatedAt: "2026-10-01T09:00:00.000Z",
   assetCode: "PMP-01",
@@ -380,4 +383,144 @@ export async function theCardsWherePartWraps(): Promise<void> {
   const where = screen.getByText("· RTU 2");
   expect(where).not.toHaveClass("truncate");
   expect(where).toHaveClass("whitespace-normal");
+}
+
+/**
+ * `E3.1` (ADR 0122 decision 5 and ruling P1; plan T4.4) — the status wizard's Root cause
+ * section, and a drop on Review that opens the wizard instead of calling reorder.
+ */
+const ALARM_ROW: WorkOrderListItem = { ...ROW, alarmId: "0f4e1d2c-0000-4000-8000-0000000000b1", title: "Breaker tripped on feeder 2" };
+
+const NO_FINDINGS = { events: [], alarm: null, tasks: [], rootCause: null, correctiveAction: null, preventiveAction: null, resolvedBy: null, alarmSnapshot: null };
+
+/** Renders the page and stubs the two reads the Root cause section makes. */
+async function renderForRootCause(row: WorkOrderListItem, detail: Partial<WorkOrderDetail> = {}): Promise<void> {
+  await renderPage(row);
+  vi.spyOn(workOrdersApi, "fetchWorkOrderDetail").mockResolvedValue({ ...row, ...NO_FINDINGS, ...detail } as WorkOrderDetail);
+  vi.spyOn(workOrdersApi, "fetchWorkOrderCauseCodes").mockResolvedValue({
+    items: [
+      { code: "equipment_failure", label: "Equipment failure", sortOrder: 10 },
+      { code: "wear_and_tear", label: "Wear and tear", sortOrder: 20 },
+    ],
+  });
+}
+
+async function openStatusWizard(): Promise<HTMLElement> {
+  await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+  return screen.findByRole("dialog", { name: "Edit status" });
+}
+
+/** Choosing `resolved` on an alarm ticket shows the Root cause section with its four fields; another status shows none. */
+export async function choosingResolvedShowsTheRootCauseSection(): Promise<void> {
+  await renderForRootCause(ALARM_ROW);
+  const dialog = await openStatusWizard();
+  expect(within(dialog).queryByRole("group", { name: "Root cause" }), "not shown for an open ticket").toBeNull();
+
+  await userEvent.selectOptions(within(dialog).getByLabelText("New status"), "resolved");
+  const section = within(dialog).getByRole("group", { name: "Root cause" });
+  for (const label of ["Cause found", "Corrective action", "Preventive action", "Cause code"]) {
+    expect(within(section).getByLabelText(label), label).toBeTruthy();
+  }
+  await within(section).findByRole("option", { name: "Wear and tear" });
+
+  await userEvent.selectOptions(within(dialog).getByLabelText("New status"), "in_progress");
+  expect(within(dialog).queryByRole("group", { name: "Root cause" }), "gone again for another status").toBeNull();
+}
+
+/** An alarm ticket cannot leave the step for `resolved` without the three findings: Next stays and says why. */
+export async function anAlarmTicketCannotLeaveTheStepWithoutItsFindings(): Promise<void> {
+  const save = vi.spyOn(workOrdersApi, "updateWorkOrderStatus");
+  await renderForRootCause(ALARM_ROW);
+  const dialog = await openStatusWizard();
+  await userEvent.selectOptions(within(dialog).getByLabelText("New status"), "resolved");
+  await within(dialog).findByRole("option", { name: "Wear and tear" });
+
+  await userEvent.type(within(dialog).getByLabelText("Cause found"), "Contacts worn");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  expect((await within(dialog).findByRole("alert")).textContent).toContain(ROOT_CAUSE_REQUIRED);
+  expect(within(dialog).queryByRole("button", { name: "Submit" }), "still on the Status step").toBeNull();
+  expect(save).not.toHaveBeenCalled();
+}
+
+/** The findings typed in the section ride the same status write. */
+export async function theFindingsAreSentWithTheResolve(): Promise<void> {
+  const save = vi.spyOn(workOrdersApi, "updateWorkOrderStatus").mockResolvedValue({ ...ALARM_ROW, status: "resolved" });
+  await renderForRootCause(ALARM_ROW);
+  const dialog = await openStatusWizard();
+  await userEvent.selectOptions(within(dialog).getByLabelText("New status"), "resolved");
+  await within(dialog).findByRole("option", { name: "Wear and tear" });
+  await userEvent.type(within(dialog).getByLabelText("Cause found"), "Contacts worn");
+  await userEvent.type(within(dialog).getByLabelText("Corrective action"), "Contacts replaced");
+  await userEvent.selectOptions(within(dialog).getByLabelText("Cause code"), "wear_and_tear");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(await within(dialog).findByRole("button", { name: "Submit" }));
+
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save.mock.calls[0]?.[0]).toEqual({
+    id: ALARM_ROW.id,
+    status: "resolved",
+    rootCause: "Contacts worn",
+    correctiveAction: "Contacts replaced",
+    causeCode: "wear_and_tear",
+  });
+}
+
+/** Findings already saved on the ticket count: the step can be left with nothing typed, and nothing is re-sent. */
+export async function findingsAlreadySavedAreNotAskedForAgain(): Promise<void> {
+  const save = vi.spyOn(workOrdersApi, "updateWorkOrderStatus").mockResolvedValue({ ...ALARM_ROW, status: "resolved" });
+  await renderForRootCause(
+    { ...ALARM_ROW, causeCode: "wear_and_tear" },
+    { rootCause: "Contacts worn", correctiveAction: "Contacts replaced", causeCode: "wear_and_tear" },
+  );
+  const dialog = await openStatusWizard();
+  await userEvent.selectOptions(within(dialog).getByLabelText("New status"), "resolved");
+  await within(dialog).findByPlaceholderText("Contacts worn");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(await within(dialog).findByRole("button", { name: "Submit" }));
+  expect(save.mock.calls[0]?.[0]).toEqual({ id: ALARM_ROW.id, status: "resolved" });
+}
+
+/** A planned ticket (no alarm) may leave the step for `resolved` with no findings. */
+export async function aPlannedTicketResolvesWithoutFindings(): Promise<void> {
+  await renderForRootCause(ROW);
+  const dialog = await openStatusWizard();
+  await userEvent.selectOptions(within(dialog).getByLabelText("New status"), "resolved");
+  expect(within(dialog).getByRole("group", { name: "Root cause" }).textContent).toContain("Optional for planned work.");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  expect(await within(dialog).findByRole("button", { name: "Submit" })).toBeTruthy();
+}
+
+/** A card dropped on Review opens the status wizard on `resolved` and calls no reorder (ruling P1). */
+export async function aDropOnReviewOpensTheWizardAndCallsNoReorder(): Promise<void> {
+  const reorder = vi.spyOn(workOrdersApi, "reorderWorkOrders");
+  await renderForRootCause(ALARM_ROW);
+
+  const card = screen.getByText(ALARM_ROW.title).closest("article");
+  if (!card) {
+    throw new Error("the work-order card has no <article> around its title");
+  }
+  // The empty columns, in board order: Assigned, In progress, Review, Done.
+  const reviewColumn = screen.getAllByText("Drop work orders here")[2];
+  const dataTransfer = { setData: vi.fn(), effectAllowed: "", dropEffect: "" };
+  fireEvent.dragStart(card, { dataTransfer });
+  fireEvent.dragOver(reviewColumn, { dataTransfer });
+  fireEvent.drop(reviewColumn, { dataTransfer });
+
+  const dialog = await screen.findByRole("dialog", { name: "Edit status" });
+  expect((within(dialog).getByLabelText("New status") as HTMLSelectElement).value).toBe("resolved");
+  expect(within(dialog).getByRole("group", { name: "Root cause" })).toBeTruthy();
+  expect(reorder).not.toHaveBeenCalled();
+}
+
+/** Findings typed for `resolved` are dropped when the status moves to another value: they are not sent with it. */
+export async function findingsAreNotSentWithAnotherStatus(): Promise<void> {
+  const save = vi.spyOn(workOrdersApi, "updateWorkOrderStatus").mockResolvedValue({ ...ALARM_ROW, status: "in_progress" });
+  await renderForRootCause(ALARM_ROW);
+  const dialog = await openStatusWizard();
+  await userEvent.selectOptions(within(dialog).getByLabelText("New status"), "resolved");
+  await userEvent.type(within(dialog).getByLabelText("Cause found"), "Contacts worn");
+  await userEvent.selectOptions(within(dialog).getByLabelText("New status"), "in_progress");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(await within(dialog).findByRole("button", { name: "Submit" }));
+  expect(save.mock.calls[0]?.[0]).toEqual({ id: ALARM_ROW.id, status: "in_progress" });
 }
