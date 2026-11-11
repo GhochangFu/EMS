@@ -68,6 +68,7 @@ const ACCENT_FILL_FILES: Record<string, number> = {
   "apps/web/src/components/asset-templates/calculations-tab.tsx": 1,
   "apps/web/src/components/asset-templates/dashboards-tab.tsx": 1,
   "apps/web/src/components/asset-templates/details-tab.tsx": 1,
+  "apps/web/src/components/asset-templates/health-tab.tsx": 1,
   "apps/web/src/components/asset-templates/instantiate-wizard.tsx": 1,
   "apps/web/src/components/asset-templates/kpis-tab.tsx": 1,
   "apps/web/src/components/asset-templates/maintenance-tab.tsx": 1,

@@ -1,7 +1,7 @@
 /**
  * The detail page's tab registry (`F2.5`, ADR 0038 decision 2 — Unit 7).
  *
- * ADR 0038 names **exactly seven** tabs, and names them so that the closed
+ * ADR 0038 names **exactly eight** tabs, and names them so that the closed
  * sections cannot arrive by accident:
  *
  * - `optimisation` is rejected outright by `templateContentSchema` (`E1.6` owns
@@ -21,7 +21,11 @@
  *   it through `mergeTemplateContent` untouched. It still has no tab: ADR 0050
  *   Amendment 1 decision 5 scopes `E1.3` to the score surfaces, and an eighth
  *   tab is an ADR 0038 amendment, not a side effect of a backlog row. Do not
- *   add one here without it.
+ *   add one here without it. **That amendment came in `F4.355`:** ADR 0038
+ *   Amendment 7 makes `health` the eighth tab, after Maintenance, because the
+ *   bands were being authored by hand through the API. The sentences above are
+ *   kept as the record of why it waited. `optimisation` is now the only closed
+ *   section.
  *
  * **`dashboards` was the third of these until `F3.1e`, and it is now the sixth
  * tab.** This docblock used to read *"the dashboard section carries only an
@@ -59,8 +63,8 @@
  * ```
  *
  * That returns exactly `details, points, calculations, kpis, alarms,
- * dashboards, maintenance`, re-run against this file when `F2.19` added the
- * seventh entry. Anyone changing the shape below must
+ * dashboards, maintenance, health`, re-run against this file when `F4.355`
+ * added the eighth entry. Anyone changing the shape below must
  * re-run it — a broken regex returns nothing and reads as compliance, which is
  * why Unit 8 must also fail on an empty scan.
  *
@@ -71,8 +75,8 @@
  * scan reads an empty result as compliance.
  */
 
-/** The seven tabs, and the only seven. */
-export type TemplateTabId = "details" | "points" | "calculations" | "kpis" | "alarms" | "dashboards" | "maintenance";
+/** The eight tabs, and the only eight. */
+export type TemplateTabId = "details" | "points" | "calculations" | "kpis" | "alarms" | "dashboards" | "maintenance" | "health";
 
 export type TemplateTab = {
   id: TemplateTabId;
@@ -89,6 +93,7 @@ export const TEMPLATE_TABS: readonly TemplateTab[] = [
   { id: "alarms", label: "Alarms", hint: "Thresholds, severities and the knowledge behind each one." },
   { id: "dashboards", label: "Dashboards", hint: "Which points a dashboard shows, and the widgets drawn from them." },
   { id: "maintenance", label: "Maintenance", hint: "The maintenance plans this asset class ships with, and how often each repeats." },
+  { id: "health", label: "Health", hint: "The bands a health score falls into, and how much each point weighs." },
 ];
 
 /** The tab a bare detail URL opens. */

@@ -54,15 +54,16 @@ export function runCleanTabTests(): void {
 /**
  * A dirty tab blocks every switch away from it.
  *
- * Asserted over all forty-two ordered pairs rather than one example, because
+ * Asserted over all fifty-six ordered pairs rather than one example, because
  * the defect was that *all five* tabs lost state — a guard wired to one of them
  * would satisfy a single-case test and leave four tabs still losing edits.
  *
  * **"All five" is deliberately not updated.** It narrates the `F2.5` defect,
  * when there were five tabs and five of them lost state. The count of *pairs*
  * moved to thirty in `F3.1e` because a sixth tab existed, and to **forty-two**
- * in `F2.19` because ADR 0038 Amendment 5 added a seventh; the record of what
- * was wrong that day does not move with either.
+ * in `F2.19` because ADR 0038 Amendment 5 added a seventh, and to
+ * **fifty-six** in `F4.355` because Amendment 7 added an eighth; the record of
+ * what was wrong that day does not move with any of them.
  */
 export function runDirtyTabTests(): void {
   let blocked = 0;
@@ -81,14 +82,15 @@ export function runDirtyTabTests(): void {
   //
   // **The number is arithmetic, not a tab count.** The loop walks every ordered
   // pair of *distinct* tabs, so `n` tabs give `n(n-1)` pairs: five gave twenty,
-  // six gave thirty, and **seven give forty-two**. ADR 0038 Amendment 4 requires
+  // six gave thirty, seven gave forty-two, and **eight give fifty-six** (8 × 7,
+  // `F4.355`, ADR 0038 Amendment 7). ADR 0038 Amendment 4 requires
   // this derivation written down, because no tab count appears anywhere in this
   // file — a search for the count does not find this line, and the next tab
   // change should be arithmetic rather than archaeology. `F2.19` is the change
   // that proved the point: ADR 0038 Amendment 5 added `maintenance` as the
   // seventh tab, and this line went red on a number that looks unrelated to
   // tabs until the derivation above is read.
-  assert(blocked === 42, `expected 42 blocked pairs, checked ${blocked}`);
+  assert(blocked === 56, `expected 56 blocked pairs, checked ${blocked}`);
 }
 
 /**

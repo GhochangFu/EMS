@@ -21,6 +21,10 @@ import {
   detailsKeepsTheEditedFieldBesideAFollowedOne,
   detailsReportsCleanAfterARefetch,
   detailsStaysDirtyAfterARefetch,
+  healthFollowsARefetchWhileClean,
+  healthKeepsAnEditOnARefetch,
+  healthReportsCleanAfterARefetch,
+  healthStaysDirtyAfterARefetch,
   maintenanceFollowsARefetchWhileClean,
   maintenanceKeepsAnEditOnARefetch,
   maintenanceReportsCleanAfterARefetch,
@@ -144,5 +148,21 @@ describe("F3.85 asset-template tabs — a refetch under the same id and status (
 
   it("Dashboards: an edited tab stays dirty after the refetch", async () => {
     await dashboardsStaysDirtyAfterARefetch();
+  });
+
+  it("Health: a clean tab shows the refetched bands", async () => {
+    await healthFollowsARefetchWhileClean();
+  });
+
+  it("Health: a clean tab reports clean after the refetch", async () => {
+    await healthReportsCleanAfterARefetch();
+  });
+
+  it("Health: an edited tab keeps the weight edit", async () => {
+    await healthKeepsAnEditOnARefetch();
+  });
+
+  it("Health: an edited tab stays dirty after the refetch", async () => {
+    await healthStaysDirtyAfterARefetch();
   });
 });

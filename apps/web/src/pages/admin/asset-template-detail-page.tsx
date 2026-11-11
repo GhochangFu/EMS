@@ -437,13 +437,13 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
             >
               All templates
             </Link>
-            {/* `F2.6` (ADR 0039 decision 8). In the page chrome, not an eighth
-                tab: ADR 0038 names exactly seven and `tests/adr-0038-template-
+            {/* `F2.6` (ADR 0039 decision 8). In the page chrome, not a tab:
+                ADR 0038 names exactly eight and `tests/adr-0038-template-
                 authoring-ui.test.ts` keeps it that way (D-3). Migration is also
-                not authoring — it acts on assets, and the seven tabs are all
+                not authoring — it acts on assets, and the eight tabs are all
                 about this template's own shape. That second reason is the
                 load-bearing one, and it did not change when `F3.1e` added the
-                sixth tab or when `F2.19` added the seventh. */}
+                sixth tab, `F2.19` the seventh or `F4.355` the eighth. */}
             <Link
               to={`/admin/asset-templates/${template.id}/versions`}
               className="surface-button px-3 py-1.5"

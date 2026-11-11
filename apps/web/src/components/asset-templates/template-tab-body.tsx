@@ -5,6 +5,7 @@ import { AlarmsTab } from "./alarms-tab";
 import { CalculationsTab } from "./calculations-tab";
 import { DashboardsTab } from "./dashboards-tab";
 import { DetailsTab } from "./details-tab";
+import { HealthTab } from "./health-tab";
 import { KpisTab } from "./kpis-tab";
 import { MaintenanceTab } from "./maintenance-tab";
 import { PointsTab } from "./points-tab";
@@ -32,15 +33,20 @@ import { PointsTab } from "./points-tab";
  * **It moved out of `asset-template-detail-page.tsx` in `F2.14`, because it now
  * serves two pages** — that authoring page and the read-only stock catalog
  * viewer (`asset-template-stock-view-page.tsx`). One file rather than two is
- * what keeps the seven-arm dispatcher and its `const unreachable: never = tab`
+ * what keeps the eight-arm dispatcher and its `const unreachable: never = tab`
  * in a single place; a copy in the viewer would put the exhaustiveness guard
- * in two, and the two would drift on the day an eighth tab lands.
+ * in two, and the two would drift on the day another tab lands.
  *
  * **That day came once already and the design held.** `F2.19` added the
  * seventh arm, `maintenance` (ADR 0038 Amendment 5 Part B): widening
  * `TemplateTabId` made the `never` assignment below a compile error naming the
  * tab, and the viewer needed no edit at all because it renders through this
  * dispatcher.
+ *
+ * **And again in `F4.355`.** ADR 0038 Amendment 7 added the eighth arm,
+ * `health`: widening the union made the `never` line a compile error naming
+ * `"health"` before this arm existed (checked, not assumed), and the stock
+ * viewer again needed no edit.
  */
 export function TemplateTabBody({
   tab,
@@ -130,7 +136,17 @@ export function TemplateTabBody({
       />
     );
   }
-  // Unreachable while `TemplateTabId` names seven tabs. Adding an eighth
+  if (tab === "health") {
+    return (
+      <HealthTab
+        template={template}
+        editable={editable}
+        onSaved={onSaved}
+        onDirtyChange={onDirtyChange}
+      />
+    );
+  }
+  // Unreachable while `TemplateTabId` names eight tabs. Adding a ninth
   // without an arm here is a type error on this line, naming the tab that has
   // no editor — rather than a silent render of whichever arm came last.
   // **This is not theoretical: it is what `F2.19` met.** Widening the union to

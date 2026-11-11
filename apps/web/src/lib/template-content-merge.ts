@@ -101,12 +101,13 @@ const WRITABLE_KEYS = ["contentVersion", "kpis", "alarms", "maintenance", "dashb
  * accepts but this file still calls reserved would block a KPI tab save on a
  * template that carries a perfectly valid health section.
  *
- * It has no tab of its own, and since `F2.19` it is the **only** section in
- * that class: writable by the API, carried through this merge byte for byte,
- * and edited by nothing in this UI. `maintenance` used to be its company —
- * ADR 0038 Amendment 5 Part B gave that section a tab, so the sentence now
- * names one section rather than two. ADR 0050 Amendment 1 decision 5 scopes
- * `E1.3` to the score surfaces, so `health` gaining a tab needs its own ruling.
+ * Until `F4.355` it had no tab of its own: from `F2.19` it was the **only**
+ * section writable by the API, carried through this merge byte for byte, and
+ * edited by nothing in this UI (`maintenance` had been its company until ADR
+ * 0038 Amendment 5 Part B gave that section a tab). ADR 0050 Amendment 1
+ * decision 5 scoped `E1.3` to the score surfaces, so `health` needed its own
+ * ruling — ADR 0038 Amendment 7 is that ruling, and the Health tab writes it
+ * through the `health` arm below.
  */
 const RESERVED_KEYS: Readonly<Record<string, string>> = {
   optimisation: "E1.6 (optimisation advisories)",

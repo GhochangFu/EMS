@@ -445,6 +445,32 @@ export async function everyMaintenancePlanRendersDisabledWithNoSavePath(): Promi
 }
 
 /**
+ * Case 2c — `?tab=health` resolves and renders read-only (`F4.355`, ADR 0038
+ * Amendment 7). The catalog entries carry no `health` block, so the tab shows
+ * the empty state and a disabled weight per point, and offers no write path:
+ * no Save, no preset, no Remove.
+ */
+export async function theHealthTabRendersReadOnlyWithNoWritePath(): Promise<void> {
+  stubApi();
+  const container = renderViewer(`/admin/asset-templates/stock/${FEEDER_CODE}?tab=health`);
+
+  await screen.findByText(FEEDER_NAME);
+  expect(
+    screen.getByRole("tab", { name: "Health" }).getAttribute("aria-selected"),
+    "?tab=health must select the Health tab in the strip",
+  ).toBe("true");
+  expect(screen.getByText(/has no health bands/)).toBeInTheDocument();
+  expect(
+    container.querySelectorAll('input[aria-label^="Weight of "]').length,
+    "one weight per catalog point, so the sweep below reads something",
+  ).toBeGreaterThan(0);
+  expect(enabledFieldNames(container), "no health field on the stock viewer accepts input").toEqual([]);
+  for (const name of ["Save health", "Use the standard five bands", "Remove health bands", "Add a band"]) {
+    expect(screen.queryByRole("button", { name }), `${name} must not render on the stock viewer`).toBeNull();
+  }
+}
+
+/**
  * Case 3 — both formula surfaces render read-only.
  *
  * This is the case that fails if `stockEntryAsTemplate` ever stamps `draft`:
