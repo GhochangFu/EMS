@@ -115,6 +115,16 @@ describe("the harness is wired in", () => {
     }
   });
 
+  it("CI's test step runs the suites on the harness's containers (BMS_TEST_DB=containers)", () => {
+    const ci = read(".github/workflows/ci.yml");
+    const job = ci.slice(ci.indexOf("  build-and-migrate:"));
+    const step = job.slice(job.indexOf("- name: Run tests"));
+    const stepEnd = step.indexOf("\n      - name:", 1);
+    const runTests = stepEnd < 0 ? step : step.slice(0, stepEnd);
+    expect(runTests).toMatch(/BMS_TEST_DB:\s*containers/);
+    expect(runTests).toMatch(/run:\s*pnpm test:coverage/);
+  });
+
   it("CI's docs-only job starts no test database (BMS_TEST_DB=none)", () => {
     const ci = read(".github/workflows/ci.yml");
     const job = ci.slice(ci.indexOf("  docs-only-tests:"), ci.indexOf("  build-and-migrate:"));

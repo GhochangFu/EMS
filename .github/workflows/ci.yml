@@ -433,6 +433,11 @@ jobs:
           # discarded after the job, so it buys nothing here and costs a Docker Hub pull. The
           # harness stops its own containers in teardown.
           TESTCONTAINERS_RYUK_DISABLED: "true"
+          # ADR 0124 decision 7, ruling 4 (F4.5 PR 6). The suites run on the harness's own
+          # TimescaleDB and Redis containers — one database copy per Vitest worker — not on the
+          # services above, which stay for the migration, seed, aggregate and Keycloak checks.
+          # `containers` beats the job-scope DATABASE_URL those steps use.
+          BMS_TEST_DB: containers
         run: pnpm test:coverage
 
   # F4.48, second half. The first half added a redaction pattern and a leak
