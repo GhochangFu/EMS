@@ -709,7 +709,8 @@ export async function runRaiseRetryPhase(
  * Amendment 2 ruling Q-A refused. `notifyCleared` therefore reads the ledger
  * before every dispatch exactly as it did before this row.
  */
-async function dispatchRememberingLostRows(
+// `F3.16`: exported for `alarm-lifecycle-device.ts`'s escalation — one memory, one site.
+export async function dispatchRememberingLostRows(
   deps: AlarmLifecycleDeps,
   a: {
     alarmId: string;

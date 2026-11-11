@@ -226,19 +226,13 @@ export function runNoAlarmRaiseIsARaiseTests(): void {
 }
 
 /**
- * `F3.56` E4a — a non-NULL key on a row with no rule reads as `unknown`.
+ * `F3.56` E4a — a RULE's key on a row with no rule reads as `unknown`.
  *
- * `unknown` is the value Amendment 8 says no writer in this codebase produces,
- * and E4a–c are what drive it through the function anyway, so it is measured
- * rather than dead prose.
- *
- * **What this block does NOT prove, stated rather than implied.** Deleting step
- * 2 outright leaves this block GREEN: with `ruleId === null` the template
- * produces the prefix `null:<ALARM_ID>:` — this case passes a real `alarmId`,
- * so the `no-alarm` sentinel never appears — which the key under test does not start
- * with, so step 3 refuses it and returns `unknown` anyway. The mutation this
- * block does kill is step 2 returning `raise` instead of `unknown`. Do not
- * record the deletion as proof of anything.
+ * Since `F3.16` a row with no rule is a device alarm's and its prefix is
+ * `system:<alarm>:` (E1b), so the old step 2 ("no rule → unknown") is gone and
+ * this block is held by step 3: a key written under a rule id does not start
+ * with the row's `system` prefix. The mutation it kills is step 3 returning
+ * `raise` on a mismatch for a rule-less row.
  */
 export function runUnknownWhenTheRuleIsNull(): void {
   const dedupeKey = buildDedupeKey({ ruleId: RULE_ID, alarmId: ALARM_ID, severity: "warning" });
@@ -378,4 +372,51 @@ export function runResidualLimitClampedTail(): void {
     `E6b: a key clamped past its own suffix reads as a raise — got ${actual}. ` +
       "If this is now `cleared`, ADR 0041 Amendment 8's residual-limit paragraph must be revised.",
   );
+}
+
+/**
+ * `F3.16` (ADR 0127 decisions 12–13) E7 — a device alarm has no rule, so the
+ * token `system` stands in the rule's place. It carries no colon, so every key
+ * keeps the separator count `isOverHourlyLimit`'s `LIKE '%:%:%:%'` tests: a
+ * device escalation step charges the reserved budget exactly as a rule's does.
+ */
+export function runSystemTokenKeyTests(): void {
+  const step = buildDedupeKey({ ruleId: null, alarmId: ALARM_ID, severity: "critical", event: { kind: "escalation", step: 1 } });
+  assert(
+    step === `system:${ALARM_ID}:critical:escalation:1`,
+    `E7: a device alarm's step key is system:alarm:severity:escalation:n, got ${step}`,
+  );
+  const raise = buildDedupeKey({ ruleId: null, alarmId: ALARM_ID, severity: "critical" });
+  const ruleRaise = buildDedupeKey({ ruleId: RULE_ID, alarmId: ALARM_ID, severity: "critical" });
+  assert(
+    raise.split(":").length === ruleRaise.split(":").length,
+    `E7: the system token must add no separator — ${raise} against ${ruleRaise}`,
+  );
+}
+
+/**
+ * `F3.16` E1b — `runEventRoundTripTests` with the `system` token: a row whose
+ * `rule_id` is NULL and whose key starts `system:<its alarm>:` reads back as
+ * the event that wrote it, never `unknown`.
+ */
+export function runSystemTokenRoundTripTests(): void {
+  const raise = { ruleId: null, alarmId: ALARM_ID, severity: "warning" };
+  const cases: readonly { what: string; input: Parameters<typeof buildDedupeKey>[0]; expected: NotificationDeliveryEvent }[] = [
+    { what: "a device raise", input: raise, expected: "raise" },
+    { what: "a device escalation step 1", input: { ...raise, event: { kind: "escalation", step: 1 } }, expected: "escalation" },
+    { what: "a device escalation step 12", input: { ...raise, event: { kind: "escalation", step: 12 } }, expected: "escalation" },
+    { what: "a device cleared message", input: { ...raise, event: { kind: "cleared" } }, expected: "cleared" },
+  ];
+  for (const [index, testCase] of cases.entries()) {
+    const dedupeKey = buildDedupeKey(testCase.input);
+    const actual = parseDeliveryEvent({ dedupeKey, ruleId: null, alarmId: testCase.input.alarmId });
+    assert(
+      actual === testCase.expected,
+      `E1b row ${index + 1} (${testCase.what}): expected ${testCase.expected}, got ${actual} from ${dedupeKey}`,
+    );
+  }
+  // A system key on a row that names a rule is not that row's key.
+  const systemKey = buildDedupeKey({ ...raise, event: { kind: "cleared" } });
+  const onARuleRow = parseDeliveryEvent({ dedupeKey: systemKey, ruleId: RULE_ID, alarmId: ALARM_ID });
+  assert(onARuleRow === "unknown", `E1b: a system key on a rule's row is unknown, got ${onARuleRow}`);
 }
