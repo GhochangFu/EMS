@@ -1,12 +1,19 @@
 import {
   workOrderCauseCodesResponseSchema,
+  workOrderChecklistTemplatesResponseSchema,
   workOrderDetailSchema,
   workOrderListItemSchema,
   workOrdersListResponseSchema,
+  workOrderTaskDtoSchema,
 } from "@bms/shared/contracts";
 import type {
   BoardWorkOrderStatus,
   CreateWorkOrderInput as SharedCreateWorkOrderInput,
+  CreateWorkOrderTaskBody,
+  PutWorkOrderRootCauseBody,
+  UpdateWorkOrderTaskBody,
+  WorkOrderChecklistTemplatesResponse,
+  WorkOrderTaskDto,
   UpdateWorkOrderStatusBody,
   WorkOrderCauseCodesResponse,
   WorkOrderDetail,
@@ -155,4 +162,63 @@ export async function fetchWorkOrderCauseCodes(): Promise<WorkOrderCauseCodesRes
     throw new Error(`work-order-cause-codes ${res.status}`);
   }
   return checkResponse(workOrderCauseCodesResponseSchema, await res.json(), "work-orders/cause-codes");
+}
+
+/** One JSON write: the auth header, the body, the session cleared on a 401, the server's text as the error. */
+async function sendJson(method: "POST" | "PATCH" | "PUT", path: string, body: unknown, label: string): Promise<unknown> {
+  const sent = {
+    ...withAuth({
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  };
+  const res = await fetch(`${base}/api/v1/${path}`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    const text = await res.text();
+    throw new Error(text || `${label} ${res.status}`);
+  }
+  return res.json();
+}
+
+/** GET /api/v1/work-orders/checklist-templates?assetId= — the active templates that fit the asset (`E3.1`, ruling P6). */
+export async function fetchWorkOrderChecklistTemplates(assetId: string): Promise<WorkOrderChecklistTemplatesResponse> {
+  const params = new URLSearchParams({ assetId });
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/work-orders/checklist-templates?${params}`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new Error(`work-order-checklist-templates ${res.status}`);
+  }
+  return checkResponse(workOrderChecklistTemplatesResponseSchema, await res.json(), "work-orders/checklist-templates");
+}
+
+/** POST /api/v1/work-orders/:id/tasks — one checklist item added by hand (`E3.1`). */
+export async function addWorkOrderTask(id: string, body: Pick<CreateWorkOrderTaskBody, "title"> & { mandatory?: boolean }): Promise<WorkOrderTaskDto> {
+  return checkResponse(workOrderTaskDtoSchema, await sendJson("POST", `work-orders/${id}/tasks`, body, "work-order-task-add"), "work-orders/:id/tasks");
+}
+
+/** PATCH /api/v1/work-orders/:id/tasks/:taskId — an item's result, its note, or both (`E3.1`). */
+export async function updateWorkOrderTask(id: string, taskId: string, body: UpdateWorkOrderTaskBody): Promise<WorkOrderTaskDto> {
+  return checkResponse(
+    workOrderTaskDtoSchema,
+    await sendJson("PATCH", `work-orders/${id}/tasks/${taskId}`, body, "work-order-task-update"),
+    "work-orders/:id/tasks/:taskId",
+  );
+}
+
+/** PUT /api/v1/work-orders/:id/root-cause — the ticket's findings, replaced whole (`E3.1`). */
+export async function putWorkOrderRootCause(id: string, body: PutWorkOrderRootCauseBody): Promise<WorkOrderDetail> {
+  return checkResponse(workOrderDetailSchema, await sendJson("PUT", `work-orders/${id}/root-cause`, body, "work-order-root-cause"), "work-orders/:id/root-cause");
+}
+
+/** POST /api/v1/work-orders/:id/reject — an approver sends a resolved ticket back to work (`E3.1`). */
+export async function rejectWorkOrder(id: string, reason: string): Promise<WorkOrderListItem> {
+  return checkResponse(workOrderListItemSchema, await sendJson("POST", `work-orders/${id}/reject`, { reason }, "work-order-reject"), "work-orders/:id/reject");
+}
+
+/** POST /api/v1/work-orders/:id/cancel — an approver cancels a ticket; it cannot be undone (`E3.1`). */
+export async function cancelWorkOrder(id: string, reason: string): Promise<WorkOrderListItem> {
+  return checkResponse(workOrderListItemSchema, await sendJson("POST", `work-orders/${id}/cancel`, { reason }, "work-order-cancel"), "work-orders/:id/cancel");
 }

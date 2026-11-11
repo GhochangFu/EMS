@@ -27,3 +27,8 @@ export const priorities: WorkOrderPriority[] = ["low", "medium", "high", "critic
  * cancels — the approval has its own wizard and a reason, and so does the cancel.
  */
 export const settableStatuses: SettableWorkOrderStatus[] = ["open", "assigned", "in_progress", "resolved"];
+
+/** `E3.1` (ADR 0122 decision 2): a ticket's human-readable reference as the card and the drawer show it, `WO #STP-000042`. */
+export function workOrderReferenceLabel(reference: string): string {
+  return `WO #${reference}`;
+}

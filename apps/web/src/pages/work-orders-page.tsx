@@ -15,8 +15,16 @@ import { fetchAssets } from "../api/assets";
 import { fetchWorkOrders, reorderWorkOrders, type ReorderWorkOrderItem } from "../api/work-orders";
 import { PageHeader } from "../components/page-header";
 import { WorkOrderCloseWizard } from "../components/work-orders/work-order-close-wizard";
+import { WorkOrderDetailDrawer } from "../components/work-orders/work-order-detail-drawer";
+import { WorkOrderSlaChip } from "../components/work-orders/work-order-sla-chip";
 import { WorkOrderStatusWizard } from "../components/work-orders/work-order-status-wizard";
-import { APPROVE_AND_CLOSE_LABEL, priorities, priorityLabels, statusLabels } from "../components/work-orders/work-order-labels";
+import {
+  APPROVE_AND_CLOSE_LABEL,
+  priorities,
+  priorityLabels,
+  statusLabels,
+  workOrderReferenceLabel,
+} from "../components/work-orders/work-order-labels";
 import { WorkOrderWizard } from "../components/work-orders/work-order-wizard";
 import { canApproveWorkOrders } from "../lib/admin-access";
 import { apiErrorMessage } from "../lib/api-error-message";
@@ -60,6 +68,9 @@ const filterStatuses: WorkOrderStatus[] = [...boardStatuses, "cancelled"];
 function isOnBoard(row: WorkOrderListItem): row is WorkOrderListItem & { status: BoardWorkOrderStatus } {
   return row.status !== "cancelled";
 }
+
+/** The search parameter that names the ticket the detail drawer shows. */
+const WORK_ORDER_PARAM = "workOrder";
 
 /** Exported for `work-orders-page.spec.tsx`: why a drop on Done was not taken. */
 export const APPROVE_NEEDS_RESOLVED = "Only a resolved work order can be approved and closed";
@@ -161,7 +172,10 @@ export function priorityRailStyle(priority: WorkOrderPriority): string {
 export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // `E3.1` (ADR 0122 decision 8, plan PR 6): the detail drawer is opened by the URL
+  // (`?workOrder=<id>`), so a reload — or a shared link — reopens the same ticket.
+  const detailId = searchParams.get(WORK_ORDER_PARAM);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [assetFilter, setAssetFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
@@ -304,6 +318,19 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
   function openStatusEditor(row: WorkOrderListItem): void {
     setEditInitialStatus(undefined);
     setEditTarget(row);
+  }
+
+  function openDetail(id: string): void {
+    const next = new URLSearchParams(searchParams);
+    next.set(WORK_ORDER_PARAM, id);
+    setSearchParams(next);
+  }
+
+  function closeDetail(): void {
+    const next = new URLSearchParams(searchParams);
+    next.delete(WORK_ORDER_PARAM);
+    // A new history entry, as opening made one: Back then returns to the open drawer.
+    setSearchParams(next);
   }
 
   function openClose(row: WorkOrderListItem): void {
@@ -579,9 +606,14 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                         {row.assetName} · {row.siteName}
                       </div>
                     </div>
-                    <span className={`rounded border px-2 py-0.5 text-3xs font-bold uppercase ${statusStyle(row.status)}`}>
-                      {statusLabels[row.status]}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded border px-2 py-0.5 text-3xs font-bold uppercase ${statusStyle(row.status)}`}>
+                        {statusLabels[row.status]}
+                      </span>
+                      <button type="button" className="surface-button px-2 py-1 text-2xs font-semibold" onClick={() => openDetail(row.id)}>
+                        Details
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -643,7 +675,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                         onDragEnd={handleDragEnd}
                       >
                         <div className="flex items-center justify-between gap-2 font-mono text-3xs text-ink-muted">
-                          <span>WO-{row.id.slice(0, 8).toUpperCase()}</span>
+                          <span>{workOrderReferenceLabel(row.reference)}</span>
                           <span title="Drag to reorder">drag</span>
                         </div>
                         <h2 className="mt-1 text-sm font-semibold text-ink">
@@ -663,6 +695,13 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                           >
                             {statusLabels[row.status]}
                           </span>
+                          {/* A ticket older than the SLA columns shows no chip, not "No SLA" on every card. */}
+                          {row.slaMinutes === null ? null : <WorkOrderSlaChip slaMinutes={row.slaMinutes} slaState={row.slaState} />}
+                          {row.checklistTotal > 0 ? (
+                            <span className="rounded border border-line bg-canvas px-2 py-0.5 text-3xs font-bold text-ink-muted">
+                              Checklist {row.checklistDone}/{row.checklistTotal}
+                            </span>
+                          ) : null}
                         </div>
                         <div className="mt-3 flex items-center justify-between gap-2 font-mono text-3xs text-ink-muted">
                           {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates. */}
@@ -681,6 +720,9 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                           </div>
                         ) : null}
                         <div className="mt-3 flex justify-end gap-2">
+                          <button type="button" className="surface-button px-2 py-1 text-2xs font-semibold" onClick={() => openDetail(row.id)}>
+                            Details
+                          </button>
                           <button
                             type="button"
                             className="surface-button px-2 py-1 text-2xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
@@ -751,6 +793,8 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
           }}
         />
       ) : null}
+
+      {detailId ? <WorkOrderDetailDrawer workOrderId={detailId} role={user.role} onClose={closeDetail} /> : null}
 
       {closeTarget ? (
         <WorkOrderCloseWizard

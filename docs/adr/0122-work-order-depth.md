@@ -538,3 +538,34 @@ what the schedule's "active work order" test, the copilot's copy of it and the
 metric catalog's open count exclude; the dashboard's two raw SQL counts name the
 same two values. A ticket resolved before migration `0148` has no findings and
 is still approved: the approval reads neither resolve gate again.
+
+**As built, 2026-11-11 (PR 6, web only).** The detail drawer landed as decision 8
+says. What the plan did not fix:
+
+*The drawer is opened by the URL.* `/work-orders?workOrder=<id>` opens it; a
+card's new *Details* button sets the parameter and *Close details* removes it. A
+cancelled ticket's drawer opens from the Cancelled list.
+
+*The stepper reads the status first.* Which steps are reached comes from the
+ticket's status, so a ticket older than the events table still draws; an event
+gives a step its time where one exists. A cancelled ticket keeps the steps it
+had reached (from the `cancelled` event's `from_status`, or two when there is no
+such event) and its fifth step reads *Cancelled*.
+
+*Who may write in the drawer.* A `viewer` reads everything and writes nothing.
+The checklist is locked once the ticket is `resolved`, `closed` or `cancelled`,
+and the root cause once it is `closed` or `cancelled` — the routes' own rules.
+Reject shows only for an approver on a `resolved` ticket; cancel only for an
+approver on a live or resolved one.
+
+*The card.* It shows `WO #<reference>`, the SLA chip (`SLA 30 mins · At risk`)
+and `Checklist <done>/<total>`. A ticket older than the SLA columns shows no
+chip, and one with no checklist shows no count.
+
+*The create form picks a checklist template.* It lists the active templates that
+fit the chosen asset (ruling P6) and sends `checklistTemplateId`; with none it
+shows no picker. The per-ticket SLA override has no field yet: it stays an
+API-only, admin-only input.
+
+*Reject, cancel and root cause are plain forms*, not `WizardShell`s: their routes
+are on the catalog's exclusion list.

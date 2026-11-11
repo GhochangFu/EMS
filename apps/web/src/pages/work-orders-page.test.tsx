@@ -4,6 +4,13 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aCancelledRowIsOnNoColumnAndUnderItsFilter,
+  aCancelledTicketOpensFromItsList,
+  anOlderCardShowsNoSlaChipAndNoChecklistCount,
+  detailsOpensTheDrawerAndCloseTakesItAway,
+  theCardShowsTheReferenceTheSlaAndTheChecklist,
+  theCreateFormPicksAChecklistTemplate,
+  theCreateFormShowsNoPickerWithoutTemplates,
+  theDrawerOpensFromTheUrl,
   aDragWithACancelledRowSendsNoCancelledItem,
   aDropOnDoneByAnApproverOpensTheApproval,
   aDropOnDoneByAnOperatorIsRefused,
@@ -200,5 +207,41 @@ describe("E3.1 the board with approval and a cancelled ticket (ADR 0122 decision
 
   it("refuses an operator's drop on Done", async () => {
     await aDropOnDoneByAnOperatorIsRefused();
+  });
+});
+
+describe("E3.1 the cards and the detail drawer (ADR 0122 decisions 2, 3 and 8)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the reference, the SLA and the checklist count on a card", async () => {
+    await theCardShowsTheReferenceTheSlaAndTheChecklist();
+  });
+
+  it("shows no SLA chip and no checklist count on an older card", async () => {
+    await anOlderCardShowsNoSlaChipAndNoChecklistCount();
+  });
+
+  it("opens the drawer from ?workOrder=<id>", async () => {
+    await theDrawerOpensFromTheUrl();
+  });
+
+  it("opens the drawer from Details and closes it again", async () => {
+    await detailsOpensTheDrawerAndCloseTakesItAway();
+  });
+
+  it("opens a cancelled ticket's drawer from the Cancelled list", async () => {
+    await aCancelledTicketOpensFromItsList();
+  });
+
+  it("offers the asset's checklist templates on the create form and sends the pick", async () => {
+    await theCreateFormPicksAChecklistTemplate();
+  });
+
+  it("shows no template picker when the asset has none", async () => {
+    await theCreateFormShowsNoPickerWithoutTemplates();
   });
 });
