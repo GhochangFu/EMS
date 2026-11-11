@@ -3,7 +3,9 @@
 ## Status
 
 **Accepted — 2026-11-11** (owner, in chat: "accept ADR 0127, yes build the
-plan, no e2e"). Drafted by an agent for backlog row `F3.16` (P1, Wave 2). The
+plan, no e2e"). **Built 2026-11-11:** PR A
+[#1270](https://github.com/GhochangFu/EMS/pull/1270) (visibility) and PR B
+(device alarms). Drafted by an agent for backlog row `F3.16` (P1, Wave 2). The
 owner ruled sixteen questions on 2026-11-11, one at a time, and chose the
 recommended option on Q2–Q16. On Q1 the owner chose to keep the comms-loss
 alarm in this row, and kept it there again when told it raises the size to
@@ -271,6 +273,49 @@ Facts the build settled; none changes a ruling.
 - **A first dropped asset** is labelled only while it is still on the bucket's
   RTU, and device-supplied strings also lose Unicode format characters
   (security review).
+
+## Build notes (PR B, 2026-11-11)
+
+- **Migration `0151_device_alarms`** (decision 12). Drizzle applies every
+  pending migration in **one** transaction, so the `ACCESS EXCLUSIVE` lock that
+  `DROP NOT NULL` and `ADD COLUMN` take on `bms.alarms` is held until the whole
+  run commits, across the two `VALIDATE` scans, the foreign key's check and the
+  partial index build. The `NOT VALID`/`VALIDATE` split in the file buys no
+  concurrency under this migrator, and the file's header comment says
+  otherwise (committed migrations are not edited, so the correction lives
+  here). `bms.alarms` is a plain table; at real volumes the stall is seconds.
+  Run `db:migrate` on a pilot in a quiet window, with the worker stopped.
+- **`alarms.rtu_id` is `ON DELETE NO ACTION`**, unlike the health tables'
+  cascade: an alarm is history. An RTU with a device alarm cannot be deleted
+  (no route deletes one); there is no index on `alarms.rtu_id`, so an RTU
+  delete's check scans `bms.alarms`.
+- **One scope rule** (decision 14) in `apps/api/src/alarms/alarm-scope.ts`,
+  rendered for Drizzle, raw SQL and the socket's in-memory check; list,
+  summary, acknowledge, details, the socket, the dashboard ribbon and its prior,
+  and the organization control room's open/critical tiles all use it, so every
+  open-alarm count agrees with the list. Asset-keyed readers (map, stats,
+  location summary, work orders, site widgets, role summary) keep excluding
+  device alarms by their inner join.
+- **The socket's device scope is cached at the handshake**, like its asset
+  ids; a re-wired asset or a newly monitored RTU reaches an open socket on
+  reconnect. A host alarm's organization is read per event, and a failed read
+  fails closed.
+- **Clear (decision 16).** ADR 0057's `normal_since` and `decideClear` with a
+  120 s hold. An RTU alarm is "normal" only when the RTU is Online **and** has
+  been heard since the alarm was raised, so a host restart (one fresh window
+  for every RTU) cannot clear a still-silent RTU. A stale host resets the hold.
+  Leaving monitoring, becoming edge-served or deletion clears at once. A host
+  alarm clears after 120 s fresh, or at once when no monitored RTU is left.
+- **Notification (decision 13).** `DispatchInput.ruleId` is nullable; the
+  delivery dedupe key uses the token `system` in the rule's place; a cleared
+  message goes only to channels that already received the alarm.
+- **Out of the device-alarm path:** enrichment (the API refuses it for every
+  caller), work orders (need an asset), and the copilot (it lists rule alarms
+  only and refuses device-alarm details). Acknowledging follows the scope rule,
+  so a user with one asset on a monitored RTU can acknowledge the
+  organization's host alarm and stop its escalation — decision 14 as ruled.
+- **`DEVICE_HEALTH_INTERVAL_MS`** sets the worker sweep (default 30000, bounds
+  10000–3600000; outside them the worker refuses to start).
 
 ## Dependencies
 
