@@ -78,6 +78,8 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/asset-points/asset-points.service.ts",
   "apps/api/src/admin/users/users.service.ts",
   "apps/api/src/admin/users/user-grants.service.ts",
+  // `F4.340` (ADR 0128): `user.create` and `user.update` write the home-organization grant's audit row here.
+  "apps/api/src/admin/users/home-organization-grant.ts",
   "apps/api/src/admin/onboarding/onboarding-commit.service.ts",
   // `F3.24b` (ADR 0103): the `onboarding.discovery` handler audits start and refuse rows here.
   "apps/api/src/admin/onboarding/onboarding-discovery.service.ts",
