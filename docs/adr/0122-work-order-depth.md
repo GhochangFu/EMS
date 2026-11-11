@@ -101,7 +101,9 @@ enrichment → work order) is folded into this record** (ruling Q2) as a
    resolution_minutes)`, `UNIQUE (organization_id, priority)`. Create looks up
    the row for the ticket's priority and **snapshots** the minutes onto the
    ticket; a later policy edit does not move open tickets. The create body may
-   carry an explicit `slaMinutes` that wins.
+   carry an explicit `slaMinutes` that wins — **from the four admin roles
+   only** (owner ruling, 2026-11-11). An `operator` who sends `slaMinutes` is
+   refused (403); an operator's ticket always takes the policy or the default.
 3. With no policy row the platform default applies, as constants in
    `packages/shared`: critical 30, high 60, medium 240, low 1440 *(Q6)*.
 4. The SLA measures **creation to `resolved`** — one clock, wall time, no
@@ -409,3 +411,40 @@ twelve more; the owner ruled them the same day:
 
 Bold marks a ruling that differs from the drafter's recommendation. R1–R5
 were raised by the plan after the first rulings.
+
+Two more, ruled by the owner in chat on 2026-11-11, during the build:
+
+| # | Question | Ruled |
+| --- | --- | --- |
+| S1 | SLA override: who may send `slaMinutes` on `POST /work-orders` | **admins only** — owner, 2026-11-11, reverses the as-built behaviour of PR 1 (which let any `operational` caller, an `operator` included, send it). Built in PR 3. |
+| S2 | Who may edit SLA policies | stays as built: the global `admin` and the organization's `organization_admin` only (`isOrganizationLevelAdmin`) — owner, 2026-11-11 |
+
+**As built, 2026-11-11 (PR 3, migration `0145`).** Six things the plan did not
+spell out, each small:
+
+- *Composite foreign keys.* `work_order_tasks` (to its work order and to its
+  template item), the template items and
+  `maintenance_task_templates.checklist_template_id` each carry a composite
+  `(organization_id, …)` foreign key to their parent, as `0144` did for events.
+  A policy does not bind `bms_fleet`; the key does. The task's template-item
+  key is `ON DELETE SET NULL (template_item_id)`, which needs Postgres 15 or
+  later (compose and CI run 16).
+- *A ticket's checklist holds at most 100 items* (409 on the next), the same
+  bound as a template's list.
+- *A template's name is unique in its organization*, case-insensitively (409 on
+  a duplicate), so a picker never shows two templates a person cannot tell
+  apart.
+- *A close that skips `resolved` is gated like a resolve.* Until PR 5 limits
+  `close` to a resolved ticket, a ticket can be closed straight from a live
+  status; that path now also answers 409 while a mandatory item is pending, so
+  it cannot step around decision 4.4.
+- *A retired template is skipped at convert, not refused.* A schedule names its
+  checklist template once; if that template is later retired or re-scoped, the
+  converted work order is created with no checklist. Create from the form
+  refuses an unusable template (400).
+- *A checklist write on a `resolved` or `closed` ticket answers 409.* Move the
+  ticket back to work to change its checklist.
+
+`checklistDone` counts the items that are no longer `pending` (`done` or
+`not_applicable`). No read returns a schedule's `checklistTemplateId` yet, and
+no screen sets it; the schedule item contract was left alone in PR 3.
