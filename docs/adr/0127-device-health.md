@@ -2,16 +2,16 @@
 
 ## Status
 
-**Proposed — 2026-11-11.** Drafted by an agent for backlog row `F3.16` (P1,
-Wave 2). The owner ruled sixteen questions on 2026-11-11, one at a time, and
-chose the recommended option on Q2–Q16. On Q1 the owner chose to keep the
-comms-loss alarm in this row, and kept it there again when told it raises the
-size to about 10–12 days. The owner also ruled that the backlog `Depends`
-(`F1.x`) is met by `F1.1`, `F1.7` and `F1.10`. Every ruling is recorded under
-*Decision* and *Owner rulings*. This record becomes Accepted when the owner
-accepts it; no code is written before that and before the owner says "yes" to
-the plan,
-[`docs/plans/f3.16-device-health.md`](../plans/f3.16-device-health.md).
+**Accepted — 2026-11-11** (owner, in chat: "accept ADR 0127, yes build the
+plan, no e2e"). Drafted by an agent for backlog row `F3.16` (P1, Wave 2). The
+owner ruled sixteen questions on 2026-11-11, one at a time, and chose the
+recommended option on Q2–Q16. On Q1 the owner chose to keep the comms-loss
+alarm in this row, and kept it there again when told it raises the size to
+about 10–12 days. The owner also ruled that the backlog `Depends` (`F1.x`) is
+met by `F1.1`, `F1.7` and `F1.10`. Every ruling is recorded under *Decision*
+and *Owner rulings*. The plan is
+[`docs/plans/f3.16-device-health.md`](../plans/f3.16-device-health.md); the
+owner approved it the same day, with no `e2e` label on either PR.
 
 No npm package is added, so AGENTS.md §9.4 does not apply. This ADR amends:
 
