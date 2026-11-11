@@ -28,6 +28,9 @@ import { assertDatabasePrefix, withDatabase } from "./worker-database";
 
 export const TEMPLATE_DATABASE = "bms_template";
 
+/** The advisory-lock key every template build on a server serialises on. */
+export const TEMPLATE_BUILD_LOCK = "bms-f45-template-build";
+
 export type ServerKind = "own-container" | "external";
 
 const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
@@ -132,6 +135,33 @@ export type BuildTemplateOptions =
  * then makes it a template nobody can connect to. Rebuilds from scratch if it already exists.
  */
 export async function buildTemplate(superuserUrl: string, options: BuildTemplateOptions): Promise<string> {
+  // The name guard runs before any connection, so a refused name never reaches a server.
+  assertDatabaseName(options.database, options.server);
+  // One template build at a time per server. Migrations `0039` (`ALTER ROLE`), `0043` and `0044`
+  // (`GRANT bms_rollup TO …`) update cluster-wide catalog rows, so two builds on one server at
+  // once — two runs against the same `DATABASE_URL` — fail with `XX000 tuple concurrently
+  // updated` (measured in PR 7; the run prefix keeps their *databases* apart, not the catalog).
+  // Advisory locks are per database, so every build takes it on `postgres`; the session ending
+  // releases it, so a killed run cannot leave it held.
+  const lock = new pg.Client({ connectionString: withDatabase(superuserUrl, "postgres") });
+  // A dropped idle session must not become an uncaught exception; the build's own error surfaces.
+  lock.on("error", () => undefined);
+  await lock.connect();
+  try {
+    const taken = await lock.query<{ ok: boolean }>("SELECT pg_try_advisory_lock(hashtext($1)) AS ok", [
+      TEMPLATE_BUILD_LOCK,
+    ]);
+    if (!taken.rows[0]?.ok) {
+      process.stderr.write("[F4.5] Waiting for another run's template build on this server.\n");
+      await lock.query("SELECT pg_advisory_lock(hashtext($1))", [TEMPLATE_BUILD_LOCK]);
+    }
+    return await buildTemplateHoldingLock(superuserUrl, options);
+  } finally {
+    await lock.end();
+  }
+}
+
+async function buildTemplateHoldingLock(superuserUrl: string, options: BuildTemplateOptions): Promise<string> {
   const database = assertDatabaseName(options.database, options.server);
 
   await onMaintenanceDb(superuserUrl, async (client) => {

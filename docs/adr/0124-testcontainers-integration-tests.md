@@ -317,6 +317,18 @@ five things the decisions above did not spell out:
   `dashboards.service.mimic.test.ts` and the two gates' own unit tests), and `main` has grown
   since. The batches work from 343.
 
+**Closure, 2026-11-11.** All seven PRs merged; every database suite runs on its own worker's
+copy, in CI (`BMS_TEST_DB=containers`) and locally. Two more facts for this record:
+
+- **Template builds are serialised per server** with an advisory lock. Two runs building
+  templates on one server at once collided on cluster-wide catalog rows (`XX000 tuple
+  concurrently updated`); the run prefix separates databases, not the catalog. Found by the
+  `F4.65` reproduction, proved by removing the lock (3 of 3 rounds red without, 0 of 3 with).
+- **Measured cost and benefit:** CI's `build-and-migrate` job 24–30 min before and after the
+  switch; template build ~7 s; ten full local runs with no shared-database failure.
+  `maxWorkers` stays 2 under ruling 9 because of `F4.356` (a disk-timing test outside the
+  database), not the database.
+
 ## Open questions for the owner (in order)
 
 All nine answered 2026-11-10 (see *Rulings*). Kept as asked, for the record.

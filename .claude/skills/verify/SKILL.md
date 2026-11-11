@@ -36,10 +36,18 @@ because `tests/` has no `tsconfig.json`. The list is the `files` array of
 Windows cmd.exe 8,191-character limit. A new invariant file is type-checked by
 nothing until it is added there by hand (AGENTS.md §4.6).
 
-**Integration suites gate on `DATABASE_URL`, asymmetrically.** Unset, they skip
-locally but **throw under `CI`**. Set, a failed connection fails everywhere
-rather than skipping. Coverage thresholds assume those suites ran, so a local
-run with no database is a *partial* result — say so.
+**The run brings its own database when it can (ADR 0124, `F4.5`).** With Docker
+running and `DATABASE_URL` unset, `pnpm test` starts one TimescaleDB and one
+Redis container, builds a template with `db:roles` → `db:migrate` → `db:seed`,
+and gives every Vitest worker its own copy (about 15 s before the first test).
+A set `DATABASE_URL` is used instead, with run-prefixed copies on that server.
+`BMS_TEST_DB=containers` forces the containers (CI's test step), `none` starts
+nothing. With neither Docker nor `DATABASE_URL` the integration suites skip
+locally but **throw under `CI`**, as before. Coverage thresholds assume those
+suites ran, so a run that printed `[F4.5] No test database` is a *partial*
+result — say so. If the machine restarted, start the Docker daemon again
+before trusting a run: the harness falls back to skip, correctly, and every
+database suite reports skipped.
 
 ## 2. Smoke checks (need the dev stack and/or a seeded DB)
 

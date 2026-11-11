@@ -161,6 +161,11 @@ Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 5. The Playwright end-to-end suite is not part of `pnpm test`; run it with
    `pnpm test:e2e` (steps in [`docs/local-setup.md`](./docs/local-setup.md),
    ADR 0100).
+6. `pnpm test` brings its own database when Docker is running and
+   `DATABASE_URL` is not set: one TimescaleDB and one Redis container per run,
+   and a database copy per Vitest worker (ADR 0124, `F4.5`). Set
+   `BMS_TEST_DB=none` (with `DATABASE_URL` unset) for a unit-only loop; the full table is in
+   [`docs/local-setup.md`](./docs/local-setup.md) (*Which database `pnpm test` uses*).
 
 ## Status
 

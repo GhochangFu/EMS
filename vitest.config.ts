@@ -48,6 +48,15 @@ export default defineConfig({
      * it on an 8-core development machine, which is precisely backwards for the environment that
      * was failing. 2 is below the default on both, so it binds where it has to. Do not raise it
      * without re-running the measurement above (`docs/plans/f4.71-shared-db-flakes.md`, U7).
+     *
+     * **Re-measured by `F4.5` (2026-11-11), with every database suite on its own worker's copy**
+     * (ADR 0124): five full runs at 2 and five at 4 on a 4-core machine. 4 was about a third
+     * faster (~520 s against ~800 s) and no run at either count failed on a database race, but
+     * three of the five at 4 went red on `apps/ingest/src/host/supervisor-buffer.test.ts` — a disk-tier timing loop that
+     * touches no database and also failed once at 2 on unchanged `main` (`F4.356`). Ruling 9
+     * (`F4.71`'s rule) raises the cap only when every run at 4 is green, so it stays 2. The
+     * database is no longer the reason; `F4.356` is. Results:
+     * `docs/plans/f4.5-testcontainers.md`, *PR 7*.
      */
     maxWorkers: 2,
     /**
