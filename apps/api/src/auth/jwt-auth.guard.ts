@@ -1,6 +1,7 @@
 import {
   type CanActivate,
   type ExecutionContext,
+  ForbiddenException,
   Inject,
   Injectable,
   Optional,
@@ -18,6 +19,8 @@ import { type AuthMode, resolveAuthMode } from "./auth-mode";
 import { RATE_LIMIT_CLASS_METADATA, rateLimitClassFor } from "../rate-limit/rate-limit-class.decorator";
 import type { RateLimitClass } from "../rate-limit/rate-limit-config";
 import { RateLimiterService } from "../rate-limit/rate-limiter.service";
+import { looksLikeServiceToken } from "../service-accounts/service-token-codec";
+import { ServiceTokenVerifier } from "../service-accounts/service-token-verifier.service";
 import { rateLimitedException, rateLimitedHeaders } from "../rate-limit/rate-limited.exception";
 import { linkIdentity, recalledIdentity, rememberIdentity, resolveIdentity } from "./identity-resolver";
 
@@ -32,6 +35,31 @@ type ResponseWithHeaders = {
 };
 
 const reflector = new Reflector();
+
+/**
+ * `F4.17` / ADR 0125 decisions 11 and 12 — what a `bms_sat_` token adds to its
+ * principal, kept beside the payload object (the identity memo's pattern) so
+ * the guard, the gateways and the limiter read it without a second lookup.
+ */
+type ServiceTokenFacts = Readonly<{ tokenId: string; readOnly: boolean }>;
+const serviceTokens = new WeakMap<object, ServiceTokenFacts>();
+
+/** The token facts of a principal that authenticated with a `bms_sat_` token, or `null` for a JWT. */
+export function serviceTokenOf(payload: object): ServiceTokenFacts | null {
+  return serviceTokens.get(payload) ?? null;
+}
+
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** The one 401 every refused service token gets: unknown, malformed, revoked, expired or disabled. */
+function invalidServiceToken(): UnauthorizedException {
+  return new UnauthorizedException({
+    statusCode: 401,
+    message: "Invalid token",
+    error: "Unauthorized",
+    code: "token_invalid",
+  } satisfies UnauthorizedEnvelope);
+}
 
 type JwtHeader = {
   kid?: string;
@@ -158,6 +186,9 @@ export class JwtAuthGuard implements CanActivate {
     private readonly jwt: JwtService,
     @Inject(AUTH_DRIZZLE) private readonly authDb: BmsDb,
     @Optional() private readonly rateLimiter?: RateLimiterService,
+    // `F4.17` / ADR 0125 decision 11. Optional so a spec builds the guard by
+    // hand; without it a `bms_sat_` token is refused, never accepted.
+    @Optional() private readonly serviceTokenVerifier?: ServiceTokenVerifier,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -169,8 +200,26 @@ export class JwtAuthGuard implements CanActivate {
     const token = header.slice(7);
 
     req.user = await this.verifyToken(token);
+    this.refuseWriteByReadOnlyToken(req, req.user);
     await this.enforceIdentityLimit(context, req, req.user);
     return true;
+  }
+
+  /**
+   * `F4.17` / ADR 0125 decision 12 — a token issued `read_only` may read and
+   * nothing else: any other method is a 403 before the controller runs, so no
+   * route needs to know about it.
+   */
+  private refuseWriteByReadOnlyToken(req: RequestWithUser, payload: JwtPayload): void {
+    const facts = serviceTokenOf(payload);
+    if (facts?.readOnly && !READ_METHODS.has((req.method ?? "GET").toUpperCase())) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        message: "This token is read-only",
+        error: "Forbidden",
+        code: "token_read_only",
+      });
+    }
   }
 
   /**
@@ -200,7 +249,10 @@ export class JwtAuthGuard implements CanActivate {
       RATE_LIMIT_CLASS_METADATA,
       [context.getHandler(), context.getClass()],
     );
-    const subject = recalledIdentity(payload)?.id ?? `sub:${payload.sub}`;
+    // A service token is its own budget (decision 1): one leaked token cannot
+    // drain the account's other token.
+    const facts = serviceTokenOf(payload);
+    const subject = facts ? `token:${facts.tokenId}` : (recalledIdentity(payload)?.id ?? `sub:${payload.sub}`);
     const decision = await limiter.checkIdentity(rateLimitClassFor(req.method, explicit), subject);
     if (decision.refuse) {
       const res = context.switchToHttp().getResponse<ResponseWithHeaders>();
@@ -211,8 +263,16 @@ export class JwtAuthGuard implements CanActivate {
     }
   }
 
-  /** Verifies either a local JWT or OIDC token using the active auth mode. */
+  /**
+   * Verifies a service-account token, a local JWT or an OIDC token. The
+   * `bms_sat_` prefix routes before any JWT parse, so a token never reaches
+   * the JWT path and a JWT never reaches the token path — under either
+   * `AUTH_MODE` (decision 11).
+   */
   async verifyToken(token: string): Promise<JwtPayload> {
+    if (looksLikeServiceToken(token)) {
+      return this.verifyServiceToken(token);
+    }
     const oidc = authMode() === "oidc";
     const payload = oidc ? await this.verifyOidcToken(token) : this.verifyLocalToken(token);
 
@@ -239,6 +299,18 @@ export class JwtAuthGuard implements CanActivate {
       rememberIdentity(payload, identity);
     }
     return payload;
+  }
+
+  private async verifyServiceToken(token: string): Promise<JwtPayload> {
+    const principal = await this.serviceTokenVerifier?.verify(token);
+    if (!principal) {
+      throw invalidServiceToken();
+    }
+    // The identity memo the rest of the request reads (`resolveDbUser`,
+    // `resolveActorId`): a service row has no OIDC subject to resolve by.
+    rememberIdentity(principal.payload, principal.identity);
+    serviceTokens.set(principal.payload, { tokenId: principal.tokenId, readOnly: principal.readOnly });
+    return principal.payload;
   }
 
   private verifyLocalToken(token: string): JwtPayload {

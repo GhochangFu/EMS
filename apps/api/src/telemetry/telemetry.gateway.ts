@@ -9,7 +9,7 @@ import type { TelemetryReading } from "@bms/shared";
 import { Namespace, Socket } from "socket.io";
 
 import { AccessControlService } from "../auth/access-control.service";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { JwtAuthGuard, serviceTokenOf } from "../auth/jwt-auth.guard";
 import { SocketRegistry } from "../auth/socket-registry";
 import { refuseRateLimitedHandshake } from "../rate-limit/handshake-limit";
 import { RateLimiterService } from "../rate-limit/rate-limiter.service";
@@ -58,6 +58,8 @@ export class TelemetryGateway implements OnGatewayInit, OnGatewayConnection {
     }
     try {
       const payload = await this.jwtAuth.verifyToken(token);
+      // F4.17 / ADR 0125 decision 13: a revoke closes this token's sockets.
+      client.data.serviceTokenId = serviceTokenOf(payload)?.tokenId;
       const userId = this.accessControl.resolveUserId(payload);
       client.data.userId = userId;
       client.data.assetIds = await this.accessControl.readableAssetIds(payload);

@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 
 /** The part of a Socket.IO socket the registry reads and calls. */
 export type RegisteredSocket = {
-  data: { userId?: unknown };
+  data: { userId?: unknown; serviceTokenId?: unknown };
   disconnect(close?: boolean): unknown;
 };
 
@@ -41,6 +41,39 @@ export class SocketRegistry {
       }
     }
     return closed;
+  }
+
+  /**
+   * `F4.17` / ADR 0125 decision 13 — disconnects every registered socket that
+   * authenticated with service token `tokenId` (its `data.serviceTokenId`);
+   * returns how many. A revoke closes that token's sockets, not every socket
+   * of the account.
+   */
+  disconnectServiceToken(tokenId: string): number {
+    let closed = 0;
+    for (const namespace of this.namespaces) {
+      for (const socket of [...namespace.sockets.values()]) {
+        if (socket.data?.serviceTokenId === tokenId) {
+          socket.disconnect(true);
+          closed += 1;
+        }
+      }
+    }
+    return closed;
+  }
+
+  /** `F4.17` — every distinct service token holding a socket on this process. */
+  connectedServiceTokenIds(): string[] {
+    const ids = new Set<string>();
+    for (const namespace of this.namespaces) {
+      for (const socket of namespace.sockets.values()) {
+        const tokenId = socket.data?.serviceTokenId;
+        if (typeof tokenId === "string") {
+          ids.add(tokenId);
+        }
+      }
+    }
+    return [...ids];
   }
 
   /**

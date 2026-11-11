@@ -113,7 +113,13 @@ export const currentUserResponseSchema = z.object({
  * `F4.203` — why an authenticated request was refused, when the reason is one
  * the user can act on. A closed set: a new code is a contract change.
  */
-export const authFailureCodeSchema = z.enum(["account_deactivated"]);
+export const authFailureCodeSchema = z.enum([
+  "account_deactivated",
+  // F4.17 / ADR 0125 decision 11: a `bms_sat_` service token that is unknown,
+  // malformed, revoked, expired or whose account is disabled — one code, so a
+  // caller cannot tell which.
+  "token_invalid",
+]);
 
 /**
  * `F4.203` — the 401 body `JwtAuthGuard` sends. Nest's default envelope plus an
