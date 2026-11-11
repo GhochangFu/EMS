@@ -664,6 +664,34 @@ schedule's `report_files.delivery_status` if the channel or SMTP host is
 missing. Restore the compose worker afterward with
 `docker compose up -d worker`.
 
+### Which database `pnpm test` uses (F4.5, ADR 0124)
+
+The Vitest run decides once, at start-up, from `BMS_TEST_DB`, `DATABASE_URL` and
+whether Docker answers:
+
+| You have | The run uses |
+|---|---|
+| Docker running, no `DATABASE_URL` | its own TimescaleDB and Redis containers (`testcontainers`), prepared with `db:roles`, `db:migrate` and `db:seed` — about 15 s before the first test (measured 2026-11-11: container start plus a ~7 s template build), stopped at the end |
+| `DATABASE_URL` set (for example the compose database) | that database. Suites still on the shared list run on it as before; a suite that has moved off the list gets a run-prefixed copy there (`bms_t<run id>_w<n>`), dropped when the run ends |
+| neither | nothing: the database suites skip locally (and refuse under `CI`) |
+| `BMS_TEST_DB=none` | the harness starts and changes nothing; suites still use `DATABASE_URL` if it is set — for a quick unit-only loop |
+
+A run that selects only projects without database suites (`--project web`,
+`--project shared`, `--project db`) starts nothing. `BMS_TEST_DB` also takes
+`containers` (always the containers; CI's test step from PR 6 of the plan),
+`external` and `shared` — see ADR 0124.
+
+Database suites still share one database inside the run until they move,
+in the batches of
+[`docs/plans/f4.5-testcontainers.md`](./plans/f4.5-testcontainers.md), onto a
+database per Vitest worker. The exports in the end-to-end section below set
+`DATABASE_URL`, so a `pnpm test` in that same shell runs against the compose
+database.
+
+The test containers publish their ports on every interface (the library has no
+loopback-only option) and use random passwords per run. On a shared network,
+set Docker's daemon default `"ip": "127.0.0.1"` to keep them off it.
+
 ### Run the end-to-end suite (F4.7, ADR 0100)
 
 The Playwright suite (`apps/e2e`, five specs on Chromium) starts the API from
