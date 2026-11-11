@@ -644,3 +644,18 @@ The consequences were not cosmetic:
   what let the defect through the first time.
 - **No migration, and no contract field added or removed.** Amendment 2's two
   integers are unchanged in name, type and meaning.
+
+## Amendment 4 — an explicit "standard five bands" button is not a default (`F4.355`, owner, 2026-11-11)
+
+**Status: Proposed — ruled by the owner in chat on 2026-11-11 with ADR 0038
+Amendment 7; the owner's merge of this text approves it.**
+
+Amendment 1 decision 3 gives bands no default: "five cut-points cannot be
+guessed". ADR 0038 Amendment 7 B3 adds a **Use the standard five bands** button
+to the template Health tab (Excellent 0.95, Good 0.85, Fair 0.7, Poor 0.5,
+Critical 0, the values the ESKOM baseline seed already uses).
+
+**Decision.** The button is an author's choice, not a default, so decision 3
+stands: a template with no `health.bands` stays unbanded, nothing fills the
+table without a click, and no read path invents bands. The five values are
+declared once in `@bms/shared` and the seed reads them from there.
