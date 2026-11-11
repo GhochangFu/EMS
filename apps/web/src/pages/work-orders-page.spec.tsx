@@ -137,7 +137,7 @@ class CommitBoundExceeded extends Error {}
  * first case instead of failing it. The guard disarms once the row is on screen,
  * because the cases' own typing and dragging commit many more times.
  */
-async function renderPage(shown: WorkOrderListItem | WorkOrderListItem[] = ROW, as: AuthUser = user): Promise<void> {
+async function renderPage(shown: WorkOrderListItem | WorkOrderListItem[] = ROW, as: AuthUser = user, at = "/work-orders"): Promise<void> {
   const rows = Array.isArray(shown) ? shown : [shown];
   const row = rows[0] as WorkOrderListItem;
   vi.stubGlobal(
@@ -159,7 +159,7 @@ async function renderPage(shown: WorkOrderListItem | WorkOrderListItem[] = ROW, 
   render(
     <Profiler id="work-orders" onRender={onRender}>
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[at]}>
           <WorkOrdersPage user={as} />
         </MemoryRouter>
       </QueryClientProvider>
@@ -627,7 +627,8 @@ export async function aCancelledRowIsOnNoColumnAndUnderItsFilter(): Promise<void
   expect(within(list).getByText(CANCELLED_ROW.title)).toBeTruthy();
   expect(within(list).getByText("GEN-000002")).toBeTruthy();
   expect(within(list).getByText("Cancelled")).toBeTruthy();
-  expect(within(list).queryByRole("button"), "a cancelled ticket has no action").toBeNull();
+  // Its only control opens the detail drawer: a cancelled ticket takes no write.
+  expect(within(list).getAllByRole("button").map((button) => button.textContent)).toEqual(["Details"]);
   expect(screen.queryByText(ROW.title), "the board is replaced by the list").toBeNull();
 }
 
@@ -664,4 +665,133 @@ export async function aDropOnDoneByAnOperatorIsRefused(): Promise<void> {
   expect((await screen.findByRole("alert")).textContent).toBe(APPROVE_NEEDS_ADMIN);
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(reorder).not.toHaveBeenCalled();
+}
+
+/**
+ * `E3.1` (ADR 0122 decisions 2, 3 and 8; plan PR 6) — the board's cards carry the
+ * reference, the SLA and the checklist count, and the detail drawer is opened by the
+ * URL, so a reload reopens it.
+ */
+const DRAWER_ROW: WorkOrderListItem = {
+  ...ROW,
+  reference: "STP-000042",
+  slaMinutes: 30,
+  slaState: "at_risk",
+  slaDueAt: "2026-10-01T09:30:00.000Z",
+  checklistDone: 1,
+  checklistTotal: 3,
+};
+
+function stubDetail(row: WorkOrderListItem): void {
+  vi.spyOn(workOrdersApi, "fetchWorkOrderDetail").mockResolvedValue({ ...row, ...NO_FINDINGS } as WorkOrderDetail);
+  vi.spyOn(workOrdersApi, "fetchWorkOrderCauseCodes").mockResolvedValue({ items: [] });
+}
+
+/** The card reads `WO #STP-000042`, its SLA as `30 mins` with its state, and the checklist count. */
+export async function theCardShowsTheReferenceTheSlaAndTheChecklist(): Promise<void> {
+  await renderPage(DRAWER_ROW);
+  const card = cardOf(DRAWER_ROW.title);
+  expect(within(card).getByText("WO #STP-000042")).toBeTruthy();
+  expect(within(card).getByText("SLA 30 mins · At risk")).toBeTruthy();
+  expect(within(card).getByText("Checklist 1/3")).toBeTruthy();
+  expect(within(card).queryByText(/^WO-/), "the old id-derived label is gone").toBeNull();
+}
+
+/** A ticket older than the SLA columns, with no checklist, shows neither chip. */
+export async function anOlderCardShowsNoSlaChipAndNoChecklistCount(): Promise<void> {
+  await renderPage(ROW);
+  const card = cardOf(ROW.title);
+  expect(within(card).getByText("WO #GEN-000001")).toBeTruthy();
+  expect(within(card).queryByText(/SLA/)).toBeNull();
+  expect(within(card).queryByText(/^Checklist/)).toBeNull();
+}
+
+/** `?workOrder=<id>` opens the drawer on that ticket with no click: a reload reopens it. */
+export async function theDrawerOpensFromTheUrl(): Promise<void> {
+  stubDetail(DRAWER_ROW);
+  await renderPage(DRAWER_ROW, user, `/work-orders?workOrder=${DRAWER_ROW.id}`);
+  const dialog = await screen.findByRole("dialog", { name: DRAWER_ROW.title });
+  expect(await within(dialog).findByText("WO #STP-000042")).toBeTruthy();
+  expect(workOrdersApi.fetchWorkOrderDetail).toHaveBeenCalledWith(DRAWER_ROW.id);
+}
+
+/** With no parameter there is no drawer; Details opens it, and Close details takes it away again. */
+export async function detailsOpensTheDrawerAndCloseTakesItAway(): Promise<void> {
+  stubDetail(DRAWER_ROW);
+  await renderPage(DRAWER_ROW);
+  expect(screen.queryByRole("dialog"), "no drawer without the parameter").toBeNull();
+  expect(workOrdersApi.fetchWorkOrderDetail).not.toHaveBeenCalled();
+
+  await userEvent.click(within(cardOf(DRAWER_ROW.title)).getByRole("button", { name: "Details" }));
+  const dialog = await screen.findByRole("dialog", { name: DRAWER_ROW.title });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Close details" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+}
+
+/** A cancelled ticket's drawer opens from the Cancelled list. */
+export async function aCancelledTicketOpensFromItsList(): Promise<void> {
+  stubDetail(CANCELLED_ROW);
+  await renderPage([ROW, CANCELLED_ROW]);
+  await userEvent.selectOptions(screen.getByLabelText("Status"), "cancelled");
+  const list = screen.getByRole("region", { name: "Cancelled work orders" });
+  await userEvent.click(within(list).getByRole("button", { name: "Details" }));
+  expect(await screen.findByRole("dialog", { name: CANCELLED_ROW.title })).toBeTruthy();
+  expect(workOrdersApi.fetchWorkOrderDetail).toHaveBeenCalledWith(CANCELLED_ROW.id);
+}
+
+/**
+ * The create form offers the checklist templates that fit the chosen asset (ruling P6)
+ * and sends the pick as `checklistTemplateId`; with none listed it shows no picker.
+ */
+export async function theCreateFormPicksAChecklistTemplate(): Promise<void> {
+  const templates = vi.spyOn(workOrdersApi, "fetchWorkOrderChecklistTemplates").mockResolvedValue({
+    items: [
+      {
+        id: "0f4e1d2c-0000-4000-8000-0000000000c1",
+        organizationId: "0f4e1d2c-0000-4000-8000-0000000000d1",
+        name: "Pump service",
+        domain: null,
+        active: true,
+        items: [
+          { id: "i1", title: "Isolate", mandatory: true, sortOrder: 0 },
+          { id: "i2", title: "Test", mandatory: false, sortOrder: 1 },
+        ],
+        createdAt: "2026-10-01T09:00:00.000Z",
+        updatedAt: "2026-10-01T09:00:00.000Z",
+      },
+    ],
+  });
+  const create = vi.spyOn(workOrdersApi, "createWorkOrder").mockResolvedValue(ROW);
+  await renderPage();
+  await screen.findByRole("option", { name: "PMP-01 · Pump One" });
+
+  await userEvent.click(screen.getByRole("button", { name: "+ New WO" }));
+  const dialog = await screen.findByRole("dialog", { name: "Create work order" });
+  const picker = await within(dialog).findByLabelText("Checklist template (optional)");
+  expect(templates).toHaveBeenCalledWith(ASSET.id);
+  expect(within(picker).getAllByRole("option").map((option) => option.textContent)).toEqual(["No checklist", "Pump service (2 items)"]);
+  await userEvent.selectOptions(picker, "0f4e1d2c-0000-4000-8000-0000000000c1");
+  expect(within(dialog).getByText("Checklist: Pump service"), "the pick is named on the form").toBeTruthy();
+  await userEvent.type(within(dialog).getByLabelText("Title"), "Service the pump");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect(create.mock.calls[0]?.[0]).toMatchObject({ assetId: ASSET.id, title: "Service the pump", checklistTemplateId: "0f4e1d2c-0000-4000-8000-0000000000c1" });
+}
+
+/** With no template for the asset the create form shows no picker. */
+export async function theCreateFormShowsNoPickerWithoutTemplates(): Promise<void> {
+  const templates = vi.spyOn(workOrdersApi, "fetchWorkOrderChecklistTemplates").mockResolvedValue({ items: [] });
+  await renderPage();
+  await screen.findByRole("option", { name: "PMP-01 · Pump One" });
+  await userEvent.click(screen.getByRole("button", { name: "+ New WO" }));
+  const dialog = await screen.findByRole("dialog", { name: "Create work order" });
+  await within(dialog).findByLabelText("Title");
+  // The list was read and came back empty: only then is "no picker" a statement about the form.
+  await waitFor(() => expect(templates).toHaveBeenCalledWith(ASSET.id));
+  await waitFor(() => expect(templates.mock.results[0]?.type).toBe("return"));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(within(dialog).queryByLabelText("Checklist template (optional)")).toBeNull();
 }
