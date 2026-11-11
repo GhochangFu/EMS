@@ -121,6 +121,8 @@ export class AlarmsService {
     severity?: string;
     raisedFrom?: Date;
     raisedTo?: Date;
+    /** `F3.16` — rule alarms only (`source = 'rule'`); the copilot's `list_alarms` sets it. */
+    ruleOnly?: boolean;
   }): Promise<{ items: AlarmListItem[]; nextCursor: string | null }> {
     // Truncated after the clamp (plan decision 4): the schema lets a fractional
     // `limit` through, as the old `Number(limitRaw)` did, and SQL's `LIMIT`
@@ -144,6 +146,7 @@ export class AlarmsService {
       ...(opts.severity !== undefined ? [eq(alarms.severity, opts.severity)] : []),
       ...(opts.raisedFrom !== undefined ? [gte(alarms.raisedAt, opts.raisedFrom)] : []),
       ...(opts.raisedTo !== undefined ? [lt(alarms.raisedAt, opts.raisedTo)] : []),
+      ...(opts.ruleOnly ? [eq(alarms.source, "rule")] : []),
     ];
 
     return withReadScope(

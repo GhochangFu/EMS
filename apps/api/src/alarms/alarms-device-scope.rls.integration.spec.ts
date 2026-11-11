@@ -6,7 +6,10 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
+import { priorOpenAlarmsInScope } from "../dashboard-builder/metric-catalog-prior";
+import type { MetricCatalogService } from "../dashboard-builder/metric-catalog.service";
 import type { DashboardService } from "../dashboard/dashboard.service";
+import { withTenant } from "../database/tenant-context";
 import type { AlarmDetailsService } from "./alarm-details.service";
 import type { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmsController } from "./alarms.controller";
@@ -29,6 +32,12 @@ import type { AlarmsService } from "./alarms.service";
  */
 export type DeviceScopeFixtures = {
   svc: AlarmsService;
+  catalog: MetricCatalogService;
+  enrichment: AlarmEnrichmentService;
+  tenantDb: BmsDb;
+  orgA: string;
+  warning: string;
+  prefix: string;
   details: AlarmDetailsService;
   dashboard: DashboardService;
   ownerPool: pg.Pool;
@@ -203,4 +212,94 @@ export async function assertAcknowledgeKeepsTheGateAndTheScope(
   expect(acked).toMatchObject({ id: ctx.alarmA2, source: "rtu_comms", assetId: null });
   expect(acked.acknowledgedAt).not.toBeNull();
   expect(await acknowledgedAt(ctx.ownerPool, ctx.alarmA2)).not.toBeNull();
+}
+
+/**
+ * Opens org A's `ingest_host` alarm for the length of `fn` (one open host alarm
+ * per organization, `alarms_open_per_device_uidx`; an already-open one is used
+ * as it is and left alone), so `aOn1`, on the monitored `a1`, sees two device
+ * alarms: `a1`'s critical comms alarm and the host alarm.
+ */
+async function withOpenHostAlarm(ctx: DeviceScopeFixtures, fn: () => Promise<void>): Promise<void> {
+  const { rows } = await ctx.ownerPool.query<{ id: string }>(
+    `INSERT INTO bms.alarms (organization_id, source, severity, message)
+     VALUES ($1, 'ingest_host', $2, $3) ON CONFLICT DO NOTHING RETURNING id`,
+    [ctx.orgA, ctx.warning, `${ctx.prefix}open-host`],
+  );
+  try {
+    await fn();
+  } finally {
+    if (rows[0]) await ctx.ownerPool.query("DELETE FROM bms.alarms WHERE id = $1", [rows[0].id]);
+  }
+}
+
+/**
+ * Review fix (F3.16 PR B) — the organization control room's alarm tile counts
+ * what the rail beside it lists: `alarms.active.count` and
+ * `alarms.critical.count` equal the summary for the same scope, device alarms
+ * (`rtu_comms` and `ingest_host`) included, and the tile's prior predicate
+ * (`priorOpenAlarmsInScope`) at an instant after every raise counts the same.
+ */
+export async function assertCatalogAlarmTilesAgreeWithTheSummary(ctx: DeviceScopeFixtures): Promise<void> {
+  await withOpenHostAlarm(ctx, async () => {
+    const bindings = {
+      widgets: [{ id: "w", tabGroupId: null, widgetType: "value_tile", config: { compareToPrevious: true } }],
+      sources: [
+        { id: "open", widgetId: "w", catalogKey: "alarms.active.count", params: {} },
+        { id: "critical", widgetId: "w", catalogKey: "alarms.critical.count", params: {} },
+      ],
+      scope: { assetId: null, locationId: null, assetGroupId: null },
+      capLocationId: null,
+    };
+    for (const scope of [[ctx.aOn1], [ctx.aOn1, ctx.aOn2], [ctx.aOn2], [ctx.aOff]]) {
+      const summary = await ctx.svc.activeCountsBySeverity(scope);
+      const critical = summary.items.filter((i) => i.tone === "critical").reduce((s, i) => s + i.count, 0);
+      const { byId } = await ctx.catalog.resolveBindings(ctx.orgA, bindings, scope, null, "F3.16");
+      const value = (id: string) => {
+        const resolved = byId.get(id);
+        return resolved?.shape === "metric" ? resolved.value : undefined;
+      };
+      const label = `${scope.length} asset(s)`;
+      expect(value("open"), `alarms.active.count for ${label} equals the summary`).toBe(summary.total);
+      expect(value("critical"), `alarms.critical.count for ${label} equals the summary's critical`).toBe(critical);
+      const after = new Date(Date.now() + 60_000);
+      for (const criticalOnly of [false, true]) {
+        const prior = await withTenant(ctx.tenantDb, ctx.orgA, (tx) =>
+          priorOpenAlarmsInScope(tx, ctx.orgA, scope, after, criticalOnly),
+        );
+        expect(prior, `the tile's prior predicate (criticalOnly ${criticalOnly}) for ${label}`).toBe(
+          criticalOnly ? critical : summary.total,
+        );
+      }
+    }
+    const onA1 = await ctx.svc.activeCountsBySeverity([ctx.aOn1]);
+    expect(onA1.total, "aOn1 sees a1's comms alarm and the open host alarm, and no rule alarm").toBe(2);
+  });
+}
+
+/** The enrichment write refuses a device alarm with the same 404 for every caller, global admin included. */
+export async function assertEnrichmentRefusesADeviceAlarm(ctx: DeviceScopeFixtures, user: JwtPayload): Promise<void> {
+  for (const [id, scope] of [
+    [ctx.alarmA1, null],
+    [ctx.hostA, null],
+    [ctx.alarmA1, [ctx.aOn1]],
+  ] as const) {
+    await expect(
+      ctx.enrichment.upsert(id, user, { rootCause: "F3.16 device alarm" }, scope === null ? null : [...scope]),
+      `${id === ctx.hostA ? "host" : "comms"} alarm, ${scope === null ? "global admin" : "scoped caller"}`,
+    ).rejects.toBeInstanceOf(NotFoundException);
+  }
+  const { rows } = await ctx.ownerPool.query("SELECT 1 FROM bms.alarm_enrichments WHERE alarm_id = ANY($1::uuid[])", [
+    [ctx.alarmA1, ctx.hostA],
+  ]);
+  expect(rows, "no enrichment was written to a device alarm").toEqual([]);
+}
+
+/** `ruleOnly` (the copilot's `list_alarms`) leaves out every device alarm the scope would otherwise list. */
+export async function assertRuleOnlyListLeavesOutDeviceAlarms(ctx: DeviceScopeFixtures): Promise<void> {
+  const page = await ctx.svc.list({ limit: 100, assetIds: [ctx.aOn1, ctx.bOn1], ruleOnly: true });
+  expect(page.items.filter((i) => i.source !== "rule"), "no device alarm in a ruleOnly page").toEqual([]);
+  expect(await idsFor(ctx, [ctx.aOn1, ctx.bOn1]), "without it the same scope lists them").toEqual(
+    expect.arrayContaining([ctx.alarmA1, ctx.alarmB1]),
+  );
 }

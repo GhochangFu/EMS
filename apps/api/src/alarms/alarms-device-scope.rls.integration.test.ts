@@ -7,21 +7,28 @@ import { createDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { AssetHealthService } from "../asset-health/asset-health.service";
 import type { CalcParametersService } from "../calc/calc-parameters.service";
+import { MetricCatalogService } from "../dashboard-builder/metric-catalog.service";
 import { DashboardService } from "../dashboard/dashboard.service";
+import type { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import { jwtFor, primeSeededSubjects } from "../testing/seeded-subjects";
 import { AlarmDetailsService } from "./alarm-details.service";
+import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import type { AlarmsGateway } from "./alarms.gateway";
 import { AlarmsService } from "./alarms.service";
 import {
   assertAcknowledgeKeepsTheGateAndTheScope,
+  assertCatalogAlarmTilesAgreeWithTheSummary,
   assertDashboardCountsAgree,
   assertDetailsFollowTheScope,
+  assertEnrichmentRefusesADeviceAlarm,
   assertHostAlarmFollowsMonitoredRtus,
   assertOrganizationBNeverSeesA,
   assertRtuAlarmVisibleOnlyThroughAnAssetOnTheRtu,
+  assertRuleOnlyListLeavesOutDeviceAlarms,
   assertSummaryAgreesWithTheList,
   type DeviceScopeFixtures,
 } from "./alarms-device-scope.rls.integration.spec";
@@ -149,8 +156,23 @@ describe.skipIf(!connectionString)("F3.16 — device alarm visibility follows th
 
     const tenantDb = createDb(tenantPool);
     const fleetDb = createDb(fleetPool);
+    const audit = new MasterDataAuditService(tenantDb, fleetDb);
     ctx = {
-      svc: new AlarmsService(tenantDb, fleetDb, gatewayStub, new MasterDataAuditService(tenantDb, fleetDb)),
+      svc: new AlarmsService(tenantDb, fleetDb, gatewayStub, audit),
+      // `accessControl` is never reached: the suite drives `resolveBindings` with the readable set.
+      catalog: new MetricCatalogService(
+        tenantDb,
+        fleetDb,
+        undefined as unknown as ConstructorParameters<typeof MetricCatalogService>[2],
+        new AssetHealthService(fleetDb),
+        fleetPool,
+      ),
+      // No skill code is sent, so the vocabulary check is never reached.
+      enrichment: new AlarmEnrichmentService(tenantDb, fleetDb, {} as VocabulariesService, audit),
+      tenantDb,
+      orgA: orgAId,
+      warning,
+      prefix: PREFIX,
       details: new AlarmDetailsService(fleetDb),
       dashboard: new DashboardService(fleetPool, {} as Pick<CalcParametersService, "resolveForAssets">),
       ownerPool: fleetPool,
@@ -207,6 +229,18 @@ describe.skipIf(!connectionString)("F3.16 — device alarm visibility follows th
 
   it("details read a device alarm in scope and 404 outside it", async () => {
     await assertDetailsFollowTheScope(ctx);
+  });
+
+  it("the catalog's alarm tiles and their prior count what the summary counts, device alarms included", async () => {
+    await assertCatalogAlarmTilesAgreeWithTheSummary(ctx);
+  });
+
+  it("the enrichment write 404s a device alarm for every caller, the global admin included", async () => {
+    await assertEnrichmentRefusesADeviceAlarm(ctx, user);
+  });
+
+  it("ruleOnly lists no device alarm", async () => {
+    await assertRuleOnlyListLeavesOutDeviceAlarms(ctx);
   });
 
   it("acknowledging keeps the operations role gate and 404s outside scope", async () => {
