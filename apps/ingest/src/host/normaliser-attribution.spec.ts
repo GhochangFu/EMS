@@ -256,7 +256,7 @@ export function runAttributionSumTests(): void {
   assert(Object.keys(clean.unattributed).length === 0, "nothing dropped: unattributed is empty");
 }
 
-/** Device-supplied strings are cut to 128 characters and lose their control characters (decision 8). */
+/** Device-supplied strings are cut to 128 characters and lose their control and format characters (decision 8). */
 export function runDeviceStringCleaningTests(): void {
   const long = "k".repeat(200);
   const result = resolveSamples(
@@ -272,4 +272,9 @@ export function runDeviceStringCleaningTests(): void {
   assert(stray?.deviceKey === "EVILKEY" && stray.sourceKey === "ab", `control characters stripped: ${JSON.stringify(stray)}`);
   assert(cleanLabel("\u{1F600}".repeat(130))?.length === 256, "the cut counts code points, never splitting a pair");
   assert(cleanLabel(null) === null, "null stays null");
+  // Security review L2: Unicode format characters (bidi overrides, zero-width, BOM) cannot spoof a key.
+  assert(
+    cleanLabel("RTU\u202E1-\u200BA\uFEFF\u2066B") === "RTU1-AB",
+    `format characters stripped: ${JSON.stringify(cleanLabel("RTU\u202E1-\u200BA\uFEFF\u2066B"))}`,
+  );
 }

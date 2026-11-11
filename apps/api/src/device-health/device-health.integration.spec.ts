@@ -112,6 +112,25 @@ export async function assertDropsOlderThanADayAreNotRecent(ctx: DeviceHealthFixt
   ]);
 }
 
+/**
+ * I4b (security review L1) — a stored first asset that is no longer on the bucket's RTU (moved,
+ * or named on another RTU) keeps its id but loses its code, RTU and location labels, so a
+ * location admin is never shown another location's names. The sibling RTU's bucket names the
+ * monitored RTU's asset.
+ */
+export async function assertAFirstAssetOffItsRtuIsNotLabelled(ctx: DeviceHealthFixtures): Promise<void> {
+  const body = await ctx.svc.list(ctx.globalAdmin);
+  const sibling = body.items.find((item) => item.rtuId === ctx.rtus.sibling);
+  expect(sibling?.drops24h[0]?.first).toEqual({
+    assetId: ctx.firstAsset.id,
+    assetCode: null,
+    assetRtuName: null,
+    assetLocationName: null,
+    pointKey: "temp_c",
+    sourceKey: null,
+  });
+}
+
 /** I5 — `unattributed` reaches the global admin only, and only the last 24 h of it. */
 export async function assertUnattributedIsTheGlobalAdmins(ctx: DeviceHealthFixtures): Promise<void> {
   const global = deviceHealthResponseSchema.parse(await ctx.svc.list(ctx.globalAdmin));

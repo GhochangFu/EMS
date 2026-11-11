@@ -10,6 +10,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import { jwtFor, primeSeededSubjects, SEEDED } from "../testing/seeded-subjects";
 import {
+  assertAFirstAssetOffItsRtuIsNotLabelled,
   assertDropsOlderThanADayAreNotRecent,
   assertOrganizationBSeesNoneOfA,
   assertTheLocationAdminSeesOnlyItsRtus,
@@ -187,6 +188,10 @@ describe.skipIf(!connectionString)("F3.16 — the device-health admin reads", ()
 
   it("I4 drops older than 24 h are not in drops24h, and the first point is named", async () => {
     await assertDropsOlderThanADayAreNotRecent(ctx);
+  });
+
+  it("I4b a first asset no longer on the bucket's RTU keeps its id but loses its labels", async () => {
+    await assertAFirstAssetOffItsRtuIsNotLabelled(ctx);
   });
 
   it("I5 unattributed drops reach the global admin only", async () => {

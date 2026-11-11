@@ -208,6 +208,34 @@ describe.skipIf(!has)("F3.16 — device health schema against a live database", 
     });
   });
 
+  it("deleting an RTU as bms_tenant cascades to its health and drop rows (migration review L3)", async () => {
+    await inTx(null, null, async (run) => {
+      const loc = await run(
+        "SELECT location_id FROM bms.rtus WHERE id = $1",
+        [eskomRtu],
+      );
+      const created = await run(
+        `INSERT INTO bms.rtus (organization_id, location_id, code, display_name)
+         VALUES ($1, $2, 'f316-cascade', 'F3.16 cascade') RETURNING id`,
+        [eskom, loc.rows[0].location_id],
+      );
+      const rtuId = created.rows[0].id as string;
+      await run(INSERT_HEALTH, [rtuId, eskom, "cascade"]);
+      await run(INSERT_DROP, [eskom, rtuId, HOUR, "badQuality", 1]);
+      await run("SET LOCAL ROLE bms_tenant");
+      await run(`SET LOCAL app.current_organization = '${eskom}'`);
+      const deleted = await run("DELETE FROM bms.rtus WHERE id = $1 RETURNING id", [rtuId]);
+      expect(deleted.rows).toHaveLength(1);
+      await run("RESET ROLE");
+      const left = await run(
+        `SELECT (SELECT count(*) FROM bms.rtu_health WHERE rtu_id = $1)::int AS health,
+                (SELECT count(*) FROM bms.rtu_drop_hours WHERE rtu_id = $1)::int AS drops`,
+        [rtuId],
+      );
+      expect(left.rows[0]).toEqual({ health: 0, drops: 0 });
+    });
+  });
+
   it("a whole UTC hour is a valid bucket in a half-hour session time zone (Asia/Kolkata)", async () => {
     await inTx("bms_fleet", null, async (run) => {
       await run("SET LOCAL timezone = 'Asia/Kolkata'");

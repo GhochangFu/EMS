@@ -253,8 +253,8 @@ export type ResolveResult = {
 /** The longest device-supplied label kept: migration `0149`'s `varchar(128)`. */
 export const MAX_LABEL_CHARS = 128;
 
-/** C0 and C1 control characters, DEL included. */
-const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/gu;
+/** C0 and C1 control characters, DEL included, and Unicode format characters (`\p{Cf}`: bidi overrides, zero-width, BOM) so a key cannot spoof another (security review L2). */
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\p{Cf}]/gu;
 
 /**
  * A device-supplied string made safe to log and store (ADR 0127 decision 8):

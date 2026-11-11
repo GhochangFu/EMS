@@ -119,8 +119,11 @@ interface FirstColumns extends Record<string, unknown> {
 const FIRST_SELECT = sql.raw(`
   x.first_asset_id, fa.code AS first_asset_code, fr.display_name AS first_asset_rtu_name,
   fl.name AS first_asset_location_name, x.first_point_key, x.first_source_key`);
+// Security review L1: the asset is labelled only while it is still on the bucket's own RTU, so a
+// moved asset never shows a location admin another location's code, RTU or location name.
 const FIRST_JOINS = sql.raw(`
   LEFT JOIN bms.assets fa ON fa.id = x.first_asset_id AND fa.organization_id = x.organization_id
+    AND fa.rtu_id = x.rtu_id
   LEFT JOIN bms.rtus fr ON fr.id = fa.rtu_id
   LEFT JOIN bms.locations fl ON fl.id = fa.location_id`);
 

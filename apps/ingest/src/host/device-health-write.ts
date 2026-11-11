@@ -24,10 +24,10 @@ import type { QueryableClient } from "./normaliser.js";
  * stalled flush itself rather than leaving a backend running after the host
  * has given up. Well under the 10 s flush interval.
  *
- * `timezone = 'UTC'` because migration `0149`'s CHECK is `bucket =
- * date_trunc('hour', bucket)`, which truncates in the **session** time zone: a
- * UTC whole hour is not a whole hour in a half-hour zone such as
- * `Asia/Kolkata`, and every bucket would be refused there.
+ * `timezone = 'UTC'` is a safeguard: migration `0150` made the bucket CHECK
+ * truncate in UTC whatever the session zone (`0149`'s form followed the
+ * session zone and refused every bucket in a half-hour zone such as
+ * `Asia/Kolkata`), so any hour arithmetic here stays in UTC too.
  */
 export const HEALTH_TRANSACTION_SETTINGS: readonly string[] = [
   "SET LOCAL statement_timeout = '5s'",
