@@ -95,6 +95,8 @@ function matchesAlarmSearch(alarm: AlarmListItem, query: string): boolean {
 
 /** `F4.316` (ADR 0111): the label's `· where` part — the RTU's name, or the location's without one. */
 function whereOf(a: AlarmListItem): string | null {
+  // F3.16: a device alarm has no asset, so no `· where` part.
+  if (a.assetCode === null) return null;
   return assetLabelParts({ code: a.assetCode, rtuName: a.assetRtuName, locationName: a.assetLocationName }).where;
 }
 
@@ -192,7 +194,8 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   function startWorkOrder(alarm: AlarmListItem): void {
     const params = new URLSearchParams({
       alarmId: alarm.id,
-      assetId: alarm.assetId,
+      // F3.16: a device alarm has no asset to prefill.
+      ...(alarm.assetId === null ? {} : { assetId: alarm.assetId }),
       title: `Investigate ${alarm.assetCode} alarm`,
       description: alarm.message,
     });

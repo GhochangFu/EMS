@@ -338,6 +338,7 @@ export class DashboardService {
             WHERE al.cleared_at IS NULL
           ))[1] AS latest_alarm_raised_at
         FROM bms.alarms al
+        -- F3.16: asset-keyed; the inner join excludes device alarms (no asset).
         INNER JOIN scoped_assets sa ON sa.id = al.asset_id
         GROUP BY al.asset_id
       ),

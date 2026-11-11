@@ -70,7 +70,9 @@ export class AlarmDetailsService {
     const [row] = await this.db
       .select({
         id: alarms.id,
-        assetId: alarms.assetId,
+        // The inner-joined asset's id: equal to `alarms.asset_id`, and non-null.
+        // F3.16: the inner join keeps excluding device alarms (no asset) here.
+        assetId: assets.id,
         severity: alarms.severity,
         message: alarms.message,
         raisedAt: alarms.raisedAt,

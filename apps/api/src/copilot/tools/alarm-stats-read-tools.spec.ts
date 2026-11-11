@@ -290,6 +290,9 @@ const ALARM_ITEM = {
   assetLocationName: "Lotapata",
   assetName: "Main meter",
   siteName: "Lotapata",
+  source: "rule" as const,
+  rtuId: null,
+  rtuCode: null,
 };
 
 /** `list_alarms` passes the item through its contract: `assetRtuName` and `assetLocationName` reach the model. */

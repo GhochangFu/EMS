@@ -42,7 +42,7 @@ async function sqlLimitFor(limit: number): Promise<number | undefined> {
     }),
   };
   // `F4.316`: the list joins `assets`, then left-joins `rtus` and `locations` (ADR 0111).
-  const joined = { leftJoin: () => ({ leftJoin: () => base }) };
+  const joined = { leftJoin: () => ({ leftJoin: () => ({ leftJoin: () => base }) }) };
   const tx = {
     select: () => ({ from: () => ({ innerJoin: () => joined }) }),
   };

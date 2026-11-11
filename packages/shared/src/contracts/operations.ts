@@ -95,9 +95,19 @@ export const energyReportPreviewSchema = z.object({
 // ---------------------------------------------------------------------------
 
 /** One alarm row for list / WebSocket payloads (`GET /api/v1/alarms`). */
+/**
+ * `F3.16` / ADR 0127 decision 12 — where an alarm came from: a rule on an asset,
+ * a silent RTU ("Communication lost"), or a silent ingest host ("Ingest host not
+ * reporting", one per organization). `bms.alarms.source`, closed by
+ * `alarms_source_check` (migration `0151`).
+ */
+export const alarmSourceSchema = z.enum(["rule", "rtu_comms", "ingest_host"]);
+
 export const alarmListItemSchema = z.object({
   id: z.string(),
-  assetId: z.string(),
+  // F3.16 / ADR 0127 decision 12: null on a device alarm, which has no asset —
+  // and so are `assetCode`, `assetName` and `siteName` below.
+  assetId: z.string().nullable(),
   ruleKey: z.string().nullable(),
   // F3.6 / ADR 0033 (migration 0032). Nullable for the same reason `rule_id`
   // is nullable in `bms.alarms`: a historical alarm raised before this column
@@ -113,13 +123,17 @@ export const alarmListItemSchema = z.object({
   // 30 s sweep observes the condition holding normal for the rule's
   // `clearHoldSeconds`. Acknowledgement no longer closes an alarm — this does.
   clearedAt: z.string().nullable(),
-  assetCode: z.string(),
+  assetCode: z.string().nullable(),
   // F4.316 / ADR 0111: the asset's RTU display name and location name, for the
   // `<code> · <RTU or location>` label; null when the asset has no RTU.
   assetRtuName: z.string().nullable(),
   assetLocationName: z.string().nullable(),
-  assetName: z.string(),
-  siteName: z.string(),
+  assetName: z.string().nullable(),
+  siteName: z.string().nullable(),
+  source: alarmSourceSchema,
+  // F3.16: the silent RTU of an `rtu_comms` alarm and its code; null otherwise.
+  rtuId: z.string().nullable(),
+  rtuCode: z.string().nullable(),
 });
 
 /** Socket.IO `/ws/alarms` event payload. */

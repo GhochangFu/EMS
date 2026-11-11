@@ -84,9 +84,10 @@ export function AlarmAckWizard({ alarm, onCancel, onDone }: AlarmAckWizardProps)
         summary={operationsWizardEntry("alarm.acknowledge").summary({
           body: values,
           params: { id: alarm.id },
-          targetName: alarm.assetName,
+          // F3.16: a device alarm has no asset; the device label is B6's.
+          targetName: alarm.assetName ?? "",
           organizationName: "",
-          alarm: { message: alarm.message, severity: alarm.severity, assetName: alarm.assetName, raisedAt: alarm.raisedAt },
+          alarm: { message: alarm.message, severity: alarm.severity, assetName: alarm.assetName ?? "", raisedAt: alarm.raisedAt },
         })}
       />
     </AdminWizardFrame>

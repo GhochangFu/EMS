@@ -195,7 +195,7 @@ export async function assertAlarmListReturnsBothOrgsForTwoOrgActor(
   // GUC, so the assetIds WHERE is the ONLY isolation control. The seed carries
   // alarms on other assets, so dropping that WHERE would surface them here.
   expect(
-    both.items.every((i) => [inScopeAssetId, foreignAssetId].includes(i.assetId)),
+    both.items.every((i) => i.assetId !== null && [inScopeAssetId, foreignAssetId].includes(i.assetId)),
     "the fleet read returns no alarm outside the passed assetIds",
   ).toBe(true);
 }

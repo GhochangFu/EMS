@@ -51,7 +51,7 @@ import {
   runEscalationPhase,
   runRaiseRetryPhase,
 } from "./alarm-lifecycle-phases";
-import { alarmListItemColumns, toAlarmListItem } from "./alarm-list-item";
+import { alarmListItemColumns, alarmRtus, toAlarmListItem } from "./alarm-list-item";
 import { AlarmsGateway } from "./alarms.gateway";
 
 /**
@@ -412,9 +412,13 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
       })
       .from(alarms)
       .where(and(isNull(alarms.clearedAt), isNotNull(alarms.ruleId)));
-    // The `WHERE` already excludes a null rule id; this narrows the type the
-    // driver hands back rather than trusting a cast.
-    return rows.flatMap((row) => (row.ruleId === null ? [] : [{ ...row, ruleId: row.ruleId }]));
+    // The `WHERE` already excludes a null rule id, and with it every device
+    // alarm (F3.16: `alarms_source_shape_check` gives a rule-bearing row an
+    // asset); this narrows the types the driver hands back rather than trusting
+    // a cast.
+    return rows.flatMap((row) =>
+      row.ruleId === null || row.assetId === null ? [] : [{ ...row, ruleId: row.ruleId, assetId: row.assetId }],
+    );
   }
 
   /**
@@ -500,6 +504,7 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
         .innerJoin(assets, eq(alarms.assetId, assets.id))
         .leftJoin(rtus, eq(assets.rtuId, rtus.id))
         .leftJoin(locations, eq(assets.locationId, locations.id))
+        .leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id))
         .where(inArray(alarms.id, clearedIds));
       return rows.map((row) => toAlarmListItem(row));
     });

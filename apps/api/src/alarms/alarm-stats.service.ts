@@ -74,6 +74,7 @@ export class AlarmStatsService {
                  count(*)::int AS raised,
                  (count(*) FILTER (WHERE a.cleared_at IS NULL))::int AS open
             FROM bms.alarms a
+           -- F3.16: asset-keyed; a device alarm (no asset) matches no id here.
            WHERE a.asset_id = ANY(${sql.param(ids)}::uuid[])
              AND a.raised_at >= ${lo}::timestamptz AND a.raised_at < ${hi}::timestamptz
            GROUP BY a.severity

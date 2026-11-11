@@ -47,6 +47,8 @@ export type ActiveAlarmsRailBodyProps = {
 
 /** `F4.316` (ADR 0111): the label's `· where` part — the RTU's name, or the location's without one. */
 function whereOf(a: AlarmListItem): string | null {
+  // F3.16: a device alarm has no asset, so no `· where` part.
+  if (a.assetCode === null) return null;
   return assetLabelParts({ code: a.assetCode, rtuName: a.assetRtuName, locationName: a.assetLocationName }).where;
 }
 

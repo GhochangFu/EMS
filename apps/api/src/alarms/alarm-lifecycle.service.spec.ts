@@ -260,6 +260,9 @@ export function fakeDeps(opts: {
                 assetLocationName: "Site A",
                 assetName: "Feeder 1",
                 siteName: "Site A",
+                source: "rule" as const,
+                rtuId: null,
+                rtuCode: null,
               };
             }),
         );

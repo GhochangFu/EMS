@@ -132,7 +132,9 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
   ): void {
     for (const client of this.server.sockets.values()) {
       const assetIds = client.data.assetIds as string[] | null | undefined;
-      if (assetIds === null || assetIds?.includes(alarm.assetId)) {
+      // F3.16: a device alarm has no asset, so only an unscoped socket gets it
+      // until the device scope rule (ADR 0127 decision 14) lands here.
+      if (assetIds === null || (alarm.assetId !== null && assetIds?.includes(alarm.assetId))) {
         client.emit("alarm", { type, alarm });
       }
     }

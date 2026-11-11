@@ -144,6 +144,7 @@ export function siteWidgetsResponseIsBounded(): void {
     id: "a", assetId: "b", ruleKey: null, ruleId: null, severity: "critical", message: "m",
     raisedAt: "2026-09-30T10:00:00.000Z", acknowledgedAt: null, acknowledgedBy: null, clearedAt: null,
     assetCode: "X", assetRtuName: "R", assetLocationName: "L", assetName: "X", siteName: "S",
+    source: "rule", rtuId: null, rtuCode: null,
   };
   const twenty = { ...response(), alarms: { active: Array.from({ length: 20 }, () => alarm), summary: [] } };
   const twentyOne = { ...response(), alarms: { active: Array.from({ length: 21 }, () => alarm), summary: [] } };

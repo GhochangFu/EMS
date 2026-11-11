@@ -155,6 +155,9 @@ function alarmRow(message: string) {
     assetLocationName: "Site",
     assetName: "AHU 7",
     siteName: "Site",
+    source: "rule" as const,
+    rtuId: null,
+    rtuCode: null,
   };
 }
 

@@ -85,6 +85,9 @@ function alarm(overrides: Partial<AlarmListItem>): AlarmListItem {
     assetLocationName: "Plant A",
     assetName: "Generator One",
     siteName: "Plant A",
+    source: "rule",
+    rtuId: null,
+    rtuCode: null,
     ...overrides,
   };
 }

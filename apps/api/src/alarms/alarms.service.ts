@@ -21,7 +21,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
 import { activeAlarmFilter } from "./active-alarm-filter";
-import { alarmListItemColumns, toAlarmListItem } from "./alarm-list-item";
+import { alarmListItemColumns, alarmRtus, toAlarmListItem } from "./alarm-list-item";
 import { AlarmsGateway } from "./alarms.gateway";
 
 function encodeCursor(raisedAt: Date, id: string): string {
@@ -142,7 +142,8 @@ export class AlarmsService {
           .from(alarms)
           .innerJoin(assets, eq(alarms.assetId, assets.id))
           .leftJoin(rtus, eq(assets.rtuId, rtus.id))
-          .leftJoin(locations, eq(assets.locationId, locations.id));
+          .leftJoin(locations, eq(assets.locationId, locations.id))
+          .leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id));
 
         const c = cursor ? decodeCursor(cursor) : null;
         const cursorFilter = c
@@ -338,6 +339,7 @@ export class AlarmsService {
         .innerJoin(assets, eq(alarms.assetId, assets.id))
         .leftJoin(rtus, eq(assets.rtuId, rtus.id))
         .leftJoin(locations, eq(assets.locationId, locations.id))
+        .leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id))
         .where(eq(alarms.id, alarmId))
         .limit(1);
 

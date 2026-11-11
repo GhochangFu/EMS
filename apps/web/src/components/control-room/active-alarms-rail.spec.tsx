@@ -87,6 +87,9 @@ function alarm(index: number, overrides: Partial<AlarmListItem> = {}): AlarmList
     assetLocationName: "Plant A",
     assetName: "CR Main Incomer",
     siteName: "SMOC",
+    source: "rule",
+    rtuId: null,
+    rtuCode: null,
     ...overrides,
   };
 }

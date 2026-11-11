@@ -155,6 +155,10 @@ const ALARM_LIST_ITEM = {
   assetLocationName: "Plant A",
   assetName: "Chiller Q1",
   siteName: "Site A",
+  // F3.16 / ADR 0127 decision 12.
+  source: "rule",
+  rtuId: null,
+  rtuCode: null,
 };
 
 const AFFECTED_ASSET = {
@@ -212,6 +216,33 @@ export const assertAlarmListItemRequiresAssetLocationName = (): void =>
   assertRefusesWithout(alarmListItemSchema, ALARM_LIST_ITEM, "assetLocationName", "alarmListItemSchema");
 export const assertAlarmListItemAcceptsNullParts = (): void =>
   assertAcceptsNullParts(alarmListItemSchema, ALARM_LIST_ITEM, "alarmListItemSchema");
+
+/**
+ * `F3.16` / ADR 0127 decision 12 — a device alarm has no asset: an `rtu_comms`
+ * row names its RTU, an `ingest_host` row names neither. Both parse, on the list
+ * and on the socket payload.
+ */
+export function assertAlarmListItemAcceptsDeviceAlarms(): void {
+  const noAsset = { ...ALARM_LIST_ITEM, assetId: null, assetCode: null, assetName: null, siteName: null, assetRtuName: null, assetLocationName: null };
+  const comms = { ...noAsset, source: "rtu_comms", rtuId: "40000000-0000-4000-8000-000000000001", rtuCode: "RTU-7" };
+  const host = { ...noAsset, source: "ingest_host" };
+  for (const [label, row] of [["rtu_comms", comms], ["ingest_host", host]] as const) {
+    const parsed = alarmListItemSchema.safeParse(row);
+    assert(parsed.success, `alarmListItemSchema refused an ${label} alarm: ${JSON.stringify(parsed.error?.issues)}`);
+    assert(alarmSocketEventSchema.safeParse({ type: "created", alarm: row }).success, `the created event refused an ${label} alarm`);
+  }
+}
+
+/** `source` is required and closed to the three sources; `rtuId` and `rtuCode` are required-nullable. */
+export function assertAlarmListItemRequiresSourceAndRtu(): void {
+  for (const key of ["source", "rtuId", "rtuCode"]) {
+    assertRefusesWithout(alarmListItemSchema, ALARM_LIST_ITEM, key, "alarmListItemSchema");
+  }
+  assert(
+    alarmListItemSchema.safeParse({ ...ALARM_LIST_ITEM, source: "edge_gateway" }).success === false,
+    "alarmListItemSchema accepted an unknown source",
+  );
+}
 
 /** The socket payload wraps the list item, so it inherits the requirement. */
 export function assertAlarmSocketEventRequiresAssetRtuName(): void {
