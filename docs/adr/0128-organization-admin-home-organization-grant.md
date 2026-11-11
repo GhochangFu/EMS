@@ -9,8 +9,9 @@ ADR 0128"; proposed the same day). Drafted by an agent for backlog row
 marked *(recommended)* below is now a ruling, and each question under *Open
 questions* carries its ruling. The step-3 plan is
 [`docs/plans/f4.340-org-admin-default-scope.md`](../plans/f4.340-org-admin-default-scope.md).
-Accepting this record does not approve the plan: no code is written before
-the owner says "yes" to the plan.
+The owner said "yes" to the plan on 2026-11-11, and the build landed in the
+same pull request; the plan's *Build record* lists where the build departs from
+the plan. Decisions 1–5 are built as written.
 
 Amends [ADR 0089](./0089-user-access-and-asset-group-administration.md)
 decision 3 (what the create transaction writes), decision 14 (one audit event
