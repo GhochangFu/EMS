@@ -72,7 +72,7 @@ export function LoadTrendChart({ points, status, stale }: LoadTrendChartProps) {
   if (status === "empty" || points.length === 0) {
     return (
       <div className="flex h-[280px] items-center justify-center surface-raised text-sm text-ink-muted">
-        No kW history yet — start the simulator.
+        No kW history yet.
       </div>
     );
   }
