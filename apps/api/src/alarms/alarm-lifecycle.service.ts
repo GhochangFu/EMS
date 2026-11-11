@@ -5,7 +5,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 
 import {
   alarmEscalationDefaults,
@@ -20,6 +20,7 @@ import {
 import type { AlarmListItem } from "@bms/shared";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { readIngestHosts, readRtuHealthRows } from "../device-health/device-health.reads";
 import { withTenant } from "../database/tenant-context";
 import { loadEnabledChannelsByIds, loadEnabledChannelsForRules } from "../notifications/channel-reads";
 import type { RuleChannelsRead } from "../notifications/channel-reads";
@@ -45,13 +46,14 @@ import {
   type LifecycleAlarm,
   escalationKey,
 } from "./alarm-lifecycle";
+import { type DeviceHealthSnapshot, type DeviceLifecycleAlarm, runDeviceLifecycle } from "./alarm-lifecycle-device";
 import {
   reasonOf,
   runClearPhase,
   runEscalationPhase,
   runRaiseRetryPhase,
 } from "./alarm-lifecycle-phases";
-import { alarmListItemColumns, toAlarmListItem } from "./alarm-list-item";
+import { alarmListItemColumns, alarmRtus, toAlarmListItem } from "./alarm-list-item";
 import { AlarmsGateway } from "./alarms.gateway";
 
 /**
@@ -77,6 +79,12 @@ import { AlarmsGateway } from "./alarms.gateway";
  * D3), which is why the sweep re-dispatches every due step every tick without a
  * "sent" set of its own, and the raise retry answers the same way from
  * `channelsOwedTheRaise`.
+ *
+ * **`F3.16` adds device alarms** (ADR 0127 decisions 12, 13, 16): a second
+ * loader selects `source <> 'rule'`, and `runDeviceLifecycle`
+ * (`alarm-lifecycle-device.ts`) clears them on the same `normal_since` hold,
+ * from the device-health state rule, and escalates them through the
+ * organization's profile — after the rule phases, never in the raise retry.
  *
  * **All three phase bodies live in `alarm-lifecycle-phases.ts`**, moved there
  * unchanged when this file reached 991 of AGENTS.md §4.5's 1000-line cap. The
@@ -152,6 +160,10 @@ export type AlarmStateUpdate = {
 export interface AlarmLifecycleDeps {
   /** Every active alarm with a rule (plan D4: `cleared_at IS NULL AND rule_id IS NOT NULL`). Fleet read. */
   loadActiveAlarms(): Promise<ActiveAlarm[]>;
+  /** `F3.16`: every active device alarm (`cleared_at IS NULL AND source <> 'rule'`). Fleet read. */
+  loadActiveDeviceAlarms(): Promise<DeviceLifecycleAlarm[]>;
+  /** `F3.16`: the monitored RTUs and the ingest hosts the device clear judges against. Fleet reads. */
+  loadDeviceHealth(): Promise<DeviceHealthSnapshot>;
   /** Every rule row, as `evaluateEnabledRules` reads them. Fleet read. */
   loadRules(): Promise<RuleRow[]>;
   /** The latest sample per `(asset, point)` the given rules need — `batchedLatestPointValues`. */
@@ -233,11 +245,34 @@ export interface AlarmLifecycleDeps {
  * hour that has already moved.
  */
 export async function runLifecycleSweep(deps: AlarmLifecycleDeps, now: Date): Promise<void> {
-  const activeAlarms = await deps.loadActiveAlarms();
-  if (activeAlarms.length === 0) {
-    return;
+  const [activeAlarms, deviceAlarms] = await Promise.all([deps.loadActiveAlarms(), deps.loadActiveDeviceAlarms()]);
+  // The tick's memory of which ceilings have already refused. The clear phase
+  // deliberately does not get it: a cleared message has no next tick to be
+  // postponed to — see `dispatchRememberingLostRows`.
+  const closedCeilings = new ClosedCeilings();
+  let catalog: EscalationCatalog | undefined;
+  if (activeAlarms.length > 0) {
+    catalog = await runRuleAlarmPhases(deps, activeAlarms, now, closedCeilings);
   }
+  // `F3.16` (ADR 0127 decisions 13, 16): after the rule phases, in the same
+  // tick, with the same memo and catalogue. Never in the raise retry.
+  if (deviceAlarms.length > 0) {
+    await runDeviceLifecycle(deps, {
+      alarms: deviceAlarms,
+      catalog: catalog ?? (await deps.loadEscalation()),
+      now,
+      closedCeilings,
+    });
+  }
+}
 
+/** The three rule-alarm phases, in order; returns the catalogue it read so the device alarms reuse it. */
+async function runRuleAlarmPhases(
+  deps: AlarmLifecycleDeps,
+  activeAlarms: ActiveAlarm[],
+  now: Date,
+  closedCeilings: ClosedCeilings,
+): Promise<EscalationCatalog> {
   const rulesById = new Map((await deps.loadRules()).map((row) => [row.id, row]));
   const referencedRules = [...new Set(activeAlarms.map((alarm) => alarm.ruleId))]
     .map((ruleId) => rulesById.get(ruleId))
@@ -246,11 +281,6 @@ export async function runLifecycleSweep(deps: AlarmLifecycleDeps, now: Date): Pr
     deps.loadSamples(referencedRules),
     deps.loadEscalation(),
   ]);
-
-  // The tick's memory of which ceilings have already refused. The clear phase
-  // deliberately does not get it: a cleared message has no next tick to be
-  // postponed to — see `dispatchRememberingLostRows`.
-  const closedCeilings = new ClosedCeilings();
 
   const clearedIds = await runClearPhase(deps, { activeAlarms, rulesById, loadSample, now });
   await runRaiseRetryPhase(deps, { activeAlarms, rulesById, clearedIds, closedCeilings, now });
@@ -262,6 +292,7 @@ export async function runLifecycleSweep(deps: AlarmLifecycleDeps, now: Date): Pr
     now,
     closedCeilings,
   });
+  return catalog;
 }
 
 export interface AlarmLifecycleLoopDeps extends AlarmLifecycleDeps {
@@ -345,6 +376,16 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
   private deps(): AlarmLifecycleDeps {
     return {
       loadActiveAlarms: () => this.loadActiveAlarms(),
+      loadActiveDeviceAlarms: () => this.loadActiveDeviceAlarms(),
+      loadDeviceHealth: async () => {
+        const [rows, { hosts, dbNowMs }] = await Promise.all([
+          // fleetDb: every organization's monitored RTUs, for a system sweep with no JWT (class header).
+          readRtuHealthRows(this.fleetDb, { kind: "monitored" }),
+          // fleetDb: ingest_hosts is a platform table with no tenant column (ADR 0127 decision 7).
+          readIngestHosts(this.fleetDb),
+        ]);
+        return { rows, hosts, dbNowMs };
+      },
       loadRules: () => this.fleetDb.transaction((tx) => selectRuleRows(tx)),
       loadSamples: (rows) => batchedLatestPointValues(this.tenantDb, rows),
       loadEscalation: () => this.loadEscalation(),
@@ -412,9 +453,41 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
       })
       .from(alarms)
       .where(and(isNull(alarms.clearedAt), isNotNull(alarms.ruleId)));
-    // The `WHERE` already excludes a null rule id; this narrows the type the
-    // driver hands back rather than trusting a cast.
-    return rows.flatMap((row) => (row.ruleId === null ? [] : [{ ...row, ruleId: row.ruleId }]));
+    // The `WHERE` already excludes a null rule id, and with it every device
+    // alarm (F3.16: `alarms_source_shape_check` gives a rule-bearing row an
+    // asset); this narrows the types the driver hands back rather than trusting
+    // a cast.
+    return rows.flatMap((row) =>
+      row.ruleId === null || row.assetId === null ? [] : [{ ...row, ruleId: row.ruleId, assetId: row.assetId }],
+    );
+  }
+
+  /**
+   * `F3.16` (ADR 0127 decision 12): the open device alarms, on the fleet pool
+   * (the class header's reason). `alarms_source_check` closes `source` to the
+   * three values, so a non-`rule` row is one of the two device sources; the
+   * narrowing below refuses anything else rather than trusting a cast.
+   */
+  private async loadActiveDeviceAlarms(): Promise<DeviceLifecycleAlarm[]> {
+    const rows = await this.fleetDb
+      .select({
+        id: alarms.id,
+        organizationId: alarms.organizationId,
+        source: alarms.source,
+        rtuId: alarms.rtuId,
+        severity: alarms.severity,
+        message: alarms.message,
+        raisedAt: alarms.raisedAt,
+        acknowledgedAt: alarms.acknowledgedAt,
+        normalSince: alarms.normalSince,
+      })
+      .from(alarms)
+      .where(and(isNull(alarms.clearedAt), ne(alarms.source, "rule")));
+    return rows.flatMap((row) =>
+      row.source === "rtu_comms" || row.source === "ingest_host"
+        ? [{ ...row, source: row.source, assetId: null, ruleId: null }]
+        : [],
+    );
   }
 
   /**
@@ -497,9 +570,12 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
       const rows = await tx
         .select(alarmListItemColumns)
         .from(alarms)
-        .innerJoin(assets, eq(alarms.assetId, assets.id))
+        // `F3.16`: a LEFT join, so a cleared device alarm (no asset) is read
+        // back and broadcast too; a rule alarm always has its asset.
+        .leftJoin(assets, eq(alarms.assetId, assets.id))
         .leftJoin(rtus, eq(assets.rtuId, rtus.id))
         .leftJoin(locations, eq(assets.locationId, locations.id))
+        .leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id))
         .where(inArray(alarms.id, clearedIds));
       return rows.map((row) => toAlarmListItem(row));
     });

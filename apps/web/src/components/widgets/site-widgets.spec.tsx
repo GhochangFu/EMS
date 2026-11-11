@@ -58,6 +58,9 @@ function alarm(id: string, assetCode: string, message: string): AlarmListItem {
     assetLocationName: "Site",
     assetName: assetCode,
     siteName: "Site",
+    source: "rule",
+    rtuId: null,
+    rtuCode: null,
   };
 }
 

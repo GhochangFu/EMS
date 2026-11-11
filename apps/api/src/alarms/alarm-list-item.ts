@@ -1,6 +1,7 @@
 import { alarms, assets, type BmsDb, locations, rtus } from "@bms/db";
-import type { AlarmListItem } from "@bms/shared";
+import { type AlarmListItem, alarmSourceSchema } from "@bms/shared";
 import { eq } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 /**
  * The one projection and the one mapper behind every `AlarmListItem` the API
@@ -18,10 +19,10 @@ import { eq } from "drizzle-orm";
  * column that made that concrete: it is on the list, on the socket payload
  * and on the details response, and the sweep is the only writer.
  *
- * **The projection spans four tables.** `assetCode`, `assetName` and
+ * **The projection spans five tables.** `assetCode`, `assetName` and
  * `siteName` come from `bms.assets`; `assetRtuName` from `bms.rtus` and
  * `assetLocationName` from `bms.locations` (`F4.316`, ADR 0111). So every
- * consumer of `alarmListItemColumns` must keep its three joins —
+ * consumer of `alarmListItemColumns` must keep its four joins (the fourth below) —
  * `.innerJoin(assets, eq(alarms.assetId, assets.id))`,
  * `.leftJoin(rtus, eq(assets.rtuId, rtus.id))` and
  * `.leftJoin(locations, eq(assets.locationId, locations.id))` — the select
@@ -29,9 +30,18 @@ import { eq } from "drizzle-orm";
  * a type error. The two left joins add no predicate: an asset with no RTU
  * keeps its alarm, with `assetRtuName: null`.
  *
+ * **`F3.16` (ADR 0127 decision 12) adds a fourth join**, the alarm's own RTU —
+ * `.leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id))` — for `rtuCode` on a
+ * `rtu_comms` alarm. It is an alias because `rtus` is already joined as the
+ * asset's RTU. A device alarm has no asset, so a reader that must show one
+ * left-joins `assets` (`readAlarmListItem` below does); a reader that keeps the
+ * inner join keeps excluding device alarms, and says so.
+ *
  * `normal_since` is deliberately absent: it is the sweep's own bookkeeping
  * (ADR 0057 decision 5), not a fact the alarm centre shows.
  */
+export const alarmRtus = alias(rtus, "alarm_rtu");
+
 export const alarmListItemColumns = {
   id: alarms.id,
   assetId: alarms.assetId,
@@ -48,6 +58,9 @@ export const alarmListItemColumns = {
   assetLocationName: locations.name,
   assetName: assets.name,
   siteName: assets.siteName,
+  source: alarms.source,
+  rtuId: alarms.rtuId,
+  rtuCode: alarmRtus.code,
 };
 
 /**
@@ -59,7 +72,7 @@ export const alarmListItemColumns = {
  */
 export type AlarmListItemRow = {
   id: string;
-  assetId: string;
+  assetId: string | null;
   ruleKey: string | null;
   ruleId: string | null;
   severity: string;
@@ -68,12 +81,27 @@ export type AlarmListItemRow = {
   acknowledgedAt: Date | null;
   acknowledgedBy: string | null;
   clearedAt: Date | null;
-  assetCode: string;
+  assetCode: string | null;
   assetRtuName: string | null;
   assetLocationName: string | null;
-  assetName: string;
-  siteName: string;
+  assetName: string | null;
+  siteName: string | null;
+  source: string;
+  rtuId: string | null;
+  rtuCode: string | null;
 };
+
+/**
+ * `bms.alarms.source` as the contract's enum. `alarms_source_check` (migration
+ * `0151`) closes the column, so a miss is stored data that broke its contract —
+ * a plain `Error` (a 500), never a `ZodError` the global filter would answer as
+ * the caller's 400 (ADR 0060).
+ */
+function sourceOf(r: Pick<AlarmListItemRow, "id" | "source">): AlarmListItem["source"] {
+  const parsed = alarmSourceSchema.safeParse(r.source);
+  if (!parsed.success) throw new Error(`alarm ${r.id} has an unknown source`);
+  return parsed.data;
+}
 
 /** The database row as the wire shape: three `Date`s become ISO strings. */
 export function toAlarmListItem(r: AlarmListItemRow): AlarmListItem {
@@ -93,6 +121,9 @@ export function toAlarmListItem(r: AlarmListItemRow): AlarmListItem {
     assetLocationName: r.assetLocationName,
     assetName: r.assetName,
     siteName: r.siteName,
+    source: sourceOf(r),
+    rtuId: r.rtuId,
+    rtuCode: r.rtuCode,
   };
 }
 
@@ -113,9 +144,12 @@ export async function readAlarmListItem(db: BmsDb, alarmId: string): Promise<Ala
   const [row] = await db
     .select(alarmListItemColumns)
     .from(alarms)
-    .innerJoin(assets, eq(alarms.assetId, assets.id))
+    // Left: a device alarm (F3.16) has no asset, and its `created` event must
+    // still reach the sockets.
+    .leftJoin(assets, eq(alarms.assetId, assets.id))
     .leftJoin(rtus, eq(assets.rtuId, rtus.id))
     .leftJoin(locations, eq(assets.locationId, locations.id))
+    .leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id))
     .where(eq(alarms.id, alarmId))
     .limit(1);
   return row === undefined ? null : toAlarmListItem(row);

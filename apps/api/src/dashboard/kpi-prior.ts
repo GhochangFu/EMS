@@ -1,6 +1,7 @@
 import type { DashboardKpis } from "@bms/shared";
 import type { Pool } from "pg";
 
+import { alarmVisibleToSql } from "../alarms/alarm-scope";
 import { latestPueRatio } from "../telemetry/pue-ratio";
 
 /**
@@ -115,8 +116,9 @@ export async function priorTotalKw(
  * cleared or cleared after `at`.
  *
  * Not nullable (plan decision 3): `bms.alarms` is the complete history, so "no
- * row" really is zero. The scope is the live count's own — an `INNER JOIN` on
- * the `$1`-scoped `bms.assets` — so the delta compares one population.
+ * row" really is zero. The scope is the live count's own — `alarmVisibleToSql`,
+ * the alarm list's rule, device alarms included (`F3.16`) — so the delta
+ * compares one population.
  */
 export async function priorOpenAlarms(
   pool: Pick<Pool, "query">,
@@ -128,15 +130,11 @@ export async function priorOpenAlarms(
   }
   const r = await pool.query<{ alarms_open: number }>(
     `
-    WITH asset_scope AS (
-      SELECT id FROM bms.assets
-      WHERE ($1::uuid[] IS NULL OR id = ANY($1::uuid[]))
-    )
     SELECT COUNT(*)::int AS alarms_open
     FROM bms.alarms al
-    INNER JOIN asset_scope s ON s.id = al.asset_id
     WHERE al.raised_at <= $2::timestamptz
       AND (al.cleared_at IS NULL OR al.cleared_at > $2::timestamptz)
+      AND ${alarmVisibleToSql("al", "$1")}
     `,
     [assetIds ?? null, at.toISOString()],
   );

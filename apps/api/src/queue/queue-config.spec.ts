@@ -396,3 +396,39 @@ export function assertCopilotPurgeIntervalHonoursAPositiveInteger(): void {
     `expected COPILOT_PURGE_INTERVAL_MS=60000 to be honoured, got ${config.copilotPurgeIntervalMs}`,
   );
 }
+
+/**
+ * `DEVICE_HEALTH_INTERVAL_MS` (`F3.16`, ADR 0127 decision 16) — the device-health
+ * sweep's tick: 30 s by default, a set value an integer in `[10 000, 3 600 000]`
+ * or the worker refuses to start, `readRuleSweepInterval`'s shape.
+ */
+export function assertDeviceHealthIntervalDefaultsTo30000(): void {
+  const config = readWorkerConfig({ REDIS_URL: "redis://r" });
+  assert(
+    config.deviceHealthIntervalMs === 30_000,
+    `expected default deviceHealthIntervalMs 30000, got ${config.deviceHealthIntervalMs}`,
+  );
+}
+
+export function assertDeviceHealthIntervalHonoursBothBounds(): void {
+  const floor = readWorkerConfig({ REDIS_URL: "redis://r", DEVICE_HEALTH_INTERVAL_MS: " 10000 " });
+  const ceiling = readWorkerConfig({ REDIS_URL: "redis://r", DEVICE_HEALTH_INTERVAL_MS: "3600000" });
+  assert(
+    floor.deviceHealthIntervalMs === 10_000 && ceiling.deviceHealthIntervalMs === 3_600_000,
+    `expected the bounds 10000 and 3600000 to be accepted, got ${floor.deviceHealthIntervalMs} and ${ceiling.deviceHealthIntervalMs}`,
+  );
+}
+
+export const INVALID_DEVICE_HEALTH_INTERVALS = ["9999", "abc", "1.5", "3600001", "-30000"] as const;
+
+export function assertInvalidDeviceHealthIntervalThrowsNamingOnlyItself(raw: string): void {
+  const err = captureThrow(() => readWorkerConfig({ REDIS_URL: "redis://r", DEVICE_HEALTH_INTERVAL_MS: raw }));
+  assert(
+    errorName(err) === "QueueConfigError",
+    `expected err.name === "QueueConfigError" for DEVICE_HEALTH_INTERVAL_MS=${JSON.stringify(raw)}, got "${errorName(err)}"`,
+  );
+  assert(
+    errorMessage(err).includes("DEVICE_HEALTH_INTERVAL_MS") && !errorMessage(err).includes("RULE_SWEEP"),
+    `expected the message to name DEVICE_HEALTH_INTERVAL_MS and no other variable for ${JSON.stringify(raw)}, got "${errorMessage(err)}"`,
+  );
+}

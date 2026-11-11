@@ -1051,6 +1051,13 @@
       "when": 1794417506348,
       "tag": "0150_device_health_utc_bucket",
       "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1794425973983,
+      "tag": "0151_device_alarms",
+      "breakpoints": true
     }
   ]
 }

@@ -218,6 +218,7 @@ export class LocationSummaryService {
              count(*)::int AS raised,
              (count(*) FILTER (WHERE a.cleared_at IS NULL))::int AS open
         FROM bms.alarms a
+       -- F3.16: asset-keyed; a device alarm (no asset) matches no id here.
        WHERE a.asset_id = ANY(${sql.param([...assetIds])}::uuid[])
          AND a.raised_at >= ${range.start.toISOString()}::timestamptz
          AND a.raised_at <= ${range.end.toISOString()}::timestamptz

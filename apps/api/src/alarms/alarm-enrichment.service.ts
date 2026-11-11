@@ -42,7 +42,7 @@ export class AlarmEnrichmentService {
 
   /**
    * The organization the alarm belongs to (`alarms.organization_id`), read on
-   * fleetDb behind the caller's scope. `alarm_enrichments` and the junction it
+   * fleetDb behind the caller's scope; a rule alarm only (`F3.16`). `alarm_enrichments` and the junction it
    * writes all belong to it, so the whole upsert runs inside this org's GUC.
    */
   private async resolveAlarmOrg(alarmId: string, assetIds: string[] | null): Promise<string> {
@@ -50,7 +50,14 @@ export class AlarmEnrichmentService {
       .select({ organizationId: alarms.organizationId })
       .from(alarms)
       .where(
-        and(eq(alarms.id, alarmId), ...(assetIds ? [inArray(alarms.assetId, assetIds)] : [])),
+        and(
+          eq(alarms.id, alarmId),
+          // F3.16 (ADR 0127): an enrichment describes a rule alarm on an asset. A device
+          // alarm is "not found" to every caller, the global admin included, so no path
+          // answers differently for one.
+          eq(alarms.source, "rule"),
+          ...(assetIds ? [inArray(alarms.assetId, assetIds)] : []),
+        ),
       )
       .limit(1);
     if (!row) {

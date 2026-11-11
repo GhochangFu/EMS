@@ -117,7 +117,14 @@ export type { DispatchEvent } from "./dedupe-key";
 
 /** What a caller knows at the moment a rule raised (or did not raise) an alarm. */
 export type DispatchInput = {
-  ruleId: string;
+  /**
+   * `null` for a device alarm (`F3.16`, ADR 0127 decision 13): no rule, so the
+   * dedupe key carries `system` in its place (`buildDedupeKey`) and the input
+   * only ever reaches `dispatchToChannels`, with its escalation profile's
+   * channels — `dispatch` has no rule join to load and sends nothing.
+   */
+  ruleId: string | null;
+  /** The rule's code, or `system` for a device alarm — log lines and the transport's payload. */
   ruleCode: string;
   /**
    * `E7.1c` (decision 7, `0048`): `notification_deliveries.organization_id`
@@ -210,6 +217,11 @@ export class NotificationsService {
    * moment migration 0038 runs.
    */
   async dispatch(input: DispatchInput): Promise<DispatchOutcome[]> {
+    if (input.ruleId === null) {
+      // `F3.16`: a device alarm has no rule join; its channels come from the
+      // escalation profile, through `dispatchToChannels`, and nowhere else.
+      return [];
+    }
     let channels: NotificationChannelRow[];
     try {
       channels = await this.channels.loadForRule(input.ruleId);

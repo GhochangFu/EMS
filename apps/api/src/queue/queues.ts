@@ -1,5 +1,6 @@
 import { calcBackfillQueue } from "./calc-backfill";
 import { copilotPurgeQueue } from "./copilot-purge";
+import { deviceHealthQueue } from "./device-health";
 import { heartbeatQueue } from "./heartbeat";
 import { onboardingDiscoveryQueue } from "./onboarding-discovery";
 import type { QueueDeclaration } from "./queue-registry";
@@ -12,7 +13,7 @@ import { rulesSweepQueue } from "./rules-sweep";
  * declares, in one place. `QueueModule` (Unit 4) builds a `QueueClient` from
  * it, and the worker host registers a processor for each entry.
  *
- * Seven entries — `heartbeatQueue` (`./heartbeat`), the decision 10
+ * Eight entries — `heartbeatQueue` (`./heartbeat`), the decision 10
  * repeatable job; `rulesSweepQueue` (`./rules-sweep`, `F3.11`, ADR 0064
  * decision 2), the scheduled rule evaluation; `reportsDispatchQueue`
  * (`./reports-dispatch`, `F3.5b`, ADR 0071 decision 8), the scheduled
@@ -23,7 +24,9 @@ import { rulesSweepQueue } from "./rules-sweep";
  * `onboardingDiscoveryQueue` (`./onboarding-discovery`, `F3.24b`, ADR 0103
  * decision 1), one bounded MQTT listening job per confirmed discovery; and
  * `calcBackfillQueue` (`./calc-backfill`, `F4.311`, ADR 0109 decision 7), one
- * job per calculated-point backfill run.
+ * job per calculated-point backfill run; and `deviceHealthQueue`
+ * (`./device-health`, `F3.16`, ADR 0127 decision 12), the 30 s device-health
+ * sweep that raises the comms-loss alarms and prunes the drop buckets.
  * `F3.12` appends its
  * own here, with its own tenancy, payload schema and retry policy, and
  * nowhere else.
@@ -46,4 +49,5 @@ export const ALL_QUEUES = [
   copilotPurgeQueue,
   onboardingDiscoveryQueue,
   calcBackfillQueue,
+  deviceHealthQueue,
 ] as const satisfies readonly QueueDeclaration[];

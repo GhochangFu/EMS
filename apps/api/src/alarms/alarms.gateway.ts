@@ -1,10 +1,11 @@
-import { Logger, Optional } from "@nestjs/common";
+import { Inject, Logger, Optional } from "@nestjs/common";
 import {
   WebSocketGateway,
   WebSocketServer,
   type OnGatewayConnection,
   type OnGatewayInit,
 } from "@nestjs/websockets";
+import type { BmsDb } from "@bms/db";
 import type { AlarmListItem } from "@bms/shared";
 import { Namespace, Socket } from "socket.io";
 
@@ -16,6 +17,14 @@ import { RateLimiterService } from "../rate-limit/rate-limiter.service";
 import { holdServiceTokenSocket, tagServiceTokenSocket } from "../service-accounts/service-token-socket";
 import { ServiceTokenVerifier } from "../service-accounts/service-token-verifier.service";
 import { MetricsService } from "../observability/metrics.service";
+import { FLEET_DRIZZLE } from "../database/database.tokens";
+import {
+  alarmVisibleInMemory,
+  EMPTY_DEVICE_ALARM_SCOPE,
+  readAlarmOrganization,
+  readDeviceAlarmScope,
+  type DeviceAlarmScope,
+} from "./alarm-scope";
 
 @WebSocketGateway({
   namespace: "/ws/alarms",
@@ -41,6 +50,10 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
     // F4.17 / ADR 0125: the post-registration liveness read. Absent, a token
     // socket is closed (fail closed), never kept.
     @Optional() private readonly serviceTokens?: ServiceTokenVerifier,
+    // F3.16 / ADR 0127 decision 14: the socket's device scope and a host
+    // alarm's organization. Fleet: a system fan-out with no single tenant (see
+    // `readAlarmListItem`). Absent, a scoped socket receives no device alarm.
+    @Optional() @Inject(FLEET_DRIZZLE) private readonly fleetDb?: BmsDb,
   ) {}
 
   /**
@@ -66,7 +79,17 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
       const payload = await this.jwtAuth.verifyToken(token);
       const userId = this.accessControl.resolveUserId(payload);
       client.data.userId = userId;
-      client.data.assetIds = await this.accessControl.readableAssetIds(payload);
+      const assetIds = await this.accessControl.readableAssetIds(payload);
+      client.data.assetIds = assetIds;
+      // F3.16: the device half of the scope, read once with the asset ids it
+      // derives from — the RTUs serving them and the organizations where one is
+      // on a monitored RTU. Cached for the socket's life, as `assetIds` is.
+      client.data.deviceScope =
+        assetIds === null
+          ? null
+          : this.fleetDb
+            ? await readDeviceAlarmScope(this.fleetDb, assetIds)
+            : EMPTY_DEVICE_ALARM_SCOPE;
       // A fresh liveness read once registered, and the expiry timer (PR 4 review M1, L2).
       if (!(await holdServiceTokenSocket(client, serviceTokenOf(payload), this.serviceTokens))) {
         return;
@@ -126,13 +149,41 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
     this.metrics.countAlarmEvent("cleared");
   }
 
+  /**
+   * `F3.16` / ADR 0127 decision 14 through `alarmVisibleInMemory`, the
+   * in-memory form of the list's scope rule. The list item does not carry its
+   * organization, so an `ingest_host` alarm's is read first (one row by key);
+   * every other alarm is delivered synchronously, as before.
+   */
   private emitScoped(
     alarm: AlarmListItem,
     type: "created" | "acknowledged" | "cleared",
   ): void {
+    if (alarm.source !== "ingest_host") {
+      this.deliver(alarm, type, null);
+      return;
+    }
+    const read = this.fleetDb ? readAlarmOrganization(this.fleetDb, alarm.id) : Promise.resolve(null);
+    void read
+      .catch((err: unknown) => {
+        this.logger.warn(`host alarm ${alarm.id}: organization unread (${String(err)}); scoped sockets skipped`);
+        return null;
+      })
+      .then((organizationId) => this.deliver(alarm, type, organizationId));
+  }
+
+  private deliver(
+    alarm: AlarmListItem,
+    type: "created" | "acknowledged" | "cleared",
+    organizationId: string | null,
+  ): void {
     for (const client of this.server.sockets.values()) {
       const assetIds = client.data.assetIds as string[] | null | undefined;
-      if (assetIds === null || assetIds?.includes(alarm.assetId)) {
+      if (assetIds === undefined) {
+        continue; // not yet scoped: the handshake is still resolving
+      }
+      const device = (client.data.deviceScope as DeviceAlarmScope | null | undefined) ?? EMPTY_DEVICE_ALARM_SCOPE;
+      if (alarmVisibleInMemory(alarm, organizationId, assetIds, device)) {
         client.emit("alarm", { type, alarm });
       }
     }

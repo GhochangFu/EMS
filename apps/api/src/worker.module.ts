@@ -5,6 +5,7 @@ import { AccessControlModule } from "./auth/access-control.module";
 import { CalcBackfillModule } from "./calc-backfill/calc-backfill.module";
 import { CopilotPurgeModule } from "./copilot/copilot-purge.module";
 import { DatabaseModule } from "./database/database.module";
+import { DeviceHealthSweepModule } from "./device-health/device-health-sweep.module";
 import { HealthModule } from "./health/health.module";
 import { pinoHttpOptions } from "./logger.options";
 import { ObservabilityModule } from "./observability/observability.module";
@@ -65,6 +66,12 @@ import { StorageModule } from "./storage/storage.module";
  * reaches the pure calc helpers and `telemetry/point-aggregates.ts` (the
  * window reads' view names), and no loop site or host.
  *
+ * **`F3.16` PR B (ADR 0127 decision 12) adds `DeviceHealthSweepModule`**,
+ * the device-health sweep: a leaf that imports `AlarmRaiseModule` only. It
+ * reaches the device-health reads and state rule (pure SQL and functions) and
+ * `telemetry/telemetry-cadence.ts`'s window CTE, never `DeviceHealthModule`
+ * (the admin routes) or `AlarmsModule`.
+ *
  * **`WORKER_CONFIG` is a second, deterministic read of the environment
  * `worker.ts` already validated.** `readWorkerConfig` ran before any Nest
  * context existed and refused a bad `REDIS_URL`, `WORKER_PORT` or
@@ -107,6 +114,8 @@ import { StorageModule } from "./storage/storage.module";
     // `F4.311` PR 5 (ADR 0109 decision 7) — the calc backfill walk, a leaf on
     // DatabaseModule and ObservabilityModule; never CalcModule.
     CalcBackfillModule,
+    // `F3.16` PR B (ADR 0127 decision 12) — the device-health sweep, a leaf on AlarmRaiseModule.
+    DeviceHealthSweepModule,
   ],
   providers: [
     WorkerHostService,

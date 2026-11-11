@@ -26,6 +26,7 @@ import {
 } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
+import { alarmVisibleTo } from "../alarms/alarm-scope";
 import { AssetHealthService } from "../asset-health/asset-health.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { CalcParametersService } from "../calc/calc-parameters.service";
@@ -531,13 +532,14 @@ const datasetValue = (
  * ADR 0057 decision 1: active = `cleared_at IS NULL`, since migration `0066`. An acknowledged
  * alarm is still active — acknowledgement only annotates who is handling it, and clearing is
  * the sole predicate this file counts against.
+ *
+ * `F3.16` (ADR 0127 decision 14): `inScope` is the visibility predicate. The two counts take
+ * `alarmVisibleTo` — the alarm list's own rule, device alarms included — so the organization
+ * control room's tile counts what the alarm rail beside it lists. The `alarms.active` dataset is
+ * per asset (each row is an asset's code and name), so it keeps the asset-keyed `scopedTo`.
  */
-const activeAlarmWhere = (organizationId: string, scope: readonly string[]) =>
-  and(
-    eq(alarms.organizationId, organizationId),
-    isNull(alarms.clearedAt),
-    scopedTo(alarms.assetId, scope),
-  );
+const activeAlarmWhere = (organizationId: string, inScope: SQL) =>
+  and(eq(alarms.organizationId, organizationId), isNull(alarms.clearedAt), inScope);
 
 /**
  * `F4.317` (ADR 0112 Amendment 1) — an active alarm whose severity has tone `critical`: the
@@ -547,7 +549,7 @@ const activeAlarmWhere = (organizationId: string, scope: readonly string[]) =>
  */
 const criticalAlarmWhere = (tx: BmsTx, organizationId: string, scope: readonly string[]) =>
   and(
-    activeAlarmWhere(organizationId, scope),
+    activeAlarmWhere(organizationId, alarmVisibleTo(scope)),
     inArray(
       alarms.severity,
       tx.select({ code: alarmSeverities.code }).from(alarmSeverities).where(eq(alarmSeverities.tone, "critical")),
@@ -608,7 +610,7 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
     const [row] = await tx
       .select({ n: sql<number>`count(*)::int` })
       .from(alarms)
-      .where(activeAlarmWhere(organizationId, scope));
+      .where(activeAlarmWhere(organizationId, alarmVisibleTo(scope)));
     return withPrior(
       metricValue("alarms.active.count", row?.n ?? 0, null),
       priorAt,
@@ -653,7 +655,7 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
         assets,
         and(eq(alarms.assetId, assets.id), eq(assets.organizationId, organizationId)),
       )
-      .where(activeAlarmWhere(organizationId, scope))
+      .where(activeAlarmWhere(organizationId, scopedTo(alarms.assetId, scope)))
       .orderBy(desc(alarms.raisedAt))
       .limit(MAX_DATASET_ROWS + 1);
 

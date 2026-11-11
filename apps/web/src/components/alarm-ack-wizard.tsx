@@ -4,6 +4,7 @@ import type { AlarmListItem } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import { ackAlarm } from "../api/alarms";
+import { alarmSubjectName } from "../lib/alarm-source";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { AdminWizardFrame, fieldClass, labelClass } from "./admin/admin-wizard-frame";
 import { WizardShell } from "./wizard/wizard-shell";
@@ -84,9 +85,10 @@ export function AlarmAckWizard({ alarm, onCancel, onDone }: AlarmAckWizardProps)
         summary={operationsWizardEntry("alarm.acknowledge").summary({
           body: values,
           params: { id: alarm.id },
-          targetName: alarm.assetName,
+          // F3.16: a device alarm has no asset; it is "on" its RTU or the ingest host.
+          targetName: alarmSubjectName(alarm),
           organizationName: "",
-          alarm: { message: alarm.message, severity: alarm.severity, assetName: alarm.assetName, raisedAt: alarm.raisedAt },
+          alarm: { message: alarm.message, severity: alarm.severity, assetName: alarmSubjectName(alarm), raisedAt: alarm.raisedAt },
         })}
       />
     </AdminWizardFrame>

@@ -290,6 +290,9 @@ const ALARM_ITEM = {
   assetLocationName: "Lotapata",
   assetName: "Main meter",
   siteName: "Lotapata",
+  source: "rule" as const,
+  rtuId: null,
+  rtuCode: null,
 };
 
 /** `list_alarms` passes the item through its contract: `assetRtuName` and `assetLocationName` reach the model. */
@@ -299,6 +302,19 @@ export async function listAlarmsCarriesTheAssetRtuName(): Promise<void> {
     | Record<string, unknown>
     | undefined;
   expect([item?.assetRtuName, item?.assetLocationName]).toEqual(["Lotapata I", "Lotapata"]);
+}
+
+/**
+ * `F3.16` review fix — `list_alarms` asks the service for rule alarms only (`ruleOnly`), on every
+ * call: `get_alarm_details` refuses a device alarm and the operations tools cannot act on one, so
+ * the model is never handed an alarm id it can do nothing with.
+ */
+export async function listAlarmsAsksForRuleAlarmsOnly(): Promise<void> {
+  const { tools, log } = fake();
+  listed(await tools.dispatch("list_alarms", { state: "all" }, ctx([ORG_X])));
+  listed(await tools.dispatch("list_alarms", { state: "active", assetId: ASSET_X }, ctx([ORG_X])));
+  expect(log.alarms.length).toBe(2);
+  for (const call of log.alarms) expect(call).toMatchObject({ ruleOnly: true });
 }
 
 /** `get_alarm_stats`' top assets carry `assetRtuName` and `assetLocationName`. */

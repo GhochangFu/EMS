@@ -289,6 +289,9 @@ const RAIL_ALARM: AlarmListItem = {
   assetLocationName: "SMOC",
   assetName: "CR Main Incomer",
   siteName: "SMOC",
+  source: "rule",
+  rtuId: null,
+  rtuCode: null,
 };
 
 /** Ascending rank, as `GET /alarms/summary` returns it. */

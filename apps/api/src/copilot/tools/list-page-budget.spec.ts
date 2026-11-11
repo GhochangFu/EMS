@@ -87,6 +87,9 @@ function alarm(i: number) {
     assetLocationName: "RSMOC KwaZulu-Natal",
     assetName: "KwaZulu-Natal Control Room Utility Incomer",
     siteName: "RSMOC KwaZulu-Natal",
+    source: "rule" as const,
+    rtuId: null,
+    rtuCode: null,
   };
 }
 

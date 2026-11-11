@@ -305,6 +305,7 @@ export class WorkOrdersService {
         if (!alarm) {
           throw new NotFoundException("Alarm not found");
         }
+        // F3.16: a device alarm has no asset, so it is never attachable here.
         if (alarm.assetId !== dto.assetId) {
           throw new BadRequestException(
             "Alarm does not belong to the selected asset",

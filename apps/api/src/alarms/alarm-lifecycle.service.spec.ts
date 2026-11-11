@@ -11,6 +11,7 @@ import {
   LIFECYCLE_TICK_MS,
   escalationKey,
 } from "./alarm-lifecycle";
+import type { DeviceHealthSnapshot, DeviceLifecycleAlarm } from "./alarm-lifecycle-device";
 import {
   type AlarmLifecycleDeps,
   type AlarmLifecycleLoopDeps,
@@ -207,6 +208,10 @@ export function fakeDeps(opts: {
    * case can be polluted by another's losses.
    */
   lostLedgerRows?: LostLedgerRows;
+  /** `F3.16`: the open device alarms (`source <> 'rule'`); none by default, so every earlier case is unchanged. */
+  deviceAlarms?: DeviceLifecycleAlarm[];
+  /** `F3.16`: the monitored RTUs and hosts the device clear judges against. */
+  deviceHealth?: DeviceHealthSnapshot;
 }): { deps: AlarmLifecycleDeps; recorded: Recorded } {
   const recorded: Recorded = {
     writes: [],
@@ -219,11 +224,15 @@ export function fakeDeps(opts: {
     ruleChannelReads: [],
     warnings: [],
   };
-  const byId = new Map(opts.alarms.map((alarm) => [alarm.id, alarm]));
+  const byId = new Map<string, LifecycleAlarm | DeviceLifecycleAlarm>(
+    [...opts.alarms, ...(opts.deviceAlarms ?? [])].map((alarm) => [alarm.id, alarm]),
+  );
   const known = [C1, C2];
 
   const deps: AlarmLifecycleDeps = {
     loadActiveAlarms: () => Promise.resolve(opts.alarms),
+    loadActiveDeviceAlarms: () => Promise.resolve(opts.deviceAlarms ?? []),
+    loadDeviceHealth: () => Promise.resolve(opts.deviceHealth ?? { rows: [], hosts: [], dbNowMs: NOW.getTime() }),
     loadRules: () => Promise.resolve(opts.rules),
     loadSamples: () =>
       Promise.resolve(async (assetId: string, pointKey: string) =>
@@ -260,6 +269,9 @@ export function fakeDeps(opts: {
                 assetLocationName: "Site A",
                 assetName: "Feeder 1",
                 siteName: "Site A",
+                source: "source" in alarm ? alarm.source : ("rule" as const),
+                rtuId: "source" in alarm ? alarm.rtuId : null,
+                rtuCode: null,
               };
             }),
         );

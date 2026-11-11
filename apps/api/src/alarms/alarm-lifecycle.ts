@@ -48,9 +48,21 @@ export type LifecycleAlarm = {
   normalSince: Date | null;
 };
 
+/**
+ * What the escalation and cleared builders read from an alarm — a rule alarm's
+ * {@link LifecycleAlarm} or a device alarm's row (`F3.16`), which has no asset
+ * and no rule.
+ */
+export type DispatchableAlarm = Pick<LifecycleAlarm, "id" | "severity" | "message" | "raisedAt">;
+
 /** What the two input builders need from the alarm's rule. */
 export type LifecycleRule = {
-  id: string;
+  /**
+   * `null` for a device alarm (`F3.16`, ADR 0127 decision 13), which has no
+   * rule: `alarm-lifecycle-device.ts` builds this from the alarm's own
+   * organization, and the dedupe key carries `system` in the rule's place.
+   */
+  id: string | null;
   code: string;
   /**
    * Plan D12, following `F3.7`'s `toDispatchInput`: the dispatch input's
@@ -202,7 +214,7 @@ export function stepIsTooLate(a: {
  * and stays the object every earlier tick built.
  */
 export function escalationDispatchInput(
-  alarm: LifecycleAlarm,
+  alarm: DispatchableAlarm,
   rule: LifecycleRule,
   stepNo: number,
   now: Date,
@@ -334,7 +346,7 @@ function withAge(message: string, raisedAt: Date, now: Date): string {
 
 /** The cleared message's `DispatchInput` (decision 9, plan D12/D14), or `null` for a rule with no organization. */
 export function clearedDispatchInput(
-  alarm: LifecycleAlarm,
+  alarm: DispatchableAlarm,
   rule: LifecycleRule,
 ): DispatchInput | null {
   if (rule.organizationId === null) {

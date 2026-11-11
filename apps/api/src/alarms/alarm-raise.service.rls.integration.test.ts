@@ -8,9 +8,13 @@ import { asRole } from "../testing/role-urls";
 import { AlarmRaiser } from "./alarm-raise.service";
 import type { AlarmRaiseRule } from "./alarm-raise.service";
 import {
+  assertRaiseDeviceHostAlarmOncePerOrganization,
+  assertRaiseDeviceRaisesOnceAndNotifies,
+  assertRaiseDeviceRefusesForeignRtu,
   assertRaiseRefusesCrossOrgUnderRealRls,
   assertRaiseStampsBothOrgsUnderRealRls,
   type AlarmRaiseRlsFixtures,
+  type DeviceRaiseRlsFixtures,
 } from "./alarm-raise.service.rls.integration.spec";
 
 /**
@@ -42,6 +46,8 @@ describe.skipIf(!connectionString)("E7.1b — AlarmRaiser stamps org under real 
   let ownerPool: pg.Pool;
   let tenantPool: pg.Pool;
   let ctx: AlarmRaiseRlsFixtures;
+  let device: DeviceRaiseRlsFixtures;
+  const startedAt = new Date(Date.now() - 60_000);
   const ruleIds: string[] = [];
   const assetIds: string[] = [];
 
@@ -155,12 +161,44 @@ describe.skipIf(!connectionString)("E7.1b — AlarmRaiser stamps org under real 
       // under it — so the raise must be refused.
       guardRule: ruleObject(guard.rule, FOREIGN_ORG),
     };
+
+    // F3.16: an RTU of this organization with no open device alarm, and one of another.
+    const rtu = await ownerPool.query<{ id: string }>(
+      `SELECT r.id FROM bms.rtus r
+        WHERE r.organization_id = $1
+          AND NOT EXISTS (SELECT 1 FROM bms.alarms a WHERE a.rtu_id = r.id AND a.cleared_at IS NULL)
+        ORDER BY r.created_at, r.id LIMIT 1`,
+      [organizationId],
+    );
+    const foreignRtu = await ownerPool.query<{ id: string }>(
+      "SELECT id FROM bms.rtus WHERE organization_id <> $1 ORDER BY created_at, id LIMIT 1",
+      [organizationId],
+    );
+    if (!rtu.rows[0] || !foreignRtu.rows[0]) {
+      throw new Error("F3.16: needs a seeded RTU in two organizations — run pnpm db:seed.");
+    }
+    // An earlier run's open host alarm would dedupe this run's first raise.
+    await ownerPool.query(
+      "UPDATE bms.alarms SET cleared_at = now() WHERE organization_id = $1 AND source = 'ingest_host' AND cleared_at IS NULL",
+      [organizationId],
+    );
+    device = {
+      raiser: ctx.raiser,
+      ownerPool,
+      organizationId,
+      rtuId: rtu.rows[0].id,
+      foreignRtuId: foreignRtu.rows[0].id,
+    };
   });
 
   afterAll(async () => {
     if (ownerPool) {
       await ownerPool.query(`DELETE FROM bms.rule_executions WHERE rule_id = ANY($1)`, [ruleIds]);
       await ownerPool.query(`DELETE FROM bms.alarms WHERE asset_id = ANY($1)`, [assetIds]);
+      await ownerPool.query(
+        "DELETE FROM bms.alarms WHERE source <> 'rule' AND organization_id = $1 AND raised_at >= $2",
+        [ctx?.organizationId, startedAt],
+      );
       await ownerPool.query(`DELETE FROM bms.automation_rules WHERE id = ANY($1)`, [ruleIds]);
       await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1)`, [assetIds]);
     }
@@ -173,5 +211,17 @@ describe.skipIf(!connectionString)("E7.1b — AlarmRaiser stamps org under real 
 
   it("refuses a raise whose rule belongs to a different org than the asset", async () => {
     await assertRaiseRefusesCrossOrgUnderRealRls(ctx);
+  });
+
+  it("F3.16: raiseDevice raises one rtu_comms alarm, announces it, writes no trace, and dedupes", async () => {
+    await assertRaiseDeviceRaisesOnceAndNotifies(device);
+  });
+
+  it("F3.16: raiseDevice raises one ingest_host alarm per organization", async () => {
+    await assertRaiseDeviceHostAlarmOncePerOrganization(device);
+  });
+
+  it("F3.16: raiseDevice refuses an RTU of another organization, writing and announcing nothing", async () => {
+    await assertRaiseDeviceRefusesForeignRtu(device);
   });
 });

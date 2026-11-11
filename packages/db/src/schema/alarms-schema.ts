@@ -1,6 +1,7 @@
 import {
   boolean,
   doublePrecision,
+  foreignKey,
   integer,
   jsonb,
   primaryKey,
@@ -18,6 +19,7 @@ import {
   bmsSchema,
   organizations,
   ruleCategories,
+  rtus,
   users,
 } from "./bms-schema";
 import { bytea } from "./column-types";
@@ -50,9 +52,10 @@ export const alarms = bmsSchema.table("alarms", {
   organizationId: uuid("organization_id")
     .notNull()
     .references(() => organizations.id),
-  assetId: uuid("asset_id")
-    .notNull()
-    .references(() => assets.id),
+  // F3.16 / ADR 0127 decision 12 (migration 0151): nullable — a device alarm
+  // (`source` 'rtu_comms' or 'ingest_host') has no asset.
+  // `alarms_source_shape_check` (SQL-only) keeps it NOT NULL for a 'rule' alarm.
+  assetId: uuid("asset_id").references(() => assets.id),
   ruleKey: varchar("rule_key", { length: 64 }),
   // ADR 0032: `alarms_severity_fk` (migration 0030) is what closes this column.
   // It was `varchar(32)` with no constraint, so the only thing keeping it clean
@@ -90,6 +93,25 @@ export const alarms = bmsSchema.table("alarms", {
   // acknowledged alarm whose condition still holds does not re-raise; a new
   // row opens only after the previous one clears.
   ruleId: uuid("rule_id").references(() => automationRules.id),
+  // F3.16 / ADR 0127 decision 12 (migration 0151). 'rule', 'rtu_comms' or
+  // 'ingest_host' (`alarms_source_check`); the shape per source is
+  // `alarms_source_shape_check`. Both CHECKs and the per-device dedupe
+  // `alarms_open_per_device_uidx` (partial, `cleared_at IS NULL AND source <>
+  // 'rule'`, on `(organization_id, source, COALESCE(rtu_id, organization_id))`)
+  // are SQL-only, like `alarms_open_per_rule_uidx`.
+  source: varchar("source", { length: 32 }).notNull().default("rule"),
+  // The silent RTU of an 'rtu_comms' alarm; keyed to `rtus (id,
+  // organization_id)` below, so an alarm can only name an RTU of its own
+  // organization.
+  rtuId: uuid("rtu_id"),
+}, (t) => {
+  return {
+    rtuOrganizationFk: foreignKey({
+      name: "alarms_rtu_id_organization_id_fkey",
+      columns: [t.rtuId, t.organizationId],
+      foreignColumns: [rtus.id, rtus.organizationId],
+    }),
+  };
 });
 
 /**

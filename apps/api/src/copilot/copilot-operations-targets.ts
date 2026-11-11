@@ -117,7 +117,9 @@ export async function readAlarmRow(
       severity: alarms.severity,
       raisedAt: alarms.raisedAt,
       acknowledgedAt: alarms.acknowledgedAt,
-      assetId: alarms.assetId,
+      // The joined asset's id (equal to `alarms.asset_id`, non-null). F3.16: the
+      // inner join keeps device alarms, which have no asset, out of the copilot.
+      assetId: assets.id,
       assetName: assets.name,
     })
     .from(alarms)

@@ -34,6 +34,9 @@ const validAlarm = {
   assetLocationName: "Campus",
   assetName: "Air Handler 1",
   siteName: "Campus",
+  source: "rule",
+  rtuId: null,
+  rtuCode: null,
 };
 
 describe("checkResponse", () => {

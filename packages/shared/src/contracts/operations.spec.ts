@@ -155,6 +155,10 @@ const ALARM_LIST_ITEM = {
   assetLocationName: "Plant A",
   assetName: "Chiller Q1",
   siteName: "Site A",
+  // F3.16 / ADR 0127 decision 12.
+  source: "rule",
+  rtuId: null,
+  rtuCode: null,
 };
 
 const AFFECTED_ASSET = {
@@ -169,6 +173,9 @@ const ALARM_DETAILS = {
   id: "a1",
   assetId: "30000000-0000-4000-8000-000000000001",
   organizationId: "10000000-0000-4000-8000-000000000001",
+  source: "rule",
+  rtuId: null,
+  rtuCode: null,
   assetCode: "CR-Q1",
   assetRtuName: "RTU 1",
   assetLocationName: "Plant A",
@@ -213,6 +220,33 @@ export const assertAlarmListItemRequiresAssetLocationName = (): void =>
 export const assertAlarmListItemAcceptsNullParts = (): void =>
   assertAcceptsNullParts(alarmListItemSchema, ALARM_LIST_ITEM, "alarmListItemSchema");
 
+/**
+ * `F3.16` / ADR 0127 decision 12 — a device alarm has no asset: an `rtu_comms`
+ * row names its RTU, an `ingest_host` row names neither. Both parse, on the list
+ * and on the socket payload.
+ */
+export function assertAlarmListItemAcceptsDeviceAlarms(): void {
+  const noAsset = { ...ALARM_LIST_ITEM, assetId: null, assetCode: null, assetName: null, siteName: null, assetRtuName: null, assetLocationName: null };
+  const comms = { ...noAsset, source: "rtu_comms", rtuId: "40000000-0000-4000-8000-000000000001", rtuCode: "RTU-7" };
+  const host = { ...noAsset, source: "ingest_host" };
+  for (const [label, row] of [["rtu_comms", comms], ["ingest_host", host]] as const) {
+    const parsed = alarmListItemSchema.safeParse(row);
+    assert(parsed.success, `alarmListItemSchema refused an ${label} alarm: ${JSON.stringify(parsed.error?.issues)}`);
+    assert(alarmSocketEventSchema.safeParse({ type: "created", alarm: row }).success, `the created event refused an ${label} alarm`);
+  }
+}
+
+/** `source` is required and closed to the three sources; `rtuId` and `rtuCode` are required-nullable. */
+export function assertAlarmListItemRequiresSourceAndRtu(): void {
+  for (const key of ["source", "rtuId", "rtuCode"]) {
+    assertRefusesWithout(alarmListItemSchema, ALARM_LIST_ITEM, key, "alarmListItemSchema");
+  }
+  assert(
+    alarmListItemSchema.safeParse({ ...ALARM_LIST_ITEM, source: "edge_gateway" }).success === false,
+    "alarmListItemSchema accepted an unknown source",
+  );
+}
+
 /** The socket payload wraps the list item, so it inherits the requirement. */
 export function assertAlarmSocketEventRequiresAssetRtuName(): void {
   const { assetRtuName: _dropped, ...without } = ALARM_LIST_ITEM;
@@ -229,6 +263,33 @@ export const assertAlarmDetailsRequiresAssetLocationName = (): void =>
   assertRefusesWithout(alarmDetailsResponseSchema, ALARM_DETAILS, "assetLocationName", "alarmDetailsResponseSchema");
 export const assertAlarmDetailsAcceptsNullParts = (): void =>
   assertAcceptsNullParts(alarmDetailsResponseSchema, ALARM_DETAILS, "alarmDetailsResponseSchema");
+
+/**
+ * `F3.16` / ADR 0127 decision 14 — a device alarm's details carry no asset:
+ * every asset field is null, `source`/`rtuId`/`rtuCode` are required.
+ */
+export function assertAlarmDetailsAcceptsDeviceAlarms(): void {
+  const noAsset = {
+    ...ALARM_DETAILS,
+    assetId: null,
+    assetCode: null,
+    assetRtuName: null,
+    assetLocationName: null,
+    assetName: null,
+    assetDomain: null,
+    locationName: null,
+    siteName: null,
+  };
+  const comms = { ...noAsset, source: "rtu_comms", rtuId: "40000000-0000-4000-8000-000000000001", rtuCode: "RTU-7" };
+  const host = { ...noAsset, source: "ingest_host" };
+  for (const [label, row] of [["rtu_comms", comms], ["ingest_host", host]] as const) {
+    const parsed = alarmDetailsResponseSchema.safeParse(row);
+    assert(parsed.success, `alarmDetailsResponseSchema refused an ${label} alarm: ${JSON.stringify(parsed.error?.issues)}`);
+  }
+  for (const key of ["source", "rtuId", "rtuCode"]) {
+    assertRefusesWithout(alarmDetailsResponseSchema, ALARM_DETAILS, key, "alarmDetailsResponseSchema");
+  }
+}
 
 export const assertAffectedAssetRequiresAssetRtuName = (): void =>
   assertRefusesWithout(alarmAffectedAssetDtoSchema, AFFECTED_ASSET, "assetRtuName", "alarmAffectedAssetDtoSchema");

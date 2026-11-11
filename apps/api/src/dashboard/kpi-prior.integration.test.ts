@@ -9,6 +9,7 @@ import {
   assertAlarmRaisedAfterAtIsNotCounted,
   assertAlarmRaisedBeforeAndUnclearedIsCounted,
   assertComposedPriorReadsEveryFieldAtAt,
+  assertDeviceAlarmsOpenAtAtAreCounted,
   assertGlobalKpisTotalKwIgnoresAnOrphanId,
   assertGlobalPriorTotalKwIgnoresAnOrphanId,
   assertKpisTotalKwIgnoresAnOrphanId,
@@ -71,6 +72,8 @@ describe.skipIf(!connectionString)("F3.28 — KPI prior reads against Postgres",
   it("does not count an alarm raised after the instant", run(assertAlarmRaisedAfterAtIsNotCounted));
 
   it("counts an alarm cleared after the instant", run(assertAlarmClearedAfterAtIsCounted));
+
+  it("F3.16 counts a device alarm raised before the instant and still open", run(assertDeviceAlarmsOpenAtAtAreCounted));
 
   it("reads a PUE pair inside (at − 900 s, at]", run(assertPriorPueReadsAPairInsideTheWindow));
 

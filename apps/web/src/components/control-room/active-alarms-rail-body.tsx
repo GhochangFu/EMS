@@ -5,6 +5,7 @@ import { ASSET_LABEL_SEPARATOR, assetLabelParts } from "@bms/shared";
 import type { AlarmListItem, AlarmSeverityCount, AlarmSeverityDto } from "@bms/shared";
 
 import { alarmSeverityTone } from "../../lib/alarm-severity";
+import { deviceAlarmLabel } from "../../lib/alarm-source";
 import { StatusPill } from "../status-pill";
 
 /** The reference rail's row budget (`docs/ux/ion-exchange-reference-alignment.md`, page 10). */
@@ -47,6 +48,8 @@ export type ActiveAlarmsRailBodyProps = {
 
 /** `F4.316` (ADR 0111): the label's `· where` part — the RTU's name, or the location's without one. */
 function whereOf(a: AlarmListItem): string | null {
+  // F3.16: a device alarm has no asset, so no `· where` part.
+  if (a.assetCode === null) return null;
   return assetLabelParts({ code: a.assetCode, rtuName: a.assetRtuName, locationName: a.assetLocationName }).where;
 }
 
@@ -134,7 +137,8 @@ export function ActiveAlarmsRailBody({
                     */}
                     <td className="min-w-0 py-1.5">
                       <div className="font-medium text-ink">
-                        <span className="whitespace-nowrap">{alarm.assetCode}</span>
+                        {/* F3.16: a device alarm names its RTU or the ingest host. */}
+                        <span className="whitespace-nowrap">{alarm.assetCode ?? deviceAlarmLabel(alarm)}</span>
                         <WhereSpan where={whereOf(alarm)} />
                       </div>
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">

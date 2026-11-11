@@ -7,6 +7,8 @@ import {
   runResidualLimitClampedTail,
   runResidualLimitSeveritySuffix,
   runSeverityThatMimicsASuffixIsARaise,
+  runSystemTokenKeyTests,
+  runSystemTokenRoundTripTests,
   runTestKindTests,
   runUnknownWhenTheKeyIsAnotherAlarms,
   runUnknownWhenTheKeyIsAnotherRules,
@@ -55,5 +57,13 @@ describe("F3.56 parseDeliveryEvent — the kind read back out of the key", () =>
 
   it("E6b records the clamped-tail residual limit rather than claiming it away", () => {
     runResidualLimitClampedTail();
+  });
+
+  it("E1b round-trips a device alarm's keys under the system token (F3.16)", () => {
+    runSystemTokenRoundTripTests();
+  });
+
+  it("E7 puts the system token in the rule's place with no extra separator (F3.16)", () => {
+    runSystemTokenKeyTests();
   });
 });

@@ -148,6 +148,7 @@ export class MapService {
               COUNT(*) FILTER (WHERE al.cleared_at IS NULL)::int AS open_alarms,
               COUNT(*) FILTER (WHERE al.cleared_at IS NULL AND al.severity = 'critical')::int AS critical_alarms
        FROM bms.alarms al
+       -- F3.16: asset-keyed; the inner join excludes device alarms (no asset).
        INNER JOIN bms.assets a ON a.id = al.asset_id
        WHERE a.location_id IS NOT NULL
          AND ($1::uuid[] IS NULL OR a.id = ANY($1::uuid[]))

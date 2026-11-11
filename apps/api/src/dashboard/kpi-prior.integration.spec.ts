@@ -185,6 +185,39 @@ export async function assertAlarmClearedAfterAtIsCounted(client: pg.PoolClient):
   assert(got === 1, `an alarm raised T − 30 h and cleared T − 23 h was open at T − 24 h, got ${got}`);
 }
 
+/**
+ * `F3.16` (ADR 0127 decision 14) — device alarms count in the ribbon's prior
+ * as they do in its live count: the asset sits on a monitored RTU, which holds
+ * an `rtu_comms` alarm raised T − 30 h and still open, and the organization an
+ * `ingest_host` alarm raised then too. The asset-only predicate answers 0.
+ */
+export async function assertDeviceAlarmsOpenAtAtAreCounted(client: pg.PoolClient): Promise<void> {
+  const s = await seedAsset(client);
+  const rtu = await client.query<{ id: string }>(
+    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type, expected_interval_seconds)
+     SELECT a.organization_id, a.location_id, $2, $2, 'mqtt', 10 FROM bms.assets a WHERE a.id = $1 RETURNING id`,
+    [s.assetId, `${RUN_CODE}-RTU`],
+  );
+  const rtuId = rtu.rows[0]?.id;
+  if (!rtuId) throw new Error("failed to insert the F3.16 fixture RTU");
+  await client.query("UPDATE bms.assets SET rtu_id = $2 WHERE id = $1", [s.assetId, rtuId]);
+  await client.query(
+    `INSERT INTO bms.rtu_health (rtu_id, organization_id, monitored_since, last_seen_at) VALUES ($1, $2, now(), now())`,
+    [rtuId, s.organizationId],
+  );
+  const severity = (await client.query<{ code: string }>("SELECT code FROM bms.alarm_severities ORDER BY code LIMIT 1"))
+    .rows[0]?.code;
+  for (const [source, alarmRtu] of [["rtu_comms", rtuId], ["ingest_host", null]] as const) {
+    await client.query(
+      `INSERT INTO bms.alarms (organization_id, source, rtu_id, severity, message, raised_at)
+       VALUES ($1, $2, $3, $4, 'F3.16 KPI prior device alarm', $5::timestamptz)`,
+      [s.organizationId, source, alarmRtu, severity, hoursBefore(s.now, 30).toISOString()],
+    );
+  }
+  const got = await priorOpenAlarms(client, [s.assetId], s.at);
+  assert(got === 2, `the comms and host alarms raised T − 30 h and open were open at T − 24 h, got ${got}`);
+}
+
 /** A pair 60 s before `at` is inside `(at − 900 s, at]`: 60 / 30 = 2. */
 export async function assertPriorPueReadsAPairInsideTheWindow(client: pg.PoolClient): Promise<void> {
   const s = await seedAsset(client);

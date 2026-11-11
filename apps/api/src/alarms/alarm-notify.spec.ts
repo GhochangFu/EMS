@@ -63,6 +63,9 @@ function sampleRow(id: string): AlarmListItem {
     assetLocationName: "Site A",
     assetName: "Transformer 1",
     siteName: "Site A",
+    source: "rule",
+    rtuId: null,
+    rtuCode: null,
   };
 }
 

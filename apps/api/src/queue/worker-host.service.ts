@@ -11,6 +11,7 @@ import { Worker } from "bullmq";
 import { CalcBackfillService } from "../calc-backfill/calc-backfill.service";
 import { CopilotPurgeService } from "../copilot/copilot-purge.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { DeviceHealthSweepService } from "../device-health/device-health-sweep.service";
 import { MetricsService } from "../observability/metrics.service";
 import { DiscoveryJobService } from "../onboarding-discovery/discovery-job.service";
 import { ReportDispatchService } from "../reports/report-dispatch.service";
@@ -18,6 +19,7 @@ import { ReportRenderService } from "../reports/report-render.service";
 import { RuleSweepService } from "../rules/rule-sweep.service";
 import { calcBackfillQueue } from "./calc-backfill";
 import { COPILOT_PURGE_SCHEDULER_ID, copilotPurgeQueue } from "./copilot-purge";
+import { DEVICE_HEALTH_SCHEDULER_ID, deviceHealthQueue } from "./device-health";
 import {
   HEARTBEAT_EVERY_MS,
   HEARTBEAT_SCHEDULER_ID,
@@ -54,13 +56,14 @@ import { QUEUE_CLIENT, WORKER_CONFIG } from "./queue.tokens";
  * `HEARTBEAT_EVERY_MS`, the rules sweep's every
  * `config.ruleSweepIntervalMs`, the report dispatch tick's every
  * `config.reportDispatchIntervalMs`, the copilot purge's every
- * `config.copilotPurgeIntervalMs` — and starts one `Worker` per registered
+ * `config.copilotPurgeIntervalMs`, the device-health sweep's every
+ * `config.deviceHealthIntervalMs` — and starts one `Worker` per registered
  * processor; on `onModuleDestroy` it closes them (`worker.ts` enables
  * shutdown hooks for exactly this).
  *
  * **Constructor order is a contract**: `(client, tenantDb, fleetDb,
  * metrics, ruleSweep, config, reportDispatch, reportRender, copilotPurge,
- * discovery, backfill)`. `runProcessor`
+ * discovery, backfill, deviceHealth)`. `runProcessor`
  * receives `{ tenantDb, fleetDb }` and a `tenant` queue's handler runs
  * inside `withTenant(tenantDb, …)` — swap the two pools and every tenant job
  * runs on the BYPASSRLS pool with a GUC nobody reads. No test boots
@@ -68,7 +71,8 @@ import { QUEUE_CLIENT, WORKER_CONFIG } from "./queue.tokens";
  * slots 1 and 2 by token; `F3.11` **appended** slots 4 and 5 and `F3.5b`
  * **appended** slots 6 and 7, `F3.85` PR 5 **appended** slot 8, and `F3.24b` **appended** slot 10
  * (`DiscoveryJobService`), and `F4.311` PR 5 **appended** slot 11
- * (`CalcBackfillService`), each moving nothing before them.
+ * (`CalcBackfillService`), and `F3.16` PR B **appended** slot 12
+ * (`DeviceHealthSweepService`), each moving nothing before them.
  *
  * **Every consumer is registered here, beside `ALL_QUEUES`'s declarations,
  * and not in a host of its own inside the module that owns the body.** One
@@ -119,6 +123,12 @@ import { QUEUE_CLIENT, WORKER_CONFIG } from "./queue.tokens";
  * in `startQueueWorkers` keeps a slow sweep from overlapping the next
  * (decision 7).
  *
+ * **What the device-health handler does** (`F3.16`, ADR 0127 decision 12).
+ * `DeviceHealthSweepService.run(ctx.db)` — the fleet handle again — reads the
+ * monitored RTUs and the ingest hosts, raises through `AlarmRaiser.raiseDevice`
+ * under each organization's tenant GUC, prunes the 30-day buckets, and the
+ * handler logs one `info` line of counts (no Redis key, no health field).
+ *
  * **What the purge handler does.** `CopilotPurgeService.purge()` — the
  * service injects both pools itself (it lists users on the fleet pool and
  * writes per user inside `withUser` on the tenant pool), so the handler
@@ -146,6 +156,7 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
     private readonly copilotPurge: CopilotPurgeService,
     private readonly discovery: DiscoveryJobService,
     private readonly backfill: CalcBackfillService,
+    private readonly deviceHealth: DeviceHealthSweepService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -173,7 +184,13 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
       { schedulerId: COPILOT_PURGE_SCHEDULER_ID, everyMs: this.config.copilotPurgeIntervalMs },
       {},
     );
-    // All four upserts passed, so the client is configured; `requireConfigured`
+    await upsertSchedule(
+      this.client,
+      deviceHealthQueue,
+      { schedulerId: DEVICE_HEALTH_SCHEDULER_ID, everyMs: this.config.deviceHealthIntervalMs },
+      {},
+    );
+    // All five upserts passed, so the client is configured; `requireConfigured`
     // is the same refusal they applied, kept for the type narrowing.
     const { prefix } = requireConfigured(this.client);
     const dbs: ProcessorDbs = { tenantDb: this.tenantDb, fleetDb: this.fleetDb };
@@ -222,11 +239,24 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
     // walk after its commit — the discovery shape again.
     const backfill = runProcessor(calcBackfillQueue, dbs, (payload, ctx) => this.backfill.run(payload, ctx.tx));
 
-    this.host = startQueueWorkers(this.client, [heartbeat, sweep, dispatch, render, purge, discovery, backfill], {
-      createWorker: (name, process, opts) => new Worker(name, process, opts),
-      metrics: this.metrics,
-      logger: this.logger,
+    // `F3.16` PR B (ADR 0127 decision 12): the fleet read on ctx.db, the raises
+    // under each organization's tenant GUC inside the service.
+    const deviceHealth = runProcessor(deviceHealthQueue, dbs, async (_payload, ctx) => {
+      const s = await this.deviceHealth.run(ctx.db);
+      this.logger.log(
+        `device-health finished: organizations=${s.organizations} hostAlarms=${s.hostAlarms} rtuAlarms=${s.rtuAlarms} failed=${s.failed} prunedRtuBuckets=${s.prunedRtuBuckets} prunedEndpointBuckets=${s.prunedEndpointBuckets} durationMs=${s.durationMs}`,
+      );
     });
+
+    this.host = startQueueWorkers(
+      this.client,
+      [heartbeat, sweep, dispatch, render, purge, discovery, backfill, deviceHealth],
+      {
+        createWorker: (name, process, opts) => new Worker(name, process, opts),
+        metrics: this.metrics,
+        logger: this.logger,
+      },
+    );
   }
 
   async onModuleDestroy(): Promise<void> {

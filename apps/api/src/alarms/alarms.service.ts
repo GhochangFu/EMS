@@ -21,7 +21,8 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
 import { activeAlarmFilter } from "./active-alarm-filter";
-import { alarmListItemColumns, toAlarmListItem } from "./alarm-list-item";
+import { alarmListItemColumns, alarmRtus, toAlarmListItem } from "./alarm-list-item";
+import { alarmVisibleTo } from "./alarm-scope";
 import { AlarmsGateway } from "./alarms.gateway";
 
 function encodeCursor(raisedAt: Date, id: string): string {
@@ -74,7 +75,8 @@ export class AlarmsService {
       .where(
         and(
           eq(alarms.id, alarmId),
-          ...(assetIds ? [inArray(alarms.assetId, assetIds)] : []),
+          // F3.16 (ADR 0127 decision 14): the one scope rule, device alarms included.
+          ...(assetIds ? [alarmVisibleTo(assetIds)] : []),
         ),
       )
       .limit(1);
@@ -101,6 +103,10 @@ export class AlarmsService {
    * 0047 — not `alarms.organization_id`). It is ANDed onto `assetIds`, never
    * a replacement for it, so it can only narrow the caller's scope.
    *
+   * `F3.16` (ADR 0127 decision 14): `assets` is left-joined and the scope is
+   * `alarmVisibleTo` — a device alarm is listed to a caller with an asset on
+   * its RTU (or, for the host alarm, on a monitored RTU of its organization).
+   *
    * `F4.291` (ADR 0099 Amendment 9 E5(b)): `severity` (the code), and
    * `raisedFrom` (inclusive) / `raisedTo` (exclusive) on `raised_at`, ANDed
    * on as the others. Only the copilot's `list_alarms` passes them; the
@@ -115,6 +121,8 @@ export class AlarmsService {
     severity?: string;
     raisedFrom?: Date;
     raisedTo?: Date;
+    /** `F3.16` — rule alarms only (`source = 'rule'`); the copilot's `list_alarms` sets it. */
+    ruleOnly?: boolean;
   }): Promise<{ items: AlarmListItem[]; nextCursor: string | null }> {
     // Truncated after the clamp (plan decision 4): the schema lets a fractional
     // `limit` through, as the old `Number(limitRaw)` did, and SQL's `LIMIT`
@@ -122,13 +130,23 @@ export class AlarmsService {
     const limit = Math.trunc(Math.min(100, Math.max(1, opts.limit)));
     const cursor = opts.cursor;
     const filters = [
-      ...(opts.assetIds ? [inArray(alarms.assetId, opts.assetIds)] : []),
+      // F3.16 (ADR 0127 decision 14): the scope rule over rule and device alarms.
+      ...(opts.assetIds ? [alarmVisibleTo(opts.assetIds)] : []),
       ...(opts.state === "active" ? [activeAlarmFilter] : []),
-      // The list inner-joins `assets`, so the organization is the joined row's.
-      ...(opts.organizationId ? [eq(assets.organizationId, opts.organizationId)] : []),
+      // A rule alarm's organization is its asset's; a device alarm (no asset)
+      // has only its own `organization_id`.
+      ...(opts.organizationId
+        ? [
+            or(
+              eq(assets.organizationId, opts.organizationId),
+              and(isNull(alarms.assetId), eq(alarms.organizationId, opts.organizationId)),
+            ),
+          ]
+        : []),
       ...(opts.severity !== undefined ? [eq(alarms.severity, opts.severity)] : []),
       ...(opts.raisedFrom !== undefined ? [gte(alarms.raisedAt, opts.raisedFrom)] : []),
       ...(opts.raisedTo !== undefined ? [lt(alarms.raisedAt, opts.raisedTo)] : []),
+      ...(opts.ruleOnly ? [eq(alarms.source, "rule")] : []),
     ];
 
     return withReadScope(
@@ -137,12 +155,14 @@ export class AlarmsService {
       opts.assetIds,
       () => ({ items: [], nextCursor: null }),
       async (tx) => {
+        // F3.16: left, so a device alarm (no asset) is listed.
         const base = tx
           .select(alarmListItemColumns)
           .from(alarms)
-          .innerJoin(assets, eq(alarms.assetId, assets.id))
+          .leftJoin(assets, eq(alarms.assetId, assets.id))
           .leftJoin(rtus, eq(assets.rtuId, rtus.id))
-          .leftJoin(locations, eq(assets.locationId, locations.id));
+          .leftJoin(locations, eq(assets.locationId, locations.id))
+          .leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id));
 
         const c = cursor ? decodeCursor(cursor) : null;
         const cursorFilter = c
@@ -237,15 +257,19 @@ export class AlarmsService {
             and(
               eq(alarms.severity, alarmSeverities.code),
               activeAlarmFilter,
-              ...(assetIds ? [inArray(alarms.assetId, assetIds)] : []),
+              // F3.16: the same scope rule as `list`, so the counts agree with it.
+              ...(assetIds ? [alarmVisibleTo(assetIds)] : []),
               ...(organizationId
                 ? [
-                    inArray(
-                      alarms.assetId,
-                      tx
-                        .select({ id: assets.id })
-                        .from(assets)
-                        .where(eq(assets.organizationId, organizationId)),
+                    or(
+                      inArray(
+                        alarms.assetId,
+                        tx
+                          .select({ id: assets.id })
+                          .from(assets)
+                          .where(eq(assets.organizationId, organizationId)),
+                      ),
+                      and(isNull(alarms.assetId), eq(alarms.organizationId, organizationId)),
                     ),
                   ]
                 : []),
@@ -306,7 +330,7 @@ export class AlarmsService {
           and(
             eq(alarms.id, alarmId),
             isNull(alarms.acknowledgedAt),
-            ...(assetIds ? [inArray(alarms.assetId, assetIds)] : []),
+            ...(assetIds ? [alarmVisibleTo(assetIds)] : []),
           ),
         )
         .returning({ id: alarms.id });
@@ -335,9 +359,11 @@ export class AlarmsService {
       const [row] = await tx
         .select(alarmListItemColumns)
         .from(alarms)
-        .innerJoin(assets, eq(alarms.assetId, assets.id))
+        // F3.16: left, so an acknowledged device alarm reads back.
+        .leftJoin(assets, eq(alarms.assetId, assets.id))
         .leftJoin(rtus, eq(assets.rtuId, rtus.id))
         .leftJoin(locations, eq(assets.locationId, locations.id))
+        .leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id))
         .where(eq(alarms.id, alarmId))
         .limit(1);
 

@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
-import { alarms, ruleExecutions } from "@bms/db";
+import { alarms, ruleExecutions, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { TENANT_DRIZZLE } from "../database/database.tokens";
@@ -122,6 +122,25 @@ export type AlarmRaiseResult = {
    */
   severity: string;
   message: string;
+};
+
+/**
+ * `F3.16` / ADR 0127 decisions 12 and 15 — a device alarm: no asset and no rule.
+ * `rtu_comms` names the silent RTU; `ingest_host` is one per organization and
+ * names neither. The shape is `alarms_source_shape_check`'s (migration `0151`),
+ * so the type cannot ask for a row the database would refuse.
+ */
+export type DeviceAlarmRaiseInput = {
+  /** The organization the alarm is filed under and the write runs inside. */
+  organizationId: string;
+  severity: string;
+  message: string;
+} & ({ source: "rtu_comms"; rtuId: string } | { source: "ingest_host"; rtuId?: never });
+
+export type DeviceAlarmRaiseResult = {
+  /** `false` when one is already open for this key, or the RTU is not the organization's. */
+  raised: boolean;
+  alarmId: string | null;
 };
 
 /**
@@ -292,5 +311,57 @@ export class AlarmRaiser {
     });
 
     return { raised: outcome.raised, alarmId: outcome.alarmId, severity, message };
+  }
+
+  /**
+   * `F3.16` / ADR 0127 decision 12 — raise a device alarm (`rtu_comms` or
+   * `ingest_host`). The `raise` contract, without a rule: one `withTenant`
+   * transaction, a bare `ON CONFLICT DO NOTHING` that `alarms_open_per_device_uidx`
+   * arbitrates (one open alarm per organization, source and RTU), and
+   * `pg_notify` last in `raise`'s channel and payload shape, so the listener
+   * broadcasts it like any other. No `rule_executions` row: there is no rule to
+   * trace, and the worker sweep that calls this records nothing per evaluation.
+   *
+   * An `rtu_comms` raise for an RTU the organization does not hold is refused
+   * before the write — the tenant cannot see another organization's RTU, and the
+   * composite key `alarms_rtu_id_organization_id_fkey` would refuse it anyway,
+   * as a 500 rather than a logged skip.
+   */
+  async raiseDevice(input: DeviceAlarmRaiseInput): Promise<DeviceAlarmRaiseResult> {
+    const { organizationId, source, severity, message } = input;
+    const rtuId = input.source === "rtu_comms" ? input.rtuId : null;
+
+    return withTenant(this.db, organizationId, async (tx) => {
+      if (rtuId !== null) {
+        const [rtu] = await tx
+          .select({ id: rtus.id })
+          .from(rtus)
+          .where(and(eq(rtus.id, rtuId), eq(rtus.organizationId, organizationId)))
+          .limit(1);
+        if (!rtu) {
+          this.logger.warn(`device alarm skipped: RTU ${rtuId} is not in organization ${organizationId}`);
+          return { raised: false, alarmId: null };
+        }
+      }
+
+      const [row] = await tx
+        .insert(alarms)
+        .values({ organizationId, source, rtuId, severity, message })
+        .onConflictDoNothing()
+        .returning({ id: alarms.id });
+      if (!row) {
+        // Already open (raised, not yet cleared) for this key: the dedupe.
+        return { raised: false, alarmId: null };
+      }
+
+      await tx.execute(
+        sql`select pg_notify(${ALARM_NOTIFY_CHANNEL}, ${encodeAlarmNotification({
+          type: "created",
+          alarmId: row.id,
+          organizationId,
+        })})`,
+      );
+      return { raised: true, alarmId: row.id };
+    });
   }
 }

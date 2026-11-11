@@ -145,6 +145,7 @@ export class AssetRoleSummaryService {
               AND ${groupFilter}
           ),
           asset_worst AS (
+            -- F3.16: asset-keyed; device alarms (no asset) are not members.
             SELECT alarms.asset_id, MAX(sev.rank) AS rank
             FROM bms.alarms
             JOIN bms.alarm_severities sev ON sev.code = alarms.severity

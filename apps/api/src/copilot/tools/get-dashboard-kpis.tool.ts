@@ -11,6 +11,10 @@ import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
  * its readable asset ids. The page overlays the socket's live sum on the Total
  * kW tile (`use-executive-dashboard.ts`), so the tile can differ from this
  * REST figure; the description says so (the row's own requirement).
+ *
+ * `F3.16`: the open and critical alarm counts include device alarms, as the
+ * ribbon and the alarm centre do, while `list_alarms` lists rule alarms only.
+ * Kept: this tool reports the screen's numbers and names no alarm to act on.
  */
 export const getDashboardKpisTool = defineReadTool({
   name: "get_dashboard_kpis",

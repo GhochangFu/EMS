@@ -94,14 +94,22 @@ export type DispatchEvent =
   | { kind: "escalation"; step: number; stale?: true }
   | { kind: "cleared" };
 
-/** The key for one notification: `rule:alarm:severity`, plus the event suffix when there is one. */
+/**
+ * `F3.16` (ADR 0127 decisions 12–13) — the rule's place in the key of a device
+ * alarm, which has no rule. A fixed word with no colon, so the separator count
+ * every reader relies on (`isOverHourlyLimit`'s `LIKE '%:%:%:%'`) is unchanged,
+ * and never a uuid, so it cannot collide with a rule's key.
+ */
+export const SYSTEM_RULE_TOKEN = "system";
+
+/** The key for one notification: `rule:alarm:severity` (`system` for a device alarm), plus the event suffix when there is one. */
 export function buildDedupeKey(input: {
-  ruleId: string;
+  ruleId: string | null;
   alarmId: string | null;
   severity: string | null;
   event?: DispatchEvent;
 }): string {
-  const parts = [input.ruleId, input.alarmId ?? "no-alarm", input.severity ?? "no-severity"];
+  const parts = [input.ruleId ?? SYSTEM_RULE_TOKEN, input.alarmId ?? "no-alarm", input.severity ?? "no-severity"];
   if (input.event?.kind === "escalation") {
     parts.push("escalation", String(input.event.step));
   } else if (input.event?.kind === "cleared") {
@@ -121,11 +129,11 @@ export function buildDedupeKey(input: {
  * 1. `dedupeKey === null` → `test`. `NotificationsService.record()` is the one
  *    production insert; its three `sendTest` call sites are the only ones that
  *    pass a literal `null`, and they pass a `null` rule with it.
- * 2. `ruleId === null` with a non-null key → `unknown`. No writer produces that
- *    shape.
+ * 2. `ruleId === null` with a non-null key is a device alarm's row (`F3.16`,
+ *    ADR 0127): its prefix uses {@link SYSTEM_RULE_TOKEN} in the rule's place.
  * 3. Strip the prefix the ROW itself determines,
- *    `${ruleId}:${alarmId ?? "no-alarm"}:`. A key that does not start with it
- *    was not written for this row → `unknown`.
+ *    `${ruleId ?? "system"}:${alarmId ?? "no-alarm"}:`. A key that does not start
+ *    with it was not written for this row → `unknown`.
  * 4. On the remainder — the severity plus at most one suffix — `:cleared` at
  *    the end is `cleared`, `:escalation:<digits>` at the end is `escalation`,
  *    and everything else is a `raise`.
@@ -163,9 +171,10 @@ export function parseDeliveryEvent(row: {
   alarmId: string | null;
 }): NotificationDeliveryEvent {
   if (row.dedupeKey === null) return "test";
-  if (row.ruleId === null) return "unknown";
 
-  const prefix = `${row.ruleId}:${row.alarmId ?? "no-alarm"}:`;
+  // `F3.16`: a row with no rule is a device alarm's, keyed under `system`
+  // (`buildDedupeKey`); a key that does not start with that is `unknown` below.
+  const prefix = `${row.ruleId ?? SYSTEM_RULE_TOKEN}:${row.alarmId ?? "no-alarm"}:`;
   if (!row.dedupeKey.startsWith(prefix)) return "unknown";
   const rest = row.dedupeKey.slice(prefix.length);
 

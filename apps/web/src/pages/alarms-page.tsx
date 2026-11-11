@@ -13,6 +13,7 @@ import {
   canAcknowledge,
   type AlarmLifecycleState,
 } from "../lib/alarm-state";
+import { deviceAlarmLabel } from "../lib/alarm-source";
 import { AlarmDetailsPanel } from "../components/alarm-details-panel";
 import { AlarmSummaryCard } from "../components/alarm-summary-card";
 import { AppShell } from "../layouts/app-shell";
@@ -32,7 +33,12 @@ type AlarmSubsystem = "UPS" | "Battery" | "HVAC" | "IT" | "Security";
 const alarmSubsystems: AlarmSubsystem[] = ["UPS", "Battery", "HVAC", "IT", "Security"];
 
 function alarmSubsystem(alarm: AlarmListItem): AlarmSubsystem {
-  const haystack = `${alarm.assetCode} ${alarm.assetName} ${alarm.message}`.toLowerCase();
+  // F3.16 (ADR 0127): a device alarm is a communications fault — a silent RTU or ingest host —
+  // and is IT by its source. Its message names an RTU, which the text match below would misfile.
+  if (alarm.source !== "rule") {
+    return "IT";
+  }
+  const haystack = `${alarm.assetCode ?? ""} ${alarm.assetName ?? ""} ${alarm.message}`.toLowerCase();
   if (haystack.includes("batt")) {
     return "Battery";
   }
@@ -81,9 +87,10 @@ function matchesAlarmSearch(alarm: AlarmListItem, query: string): boolean {
   const state = alarmStateSearchText(alarm);
   const searchable = [
     alarm.severity,
-    alarm.assetCode,
-    alarm.assetName,
-    alarm.siteName,
+    // F3.16: a device alarm is found by its device label.
+    deviceAlarmLabel(alarm) ?? alarm.assetCode ?? "",
+    alarm.assetName ?? "",
+    alarm.siteName ?? "",
     alarm.message,
     state,
     alarmSubsystem(alarm),
@@ -95,6 +102,8 @@ function matchesAlarmSearch(alarm: AlarmListItem, query: string): boolean {
 
 /** `F4.316` (ADR 0111): the label's `· where` part — the RTU's name, or the location's without one. */
 function whereOf(a: AlarmListItem): string | null {
+  // F3.16: a device alarm has no asset, so no `· where` part.
+  if (a.assetCode === null) return null;
   return assetLabelParts({ code: a.assetCode, rtuName: a.assetRtuName, locationName: a.assetLocationName }).where;
 }
 
@@ -192,8 +201,9 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   function startWorkOrder(alarm: AlarmListItem): void {
     const params = new URLSearchParams({
       alarmId: alarm.id,
-      assetId: alarm.assetId,
-      title: `Investigate ${alarm.assetCode} alarm`,
+      // F3.16: a device alarm has no asset to prefill (and its row offers no work order).
+      ...(alarm.assetId === null ? {} : { assetId: alarm.assetId }),
+      title: `Investigate ${alarm.assetCode ?? ""} alarm`,
       description: alarm.message,
     });
     navigate(`/work-orders?${params}`);
@@ -372,14 +382,21 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                         />
                       </td>
                       <td className="px-3 py-2">
-                        {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates. */}
-                        <div className="font-medium">
-                          <span className="whitespace-nowrap">{a.assetCode}</span>
-                          <WhereSpan where={whereOf(a)} />
-                        </div>
-                        <div className="text-xs text-ink-muted">{a.assetName}</div>
+                        {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates.
+                            F3.16: a device alarm names its RTU or the ingest host instead. */}
+                        {a.assetCode === null ? (
+                          <div className="font-medium">{deviceAlarmLabel(a)}</div>
+                        ) : (
+                          <>
+                            <div className="font-medium">
+                              <span className="whitespace-nowrap">{a.assetCode}</span>
+                              <WhereSpan where={whereOf(a)} />
+                            </div>
+                            <div className="text-xs text-ink-muted">{a.assetName}</div>
+                          </>
+                        )}
                       </td>
-                      <td className="px-3 py-2 text-xs">{a.siteName}</td>
+                      <td className="px-3 py-2 text-xs">{a.siteName ?? "—"}</td>
                       <td className="max-w-xs px-3 py-2 text-xs">{a.message}</td>
                       <td className="px-3 py-2 text-xs">
                         <span className={alarmStateToneClass(alarmLifecycleState(a))}>
@@ -395,13 +412,16 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                           >
                             Details
                           </button>
-                          <button
-                            type="button"
-                            className="surface-button px-2.5 py-1"
-                            onClick={() => startWorkOrder(a)}
-                          >
-                            Work order
-                          </button>
+                          {/* F3.16: a work order needs an asset, which a device alarm has not. */}
+                          {a.assetId !== null ? (
+                            <button
+                              type="button"
+                              className="surface-button px-2.5 py-1"
+                              onClick={() => startWorkOrder(a)}
+                            >
+                              Work order
+                            </button>
+                          ) : null}
                           {/*
                             `POST /alarms/:id/ack` filters on
                             `acknowledged_at IS NULL` and nothing else, so a

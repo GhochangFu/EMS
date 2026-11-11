@@ -55,6 +55,14 @@ export const COPILOT_ALARMS_ASSET_OR_LOCATION = "name assetId or locationId, not
  * may be given alone), never both — passed to `AlarmsService.list` as
  * `raisedFrom` (inclusive) / `raisedTo` (exclusive). The range is checked
  * before any read.
+ *
+ * `F3.16` (ADR 0127): rule alarms only (`ruleOnly`). `get_alarm_details`
+ * refuses a device alarm (no asset places it — it fails closed) and the
+ * operations tools cannot act on one, so a listed device alarm would be an id
+ * the model can do nothing with. Filtered in SQL, not on the page, so the
+ * keyset paging and the page budget stay exact. `get_dashboard_kpis` still
+ * counts device alarms: it reports the ribbon's numbers, which are the alarm
+ * centre's (device alarms included), and names no alarm the model could act on.
  */
 export const listAlarmsTool = defineReadTool({
   name: "list_alarms",
@@ -99,6 +107,8 @@ export const listAlarmsTool = defineReadTool({
           assetIds: args.assetId !== undefined ? [args.assetId] : [...assetIds],
           state: args.state,
           organizationId: organization,
+          // F3.16: device alarms stay out, as get_alarm_details refuses them (fails closed).
+          ruleOnly: true,
           ...(args.severity !== undefined ? { severity: args.severity } : {}),
           ...(range.from !== undefined ? { raisedFrom: range.from } : {}),
           ...(range.to !== undefined ? { raisedTo: range.to } : {}),

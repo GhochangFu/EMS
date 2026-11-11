@@ -12,7 +12,7 @@ import {
 } from "@bms/shared";
 
 import { activeAlarmFilter } from "../alarms/active-alarm-filter";
-import { alarmListItemColumns, toAlarmListItem } from "../alarms/alarm-list-item";
+import { alarmListItemColumns, alarmRtus, toAlarmListItem } from "../alarms/alarm-list-item";
 import {
   AssetRoleSummaryService,
   readableGroupScope,
@@ -301,12 +301,14 @@ async function activeAlarms(tx: BmsTx, organizationId: string, assetIds: readonl
   if (assetIds.length === 0) {
     return [];
   }
+  // F3.16: asset-keyed; the inner join on assets excludes device alarms (no asset).
   const rows = await tx
     .select(alarmListItemColumns)
     .from(alarms)
     .innerJoin(assets, eq(alarms.assetId, assets.id))
     .leftJoin(rtus, eq(assets.rtuId, rtus.id))
     .leftJoin(locations, eq(assets.locationId, locations.id))
+    .leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id))
     .where(
       and(
         inArray(alarms.assetId, [...assetIds]),
