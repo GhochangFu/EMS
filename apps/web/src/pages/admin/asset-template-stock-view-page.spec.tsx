@@ -23,7 +23,7 @@ import * as copilotApi from "../../api/copilot";
  * file Vitest collects (ADR 0042 decision 2).
  *
  * **What this file exists to hold.** The viewer renders repository data through
- * the same seven authoring tabs with `editable={false}`. Two things can
+ * the same eight authoring tabs with `editable={false}`. Two things can
  * silently stop being true: a field could render writable on a screen with no
  * save path, and the synthetic `status` in `lib/stock-template-view.ts` could
  * become `draft`, which leaves the Calculations and KPIs formula editors

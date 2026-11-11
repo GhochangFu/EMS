@@ -238,3 +238,34 @@ export function anUntouchedStoredBlockIsClean(): void {
   expect(onDirtyChange).not.toHaveBeenCalledWith(true);
   expect((screen.getByRole("button", { name: "Save health" }) as HTMLButtonElement).disabled).toBe(true);
 }
+
+/**
+ * After a removal is saved the tab shows the empty state, not the old bands
+ * under a "will be removed" banner (code review, F4.355 PR 3). The save's
+ * answer reseeds the form; then the page's refetch arrives with no health key.
+ */
+export async function aSavedRemovalShowsTheEmptyState(): Promise<void> {
+  const before = template("draft", FIVE);
+  const after = template("draft", undefined);
+  vi.spyOn(api, "updateAdminAssetTemplate").mockResolvedValue(after);
+  const onDirtyChange = vi.fn();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (dto: AdminAssetTemplateDto) => (
+    <QueryClientProvider client={queryClient}>
+      <HealthTab template={dto} editable onSaved={vi.fn()} onDirtyChange={onDirtyChange} />
+    </QueryClientProvider>
+  );
+  const { rerender } = render(tree(before));
+
+  await userEvent.click(screen.getByRole("button", { name: "Remove health bands" }));
+  const buttons = screen.getAllByRole("button", { name: "Remove health bands" });
+  await userEvent.click(buttons[buttons.length - 1] as HTMLElement);
+  await userEvent.click(screen.getByRole("button", { name: "Save health" }));
+  await waitFor(() => expect(screen.queryByText(/will be removed when you save/)).toBeNull());
+  rerender(tree(after));
+
+  expect(screen.getByText(/has no health bands/)).toBeInTheDocument();
+  expect(screen.queryByLabelText("Band 1 code")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Keep health bands" })).toBeNull();
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+}

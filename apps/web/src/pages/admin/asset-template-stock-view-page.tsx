@@ -3,7 +3,7 @@
  * decisions 1 and 10).
  *
  * An administrator can read a catalog entry in full before deciding to import
- * it. The entry is rendered through the **same seven tab components the
+ * it. The entry is rendered through the **same eight tab components the
  * authoring detail page uses**, with `editable={false}`, so there is exactly
  * one description of what a template looks like rather than a second read-only
  * copy that drifts. That is what made `F2.19` free here: `MaintenanceTab`

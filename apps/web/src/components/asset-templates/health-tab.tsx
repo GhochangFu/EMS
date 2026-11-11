@@ -24,7 +24,7 @@
  * `health: null`. Emptying the band table is not a removal — the lib names it as
  * a problem instead — so a deletion is always something the author asked for.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type { AdminAssetTemplateDto } from "@bms/shared";
 
@@ -55,6 +55,7 @@ type HealthTabProps = {
   onDirtyChange: (dirty: boolean) => void;
 };
 
+/** The Health tab: health bands and point weights for one template version. */
 export function HealthTab({ template, editable, onSaved, onDirtyChange }: HealthTabProps) {
   const stored = storedHealth(template.content);
   const [form, setForm] = useState<HealthForm>(() => healthFormFrom(stored, template.points));
@@ -69,12 +70,21 @@ export function HealthTab({ template, editable, onSaved, onDirtyChange }: Health
   }, [template.id, template.status]);
 
   // A refetch under the same id and status is followed only while the tab is clean.
-  useFollowStoredWhenClean(
+  const reseedFrom = useFollowStoredWhenClean(
     template.id,
     stored,
     (previous) => !healthHasChanged(form, previous, template.points),
     (next) => setForm(healthFormFrom(next, template.points)),
   );
+
+  // The form a save was sent from, and the form now. The save's answer reseeds
+  // only a form nobody touched while it was pending — the `kpis-tab.tsx`
+  // pattern. Without it a saved removal left the old bands on screen under a
+  // "will be removed" banner, because a form armed for removal never counts as
+  // clean against the block it removes (code review, F4.355 PR 3).
+  const sentForm = useRef<HealthForm | null>(null);
+  const currentForm = useRef(form);
+  currentForm.current = form;
 
   const blockedKeys = unwritableContentKeys(template.content);
   const changed = healthHasChanged(form, stored, template.points);
@@ -90,15 +100,21 @@ export function HealthTab({ template, editable, onSaved, onDirtyChange }: Health
   const blocked = problems.length > 0 || blockedKeys.length > 0 || write.kind === "none";
 
   const saveM = useMutation({
-    mutationFn: () =>
-      updateAdminAssetTemplate(template.id, {
-        content: mergeTemplateContent(template.content, {
-          section: "health",
-          value: write.kind === "set" ? write.value : null,
-        }),
-      }),
+    mutationFn: () => {
+      sentForm.current = form;
+      // `null` deletes the block, so it is sent only for an explicit, confirmed
+      // removal; `none` never reaches here (Save is disabled for it).
+      const value = write.kind === "remove" ? null : write.kind === "set" ? write.value : undefined;
+      if (value === undefined) {
+        throw new Error("Nothing to save.");
+      }
+      return updateAdminAssetTemplate(template.id, {
+        content: mergeTemplateContent(template.content, { section: "health", value }),
+      });
+    },
     onSuccess: (next) => {
       setError(null);
+      if (currentForm.current === sentForm.current) reseedFrom(storedHealth(next.content));
       onSaved(next);
     },
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
@@ -188,7 +204,7 @@ export function HealthTab({ template, editable, onSaved, onDirtyChange }: Health
                 return (
                   <tr key={index} className="align-top">
                     <td className="py-1 pr-2">
-                      <BandInput
+                      <CellInput
                         label={`Band ${n} code`}
                         value={band.code}
                         editable={editable}
@@ -197,7 +213,7 @@ export function HealthTab({ template, editable, onSaved, onDirtyChange }: Health
                       />
                     </td>
                     <td className="py-1 pr-2">
-                      <BandInput
+                      <CellInput
                         label={`Band ${n} label`}
                         value={band.label}
                         editable={editable}
@@ -206,7 +222,7 @@ export function HealthTab({ template, editable, onSaved, onDirtyChange }: Health
                       />
                     </td>
                     <td className="py-1 pr-2">
-                      <BandInput
+                      <CellInput
                         label={`Band ${n} minimum score (%)`}
                         value={band.minPercent}
                         editable={editable}
@@ -307,7 +323,7 @@ export function HealthTab({ template, editable, onSaved, onDirtyChange }: Health
                   <td className="py-1 pr-2 text-ink-muted">{row.kind ?? "—"}</td>
                   <td className="py-1 pr-2">
                     <div className="flex gap-2">
-                      <BandInput
+                      <CellInput
                         label={`Weight of ${row.pointKey}`}
                         value={row.weight}
                         editable={editable}
@@ -394,7 +410,7 @@ export function HealthTab({ template, editable, onSaved, onDirtyChange }: Health
   );
 }
 
-function BandInput({
+function CellInput({
   label,
   value,
   editable,

@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aRefusalIsShownInPercentAndBlocksSave,
+  aSavedRemovalShowsTheEmptyState,
   aServerRefusalIsShownVerbatim,
   aWeightEditIsWrittenAndOnesAreNot,
   anEmptyDraftStaysEmptyUntilThePresetIsClicked,
@@ -59,5 +60,9 @@ describe("F4.355 health tab — ADR 0038 Amendment 7, ADR 0050 Amendment 4", () 
 
   it("treats an untouched stored block as clean", () => {
     anUntouchedStoredBlockIsClean();
+  });
+
+  it("shows the empty state after a saved removal, not the old bands", async () => {
+    await aSavedRemovalShowsTheEmptyState();
   });
 });
