@@ -14,6 +14,8 @@ import type {
 import * as assetHealthApi from "../api/asset-health";
 import * as dashboardsApi from "../api/dashboards";
 import * as locationsApi from "../api/locations";
+import * as systemStatusApi from "../api/system-status";
+import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import * as executiveDashboard from "../hooks/use-executive-dashboard";
 import { WIDGET_ICON_PATH } from "../lib/widget-catalog";
 import type { AuthUser } from "../stores/auth-store";
@@ -458,4 +460,35 @@ export async function theEstateListsTheDashboards(): Promise<void> {
     "/dashboards/plant-overview?organizationId=22222222-2222-4222-8222-222222222222",
   );
   expect(dashboardsApi.fetchDashboards).toHaveBeenCalledWith(undefined, undefined, undefined, undefined);
+}
+
+/**
+ * `F3.16` / ADR 0127 decision 19 — the "Offline devices" tile reads
+ * `devices.offline` of `devices.monitored` from the system-status poll, and is
+ * hidden when no monitored RTU is in scope (a simulator-only estate).
+ */
+export async function theOfflineDevicesTileReadsNOfM(): Promise<void> {
+  stubDashboard(1.42);
+  vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue({
+    ...OPERATIONAL,
+    devices: { monitored: 5, offline: 2 },
+  });
+  renderPage();
+
+  await screen.findByText("Offline devices");
+  const tile = tileLabelled("Offline devices");
+  expect(within(tile).getByText("2 of 5")).toBeInTheDocument();
+}
+
+export async function theOfflineDevicesTileHidesAtZeroMonitored(): Promise<void> {
+  stubDashboard(1.42);
+  vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue({
+    ...OPERATIONAL,
+    devices: { monitored: 0, offline: 0 },
+  });
+  renderPage();
+
+  // The footer reads the same `["system","status"]` query: once it shows the verdict, the body has landed.
+  await screen.findByText("All systems operational");
+  expect(screen.queryByText("Offline devices")).toBeNull();
 }

@@ -16,6 +16,8 @@ import {
   sitesOnlineHintReadsTheFreshnessWindow,
   sitesOnlineWearsNoIcon,
   theCriticalCountRendersInTheNote,
+  theOfflineDevicesTileHidesAtZeroMonitored,
+  theOfflineDevicesTileReadsNOfM,
   theEstateKeepsTheLocationAccordion,
   theEstateListsTheDashboards,
   theEstateShowsOneCardPerOrganization,
@@ -130,5 +132,20 @@ describe("F3.72 the Control Room estate (ADR 0087, plan D2)", () => {
 
   it("lists the library dashboards of the whole read scope", async () => {
     await theEstateListsTheDashboards();
+  });
+});
+
+describe("F3.16 offline devices tile (ADR 0127 decision 19)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("shows devices.offline of devices.monitored", async () => {
+    await theOfflineDevicesTileReadsNOfM();
+  });
+
+  it("hides when no device is monitored", async () => {
+    await theOfflineDevicesTileHidesAtZeroMonitored();
   });
 });

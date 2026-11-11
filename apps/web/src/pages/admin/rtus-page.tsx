@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { AdminRtuDto, CreateRtuBody, MasterDataActiveFilter, UpdateRtuBody } from "@bms/shared";
+import type {
+  AdminRtuDto,
+  CreateRtuBody,
+  MasterDataActiveFilter,
+  RtuHealthDto,
+  UpdateRtuBody,
+} from "@bms/shared";
 
 import { fetchAdminLocationSummary } from "../../api/admin/locations";
 import {
@@ -17,11 +23,16 @@ import {
   type HierarchySelection,
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { RtuDropHistoryDrawer } from "../../components/admin/rtu-drop-history-drawer";
+import { DeviceHealthTiles, IngestHostBanner, RtuHealthCells } from "../../components/admin/rtu-health-cells";
 import { RtuPayloadFormatWizard } from "../../components/admin/rtu-payload-format-wizard";
 import { RtuStatusWizard, RtuWizard } from "../../components/admin/rtu-wizards";
+import { UnregisteredDevicesSection } from "../../components/admin/unregistered-devices-section";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
+import { useDeviceHealth } from "../../hooks/use-device-health";
+import { isGlobalAdmin } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -34,6 +45,11 @@ type RtusAdminPageProps = { user: AuthUser };
  * and `rtu.update` wizards, and Deactivate and Reactivate are Review-only
  * wizards (ruling Q9); all four live in `components/admin/rtu-wizards.tsx`.
  * This page sends what Review parsed, with no `X-Copilot-Change` header.
+ *
+ * `F3.16` (ADR 0127 decisions 4, 17, 19) — device health is a second read,
+ * merged into the rows by RTU id: Last seen, State, Clock skew, Drops 24 h, the
+ * header tiles and the ingest-host banner (`rtu-health-cells.tsx`). The list
+ * does not wait on it, and a failed read leaves "—" in those cells.
  */
 /**
  * `F4.339` (ADR 0117 decision 8) — what the row says about a released MQTT topic: the topic an
@@ -60,6 +76,8 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
   const [statusTarget, setStatusTarget] = useState<AdminRtuDto | null>(null);
   /** `F4.334` (plan T5.4) — the MQTT RTU whose payload format wizard is open. */
   const [formatTarget, setFormatTarget] = useState<AdminRtuDto | null>(null);
+  /** `F3.16` — the RTU whose drop history drawer is open. */
+  const [dropsTarget, setDropsTarget] = useState<AdminRtuDto | null>(null);
 
   const locationSummaryQ = useQuery({
     queryKey: ["admin", "location-summary", locationId],
@@ -81,6 +99,14 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
     queryFn: () =>
       fetchAdminRtus(activeFilter, locationId ?? selection.locationId ?? undefined),
   });
+
+  const healthQ = useDeviceHealth(locationId ?? selection.locationId ?? undefined);
+  const healthById = useMemo(
+    () => new Map<string, RtuHealthDto>((healthQ.data?.items ?? []).map((item) => [item.rtuId, item])),
+    [healthQ.data?.items],
+  );
+  // Ages are judged at the instant the poll landed, so a re-render between polls does not move them.
+  const nowMs = healthQ.dataUpdatedAt;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -135,6 +161,13 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
           </button>
         }
       />
+      <div className="mb-3 space-y-3">
+        <IngestHostBanner data={healthQ.data} />
+        <DeviceHealthTiles
+          data={healthQ.data}
+          status={healthQ.isLoading ? "loading" : healthQ.isError ? "error" : "ready"}
+        />
+      </div>
       <SectionCard title="RTU list" bodyClassName="p-3 space-y-3">
         <div className="flex flex-wrap gap-3">
           <ActiveFilterBar value={activeFilter} onChange={setActiveFilter} />
@@ -160,6 +193,10 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
               <th className="px-2 py-2">Source</th>
               <th className="px-2 py-2">Device ID</th>
               <th className="px-2 py-2">Status</th>
+              <th className="px-2 py-2">Last seen</th>
+              <th className="px-2 py-2">State</th>
+              <th className="px-2 py-2">Clock skew</th>
+              <th className="px-2 py-2">Drops 24 h</th>
               <th className="px-2 py-2">Actions</th>
             </tr>
           </thead>
@@ -194,6 +231,12 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                     <p className="mt-1 text-2xs text-ink-muted">{releasedTopicLine(item)}</p>
                   ) : null}
                 </td>
+                <RtuHealthCells
+                  code={item.code}
+                  health={healthById.get(item.id)}
+                  nowMs={nowMs}
+                  onOpenDrops={() => setDropsTarget(item)}
+                />
                 <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
                   <div className="flex gap-2">
                     <button
@@ -230,6 +273,19 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
           </tbody>
         </table>
       </SectionCard>
+
+      {isGlobalAdmin(user.role) && healthQ.data ? (
+        <div className="mt-3">
+          <UnregisteredDevicesSection items={healthQ.data.unattributed} />
+        </div>
+      ) : null}
+
+      {dropsTarget ? (
+        <RtuDropHistoryDrawer
+          rtu={{ id: dropsTarget.id, code: dropsTarget.code }}
+          onClose={() => setDropsTarget(null)}
+        />
+      ) : null}
 
       {modalOpen ? (
         <RtuWizard
