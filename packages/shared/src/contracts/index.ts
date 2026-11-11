@@ -77,6 +77,9 @@ export * from "./point-keys";
 export * from "./point-key-states";
 // `F4.334` (ADR 0116 decision 5): the MQTT payload format catalog.
 export * from "./mqtt-payload-formats";
+// `E7.2` (ADR 0123 decision 12): the edge gateway admin's DTO, token response and write bodies.
+export * from "./edge-gateways";
+export * from "./edge-gateway-writes";
 export * from "./point-metadata";
 export * from "./point-metadata-writes";
 export * from "./reports";

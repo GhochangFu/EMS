@@ -57,6 +57,7 @@ import { MimicLayoutsPage } from "./pages/admin/mimic-layouts-page";
 import { MimicSymbolLibrariesPage } from "./pages/admin/mimic-symbol-libraries-page";
 import { PointKeysAdminPage } from "./pages/admin/point-keys-page";
 import { PayloadFormatsAdminPage } from "./pages/admin/payload-formats-page";
+import { EdgeGatewaysAdminPage } from "./pages/admin/edge-gateways-page";
 import { PointKeyStatesAdminPage } from "./pages/admin/point-key-states-page";
 import { TrendPointsAdminPage } from "./pages/admin/trend-points-page";
 import { RtusAdminPage } from "./pages/admin/rtus-page";
@@ -848,6 +849,19 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <PayloadFormatsAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/* E7.2 (ADR 0123 decision 12): the site edge gateways; the page fails closed for a non-global admin. */}
+      <Route
+        path="/admin/edge-gateways"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <EdgeGatewaysAdminPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

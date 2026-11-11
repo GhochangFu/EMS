@@ -102,6 +102,7 @@ const ACCENT_FILL_FILES: Record<string, number> = {
   "apps/web/src/pages/admin/dashboard-template-detail-page.tsx": 3,
   "apps/web/src/pages/admin/dashboard-template-stock-view-page.tsx": 1,
   "apps/web/src/pages/admin/dashboard-templates-page.tsx": 1,
+  "apps/web/src/pages/admin/edge-gateways-page.tsx": 1,
   "apps/web/src/pages/admin/escalation-profiles-page.tsx": 2,
   "apps/web/src/pages/admin/location-types-page.tsx": 1,
   "apps/web/src/pages/admin/locations-page.tsx": 1,

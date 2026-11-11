@@ -69,6 +69,10 @@ import {
   updatePointKeyStateBodySchema,
   // `F4.317` task 4.2 (ADR 0112 decision 4): "Make organization layout".
   putOrganizationControlRoomViewBodySchema,
+  // `E7.2` (ADR 0123 decision 12): the edge gateway write bodies.
+  createEdgeGatewayBodySchema,
+  putEdgeGatewayRtusBodySchema,
+  updateEdgeGatewayBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -317,6 +321,11 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   EscalationDefaultsController_set: setEscalationDefaultsBodySchema,
   EscalationProfilesController_create: createEscalationProfileBodySchema,
   EscalationProfilesController_update: updateEscalationProfileBodySchema,
+  // `E7.2` (ADR 0123 decision 12, plan T6.2) — the three bodies; the service parses each. `_list`,
+  // `_revoke` and `_mintToken` are absent: no body and no query, at most one path parameter.
+  EdgeGatewaysAdminController_create: createEdgeGatewayBodySchema,
+  EdgeGatewaysAdminController_replaceRtus: putEdgeGatewayRtusBodySchema,
+  EdgeGatewaysAdminController_update: updateEdgeGatewayBodySchema,
   LocationsAdminController_create: createLocationBodySchema,
   LocationsAdminController_update: updateLocationBodySchema,
   // `F4.162` (ADR 0077 Amendment 1, plan D1/D4) — the two `.strict()` bodies

@@ -253,6 +253,15 @@ export function canManagePayloadFormats(role: UserRole): boolean {
 }
 
 /**
+ * `E7.2` (ADR 0123 decision 12, plan T6.3) — the Edge Gateways page. Every route behind it, the
+ * read included, is the global `admin`'s (`EdgeGatewaysAdminService`); its own predicate, the
+ * `canManageLocationTypes` rule, so the page's fail-closed check never moves with another.
+ */
+export function canManageEdgeGateways(role: UserRole): boolean {
+  return role === "admin";
+}
+
+/**
  * Whether the role may draw, save and delete plant mimic layouts
  * (`F3.32c`, ADR 0081 decision 3, plan D8).
  *
@@ -366,6 +375,9 @@ export const masterDataTabs = [
   { label: "RTUs", path: "/admin/rtus", area: "sites" },
   { label: "Assets", path: "/admin/assets", area: "sites" },
   { label: "Asset Points", path: "/admin/asset-points", area: "sites" },
+  // `E7.2` (ADR 0123 decision 12): the site edge gateways, global `admin` only on every route, the
+  // read included, so the tab is too; the page fails closed for any other role.
+  { label: "Edge Gateways", path: "/admin/edge-gateways", globalAdminOnly: true, area: "sites" },
   // `F3.37` (ADR 0049 decision 5). Not `catalogOnly` and not `globalAdminOnly`:
   // the API gates it on `requireMasterDataUser` plus a per-group
   // `canManageLocation` check, which is exactly the set of roles this tab list

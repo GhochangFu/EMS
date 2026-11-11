@@ -56,6 +56,8 @@ import { PointKeyStatesAdminController } from "./point-key-states/point-key-stat
 import { PointKeyStatesAdminService } from "./point-key-states/point-key-states.service";
 import { MqttPayloadFormatsAdminController } from "./mqtt-payload-formats/mqtt-payload-formats.controller";
 import { MqttPayloadFormatsAdminService } from "./mqtt-payload-formats/mqtt-payload-formats.service";
+import { EdgeGatewaysAdminController } from "./edge-gateways/edge-gateways.controller";
+import { EdgeGatewaysAdminService } from "./edge-gateways/edge-gateways.service";
 import { AssetRolesAdminController } from "./vocabularies/asset-roles/asset-roles.controller";
 import { AssetRolesAdminService } from "./vocabularies/asset-roles/asset-roles.service";
 import { LocationTypesVocabularyAdminController } from "./vocabularies/location-types.controller";
@@ -133,6 +135,8 @@ import { WorkOrderSlaPoliciesAdminService } from "./work-order-sla-policies/work
     PointKeyStatesAdminController,
     // F4.334 / ADR 0116 decision 5 — the MQTT payload format catalog.
     MqttPayloadFormatsAdminController,
+    // E7.2 / ADR 0123 decision 12 — the edge gateways, global admin only (not in the copilot catalog).
+    EdgeGatewaysAdminController,
     // E4.1a / ADR 0070 decision 2 — the calc parameter store and its vocabulary read.
     CalcParametersAdminController,
     AssetRolesAdminController,
@@ -193,6 +197,7 @@ import { WorkOrderSlaPoliciesAdminService } from "./work-order-sla-policies/work
     PointKeysAdminService,
     PointKeyStatesAdminService,
     MqttPayloadFormatsAdminService,
+    EdgeGatewaysAdminService,
     CalcParametersAdminService,
     AssetRolesAdminService,
     LocationTypesVocabularyAdminService,
