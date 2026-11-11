@@ -1,5 +1,6 @@
 import { ForbiddenException, HttpException, UnauthorizedException, type ExecutionContext } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { lastValueFrom, of } from "rxjs";
 import { expect, vi } from "vitest";
 
 import type { BmsDb } from "@bms/db";
@@ -7,6 +8,7 @@ import type { BmsDb } from "@bms/db";
 import { readRateLimitConfig } from "../rate-limit/rate-limit-config";
 import { RateLimitStore } from "../rate-limit/rate-limit-store";
 import { RateLimiterService } from "../rate-limit/rate-limiter.service";
+import { ReadOnlyServiceTokenInterceptor } from "../service-accounts/read-only-token.interceptor";
 import type { ServicePrincipal, ServiceTokenVerifier } from "../service-accounts/service-token-verifier.service";
 import { recalledIdentity } from "./identity-resolver";
 import { JwtAuthGuard, serviceTokenOf } from "./jwt-auth.guard";
@@ -115,21 +117,40 @@ export async function assertAJwtNeverReachesTheVerifier(): Promise<void> {
   expect(verify).not.toHaveBeenCalled();
 }
 
+/** A read-only token's write: the guard admits it (401-never-403, `F4.52`); the interceptor refuses it. */
 export async function assertAReadOnlyTokenReadsAndIsRefusedEveryWrite(): Promise<void> {
   const { verifier } = verifierAnswering(() => principalFor("AAAAAAAAAAAA", true));
   const guard = new JwtAuthGuard(new JwtService({ secret: "x" }), authDbNeverRead, undefined, verifier);
+  const interceptor = new ReadOnlyServiceTokenInterceptor();
+  const next = { handle: () => of("handled") };
   for (const method of ["GET", "HEAD", "OPTIONS"]) {
-    expect(await guard.canActivate(context(method, `Bearer ${TOKEN_A}`).ctx), method).toBe(true);
+    const { ctx } = context(method, `Bearer ${TOKEN_A}`);
+    expect(await guard.canActivate(ctx), method).toBe(true);
+    expect(await lastValueFrom(interceptor.intercept(ctxForInterceptor(ctx), next)), method).toBe("handled");
   }
   for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
-    const err = await guard.canActivate(context(method, `Bearer ${TOKEN_A}`).ctx).catch((e: unknown) => e);
+    const { ctx } = context(method, `Bearer ${TOKEN_A}`);
+    expect(await guard.canActivate(ctx), method).toBe(true);
+    let err: unknown;
+    try {
+      interceptor.intercept(ctxForInterceptor(ctx), next);
+    } catch (e) {
+      err = e;
+    }
     expect(err, method).toBeInstanceOf(ForbiddenException);
     expect((err as HttpException).getResponse()).toEqual(expect.objectContaining({ code: "token_read_only" }));
   }
   // A read-write token of the same account writes.
   const rw = verifierAnswering(() => principalFor("BBBBBBBBBBBB", false));
   const rwGuard = new JwtAuthGuard(new JwtService({ secret: "x" }), authDbNeverRead, undefined, rw.verifier);
-  expect(await rwGuard.canActivate(context("POST", `Bearer ${TOKEN_B}`).ctx)).toBe(true);
+  const { ctx } = context("POST", `Bearer ${TOKEN_B}`);
+  expect(await rwGuard.canActivate(ctx)).toBe(true);
+  expect(await lastValueFrom(interceptor.intercept(ctxForInterceptor(ctx), next))).toBe("handled");
+}
+
+/** The guard's context plus the `getType` an interceptor reads. */
+function ctxForInterceptor(ctx: ExecutionContext): ExecutionContext {
+  return Object.assign(Object.create(ctx) as ExecutionContext, { getType: () => "http" });
 }
 
 export async function assertEachTokenHasItsOwnStage2Budget(): Promise<void> {

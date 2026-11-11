@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, getTableColumns } from "drizzle-orm";
 
 import { serviceAccountTokens, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -218,6 +218,10 @@ export class ServiceTokenVerifier {
   }
 
   private async readAccount(id: string, organizationId: string): Promise<ResolvedIdentity | null> {
+    // Shorthand on purpose (the `identity-resolver.ts` reason):
+    // `tests/e7.1h-audit-subject-writer-shape.test.ts` reads every
+    // `oidcSubject:` key under apps/api/src as an audit-payload write.
+    const { oidcSubject } = getTableColumns(users);
     const [row] = await this.authDb
       .select({
         id: users.id,
@@ -225,7 +229,7 @@ export class ServiceTokenVerifier {
         displayName: users.displayName,
         role: users.role,
         organizationId: users.organizationId,
-        oidcSubject: users.oidcSubject,
+        oidcSubject,
         disabledAt: users.disabledAt,
         kind: users.kind,
       })

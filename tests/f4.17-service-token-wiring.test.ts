@@ -41,14 +41,10 @@ describe("F4.17 — service-account tokens are wired where ADR 0125 puts them", 
     expect(guard).toMatch(/@Optional\(\) private readonly serviceTokenVerifier\?: ServiceTokenVerifier/);
   });
 
-  it("canActivate refuses a read-only token's write before the Stage 2 limit", () => {
-    const guard = code("apps/api/src/auth/jwt-auth.guard.ts");
-    const verify = guard.indexOf("req.user = await this.verifyToken(token);");
-    const readOnly = guard.indexOf("this.refuseWriteByReadOnlyToken(req, req.user);");
-    const stage2 = guard.indexOf("await this.enforceIdentityLimit(context, req, req.user);");
-    expect(verify).toBeGreaterThan(-1);
-    expect(readOnly).toBeGreaterThan(verify);
-    expect(stage2).toBeGreaterThan(readOnly);
+  it("a read-only token's write is refused by a global interceptor, never by the guard (F4.52)", () => {
+    const module = code("apps/api/src/service-accounts/service-accounts.module.ts");
+    expect(module).toMatch(/\{ provide: APP_INTERCEPTOR, useClass: ReadOnlyServiceTokenInterceptor \}/);
+    expect(code("apps/api/src/auth/jwt-auth.guard.ts")).not.toMatch(/ForbiddenException/);
   });
 
   it.each(["apps/api/src/telemetry/telemetry.gateway.ts", "apps/api/src/alarms/alarms.gateway.ts"])(

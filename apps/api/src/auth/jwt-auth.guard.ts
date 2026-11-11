@@ -1,7 +1,6 @@
 import {
   type CanActivate,
   type ExecutionContext,
-  ForbiddenException,
   Inject,
   Injectable,
   Optional,
@@ -48,8 +47,6 @@ const serviceTokens = new WeakMap<object, ServiceTokenFacts>();
 export function serviceTokenOf(payload: object): ServiceTokenFacts | null {
   return serviceTokens.get(payload) ?? null;
 }
-
-const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** The one 401 every refused service token gets: unknown, malformed, revoked, expired or disabled. */
 function invalidServiceToken(): UnauthorizedException {
@@ -200,27 +197,12 @@ export class JwtAuthGuard implements CanActivate {
     const token = header.slice(7);
 
     req.user = await this.verifyToken(token);
-    this.refuseWriteByReadOnlyToken(req, req.user);
+    // A read-only token's write is refused by `ReadOnlyServiceTokenInterceptor`
+    // (403), not here: this guard answers 401 and never 403 (`F4.52`).
     await this.enforceIdentityLimit(context, req, req.user);
     return true;
   }
 
-  /**
-   * `F4.17` / ADR 0125 decision 12 — a token issued `read_only` may read and
-   * nothing else: any other method is a 403 before the controller runs, so no
-   * route needs to know about it.
-   */
-  private refuseWriteByReadOnlyToken(req: RequestWithUser, payload: JwtPayload): void {
-    const facts = serviceTokenOf(payload);
-    if (facts?.readOnly && !READ_METHODS.has((req.method ?? "GET").toUpperCase())) {
-      throw new ForbiddenException({
-        statusCode: 403,
-        message: "This token is read-only",
-        error: "Forbidden",
-        code: "token_read_only",
-      });
-    }
-  }
 
   /**
    * `F4.17` / ADR 0125 decisions 1, 2 and 5 — **Stage 2**, per identity, at

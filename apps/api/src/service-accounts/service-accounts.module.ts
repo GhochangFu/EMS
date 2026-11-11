@@ -1,6 +1,8 @@
 import { Global, Module } from "@nestjs/common";
+import { APP_INTERCEPTOR } from "@nestjs/core";
 
 import { AuthModule } from "../auth/auth.module";
+import { ReadOnlyServiceTokenInterceptor } from "./read-only-token.interceptor";
 import { ServiceTokenListenerService } from "./service-token-listener.service";
 import { ServiceTokenVerifier } from "./service-token-verifier.service";
 
@@ -16,7 +18,12 @@ import { ServiceTokenVerifier } from "./service-token-verifier.service";
 @Global()
 @Module({
   imports: [AuthModule],
-  providers: [ServiceTokenVerifier, ServiceTokenListenerService],
+  providers: [
+    ServiceTokenVerifier,
+    ServiceTokenListenerService,
+    // Decision 12: a read-only token is refused every write (403), outside the guard (`F4.52`).
+    { provide: APP_INTERCEPTOR, useClass: ReadOnlyServiceTokenInterceptor },
+  ],
   exports: [ServiceTokenVerifier],
 })
 export class ServiceAccountsModule {}
