@@ -1440,6 +1440,8 @@ effects; the facts below come from it.
   /admin/vocabularies/asset-roles/:code` is withdrawn. Decision 6's wizards:
   the location-types page moves to `WizardShell` forms and a small global-admin
   *Unit roles* page is added beside it. *(Q17)*
+  *Later exception (2026-11-11):* `PATCH /admin/vocabularies/asset-domains/:code`
+  (`E3.1`) is excluded from the catalog by ADR 0122 decision 10.
 - **File-borne data (`F4.283`).** Entries `telemetry.import` (the commit, after
   the server's `preview` counts are on the card), `telemetryReading.create` and
   `assetImage.upload`, offered to admin, organization_admin and
