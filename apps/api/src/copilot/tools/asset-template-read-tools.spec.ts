@@ -59,6 +59,7 @@ function template(organizationId: string, code: string, version = 1, over: Parti
     assetType: "pump",
     domain: "water",
     description: "secret description",
+    workOrderPrefix: null,
     status: "published",
     content: { kpis: [] },
     publishedAt: "2026-11-01T00:00:00.000Z",

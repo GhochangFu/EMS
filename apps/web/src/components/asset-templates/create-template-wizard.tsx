@@ -10,6 +10,7 @@ import {
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { workOrderPrefixError } from "../../lib/template-details-form";
 import type { WizardStep } from "../../lib/wizard-steps";
 import { WizardShell } from "../wizard/wizard-shell";
 
@@ -42,6 +43,7 @@ function textOf(values: Record<string, unknown>, field: string): string {
 export function createTemplateInput(body: Record<string, unknown>): CreateAssetTemplateInput {
   const description = textOf(body, "description").trim();
   const { content, points } = body;
+  const workOrderPrefix = textOf(body, "workOrderPrefix").trim().toUpperCase();
   return {
     organizationId: textOf(body, "organizationId"),
     code: textOf(body, "code").trim(),
@@ -49,6 +51,8 @@ export function createTemplateInput(body: Record<string, unknown>): CreateAssetT
     assetType: textOf(body, "assetType").trim(),
     domain: textOf(body, "domain"),
     description: description === "" ? null : description,
+    // E3.1 / ADR 0122: sent only when filled; empty means the domain's prefix.
+    ...(workOrderPrefix === "" ? {} : { workOrderPrefix }),
     // A copilot fill; the API validates both, so only the shape is narrowed here.
     ...(typeof content === "object" && content !== null && !Array.isArray(content)
       ? { content: content as Record<string, unknown> }
@@ -195,6 +199,22 @@ export function CreateTemplateWizard({
             className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
           />
         </label>
+        <label className="block text-xs font-semibold text-ink">
+          Work-order prefix
+          <input
+            value={textOf(form, "workOrderPrefix")}
+            maxLength={8}
+            onChange={(event) =>
+              update(withField(form, "workOrderPrefix", event.target.value.toUpperCase()))
+            }
+            placeholder="STP"
+            className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
+          />
+          <span className="mt-1 block text-2xs font-normal text-ink-muted">
+            Optional. Work orders on assets built from this template read &lt;PREFIX&gt;-000123.
+            Empty uses the asset domain&apos;s prefix.
+          </span>
+        </label>
         {form.content !== undefined ? (
           <p className="text-2xs text-ink-muted">{filledNote("Content", form.content)}</p>
         ) : null}
@@ -219,6 +239,12 @@ export function CreateTemplateWizard({
           values={form}
           onChange={update}
           renderStep={renderStep}
+          // `workOrderPrefix` is a `clientOnly` field, so the shell's own body check skips
+          // it: the wizard holds the step until the prefix is empty or well formed.
+          stepBlocker={() => {
+            const problem = workOrderPrefixError(textOf(form, "workOrderPrefix"));
+            return problem === null ? null : `Work-order prefix: ${problem}`;
+          }}
           onSubmit={(body) => {
             setError(null);
             createM.mutate(body);

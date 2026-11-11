@@ -263,10 +263,15 @@ export class AssetTemplatesAdminService {
           domain: body.domain ?? template.domain,
           description:
             body.description !== undefined ? (body.description ?? null) : template.description,
+          // E3.1 (ADR 0122 decision 2.5): `null` clears the prefix, an omitted field keeps it.
+          workOrderPrefix: body.workOrderPrefix !== undefined ? body.workOrderPrefix : template.workOrderPrefix,
           content: body.content ?? (template.content as Record<string, unknown>),
           updatedAt: new Date(),
         })
-        .where(and(eq(assetTemplates.id, id), updatedAtMatches(assetTemplates.updatedAt, ifMatch)))
+        // `status = 'draft'` in the statement itself: `assertDraft` above judged a row read
+        // before this transaction, and a publish that commits in between must not have its
+        // version rewritten (E3.1 security review; ruling R2 for the prefix).
+        .where(and(eq(assetTemplates.id, id), eq(assetTemplates.status, "draft"), updatedAtMatches(assetTemplates.updatedAt, ifMatch)))
         .returning({ id: assetTemplates.id });
       // `F4.247`: a stale `If-Match` touches no row — a 412 before the points or the audit row (the
       // throw rolls the transaction back).
@@ -290,6 +295,8 @@ export class AssetTemplatesAdminService {
           organizationId: template.organizationId,
           payload: {
             ...body,
+            // E3.1: the prefix names tickets, so its audit row says what it replaced too.
+            ...(body.workOrderPrefix !== undefined ? { fromWorkOrderPrefix: template.workOrderPrefix } : {}),
             content: body.content
               ? { changed: true, sections: Object.keys(body.content) }
               : undefined,
@@ -422,6 +429,10 @@ export class AssetTemplatesAdminService {
           // import.
           stockCode: template.stockCode,
           stockVersion: template.stockVersion,
+          // E3.1 (ADR 0122 decision 2.5, ruling R2): the prefix travels with the version. A
+          // published version cannot be edited, so the next draft is the only place it can
+          // change — and it must start from what the published one holds.
+          workOrderPrefix: template.workOrderPrefix,
           createdBy,
         })
         .returning();
@@ -642,6 +653,7 @@ export class AssetTemplatesAdminService {
       assetType: template.assetType,
       domain: template.domain,
       description: template.description,
+      workOrderPrefix: template.workOrderPrefix,
       status: template.status as AssetTemplateStatus,
       content: (template.content ?? {}) as Record<string, unknown>,
       publishedAt: template.publishedAt?.toISOString() ?? null,

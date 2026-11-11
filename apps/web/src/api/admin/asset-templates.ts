@@ -132,6 +132,8 @@ export interface CreateAssetTemplateInput {
   assetType: string;
   domain: string;
   description?: string | null;
+  /** E3.1 / ADR 0122: the work-order reference prefix; `null` clears it. */
+  workOrderPrefix?: string | null;
   content?: Record<string, unknown>;
   points?: TemplatePointInput[];
 }
@@ -146,6 +148,8 @@ export interface UpdateAssetTemplateInput {
   assetType?: string;
   domain?: string;
   description?: string | null;
+  /** E3.1 / ADR 0122: the work-order reference prefix; `null` clears it. */
+  workOrderPrefix?: string | null;
   content?: Record<string, unknown>;
   points?: TemplatePointInput[];
 }

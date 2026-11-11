@@ -107,6 +107,8 @@ export async function createTemplateCore(
       assetType: body.assetType,
       domain: body.domain,
       description: body.description ?? null,
+      // E3.1 (ADR 0122 decision 2.5): NULL for a body that names none — a stock import included (ruling R3).
+      workOrderPrefix: body.workOrderPrefix ?? null,
       status: "draft",
       content: body.content ?? {},
       // Both or neither — `asset_templates_stock_stamp_check` holds it.

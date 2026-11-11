@@ -7,7 +7,7 @@ import { ServiceAccountsAdminPage } from "./service-accounts-page";
 /**
  * `F4.17` (ADR 0125 decision 14) — the `/admin/service-accounts` route element: signed out goes to
  * login, signed in goes through `AdminRoute`, and the page fails closed below organization admin.
- * Its own file so `app.tsx` stays under the AGENTS.md §4.5 cap with a one-line route.
+ * Its own file so `app.tsx` stays under the AGENTS.md §4.5 cap; `extra-admin-routes.tsx` mounts it.
  */
 export function ServiceAccountsRoute() {
   const accessToken = useAuthStore((s) => s.accessToken);

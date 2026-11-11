@@ -90,9 +90,15 @@ export function theFixedBodyStepRuleIsNotVacuous(): void {
   expect(stepProblems({ ...base, steps: [step] })).toEqual(["assetRole.deactivate: a fixed-body entry has steps"]);
 }
 
-/** Q17 withdraws Amendment 3 A1: no vocabulary route stays on the exclusion list. */
+/**
+ * Q17 withdraws Amendment 3 A1: no location-type or unit-role route stays on the exclusion
+ * list. The one vocabulary route that is excluded is `E3.1`'s domain work-order prefix
+ * (ADR 0122 decision 10, rulings P8 and R4): a global administrator sets it on its screen.
+ */
 export function noVocabularyRouteIsExcluded(): void {
-  expect(EXCLUDED_ROUTES.filter((route) => route.path.startsWith("/admin/vocabularies/"))).toEqual([]);
+  expect(
+    EXCLUDED_ROUTES.filter((route) => route.path.startsWith("/admin/vocabularies/")).map((route) => `${route.method} ${route.path}`),
+  ).toEqual(["PATCH /admin/vocabularies/asset-domains/:code"]);
 }
 
 /** The deactivate card states how many locations use the type, and says so when it is unknown. */

@@ -172,6 +172,12 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     route: { method: "POST", path: "/work-orders/:id/tasks" },
     auditMethods: ["addTask"],
   },
+  // `E3.1` PR 7 (rulings P8 and R4): a domain's work-order prefix, on the global admin's screen.
+  {
+    file: "apps/api/src/admin/vocabularies/asset-domains.service.ts",
+    route: { method: "PATCH", path: "/admin/vocabularies/asset-domains/:code" },
+    auditMethods: ["update"],
+  },
   {
     file: "apps/api/src/work-orders/work-order-findings.service.ts",
     route: { method: "PUT", path: "/work-orders/:id/root-cause" },

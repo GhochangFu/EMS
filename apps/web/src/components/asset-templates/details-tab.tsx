@@ -98,6 +98,8 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
           assetType: "assetType" in edited ? current.assetType : followed.assetType,
           domain: "domain" in edited ? current.domain : followed.domain,
           description: "description" in edited ? current.description : followed.description,
+          workOrderPrefix:
+            "workOrderPrefix" in edited ? current.workOrderPrefix : followed.workOrderPrefix,
         };
       }),
   );
@@ -216,6 +218,23 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
           </select>
         </Field>
       </div>
+
+      <Field
+        label="Work-order prefix"
+        error={errors.workOrderPrefix}
+        hint="Optional. Work orders on assets built from this template read <PREFIX>-000123. Empty uses the asset domain's prefix."
+      >
+        <input
+          type="text"
+          value={form.workOrderPrefix}
+          maxLength={8}
+          disabled={!editable}
+          onChange={(event) =>
+            setForm((current) => ({ ...current, workOrderPrefix: event.target.value.toUpperCase() }))
+          }
+          className={inputClass(!editable, errors.workOrderPrefix)}
+        />
+      </Field>
 
       <Field label="Description" error={errors.description}>
         <textarea

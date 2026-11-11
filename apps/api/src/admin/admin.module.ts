@@ -60,6 +60,8 @@ import { EdgeGatewaysAdminController } from "./edge-gateways/edge-gateways.contr
 import { EdgeGatewaysAdminService } from "./edge-gateways/edge-gateways.service";
 import { AssetRolesAdminController } from "./vocabularies/asset-roles/asset-roles.controller";
 import { AssetRolesAdminService } from "./vocabularies/asset-roles/asset-roles.service";
+import { AssetDomainsAdminController } from "./vocabularies/asset-domains.controller";
+import { AssetDomainsAdminService } from "./vocabularies/asset-domains.service";
 import { LocationTypesVocabularyAdminController } from "./vocabularies/location-types.controller";
 import { LocationTypesVocabularyAdminService } from "./vocabularies/location-types.service";
 import { MasterDataAuditService } from "./master-data-audit.service";
@@ -144,6 +146,8 @@ import { WorkOrderSlaPoliciesAdminService } from "./work-order-sla-policies/work
     AssetRolesAdminController,
     // F4.162 / ADR 0077 Amendment 1 — the global-admin location-type catalog.
     LocationTypesVocabularyAdminController,
+    // E3.1 / ADR 0122 rulings P8 and R4 — GET and PATCH admin/vocabularies/asset-domains (the work-order prefix).
+    AssetDomainsAdminController,
     AssetTemplatesAdminController,
     DashboardTemplatesController,
     AuditAdminController,
@@ -206,6 +210,7 @@ import { WorkOrderSlaPoliciesAdminService } from "./work-order-sla-policies/work
     CalcParametersAdminService,
     AssetRolesAdminService,
     LocationTypesVocabularyAdminService,
+    AssetDomainsAdminService,
     AssetTemplatesAdminService,
     AssetTemplateInstantiationService,
     // F3.2 / ADR 0067 decision 4 — the two triggers that write per-asset

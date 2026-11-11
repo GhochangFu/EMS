@@ -134,6 +134,7 @@ function template(overrides: Record<string, unknown> = {}): AdminAssetTemplateDt
     content: BASE_CONTENT,
     publishedAt: null,
     archivedAt: null,
+    workOrderPrefix: null,
     stockCode: null,
     stockVersion: null,
     createdAt: "2026-09-11T00:00:00.000Z",

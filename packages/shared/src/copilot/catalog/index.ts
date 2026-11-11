@@ -336,6 +336,8 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   // PR 5 (decisions 6.4 and 6.8): an approver's own decisions, each with a typed reason.
   { method: "POST", path: "/work-orders/:id/reject", reason: "E3.1 / ADR 0122: an approver rejects a resolved ticket on the ticket, by hand" },
   { method: "POST", path: "/work-orders/:id/cancel", reason: "E3.1 / ADR 0122: an approver cancels a ticket on the ticket, by hand; it cannot be undone" },
+  // PR 7 (rulings P8 and R4): a fleet-wide prefix, set by a global administrator on its screen.
+  { method: "PATCH", path: "/admin/vocabularies/asset-domains/:code", reason: "E3.1 / ADR 0122: a domain's work-order prefix is set on its admin screen, by a global administrator" },
   { method: "POST", path: "/admin/work-order-checklist-templates", reason: "E3.1 / ADR 0122: a checklist template is authored on its page" },
   { method: "PATCH", path: "/admin/work-order-checklist-templates/:id", reason: "E3.1 / ADR 0122: a checklist template is authored on its page" },
 ];

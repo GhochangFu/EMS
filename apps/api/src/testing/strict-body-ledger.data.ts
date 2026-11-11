@@ -654,6 +654,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "updateLocationBodySchema/floorArea": STRICT(CALLER_ERROR),
   // `F4.162`. `code` is the primary key; a PATCH naming it is a 400.
   updateLocationTypeBodySchema: STRICT(CALLER_ERROR),
+  // `E3.1` (ADR 0122 ruling P8): the prefix only; a `label` or `active` beside it must not be dropped at 200.
+  updateAssetDomainBodySchema: STRICT(CALLER_ERROR),
   updateMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),
   updateMimicOrgSymbolBodySchema: STRICT(CALLER_ERROR),
   updateMimicOrgSymbolLibraryBodySchema: STRICT(CALLER_ERROR),

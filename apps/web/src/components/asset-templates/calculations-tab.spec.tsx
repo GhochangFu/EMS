@@ -112,6 +112,7 @@ function template(points: readonly unknown[], status = "draft"): AdminAssetTempl
     content: {},
     publishedAt: status === "published" ? "2026-09-11T00:00:00.000Z" : null,
     archivedAt: null,
+    workOrderPrefix: null,
     stockCode: null,
     stockVersion: null,
     createdAt: "2026-09-11T00:00:00.000Z",

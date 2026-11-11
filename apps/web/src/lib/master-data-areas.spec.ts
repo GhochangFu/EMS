@@ -24,7 +24,7 @@ export function groupsEveryTabIntoItsArea(): void {
   );
   expect(grouped).toEqual({
     "Sites & Equipment": ["Organizations", "Locations", "RTUs", "Assets", "Asset Points", "Edge Gateways"],
-    "Reference Data": ["Asset Groups", "Point Keys", "State Labels", "Trend Points", "Location Types", "Unit Roles", "Payload Formats", "Calc Parameters", "Portal Appearance"],
+    "Reference Data": ["Asset Groups", "Point Keys", "State Labels", "Trend Points", "Location Types", "Unit Roles", "Asset Domains", "Work Order SLA", "Checklist Templates", "Payload Formats", "Calc Parameters", "Portal Appearance"],
     "Templates & Visuals": ["Asset Templates", "Dashboard Templates", "Mimic Layouts", "Symbol Libraries"],
     "Data Input": ["Manual Entry", "Import Telemetry"],
     Notifications: ["Channels", "Escalation", "Deliveries"],
@@ -80,6 +80,9 @@ export function keepsOnlyTheVisibleTabsInAnArea(): void {
     "Asset Groups",
     "Point Keys",
     "Trend Points",
+    // `E3.1`: the organization's SLA policy and checklist templates; Asset Domains is the global admin's.
+    "Work Order SLA",
+    "Checklist Templates",
     "Calc Parameters",
   ]);
 }
@@ -178,11 +181,13 @@ export function selectsTheTabOfEachRoute(): void {
   expect(actual).toEqual(expected);
 }
 
-/** `app.tsx` as text (`import.meta.glob`: the web tsconfig carries no Node types). */
-const APP_SOURCE: string =
-  Object.values(
-    import.meta.glob<string>("/src/app.tsx", { query: "?raw", import: "default", eager: true }),
-  )[0] ?? "";
+/**
+ * `app.tsx` and the admin routes it mounts from `extra-admin-routes.tsx`, as text
+ * (`import.meta.glob`: the web tsconfig carries no Node types).
+ */
+const APP_SOURCE: string = Object.values(
+  import.meta.glob<string>(["/src/app.tsx", "/src/pages/admin/extra-admin-routes.tsx"], { query: "?raw", import: "default", eager: true }),
+).join("\n");
 
 /** Routes under `/admin` that are not master-data screens. */
 const OUTSIDE_THE_HUB = new Set(["/admin", "/admin/dashboards", "/admin/dashboards/:slug"]);
@@ -196,6 +201,12 @@ export function givesEveryAdminRouteAnArea(): void {
   expect(routes.length).toBeGreaterThan(25);
   const orphans = routes
     .filter((route) => !OUTSIDE_THE_HUB.has(route))
-    .filter((route) => masterDataTabForPath(route.replace(/:[A-Za-z]+/g, "x")) === null);
+    // A splat route (`/admin/work-order-settings/*`, `E3.1`) mounts nested routes: it has an
+    // area when a tab sits under its prefix.
+    .filter((route) =>
+      route.endsWith("/*")
+        ? !masterDataTabs.some((tab) => tab.path.startsWith(route.slice(0, -1)))
+        : masterDataTabForPath(route.replace(/:[A-Za-z]+/g, "x")) === null,
+    );
   expect(orphans).toEqual([]);
 }

@@ -6,6 +6,7 @@ import {
   runLengthLimitTests,
   runOnlyChangedFieldsTests,
   runSeedTests,
+  runWorkOrderPrefixTests,
 } from "./template-details-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -28,5 +29,9 @@ describe("template details form", () => {
 
   it("distinguishes leaving, setting and clearing the description", () => {
     runDescriptionThreeStateTests();
+  });
+
+  it("treats the work-order prefix as a three-state, validated field", () => {
+    runWorkOrderPrefixTests();
   });
 });

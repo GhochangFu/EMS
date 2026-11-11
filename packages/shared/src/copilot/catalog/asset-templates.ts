@@ -77,7 +77,8 @@ export const ASSET_TEMPLATE_ENTRIES: readonly CatalogEntry[] = [
     params: {},
     body: createAssetTemplateBodySchema,
     bodyName: "createAssetTemplateBodySchema",
-    clientOnly: [],
+    // `E3.1` (ADR 0122 ruling R5): the work-order prefix is typed on the page, never through the copilot.
+    clientOnly: ["workOrderPrefix"],
     risk: "create",
     target: { kind: "organization", manage: "template" },
     refs: [],
@@ -101,7 +102,8 @@ export const ASSET_TEMPLATE_ENTRIES: readonly CatalogEntry[] = [
     body: updateAssetTemplateBodySchema,
     bodyName: "updateAssetTemplateBodySchema",
     precondition: "updatedAt",
-    clientOnly: [],
+    // `E3.1` (ADR 0122 ruling R5): as on the create.
+    clientOnly: ["workOrderPrefix"],
     risk: "edit",
     target: ASSET_TEMPLATE,
     refs: [],
