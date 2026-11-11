@@ -28,7 +28,7 @@ export function groupsEveryTabIntoItsArea(): void {
     "Templates & Visuals": ["Asset Templates", "Dashboard Templates", "Mimic Layouts", "Symbol Libraries"],
     "Data Input": ["Manual Entry", "Import Telemetry"],
     Notifications: ["Channels", "Escalation", "Deliveries"],
-    "Users & Access": ["Users"],
+    "Users & Access": ["Users", "Service Accounts"],
   });
 }
 
