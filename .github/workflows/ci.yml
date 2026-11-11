@@ -424,6 +424,11 @@ jobs:
         env:
           KEYCLOAK_ADMIN: admin
           KEYCLOAK_ADMIN_PASSWORD: admin
+          # ADR 0124 decision 7 (F4.5). testcontainers' reaper (Ryuk) is a container that mounts
+          # the Docker socket and removes test containers when the process dies. The runner is
+          # discarded after the job, so it buys nothing here and costs a Docker Hub pull. The
+          # harness stops its own containers in teardown.
+          TESTCONTAINERS_RYUK_DISABLED: "true"
         run: pnpm test:coverage
 
   # F4.48, second half. The first half added a redaction pattern and a leak
