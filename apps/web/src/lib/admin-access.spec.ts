@@ -142,6 +142,8 @@ export function runAssetTemplateTabTests(): void {
         "/admin/notification-deliveries",
         // Users & Access. `F3.78` (ADR 0089) — Users, `usersAdmin`.
         "/admin/users",
+        // `F4.17` (ADR 0125 decision 14) — Service Accounts, `serviceAccountsAdmin`.
+        "/admin/service-accounts",
       ].join(" "),
     `master data tabs changed — got ${masterDataTabs.map((tab) => tab.path).join(" ")}`,
   );
@@ -178,7 +180,9 @@ export function runAssetTemplateTabTests(): void {
     // `F4.334` added Payload Formats as `globalAdminOnly`: `admin` alone goes 22 -> 23.
     // `F4.341` added Portal Appearance as `globalAdminOnly`: `admin` alone goes 23 -> 24.
     // `E7.2` added Edge Gateways as `globalAdminOnly`: `admin` alone goes 24 -> 25.
-    const expected = role === "location_admin" ? 11 : role === "admin" ? 25 : 19;
+    // `F4.17` added Service Accounts as `serviceAccountsAdmin` (admin and organization_admin only):
+    // 25 -> 26 and 19 -> 20; `location_admin` stays at 11.
+    const expected = role === "location_admin" ? 11 : role === "admin" ? 26 : 20;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,

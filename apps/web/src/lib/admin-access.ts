@@ -296,6 +296,16 @@ export function canManageUsers(role: UserRole): boolean {
 }
 
 /**
+ * `F4.17` (ADR 0125 decision 14) — `admin` (any organization) and `organization_admin` (its own)
+ * manage service accounts and their tokens. Mirrors `ServiceAccountsAdminService.requireManager`;
+ * its own predicate on the `canManageUsers` rule, so the page fails closed on it and a change to
+ * user administration does not silently move it.
+ */
+export function canManageServiceAccounts(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
+/**
  * Where `AdminRoute` sends a master-data role it refuses. Not the landing page:
  * `/admin` renders the Master Data Hub since `F3.76`.
  */
@@ -461,6 +471,8 @@ export const masterDataTabs = [
   // `admin` or `organization_admin`, so the tab is hidden from the others, who would meet
   // only the page's refusal sentence.
   { label: "Users", path: "/admin/users", usersAdmin: true, area: "access" },
+  // `F4.17` (ADR 0125 decision 14): every route refuses a role below `organization_admin`.
+  { label: "Service Accounts", path: "/admin/service-accounts", serviceAccountsAdmin: true, area: "access" },
 ] as const satisfies readonly {
   label: string;
   path: string;
@@ -471,6 +483,7 @@ export const masterDataTabs = [
   orgAdminOnly?: true;
   symbolLibraryAdmin?: true;
   usersAdmin?: true;
+  serviceAccountsAdmin?: true;
   trendPointsAdmin?: true;
 }[];
 
@@ -498,6 +511,9 @@ export function visibleMasterDataTabs(role: UserRole): MasterDataTab[] {
     }
     if ("usersAdmin" in tab && tab.usersAdmin) {
       return canManageUsers(role);
+    }
+    if ("serviceAccountsAdmin" in tab && tab.serviceAccountsAdmin) {
+      return canManageServiceAccounts(role);
     }
     if ("trendPointsAdmin" in tab && tab.trendPointsAdmin) {
       return canEditTrendPoints(role);
