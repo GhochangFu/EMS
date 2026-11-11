@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  aBadRootCauseBodyIs400,
   aMalformedSlaIsA400BeforeTheSlaGate,
   aViewerIsRefusedOnTheChecklistRoutesBeforeTheBodyIsParsed,
   anAdminRoleMaySendSlaMinutes,
@@ -8,8 +9,10 @@ import {
   anOperatorSendingSlaMinutesIsRefused,
   anOperatorWithoutSlaMinutesCreatesTheTicket,
   onlyTheFourAdminRolesMayOverrideTheSla,
+  theCauseCodeListIsAPlainRead,
   theChecklistRoutesAreWhereTheAdrSays,
   theLiteralReadIsDeclaredAboveTheIdRead,
+  theRootCauseRouteIsOperational,
   theTemplateListIsAReadBehindTheAssetScope,
 } from "./work-orders.controller.spec";
 
@@ -50,12 +53,26 @@ describe("E3.1 — WorkOrdersController (stubbed gates and services)", () => {
       await theTemplateListIsAReadBehindTheAssetScope();
     });
 
-    it("declares the literal checklist-templates read above the :id read", () => {
+    it("declares the literal checklist-templates and cause-codes reads above the :id read", () => {
       theLiteralReadIsDeclaredAboveTheIdRead();
     });
 
     it("declares POST :id/tasks and PATCH :id/tasks/:taskId", () => {
       theChecklistRoutesAreWhereTheAdrSays();
+    });
+  });
+
+  describe("root cause (PR 4)", () => {
+    it("gates PUT :id/root-cause on the operational class", async () => {
+      await theRootCauseRouteIsOperational();
+    });
+
+    it("answers 400 for a root-cause body with a snapshot key or a missing one", async () => {
+      await aBadRootCauseBodyIs400();
+    });
+
+    it("serves the cause codes as a plain read", async () => {
+      await theCauseCodeListIsAPlainRead();
     });
   });
 });

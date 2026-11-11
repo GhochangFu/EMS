@@ -8,13 +8,15 @@ import { Logger } from "@nestjs/common";
 
 import type { BmsTx } from "../database/tenant-context";
 import { readWorkOrderTasks } from "./work-order-checklist";
+import { readWorkOrderFindings } from "./work-order-findings";
 import { readWorkOrderListItem } from "./work-order-projection";
 
 const logger = new Logger("WorkOrderDetail");
 
 /**
- * `E3.1` (ADR 0122 decisions 4, 7.3 and 8) — one work order with its timeline, its
- * checklist and the alarm it was raised from: `GET /work-orders/:id`.
+ * `E3.1` (ADR 0122 decisions 4, 5, 5a, 7.3 and 8) — one work order with its timeline, its
+ * checklist, its findings, its alarm snapshot and the alarm it was raised from:
+ * `GET /work-orders/:id`.
  *
  * The caller chooses the transaction (`withReadScope`); this only reads on it. The item
  * read enforces the caller's asset scope and throws 404 when the ticket is absent or
@@ -76,5 +78,7 @@ export async function readWorkOrderDetail(
 
   const tasks = await readWorkOrderTasks(tx, id);
 
-  return { ...item, events, alarm, tasks };
+  const findings = await readWorkOrderFindings(tx, id);
+
+  return { ...item, events, alarm, tasks, ...findings };
 }

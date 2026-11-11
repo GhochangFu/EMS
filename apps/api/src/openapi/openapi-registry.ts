@@ -159,6 +159,7 @@ import {
   createWorkOrderBodySchema,
   createWorkOrderChecklistTemplateBodySchema,
   createWorkOrderTaskBodySchema,
+  putWorkOrderRootCauseBodySchema,
   putWorkOrderSlaPoliciesBodySchema,
   updateWorkOrderChecklistTemplateBodySchema,
   updateWorkOrderTaskBodySchema,
@@ -489,6 +490,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `E3.1` (ADR 0122 decision 4): the checklist task bodies and the template bodies.
   WorkOrdersController_addTask: createWorkOrderTaskBodySchema,
   WorkOrdersController_updateTask: updateWorkOrderTaskBodySchema,
+  // `E3.1` (ADR 0122 decision 5): the findings, replaced whole.
+  WorkOrdersController_putRootCause: putWorkOrderRootCauseBodySchema,
   WorkOrderChecklistTemplatesAdminController_create: createWorkOrderChecklistTemplateBodySchema,
   WorkOrderChecklistTemplatesAdminController_update: updateWorkOrderChecklistTemplateBodySchema,
   // `E3.1` (ADR 0122 decision 3.2, plan D8): the replace-all SLA policy set.

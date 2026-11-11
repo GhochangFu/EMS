@@ -3,6 +3,7 @@ import type { CatalogEntry } from "@bms/shared/copilot";
 
 import {
   reorderMoveRefusal,
+  statusChangeRefusal,
   WORK_ORDER_CLOSE_BY_DRAG_REFUSAL,
   WORK_ORDER_CLOSED_REFUSAL,
   WORK_ORDER_REOPEN_REFUSAL,
@@ -104,9 +105,21 @@ export function checkOperations(entry: CatalogEntry, body: Readonly<Record<strin
     case "alarm.enrichment.set":
       return target.alarm === undefined ? refuse(PROPOSE_TARGET_ERROR) : NOTHING;
     case "workOrder.setStatus":
-    case "workOrder.close":
+    case "workOrder.close": {
       if (target.workOrder === undefined) return refuse(PROPOSE_TARGET_ERROR);
-      return target.workOrder.status === "closed" ? refuse(WORK_ORDER_CLOSED) : NOTHING;
+      // The route's own rule (`statusChangeRefusal`), for what can be known before the
+      // write: a closed ticket takes no status write, and a resolved one goes back to In
+      // progress only (`E3.1`, ruling P3). The checklist and the root cause are read under
+      // the route's row lock, so they are not judged here.
+      const to = entry.id === "workOrder.close" ? "closed" : (body.status as WorkOrderStatus);
+      const refusal = statusChangeRefusal({
+        from: target.workOrder.status as WorkOrderStatus,
+        to,
+        pendingMandatory: 0,
+        rootCauseMissing: false,
+      });
+      return refusal === null ? NOTHING : refuse(refusal.message);
+    }
     case "workOrder.reorder":
       return checkReorder(body, target);
     case "maintenanceSchedule.convert":

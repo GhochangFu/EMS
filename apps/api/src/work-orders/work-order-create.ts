@@ -8,6 +8,7 @@ import { BadRequestException } from "@nestjs/common";
 import type { BmsTx } from "../database/tenant-context";
 import { CHECKLIST_TEMPLATE_REFUSAL, copyChecklistOntoWorkOrder, isUsableChecklistTemplate } from "./work-order-checklist";
 import { type WorkOrderActor, writeWorkOrderEvent } from "./work-order-events";
+import { readAlarmEnrichmentForSnapshot } from "./work-order-findings";
 
 /**
  * `E3.1` (ADR 0122, plan D3) — the one place a work order row is inserted.
@@ -15,8 +16,12 @@ import { type WorkOrderActor, writeWorkOrderEvent } from "./work-order-events";
  * Two routes create a work order: `POST /work-orders` and the maintenance convert. Both
  * call this, inside their own tenant transaction, so everything a new ticket must carry
  * is decided once: its reference (decision 2), its SLA snapshot (decision 3), its
- * checklist copy (decision 4.3) and its first timeline events (decision 7). A later PR
- * adds the alarm snapshot here too.
+ * checklist copy (decision 4.3), its alarm snapshot (`E3.4`, decision 5a) and its first
+ * timeline events (decision 7).
+ *
+ * **This is the ONLY writer of the four `alarm_*` snapshot columns.** They are copied
+ * here once, from the alarm's enrichment as the server reads it (plan D17), and no
+ * route updates them: `tests/e3.1-alarm-snapshot-single-writer.test.ts` holds that.
  *
  * Do not insert into `bms.work_orders` anywhere else in `apps/api`:
  * `tests/e3.1-work-order-write-gates.test.ts` holds that line.
@@ -112,6 +117,11 @@ export async function insertWorkOrder(tx: BmsTx, input: InsertWorkOrderInput): P
       throw new BadRequestException(CHECKLIST_TEMPLATE_REFUSAL);
     }
   }
+  // E3.4 (decision 5a): the alarm's enrichment as it stands at this moment. Read here,
+  // on the server, inside the tenant transaction — never taken from the request.
+  const enrichment = input.alarmId
+    ? await readAlarmEnrichmentForSnapshot(tx, { organizationId: input.organizationId, alarmId: input.alarmId })
+    : null;
   const { seq, reference } = await allocateWorkOrderReference(tx, input.organizationId, input.assetId);
 
   const [created] = await tx
@@ -134,6 +144,10 @@ export async function insertWorkOrder(tx: BmsTx, input: InsertWorkOrderInput): P
       // to, so `sla_due_at - created_at` is exactly the minutes.
       createdAt: sql`now()`,
       slaDueAt: sql`now() + make_interval(mins => ${slaMinutes}::integer)`,
+      alarmRootCause: enrichment?.rootCause ?? null,
+      alarmCorrectiveActions: enrichment?.correctiveActions ?? null,
+      alarmSkillCode: enrichment?.skillCode ?? null,
+      alarmEtrAt: enrichment?.etrAt ?? null,
     })
     .returning({ id: workOrders.id });
   if (!created) {

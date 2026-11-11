@@ -189,6 +189,21 @@ export async function aReorderIntoResolvedIsRefused(): Promise<void> {
   expect(h.stored, "no card is stored").toHaveLength(0);
 }
 
+/**
+ * `E3.1` (ADR 0122 ruling P3): a status change that takes a resolved work order back to
+ * Open is refused before the card, with the route's sentence; back to In progress is not.
+ */
+export async function aResolvedWorkOrderGoesBackToInProgressOnly(): Promise<void> {
+  const resolved: ResolvedTarget = { ...WORK_ORDER_TARGET, workOrder: { title: "Check the breaker", status: "resolved", assetName: "MCC-1" } };
+  const refused = proposeHarness({ target: resolved });
+  const outcome = await refused.call("propose_workOrder_setStatus", { id: WO_1, body: { status: "open" } });
+  expect(outcome.error).toBe("A resolved work order can only go back to In progress");
+  expect(refused.stored, "no card is stored").toHaveLength(0);
+
+  const allowed = proposeHarness({ target: resolved });
+  expect((await allowed.call("propose_workOrder_setStatus", { id: WO_1, body: { status: "in_progress" } })).ok).toBe(true);
+}
+
 /** A reorder naming one work order twice is refused with the route's sentence. */
 export async function aReorderWithADuplicateIsRefused(): Promise<void> {
   const h = proposeHarness({ target: BATCH_TARGET });
