@@ -34,7 +34,7 @@ export function HealthSummarySection({ locationId, organizationId }: HealthSumma
   return (
     <SectionCard
       title="Asset health"
-      subtitle="Share of samples inside every published threshold · ADR 0050"
+      subtitle="Share of readings inside their alarm thresholds"
       bodyClassName="p-3"
     >
       {query.isLoading ? (
