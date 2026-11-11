@@ -34,7 +34,7 @@ const item = {
   clockSkewSeconds: -3,
   clockSkewAt: "2026-11-11T10:00:00.000Z",
   edgeServed: false,
-  drops24h: [{ reason: "badQuality", count: 4, first }],
+  drops24h: [{ reason: "badQuality", count: 4, firstAt: "2026-11-11T09:00:00.000Z", first }],
 };
 
 const response = {
