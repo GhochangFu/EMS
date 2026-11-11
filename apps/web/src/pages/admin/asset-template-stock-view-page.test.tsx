@@ -11,6 +11,7 @@ import {
   everyPointRendersAndNoFieldAcceptsInput,
   importIsRefusedUntilAnOrganizationIsChosen,
   importLandsOnTheNewDraft,
+  theHealthTabRendersReadOnlyWithNoWritePath,
 } from "./asset-template-stock-view-page.spec";
 
 /**
@@ -34,6 +35,10 @@ describe("F2.14 the read-only viewer for a stock catalog entry", () => {
 
   it("renders every stored maintenance plan disabled, with no save path (F2.19)", async () => {
     await everyMaintenancePlanRendersDisabledWithNoSavePath();
+  });
+
+  it("resolves ?tab=health and renders it read-only, with no write path (F4.355)", async () => {
+    await theHealthTabRendersReadOnlyWithNoWritePath();
   });
 
   it("renders both the formula and the KPI expression editor read-only", async () => {

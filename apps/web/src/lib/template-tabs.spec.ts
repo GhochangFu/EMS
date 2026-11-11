@@ -18,15 +18,15 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-/** Seven tabs, the seven ADR 0038 names, in the ADR's order (Amendment 5). */
+/** Eight tabs, the eight ADR 0038 names, in the ADR's order (Amendment 7). */
 export function runRegistryShapeTests(): void {
   assert(
-    TEMPLATE_TABS.length === 7,
-    `ADR 0038 Amendment 5 names seven tabs, got ${TEMPLATE_TABS.length}`,
+    TEMPLATE_TABS.length === 8,
+    `ADR 0038 Amendment 7 names eight tabs, got ${TEMPLATE_TABS.length}`,
   );
   assert(
     TEMPLATE_TABS.map((tab) => tab.id).join(",") ===
-      "details,points,calculations,kpis,alarms,dashboards,maintenance",
+      "details,points,calculations,kpis,alarms,dashboards,maintenance,health",
     `the registry drifted — got ${TEMPLATE_TABS.map((tab) => tab.id).join(",")}`,
   );
   assert(
@@ -53,14 +53,17 @@ export function runRegistryShapeTests(): void {
  * **`maintenance` left it in `F2.19`** (Amendment 5 Part B), and for a
  * different kind of reason: decision 2 set it no condition to discharge, it was
  * omitted pending a ruling nobody had asked for, and the amendment is that
- * ruling. Exactly one entry was removed each time; the mechanism is untouched.
- * Asserted over the ids rather than trusted to the count: seven tabs is still
- * seven tabs if one of
+ * ruling. **`health` left it in `F4.355`** (Amendment 7 B1), which ruled the
+ * eighth tab directly — the "needs an ADR 0038 amendment" above is that
+ * amendment, and the sentence about `E1.3` is kept as the dated record. Exactly
+ * one entry was removed each time; the mechanism is untouched.
+ * Asserted over the ids rather than trusted to the count: eight tabs is still
+ * eight tabs if one of
  * them is the wrong one.
  */
 export function runNoClosedSectionTabTests(): void {
   const ids = TEMPLATE_TABS.map((tab) => tab.id as string);
-  for (const closed of ["health", "optimisation"]) {
+  for (const closed of ["optimisation"]) {
     assert(!ids.includes(closed), `${closed} has no tab in this ADR — got ${ids.join(",")}`);
   }
 }
@@ -90,8 +93,10 @@ export function runResolveTabTests(): void {
   // once `dashboards` is a real tab, asserting it falls back to Details
   // contradicts the "every tab id resolves to itself" loop directly. The other
   // six entries stay, and the ordering note above still holds: `"nonsense"` is
-  // the plausible-but-wrong id and stays first.
-  for (const bad of ["nonsense", "health", "Details", "", undefined, null]) {
+  // the plausible-but-wrong id and stays first. `"health"` left in `F4.355`
+  // for the same reason `"dashboards"` did, and `"optimisation"` took its place
+  // as the id of a section that has no tab.
+  for (const bad of ["nonsense", "optimisation", "Details", "", undefined, null]) {
     assert(
       resolveTemplateTab(bad) === DEFAULT_TEMPLATE_TAB,
       `${JSON.stringify(bad)} must fall back to Details, got ${resolveTemplateTab(bad)}`,
@@ -101,4 +106,5 @@ export function runResolveTabTests(): void {
   // `"Details"` is in that list on purpose: the ids are lower-case and the
   // comparison is exact, so a capitalised link is a miss and not a match.
   assert(resolveTemplateTab("kpis") === "kpis", "the lower-case id is the one that matches");
+  assert(resolveTemplateTab("health") === "health", "?tab=health opens the Health tab (F4.355)");
 }

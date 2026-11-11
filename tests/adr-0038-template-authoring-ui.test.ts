@@ -8,8 +8,9 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
 /**
  * ADR 0038 decision 2, as amended: the template detail page has **exactly
- * seven** tabs — Details, Points, Calculations, KPIs, Alarms, Dashboards,
- * Maintenance — and no tab for a content section the API will not accept.
+ * eight** tabs — Details, Points, Calculations, KPIs, Alarms, Dashboards,
+ * Maintenance, Health — and no tab for a content section the API will not
+ * accept.
  *
  * The count was five until `F3.1e`. **Amendment 4 (2026-08-29) moved it to
  * six**, discharging the condition decision 2 wrote for itself — *"It becomes a
@@ -18,7 +19,10 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
  * for `F2.19`, and on a different footing: decision 2 set `maintenance` no
  * condition at all. *Not in this ADR* omitted it pending a ruling nobody had
  * asked for on whether class-level plans are authored here or with the
- * work-order surface, and the amendment is that ruling. The number moves by
+ * work-order surface, and the amendment is that ruling. **Amendment 7
+ * (2026-11-11) moved it to eight** for `F4.355`: it reverses Amendment 5's
+ * "No eighth tab" for `health` only, because bands were being authored by hand
+ * through the API. `optimisation` stays out. The number moves by
  * amendment, once, with a reason. Never by editing this file to make a new tab
  * pass.
  *
@@ -28,7 +32,7 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
  * ships behaves correctly, and it would keep passing if an eighth tab were
  * added to the array *and* to the spec's expected list — which is what a
  * well-meaning "add another tab" change looks like, since a red test is an
- * invitation to update it. This reads the **source text**, so the number seven
+ * invitation to update it. This reads the **source text**, so the number eight
  * is asserted somewhere the person adding a tab is not already editing.
  *
  * The two overlap on purpose and neither replaces the other: behaviour there,
@@ -69,7 +73,7 @@ function stripComments(source: string): string {
   return source.replace(BLOCK_COMMENT, "").replace(LINE_COMMENT, "");
 }
 
-describe("ADR 0038 decision 2 + Amendment 5 — the tab registry declares exactly seven tabs", () => {
+describe("ADR 0038 decision 2 + Amendments 5 and 7 — the tab registry declares exactly eight tabs", () => {
   // `apps/web/src/lib/template-tabs.ts`, not the strip that renders it. The
   // plan put the registry in `template-tab-strip.tsx`; Unit 7 moved it here so
   // `resolveTemplateTab` would be reachable by a test at all, and the module's
@@ -86,6 +90,7 @@ describe("ADR 0038 decision 2 + Amendment 5 — the tab registry declares exactl
     "alarms",
     "dashboards",
     "maintenance",
+    "health",
   ];
 
   /**
@@ -117,17 +122,17 @@ describe("ADR 0038 decision 2 + Amendment 5 — the tab registry declares exactl
     ).toBeGreaterThan(0);
   });
 
-  it("declares seven tabs, with the seven ADR 0038 ids, in the ADR's order", () => {
+  it("declares eight tabs, with the eight ADR 0038 ids, in the ADR's order", () => {
     expect(ids).toEqual(EXPECTED);
     // Asserted separately from the list so a count drift and a rename read as
     // different failures.
-    expect(ids.length, "ADR 0038 Amendment 5 names seven tabs and only seven").toBe(7);
+    expect(ids.length, "ADR 0038 Amendment 7 names eight tabs and only eight").toBe(8);
     // Each entry is one object literal. A second source of the same number,
     // which catches an entry that lost its `id` rather than the whole entry.
     expect(
       (block.match(/\{/g) ?? []).length,
       "one object literal per tab — an entry without an id would not be counted above",
-    ).toBe(7);
+    ).toBe(8);
   });
 
   it("has no tab for a reserved or deferred content section", () => {
@@ -154,16 +159,19 @@ describe("ADR 0038 decision 2 + Amendment 5 — the tab registry declares exactl
     // had asked for, and the amendment is that ruling. Exactly one entry was
     // removed each time; the rest of this loop is untouched and must stay that
     // way. Weakening the scan to make room for a tab is what it exists to stop.
-    for (const closed of ["health", "optimisation", "optimization"]) {
+    // `health` left it in `F4.355` under Amendment 7, which ruled the tab in
+    // directly (B1); the API had accepted the section since `E1.3`. Again one
+    // entry, and `optimisation` stays.
+    for (const closed of ["optimisation", "optimization"]) {
       expect(
         ids,
-        `${closed} has no tab in ADR 0038. The two reserved keys are refused by ` +
-          "templateContentSchema, so a tab for either would always error.",
+        `${closed} has no tab in ADR 0038. The section is reserved and refused by ` +
+          "templateContentSchema, so a tab for it would always error.",
       ).not.toContain(closed);
     }
   });
 
-  it("the TemplateTabId union names the same seven ids and no more", () => {
+  it("the TemplateTabId union names the same eight ids and no more", () => {
     // The array's element type is what keeps an eighth entry from compiling. That
     // protection is only as strong as the union: widen it to `string`, or add a
     // name to it, and the array can hold anything with `tsc` silent. Nothing
@@ -172,7 +180,7 @@ describe("ADR 0038 decision 2 + Amendment 5 — the tab registry declares exactl
     expect(union, "TemplateTabId is no longer a single-line union of string literals").not.toBeNull();
 
     const declared = [...(union?.[1] ?? "").matchAll(/"([a-z]+)"/g)].map((match) => match[1]);
-    expect(declared, "the union must be a closed set of the seven tab ids").toEqual(EXPECTED);
+    expect(declared, "the union must be a closed set of the eight tab ids").toEqual(EXPECTED);
     expect(declared, "the union and the array must name the same tabs").toEqual(ids);
   });
 
@@ -193,7 +201,7 @@ describe("ADR 0038 decision 2 + Amendment 5 — the tab registry declares exactl
       expect(
         block,
         `the registry entries must stay literal — found ${construction}. Building them ` +
-          "from anything else makes the seven-tab limit unenforceable by a source scan.",
+          "from anything else makes the eight-tab limit unenforceable by a source scan.",
       ).not.toContain(construction);
     }
   });

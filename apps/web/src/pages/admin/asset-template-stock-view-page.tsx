@@ -3,7 +3,7 @@
  * decisions 1 and 10).
  *
  * An administrator can read a catalog entry in full before deciding to import
- * it. The entry is rendered through the **same seven tab components the
+ * it. The entry is rendered through the **same eight tab components the
  * authoring detail page uses**, with `editable={false}`, so there is exactly
  * one description of what a template looks like rather than a second read-only
  * copy that drifts. That is what made `F2.19` free here: `MaintenanceTab`
@@ -13,7 +13,7 @@
  * row identity — as the `AdminAssetTemplateDto` the tabs take.
  *
  * **Nothing here writes to the catalog, and nothing can.** ADR 0052 decision 1
- * makes the catalog repository data; every save control in all seven tabs sits
+ * makes the catalog repository data; every save control in all eight tabs sits
  * behind `{editable ? … : null}`, and this page passes the literal `false`. The
  * one write on the screen is the header's Import, which opens the
  * `ImportStockWizard` (`F4.254` PR 2: the organization is its first step, and
@@ -63,12 +63,12 @@ import type { AuthUser } from "../../stores/auth-store";
 type AssetTemplateStockViewPageProps = { user: AuthUser };
 
 /**
- * The two callbacks the seven tabs require, as **module-level constants rather
+ * The two callbacks the eight tabs require, as **module-level constants rather
  * than inline arrows**.
  *
  * `onDirtyChange` sits in a `useEffect` dependency array in every one of the
- * seven tabs. A fresh arrow on each render changes that dependency every time,
- * which re-runs seven effects for no reason. These are stable by construction.
+ * eight tabs. A fresh arrow on each render changes that dependency every time,
+ * which re-runs eight effects for no reason. These are stable by construction.
  * They are not "simplifiable" back to `() => {}` at the call site.
  */
 const NEVER_SAVED: (next: AdminAssetTemplateDto) => void = () => {};

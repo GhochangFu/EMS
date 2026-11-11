@@ -13,6 +13,7 @@ import { CalculationsTab } from "./calculations-tab";
 import { DashboardsTab } from "./dashboards-tab";
 import { DetailsTab } from "./details-tab";
 import type { FormulaEditorProps } from "./formula-editor-lazy";
+import { HealthTab } from "./health-tab";
 import { MaintenanceTab } from "./maintenance-tab";
 import { PointsTab } from "./points-tab";
 
@@ -421,5 +422,50 @@ export async function dashboardsKeepsAnEditOnARefetch(): Promise<void> {
 
 export async function dashboardsStaysDirtyAfterARefetch(): Promise<void> {
   const { onDirtyChange } = dashboardsEdited();
+  expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+}
+
+// ---------------------------------------------------------------- Health
+
+/** `F4.355`: the copilot (or another tab) adds bands under the same id and status. */
+const PLUS_BANDS = () =>
+  template({
+    content: {
+      ...BASE_CONTENT,
+      health: { bands: [{ code: "ok", label: "OK", minScore: 0.6 }, { code: "bad", label: "Bad", minScore: 0 }] },
+    },
+  });
+
+function healthClean() {
+  const tab = renderRefetchable(HealthTab);
+  tab.refetch(PLUS_BANDS());
+  return tab;
+}
+
+function healthEdited() {
+  const tab = renderRefetchable(HealthTab);
+  fireEvent.change(screen.getByLabelText("Weight of kw"), { target: { value: "3" } });
+  tab.refetch(PLUS_BANDS());
+  return tab;
+}
+
+export async function healthFollowsARefetchWhileClean(): Promise<void> {
+  healthClean();
+  expect(values("Band 1 code")).toEqual(["ok"]);
+}
+
+export async function healthReportsCleanAfterARefetch(): Promise<void> {
+  const { onDirtyChange } = healthClean();
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+}
+
+export async function healthKeepsAnEditOnARefetch(): Promise<void> {
+  healthEdited();
+  expect(values("Weight of kw")).toEqual(["3"]);
+  expect(screen.queryByLabelText("Band 1 code"), "an edited tab does not take the refetch").toBeNull();
+}
+
+export async function healthStaysDirtyAfterARefetch(): Promise<void> {
+  const { onDirtyChange } = healthEdited();
   expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 }
