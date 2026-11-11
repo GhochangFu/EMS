@@ -531,6 +531,12 @@ now depends on `@bms/db` (`workspace:*`), gains the `start:edge` script
 The loop is still not wired in `main.ts`, so the sentence above still holds
 until that PR merges.
 
+*2026-11-11, later:* the loop is wired. `main.ts` starts the repair pass on a
+10 s tick whenever the uplink listener starts, with `createRepairStore(pool)`
+and `refreshAggregatesFrom(pool, from, to)`, and clears the timer on
+shutdown. Decision 11 is now started, and the warning is gone. Merging a
+pass's windows into one refresh range (security review L3) is still owed.
+
 **(d) Accepted risk, as built.**
 
 - A stolen token can overwrite up to 6.5 days of its own gateway's points,

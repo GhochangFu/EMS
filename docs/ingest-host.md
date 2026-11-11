@@ -641,30 +641,30 @@ inside the window and move neither bound, so the repair's compare-and-clear
 never clears a generation it did not refresh. A batch whose every sample was
 screened out still records the gateway.
 
-**Aggregate repair is owed — not wired in this build.** The repair pass
-(`src/host/aggregate-repair.ts`) is built and tested with its refresh
-injected: it lists each dirty window, refreshes it, and clears it only on
-success with a compare-and-clear on the stored bounds and generation, at most
-once a minute per gateway; the prescribed tick is 10 s. It is **not started**, because it needs `@bms/db`'s
-`refreshAggregatesFrom` and `apps/ingest/package.json` does not depend on
-`@bms/db` yet — an agent may not edit a manifest (plan P8, the owner's
-edit). `main.ts` carries the one marked wiring point, and a host started with
-`INGEST_UPLINK_PORT` logs `warn` "aggregate repair is not wired; dirty windows
-will accumulate on bms.edge_gateways until it is". The windows are columns,
-not memory, so nothing is lost: a late batch's rows are in
-`telemetry.point_values`, its window waits on the gateway row, and the first
-pass after the wiring lands repairs it. Until then the stored `_1m` … `_1d`
-buckets of a window older than each policy's reach are missing those rows.
-Owed with it: the `apps/ingest/Dockerfile` change (copy and build
-`packages/db`, plan T3.0) and the integration case that proves a 4 h old
-batch reaches `_1m` and `_1h` after one pass.
+**Aggregate repair runs with the receiver.** The repair pass
+(`src/host/aggregate-repair.ts`) lists each dirty window, refreshes it with
+`@bms/db`'s `refreshAggregatesFrom`, and clears it only on success with a
+compare-and-clear on the stored bounds and generation, at most once a minute
+per gateway. `main.ts` starts it on a 10 s tick whenever `INGEST_UPLINK_PORT`
+is set, and clears the timer on shutdown; with no listener there is nothing to
+repair, so it does not start. A failed refresh is one `warn` line
+("aggregate repair failed; window kept") and the window waits for the next
+pass; a repaired one is one `info` line ("aggregate window repaired"). A
+`55P03` retry inside `refreshAggregatesFrom` also writes its own plain-text
+`[F4.1] … retrying` line to stderr, outside the JSON logger. The
+host's role (`bms_fleet` in compose) refreshes through `SET ROLE bms_rollup`,
+as the API does. `apps/ingest` depends on `@bms/db` since #1241, and its
+Dockerfile builds it. Windows recorded before the wiring are columns, so the
+first pass after a deploy repairs them. `aggregate-repair.integration.spec.ts`
+holds the case: a batch 6 h late reaches `_1m` and `_1h` after one pass and
+its window clears.
 
-**Known limits, owed when the repair is wired** (security review L3, L4):
+**Known limits** (security review L3, L4):
 
 - **One refresh per gateway window, not per pass.** Each gateway's window is
   refreshed on its own, so many sites returning from one outage refresh
   overlapping ranges many times. Merging the windows of a pass into one
-  refresh range is owed with the wiring.
+  refresh range is still owed; the wiring did not change it.
 - **A token can overwrite its own history.** A valid token may post any value
   for its own gateway's points with an `rx` up to 6 d 12 h old, and the upsert
   replaces what was stored at that key, with no audit trail of the overwrite.
