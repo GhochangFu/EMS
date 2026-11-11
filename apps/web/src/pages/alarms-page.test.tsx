@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   ackRefusalShowsTheServerSentence,
+  aDeviceAlarmCountsUnderIt,
   aDeviceAlarmHidesTheAssetOnlyActions,
   aDeviceAlarmIsAcknowledged,
   aDeviceAlarmNamesItsRtuOrTheIngestHost,
@@ -76,6 +77,10 @@ describe("F3.10 alarm lifecycle on the alarms page", () => {
 
   it("F3.16 a device alarm hides the work order and keeps Details and Ack", async () => {
     await aDeviceAlarmHidesTheAssetOnlyActions();
+  });
+
+  it("F3.16 a device alarm counts under IT by its source, not its message", async () => {
+    await aDeviceAlarmCountsUnderIt();
   });
 
   it("F3.16 a device alarm is acknowledged, the Review card naming the device", async () => {

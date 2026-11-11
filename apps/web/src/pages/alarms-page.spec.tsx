@@ -404,3 +404,20 @@ export async function aDeviceAlarmIsAcknowledged(): Promise<void> {
   await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
   expect(ack.mock.calls[0]?.slice(0, 2)).toEqual(["d1", "RTU power restored"]);
 }
+
+/**
+ * `F3.16` review fix — a device alarm is a communications fault, so the subsystem split files it
+ * under IT by its `source`, never by its message: the comms message names a battery RTU, which
+ * the text match would file under Battery, and the host alarm would fall through to Security.
+ */
+export async function aDeviceAlarmCountsUnderIt(): Promise<void> {
+  const batteryRtu = { ...RTU_ALARM, message: "Communication lost: Battery room RTU" };
+  await renderPage([batteryRtu, HOST_ALARM, RULE_ALARM]);
+  const countOf = (subsystem: string) => {
+    const label = screen.getAllByText(subsystem, { exact: true }).find((node) => !screen.getByRole("table").contains(node));
+    return label?.parentElement?.textContent?.replace(subsystem, "").trim();
+  };
+  expect(countOf("IT"), "both device alarms are IT").toBe("2 / 3");
+  expect(countOf("Battery"), "the comms message names a battery RTU, not a battery").toBe("0 / 3");
+  expect(countOf("Security"), "only the rule alarm falls through").toBe("1 / 3");
+}

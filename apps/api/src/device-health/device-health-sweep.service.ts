@@ -70,6 +70,13 @@ export interface DeviceHealthSweepDeps {
   logger: Pick<Logger, "warn">;
 }
 
+/**
+ * One device-health tick over `deps` (the file docblock is the rule): reads the monitored RTUs
+ * and the ingest hosts, raises at most one `ingest_host` alarm or else the `rtu_comms` alarms of
+ * each organization, then prunes the drop buckets. A raise that throws is warned and counted in
+ * `failed`, never rethrown. `clock` stamps only `durationMs`; staleness is judged on the
+ * database clock the host read returns.
+ */
 export async function runDeviceHealthSweep(
   deps: DeviceHealthSweepDeps,
   clock: () => number = Date.now,

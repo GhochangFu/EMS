@@ -94,7 +94,6 @@ export const energyReportPreviewSchema = z.object({
 // Alarms
 // ---------------------------------------------------------------------------
 
-/** One alarm row for list / WebSocket payloads (`GET /api/v1/alarms`). */
 /**
  * `F3.16` / ADR 0127 decision 12 — where an alarm came from: a rule on an asset,
  * a silent RTU ("Communication lost"), or a silent ingest host ("Ingest host not
@@ -103,6 +102,7 @@ export const energyReportPreviewSchema = z.object({
  */
 export const alarmSourceSchema = z.enum(["rule", "rtu_comms", "ingest_host"]);
 
+/** One alarm row for list / WebSocket payloads (`GET /api/v1/alarms`). */
 export const alarmListItemSchema = z.object({
   id: z.string(),
   // F3.16 / ADR 0127 decision 12: null on a device alarm, which has no asset —

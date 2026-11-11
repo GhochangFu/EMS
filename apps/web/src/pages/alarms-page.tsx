@@ -33,6 +33,11 @@ type AlarmSubsystem = "UPS" | "Battery" | "HVAC" | "IT" | "Security";
 const alarmSubsystems: AlarmSubsystem[] = ["UPS", "Battery", "HVAC", "IT", "Security"];
 
 function alarmSubsystem(alarm: AlarmListItem): AlarmSubsystem {
+  // F3.16 (ADR 0127): a device alarm is a communications fault — a silent RTU or ingest host —
+  // and is IT by its source. Its message names an RTU, which the text match below would misfile.
+  if (alarm.source !== "rule") {
+    return "IT";
+  }
   const haystack = `${alarm.assetCode ?? ""} ${alarm.assetName ?? ""} ${alarm.message}`.toLowerCase();
   if (haystack.includes("batt")) {
     return "Battery";

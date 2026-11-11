@@ -91,6 +91,11 @@ export function alarmVisibleTo(assetIds: readonly string[]): SQL {
  * Raw SQL text for a `pg` pool query: `alias` names `bms.alarms` in the
  * caller's FROM, `scopeParam` is the placeholder of a `uuid[]` parameter
  * (`$1`). A NULL parameter is the global admin and passes every alarm.
+ *
+ * **Both arguments are spliced into the SQL text unescaped**, so each must be a
+ * literal written in the calling source (`"al"`, `"$1"`) — never a value from a
+ * request, a row or configuration. The scope itself only ever travels as the
+ * bound parameter.
  */
 export function alarmVisibleToSql(alias: string, scopeParam: string): string {
   const scope = `${scopeParam}::uuid[]`;
