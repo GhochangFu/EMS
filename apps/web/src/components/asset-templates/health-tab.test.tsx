@@ -13,6 +13,12 @@ import {
   bandsMoveAndRemove,
   readOnlyShowsTheBandsWithNoWritePath,
   removeAsksFirstAndSavesWithoutHealth,
+  aDraftMakesNoVersionsRead,
+  aFailedVersionsReadShowsNoHint,
+  aPublishedVersionNamesTheAssetsOnOtherVersions,
+  noHintWhenNoOtherVersionHoldsAssets,
+  oneAssetReadsInTheSingular,
+  theStockViewerMakesNoVersionsRead,
 } from "./health-tab.spec";
 
 /**
@@ -64,5 +70,29 @@ describe("F4.355 health tab — ADR 0038 Amendment 7, ADR 0050 Amendment 4", () 
 
   it("shows the empty state after a saved removal, not the old bands", async () => {
     await aSavedRemovalShowsTheEmptyState();
+  });
+
+  it("B5: a published version names the assets on other versions and links to migration", async () => {
+    await aPublishedVersionNamesTheAssetsOnOtherVersions();
+  });
+
+  it("B5: no hint when no other version holds an asset", async () => {
+    await noHintWhenNoOtherVersionHoldsAssets();
+  });
+
+  it("B5: one asset reads in the singular", async () => {
+    await oneAssetReadsInTheSingular();
+  });
+
+  it("B5: a failed versions read shows nothing", async () => {
+    await aFailedVersionsReadShowsNoHint();
+  });
+
+  it("B5: a draft makes no versions read", () => {
+    aDraftMakesNoVersionsRead();
+  });
+
+  it("B5: the stock viewer makes no versions read", () => {
+    theStockViewerMakesNoVersionsRead();
   });
 });

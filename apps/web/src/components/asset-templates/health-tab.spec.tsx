@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import { adminAssetTemplateDtoSchema } from "@bms/shared/contracts";
@@ -89,15 +90,34 @@ function template(
   });
 }
 
+/** The client the last `renderTab` used, so a negative case can wait for its query to settle. */
+let lastQueryClient: QueryClient | null = null;
+
+/**
+ * Waits until the versions read has settled AND the render that follows it has
+ * committed. An absence check made any earlier passes on a tab that has not yet
+ * drawn the data (code review, F4.355 PR 4): the mock is called inside
+ * `render()`, so "the mock was called" settles nothing.
+ */
+async function versionsReadSettled(status: "success" | "error"): Promise<void> {
+  await waitFor(() =>
+    expect(lastQueryClient?.getQueryState(["admin", "asset-template-versions", "t1"])?.status).toBe(status),
+  );
+  await act(async () => {});
+}
+
 function renderTab(
   dto: AdminAssetTemplateDto,
   editable: boolean,
   onDirtyChange: (dirty: boolean) => void = vi.fn(),
 ): HTMLElement {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  lastQueryClient = queryClient;
   const { container } = render(
     <QueryClientProvider client={queryClient}>
-      <HealthTab template={dto} editable={editable} onSaved={vi.fn()} onDirtyChange={onDirtyChange} />
+      <MemoryRouter>
+        <HealthTab template={dto} editable={editable} onSaved={vi.fn()} onDirtyChange={onDirtyChange} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   return container;
@@ -111,6 +131,7 @@ function sentContent(spy: ReturnType<typeof vi.spyOn>): Record<string, unknown> 
 
 /** A published version: every value shown, no field enabled, no button to change anything. */
 export function readOnlyShowsTheBandsWithNoWritePath(): void {
+  vi.spyOn(api, "fetchAdminAssetTemplateVersions").mockResolvedValue({ items: [] } as never);
   const container = renderTab(template("published", { ...FIVE, weights: { flow_rate: 2 } }), false);
   const inputs = [...container.querySelectorAll<HTMLInputElement>("input")];
   expect(inputs.length, "five bands × three fields + two weights").toBe(17);
@@ -268,4 +289,75 @@ export async function aSavedRemovalShowsTheEmptyState(): Promise<void> {
   expect(screen.queryByLabelText("Band 1 code")).toBeNull();
   expect(screen.queryByRole("button", { name: "Keep health bands" })).toBeNull();
   expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+}
+
+const VERSIONS = {
+  items: [
+    { id: "t1", version: 2, status: "published", publishedAt: "2026-11-11T00:00:00.000Z", assetCount: 0, pointCount: 2 },
+    { id: "t0", version: 1, status: "published", publishedAt: "2026-10-01T00:00:00.000Z", assetCount: 3, pointCount: 2 },
+  ],
+};
+
+/** B5: on a published version whose siblings hold assets, the hint counts them and links to Versions & migration. */
+export async function aPublishedVersionNamesTheAssetsOnOtherVersions(): Promise<void> {
+  const versions = vi.spyOn(api, "fetchAdminAssetTemplateVersions").mockResolvedValue(VERSIONS as never);
+  renderTab(template("published", FIVE), false);
+  expect(
+    await screen.findByText(
+      "3 assets are on other versions of this template (v1: 3). They keep that version's bands until you migrate them.",
+    ),
+  ).toBeInTheDocument();
+  expect(versions).toHaveBeenCalledWith("t1");
+  expect(screen.getByRole("link", { name: "Versions & migration" }).getAttribute("href")).toBe(
+    "/admin/asset-templates/t1/versions",
+  );
+}
+
+/** Positive twin's negative: when no other version holds an asset, there is no hint. */
+export async function noHintWhenNoOtherVersionHoldsAssets(): Promise<void> {
+  const versions = vi.spyOn(api, "fetchAdminAssetTemplateVersions").mockResolvedValue({
+    items: [VERSIONS.items[0], { ...VERSIONS.items[1], assetCount: 0 }],
+  } as never);
+  renderTab(template("published", FIVE), false);
+  await versionsReadSettled("success");
+  expect(versions).toHaveBeenCalledWith("t1");
+  expect(screen.queryByText(/other version/)).toBeNull();
+  expect(screen.queryByRole("link", { name: "Versions & migration" })).toBeNull();
+}
+
+/** One asset reads in the singular. */
+export async function oneAssetReadsInTheSingular(): Promise<void> {
+  vi.spyOn(api, "fetchAdminAssetTemplateVersions").mockResolvedValue({
+    items: [VERSIONS.items[0], { ...VERSIONS.items[1], assetCount: 1 }],
+  } as never);
+  renderTab(template("published", FIVE), false);
+  expect(
+    await screen.findByText(
+      "1 asset is on another version of this template (v1: 1). It keeps that version's bands until you migrate it.",
+    ),
+  ).toBeInTheDocument();
+}
+
+/** A failed read shows nothing rather than a guess. */
+export async function aFailedVersionsReadShowsNoHint(): Promise<void> {
+  const versions = vi.spyOn(api, "fetchAdminAssetTemplateVersions").mockRejectedValue(new Error("boom"));
+  renderTab(template("published", FIVE), false);
+  await versionsReadSettled("error");
+  expect(versions).toHaveBeenCalledWith("t1");
+  expect(screen.queryByText(/other version/)).toBeNull();
+  expect(screen.queryByText("boom")).toBeNull();
+}
+
+/** A draft shows no hint and makes no versions read. */
+export function aDraftMakesNoVersionsRead(): void {
+  const versions = vi.spyOn(api, "fetchAdminAssetTemplateVersions");
+  renderTab(template("draft", FIVE), true);
+  expect(versions).not.toHaveBeenCalled();
+}
+
+/** The stock viewer's synthetic `published` entry never calls the API. */
+export function theStockViewerMakesNoVersionsRead(): void {
+  const versions = vi.spyOn(api, "fetchAdminAssetTemplateVersions");
+  renderTab({ ...template("published", FIVE), id: "stock:electrical-feeder" }, false);
+  expect(versions).not.toHaveBeenCalled();
 }
