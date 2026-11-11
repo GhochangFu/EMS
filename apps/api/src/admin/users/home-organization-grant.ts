@@ -33,7 +33,8 @@ export async function writeHomeOrganizationGrant(
   const [row] = await tx
     .insert(userOrganizationAccess)
     .values({ userId, organizationId })
-    .onConflictDoNothing()
+    // `user_organization_access_user_org_unique` (`0018`): only a held grant is skipped.
+    .onConflictDoNothing({ target: [userOrganizationAccess.userId, userOrganizationAccess.organizationId] })
     .returning({ id: userOrganizationAccess.id });
   if (!row) {
     return false;

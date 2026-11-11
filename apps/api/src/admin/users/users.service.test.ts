@@ -405,6 +405,14 @@ describe("F4.340 — an organization admin gets its home organization's grant (A
     await spec.assertNoOtherUpdateInsertsAGrant();
   });
 
+  it("a demotion from admin to organization_admin grants the body's organization on fleet", async () => {
+    await spec.assertADemotionFromAdminToOrganizationAdminGrantsTheBodysOrganization();
+  });
+
+  it("an organization_admin's promotion grants the target's home under its GUC", async () => {
+    await spec.assertAnOrganizationAdminsPromotionGrantsTheTargetsHome();
+  });
+
   it("the list flags each user with no grant in effect", async () => {
     await spec.assertTheListFlagsUsersWithNoEffectiveGrant();
   });

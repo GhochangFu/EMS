@@ -965,3 +965,24 @@ export async function assertAGrantOfAnUnreadKindIsNotEffective(): Promise<void> 
     delete GRANTS[locationAdmin.id];
   }
 }
+
+/** Security review L1(a): admin → organization_admin crosses the admin boundary; the grant is the body's organization, on fleet. */
+export async function assertADemotionFromAdminToOrganizationAdminGrantsTheBodysOrganization(): Promise<void> {
+  const { service, jwt, timeline } = harness();
+  await service.update(jwt, ADMIN_TARGET.id, { role: "organization_admin", organizationId: ORG_B });
+  const [grant] = homeGrantInserts(timeline);
+  expect([grant?.executor, grant?.values]).toEqual(["fleet.tx", { userId: ADMIN_TARGET.id, organizationId: ORG_B }]);
+}
+
+/** Security review L1(b): an organization_admin promoting a user in its organization grants that home organization, under its GUC. */
+export async function assertAnOrganizationAdminsPromotionGrantsTheTargetsHome(): Promise<void> {
+  const { service, jwt, timeline } = harness({ caller: ORG_ADMIN_CALLER });
+  await service.update(jwt, VIEWER_A.id, { role: "organization_admin" });
+  const [grant] = homeGrantInserts(timeline);
+  const guc = ops(timeline).find((op) => op.text.includes("app.current_organization"));
+  expect([grant?.executor, grant?.values, guc?.params[0]]).toEqual([
+    "tenant.tx",
+    { userId: VIEWER_A.id, organizationId: ORG_A },
+    ORG_A,
+  ]);
+}

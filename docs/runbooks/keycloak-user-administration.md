@@ -264,3 +264,9 @@ insert the grant with SQL: that leaves no audit row.
 
 This is not a migration on purpose (ADR 0128 Q5). A migration would run on
 every host and add back a grant that an admin removed on purpose.
+
+A demotion keeps the grant (ADR 0128 decision 2). An organization admin
+demoted to `operator` or `viewer` therefore still reads its whole home
+organization, because `organization` is the first read source for both
+roles. If that is not wanted, remove the grant in **Grants** after the
+demotion.
