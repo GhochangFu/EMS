@@ -175,7 +175,7 @@ export const NO_GRANT_WARNING =
  * gets its organization's grant on create; every other role but `admin` sees
  * nothing until a grant is added, so Review says so.
  */
-export function CreateUserAccessNote({ role, organizationName }: { role: UserRole; organizationName: string }) {
+function CreateUserAccessNote({ role, organizationName }: { role: UserRole; organizationName: string }) {
   if (role === "admin") return null;
   if (role === "organization_admin") {
     return <p className="mt-3 text-xs text-ink-muted">{organizationAdminAccessSentence(organizationName)}</p>;

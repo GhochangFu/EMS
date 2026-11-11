@@ -336,13 +336,21 @@ export async function aFillOfANewKindKeepsItsTarget(): Promise<void> {
 
 // --- F4.340 / ADR 0128: the create wizard's Review says what access the user gets ---
 
-/** Decision 4: a viewer created without a grant is warned about on Review. */
-export async function theCreateReviewWarnsAViewerSeesNothing(): Promise<void> {
+/** Decision 4: each scoped role created without a grant is warned about on Review. */
+export async function theCreateReviewWarnsAScopedRoleSeesNothing(
+  role: "location_admin" | "asset_group_admin" | "operator" | "viewer",
+): Promise<void> {
   stubOidc();
   stubFetch();
   renderPage();
   const dialog = await openCreateModal();
-  await fillCreate(dialog, CREATE_SECRET);
+  await userEvent.type(within(dialog).getByLabelText("Email"), "new.person@example.test");
+  await userEvent.type(within(dialog).getByLabelText("Display name"), "New Person");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.selectOptions(within(dialog).getByRole("combobox", { name: "Role" }), role);
+  await userEvent.selectOptions(within(dialog).getByLabelText("Organization"), ORG_ID);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await within(dialog).findByRole("region", { name: "Create a user" });
   expect(within(dialog).getByRole("note")).toHaveTextContent(NO_GRANT_WARNING);
   expect(within(dialog).queryByText(organizationAdminAccessSentence("Acme Works"))).not.toBeInTheDocument();
 }
@@ -390,3 +398,27 @@ export async function showsTheNoAccessPillOnAnActiveUserWithoutAGrant(): Promise
   expect(within(row("Ada Linked")).queryByText(NO_ACCESS_PILL)).not.toBeInTheDocument();
   expect(within(row("Dev Deactivated")).queryByText(NO_ACCESS_PILL)).not.toBeInTheDocument();
 }
+
+/** Code review F4.340: a grant added in the drawer refetches the list, so the "No access" pill clears. */
+export async function aGrantAddedInTheDrawerClearsTheNoAccessPill(): Promise<void> {
+  stubOidc();
+  let granted = false;
+  stubFetch({
+    "GET /api/v1/admin/users": () => ({
+      status: 200,
+      body: { items: [userRow(LINKED_ID, "Ada Linked", { hasEffectiveGrant: granted })] },
+    }),
+    [`POST /api/v1/admin/users/${LINKED_ID}/grants`]: () => {
+      granted = true;
+      return { status: 201, body: GRANTS };
+    },
+  });
+  renderPage();
+  const row = () => screen.getByText("Ada Linked").closest("tr") as HTMLElement;
+  expect(await within(await screen.findByRole("table")).findByText(NO_ACCESS_PILL)).toBeInTheDocument();
+  const drawer = await openGrants();
+  await addOrganizationGrant(drawer);
+  await userEvent.click(await within(drawer).findByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(within(row()).queryByText(NO_ACCESS_PILL)).not.toBeInTheDocument());
+}
+

@@ -29,6 +29,8 @@ export type DbOp = {
   /** `set()` values of an update, `values()` of an insert. */
   readonly values: Record<string, unknown> | null;
   readonly returning: boolean;
+  /** `F4.340`: the insert carried `ON CONFLICT DO NOTHING`. */
+  readonly onConflictDoNothing?: boolean;
 };
 
 export type TimelineEntry =
@@ -107,7 +109,7 @@ class Builder implements PromiseLike<unknown> {
     this.returningCalled = true;
     return this;
   }
-  /** `F4.340`: an insert's `ON CONFLICT DO NOTHING`, recorded as the op's `text`. */
+  /** `F4.340`: an insert's `ON CONFLICT DO NOTHING`, recorded as `onConflictDoNothing`. */
   onConflictDoNothing(): this {
     this.conflictDoNothing = true;
     return this;
@@ -125,10 +127,11 @@ class Builder implements PromiseLike<unknown> {
       executor: this.executor,
       kind: this.kind,
       table: this.table,
-      text: this.conflictDoNothing ? "ON CONFLICT DO NOTHING" : rendered.text,
+      text: rendered.text,
       params: rendered.params,
       values: this.payload,
       returning: this.returningCalled,
+      onConflictDoNothing: this.conflictDoNothing,
     };
     this.timeline.push({ source: "db", op });
     const rows = this.answer(op) ?? [];

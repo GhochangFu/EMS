@@ -5,8 +5,9 @@ import { afterEach, describe, it, vi } from "vitest";
 import {
   aFillOfANewKindKeepsItsTarget,
   theCreateReviewSaysAnOrganizationAdminGetsItsOrganization,
-  theCreateReviewWarnsAViewerSeesNothing,
+  theCreateReviewWarnsAScopedRoleSeesNothing,
   showsTheNoAccessPillOnAnActiveUserWithoutAGrant,
+  aGrantAddedInTheDrawerClearsTheNoAccessPill,
   theCreateRequestBodyIsTheWizardValuesAndThePassword,
   theCreateRequestCarriesTheTypedPassword,
   theCreateWizardValuesHoldNoPassword,
@@ -115,9 +116,13 @@ describe("F3.86 users page and grants drawer wizards", () => {
     await aFillOfANewKindKeepsItsTarget();
   }, 15_000);
 
-  it("F4.340: the create Review warns that a viewer sees nothing until a grant is added", async () => {
-    await theCreateReviewWarnsAViewerSeesNothing();
-  }, 15_000);
+  it.each(["location_admin", "asset_group_admin", "operator", "viewer"] as const)(
+    "F4.340: the create Review warns that a %s sees nothing until a grant is added",
+    async (role) => {
+      await theCreateReviewWarnsAScopedRoleSeesNothing(role);
+    },
+    15_000,
+  );
 
   it("F4.340: the create Review says an organization admin gets its organization", async () => {
     await theCreateReviewSaysAnOrganizationAdminGetsItsOrganization();
@@ -126,4 +131,8 @@ describe("F3.86 users page and grants drawer wizards", () => {
   it("F4.340: shows No access on an active user with no grant in effect only", async () => {
     await showsTheNoAccessPillOnAnActiveUserWithoutAGrant();
   });
+
+  it("F4.340: a grant added in the drawer clears the No access pill", async () => {
+    await aGrantAddedInTheDrawerClearsTheNoAccessPill();
+  }, 15_000);
 });

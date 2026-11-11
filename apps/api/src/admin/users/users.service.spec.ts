@@ -880,10 +880,10 @@ export async function assertCreatingAnOrganizationAdminInsertsTheHomeGrant(): Pr
   const response = await service.create(jwt, createBody({ role: "organization_admin" }));
   const [grant, ...rest] = homeGrantInserts(timeline);
   expect(rest).toEqual([]);
-  expect([grant?.executor, grant?.values, grant?.text]).toEqual([
+  expect([grant?.executor, grant?.values, grant?.onConflictDoNothing]).toEqual([
     "tenant.tx",
     { userId: response.user.id, organizationId: ORG_A },
-    "ON CONFLICT DO NOTHING",
+    true,
   ]);
 }
 

@@ -16,6 +16,7 @@ import {
   assertAdminCreateInsertLandsOnTheFleetRole,
   assertAPromotionToOrganizationAdminAddsTheHomeGrant,
   assertAPromotionWithTheGrantAddsNothing,
+  assertTheListFlagFollowsEachGrantKindAndTheActiveRule,
   assertTheListFlagsAUserWithNoGrant,
   assertCreateInsertLandsOnTheTenantRole,
   assertDeactivateUnderTheWrongGucIsRefusedWithNoAudit,
@@ -105,6 +106,10 @@ describe.skipIf(!connectionString)("F3.78 — users API on the real pool roles (
 
   it("F4.340: the list flags a user with no grant in effect (ADR 0128 Q6)", async () => {
     await assertTheListFlagsAUserWithNoGrant(superDb);
+  });
+
+  it("F4.340: the list flag follows each grant kind and needs an active site", async () => {
+    await assertTheListFlagFollowsEachGrantKindAndTheActiveRule(superDb);
   });
 
   it("demoting an admin while another admin row is locked fails with 55P03 (the last-admin lock)", async () => {

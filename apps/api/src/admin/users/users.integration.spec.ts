@@ -453,6 +453,67 @@ export async function assertTheListFlagsAUserWithNoGrant(superDb: BmsDb): Promis
   expect(flags).toEqual([true, true, false]);
 }
 
+/**
+ * Code review F4.340: the location and asset-group branches of the flag, and
+ * the active-site rule. A grant counts only when it reaches an active
+ * location, as the Grants drawer's `effective` does.
+ */
+export async function assertTheListFlagFollowsEachGrantKindAndTheActiveRule(superDb: BmsDb): Promise<void> {
+  let flags: Record<string, boolean | undefined> = {};
+  await withRollback(superDb, async (tx) => {
+    const db = tx as unknown as BmsDb;
+    const eskom = await organizationId(db, "ESKOM");
+    const caller = await insertUser(db, "admin", null, false);
+    const [active, inactive] = rowsOf<{ id: string }>(
+      await db.execute(sql`
+        SELECT l.id FROM bms.locations l
+         WHERE l.organization_id = ${eskom} AND l.active
+           AND EXISTS (SELECT 1 FROM bms.asset_groups g WHERE g.location_id = l.id)
+         ORDER BY l.id LIMIT 2
+      `),
+    );
+    if (!active || !inactive) throw new Error("F4.340: the seed needs two active ESKOM locations with asset groups");
+    await db.execute(sql`UPDATE bms.locations SET active = false WHERE id = ${inactive.id}`);
+    const [group] = rowsOf<{ id: string }>(
+      await db.execute(sql`SELECT id FROM bms.asset_groups WHERE location_id = ${active.id} LIMIT 1`),
+    );
+    const [deadGroup] = rowsOf<{ id: string }>(
+      await db.execute(sql`SELECT id FROM bms.asset_groups WHERE location_id = ${inactive.id} LIMIT 1`),
+    );
+    const locationAdmin = await insertUser(db, "location_admin", eskom, true);
+    const groupAdmin = await insertUser(db, "asset_group_admin", eskom, true);
+    const operator = await insertUser(db, "operator", eskom, true);
+    const deadLocationAdmin = await insertUser(db, "location_admin", eskom, true);
+    const deadGroupAdmin = await insertUser(db, "asset_group_admin", eskom, true);
+    const wrongKind = await insertUser(db, "location_admin", eskom, true);
+    await db.execute(sql`INSERT INTO bms.user_location_access (user_id, location_id) VALUES
+      (${locationAdmin.id}, ${active.id}), (${operator.id}, ${active.id}), (${deadLocationAdmin.id}, ${inactive.id})`);
+    await db.execute(sql`INSERT INTO bms.user_asset_group_access (user_id, asset_group_id) VALUES
+      (${groupAdmin.id}, ${group?.id}), (${deadGroupAdmin.id}, ${deadGroup?.id})`);
+    await db.execute(sql`INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES (${wrongKind.id}, ${eskom})`);
+    const service = buildService(asRole(db, "bms_fleet", []), asRole(db, "bms_tenant", []), new UniqueIdentityAdmin());
+    const { items } = await service.list(callerJwt(caller));
+    const flag = (id: string) => items.find((item) => item.id === id)?.hasEffectiveGrant;
+    flags = {
+      locationAdmin: flag(locationAdmin.id),
+      groupAdmin: flag(groupAdmin.id),
+      operator: flag(operator.id),
+      deadLocationAdmin: flag(deadLocationAdmin.id),
+      deadGroupAdmin: flag(deadGroupAdmin.id),
+      wrongKind: flag(wrongKind.id),
+    };
+    tx.rollback();
+  });
+  expect(flags).toEqual({
+    locationAdmin: true,
+    groupAdmin: true,
+    operator: true,
+    deadLocationAdmin: false,
+    deadGroupAdmin: false,
+    wrongKind: false,
+  });
+}
+
 // -- the last-admin lock: committed fixtures, a second connection -----------
 
 export type LockPools = { superPool: pg.Pool; fleetPool: pg.Pool };

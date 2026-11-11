@@ -124,6 +124,7 @@ export function assertListResponseRefusesARowWithoutHasEffectiveGrant(): void {
   expect(adminUsersListResponseSchema.safeParse({ items: [USER] }).success).toBe(false);
 }
 
+/** The positive control: the same row with the field parses. */
 export function assertListResponseAcceptsARowWithHasEffectiveGrant(): void {
   expect(adminUsersListResponseSchema.safeParse({ items: [{ ...USER, hasEffectiveGrant: false }] }).success).toBe(true);
 }
