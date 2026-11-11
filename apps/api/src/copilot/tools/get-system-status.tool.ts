@@ -18,8 +18,10 @@ import { targetOrganizations } from "./copilot-tool-scope";
 export const getSystemStatusTool = defineReadTool({
   name: "get_system_status",
   description:
-    "Read the system status: queue, storage and field-data states, one verdict (operational/degraded), and data quality, " +
-    "the share of readable assets that reported in the last 150 s. Use for 'is ingest healthy?'. not_monitored: no MQTT asset in scope.",
+    "Read the system status: queue, storage and field-data states, one verdict (operational/degraded), data quality " +
+    "(the share of readable assets that reported inside their RTU's offline window), and device counts (monitored and " +
+    "offline RTUs serving an asset in scope). field_data comes from the ingest host's heartbeat: ok while it beats, " +
+    "degraded when it is stale or absent. Use for 'is ingest healthy?'. not_monitored: no MQTT asset in scope.",
   schema: z.object({ organizationId: z.string().uuid().optional() }).strict(),
   async run({ access, systemStatus }, args, ctx) {
     const target = targetOrganizations(args.organizationId, ctx.allowedOrganizationIds);

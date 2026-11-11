@@ -17,7 +17,10 @@ import type { IngestHostState, RtuHealthState } from "@bms/shared";
 export interface HostBeat {
   readonly hostKey: string;
   readonly lastBeatMs: number;
-  /** `null` after a missed beat (decision 10): no restart credit. */
+  /**
+   * When the host last (re)started being healthy: its first beat, restarted after a missed beat
+   * (decision 10). The column is nullable, but the host always writes it; `null` gives no credit.
+   */
   readonly healthySinceMs: number | null;
 }
 

@@ -17,6 +17,7 @@ import {
   assertTheThirtyDayHistory,
   assertTheWindowAndState,
   assertUnattributedIsTheGlobalAdmins,
+  UNATTRIBUTED_FIXTURE_COUNT,
   type DeviceHealthFixtures,
 } from "./device-health.integration.spec";
 import { DeviceHealthService } from "./device-health.service";
@@ -126,27 +127,29 @@ describe.skipIf(!connectionString)("F3.16 — the device-health admin reads", ()
         [rtuId, orgId, hostKey],
       );
     }
-    const drop = async (rtuId: string, hoursAgo: number, reason: string, dropped: number): Promise<void> => {
-      await observer.query(
+    const drop = async (rtuId: string, hoursAgo: number, reason: string, dropped: number): Promise<string> => {
+      const { rows } = await observer.query<{ bucket_ms: number }>(
         `INSERT INTO bms.rtu_drop_hours (organization_id, rtu_id, bucket, reason, dropped, first_asset_id, first_point_key)
-         VALUES ($1, $2, date_trunc('hour', now(), 'UTC') - make_interval(hours => $3), $4, $5, $6, 'temp_c')`,
+         VALUES ($1, $2, date_trunc('hour', now(), 'UTC') - make_interval(hours => $3), $4, $5, $6, 'temp_c')
+         RETURNING (extract(epoch FROM bucket) * 1000)::float8 AS bucket_ms`,
         [mine.organization_id, rtuId, hoursAgo, reason, dropped, assetId],
       );
+      return new Date(rows[0]!.bucket_ms).toISOString();
     };
-    await drop(monitored, 0, "outOfRange", 5);
+    const recentBucket = await drop(monitored, 0, "outOfRange", 5);
     await drop(monitored, 48, "badQuality", 7);
     await drop(monitored, 29 * 24, "nonFinite", 2);
     await drop(monitored, 31 * 24, "nonFinite", 3);
     await drop(sibling, 0, "badQuality", 1);
     const endpointKey = `f316dh-${stamp}-ep`;
-    for (const [hoursAgo, deviceKey] of [
-      [0, "dev-recent"],
-      [48, "dev-old"],
+    for (const [hoursAgo, deviceKey, dropped] of [
+      [0, "dev-recent", UNATTRIBUTED_FIXTURE_COUNT],
+      [48, "dev-old", 4],
     ] as const) {
       await observer.query(
         `INSERT INTO bms.ingest_endpoint_drop_hours (host_key, endpoint_key, bucket, reason, dropped, first_device_key)
-         VALUES ($1, $2, date_trunc('hour', now(), 'UTC') - make_interval(hours => $3), 'unknownDevice', 4, $4)`,
-        [hostKey, endpointKey, hoursAgo, deviceKey],
+         VALUES ($1, $2, date_trunc('hour', now(), 'UTC') - make_interval(hours => $3), 'unknownDevice', $4, $5)`,
+        [hostKey, endpointKey, hoursAgo, dropped, deviceKey],
       );
     }
 
@@ -158,7 +161,15 @@ describe.skipIf(!connectionString)("F3.16 — the device-health admin reads", ()
       locations: { mine: mine.id, sibling: siblingRows[0].id, foreign: foreignRows[0].id },
       rtus: { monitored, unmonitored, sibling, foreign },
       firstAsset: { id: assetId, code: assetCode, rtuName: `f316dh-${stamp}-a-monitored`, locationName: mine.name },
+      recentBucket,
       endpointKey,
+      refreshBeat: async () => {
+        await observer.query("UPDATE bms.ingest_hosts SET last_beat_at = now() WHERE host_key = $1", [hostKey]);
+        await observer.query(
+          "UPDATE bms.rtu_health SET last_seen_at = now() - interval '10 seconds' WHERE rtu_id = $1",
+          [monitored],
+        );
+      },
     };
   }, 60_000);
 

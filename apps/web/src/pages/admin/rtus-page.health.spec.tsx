@@ -99,9 +99,10 @@ function body(hostState: "ok" | "stale" | "never" = "ok"): DeviceHealthResponse 
           {
             reason: "unmappedSourceKey",
             count: 5,
+            firstAt: "2026-11-11T08:00:00.000Z",
             first: { assetId: null, assetCode: null, assetRtuName: null, assetLocationName: null, pointKey: null, sourceKey: MARKUP_SOURCE_KEY },
           },
-          { reason: "badQuality", count: 2, first: null },
+          { reason: "badQuality", count: 2, firstAt: "2026-11-11T06:00:00.000Z", first: null },
         ],
       }),
       health({
@@ -113,6 +114,7 @@ function body(hostState: "ok" | "stale" | "never" = "ok"): DeviceHealthResponse 
           {
             reason: "outOfRange",
             count: 3,
+            firstAt: "2026-11-11T08:00:00.000Z",
             first: { assetId: "x", assetCode: "AHU-1", assetRtuName: null, assetLocationName: null, pointKey: "supply_temp", sourceKey: "t1" },
           },
         ],

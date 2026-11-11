@@ -24,14 +24,12 @@ interface StatusCountsRow extends Record<string, unknown> {
   streaming_assets: number;
   fresh_assets: number;
   mqtt_assets: number;
-  mqtt_fresh: number;
 }
 
 const EMPTY_COUNTS: StatusCountsRow = {
   streaming_assets: 0,
   fresh_assets: 0,
   mqtt_assets: 0,
-  mqtt_fresh: 0,
 };
 
 /** A monitored RTU serving an asset in scope (`F3.16`): its `rtu_health` fields and its window. */
@@ -90,11 +88,12 @@ const EMPTY_READ: ScopedRead = { counts: EMPTY_COUNTS, monitored: [] };
  * tenant's assets out of both counts. An empty scope runs no query (plan
  * decision 7).
  *
- * **Devices** (`F3.16`, ADR 0127 decision 19). `monitored` counts the RTUs
- * with a `monitored_since` that serve an asset in scope, read inside the same
+ * **Devices** (`F3.16`, ADR 0127 decision 19). The RTUs with a
+ * `monitored_since` that serve an asset in scope are read inside the same
  * scoped transaction (`bms.rtu_health` is tenant-policied, `0149`), each with
- * its window from `rtuWindowsCteSql`; `offline` is those `rtuStateAt` judges
- * Offline against their host's beat. `bms.ingest_hosts` is read on `fleetDb`
+ * its window from `rtuWindowsCteSql`; `rtuStateAt` judges each against its
+ * host's beat, `monitored` counts those it does not call Not monitored (a
+ * host with no row) and `offline` those it calls Offline. `bms.ingest_hosts` is read on `fleetDb`
  * after, and only when something in scope needs a host.
  */
 @Injectable()
@@ -129,8 +128,7 @@ export class SystemStatusService {
             SELECT
               COUNT(*)::int AS streaming_assets,
               COUNT(r.asset_id)::int AS fresh_assets,
-              COUNT(*) FILTER (WHERE s.source_type = 'mqtt')::int AS mqtt_assets,
-              COUNT(r.asset_id) FILTER (WHERE s.source_type = 'mqtt')::int AS mqtt_fresh
+              COUNT(*) FILTER (WHERE s.source_type = 'mqtt')::int AS mqtt_assets
             FROM scoped s
             LEFT JOIN live r ON r.asset_id = s.id
           `);
@@ -165,14 +163,17 @@ export class SystemStatusService {
         ? await readIngestHosts(this.fleetDb)
         : { hosts: [] as HostBeat[], dbNowMs: 0 };
     const hostsByKey = new Map(hosts.map((h) => [h.hostKey, h]));
-    const offline = monitored.filter(
-      (row) =>
+    // The one state rule decides both counts: an RTU whose host has no row is Not monitored.
+    const states = monitored
+      .map((row) =>
         rtuStateAt(
           { hostKey: row.host_key, lastSeenMs: row.last_seen_ms, monitoredSinceMs: row.monitored_since_ms },
           row.host_key === null ? undefined : hostsByKey.get(row.host_key),
           Number(row.window_seconds),
-        ) === "offline",
-    ).length;
+        ),
+      )
+      .filter((state) => state !== "not_monitored");
+    const offline = states.filter((state) => state === "offline").length;
     const serving = monitored.flatMap((row) => (row.host_key === null ? [] : [row.host_key]));
     const host = hostSummaryFor(hosts, serving, dbNowMs).state;
 
@@ -196,7 +197,7 @@ export class SystemStatusService {
         streamingAssets: streaming,
         windowSeconds: FRESHNESS_FLOOR_SECONDS,
       },
-      devices: { monitored: monitored.length, offline },
+      devices: { monitored: states.length, offline },
       checkedAt: new Date().toISOString(),
     };
   }

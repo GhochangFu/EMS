@@ -8,6 +8,7 @@ import type { BmsDb } from "@bms/db";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertEmptyScopeRunsNoQuery,
+  assertAMissingHostMonitorsNothing,
   assertFreshHostWithSilentDevicesIsOk,
   assertNoMqttInScopeIsNotMonitored,
   assertNoRtuIsNotStreaming,
@@ -80,6 +81,10 @@ describe.skipIf(!connectionString)("F3.30 — GET /system/status read (real data
 
   it("a monitored RTU heard 60 s ago is not offline (F3.16)", async () => {
     await assertRecentlyHeardRtuIsNotOffline(db);
+  }, 60_000);
+
+  it("a monitored RTU whose host has no row counts as neither monitored nor offline (F3.16)", async () => {
+    await assertAMissingHostMonitorsNothing(db);
   }, 60_000);
 
   it("a fresh mqtt asset outside the scope reaches neither count", async () => {

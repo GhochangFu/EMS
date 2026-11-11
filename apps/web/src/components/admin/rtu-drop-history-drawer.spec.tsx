@@ -22,7 +22,7 @@ const HISTORY: RtuDropHistoryResponse = {
       bucket: "2026-11-10T09:00:00.000Z",
       reason: "outOfRange",
       count: 4,
-      first: { assetId: "a", assetCode: "CH-2", assetRtuName: null, assetLocationName: null, pointKey: "kw", sourceKey: "s1" },
+      first: { assetId: "a", assetCode: "CH-2", assetRtuName: "RTU-A", assetLocationName: "Plant", pointKey: "kw", sourceKey: "s1" },
     },
     {
       bucket: "2026-11-10T08:00:00.000Z",
@@ -49,7 +49,8 @@ function renderDrawer(history: RtuDropHistoryResponse, onClose = vi.fn()): typeo
 export async function theDrawerLoadsAndListsTheHistory(): Promise<void> {
   renderDrawer(HISTORY);
   const dialog = screen.getByRole("dialog", { name: "Drop history — DR-1" });
-  expect(await within(dialog).findByText("CH-2 · kw")).toBeInTheDocument();
+  // ADR 0111: the asset is named with assetLabelOf, its RTU before its location.
+  expect(await within(dialog).findByText("CH-2 · RTU-A · kw")).toBeInTheDocument();
   expect(vi.mocked(deviceHealthApi.fetchRtuDropHistory)).toHaveBeenCalledWith(RTU.id);
   const rows = within(dialog).getAllByRole("row");
   // The header row and three buckets.

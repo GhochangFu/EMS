@@ -141,9 +141,15 @@ function firstOf(row: FirstColumns): DropFirst | null {
   };
 }
 
-/** Per scoped RTU and reason, the drops of the buckets overlapping the last 24 h, with the earliest bucket's first point. */
+/**
+ * Per scoped RTU and reason, the drops of the buckets overlapping the last 24 h, with the
+ * earliest bucket's first point and that bucket as `firstAt`, so the web can name the
+ * earliest drop across reasons.
+ */
 export async function readRecentDrops(db: BmsDb, scope: RtuScope): Promise<Map<string, RtuDropCount[]>> {
-  const result = await db.execute<FirstColumns & { rtu_id: string; reason: DropReason; total: number }>(sql`
+  const result = await db.execute<
+    FirstColumns & { rtu_id: string; reason: DropReason; total: number; first_at_ms: number }
+  >(sql`
     WITH ${scopeCte(scope)},
     x AS (
       SELECT d.*,
@@ -153,7 +159,7 @@ export async function readRecentDrops(db: BmsDb, scope: RtuScope): Promise<Map<s
        WHERE d.rtu_id IN (SELECT id FROM scope)
          AND d.bucket > now() - make_interval(hours => ${DROPS_RECENT_HOURS + 1})
     )
-    SELECT x.rtu_id, x.reason, x.total::float8 AS total, ${FIRST_SELECT}
+    SELECT x.rtu_id, x.reason, x.total::float8 AS total, ${ms("x.bucket")} AS first_at_ms, ${FIRST_SELECT}
       FROM x ${FIRST_JOINS}
      WHERE x.rn = 1
      ORDER BY x.rtu_id, x.reason
@@ -161,7 +167,12 @@ export async function readRecentDrops(db: BmsDb, scope: RtuScope): Promise<Map<s
   const byRtu = new Map<string, RtuDropCount[]>();
   for (const row of result.rows) {
     const list = byRtu.get(row.rtu_id) ?? [];
-    list.push({ reason: row.reason, count: Number(row.total), first: firstOf(row) });
+    list.push({
+      reason: row.reason,
+      count: Number(row.total),
+      firstAt: new Date(Number(row.first_at_ms)).toISOString(),
+      first: firstOf(row),
+    });
     byRtu.set(row.rtu_id, list);
   }
   return byRtu;

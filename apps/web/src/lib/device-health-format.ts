@@ -1,4 +1,4 @@
-import { CLOCK_SKEW_HIGHLIGHT_SECONDS } from "@bms/shared";
+import { CLOCK_SKEW_HIGHLIGHT_SECONDS, assetLabelOf } from "@bms/shared";
 import type { DropFirst, DropReason, RtuDropCount, RtuHealthDto, RtuHealthState } from "@bms/shared";
 
 /**
@@ -65,22 +65,36 @@ export function clockSkewHighlighted(seconds: number | null): boolean {
   return seconds !== null && Math.abs(seconds) > CLOCK_SKEW_HIGHLIGHT_SECONDS;
 }
 
-/** `"<asset code> · <point key>"`, or the point key, or the source key; `null` when nothing names it. */
+/**
+ * `"<asset label> · <point key>"` (the asset named by `assetLabelOf`, ADR 0111), or the point
+ * key, or the source key; `null` when nothing names it.
+ */
 export function firstDroppedLabel(first: DropFirst | null): string | null {
   if (first === null) return null;
   if (first.pointKey !== null) {
-    return first.assetCode !== null ? `${first.assetCode} · ${first.pointKey}` : first.pointKey;
+    if (first.assetCode === null) return first.pointKey;
+    const asset = assetLabelOf({
+      assetCode: first.assetCode,
+      assetRtuName: first.assetRtuName,
+      assetLocationName: first.assetLocationName,
+    });
+    return `${asset} · ${first.pointKey}`;
   }
   return first.sourceKey;
 }
 
-/** The 24 h total across reasons, and the first dropped sample any reason names. */
+/**
+ * The 24 h total across reasons, and the earliest dropped sample: the reasons are taken in
+ * `firstAt` order (a tie keeps the given order), and the first that names something wins.
+ */
 export function dropsSummary(drops: readonly RtuDropCount[]): { total: number; first: string | null } {
   let total = 0;
+  for (const drop of drops) total += drop.count;
+  const earliestFirst = [...drops].sort((a, b) => Date.parse(a.firstAt) - Date.parse(b.firstAt));
   let first: string | null = null;
-  for (const drop of drops) {
-    total += drop.count;
-    if (first === null) first = firstDroppedLabel(drop.first);
+  for (const drop of earliestFirst) {
+    first = firstDroppedLabel(drop.first);
+    if (first !== null) break;
   }
   return { total, first };
 }

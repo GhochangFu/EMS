@@ -4,7 +4,7 @@ import { DROP_REASONS } from "../device-health";
 
 /**
  * `F3.16` / ADR 0127 decisions 7, 8, 17 and 19 — the device-health read
- * contracts (`GET /api/v1/admin/rtus/health`, the per-RTU drop history).
+ * contracts (`GET /api/v1/admin/device-health`, the per-RTU drop history).
  *
  * Plain `z.object` throughout: nothing here is an intersection or all-readonly,
  * so no `z.intersection` or `.readonly()` applies, and a later change must not
@@ -40,6 +40,8 @@ export const dropFirstSchema = z.object({
 export const rtuDropCountSchema = z.object({
   reason: dropReasonSchema,
   count: z.number().int().positive(),
+  /** ISO start of the earliest hour bucket of the 24 h holding this reason: the hour `first` was dropped in. */
+  firstAt: z.string(),
   first: dropFirstSchema.nullable(),
 });
 

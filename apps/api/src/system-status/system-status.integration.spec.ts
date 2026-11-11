@@ -332,6 +332,18 @@ export async function assertRecentlyHeardRtuIsNotOffline(db: BmsDb): Promise<voi
 }
 
 /**
+ * Case 7c — `F3.16`: with its host's row gone the monitored RTU is Not monitored under
+ * `rtuStateAt`, so the one state rule makes it count in neither `monitored` nor `offline`.
+ */
+export async function assertAMissingHostMonitorsNothing(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    await scene.tx.execute(sql`DELETE FROM bms.ingest_hosts WHERE host_key = ${scene.hostKey}`);
+    const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.a]);
+    assert(r.devices.monitored === 0 && r.devices.offline === 0, `expected devices 0/0; got ${summary(r)}`);
+  });
+}
+
+/**
  * Case 8 — security L1: A (mqtt) fresh 5 s but outside the scope; the scope
  * is [B], and B's only sample is 200 s old, beyond the 150 s reporting
  * window. A must reach neither count: no

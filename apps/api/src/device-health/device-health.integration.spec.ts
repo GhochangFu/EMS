@@ -34,7 +34,11 @@ export type DeviceHealthFixtures = {
     foreign: string;
   };
   firstAsset: { id: string; code: string; rtuName: string; locationName: string };
+  /** The ISO hour of the monitored RTU's `outOfRange` bucket (the current hour at setup). */
+  recentBucket: string;
   endpointKey: string;
+  /** Re-beats the run's host and re-hears the monitored RTU now, so a slow suite never reads them stale. */
+  refreshBeat: () => Promise<void>;
 };
 
 async function settle(run: Promise<unknown>): Promise<unknown> {
@@ -72,6 +76,7 @@ export async function assertOrganizationBSeesNoneOfA(ctx: DeviceHealthFixtures):
 
 /** I3 — the window is `windowSecondsFor` of the RTU's interval; the state is judged against the run's host. */
 export async function assertTheWindowAndState(ctx: DeviceHealthFixtures): Promise<void> {
+  await ctx.refreshBeat();
   const body = deviceHealthResponseSchema.parse(await ctx.svc.list(ctx.locationAdmin, ctx.locations.mine));
   const monitored = body.items.find((item) => item.rtuId === ctx.rtus.monitored);
   const unmonitored = body.items.find((item) => item.rtuId === ctx.rtus.unmonitored);
@@ -100,6 +105,7 @@ export async function assertDropsOlderThanADayAreNotRecent(ctx: DeviceHealthFixt
     {
       reason: "outOfRange",
       count: 5,
+      firstAt: ctx.recentBucket,
       first: {
         assetId: ctx.firstAsset.id,
         assetCode: ctx.firstAsset.code,
@@ -131,6 +137,12 @@ export async function assertAFirstAssetOffItsRtuIsNotLabelled(ctx: DeviceHealthF
   });
 }
 
+/**
+ * The fixture's recent unattributed count: large enough to rank first under the reader's
+ * `ORDER BY total DESC LIMIT 200`, so a busy database cannot push the row out.
+ */
+export const UNATTRIBUTED_FIXTURE_COUNT = 1_000_000_000_000;
+
 /** I5 — `unattributed` reaches the global admin only, and only the last 24 h of it. */
 export async function assertUnattributedIsTheGlobalAdmins(ctx: DeviceHealthFixtures): Promise<void> {
   const global = deviceHealthResponseSchema.parse(await ctx.svc.list(ctx.globalAdmin));
@@ -140,7 +152,7 @@ export async function assertUnattributedIsTheGlobalAdmins(ctx: DeviceHealthFixtu
       hostKey: expect.any(String),
       endpointKey: ctx.endpointKey,
       reason: "unknownDevice",
-      count: 4,
+      count: UNATTRIBUTED_FIXTURE_COUNT,
       firstDeviceKey: "dev-recent",
       firstSourceKey: null,
     },
