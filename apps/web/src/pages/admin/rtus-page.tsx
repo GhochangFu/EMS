@@ -24,7 +24,9 @@ import {
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { RtuDropHistoryDrawer } from "../../components/admin/rtu-drop-history-drawer";
-import { DeviceHealthTiles, IngestHostBanner, RtuHealthCells } from "../../components/admin/rtu-health-cells";
+import { DeviceHealthTiles } from "../../components/admin/device-health-tiles";
+import { IngestHostBanner } from "../../components/admin/ingest-host-banner";
+import { RtuHealthCells } from "../../components/admin/rtu-health-cells";
 import { RtuPayloadFormatWizard } from "../../components/admin/rtu-payload-format-wizard";
 import { RtuStatusWizard, RtuWizard } from "../../components/admin/rtu-wizards";
 import { UnregisteredDevicesSection } from "../../components/admin/unregistered-devices-section";
@@ -48,7 +50,8 @@ type RtusAdminPageProps = { user: AuthUser };
  *
  * `F3.16` (ADR 0127 decisions 4, 17, 19) — device health is a second read,
  * merged into the rows by RTU id: Last seen, State, Clock skew, Drops 24 h, the
- * header tiles and the ingest-host banner (`rtu-health-cells.tsx`). The list
+ * header tiles and the ingest-host banner (`rtu-health-cells.tsx`,
+ * `device-health-tiles.tsx`, `ingest-host-banner.tsx`). The list
  * does not wait on it, and a failed read leaves "—" in those cells.
  */
 /**

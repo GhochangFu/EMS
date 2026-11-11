@@ -1,24 +1,22 @@
 import { CLOCK_SKEW_HIGHLIGHT_SECONDS } from "@bms/shared";
-import type { DeviceHealthResponse, RtuHealthDto } from "@bms/shared";
+import type { RtuHealthDto } from "@bms/shared";
 
 import {
-  INGEST_HOST_BANNER,
   RTU_HEALTH_LABELS,
   RTU_HEALTH_TONES,
   absoluteTime,
   clockSkewHighlighted,
   clockSkewText,
-  deviceHealthCounts,
   dropsSummary,
   lastSeenRelative,
 } from "../../lib/device-health-format";
-import { KpiTile, type KpiTileStatus } from "../kpi-tile";
 import { StatusPill } from "../status-pill";
 
 /**
- * `F3.16` / ADR 0127 decisions 4, 16, 18 and 20 — the device-health parts of
- * the admin RTUs page: four row cells, the header tiles and the ingest-host
- * banner. Split from `rtus-page.tsx` so the page stays a list.
+ * `F3.16` / ADR 0127 decisions 4, 16, 18 and 20 — the four device-health row
+ * cells of the admin RTUs page. Split from `rtus-page.tsx` so the page stays a
+ * list; the header tiles are `device-health-tiles.tsx` and the banner
+ * `ingest-host-banner.tsx` (§4.2, one exported component per file).
  *
  * `health` is `undefined` while the read is pending, when it failed, or when
  * the RTU is not in its answer: every cell then reads "—" and the row keeps
@@ -105,54 +103,5 @@ export function RtuHealthCells({
         )}
       </td>
     </>
-  );
-}
-
-/** Monitored / Online / Stale / Offline over the RTUs the read answered for (decision 19). */
-export function DeviceHealthTiles({
-  data,
-  status,
-}: {
-  data: DeviceHealthResponse | undefined;
-  status: KpiTileStatus;
-}) {
-  const counts = data ? deviceHealthCounts(data.items) : null;
-  const value = (n: number | undefined) => (n === undefined ? null : String(n));
-  return (
-    <section aria-label="Device health" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <KpiTile label="Monitored" status={status} value={value(counts?.monitored)} />
-      <KpiTile label="Online" status={status} value={value(counts?.online)} />
-      <KpiTile
-        label="Stale"
-        status={status}
-        value={value(counts?.stale)}
-        tone={counts && counts.stale > 0 ? "warning" : "default"}
-      />
-      <KpiTile
-        label="Offline"
-        status={status}
-        value={value(counts?.offline)}
-        tone={counts && counts.offline > 0 ? "critical" : "default"}
-      />
-    </section>
-  );
-}
-
-/**
- * The banner while the ingest host is not reporting (decision 16). Shown only
- * when a monitored RTU is in the answer: with none, nothing is frozen, and a
- * simulator-only estate (decision 20) has no host to report.
- */
-export function IngestHostBanner({ data }: { data: DeviceHealthResponse | undefined }) {
-  if (!data || data.ingestHost.state === "ok") return null;
-  if (deviceHealthCounts(data.items).monitored === 0) return null;
-  return (
-    <p
-      role="status"
-      className="rounded border border-warning-line bg-warning-wash p-3 text-sm text-warning-ink"
-      title={data.ingestHost.lastBeatAt !== null ? `Last heartbeat ${absoluteTime(data.ingestHost.lastBeatAt)}` : undefined}
-    >
-      {INGEST_HOST_BANNER}
-    </p>
   );
 }
