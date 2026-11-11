@@ -78,6 +78,10 @@ export function clientOnlyFieldsFor(
       // `E3.1` (ADR 0122 ruling P4): a ticket's findings are typed on the page, never through the copilot.
       return [{ path, label: fieldLabel(path), schema: undefined, required: false, shown: false }];
     }
+    if (path === "workOrderPrefix" && entry.id.startsWith("assetTemplate.")) {
+      // `E3.1` (ADR 0122 ruling R5): a template's work-order prefix is typed on the page, never through the copilot.
+      return [{ path, label: "Work-order prefix", schema: undefined, required: false, shown: false }];
+    }
     if (path === "checklistTemplateId") {
       // `E3.1` (ADR 0122 ruling P4): a checklist template is picked on the page, never through the copilot.
       return [{ path, label: "Checklist template", schema: undefined, required: false, shown: false }];

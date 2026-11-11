@@ -64,6 +64,7 @@ const TEMPLATE: AdminAssetTemplateDto = adminAssetTemplateDtoSchema.parse({
   assetType: "feeder",
   domain: "electrical",
   description: null,
+  workOrderPrefix: null,
   status: "draft",
   content: {},
   publishedAt: null,
@@ -141,4 +142,52 @@ export async function aReadOnlyRenderCannotSubmitEvenWhenTheFormIsDirty(): Promi
     expect(save).toHaveBeenCalledTimes(1);
   });
   expect(save).toHaveBeenCalledWith(TEMPLATE.id, { name: "FeederX" });
+}
+
+const DRAFT_WITH_PREFIX: AdminAssetTemplateDto = { ...TEMPLATE, workOrderPrefix: "STP" };
+
+function treeFor(template: AdminAssetTemplateDto, editable: boolean) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return (
+    <QueryClientProvider client={queryClient}>
+      <DetailsTab template={template} editable={editable} onSaved={vi.fn()} onDirtyChange={vi.fn()} />
+    </QueryClientProvider>
+  );
+}
+
+const PREFIX_LABEL = /Work-order prefix/;
+
+/** `E3.1` / ADR 0122 — a draft's prefix is editable, upper-cased, and saved as null when emptied. */
+export async function aDraftPrefixIsEditableUpperCasedAndSavedAsNullWhenEmptied(): Promise<void> {
+  vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES);
+  const save = vi.spyOn(templateApi, "updateAdminAssetTemplate").mockResolvedValue(DRAFT_WITH_PREFIX);
+
+  render(treeFor(DRAFT_WITH_PREFIX, true));
+  await screen.findByRole("option", { name: "Electrical" });
+  const input = screen.getByRole("textbox", { name: PREFIX_LABEL }) as HTMLInputElement;
+  expect(input).toBeEnabled();
+  expect(input.value).toBe("STP");
+  expect(input.maxLength).toBe(8);
+
+  await userEvent.clear(input);
+  await userEvent.type(input, "etp");
+  expect(input.value).toBe("ETP");
+  await userEvent.click(screen.getByRole("button", { name: "Save details" }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  expect(save).toHaveBeenLastCalledWith(DRAFT_WITH_PREFIX.id, { workOrderPrefix: "ETP" });
+
+  await userEvent.clear(input);
+  await userEvent.click(screen.getByRole("button", { name: "Save details" }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(save).toHaveBeenLastCalledWith(DRAFT_WITH_PREFIX.id, { workOrderPrefix: null });
+}
+
+/** `E3.1` / ADR 0122 — a published version is immutable (ruling R2), so its prefix is disabled. */
+export async function aPublishedVersionPrefixIsDisabled(): Promise<void> {
+  vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES);
+  render(treeFor({ ...DRAFT_WITH_PREFIX, status: "published" }, false));
+  await screen.findByRole("option", { name: "Electrical" });
+  const input = screen.getByRole("textbox", { name: PREFIX_LABEL }) as HTMLInputElement;
+  expect(input).toBeDisabled();
+  expect(input.value).toBe("STP");
 }

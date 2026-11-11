@@ -4947,7 +4947,7 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   stored-contract violation driven through a service degraded to a bare
   `ZodError` and a 400. It now classifies by shape; two spec rows hold it.
 - **Unblocks:** `F3.4` (upload, delete, audit, UI) — closed 2026-09-16, the
-  next section. `E3.2` still waits on `E3.1` and `F3.20`.
+  next section. `E3.2` still waits on `F3.20` (`E3.1` closed 2026-11-11, ADR 0122).
 
 ### Image upload and delete, audit rows, an admin Images panel and a reader gallery (`F3.4`, ADR 0066 decision 7 + Amendment 3) — done
 - **Status:** merged 2026-09-16 — PR
@@ -4996,7 +4996,7 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   only), content 503, delete 204 plus the orphan warn without `org/`.
 - **Deferred by name, unchanged:** presigned URLs, thumbnails/`sharp`,
   `If-None-Match`/304, the orphan sweep, the scoped MinIO key (`F4.144`).
-- **Unblocks:** nothing directly; `E3.2` still waits on `E3.1` and `F3.20`.
+- **Unblocks:** nothing directly; `E3.2` still waits on `F3.20` (`E3.1` closed 2026-11-11, ADR 0122).
 
 ### A BullMQ job queue and a `worker` process, split out of the infra bundle (`F4.24`, ADR 0063 + Amendments 1–2) — done
 - **Status:** merged 2026-09-11 — PR
@@ -7878,3 +7878,5 @@ One PR, [#894](https://github.com/GhochangFu/EMS/pull/894) (`09836994`), under [
 **`F4.311` done 2026-11-04** in [#993](https://github.com/GhochangFu/EMS/pull/993), [#994](https://github.com/GhochangFu/EMS/pull/994), [#995](https://github.com/GhochangFu/EMS/pull/995), [#996](https://github.com/GhochangFu/EMS/pull/996), [#997](https://github.com/GhochangFu/EMS/pull/997), [#998](https://github.com/GhochangFu/EMS/pull/998), [#999](https://github.com/GhochangFu/EMS/pull/999), under ADR 0109 and ADR 0099 Amendment 11, `chore(agents):` last: an asset with no template can carry a calculated point with its own formula, through the extended `/admin/assets/:assetId/calc-points` routes and `POST /admin/calc-points/batch` (up to 25 assets, all or nothing); `backfillDays` (1–31) runs on the new `calc-backfill` queue on the worker (migration `0123`, `bms.calc_backfill_runs`), with progress on the asset points page; the copilot gains `calcPoint.set`, `calcPoint.createBatch` and `calcPoint.delete`, the third `DELETE` it may propose. Adopting an unpinned asset onto a template version is `F4.312`. Not live-checked: the §4.6 database, API, backfill and browser checks are owed from the owner's local session (see the BACKLOG row).
 
 **`F4.312` and `F4.313` done 2026-11-05** in [#1017](https://github.com/GhochangFu/EMS/pull/1017), [#1023](https://github.com/GhochangFu/EMS/pull/1023), [#1028](https://github.com/GhochangFu/EMS/pull/1028) (`F4.312`) and [#1014](https://github.com/GhochangFu/EMS/pull/1014), [#1021](https://github.com/GhochangFu/EMS/pull/1021) (`F4.313`), under ADR 0109 Amendment 1 and ADR 0099 Amendment 12, `chore(agents):` last: `POST /admin/asset-templates/:id/adoption-preview` and `/:id/adopt` pin up to 25 template-less assets to a published version of their own organization and domain (all or nothing, migrate's access, no migration); the copilot gains `assetTemplate.adopt` (red); the asset page and list gain **Adopt a template**; the calculated-point pickers gain **New key** for a global administrator, domain-first with **Show all keys** and a search (`domain` on `GET /admin/assets/:id`). Release back to no template stays out (A7). Not live-checked: the §4.6 database, API and browser checks are owed from the owner's local session (see the BACKLOG rows).
+
+**`E3.1` done 2026-11-11** in [#1225](https://github.com/GhochangFu/EMS/pull/1225), [#1234](https://github.com/GhochangFu/EMS/pull/1234), [#1236](https://github.com/GhochangFu/EMS/pull/1236), [#1237](https://github.com/GhochangFu/EMS/pull/1237), [#1242](https://github.com/GhochangFu/EMS/pull/1242), [#1244](https://github.com/GhochangFu/EMS/pull/1244) and a seventh PR for the admin screens, under [ADR 0122](./adr/0122-work-order-depth.md) and migrations 0140, 0144, 0145 and 0148: a work order has a readable reference (`STP-000123`), an SLA due time from a per-organization policy, a checklist copied from a template, a root cause, an event timeline, and an approve / reject / cancel step; the board gained a ticket drawer and a Cancelled column, and administrators set domain and template prefixes, the SLA policy and the checklist templates under *Work-order settings*. `E3.4` closed with it. Owed: the `chore(agents):` AGENTS.md catch-up. `E3.2` still waits on `F3.20`.

@@ -15,6 +15,7 @@ import { templateContentSchema } from "./asset-template-content-writes";
 import { calcDialectSchema } from "./asset-templates";
 import { assetDomainCodeSchema } from "./operations";
 import { hasAnyPointMetadata, pointMetadataBodyShape, refinePointMetadata } from "./point-metadata-writes";
+import { workOrderPrefixSchema } from "./work-orders";
 
 /**
  * The structural write bodies of the asset-template admin surface (ADR 0015,
@@ -330,6 +331,12 @@ export const createAssetTemplateBodySchema = z
     // from the form that caused it.
     domain: assetDomainCodeSchema,
     description: z.string().max(2000).nullish(),
+    /**
+     * `E3.1` (ADR 0122 decision 2.5, ruling Q4): the work-order reference prefix of assets
+     * built from this template (`STP`), which wins over the domain's. `null` or left out
+     * means the domain's prefix. Set on a draft only: a published version is immutable (R2).
+     */
+    workOrderPrefix: workOrderPrefixSchema.nullish(),
     content: templateContentSchema.optional(),
     points: templatePointsBodySchema.default([]),
   })
@@ -346,6 +353,8 @@ export const updateAssetTemplateBodySchema = z
     assetType: z.string().min(1).max(64).optional(),
     domain: assetDomainCodeSchema.optional(),
     description: z.string().max(2000).nullish(),
+    /** `E3.1` (ADR 0122 decision 2.5): `null` clears the prefix; left out keeps it. A draft only. */
+    workOrderPrefix: workOrderPrefixSchema.nullish(),
     content: templateContentSchema.optional(),
     points: templatePointsBodySchema.optional(),
   })

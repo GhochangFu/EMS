@@ -1,4 +1,4 @@
-import type { AdminAssetTemplateDto } from "@bms/shared";
+import { WORK_ORDER_PREFIX_PATTERN, type AdminAssetTemplateDto } from "@bms/shared";
 
 /**
  * The Details tab's form rules (`F2.5`, ADR 0038 Unit 9a).
@@ -57,6 +57,8 @@ export type TemplateDetailsForm = {
   assetType: string;
   domain: string;
   description: string;
+  /** `E3.1` / ADR 0122: the work-order reference prefix; `""` = use the asset domain's. */
+  workOrderPrefix: string;
 };
 
 /**
@@ -71,6 +73,8 @@ export type TemplateDetailsPatch = {
   assetType?: string;
   domain?: string;
   description?: string | null;
+  /** `E3.1` / ADR 0122: `null` clears the template's prefix, a string sets it. */
+  workOrderPrefix?: string | null;
 };
 
 /** Field limits, mirroring `updateAssetTemplateBodySchema`. */
@@ -83,7 +87,20 @@ export function detailsFormFrom(template: AdminAssetTemplateDto): TemplateDetail
     assetType: template.assetType,
     domain: template.domain,
     description: template.description ?? "",
+    workOrderPrefix: template.workOrderPrefix ?? "",
   };
+}
+
+/**
+ * `E3.1` / ADR 0122: the message for an invalid work-order prefix, or `null`.
+ * Empty is valid (it means "use the asset domain's prefix").
+ */
+export function workOrderPrefixError(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  return WORK_ORDER_PREFIX_PATTERN.test(trimmed.toUpperCase())
+    ? null
+    : "Two to eight capital letters or digits.";
 }
 
 /**
@@ -117,6 +134,11 @@ export function detailsFormErrors(form: TemplateDetailsForm): Record<string, str
 
   if (form.description.trim().length > LIMITS.description) {
     errors.description = `A description is at most ${LIMITS.description} characters.`;
+  }
+
+  const prefixError = workOrderPrefixError(form.workOrderPrefix);
+  if (prefixError !== null) {
+    errors.workOrderPrefix = prefixError;
   }
 
   return errors;
@@ -163,6 +185,13 @@ export function buildDetailsPatch(
   const next = description === "" ? null : description;
   if (next !== (template.description ?? null)) {
     patch.description = next;
+  }
+
+  // Same three states as `description`: an emptied box is `null`, never `""`.
+  const prefix = form.workOrderPrefix.trim().toUpperCase();
+  const nextPrefix = prefix === "" ? null : prefix;
+  if (nextPrefix !== (template.workOrderPrefix ?? null)) {
+    patch.workOrderPrefix = nextPrefix;
   }
 
   return Object.keys(patch).length === 0 ? null : patch;

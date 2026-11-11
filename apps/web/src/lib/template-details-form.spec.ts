@@ -12,6 +12,7 @@ import {
   buildDetailsPatch,
   detailsFormErrors,
   detailsFormFrom,
+  workOrderPrefixError,
 } from "./template-details-form";
 
 function assert(condition: boolean, message: string): void {
@@ -32,6 +33,7 @@ function template(overrides: Partial<AdminAssetTemplateDto> = {}): AdminAssetTem
     assetType: "chiller",
     domain: "hvac",
     description: "A water-cooled chiller.",
+    workOrderPrefix: null,
     status: "draft",
     content: {},
     publishedAt: null,
@@ -67,7 +69,7 @@ export function runSeedTests(): void {
  * checks mean "has content" rather than "has characters".
  */
 export function runBlankFieldTests(): void {
-  const empty = detailsFormErrors({ name: "", assetType: "", domain: "", description: "" });
+  const empty = detailsFormErrors({ name: "", assetType: "", domain: "", description: "", workOrderPrefix: "" });
   assert(empty.name !== undefined, "a blank name is refused");
   assert(empty.assetType !== undefined, "a blank asset type is refused");
   assert(empty.domain !== undefined, "an unchosen domain is refused");
@@ -78,6 +80,7 @@ export function runBlankFieldTests(): void {
     assetType: "  ",
     domain: " ",
     description: "",
+    workOrderPrefix: "",
   });
   assert(
     spaces.name !== undefined && spaces.assetType !== undefined && spaces.domain !== undefined,
@@ -89,6 +92,7 @@ export function runBlankFieldTests(): void {
     assetType: "chiller",
     domain: "hvac",
     description: "",
+    workOrderPrefix: "",
   });
   assert(Object.keys(ok).length === 0, `a filled form has no errors — got ${Object.keys(ok)}`);
 }
@@ -100,6 +104,7 @@ export function runLengthLimitTests(): void {
     assetType: "a".repeat(65),
     domain: "hvac",
     description: "d".repeat(2001),
+    workOrderPrefix: "",
   });
   assert(long.name !== undefined, "255 is the name cap");
   assert(long.assetType !== undefined, "64 is the asset type cap");
@@ -110,6 +115,7 @@ export function runLengthLimitTests(): void {
     assetType: "a".repeat(64),
     domain: "hvac",
     description: "d".repeat(2000),
+    workOrderPrefix: "",
   });
   assert(
     Object.keys(atCap).length === 0,
@@ -199,4 +205,38 @@ export function runDescriptionThreeStateTests(): void {
     blanked?.description === null,
     `a whitespace-only description clears it — got ${JSON.stringify(blanked?.description)}`,
   );
+}
+
+/**
+ * `E3.1` / ADR 0122: the work-order prefix is a three-state field like
+ * `description` — omitted leaves it, `null` clears it, a string sets it.
+ */
+export function runWorkOrderPrefixTests(): void {
+  const stored = template({ workOrderPrefix: "STP" });
+  assert(detailsFormFrom(stored).workOrderPrefix === "STP", "a stored prefix seeds the form");
+  assert(
+    detailsFormFrom(template({ workOrderPrefix: null })).workOrderPrefix === "",
+    "an absent prefix seeds as an empty string",
+  );
+
+  assert(buildDetailsPatch(detailsFormFrom(stored), stored) === null, "an untouched prefix is not sent");
+  const changed = buildDetailsPatch({ ...detailsFormFrom(stored), workOrderPrefix: "ETP" }, stored);
+  assert(changed?.workOrderPrefix === "ETP", "a changed prefix is sent");
+  assert(Object.keys(changed ?? {}).join(",") === "workOrderPrefix", "only the prefix is sent");
+
+  const cleared = buildDetailsPatch({ ...detailsFormFrom(stored), workOrderPrefix: "" }, stored);
+  assert(cleared !== null && cleared.workOrderPrefix === null, "an emptied prefix sends null, not \"\"");
+  const lower = buildDetailsPatch({ ...detailsFormFrom(stored), workOrderPrefix: "etp" }, stored);
+  assert(lower?.workOrderPrefix === "ETP", "the prefix is sent upper-case");
+
+  const none = template({ workOrderPrefix: null });
+  assert(buildDetailsPatch(detailsFormFrom(none), none) === null, "an absent prefix that stays empty sends nothing");
+
+  assert(workOrderPrefixError("") === null, "empty is valid");
+  assert(workOrderPrefixError("STP") === null, "STP is valid");
+  assert(workOrderPrefixError("A") === "Two to eight capital letters or digits.", "one character is refused");
+  assert(workOrderPrefixError("ABCDEFGHI") !== null, "nine characters are refused");
+  assert(workOrderPrefixError("ST-P") !== null, "a hyphen is refused");
+  const errs = detailsFormErrors({ ...detailsFormFrom(stored), workOrderPrefix: "S" });
+  assert(errs.workOrderPrefix !== undefined, "an invalid prefix makes the form invalid");
 }

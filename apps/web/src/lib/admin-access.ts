@@ -306,6 +306,26 @@ export function canManageServiceAccounts(role: UserRole): boolean {
 }
 
 /**
+ * `E3.1` (ADR 0122 decision 2.4, rulings P8 and R4) — whether the role may open the Asset
+ * Domains screen, where a domain's work-order reference prefix is set. Every route behind
+ * it is the global `admin`'s (`AssetDomainsAdminService.requireGlobalAdmin`), the read
+ * included. Its own predicate, so the page's fail-closed check never moves with another.
+ */
+export function canManageAssetDomains(role: UserRole): boolean {
+  return role === "admin";
+}
+
+/**
+ * `E3.1` (ADR 0122 decisions 3.2 and 4.2) — whether the role may open the Work Order SLA
+ * and the Checklist Templates screens. Both controllers ask for the `configuration`
+ * class and then `isOrganizationLevelAdmin`: the global `admin` and an
+ * `organization_admin`. A `location_admin` holds `configuration` and is still refused.
+ */
+export function canManageWorkOrderSettings(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
+/**
  * `E3.1` (ADR 0122 decision 6.2) — who may approve and close, reject or cancel a work
  * order: the four admin roles. Mirrors the API's `approval` write class
  * (`apps/api/src/auth/operations-write.ts`); an `operator` resolves a ticket and does not
@@ -422,6 +442,13 @@ export const masterDataTabs = [
   // `F4.282` (ADR 0099 Amendment 8 Q17): the unit-role vocabulary, gated like Location Types —
   // every `admin/vocabularies/asset-roles` write is the global `admin`'s (`requireGlobalAdmin`).
   { label: "Unit Roles", path: "/admin/unit-roles", globalAdminOnly: true, area: "reference" },
+  // `E3.1` (ADR 0122 rulings P8 and R4): a domain's work-order reference prefix — the global
+  // `admin`'s on every route, the read included, so the tab is too.
+  { label: "Asset Domains", path: "/admin/work-order-settings/asset-domains", globalAdminOnly: true, area: "reference" },
+  // `E3.1` (ADR 0122 decisions 3.2 and 4.2): the organization's SLA policy and its checklist
+  // templates. `workOrderSettingsAdmin`: both controllers refuse a role below organization admin.
+  { label: "Work Order SLA", path: "/admin/work-order-settings/sla-policies", workOrderSettingsAdmin: true, area: "reference" },
+  { label: "Checklist Templates", path: "/admin/work-order-settings/checklist-templates", workOrderSettingsAdmin: true, area: "reference" },
   // `F4.334` (ADR 0116 decision 5): the MQTT payload format catalog — every write is the global `admin`'s.
   { label: "Payload Formats", path: "/admin/payload-formats", globalAdminOnly: true, area: "reference" },
   // `E4.1a` (ADR 0070 decision 2). Ungated, like Asset Groups above: the API
@@ -495,6 +522,7 @@ export const masterDataTabs = [
   usersAdmin?: true;
   serviceAccountsAdmin?: true;
   trendPointsAdmin?: true;
+  workOrderSettingsAdmin?: true;
 }[];
 
 export type MasterDataTab = (typeof masterDataTabs)[number];
@@ -527,6 +555,9 @@ export function visibleMasterDataTabs(role: UserRole): MasterDataTab[] {
     }
     if ("trendPointsAdmin" in tab && tab.trendPointsAdmin) {
       return canEditTrendPoints(role);
+    }
+    if ("workOrderSettingsAdmin" in tab && tab.workOrderSettingsAdmin) {
+      return canManageWorkOrderSettings(role);
     }
     return true;
   });

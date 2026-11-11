@@ -103,6 +103,7 @@ function templateBase(spec: TemplateSpec) {
     content: {},
     publishedAt: null,
     archivedAt: null,
+    workOrderPrefix: null,
     stockCode: null,
     stockVersion: null,
     createdAt: new Date(0).toISOString(),

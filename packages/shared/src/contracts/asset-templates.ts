@@ -127,6 +127,11 @@ export const adminAssetTemplateDtoSchema = z.object({
   assetType: z.string(),
   domain: z.string(),
   description: z.string().nullable(),
+  /**
+   * `E3.1` (ADR 0122 decision 2.5): this version's work-order reference prefix, or `null`
+   * for the domain's. The column's own `CHECK` holds the pattern.
+   */
+  workOrderPrefix: z.string().nullable(),
   status: assetTemplateStatusSchema,
   /**
    * The `E1.7` overlay. A bare record rather than `TemplateContent` on purpose:

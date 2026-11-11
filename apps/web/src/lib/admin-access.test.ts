@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runAdminAccessTests,
   runCanApproveWorkOrdersTruthTableTest,
+  runWorkOrderSettingsAccessTests,
   runCanMoveLocationsAdminsTest,
   runCanMoveLocationsOthersTest,
   runCanEditTrendPointsAdminsTest,
@@ -139,6 +140,10 @@ describe("admin-access", () => {
 
   it("shows the Edge Gateways tab to the global admin alone (E7.2)", () => {
     runEdgeGatewaysTabIsGlobalAdminOnlyTest();
+  });
+
+  it("gates the three work-order settings tabs: Asset Domains to admin, SLA and templates to organization admins (E3.1)", () => {
+    runWorkOrderSettingsAccessTests();
   });
 
   it("canApproveWorkOrders admits the four admin roles and refuses operator and viewer (E3.1)", () => {

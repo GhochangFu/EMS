@@ -85,6 +85,8 @@ export function stockEntryAsTemplate(entry: StockAssetTemplateDto): AdminAssetTe
     assetType: entry.assetType,
     domain: entry.domain,
     description: entry.description,
+    // A stock catalog entry carries no prefix (ADR 0122 ruling R3).
+    workOrderPrefix: null,
     status: "published",
     content: entry.content,
     publishedAt: null,

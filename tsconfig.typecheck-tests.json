@@ -315,6 +315,7 @@
     "tests/f4.344-mimic-motion-gate.test.ts",
     "tests/e3.1-work-order-reference-sla-schema.test.ts",
     "tests/e3.1-work-order-write-gates.test.ts",
+    "tests/e3.1-work-order-admin-reachable.test.ts",
     "tests/e3.1-work-order-events-schema.test.ts",
     "tests/e3.1-work-order-checklists-schema.test.ts",
     "tests/e3.1-work-order-migration-d-schema.test.ts",

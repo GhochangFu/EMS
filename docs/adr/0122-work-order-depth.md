@@ -569,3 +569,40 @@ API-only, admin-only input.
 
 *Reject, cancel and root cause are plain forms*, not `WizardShell`s: their routes
 are on the catalog's exclusion list.
+
+**As built, 2026-11-11 (PR 7, no migration) — the row is closed.** The admin
+surfaces landed as decisions 2.4, 2.5, 3.2 and 4.2 and rulings P8, R2, R4 and R5
+say. What the plan did not fix:
+
+*The domain route answers the row.* `GET /admin/vocabularies/asset-domains` and
+`PATCH …/:code` are the global `admin`'s, the read included. The body is
+`{ workOrderPrefix }` alone, required and nullable; any other key is a 400. The
+write locks the row and audits `fromWorkOrderPrefix` and `toWorkOrderPrefix` in
+an org-less audit row (`master.asset_domain.update`). A ticket made afterwards
+takes the new prefix; an older one keeps its reference.
+
+*One catalog rule gained an exception.* Ruling Q17 of ADR 0099 Amendment 8 left
+no `/admin/vocabularies/` route on the copilot's exclusion list. The domain
+prefix `PATCH` is on it, by decision 10 of this record; the vocabulary catalog
+spec names that one route.
+
+*The template prefix is a `clientOnly` field* on `assetTemplate.create` and
+`.update` (ruling R5): typed on the page, never filled by the copilot.
+`createDraftFrom` copies it onto the next draft, which is the only place it can
+change once a version is published (ruling R2). A stock import carries none
+(ruling R3).
+
+*Three screens under one route.* `/admin/work-order-settings/asset-domains`,
+`…/sla-policies` and `…/checklist-templates` are nested routes in their own
+file, because `app.tsx` is at the 1000-line cap: it takes one route line. The
+Asset Domains tab is the global `admin`'s; Work Order SLA and Checklist
+Templates are shown to `admin` and `organization_admin`, as the two controllers
+admit; each page fails closed on its own role check before any request.
+
+*The SLA page writes only the organization's own rows.* A row left on the
+platform default is left out of the `PUT`, so it keeps following the default.
+
+*Still not built:* a field for the per-ticket SLA override on the create form
+(API-only, admin-only), and the `chore(agents):` PR that brings AGENTS.md
+section 4.7's matrix, section 4.4's vocabulary list and section 3 up to date
+(plan section 9). `E3.4` closes with this row.

@@ -356,6 +356,7 @@ const TEMPLATE_DTO = {
   assetType: "pump",
   domain: "water",
   description: null,
+  workOrderPrefix: null,
   status: "draft" as const,
   content: { kpis: [] },
   publishedAt: null,

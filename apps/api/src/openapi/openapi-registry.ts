@@ -31,6 +31,7 @@ import {
   updateAssetRoleBodySchema,
   createLocationTypeBodySchema,
   updateLocationTypeBodySchema,
+  updateAssetDomainBodySchema,
   createMimicLayoutBodySchema,
   createMimicOrgSymbolLibraryBodySchema,
   putMimicLayoutBodySchema,
@@ -342,6 +343,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // and `_reactivate` are deliberately absent — no body, no query.
   LocationTypesVocabularyAdminController_create: createLocationTypeBodySchema,
   LocationTypesVocabularyAdminController_update: updateLocationTypeBodySchema,
+  // `E3.1` (ADR 0122 rulings P8 and R4): a domain's work-order prefix, and nothing else.
+  AssetDomainsAdminController_update: updateAssetDomainBodySchema,
   // `F3.67` U4 (ADR 0076 decision 5, plan D4). `_getControlRoomView` is absent
   // — one path parameter, no body, no query, the `EscalationProfilesController_remove`
   // rule above. `SiteViewController_view` (the resolve read) is absent for the

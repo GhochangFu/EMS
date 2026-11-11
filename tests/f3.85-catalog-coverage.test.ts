@@ -74,6 +74,8 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/admin/vocabularies/asset-roles/asset-roles.controller.ts", full: true },
   // `F4.282` (Amendment 8): the release-4 vocabulary controller.
   { file: "apps/api/src/admin/vocabularies/location-types.controller.ts", full: true },
+  // `E3.1` PR 7: the domain prefix route (excluded by name: a global admin's own screen).
+  { file: "apps/api/src/admin/vocabularies/asset-domains.controller.ts", full: true },
   // `F4.278` (Amendment 8): the alarm rules — seven entries, two routes excluded (since `F4.279`).
   { file: "apps/api/src/rules/rules.controller.ts", full: true },
   // `F4.279` (Amendment 8): the notification channels, and the escalation profiles and severity

@@ -119,6 +119,7 @@ function fixture(status = "draft"): AdminAssetTemplateDto {
     content: { kpis: [SITE_LOAD, DOUBLE] },
     publishedAt: status === "published" ? "2026-09-11T00:00:00.000Z" : null,
     archivedAt: null,
+    workOrderPrefix: null,
     stockCode: null,
     stockVersion: null,
     createdAt: "2026-09-11T00:00:00.000Z",

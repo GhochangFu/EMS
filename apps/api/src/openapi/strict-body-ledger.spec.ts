@@ -25,6 +25,7 @@ import {
   updateAssetRoleBodySchema,
   createLocationTypeBodySchema,
   updateLocationTypeBodySchema,
+  updateAssetDomainBodySchema,
   createMimicLayoutBodySchema,
   createMimicOrgSymbolLibraryBodySchema,
   putMimicLayoutBodySchema,
@@ -258,6 +259,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // the primary key `locations.type` references — refused, never dropped.
   createLocationTypeBodySchema,
   updateLocationTypeBodySchema,
+  updateAssetDomainBodySchema,
   createMaintenanceScheduleBodySchema,
   createNotificationChannelBodySchema,
   createOrganizationBodySchema,

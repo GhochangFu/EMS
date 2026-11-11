@@ -8,6 +8,7 @@ import type { z } from "zod";
 
 import type * as E from "../contracts/envelopes";
 import type * as Op from "../contracts/operations";
+import type * as Ad from "../contracts/asset-domain-writes";
 import type * as Wo from "../contracts/work-orders";
 
 export type WorkOrderStatus = z.infer<typeof Op.workOrderStatusSchema>;
@@ -36,3 +37,6 @@ export type WorkOrderChecklistTemplatesResponse = z.infer<typeof Wo.workOrderChe
 export type WorkOrderCauseCodeDto = z.infer<typeof Wo.workOrderCauseCodeDtoSchema>;
 export type WorkOrderCauseCodesResponse = z.infer<typeof Wo.workOrderCauseCodesResponseSchema>;
 export type WorkOrderAlarmSnapshot = z.infer<typeof Wo.workOrderAlarmSnapshotSchema>;
+/** `E3.1` (ADR 0122 rulings P8 and R4): one asset domain on the global admin's prefix screen. */
+export type AdminAssetDomainDto = z.infer<typeof Ad.adminAssetDomainDtoSchema>;
+export type AdminAssetDomainsListResponse = z.infer<typeof Ad.adminAssetDomainsListResponseSchema>;

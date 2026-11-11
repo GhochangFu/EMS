@@ -1,5 +1,7 @@
 import {
   canApproveWorkOrders,
+  canManageAssetDomains,
+  canManageWorkOrderSettings,
   canAccessOnboarding,
   canManageAiAssistant,
   canAuthorDashboards,
@@ -118,6 +120,11 @@ export function runAssetTemplateTabTests(): void {
         "/admin/location-types",
         // `F4.282` (ADR 0099 Amendment 8 Q17) — Unit Roles, `globalAdminOnly` like Location Types.
         "/admin/unit-roles",
+        // `E3.1` (ADR 0122 rulings P8 and R4, decisions 3.2 and 4.2) — Asset Domains
+        // (`globalAdminOnly`), then Work Order SLA and Checklist Templates (`workOrderSettingsAdmin`).
+        "/admin/work-order-settings/asset-domains",
+        "/admin/work-order-settings/sla-policies",
+        "/admin/work-order-settings/checklist-templates",
         // `F4.334` (ADR 0116 decision 5) — Payload Formats, `globalAdminOnly` like Location Types.
         "/admin/payload-formats",
         "/admin/calc-parameters",
@@ -183,7 +190,10 @@ export function runAssetTemplateTabTests(): void {
     // `E7.2` added Edge Gateways as `globalAdminOnly`: `admin` alone goes 24 -> 25.
     // `F4.17` added Service Accounts as `serviceAccountsAdmin` (admin and organization_admin only):
     // 25 -> 26 and 19 -> 20; `location_admin` stays at 11.
-    const expected = role === "location_admin" ? 11 : role === "admin" ? 26 : 20;
+    // `E3.1` added Asset Domains as `globalAdminOnly` and Work Order SLA and Checklist Templates as
+    // `workOrderSettingsAdmin` (admin and organization_admin only): 26 -> 29 and 20 -> 22;
+    // `location_admin` stays at 11.
+    const expected = role === "location_admin" ? 11 : role === "admin" ? 29 : 22;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
@@ -572,4 +582,35 @@ export function runCanApproveWorkOrdersTruthTableTest(): void {
   for (const [role, expected] of Object.entries(table) as Array<[keyof typeof table, boolean]>) {
     assert(canApproveWorkOrders(role) === expected, `${role} must ${expected ? "" : "not "}approve work orders`);
   }
+}
+
+/**
+ * `E3.1` (ADR 0122 rulings P8 and R4; decisions 3.2 and 4.2) — the two work-order
+ * settings predicates, role by role, and the tabs they hide. Asset Domains is the global
+ * `admin`'s; the SLA policy and the checklist templates are an organization-level
+ * administrator's. A `location_admin` sees none of the three.
+ */
+export function runWorkOrderSettingsAccessTests(): void {
+  const table = {
+    admin: [true, true],
+    organization_admin: [false, true],
+    location_admin: [false, false],
+    asset_group_admin: [false, false],
+    operator: [false, false],
+    viewer: [false, false],
+  } as const;
+  for (const [role, [domains, settings]] of Object.entries(table) as Array<[keyof typeof table, readonly [boolean, boolean]]>) {
+    assert(canManageAssetDomains(role) === domains, `${role}: canManageAssetDomains must be ${domains}`);
+    assert(canManageWorkOrderSettings(role) === settings, `${role}: canManageWorkOrderSettings must be ${settings}`);
+  }
+  const DOMAINS = "/admin/work-order-settings/asset-domains";
+  const SLA = "/admin/work-order-settings/sla-policies";
+  const TEMPLATES = "/admin/work-order-settings/checklist-templates";
+  const seen = (role: "admin" | "organization_admin" | "location_admin") => {
+    const paths: readonly string[] = visibleMasterDataTabs(role).map((tab) => tab.path);
+    return [DOMAINS, SLA, TEMPLATES].map((path) => paths.includes(path));
+  };
+  assert(seen("admin").join() === "true,true,true", "admin must see all three tabs");
+  assert(seen("organization_admin").join() === "false,true,true", "organization_admin must see the SLA and template tabs only");
+  assert(seen("location_admin").join() === "false,false,false", "location_admin must see none of the three");
 }

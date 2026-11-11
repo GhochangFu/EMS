@@ -23,7 +23,7 @@ describe("F4.282 — the location-type and unit-role vocabulary entries", () => 
   it("parses each fixed body with the route's body", () => aFixedBodyParsesWithTheRoutesBody());
   it("fixes the two directions of active", () => theFixedBodiesAreTheTwoDirections());
   it("refuses a fixed-body entry with a step", () => theFixedBodyStepRuleIsNotVacuous());
-  it("excludes no vocabulary route", () => noVocabularyRouteIsExcluded());
+  it("excludes no vocabulary route but E3.1's domain work-order prefix", () => noVocabularyRouteIsExcluded());
   it("states the location count on a deactivate card", () => theDeactivateSummaryStatesTheUsage());
   it("names the counted organization on the copilot's deactivate card", () =>
     theCopilotDeactivateSummaryNamesTheCountedOrganization());
