@@ -6,6 +6,7 @@ import {
   runForeignHostRefusedTests,
   runHostPrefixRefusedTests,
   runHostSuffixRefusedTests,
+  runLoopbackBindTests,
   runLoopbackHostAcceptedTests,
   runMethodOverSocketTests,
   runMethodRefusedTests,
@@ -64,6 +65,10 @@ describe("health endpoint request gate (F4.61)", () => {
 describe("health endpoint request gate over a socket (F4.61)", () => {
   it("reports the bound port, not the 0 it was given", async () => {
     await runBoundPortTests();
+  });
+
+  it("binds the listener to 127.0.0.1 only (ADR 0123 Q3b)", async () => {
+    await runLoopbackBindTests();
   });
 
   it("serves GET / and GET /health to a loopback Host", async () => {

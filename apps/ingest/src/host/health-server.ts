@@ -380,9 +380,14 @@ export function refuseHealthRequest(request: {
   return undefined;
 }
 
+/** The only interface the health listener binds (`E7.2`, ADR 0123 Q3b). */
+const HEALTH_BIND_ADDRESS = "127.0.0.1";
+
 export type HealthServer = {
   /** The port the OS bound — not the argument, which is 0 in the tests. */
   readonly port: number;
+  /** The address the OS bound: always `127.0.0.1` (`E7.2`, ADR 0123 Q3b). */
+  readonly address: string;
   close(): Promise<void>;
 };
 
@@ -426,11 +431,14 @@ export function startHealthServer(
 
   return new Promise<HealthServer>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, () => {
+    // Loopback only: the container also joins `edge-uplink` (ADR 0123 Q3b), and
+    // this body is unauthenticated. `127.0.0.1`, not `localhost`, which may be `::1`.
+    server.listen(port, HEALTH_BIND_ADDRESS, () => {
       server.removeListener("error", reject);
       const address = server.address();
       resolve({
         port: typeof address === "object" && address !== null ? address.port : port,
+        address: typeof address === "object" && address !== null ? address.address : HEALTH_BIND_ADDRESS,
         close: () =>
           new Promise<void>((done) => {
             server.close(() => {

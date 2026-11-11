@@ -223,6 +223,39 @@ counters and never part of the verdict.
 - Not built, for the owner to rule on: while `skewed`, stamp `rx` from the
   last trusted cloud time plus monotonic elapsed time.
 
+## Before turning the receiver on (owner checklist)
+
+The public route is `location /edge/` in `deploy/aws/nginx.conf` (ADR 0016
+Amendment 9 (b)). With buffering on, nginx reads up to 300k from an
+unauthenticated client before the receiver's 401; the per-client `limit_req`
+bounds that once enforced, and it is in dry run (log only) until step 5.
+
+1. On the host: Caddy forwards `/edge/*` to the web container; its
+   `X-Forwarded-For` ends with the real client address; nothing sits in front
+   of Caddy; and its request-body limit is at least 300k.
+2. Docker address pools: the deploy creates a new network, `edge-uplink`. Run
+   `docker network ls` first and check the pool has room.
+3. Right after the deploy, with ingest still off: `nginx -t` passes in the web
+   container; `POST /edge/v1/batches` returns 502; and `/`, `/health`, an
+   `/api/` call, a `/socket.io/` handshake and the Keycloak well-known URL
+   behave as before.
+4. To turn it on: add `@bms/db` to `apps/ingest/package.json` and wire the
+   aggregate repair loop FIRST (ADR 0123 Amendment 1). Then set
+   `INGEST_UPLINK_PORT=9103` and start ingest. An unauthenticated POST returns
+   401 with a JSON `error` body; the health port answers on `127.0.0.1` inside
+   the ingest container and is refused from the web container; the ingest log
+   still shows the broker connection (ingest is now on two networks, so its
+   egress bridge may change).
+5. Then remove `limit_req_dry_run on;` (and its assertion in
+   `tests/e7.2-edge-uplink-route.test.ts`). About 30 rapid unauthenticated
+   POSTs from one address should start getting 429 while a second address
+   still gets 401.
+
+Known limits of the route: nginx's own 429 carries no `Retry-After`; the nginx
+upstream port 9103 and `INGEST_UPLINK_PORT` agree by convention only; while
+ingest is off nginx's lookup of `ingest` goes to the host resolver (the same
+pattern as `api` and `keycloak`).
+
 ## What is not yet proved
 
 The plan's §8 outage drill (a real TLS proxy, a real broker, a 20-minute
