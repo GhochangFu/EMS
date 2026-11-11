@@ -10,7 +10,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import { assets, bmsSchema, organizations, users } from "./bms-schema";
+import { assetDomains, assets, bmsSchema, organizations, users } from "./bms-schema";
 import { alarms } from "./alarms-schema";
 
 /**
@@ -142,6 +142,63 @@ export const workOrderEvents = bmsSchema.table("work_order_events", {
     .default(sql`clock_timestamp()`),
 });
 
+/**
+ * E3.1 (ADR 0122 decision 4.2, migration 0145) — a reusable checklist: per organization
+ * and optionally per asset domain (`domain` NULL fits every domain). Its name is unique
+ * in the organization, case-insensitively. Retired with `active = false`, never
+ * deleted. Tenant table under FORCE row security.
+ */
+export const workOrderChecklistTemplates = bmsSchema.table("work_order_checklist_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  domain: varchar("domain", { length: 64 }).references(() => assetDomains.code),
+  active: boolean("active").notNull().default(true),
+  createdBy: uuid("created_by").references(() => users.id),
+  updatedBy: uuid("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * E3.1 (ADR 0122 decision 4.2, migration 0145) — one line of a checklist template. It
+ * carries its own `organizationId` (plan D7); the policy also checks the template's,
+ * and a composite foreign key `(organization_id, template_id)` says the same for a role
+ * the policy does not bind. The key lives in the migration; Drizzle declares the simple
+ * one. A template edit REPLACES its items, so an item id is not stable.
+ */
+export const workOrderChecklistTemplateItems = bmsSchema.table("work_order_checklist_template_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  templateId: uuid("template_id")
+    .notNull()
+    .references(() => workOrderChecklistTemplates.id),
+  title: varchar("title", { length: 255 }).notNull(),
+  mandatory: boolean("mandatory").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * A ticket's checklist (E3.1, ADR 0122 decision 4.1). One row per item, copied from a
+ * template at create as a frozen snapshot, or added by hand.
+ *
+ * `result` is a `CHECK` over `WORK_ORDER_TASK_RESULTS`; a `mandatory` item that is
+ * still `pending` blocks the move to `resolved`. `status` is the legacy column: it
+ * stays and is no longer read (plan D21). Since migration 0145 the policy also checks
+ * the parent work order's organization (ruling P9), and a composite foreign key
+ * `(organization_id, work_order_id)` says the same for `bms_fleet`.
+ */
 export const workOrderTasks = bmsSchema.table("work_order_tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
   // E7.1b: audit-added tenant table (decision 5 "at minimum"). NOT NULL as of
@@ -155,7 +212,17 @@ export const workOrderTasks = bmsSchema.table("work_order_tasks", {
   title: varchar("title", { length: 255 }).notNull(),
   status: varchar("status", { length: 32 }).notNull().default("open"),
   sortOrder: integer("sort_order").notNull().default(0),
+  mandatory: boolean("mandatory").notNull().default(false),
+  result: varchar("result", { length: 16 }).notNull().default("pending"),
+  note: text("note"),
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  completedBy: uuid("completed_by").references(() => users.id),
+  // ON DELETE SET NULL (migration 0145): a template edit replaces its items, and the
+  // copied task must survive it. In the database the key is composite,
+  // `(organization_id, template_item_id)`, and clears this column only.
+  templateItemId: uuid("template_item_id").references(() => workOrderChecklistTemplateItems.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -186,6 +253,10 @@ export const maintenanceTaskTemplates = bmsSchema.table(
     safetyCritical: boolean("safety_critical").notNull().default(false),
     priority: varchar("priority", { length: 32 }).notNull().default("medium"),
     estimatedMinutes: integer("estimated_minutes").notNull().default(60),
+    // E3.1 (ADR 0122 decision 4.3, migration 0145): the checklist a converted schedule's
+    // work order starts with. NULL is none. The migration's composite foreign key keeps
+    // it inside the schedule's own organization.
+    checklistTemplateId: uuid("checklist_template_id").references(() => workOrderChecklistTemplates.id),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
