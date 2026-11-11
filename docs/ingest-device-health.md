@@ -1,8 +1,12 @@
 # Ingest host — device health (`F3.16`, ADR 0127)
 
 Split out of [`ingest-host.md`](./ingest-host.md), which sits at the 1000-line
-mark. The two environment variables, `INGEST_HEALTH_FLUSH_MS` and
-`INGEST_HOST_KEY`, are in that file's *Environment* table.
+mark. The two environment variables that belong to device health:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `INGEST_HEALTH_FLUSH_MS` | `10000` | ADR 0127 decision 16 (`F3.16`). How often the device-health heartbeat and counters are flushed. `1000`–`15000`, so at least two beats land inside the API's 30 s host-stale bound; anything else refuses start-up naming the variable. |
+| `INGEST_HOST_KEY` | `cloud` | ADR 0127 decision 10 (`F3.16`). This host's row in `bms.ingest_hosts`, and the `host_key` on the RTU rows it writes. Trimmed; `[a-z0-9-]{1,64}` or start-up is refused. Two hosts must not share a key. |
 
 The host is the one writer of device health. Nothing here changes the health
 endpoint below; it is a second, database-side record.
