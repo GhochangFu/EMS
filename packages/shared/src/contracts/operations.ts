@@ -718,18 +718,24 @@ export const alarmClassPhilosophySchema = z.object({
  */
 export const alarmDetailsResponseSchema = z.object({
   id: z.string(),
-  assetId: z.string(),
-  /** The alarm's own asset's organization — found needed in review: the
-   * affected-asset picker (ADR 0034 decision 4) must narrow its candidate
-   * list to this organization, or it mixes assets across tenants. */
+  // F3.16 / ADR 0127 decisions 12 and 14: a device alarm has no asset, so
+  // `assetId`, `assetCode`, `assetName`, `assetDomain`, `locationName` and
+  // `siteName` are null on it; `source`, `rtuId` and `rtuCode` as on the list item.
+  assetId: z.string().nullable(),
+  /** The alarm's organization (its asset's, for a rule alarm) — found needed in
+   * review: the affected-asset picker (ADR 0034 decision 4) must narrow its
+   * candidate list to this organization, or it mixes assets across tenants. */
   organizationId: z.string(),
-  assetCode: z.string(),
+  source: alarmSourceSchema,
+  rtuId: z.string().nullable(),
+  rtuCode: z.string().nullable(),
+  assetCode: z.string().nullable(),
   assetRtuName: z.string().nullable(), // F4.316 / ADR 0111
   assetLocationName: z.string().nullable(),
-  assetName: z.string(),
-  assetDomain: z.string(),
-  locationName: z.string(),
-  siteName: z.string(),
+  assetName: z.string().nullable(),
+  assetDomain: z.string().nullable(),
+  locationName: z.string().nullable(),
+  siteName: z.string().nullable(),
   severity: z.string(),
   message: z.string(),
   raisedAt: z.string(),

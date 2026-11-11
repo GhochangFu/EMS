@@ -41,10 +41,11 @@ async function sqlLimitFor(limit: number): Promise<number | undefined> {
       },
     }),
   };
-  // `F4.316`: the list joins `assets`, then left-joins `rtus` and `locations` (ADR 0111).
+  // `F4.316`: the list joins `assets`, then left-joins `rtus` and `locations` (ADR 0111);
+  // `F3.16`: every join is left (a device alarm has no asset), the fourth the alarm's own RTU.
   const joined = { leftJoin: () => ({ leftJoin: () => ({ leftJoin: () => base }) }) };
   const tx = {
-    select: () => ({ from: () => ({ innerJoin: () => joined }) }),
+    select: () => ({ from: () => ({ leftJoin: () => joined }) }),
   };
   const fleetDb = {
     transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),

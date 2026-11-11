@@ -59,7 +59,8 @@ export const getAlarmDetailsTool = defineReadTool({
       throw error;
     }
     const dto = parseStoredContract(alarmDetailsResponseSchema, stored, "copilot_tools.get_alarm_details.result");
-    const organizationId = placed.get(dto.assetId);
+    // F3.16: a device alarm names no asset, so no placement confirms it — refused (fails closed).
+    const organizationId = dto.assetId === null ? undefined : placed.get(dto.assetId);
     if (organizationId === undefined || organizationId !== dto.organizationId) return OUT_OF_SCOPE;
     let textCut = false;
     const cut = (value: string | null, max: number): string | null => {

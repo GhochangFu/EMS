@@ -73,7 +73,8 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
 
   const details = detailsQ.data;
   // F4.316 (ADR 0111): the header label's `· where` part — the RTU's name, or the location's.
-  const headerWhere = details
+  // F3.16: a device alarm has no asset, so no `· where` part.
+  const headerWhere = details && details.assetCode !== null
     ? assetLabelParts({ code: details.assetCode, rtuName: details.assetRtuName, locationName: details.assetLocationName }).where
     : null;
   const pairing = details
@@ -128,7 +129,9 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                 ) : null}
               </span>
               <span className="text-ink-muted">{details.assetName}</span>
-              <AssetHistoryLink assetId={details.assetId} code={details.assetCode} />
+              {details.assetId !== null && details.assetCode !== null ? (
+                <AssetHistoryLink assetId={details.assetId} code={details.assetCode} />
+              ) : null}
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-ink-muted">
               <div>

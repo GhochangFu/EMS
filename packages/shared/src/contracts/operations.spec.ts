@@ -173,6 +173,9 @@ const ALARM_DETAILS = {
   id: "a1",
   assetId: "30000000-0000-4000-8000-000000000001",
   organizationId: "10000000-0000-4000-8000-000000000001",
+  source: "rule",
+  rtuId: null,
+  rtuCode: null,
   assetCode: "CR-Q1",
   assetRtuName: "RTU 1",
   assetLocationName: "Plant A",
@@ -260,6 +263,33 @@ export const assertAlarmDetailsRequiresAssetLocationName = (): void =>
   assertRefusesWithout(alarmDetailsResponseSchema, ALARM_DETAILS, "assetLocationName", "alarmDetailsResponseSchema");
 export const assertAlarmDetailsAcceptsNullParts = (): void =>
   assertAcceptsNullParts(alarmDetailsResponseSchema, ALARM_DETAILS, "alarmDetailsResponseSchema");
+
+/**
+ * `F3.16` / ADR 0127 decision 14 — a device alarm's details carry no asset:
+ * every asset field is null, `source`/`rtuId`/`rtuCode` are required.
+ */
+export function assertAlarmDetailsAcceptsDeviceAlarms(): void {
+  const noAsset = {
+    ...ALARM_DETAILS,
+    assetId: null,
+    assetCode: null,
+    assetRtuName: null,
+    assetLocationName: null,
+    assetName: null,
+    assetDomain: null,
+    locationName: null,
+    siteName: null,
+  };
+  const comms = { ...noAsset, source: "rtu_comms", rtuId: "40000000-0000-4000-8000-000000000001", rtuCode: "RTU-7" };
+  const host = { ...noAsset, source: "ingest_host" };
+  for (const [label, row] of [["rtu_comms", comms], ["ingest_host", host]] as const) {
+    const parsed = alarmDetailsResponseSchema.safeParse(row);
+    assert(parsed.success, `alarmDetailsResponseSchema refused an ${label} alarm: ${JSON.stringify(parsed.error?.issues)}`);
+  }
+  for (const key of ["source", "rtuId", "rtuCode"]) {
+    assertRefusesWithout(alarmDetailsResponseSchema, ALARM_DETAILS, key, "alarmDetailsResponseSchema");
+  }
+}
 
 export const assertAffectedAssetRequiresAssetRtuName = (): void =>
   assertRefusesWithout(alarmAffectedAssetDtoSchema, AFFECTED_ASSET, "assetRtuName", "alarmAffectedAssetDtoSchema");

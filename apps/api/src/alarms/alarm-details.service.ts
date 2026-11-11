@@ -14,7 +14,7 @@ import {
   rtus,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AlarmDetailsResponse, AutomationRuleOperator } from "@bms/shared";
+import { alarmSourceSchema, type AlarmDetailsResponse, type AutomationRuleOperator } from "@bms/shared";
 
 /**
  * One `content.alarms[]` entry as the jsonb pick returns it (`E2.2`, ADR 0059).
@@ -32,12 +32,21 @@ type TemplateAlarmEntry = {
   } | null;
 } | null;
 
+/** `bms.alarms.source` as the contract's enum; a miss is stored data that broke `alarms_source_check` (a 500). */
+function sourceOf(row: { id: string; source: string }): AlarmDetailsResponse["source"] {
+  const parsed = alarmSourceSchema.safeParse(row.source);
+  if (!parsed.success) throw new Error(`alarm ${row.id} has an unknown source`);
+  return parsed.data;
+}
+
 /** A philosophy field is text or it is absent. Anything else is not shown. */
 function philosophyText(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
 import { FLEET_DRIZZLE } from "../database/database.tokens";
+import { alarmRtus } from "./alarm-list-item";
+import { alarmVisibleTo } from "./alarm-scope";
 
 /**
  * `GET /api/v1/alarms/:id/details` (ADR 0034 decision 5).
@@ -70,9 +79,9 @@ export class AlarmDetailsService {
     const [row] = await this.db
       .select({
         id: alarms.id,
-        // The inner-joined asset's id: equal to `alarms.asset_id`, and non-null.
-        // F3.16: the inner join keeps excluding device alarms (no asset) here.
-        assetId: assets.id,
+        // F3.16 (ADR 0127 decisions 12, 14): `assets` and `locations` are left
+        // joins, so a device alarm (no asset) reads with every asset field null.
+        assetId: alarms.assetId,
         severity: alarms.severity,
         message: alarms.message,
         raisedAt: alarms.raisedAt,
@@ -90,7 +99,12 @@ export class AlarmDetailsService {
         assetDomain: assets.domain,
         siteName: assets.siteName,
         locationName: locations.name,
-        organizationId: locations.organizationId,
+        // The alarm's own: equal to the asset's organization for a rule alarm
+        // (migration 0046), and the only one a device alarm has.
+        organizationId: alarms.organizationId,
+        source: alarms.source,
+        rtuId: alarms.rtuId,
+        rtuCode: alarmRtus.code,
         thresholdOperator: automationRules.operator,
         thresholdValue: automationRules.thresholdValue,
         rulePointKey: automationRules.pointKey,
@@ -122,9 +136,10 @@ export class AlarmDetailsService {
         )`,
       })
       .from(alarms)
-      .innerJoin(assets, eq(alarms.assetId, assets.id))
-      .innerJoin(locations, eq(assets.locationId, locations.id))
+      .leftJoin(assets, eq(alarms.assetId, assets.id))
+      .leftJoin(locations, eq(assets.locationId, locations.id))
       .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+      .leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id))
       .leftJoin(automationRules, eq(alarms.ruleId, automationRules.id))
       .leftJoin(alarmEnrichments, eq(alarmEnrichments.alarmId, alarms.id))
       // ADR 0059 decision 9. This service runs on `bms_fleet`, which carries
@@ -145,7 +160,8 @@ export class AlarmDetailsService {
       .where(
         and(
           eq(alarms.id, alarmId),
-          ...(assetIds ? [inArray(alarms.assetId, assetIds)] : []),
+          // F3.16: the one scope rule (ADR 0127 decision 14).
+          ...(assetIds ? [alarmVisibleTo(assetIds)] : []),
         ),
       )
       .limit(1);
@@ -159,7 +175,7 @@ export class AlarmDetailsService {
     // simple ORDER BY + LIMIT `RulesService.latestPointValue` uses is both
     // correct and fast here.
     const currentValue =
-      row.ruleId && row.rulePointKey
+      row.ruleId && row.rulePointKey && row.assetId
         ? (
             await this.db
               .select({ time: pointValues.time, value: pointValues.value, unit: pointValues.unit })
@@ -219,6 +235,9 @@ export class AlarmDetailsService {
       id: row.id,
       assetId: row.assetId,
       organizationId: row.organizationId,
+      source: sourceOf(row),
+      rtuId: row.rtuId,
+      rtuCode: row.rtuCode,
       assetCode: row.assetCode,
       assetRtuName: row.assetRtuName,
       assetLocationName: row.locationName,

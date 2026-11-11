@@ -60,6 +60,8 @@ describe("alarm schemas name the asset's RTU and location (F4.316 PR 2, ADR 0111
 describe("alarm list items carry device alarms (F3.16, ADR 0127 decision 12)", () => {
   it("alarmListItemSchema accepts an rtu_comms and an ingest_host alarm with no asset", () => spec.assertAlarmListItemAcceptsDeviceAlarms());
   it("alarmListItemSchema requires source, rtuId and rtuCode, and closes source", () => spec.assertAlarmListItemRequiresSourceAndRtu());
+  it("alarmDetailsResponseSchema accepts a device alarm with no asset and requires source, rtuId and rtuCode", () =>
+    spec.assertAlarmDetailsAcceptsDeviceAlarms());
 });
 
 describe("work-order and maintenance-schedule items name the asset's RTU and location (F4.316 PR 4a, ADR 0111)", () => {

@@ -196,9 +196,10 @@ export function AlarmEnrichmentWizard({ details, skills, assets, assetsLoading, 
       summary={entry.summary({
         body: values,
         params: { id: details.id },
-        targetName: details.assetName,
+        // F3.16: a device alarm has no asset (the panel offers it no enrichment).
+        targetName: details.assetName ?? "",
         organizationName: "",
-        alarm: { message: details.message, severity: details.severity, assetName: details.assetName, raisedAt: details.raisedAt },
+        alarm: { message: details.message, severity: details.severity, assetName: details.assetName ?? "", raisedAt: details.raisedAt },
       })}
     />
   );
