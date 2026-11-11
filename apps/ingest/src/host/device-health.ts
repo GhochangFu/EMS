@@ -1,4 +1,4 @@
-import type { DropReason } from "@bms/shared/ingest";
+import { type DropReason, INGEST_HOST_STALE_SECONDS } from "@bms/shared/ingest";
 
 import type { EdgeServed } from "./binding-targets.js";
 import type { EndpointPlan } from "./bindings.js";
@@ -86,12 +86,21 @@ export type EndpointDropRow = {
   readonly firstSourceKey: string | null;
 };
 
+/**
+ * The host row's beat. Every instant the row stores (`started_at`,
+ * `healthy_since`, `last_beat_at`) is the database's `now()`, not this host's
+ * clock, because the API judges the beat against the database clock; the flags
+ * say which of them this beat restarts.
+ */
 export type HostBeat = {
   readonly hostKey: string;
-  readonly startedAt: Date;
-  readonly healthySince: Date;
+  /** This host's clock at the drain: the accumulator's missed-beat reference only, never written. */
   readonly beatAt: Date;
   readonly endpoints: number;
+  /** No beat of this process has committed yet: `started_at` and `healthy_since` restart. */
+  readonly restarted: boolean;
+  /** `healthy_since` restarts: at boot, or after no beat committed for more than `INGEST_HOST_STALE_SECONDS`. */
+  readonly healthyReset: boolean;
 };
 
 /** What `monitored_since` must do in this flush. */
@@ -121,7 +130,7 @@ export type DeviceHealth = {
   /** The RTUs the host now serves (cloud endpoints and edge gateways), and the endpoint count. */
   planChanged(rtuIds: Iterable<string>, endpoints: number): void;
   drain(): HealthFlush;
-  /** The flush committed: its beat counts for `healthy_since`. */
+  /** The flush committed: its beat is the reference for the next missed-beat check, and its restart flags are spent. */
   committed(flush: HealthFlush): void;
   /** The flush failed: merge it back. Returns the drops discarded by the hour bound. */
   restore(flush: HealthFlush): { readonly discarded: number };
@@ -130,9 +139,15 @@ export type DeviceHealth = {
 export type DeviceHealthOptions = {
   readonly hostKey: string;
   readonly now: () => Date;
-  /** `INGEST_HEALTH_FLUSH_MS`. A gap of more than two of these since the last committed beat is a missed beat. */
-  readonly flushMs: number;
 };
+
+/**
+ * A gap since the last committed beat longer than this is a missed beat: the
+ * API's host-stale bound, past which it froze every state, so the restart
+ * credit is owed exactly when the states were frozen. One failed flush at
+ * `INGEST_HEALTH_FLUSH_MS` (at most 15 s) stays inside it.
+ */
+const MISSED_BEAT_MS = INGEST_HOST_STALE_SECONDS * 1_000;
 
 type Bucket = { dropped: number; first: DropTally["first"]; bucket: Date; reason: DropReason };
 
@@ -159,10 +174,17 @@ function addTo(map: Map<string, Bucket & { owner: string }>, owner: string, reas
   }
 }
 
+/**
+ * The accumulator one ingest host keeps (ADR 0127 decisions 9, 10 and 17):
+ * RTU activity, hour buckets of drops and the plan's `monitored_since` delta
+ * between flushes, and the heartbeat's restart flags. `options.now` is the
+ * only clock; see the module comment for the call order.
+ */
 export function createDeviceHealth(options: DeviceHealthOptions): DeviceHealth {
   const startedAt = options.now();
-  let healthySince = startedAt;
   let lastCommittedBeat: Date | undefined;
+  let restartPending = true;
+  let healthyResetPending = true;
   let endpoints = 0;
 
   let rtus = new Map<string, { lastSeenAt: Date; skew: { seconds: number; at: Date } | null }>();
@@ -194,17 +216,20 @@ export function createDeviceHealth(options: DeviceHealthOptions): DeviceHealth {
     tallies: DropTallies,
   ): void => {
     for (const [reason, tally] of Object.entries(tallies) as [DropReason, DropTally][]) {
-      addTo(target, owner, reason, {
-        dropped: tally.count,
-        bucket: hourOf(tally.firstAt),
-        reason,
-        first: {
-          assetId: tally.first.assetId,
-          pointKey: cleanLabel(tally.first.pointKey),
-          sourceKey: cleanLabel(tally.first.sourceKey),
-          deviceKey: cleanLabel(tally.first.deviceKey),
-        },
-      });
+      // Each drop lands in the hour of its own receive time (a replayed batch can cross one).
+      for (const hour of tally.hours) {
+        addTo(target, owner, reason, {
+          dropped: hour.count,
+          bucket: hourOf(hour.firstAt),
+          reason,
+          first: {
+            assetId: hour.first.assetId,
+            pointKey: cleanLabel(hour.first.pointKey),
+            sourceKey: cleanLabel(hour.first.sourceKey),
+            deviceKey: cleanLabel(hour.first.deviceKey),
+          },
+        });
+      }
     }
   };
 
@@ -254,11 +279,17 @@ export function createDeviceHealth(options: DeviceHealthOptions): DeviceHealth {
     drain() {
       const now = options.now();
       const reference = lastCommittedBeat ?? startedAt;
-      if (now.getTime() - reference.getTime() > 2 * options.flushMs) {
-        healthySince = now;
+      if (now.getTime() - reference.getTime() > MISSED_BEAT_MS) {
+        healthyResetPending = true;
       }
       const flush: HealthFlush = {
-        host: { hostKey: options.hostKey, startedAt, healthySince, beatAt: now, endpoints },
+        host: {
+          hostKey: options.hostKey,
+          beatAt: now,
+          endpoints,
+          restarted: restartPending,
+          healthyReset: healthyResetPending,
+        },
         rtus: [...rtus].map(([rtuId, r]) => ({
           rtuId,
           lastSeenAt: r.lastSeenAt,
@@ -299,6 +330,8 @@ export function createDeviceHealth(options: DeviceHealthOptions): DeviceHealth {
 
     committed(flush) {
       lastCommittedBeat = flush.host.beatAt;
+      if (flush.host.restarted) restartPending = false;
+      if (flush.host.healthyReset) healthyResetPending = false;
     },
 
     restore(flush) {

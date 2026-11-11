@@ -37,10 +37,16 @@ endpoint below; it is a second, database-side record.
   loaded writes nothing. A failed flush is merged back into memory, keeping at
   most the last 24 hours of buckets, and logged as `device health flush
   failed`.
-- **The heartbeat.** `started_at` is the process start; `healthy_since`
-  restarts at boot and whenever more than two flush intervals pass with no
-  committed beat. The API judges every RTU against `last_beat_at`, so a
-  stopped host freezes RTU state rather than turning the fleet Offline.
+- **The heartbeat.** `started_at` is the process's first committed beat;
+  `healthy_since` restarts there and whenever more than
+  `INGEST_HOST_STALE_SECONDS` (30 s, the API's host-stale bound) pass with no
+  committed beat, so one failed flush is not a missed beat. The API judges
+  every RTU against `last_beat_at`, so a stopped host freezes RTU state rather
+  than turning the fleet Offline.
+- **Clocks.** The host row's three instants are the database's `now()`;
+  `last_seen_at` and `monitored_since` are receive and plan instants on the
+  ingest host's clock, so the state rule assumes the two clocks agree (NTP) to
+  well under the 25 s window floor.
 - **Monitored.** At boot and on each reload the host stamps
   `monitored_since` on every RTU that entered its plan (cloud endpoints and
   edge gateways) and clears it on every RTU that left; the first flush after

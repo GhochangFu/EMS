@@ -5,7 +5,7 @@ import {
   monitoredRtuIds,
   RESTORE_MAX_HOURS,
 } from "./device-health.js";
-import type { DeviceActivity, DropTallies, DropTally } from "./normaliser.js";
+import { type DeviceActivity, type DropTallies, type DropTally, type PointIndex, resolveSamples } from "./normaliser.js";
 
 /**
  * `F3.16` / ADR 0127 decisions 9, 10 and 17 — the in-memory accumulator the
@@ -36,11 +36,8 @@ function clock(start: Date): { now: () => Date; advance: (ms: number) => void; s
 }
 
 function tally(count: number, firstAt: Date, first: Partial<DropTally["first"]> = {}): DropTally {
-  return {
-    count,
-    firstAt,
-    first: { assetId: null, pointKey: null, sourceKey: null, deviceKey: null, ...first },
-  };
+  const named = { assetId: null, pointKey: null, sourceKey: null, deviceKey: null, ...first };
+  return { count, firstAt, first: named, hours: [{ count, firstAt, first: named }] };
 }
 
 function activity(lastReceivedAt: Date, drops: DropTallies = {}, skew: DeviceActivity["skew"] = null): DeviceActivity {
@@ -65,7 +62,7 @@ function record(
 /** Batches sum into the hour of their receive time; the first point in the hour is kept; `drain` empties. */
 export function runAccumulateAndDrainTests(): void {
   const c = clock(BOOT);
-  const health = createDeviceHealth({ hostKey: "cloud", now: c.now, flushMs: FLUSH_MS });
+  const health = createDeviceHealth({ hostKey: "cloud", now: c.now });
   const at1059 = new Date("2026-11-11T10:59:58.000Z");
   const at1100 = new Date("2026-11-11T11:00:03.000Z");
   record(health, {
@@ -111,7 +108,7 @@ export function runAccumulateAndDrainTests(): void {
 /** Skew is the newest device time, in whole seconds, positive when the device is ahead. */
 export function runSkewTests(): void {
   const c = clock(BOOT);
-  const health = createDeviceHealth({ hostKey: "cloud", now: c.now, flushMs: FLUSH_MS });
+  const health = createDeviceHealth({ hostKey: "cloud", now: c.now });
   const rx = new Date("2026-11-11T11:00:00.000Z");
   record(health, { "RTU-1": activity(rx, {}, { deviceTime: new Date(rx.getTime() + 90_400), receivedAt: rx }) });
   const older = new Date(rx.getTime() - 5_000);
@@ -129,7 +126,7 @@ export function runSkewTests(): void {
 /** `restore` merges a failed flush back, keeps the earlier first point, and drops buckets past the bound. */
 export function runRestoreTests(): void {
   const c = clock(new Date("2026-11-12T12:00:00.000Z"));
-  const health = createDeviceHealth({ hostKey: "cloud", now: c.now, flushMs: FLUSH_MS });
+  const health = createDeviceHealth({ hostKey: "cloud", now: c.now });
   const recent = new Date("2026-11-12T11:30:00.000Z");
   const ancient = new Date(recent.getTime() - (RESTORE_MAX_HOURS + 1) * 3_600_000);
   record(health, {
@@ -155,34 +152,52 @@ export function runRestoreTests(): void {
   assert(next.rtus.some((r) => r.rtuId === "rtu-2"), "last-seen is restored even when its drops were too old");
 }
 
-/** `healthy_since` starts at boot and restarts after a missed beat; a failed flush is not a beat. */
+/**
+ * The first committed beat stamps `started_at` and `healthy_since`; after that
+ * `healthy_since` restarts only when no beat committed for longer than
+ * `INGEST_HOST_STALE_SECONDS` — the bound past which the API froze the states —
+ * so one failed flush is not a missed beat. A reset that fails is carried.
+ */
 export function runHeartbeatTests(): void {
   const c = clock(BOOT);
-  const health = createDeviceHealth({ hostKey: "cloud", now: c.now, flushMs: FLUSH_MS });
+  const health = createDeviceHealth({ hostKey: "cloud", now: c.now });
   c.advance(FLUSH_MS);
   const first = health.drain();
-  assert(first.host.startedAt.getTime() === BOOT.getTime(), "started_at is boot");
-  assert(first.host.healthySince.getTime() === BOOT.getTime(), "healthy since boot");
-  health.committed(first);
+  assert(first.host.restarted && first.host.healthyReset, "the first beat stamps started_at and healthy_since");
+  health.restore(first);
+  c.advance(FLUSH_MS);
+  const retry = health.drain();
+  assert(retry.host.restarted && retry.host.healthyReset, "a failed first beat is carried to the next");
+  health.committed(retry);
 
   c.advance(FLUSH_MS);
   const second = health.drain();
-  assert(second.host.healthySince.getTime() === BOOT.getTime(), "an on-time beat keeps healthy_since");
+  assert(!second.host.restarted && !second.host.healthyReset, "an on-time beat keeps both");
   health.restore(second);
 
-  // The flush failed: the next one, 25 s after the last committed beat, finds a gap.
+  // One failed flush: the next is 25 s after the last committed beat, inside the 30 s bound.
   c.advance(15_000);
   const late = health.drain();
-  assert(late.host.healthySince.getTime() === c.now().getTime(), `a missed beat restarts healthy_since: ${late.host.healthySince.toISOString()}`);
-  health.committed(late);
+  assert(!late.host.healthyReset, "a 25 s gap after one failed flush does not restart healthy_since");
+  health.restore(late);
+
+  // Another failure: 31 s since the last committed beat, past the bound.
+  c.advance(6_000);
+  const missed = health.drain();
+  assert(missed.host.healthyReset && !missed.host.restarted, "a 31 s gap restarts healthy_since, not started_at");
+  health.restore(missed);
+  c.advance(1_000);
+  const carried = health.drain();
+  assert(carried.host.healthyReset, "a reset whose flush failed is carried to the next");
+  health.committed(carried);
   c.advance(FLUSH_MS);
-  assert(health.drain().host.healthySince.getTime() === late.host.beatAt.getTime(), "and it holds from there");
+  assert(!health.drain().host.healthyReset, "and it holds from there");
 }
 
 /** `monitored_since` is stamped on plan entry and cleared on exit; the boot plan is a full sweep. */
 export function runPlanTests(): void {
   const c = clock(BOOT);
-  const health = createDeviceHealth({ hostKey: "cloud", now: c.now, flushMs: FLUSH_MS });
+  const health = createDeviceHealth({ hostKey: "cloud", now: c.now });
   health.planChanged(["rtu-1", "rtu-2"], 2);
   const boot = health.drain();
   assert(boot.host.endpoints === 2, "endpoints from the plan");
@@ -214,7 +229,7 @@ export function runPlanTests(): void {
 /** A 200-character source key is cut to 128, and a newline is stripped. */
 export function runLabelCleaningTests(): void {
   const c = clock(BOOT);
-  const health = createDeviceHealth({ hostKey: "cloud", now: c.now, flushMs: FLUSH_MS });
+  const health = createDeviceHealth({ hostKey: "cloud", now: c.now });
   record(
     health,
     { "RTU-1": activity(BOOT, { unmappedSourceKey: tally(1, BOOT, { sourceKey: "s".repeat(200) }) }) },
@@ -238,4 +253,32 @@ export function runMonitoredRtuIdsTests(): void {
     new Map([["gw", { deviceKeys: new Set(["E"]), rtuIdByDeviceKey: new Map([["E", "e"]]), pointIndex: new Map() }]]),
   );
   assert(ids.slice().sort().join() === "a,b,c,e", `cloud and edge RTUs: ${ids.join()}`);
+}
+
+/** A replayed batch crossing an hour lands each drop in the hour of its own receive time, with that hour's first point. */
+export function runHourSplitTests(): void {
+  const c = clock(new Date("2026-11-11T11:00:10.000Z"));
+  const health = createDeviceHealth({ hostKey: "cloud", now: c.now });
+  const target = (pointKey: string) => ({
+    assetId: "a-1", pointKey, unit: null, scaleMultiplier: null, scaleOffset: null, engMin: 0, engMax: 10, qualityPolicy: null,
+  });
+  const index: PointIndex = new Map([["RTU-1", new Map([["lvl", [target("LEVEL")]], ["tank", [target("TANK")]]])]]);
+  const before = new Date("2026-11-11T10:59:58.000Z");
+  const after = new Date("2026-11-11T11:00:01.000Z");
+  const result = resolveSamples(
+    [
+      { receivedAt: before, sample: { deviceKey: "RTU-1", sourceKey: "lvl", value: 11 } },
+      { receivedAt: before, sample: { deviceKey: "RTU-1", sourceKey: "lvl", value: 12 } },
+      { receivedAt: after, sample: { deviceKey: "RTU-1", sourceKey: "tank", value: 13 } },
+      { receivedAt: after, sample: { deviceKey: "RTU-1", sourceKey: "lvl", value: 14 } },
+    ],
+    index,
+  );
+  health.record({ endpointKey: "mqtts://broker:8883", rtuIdOf: (key) => RTU_IDS[key], result });
+  const { drops } = health.drain();
+  const ten = drops.find((d) => d.bucket.getTime() === hourOf(before).getTime());
+  const eleven = drops.find((d) => d.bucket.getTime() === hourOf(after).getTime());
+  assert(ten?.dropped === 2 && ten.firstPointKey === "LEVEL", `10:00 holds its own two: ${JSON.stringify(ten)}`);
+  assert(eleven?.dropped === 2 && eleven.firstPointKey === "TANK", `11:00 holds its own two, first TANK: ${JSON.stringify(eleven)}`);
+  assert(drops.length === 2, `two buckets, got ${drops.length}`);
 }

@@ -278,3 +278,26 @@ export function runDeviceStringCleaningTests(): void {
     `format characters stripped: ${JSON.stringify(cleanLabel("RTU\u202E1-\u200BA\uFEFF\u2066B"))}`,
   );
 }
+
+/** A batch crossing an hour splits each reason's tally by the hour of each drop's own receive time. */
+export function runHourSplitAttributionTests(): void {
+  const before = new Date("2026-11-11T10:59:59.000Z");
+  const after = new Date("2026-11-11T11:00:01.000Z");
+  const result = resolveSamples(
+    [
+      at(before, { deviceKey: "RTU-1", sourceKey: "level", value: 11 }),
+      at(after, { deviceKey: "RTU-1", sourceKey: "shared", value: 6 }),
+      at(after, { deviceKey: "RTU-1", sourceKey: "level", value: 12 }),
+    ],
+    INDEX,
+  );
+  const range = tally(result, "RTU-1", "outOfRange");
+  assert(range.count === 3 && range.first.pointKey === "LEVEL", `the batch tally is unchanged: ${JSON.stringify(range)}`);
+  assert(range.hours.length === 2, `two hours, got ${range.hours.length}`);
+  const [ten, eleven] = range.hours;
+  assert(ten.count === 1 && ten.first.pointKey === "LEVEL" && ten.firstAt.getTime() === before.getTime(), `10:00: ${JSON.stringify(ten)}`);
+  assert(
+    eleven.count === 2 && eleven.first.pointKey === "SHARED_B" && eleven.firstAt.getTime() === after.getTime(),
+    `11:00 names its own first: ${JSON.stringify(eleven)}`,
+  );
+}

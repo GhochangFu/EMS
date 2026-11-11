@@ -35,13 +35,21 @@ export const HEALTH_TRANSACTION_SETTINGS: readonly string[] = [
   "SET LOCAL timezone = 'UTC'",
 ];
 
+/**
+ * Every instant on the host row is the database's `now()` (the transaction's
+ * start), never the host's clock: the API judges `last_beat_at` against the
+ * database clock (`hostStateAt`), and `healthy_since` is compared with
+ * `last_beat_at` in the state rule, so the three share one clock. `$3`
+ * (`restarted`) restarts `started_at` and `healthy_since`; `$4`
+ * (`healthyReset`) restarts `healthy_since` alone.
+ */
 export const UPSERT_HOST = `
   INSERT INTO bms.ingest_hosts (host_key, started_at, healthy_since, last_beat_at, endpoints, updated_at)
-  VALUES ($1, $2, $3, $4, $5, now())
+  VALUES ($1, now(), now(), now(), $2, now())
   ON CONFLICT (host_key) DO UPDATE
-     SET started_at = EXCLUDED.started_at,
-         healthy_since = EXCLUDED.healthy_since,
-         last_beat_at = EXCLUDED.last_beat_at,
+     SET started_at = CASE WHEN $3::boolean THEN now() ELSE bms.ingest_hosts.started_at END,
+         healthy_since = CASE WHEN $3::boolean OR $4::boolean THEN now() ELSE bms.ingest_hosts.healthy_since END,
+         last_beat_at = now(),
          endpoints = EXCLUDED.endpoints,
          updated_at = now()
 `;
@@ -157,7 +165,7 @@ export async function writeDeviceHealth(client: QueryableClient, flush: HealthFl
     for (const setting of HEALTH_TRANSACTION_SETTINGS) {
       await client.query(setting);
     }
-    await client.query(UPSERT_HOST, [host.hostKey, host.startedAt, host.healthySince, host.beatAt, host.endpoints]);
+    await client.query(UPSERT_HOST, [host.hostKey, host.endpoints, host.restarted, host.healthyReset]);
     if (monitoring.keep !== null) {
       await client.query(CLEAR_OUTSIDE_PLAN, [host.hostKey, monitoring.keep]);
     }

@@ -7,6 +7,7 @@ import {
   assertLastSeenOnlyMovesForward,
   assertMonitoredSinceFollowsThePlan,
   assertTenantReadsOnlyItsOwn,
+  assertTheBeatIsTheDatabaseClock,
   cleanUp,
   type Fixture,
   plantFixture,
@@ -73,6 +74,10 @@ describe.skipIf(!connectionString)("F3.16 — the device health flush on a real 
 
   it("stamps and clears monitored_since from the plan", async () => {
     await assertMonitoredSinceFollowsThePlan(fleet as pg.Pool, fixture as Fixture);
+  });
+
+  it("stamps the host row on the database clock, restarting only what the beat flags", async () => {
+    await assertTheBeatIsTheDatabaseClock(fleet as pg.Pool, fixture as Fixture);
   });
 
   it("rolls the beat back with a failing statement", async () => {

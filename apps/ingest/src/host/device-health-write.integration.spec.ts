@@ -57,9 +57,14 @@ export async function cleanUp(fleet: pg.Pool, fixture: Fixture | undefined): Pro
   await fleet.query("DELETE FROM bms.ingest_hosts WHERE host_key = $1", [fixture.hostKey]);
 }
 
-function flush(fixture: Fixture, beatAt: Date, parts: Partial<Omit<HealthFlush, "host">> = {}): HealthFlush {
+function flush(
+  fixture: Fixture,
+  beatAt: Date,
+  parts: Partial<Omit<HealthFlush, "host">> = {},
+  restart: { restarted: boolean; healthyReset: boolean } = { restarted: true, healthyReset: true },
+): HealthFlush {
   return {
-    host: { hostKey: fixture.hostKey, startedAt: HOUR, healthySince: HOUR, beatAt, endpoints: 3 },
+    host: { hostKey: fixture.hostKey, beatAt, endpoints: 3, ...restart },
     rtus: [],
     monitoring: { entered: [], exited: [], keep: null },
     drops: [],
@@ -117,11 +122,8 @@ export async function assertFlushesSumAndKeepTheFirstPoint(fleet: pg.Pool, fixtu
     }),
   );
 
-  const host = await fleet.query(
-    `SELECT started_at, healthy_since, last_beat_at, endpoints FROM bms.ingest_hosts WHERE host_key = $1`,
-    [fixture.hostKey],
-  );
-  expect(host.rows).toEqual([{ started_at: HOUR, healthy_since: HOUR, last_beat_at: t2, endpoints: 3 }]);
+  const host = await fleet.query(`SELECT endpoints FROM bms.ingest_hosts WHERE host_key = $1`, [fixture.hostKey]);
+  expect(host.rows).toEqual([{ endpoints: 3 }]);
 
   const health = await fleet.query(
     `SELECT organization_id, host_key, last_seen_at, clock_skew_seconds, clock_skew_at FROM bms.rtu_health WHERE rtu_id = $1`,
@@ -274,4 +276,42 @@ export async function assertTenantReadsOnlyItsOwn(fleet: pg.Pool, tenant: pg.Poo
   } finally {
     client.release();
   }
+}
+
+type HostRow = { started_at: Date; healthy_since: Date; last_beat_at: Date; lag_ms: number };
+
+async function hostRow(fleet: pg.Pool, fixture: Fixture): Promise<HostRow> {
+  const result = await fleet.query<HostRow>(
+    `SELECT started_at, healthy_since, last_beat_at,
+            (extract(epoch FROM now() - last_beat_at) * 1000)::float8 AS lag_ms
+       FROM bms.ingest_hosts WHERE host_key = $1`,
+    [fixture.hostKey],
+  );
+  expect(result.rows).toHaveLength(1);
+  return result.rows[0];
+}
+
+/**
+ * The host row is stamped on the database clock (the one `hostStateAt` judges it on), never
+ * the host's `beatAt`; `started_at` and `healthy_since` move only when the beat's flags say so.
+ */
+export async function assertTheBeatIsTheDatabaseClock(fleet: pg.Pool, fixture: Fixture): Promise<void> {
+  const hostClock = new Date("2000-01-01T00:00:00.000Z");
+  await write(fleet, flush(fixture, hostClock));
+  const boot = await hostRow(fleet, fixture);
+  expect(boot.last_beat_at.getTime(), "never the host's clock").not.toBe(hostClock.getTime());
+  expect(boot.lag_ms, "the database's now()").toBeLessThan(60_000);
+  expect(boot.started_at).toEqual(boot.last_beat_at);
+  expect(boot.healthy_since).toEqual(boot.last_beat_at);
+
+  await write(fleet, flush(fixture, hostClock, {}, { restarted: false, healthyReset: false }));
+  const onTime = await hostRow(fleet, fixture);
+  expect(onTime.last_beat_at.getTime()).toBeGreaterThan(boot.last_beat_at.getTime());
+  expect(onTime.started_at, "an on-time beat keeps started_at").toEqual(boot.started_at);
+  expect(onTime.healthy_since, "and healthy_since").toEqual(boot.healthy_since);
+
+  await write(fleet, flush(fixture, hostClock, {}, { restarted: false, healthyReset: true }));
+  const missed = await hostRow(fleet, fixture);
+  expect(missed.healthy_since, "a missed beat restarts healthy_since at the beat").toEqual(missed.last_beat_at);
+  expect(missed.started_at, "but not started_at").toEqual(boot.started_at);
 }

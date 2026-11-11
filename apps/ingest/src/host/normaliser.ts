@@ -211,12 +211,21 @@ export type DropFirst = {
   readonly deviceKey: string | null;
 };
 
-/** One reason's count in a batch, with its first drop and that drop's receive time. */
-export type DropTally = {
+/** A count, with its first drop and that drop's receive time. */
+export type HourTally = {
   readonly count: number;
   readonly first: DropFirst;
   readonly firstAt: Date;
 };
+
+/**
+ * One reason's count in a batch, with its first drop and that drop's receive
+ * time. `hours` splits it by the whole UTC hour of each drop's own receive
+ * time, in first-drop order (a replayed batch can cross an hour): their counts
+ * sum to `count`, each names the first drop in its hour, and `hours[0]` is the
+ * tally's own first.
+ */
+export type DropTally = HourTally & { readonly hours: readonly HourTally[] };
 
 /** Per reason; a reason with no drop has no key. */
 export type DropTallies = Readonly<Partial<Record<DropReason, DropTally>>>;
@@ -270,7 +279,11 @@ export function cleanLabel(value: string | null | undefined): string | null {
   return points.length <= MAX_LABEL_CHARS ? stripped : points.slice(0, MAX_LABEL_CHARS).join("");
 }
 
-type MutableTally = { count: number; first: DropFirst; firstAt: Date };
+type MutableHour = { count: number; first: DropFirst; firstAt: Date };
+type MutableTally = MutableHour & { hours: MutableHour[] };
+
+const HOUR_MS = 3_600_000;
+const hourIndex = (at: Date): number => Math.floor(at.getTime() / HOUR_MS);
 type MutableTallies = Partial<Record<DropReason, MutableTally>>;
 type MutableActivity = {
   lastReceivedAt: Date;
@@ -311,18 +324,26 @@ class Attribution {
     first: { assetId: string | null; pointKey: string | null; sourceKey: string; deviceKey: string | undefined },
   ): void {
     const tallies = activity === undefined ? this.unattributed : activity.drops;
-    const existing = tallies[reason];
-    if (existing !== undefined) {
-      existing.count += 1;
-      return;
-    }
-    const named: DropFirst = {
+    const name = (): DropFirst => ({
       assetId: first.assetId,
       pointKey: first.pointKey,
       sourceKey: cleanLabel(first.sourceKey),
       deviceKey: cleanLabel(first.deviceKey),
-    };
-    tallies[reason] = { count: 1, first: named, firstAt: receivedAt };
+    });
+    const existing = tallies[reason];
+    if (existing !== undefined) {
+      existing.count += 1;
+      const hour = hourIndex(receivedAt);
+      const inHour = existing.hours.find((h) => hourIndex(h.firstAt) === hour);
+      if (inHour !== undefined) {
+        inHour.count += 1;
+      } else {
+        existing.hours.push({ count: 1, first: name(), firstAt: receivedAt });
+      }
+      return;
+    }
+    const named = name();
+    tallies[reason] = { count: 1, first: named, firstAt: receivedAt, hours: [{ count: 1, first: named, firstAt: receivedAt }] };
     if (this.firstDropped[reason] === undefined) {
       this.firstDropped[reason] = named;
     }

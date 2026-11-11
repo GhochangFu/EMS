@@ -5,6 +5,7 @@ import {
   runDeviceStringCleaningTests,
   runFanOutAttributionTests,
   runFirstDropPerReasonTests,
+  runHourSplitAttributionTests,
   runLastSeenAndSkewTests,
   runUnattributedTests,
 } from "./normaliser-attribution.spec.js";
@@ -29,6 +30,10 @@ describe("host normaliser — device attribution (F3.16, ADR 0127 decisions 8 an
 
   it("accounts for every drop: devices plus unattributed equals droppedCount", () => {
     runAttributionSumTests();
+  });
+
+  it("splits a reason's tally by the hour of each drop's receive time", () => {
+    runHourSplitAttributionTests();
   });
 
   it("cuts device strings to 128 characters and strips control characters", () => {

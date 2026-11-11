@@ -76,7 +76,6 @@ async function main(): Promise<void> {
   const deviceHealth = createDeviceHealth({
     hostKey: hostConfig.hostKey,
     now: realScheduler.now,
-    flushMs: hostConfig.healthFlushMs,
   });
 
   // Opened before any database connection is attempted. A directory that

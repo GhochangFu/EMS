@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runAccumulateAndDrainTests,
   runHeartbeatTests,
+  runHourSplitTests,
   runLabelCleaningTests,
   runMonitoredRtuIdsTests,
   runPlanTests,
@@ -24,8 +25,12 @@ describe("device health accumulator (F3.16, ADR 0127 decisions 9, 10, 17)", () =
     runRestoreTests();
   });
 
-  it("restarts healthy_since after a missed beat", () => {
+  it("restarts healthy_since only past the host-stale bound, carrying a failed reset", () => {
     runHeartbeatTests();
+  });
+
+  it("buckets a batch crossing an hour by each drop's own receive time", () => {
+    runHourSplitTests();
   });
 
   it("stamps monitored_since on plan entry and clears it on exit", () => {
