@@ -28,12 +28,11 @@ import { errorKind, type HostLogger } from "./logger.js";
  * twice (M11), so a host that hammered it would fail more refreshes, not
  * fewer.
  *
- * **The refresh is injected** (`refresh(from, to)`): `main.ts` will pass
- * `@bms/db`'s `refreshAggregatesFrom` over the host's pool once
- * `apps/ingest/package.json` depends on `@bms/db` (plan P8, owed; see
- * `docs/ingest-host.md` *The uplink receiver*). Until then the loop is not
- * started and windows accumulate on the gateway rows — durable, so nothing is
- * lost, only not yet repaired.
+ * **The refresh is injected** (`refresh(from, to)`): `main.ts` passes
+ * `@bms/db`'s `refreshAggregatesFrom` over the host's pool and runs the pass
+ * on a 10 s tick while the uplink listener is on (see `docs/ingest-host.md`
+ * *The uplink receiver*). The unit spec injects a fake; the integration spec
+ * uses the real refresh.
  */
 
 /** One gateway's recorded window. `fromKey`/`toKey` are the stored values as text. */
@@ -119,7 +118,7 @@ export const REPAIR_MIN_INTERVAL_MS = 60_000;
 
 export type AggregateRepairDeps = {
   readonly store: RepairStore;
-  /** `refreshAggregatesFrom(pool, from, to)` from `@bms/db`, once wired. */
+  /** `refreshAggregatesFrom(pool, from, to)` from `@bms/db` in `main.ts`; a fake in the unit spec. */
   readonly refresh: (from: Date, to: Date) => Promise<void>;
   readonly now: () => Date;
   readonly logger: HostLogger;
@@ -131,7 +130,7 @@ export type AggregateRepair = {
   runOnce(): Promise<void>;
 };
 
-/** Builds the repair pass. The caller owns the timer (`main.ts`, once wired). */
+/** Builds the repair pass. The caller owns the timer (`main.ts`). */
 export function createAggregateRepair(deps: AggregateRepairDeps): AggregateRepair {
   const minIntervalMs = deps.minIntervalMs ?? REPAIR_MIN_INTERVAL_MS;
   const lastPass = new Map<string, number>();

@@ -1,9 +1,11 @@
 import { resolve } from "node:path";
 
+import { refreshAggregatesFrom } from "@bms/db";
 import { config as loadDotenv } from "dotenv";
 import pg from "pg";
 
 import { lookupAdapter } from "./adapter/registry.js";
+import { createAggregateRepair, createRepairStore } from "./host/aggregate-repair.js";
 import { type EdgeServed, edgeServedCounts } from "./host/binding-targets.js";
 import {
   loadBindingRows,
@@ -55,6 +57,9 @@ import { decryptCredentials, resolveMqttConnection } from "./rtu-config.js";
 
 /** The most shutdown waits for the uplink listener before stopping the supervisors. */
 const UPLINK_CLOSE_LIMIT_MS = 5_000;
+
+/** How often the aggregate repair pass looks for dirty windows (plan T3.7). */
+const REPAIR_TICK_MS = 10_000;
 
 async function main(): Promise<void> {
   const pkgRoot = process.cwd();
@@ -287,6 +292,7 @@ async function main(): Promise<void> {
   // E7.2 (ADR 0123 decision 4): the edge uplink receiver, off unless
   // INGEST_UPLINK_PORT is set. Every decision is in `host/uplink-*.ts`.
   let uplink: UplinkServer | undefined;
+  let repairTimer: ReturnType<typeof setInterval> | undefined;
   if (hostConfig.uplinkPort !== undefined) {
     const uplinkLogger = logger.child({ subsystem: "uplink" });
     uplink = await startUplinkServer(hostConfig.uplinkPort, {
@@ -302,26 +308,19 @@ async function main(): Promise<void> {
       maxConnections: hostConfig.uplinkMaxConnections,
       logger: uplinkLogger,
     });
-    // ── AGGREGATE REPAIR: THE ONE WIRING POINT (ADR 0123 decision 11) ───────
-    // Owed: once `apps/ingest/package.json` depends on `@bms/db` (plan P8),
-    // replace this warning with
-    //   const repair = createAggregateRepair({
-    //     store: createRepairStore(pool),
-    //     refresh: (from, to) => refreshAggregatesFrom(pool, from, to),
-    //     now: realScheduler.now,
-    //     logger: logger.child({ subsystem: "aggregate-repair" }),
-    //   });
-    //   const repairTimer = setInterval(() => void repair.runOnce(), 10_000);
-    // — a 10 s tick: `runOnce` already holds each gateway to one pass a
-    // minute and never overlaps itself, so the tick only bounds how long a
-    // new window waits for its first pass — and `clearInterval(repairTimer)`
-    // in `shutdown` below. Until then a late
-    // batch's window is recorded on `bms.edge_gateways` and stays there —
-    // durable, so nothing is lost, only not yet folded into the aggregates.
-    uplinkLogger.warn(
-      "aggregate repair is not wired; dirty windows will accumulate on bms.edge_gateways until it is",
-      { owed: "E7.2 PR 3 follow-up: @bms/db dependency (plan P8)" },
-    );
+    // ── AGGREGATE REPAIR (ADR 0123 decision 11, plan T3.4/T3.7) ─────────────
+    // A late batch's window is recorded on `bms.edge_gateways` in the write's
+    // own transaction; this pass refreshes it and clears it only on success.
+    // A 10 s tick: `runOnce` already holds each gateway to one pass a minute
+    // and never overlaps itself, so the tick only bounds how long a new
+    // window waits for its first pass. `runOnce` never rejects.
+    const repair = createAggregateRepair({
+      store: createRepairStore(pool),
+      refresh: (from, to) => refreshAggregatesFrom(pool, from, to),
+      now: realScheduler.now,
+      logger: logger.child({ subsystem: "aggregate-repair" }),
+    });
+    repairTimer = setInterval(() => void repair.runOnce(), REPAIR_TICK_MS);
   }
 
   // E7.2 (ADR 0123 decision 6): RTUs the edge serves are in no endpoint and no
@@ -423,6 +422,7 @@ async function main(): Promise<void> {
     logger.info("shutting down", { signal });
     void (async () => {
       clearInterval(reloadTimer);
+      clearInterval(repairTimer);
       // Stop taking batches first: an edge whose post fails keeps it on disk.
       // Bounded, so no client can keep the supervisors from stopping (H1):
       // `close()` itself destroys every socket after its 2 s grace.

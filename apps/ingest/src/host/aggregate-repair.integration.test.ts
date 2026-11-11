@@ -1,7 +1,10 @@
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
-import { assertCompareAndClearOnTheRealTable } from "./aggregate-repair.integration.spec.js";
+import {
+  assertARepairPassFoldsALateBatchIntoTheAggregates,
+  assertCompareAndClearOnTheRealTable,
+} from "./aggregate-repair.integration.spec.js";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate.js";
 
 /**
@@ -30,5 +33,9 @@ describe.skipIf(!connectionString)("E7.2 — the aggregate repair store on a rea
 
   it("keeps a window that moved and clears one that did not", async () => {
     await assertCompareAndClearOnTheRealTable(pool as pg.Pool);
+  });
+
+  it("folds a 6 h late batch into _1m and _1h in one pass and clears its window", { timeout: 120_000 }, async () => {
+    await assertARepairPassFoldsALateBatchIntoTheAggregates(pool as pg.Pool);
   });
 });
