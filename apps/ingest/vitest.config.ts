@@ -12,5 +12,7 @@ export default defineProject({
     name: "ingest",
     environment: "node",
     include: ["src/**/*.test.js", "src/**/*.test.ts"],
+    // `F4.5` (ADR 0124): the run's database for this file, before the file imports.
+    setupFiles: ["../../vitest.worker-setup.ts"],
   },
 });

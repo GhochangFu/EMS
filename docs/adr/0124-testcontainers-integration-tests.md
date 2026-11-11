@@ -291,6 +291,32 @@ program next to the repo's 24, and Node 18's `ProcessEnv` fails an existing call
 use) run native install scripts; `pnpm.neverBuiltDependencies` lists both, so `pnpm install`
 does not run them. `ssh2` falls back to plain JavaScript.
 
+**PR 2 refinements (drafter, 2026-11-11; no ruling changes).** Wiring the harness in showed
+five things the decisions above did not spell out:
+
+- **`BMS_TEST_DB=none`.** A fifth mode: start nothing, change nothing. CI's
+  `docs-only-tests` job sets it, because it runs the `repo` project on a runner with Docker and
+  no `DATABASE_URL`, and would otherwise start and prepare containers it never uses. So the
+  *Consequences* line "the `docs-only-tests` job is unchanged" no longer holds: that job gains
+  one environment variable and nothing else. A database suite that runs under `none` still meets
+  its own gate (skip locally, refuse under `CI`).
+- **A run that selects no database project starts nothing.** The global setup reads the selected
+  projects; `--project web`, `shared` or `db` start no container and do not probe Docker.
+  Within the `api`, `ingest` or `repo` projects a run with Docker and no `DATABASE_URL` still
+  starts the containers (about 15 s), as ruling 6 says; `BMS_TEST_DB=none` is the opt-out.
+- **Only database suites are touched.** A unit test file keeps the environment the run started
+  with, so no unit file waits on Postgres.
+- **An external template needs `db:roles`' database-scoped statements.** The external mode does
+  not run `db:roles` (it would reset other people's role passwords), but a fresh template still
+  needs `CREATE EXTENSION btree_gist`; the harness runs exactly the `CREATE EXTENSION`
+  statements of `db:roles`' own list. Found by the external-mode case of the harness test,
+  which failed `db:migrate` with `42704` before the fix.
+- **The ratchet counts 343 database suites, not 318.** 318 was the count of
+  `*.integration.test.ts` files when this record was drafted. The ratchet's rule also counts any
+  test file that calls an integration gate, itself or through its `.spec` sibling (today that adds
+  `dashboards.service.mimic.test.ts` and the two gates' own unit tests), and `main` has grown
+  since. The batches work from 343.
+
 ## Open questions for the owner (in order)
 
 All nine answered 2026-11-10 (see *Rulings*). Kept as asked, for the record.

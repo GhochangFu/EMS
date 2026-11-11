@@ -3,7 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startRedis, startTimescale, type StartedServer } from "./harness/containers";
 import { dockerAnswers } from "./harness/docker";
 import { pg, type PgQueryable } from "./harness/pg";
-import { buildTemplate, copyDatabase, TEMPLATE_DATABASE } from "./harness/template-database";
+import {
+  buildTemplate,
+  copyDatabase,
+  dropRunDatabases,
+  TEMPLATE_DATABASE,
+} from "./harness/template-database";
 import { testInfraMode } from "./harness/test-infra-mode";
 import { resolveRoleUrls, withDatabase, workerDatabaseEnv } from "./harness/worker-database";
 
@@ -132,4 +137,43 @@ describe.runIf(run)("F4.5 harness against real containers", () => {
       await Promise.allSettled([one.quit(), two.quit()]);
     }
   });
+
+  /**
+   * The external mode end to end (PR 2 code review, finding 1): this container stands in for a
+   * server someone else owns. Roles already exist there (`beforeAll` ran `db:roles`), so the
+   * external build skips it and seeds with the caller's own `bms_owner` URL — the shape CI's
+   * service database and a developer's compose database take once a suite leaves the list.
+   */
+  it("builds, copies and drops a run-prefixed set on an external server, leaving its other databases", async () => {
+    const server = (postgres as StartedServer).url;
+    const prefix = "bms_tf45ext01";
+    const owner = new URL(server);
+    owner.username = "bms_owner";
+    owner.password = "bms_owner_dev";
+
+    await buildTemplate(server, { server: "external", database: `${prefix}_template`, ownerUrl: owner.toString() });
+    await copyDatabase(server, `${prefix}_template`, `${prefix}_w1`, "external");
+    await copyDatabase(server, `${prefix}_template`, `${prefix}_w2`, "external");
+
+    const one = pool(withDatabase(server, `${prefix}_w1`));
+    const two = pool(withDatabase(server, `${prefix}_w2`));
+    await one.query(
+      "INSERT INTO bms.organizations (code, name, currency) VALUES ('F45-EXT', 'F4.5 external probe', 'INR')",
+    );
+    expect((await one.query("SELECT 1 FROM bms.organizations WHERE code = 'F45-EXT'")).rowCount).toBe(1);
+    expect((await two.query("SELECT 1 FROM bms.organizations WHERE code = 'F45-EXT'")).rowCount).toBe(0);
+    await Promise.all([one.end(), two.end()]);
+    pools.splice(pools.indexOf(one), 1);
+    pools.splice(pools.indexOf(two), 1);
+
+    await dropRunDatabases(server, prefix);
+
+    const maintenance = pool(withDatabase(server, "postgres"));
+    const left = await maintenance.query<{ datname: string }>(
+      "SELECT datname FROM pg_database WHERE datname LIKE 'bms%' ORDER BY datname",
+    );
+    const names = left.rows.map((row) => row.datname);
+    expect(names.filter((name) => name.startsWith(prefix))).toEqual([]);
+    expect(names).toEqual(expect.arrayContaining([TEMPLATE_DATABASE, "bms_w1", "bms_w2"]));
+  }, 180_000);
 });

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 import { pg, type PgClient } from "./pg";
@@ -44,6 +45,23 @@ const INIT_SQL =
   "CREATE EXTENSION IF NOT EXISTS timescaledb; " +
   "CREATE SCHEMA IF NOT EXISTS bms AUTHORIZATION bms_app; " +
   "CREATE SCHEMA IF NOT EXISTS telemetry AUTHORIZATION bms_app;";
+
+const requireFromDb = createRequire(new URL("../../packages/db/package.json", import.meta.url));
+
+/**
+ * The database-scoped statements of `db:roles` (today `CREATE EXTENSION btree_gist`, which
+ * migration `0074`'s exclusion constraint needs). On a server this run started, `db:roles` runs
+ * them; on an external server it must not run (it would reset other people's role passwords), but
+ * a fresh template database still needs them, so they run on their own. Read from `db:roles`' own
+ * list rather than copied, so a new one is picked up. Found by the external-mode case of the
+ * harness test, which failed `db:migrate` with `42704` without it (PR 2).
+ */
+export function databaseScopedProvisioning(): string[] {
+  const { ROLE_PROVISIONING_SQL } = requireFromDb("./dist/roles.js") as {
+    ROLE_PROVISIONING_SQL: readonly string[];
+  };
+  return ROLE_PROVISIONING_SQL.filter((statement) => /^\s*CREATE EXTENSION\b/i.test(statement));
+}
 
 const PLAIN_NAME = /^bms_(template|shared|w[0-9]{1,2})$/;
 const PREFIXED_NAME = /^bms_t[a-z0-9]{6,12}_(template|shared|w[0-9]{1,2})$/;
@@ -125,6 +143,11 @@ export async function buildTemplate(superuserUrl: string, options: BuildTemplate
   await init.connect();
   try {
     await init.query(INIT_SQL);
+    if (options.server === "external") {
+      for (const statement of databaseScopedProvisioning()) {
+        await init.query(statement);
+      }
+    }
   } finally {
     await init.end();
   }
