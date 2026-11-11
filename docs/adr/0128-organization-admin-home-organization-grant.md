@@ -2,10 +2,12 @@
 
 ## Status
 
-**Proposed — 2026-11-11.** Drafted by an agent for backlog row `F4.340` (P1
-defect). Nothing is ruled yet: every line marked *(recommended)* is a
-recommendation, and the owner rules the numbered questions under *Open
-questions*. The step-3 plan is
+**Accepted — 2026-11-11** (owner, in chat: "record the rulings and accept
+ADR 0128"; proposed the same day). Drafted by an agent for backlog row
+`F4.340` (P1 defect). The owner ruled the six questions one at a time on
+2026-11-11 and **chose the recommended option on every one**, so every line
+marked *(recommended)* below is now a ruling, and each question under *Open
+questions* carries its ruling. The step-3 plan is
 [`docs/plans/f4.340-org-admin-default-scope.md`](../plans/f4.340-org-admin-default-scope.md).
 Accepting this record does not approve the plan: no code is written before
 the owner says "yes" to the plan.
@@ -89,31 +91,32 @@ Read from `main` at `9c8c6f1`:
    on each host. A migration would run on every host and would re-add a grant
    an admin deliberately removed, against the F3.78 ruling.
 
-## Open questions
+## Open questions — all ruled as recommended (owner, 2026-11-11)
 
 1. **Q1 — Where the fix lives.** Options: (a) the server writes the
    home-organization grant in the create transaction; (b) the home
    organization is an implicit scope in `directOrganizationIds`; (c) the
-   wizard sends a second `POST …/grants` after create. **Recommended: (a).**
+   wizard sends a second `POST …/grants` after create. **Recommended: (a).** **Ruled: (a)** — the server adds the grant.
    (b) is rejected above; (c) is two requests, so a failed second call leaves
    the same defect, and the copilot's `user.create` path would not get it.
 2. **Q2 — Promotion.** Should a role change to `organization_admin` also add
    the home grant? **Recommended: yes**, same transaction, idempotent.
+   **Ruled: yes.**
 3. **Q3 — Audit shape.** Options: (a) two rows (`master.user.create` +
    `master.user_grant.add`); (b) one row with the grant in its payload.
    **Recommended: (a)** — anyone reading grant history finds it where every
-   other grant is.
+   other grant is. **Ruled: (a)**, two audit rows.
 4. **Q4 — Other roles.** Warn only (Review line + Users-list flag), or also
-   auto-grant something? **Recommended: warn only.**
+   auto-grant something? **Recommended: warn only.** **Ruled: warn only.**
 5. **Q5 — Existing org admins on AWS.** Options: (a) a one-off runbook SQL
    the owner runs after reading the listing; (b) a data migration that grants
    every `organization_admin` without one. **Recommended: (a).** On the demo
    the one known case (`bcpl-admin`) was already fixed by hand, so the listing
-   is expected to be empty.
+   is expected to be empty. **Ruled: (a)**, runbook listing + Grants screen.
 6. **Q6 — The Users-list flag needs data.** Add `hasEffectiveGrant: boolean`
    to `adminUserDtoSchema` (additive, ADR 0030), computed on `bms_fleet` in
    the list query? **Recommended: yes**; the alternative is one grants request
-   per row from the page.
+   per row from the page. **Ruled: yes**, the field on the list.
 
 ## Consequences
 
