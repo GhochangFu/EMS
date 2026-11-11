@@ -3,6 +3,9 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aDeviceAlarmHidesTheAssetSections,
+  aDeviceAlarmsHeaderNamesItsRtuOrTheIngestHost,
+  aRuleAlarmKeepsTheAssetSections,
   detailsLoadFailureReadsTheEnvelopeSentence,
   enrichmentSaveRefusalShowsTheServerSentence,
   keepsTheClassBlockDistinctFromTheInstanceEnrichment,
@@ -80,5 +83,17 @@ describe("E2.2 — the class philosophy on the Alarm Details panel", () => {
 
   it("F4.316 the affected assets list their labels", async () => {
     await theAffectedAssetsListTheirLabels();
+  });
+
+  it("F3.16 a device alarm's header names its RTU or the ingest host", async () => {
+    await aDeviceAlarmsHeaderNamesItsRtuOrTheIngestHost();
+  });
+
+  it("F3.16 a device alarm hides the asset link, the asset rows and the enrichment", async () => {
+    await aDeviceAlarmHidesTheAssetSections();
+  });
+
+  it("F3.16 a rule alarm keeps the asset link, the asset rows and the enrichment form", async () => {
+    await aRuleAlarmKeepsTheAssetSections();
   });
 });

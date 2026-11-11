@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -110,7 +110,7 @@ async function renderPanel(payload: AlarmDetailsResponse, readOnly = false): Pro
     </QueryClientProvider>,
   );
   await waitFor(() => {
-    expect(screen.getByText("Bearing temperature above 85 C")).toBeTruthy();
+    expect(screen.getByText(payload.message)).toBeTruthy();
   });
 }
 
@@ -338,4 +338,71 @@ export async function theAffectedAssetsListTheirLabels(): Promise<void> {
     true,
   );
   expect(screen.getByText("PMP-02 · RTU 2, PMP-03 · Plant B")).toBeInTheDocument();
+}
+
+/* F3.16 (plan B6, ADR 0127 decisions 12 and 14) — a device alarm has no asset. */
+
+const NO_ASSET = {
+  assetId: null,
+  assetCode: null,
+  assetRtuName: null,
+  assetLocationName: null,
+  assetName: null,
+  assetDomain: null,
+  locationName: null,
+  siteName: null,
+  ruleId: null,
+  thresholdOperator: null,
+  thresholdValue: null,
+  currentValue: null,
+  currentValueUnit: null,
+  currentValueAt: null,
+} as const;
+
+const RTU_DETAILS = details({
+  ...NO_ASSET,
+  source: "rtu_comms",
+  rtuId: "rtu-7",
+  rtuCode: "RTU-07",
+  message: "Communication lost: Pump house RTU",
+});
+const HOST_DETAILS = details({ ...NO_ASSET, source: "ingest_host", message: "Ingest host not reporting" });
+
+/** The header names the RTU (`RTU <code>`) or the ingest host where the asset would be. */
+export async function aDeviceAlarmsHeaderNamesItsRtuOrTheIngestHost(): Promise<void> {
+  await renderPanel(RTU_DETAILS);
+  expect(byWholeText("RTU RTU-07")).toBeInTheDocument();
+  cleanup();
+  await renderPanel(HOST_DETAILS);
+  expect(byWholeText("Ingest host")).toBeInTheDocument();
+}
+
+/** No asset link, no asset Type/Location rows, and no enrichment (it needs an asset) — for either role. */
+export async function aDeviceAlarmHidesTheAssetSections(): Promise<void> {
+  for (const [payload, readOnly] of [
+    [RTU_DETAILS, false],
+    [HOST_DETAILS, false],
+    [RTU_DETAILS, true],
+  ] as const) {
+    await renderPanel(payload, readOnly);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByRole("link", { name: /History of/ }), "no asset history link").toBeNull();
+    expect(within(dialog).queryByText("Type"), "no asset type").toBeNull();
+    expect(within(dialog).queryByText("Location"), "no asset location").toBeNull();
+    expect(within(dialog).queryByLabelText("Root cause"), "no enrichment form").toBeNull();
+    expect(within(dialog).queryByText("No enrichment recorded yet."), "no enrichment block").toBeNull();
+    expect(dialog.textContent, "no null leaks into the panel").not.toMatch(/null/);
+    expect(within(dialog).getByText("Triggered")).toBeInTheDocument();
+    cleanup();
+  }
+}
+
+/** A rule alarm keeps every asset section: the link, Type, Location and the enrichment form. */
+export async function aRuleAlarmKeepsTheAssetSections(): Promise<void> {
+  await renderPanel(details());
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByRole("link", { name: "History of PMP-01" })).toBeInTheDocument();
+  expect(within(dialog).getByText("Type")).toBeInTheDocument();
+  expect(within(dialog).getByText("Location")).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Root cause")).toBeInTheDocument();
 }

@@ -388,3 +388,30 @@ export async function theCodeStaysOnOneLine(): Promise<void> {
   const code = within(await railRow("Alarm message 1")).getByText("CR-Q1");
   expect(code).toHaveClass("whitespace-nowrap");
 }
+
+/**
+ * `F3.16` (plan B6, ADR 0127 decision 12): a device alarm has no asset — the rail names
+ * its RTU (`RTU <code>`) or the ingest host where the asset label would be, and a rule
+ * alarm in the same feed renders as before.
+ */
+export async function aDeviceAlarmNamesItsRtuOrTheIngestHost(): Promise<void> {
+  const noAsset = {
+    assetId: null,
+    assetCode: null,
+    assetRtuName: null,
+    assetLocationName: null,
+    assetName: null,
+    siteName: null,
+  };
+  renderRail({
+    items: [
+      alarm(1, { ...noAsset, source: "rtu_comms", rtuId: "rtu-7", rtuCode: "RTU-07", message: "Communication lost: Pump house" }),
+      alarm(2, { ...noAsset, source: "ingest_host", message: "Ingest host not reporting" }),
+      alarm(3),
+    ],
+  });
+  expect(byWholeText(await railRow("Communication lost: Pump house"), "RTU RTU-07")).toBeInTheDocument();
+  expect(byWholeText(await railRow("Ingest host not reporting"), "Ingest host")).toBeInTheDocument();
+  expect(byWholeText(await railRow("Alarm message 3"), "CR-Q1 · RTU 1")).toBeInTheDocument();
+  expect((await railRow("Ingest host not reporting")).textContent).not.toMatch(/null/);
+}

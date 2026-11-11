@@ -334,3 +334,73 @@ export async function theAssetCellsWherePartWraps(): Promise<void> {
   expect(where).not.toHaveClass("truncate");
   expect(where).toHaveClass("whitespace-normal");
 }
+
+/* -------------------------------------------------------------------------- */
+/* F3.16 (plan B6, ADR 0127 decisions 12 and 14) — device alarms in the grid    */
+/* -------------------------------------------------------------------------- */
+
+const DEVICE_FIELDS = {
+  assetId: null,
+  assetCode: null,
+  assetRtuName: null,
+  assetLocationName: null,
+  assetName: null,
+  siteName: null,
+  ruleId: null,
+} as const;
+const RTU_ALARM = alarm({
+  id: "d1",
+  ...DEVICE_FIELDS,
+  severity: "info",
+  message: "Communication lost: Pump house RTU",
+  source: "rtu_comms",
+  rtuId: "rtu-7",
+  rtuCode: "RTU-07",
+});
+const HOST_ALARM = alarm({
+  id: "d2",
+  ...DEVICE_FIELDS,
+  message: "Ingest host not reporting",
+  source: "ingest_host",
+});
+const RULE_ALARM = alarm({ id: "a1", assetCode: "CR-Q1", message: "Voltage above limit" });
+
+/** The Asset cell names the RTU (`RTU <code>`) or the ingest host where an asset would be. */
+export async function aDeviceAlarmNamesItsRtuOrTheIngestHost(): Promise<void> {
+  await renderPage([RTU_ALARM, HOST_ALARM, RULE_ALARM]);
+  expect(byWholeText(rowFor("Communication lost"), "RTU RTU-07")).toBeInTheDocument();
+  expect(byWholeText(rowFor("Ingest host not reporting"), "Ingest host")).toBeInTheDocument();
+  expect(byWholeText(rowFor("Voltage above limit"), "CR-Q1 · RTU 1"), "a rule alarm renders as before").toBeInTheDocument();
+  for (const message of ["Communication lost", "Ingest host not reporting"]) {
+    expect(rowFor(message).textContent, "no null leaks into a device row").not.toMatch(/null/);
+  }
+}
+
+/** A work order needs an asset, so a device row offers none; Details and Ack stay. */
+export async function aDeviceAlarmHidesTheAssetOnlyActions(): Promise<void> {
+  await renderPage([RTU_ALARM, HOST_ALARM, RULE_ALARM]);
+  for (const message of ["Communication lost", "Ingest host not reporting"]) {
+    const row = rowFor(message);
+    expect(within(row).queryByRole("button", { name: "Work order" }), `${message}: no work order`).toBeNull();
+    expect(within(row).getByRole("button", { name: "Details" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Ack" })).toBeInTheDocument();
+  }
+  expect(within(rowFor("Voltage above limit")).getByRole("button", { name: "Work order" })).toBeInTheDocument();
+}
+
+/** Acknowledging a device alarm sends its id, and the Review card names the device. */
+export async function aDeviceAlarmIsAcknowledged(): Promise<void> {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("no fetch expected"))),
+  );
+  const ack = vi.spyOn(alarmsApi, "ackAlarm").mockResolvedValue({ ...RTU_ALARM, acknowledgedAt: ACK_AT });
+  await renderPage([RTU_ALARM, RULE_ALARM]);
+  await userEvent.click(within(rowFor("Communication lost")).getByRole("button", { name: "Ack" }));
+  const dialog = screen.getByRole("dialog");
+  await userEvent.type(within(dialog).getByLabelText("Reason (required)"), "RTU power restored");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  expect(within(dialog).getByText(/on RTU RTU-07, raised/)).toBeInTheDocument();
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+  expect(ack.mock.calls[0]?.slice(0, 2)).toEqual(["d1", "RTU power restored"]);
+}

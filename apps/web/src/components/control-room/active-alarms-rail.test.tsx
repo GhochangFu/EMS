@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 import { onlineManager } from "@tanstack/react-query";
 
 import {
+  aDeviceAlarmNamesItsRtuOrTheIngestHost,
   emptyIdsFetchNoActiveList,
   emptyIdsFetchNoSummary,
   failedAssetReadDoesNotSayLoading,
@@ -151,5 +152,9 @@ describe("F3.28 active alarms rail", () => {
 
   it("keeps the asset code on one line", async () => {
     await theCodeStaysOnOneLine();
+  });
+
+  it("F3.16 names a device alarm's RTU or the ingest host; a rule alarm renders as before", async () => {
+    await aDeviceAlarmNamesItsRtuOrTheIngestHost();
   });
 });

@@ -7,6 +7,7 @@ import { fetchAssets } from "../api/assets";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { alarmSkillLabel, formatThresholdPairing } from "../lib/alarm-details";
+import { deviceAlarmLabel } from "../lib/alarm-source";
 import { alarmSeverityTone } from "../lib/alarm-severity";
 import { alarmLifecycleState, alarmStateLabel } from "../lib/alarm-state";
 import { AssetHistoryLink } from "./assets/asset-history-link";
@@ -63,10 +64,12 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
   // see). Gated on `detailsQ.data` so it never fires with an undefined
   // `organizationId`, which would silently fetch the unscoped list.
   const organizationId = detailsQ.data?.organizationId;
+  // F3.16: a device alarm has no asset and so no enrichment form to feed.
+  const hasAsset = detailsQ.data !== undefined && detailsQ.data.assetId !== null;
   const assetsQ = useQuery({
     queryKey: ["assets", "picker", organizationId],
     queryFn: () => fetchAssets(organizationId),
-    enabled: !!organizationId,
+    enabled: !!organizationId && hasAsset,
     staleTime: 5 * 60 * 1000,
   });
   const assets = assetsQ.data ?? [];
@@ -118,28 +121,37 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
           <div className="mt-4 space-y-4 text-sm">
             <div className="flex items-center gap-2">
               <StatusPill label={details.severity} tone={alarmSeverityTone(details.severity, severities)} />
-              {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates. */}
-              <span className="font-medium">
-                <span className="whitespace-nowrap">{details.assetCode}</span>
-                {headerWhere !== null ? (
-                  <span className="whitespace-normal">
-                    {ASSET_LABEL_SEPARATOR}
-                    {headerWhere}
-                  </span>
-                ) : null}
-              </span>
-              <span className="text-ink-muted">{details.assetName}</span>
+              {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates.
+                  F3.16: a device alarm names its RTU or the ingest host, with no asset link. */}
               {details.assetId !== null && details.assetCode !== null ? (
-                <AssetHistoryLink assetId={details.assetId} code={details.assetCode} />
-              ) : null}
+                <>
+                  <span className="font-medium">
+                    <span className="whitespace-nowrap">{details.assetCode}</span>
+                    {headerWhere !== null ? (
+                      <span className="whitespace-normal">
+                        {ASSET_LABEL_SEPARATOR}
+                        {headerWhere}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="text-ink-muted">{details.assetName}</span>
+                  <AssetHistoryLink assetId={details.assetId} code={details.assetCode} />
+                </>
+              ) : (
+                <span className="font-medium">{deviceAlarmLabel(details)}</span>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-ink-muted">
-              <div>
-                <span className="font-semibold text-ink">Type</span> {details.assetDomain}
-              </div>
-              <div>
-                <span className="font-semibold text-ink">Location</span> {details.locationName}
-              </div>
+              {hasAsset ? (
+                <>
+                  <div>
+                    <span className="font-semibold text-ink">Type</span> {details.assetDomain}
+                  </div>
+                  <div>
+                    <span className="font-semibold text-ink">Location</span> {details.locationName}
+                  </div>
+                </>
+              ) : null}
               <div>
                 <span className="font-semibold text-ink">Triggered</span>{" "}
                 {new Date(details.raisedAt).toLocaleString()}
@@ -225,7 +237,9 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
               </section>
             ) : null}
 
-            {readOnly ? (
+            {/* F3.16: an enrichment names affected assets and is written against the alarm's
+                asset scope, so a device alarm (no asset) shows none and offers none. */}
+            {!hasAsset ? null : readOnly ? (
               details.enrichment ? (
                 <dl className="space-y-2 text-xs">
                   <div>

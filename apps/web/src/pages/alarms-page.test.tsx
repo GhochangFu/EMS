@@ -4,6 +4,9 @@ import { cleanup } from "@testing-library/react";
 
 import {
   ackRefusalShowsTheServerSentence,
+  aDeviceAlarmHidesTheAssetOnlyActions,
+  aDeviceAlarmIsAcknowledged,
+  aDeviceAlarmNamesItsRtuOrTheIngestHost,
   aReasonThatTrimsShortStaysOnTheReasonStep,
   countsActiveAsUnclearedAndAcknowledgedAsStamped,
   offersAckOnExactlyTheUnacknowledgedRows,
@@ -65,5 +68,17 @@ describe("F3.10 alarm lifecycle on the alarms page", () => {
 
   it("F4.316 the Asset cell's where part wraps, never truncates", async () => {
     await theAssetCellsWherePartWraps();
+  });
+
+  it("F3.16 a device alarm names its RTU or the ingest host; a rule alarm renders as before", async () => {
+    await aDeviceAlarmNamesItsRtuOrTheIngestHost();
+  });
+
+  it("F3.16 a device alarm hides the work order and keeps Details and Ack", async () => {
+    await aDeviceAlarmHidesTheAssetOnlyActions();
+  });
+
+  it("F3.16 a device alarm is acknowledged, the Review card naming the device", async () => {
+    await aDeviceAlarmIsAcknowledged();
   });
 });

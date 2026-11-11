@@ -5,6 +5,7 @@ import type { AlarmDetailsResponse, AlarmSkillDto } from "@bms/shared";
 import { saveAlarmEnrichment } from "../api/alarms";
 import type { AssetRow } from "../api/assets";
 import { alarmSkillLabel, toLocalDateTimeInputValue } from "../lib/alarm-details";
+import { alarmSubjectName } from "../lib/alarm-source";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { filterAssetsByQuery, toggleAssetSelection } from "../lib/asset-picker";
 import { operationsWizardEntry } from "./alarm-ack-wizard";
@@ -196,10 +197,10 @@ export function AlarmEnrichmentWizard({ details, skills, assets, assetsLoading, 
       summary={entry.summary({
         body: values,
         params: { id: details.id },
-        // F3.16: a device alarm has no asset (the panel offers it no enrichment).
-        targetName: details.assetName ?? "",
+        // F3.16: the panel offers a device alarm no enrichment; named as the ack wizard names it.
+        targetName: alarmSubjectName(details),
         organizationName: "",
-        alarm: { message: details.message, severity: details.severity, assetName: details.assetName ?? "", raisedAt: details.raisedAt },
+        alarm: { message: details.message, severity: details.severity, assetName: alarmSubjectName(details), raisedAt: details.raisedAt },
       })}
     />
   );
