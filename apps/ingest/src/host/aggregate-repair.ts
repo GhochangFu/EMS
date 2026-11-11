@@ -116,6 +116,40 @@ export function createRepairStore(db: RepairQueryable): RepairStore {
 /** Minimum time between two passes over the same gateway. */
 export const REPAIR_MIN_INTERVAL_MS = 60_000;
 
+/**
+ * Security review L3: two windows whose gap is at most this share one refresh.
+ * One hour is the `_1h` bucket — `refreshAggregatesFrom` widens every range to
+ * whole buckets anyway, so a gap under an hour would be refreshed twice at
+ * that level. Wider gaps stay apart, so a range never spans days of untouched
+ * data at the fine levels.
+ */
+export const REPAIR_MERGE_GAP_MS = 3_600_000;
+
+/** One refresh range and the windows it covers. */
+export type RepairRange = {
+  readonly from: Date;
+  readonly to: Date;
+  readonly windows: readonly DirtyWindow[];
+};
+
+/** Merges windows that overlap or sit within `gapMs` of each other into ranges, oldest first. */
+export function mergeDirtyWindows(windows: readonly DirtyWindow[], gapMs: number): RepairRange[] {
+  const sorted = [...windows].sort((a, b) => a.from.getTime() - b.from.getTime());
+  const ranges: { from: Date; to: Date; windows: DirtyWindow[] }[] = [];
+  for (const window of sorted) {
+    const last = ranges[ranges.length - 1];
+    if (last !== undefined && window.from.getTime() - last.to.getTime() <= gapMs) {
+      last.windows.push(window);
+      if (window.to.getTime() > last.to.getTime()) {
+        last.to = window.to;
+      }
+    } else {
+      ranges.push({ from: window.from, to: window.to, windows: [window] });
+    }
+  }
+  return ranges;
+}
+
 export type AggregateRepairDeps = {
   readonly store: RepairStore;
   /** `refreshAggregatesFrom(pool, from, to)` from `@bms/db` in `main.ts`; a fake in the unit spec. */
@@ -136,25 +170,32 @@ export function createAggregateRepair(deps: AggregateRepairDeps): AggregateRepai
   const lastPass = new Map<string, number>();
   let running = false;
 
-  async function repairOne(window: DirtyWindow): Promise<void> {
+  async function repairRange(range: RepairRange): Promise<void> {
     try {
-      await deps.refresh(window.from, window.to);
+      await deps.refresh(range.from, range.to);
     } catch (error) {
-      // The window stays: it is cleared only on success, so the next pass retries it.
-      deps.logger.warn("aggregate repair failed; window kept", { gatewayId: window.gatewayId, ...errorKind(error) });
+      // Every window stays: each is cleared only on success, so the next pass retries it.
+      deps.logger.warn("aggregate repair failed; window kept", {
+        gatewayIds: range.windows.map((w) => w.gatewayId).join(","),
+        ...errorKind(error),
+      });
       return;
     }
-    const cleared = await deps.store.clear(window);
-    if (cleared) {
-      deps.logger.info("aggregate window repaired", {
-        gatewayId: window.gatewayId,
-        from: window.from.toISOString(),
-        to: window.to.toISOString(),
-      });
-    } else {
-      deps.logger.info("dirty window moved during refresh; kept for the next pass", {
-        gatewayId: window.gatewayId,
-      });
+    // Each window is cleared on its own compare-and-clear: one that moved
+    // while the range was refreshed is kept, whatever happened to the others.
+    for (const window of range.windows) {
+      const cleared = await deps.store.clear(window);
+      if (cleared) {
+        deps.logger.info("aggregate window repaired", {
+          gatewayId: window.gatewayId,
+          from: window.from.toISOString(),
+          to: window.to.toISOString(),
+        });
+      } else {
+        deps.logger.info("dirty window moved during refresh; kept for the next pass", {
+          gatewayId: window.gatewayId,
+        });
+      }
     }
   }
 
@@ -166,14 +207,16 @@ export function createAggregateRepair(deps: AggregateRepairDeps): AggregateRepai
       running = true;
       try {
         const windows = await deps.store.listDirty();
-        for (const window of windows) {
-          const nowMs = deps.now().getTime();
+        const nowMs = deps.now().getTime();
+        const due = windows.filter((window) => {
           const last = lastPass.get(window.gatewayId);
-          if (last !== undefined && nowMs - last < minIntervalMs) {
-            continue;
-          }
+          return last === undefined || nowMs - last >= minIntervalMs;
+        });
+        for (const window of due) {
           lastPass.set(window.gatewayId, nowMs);
-          await repairOne(window);
+        }
+        for (const range of mergeDirtyWindows(due, REPAIR_MERGE_GAP_MS)) {
+          await repairRange(range);
         }
       } catch (error) {
         deps.logger.error("aggregate repair pass failed", errorKind(error));

@@ -642,14 +642,18 @@ never clears a generation it did not refresh. A batch whose every sample was
 screened out still records the gateway.
 
 **Aggregate repair runs with the receiver.** The repair pass
-(`src/host/aggregate-repair.ts`) lists each dirty window, refreshes it with
-`@bms/db`'s `refreshAggregatesFrom`, and clears it only on success with a
-compare-and-clear on the stored bounds and generation, at most once a minute
-per gateway. `main.ts` starts it on a 10 s tick whenever `INGEST_UPLINK_PORT`
+(`src/host/aggregate-repair.ts`) lists the dirty windows that are due (at
+most once a minute per gateway), merges those that overlap or lie within an
+hour of each other into one range (`REPAIR_MERGE_GAP_MS`, security review
+L3), refreshes each range once with `@bms/db`'s `refreshAggregatesFrom`, and
+then clears each window on its own compare-and-clear on the stored bounds and
+generation — so a window that moved during the refresh is kept while the
+others clear. Many sites returning from one outage therefore cost one refresh,
+not one per gateway. `main.ts` starts it on a 10 s tick whenever `INGEST_UPLINK_PORT`
 is set, and clears the timer on shutdown; with no listener there is nothing to
-repair, so it does not start. A failed refresh is one `warn` line
-("aggregate repair failed; window kept") and the window waits for the next
-pass; a repaired one is one `info` line ("aggregate window repaired"). A
+repair, so it does not start. A failed refresh is one `warn` line per range
+("aggregate repair failed; window kept", with `gatewayIds`) and every window
+in it waits for the next pass; a repaired one is one `info` line ("aggregate window repaired"). A
 `55P03` retry inside `refreshAggregatesFrom` also writes its own plain-text
 `[F4.1] … retrying` line to stderr, outside the JSON logger. The
 host's role (`bms_fleet` in compose) refreshes through `SET ROLE bms_rollup`,
@@ -659,12 +663,9 @@ first pass after a deploy repairs them. `aggregate-repair.integration.spec.ts`
 holds the case: a batch 6 h late reaches `_1m` and `_1h` after one pass and
 its window clears.
 
-**Known limits** (security review L3, L4):
+**Known limits** (security review L4; L3, one refresh per window, is fixed
+by the merge above):
 
-- **One refresh per gateway window, not per pass.** Each gateway's window is
-  refreshed on its own, so many sites returning from one outage refresh
-  overlapping ranges many times. Merging the windows of a pass into one
-  refresh range is still owed; the wiring did not change it.
 - **A token can overwrite its own history.** A valid token may post any value
   for its own gateway's points with an `rx` up to 6 d 12 h old, and the upsert
   replaces what was stored at that key, with no audit trail of the overwrite.
