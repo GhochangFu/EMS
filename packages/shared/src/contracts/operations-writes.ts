@@ -1,7 +1,8 @@
 import { z } from "zod";
 
-import { alarmSkillCodeSchema, workOrderPrioritySchema, workOrderStatusSchema } from "./operations";
+import { alarmSkillCodeSchema, assetDomainCodeSchema, workOrderPrioritySchema, workOrderStatusSchema } from "./operations";
 import { WORK_ORDER_SLA_MAX_MINUTES } from "../work-order-sla";
+import { workOrderTaskResultSchema } from "./work-orders";
 
 /**
  * `F4.284` (ADR 0106 decision 7, ADR 0030) — the request bodies of the alarm
@@ -79,10 +80,83 @@ export const createWorkOrderBodySchema = z
     priority: workOrderPrioritySchema.default("medium"),
     assignedTo: z.string().uuid().optional(),
     dueAt: z.string().datetime({ offset: true }).optional(),
-    /** `E3.1` (ADR 0122 decision 3.2): wins over the organization's policy for this one ticket. */
+    /**
+     * `E3.1` (ADR 0122 decision 3.2): wins over the organization's policy for this one
+     * ticket. Administrators only (owner ruling, 2026-11-11): the route refuses an
+     * `operator` who sends it.
+     */
     slaMinutes: workOrderSlaMinutesSchema.optional(),
+    /** `E3.1` (ADR 0122 decision 4.3): the checklist template whose items are copied onto the ticket. */
+    checklistTemplateId: z.string().uuid().optional(),
   })
   .strict();
+
+const checklistItemTitle = z.string().min(2).max(255);
+
+/** `POST /work-orders/:id/tasks` (`E3.1`, ADR 0122 decision 4.3): one checklist item added by hand. */
+export const createWorkOrderTaskBodySchema = z
+  .object({
+    title: checklistItemTitle,
+    mandatory: z.boolean().default(false),
+  })
+  .strict();
+
+/**
+ * `PATCH /work-orders/:id/tasks/:taskId` (`E3.1`, ADR 0122 decision 4): the item's
+ * result, its note, or both. `note: null` clears the note.
+ */
+export const updateWorkOrderTaskBodySchema = z
+  .object({
+    result: workOrderTaskResultSchema.optional(),
+    note: z.string().max(2000).nullable().optional(),
+  })
+  .strict()
+  .refine((body) => body.result !== undefined || body.note !== undefined, {
+    message: "Send a result, a note, or both",
+  })
+  .describe("At least one of result and note must be sent.");
+
+/** One line of a checklist template, as it is written (`E3.1`, ADR 0122 decision 4.2). */
+export const workOrderChecklistTemplateItemInputSchema = z
+  .object({
+    title: checklistItemTitle,
+    mandatory: z.boolean().default(false),
+  })
+  .strict();
+
+const checklistTemplateName = z.string().min(3).max(255);
+/** An asset domain code, or null for a template that fits every domain. The route checks the code exists. */
+const checklistTemplateDomain = assetDomainCodeSchema.nullable();
+/** The order of the array is the order of the checklist. */
+const checklistTemplateItems = z.array(workOrderChecklistTemplateItemInputSchema).min(1).max(100);
+
+/** `POST /admin/work-order-checklist-templates`. */
+export const createWorkOrderChecklistTemplateBodySchema = z
+  .object({
+    organizationId: z.string().uuid(),
+    name: checklistTemplateName,
+    domain: checklistTemplateDomain.optional(),
+    items: checklistTemplateItems,
+  })
+  .strict();
+
+/**
+ * `PATCH /admin/work-order-checklist-templates/:id`. `items`, when sent, REPLACES the
+ * template's whole list; a ticket that already copied the old items keeps them
+ * (decision 4.3). `active: false` retires the template.
+ */
+export const updateWorkOrderChecklistTemplateBodySchema = z
+  .object({
+    name: checklistTemplateName.optional(),
+    domain: checklistTemplateDomain.optional(),
+    active: z.boolean().optional(),
+    items: checklistTemplateItems.optional(),
+  })
+  .strict()
+  .refine((body) => Object.values(body).some((value) => value !== undefined), {
+    message: "Send at least one field to change",
+  })
+  .describe("At least one of name, domain, active and items must be sent.");
 
 /** One row of `PUT /admin/work-order-sla-policies` (`E3.1`, ADR 0122 decision 3.2). */
 export const workOrderSlaPolicyInputSchema = z
@@ -161,6 +235,10 @@ export type AlarmAckBody = z.infer<typeof alarmAckBodySchema>;
 export type AlarmEnrichmentUpsertBody = z.infer<typeof alarmEnrichmentUpsertBodySchema>;
 export type CreateWorkOrderBody = z.infer<typeof createWorkOrderBodySchema>;
 export type PutWorkOrderSlaPoliciesBody = z.infer<typeof putWorkOrderSlaPoliciesBodySchema>;
+export type CreateWorkOrderTaskBody = z.infer<typeof createWorkOrderTaskBodySchema>;
+export type UpdateWorkOrderTaskBody = z.infer<typeof updateWorkOrderTaskBodySchema>;
+export type CreateWorkOrderChecklistTemplateBody = z.infer<typeof createWorkOrderChecklistTemplateBodySchema>;
+export type UpdateWorkOrderChecklistTemplateBody = z.infer<typeof updateWorkOrderChecklistTemplateBodySchema>;
 /** What a caller sends: the defaulted `priority` may be left out. */
 export type CreateWorkOrderInput = z.input<typeof createWorkOrderBodySchema>;
 export type UpdateWorkOrderStatusBody = z.infer<typeof updateWorkOrderStatusBodySchema>;

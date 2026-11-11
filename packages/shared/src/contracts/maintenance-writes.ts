@@ -33,6 +33,8 @@ export const createMaintenanceScheduleBodySchema = z
     estimatedMinutes: z.number().int().min(5).max(1_440).default(60),
     intervalDays: z.number().int().min(1).max(730),
     firstDueAt: z.string().datetime({ offset: true }),
+    /** `E3.1` (ADR 0122 decision 4.3): the checklist a work order converted from this schedule starts with. */
+    checklistTemplateId: z.string().uuid().optional(),
   })
   .strict();
 
@@ -43,6 +45,8 @@ export const updateMaintenanceScheduleBodySchema = z
   .object({
     active: z.boolean(),
     reason: maintenanceReasonSchema,
+    /** `E3.1` (ADR 0122 decision 4.3): set the schedule's checklist template, or clear it with `null`. Left out keeps it. */
+    checklistTemplateId: z.string().uuid().nullable().optional(),
   })
   .strict();
 

@@ -71,6 +71,10 @@ export function clientOnlyFieldsFor(
       // `E3.1` (ADR 0122 ruling P4): an SLA override is set on the page, never through the copilot.
       return [{ path, label: "SLA", schema: undefined, required: false, shown: false }];
     }
+    if (path === "checklistTemplateId") {
+      // `E3.1` (ADR 0122 ruling P4): a checklist template is picked on the page, never through the copilot.
+      return [{ path, label: "Checklist template", schema: undefined, required: false, shown: false }];
+    }
     if (path === "config.url") {
       const replacesConfig = entry.id === "notificationChannel.create" || isObject(body.config);
       return [{ path, label: "Webhook URL", schema: copilotWebhookUrlSchema as Schema, required: true, shown: webhook && replacesConfig }];

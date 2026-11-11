@@ -92,6 +92,8 @@ const ROW: WorkOrderListItem = {
   slaMinutes: null,
   slaDueAt: null,
   slaState: "none",
+  checklistDone: 0,
+  checklistTotal: 0,
   createdAt: "2026-10-01T09:00:00.000Z",
   updatedAt: "2026-10-01T09:00:00.000Z",
   assetCode: "PMP-01",
