@@ -82,6 +82,8 @@ export * from "./mqtt-payload-formats";
 // `E7.2` (ADR 0123 decision 12): the edge gateway admin's DTO, token response and write bodies.
 export * from "./edge-gateways";
 export * from "./edge-gateway-writes";
+// `F3.16` (ADR 0127): device-health read DTOs.
+export * from "./device-health";
 export * from "./point-metadata";
 export * from "./point-metadata-writes";
 export * from "./reports";

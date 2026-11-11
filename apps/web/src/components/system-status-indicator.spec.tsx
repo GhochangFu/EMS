@@ -31,6 +31,7 @@ export const OPERATIONAL: SystemStatusResponse = {
     { key: "field_data", state: "ok" },
   ],
   dataQuality: { percent: 98.6, freshAssets: 148, streamingAssets: 150, windowSeconds: 25 },
+  devices: { monitored: 0, offline: 0 },
   checkedAt: "2026-09-25T00:00:00.000Z",
 };
 

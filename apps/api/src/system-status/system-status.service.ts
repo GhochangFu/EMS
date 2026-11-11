@@ -136,6 +136,8 @@ export class SystemStatusService {
         streamingAssets: streaming,
         windowSeconds: FRESHNESS_FLOOR_SECONDS,
       },
+      // Zeros until the device-health read (F3.16 unit A5) counts the caller's monitored and offline RTUs.
+      devices: { monitored: 0, offline: 0 },
       checkedAt: new Date().toISOString(),
     };
   }

@@ -24,6 +24,7 @@ const VALID_BODY = {
     { key: "field_data", state: "ok" },
   ],
   dataQuality: { percent: 100, freshAssets: 2, streamingAssets: 2, windowSeconds: 25 },
+  devices: { monitored: 0, offline: 0 },
   checkedAt: "2026-09-25T00:00:00.000Z",
 };
 

@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { DROP_REASONS } from "../packages/shared/src/device-health";
+
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
@@ -13,7 +15,7 @@ const TAG = "0149_device_health";
 const TENANT_TABLES = ["rtu_health", "rtu_drop_hours"] as const;
 const PLATFORM_TABLES = ["ingest_hosts", "ingest_endpoint_drop_hours"] as const;
 const OWN_ORG = "organization_id = nullif(current_setting('app.current_organization', true), '')::uuid";
-const REASONS = ["badQuality", "nonFinite", "unknownDevice", "unmappedSourceKey", "ambiguousDevice", "outOfRange"];
+const REASONS = [...DROP_REASONS];
 
 /** Strip `--` comment lines before a scan (the f3.67 lesson). */
 const sqlOnly = (source: string): string =>
@@ -165,6 +167,17 @@ describe("F3.16 — device health tables (migration 0149)", () => {
     for (const table of PLATFORM_TABLES) {
       expect(owner).toContain(`REVOKE ALL ON bms.${table} FROM bms_tenant;`);
     }
+  });
+
+  it("DROP_REASONS is the six reasons the CHECKs hold, in this order", () => {
+    expect(DROP_REASONS).toEqual([
+      "badQuality",
+      "nonFinite",
+      "unknownDevice",
+      "unmappedSourceKey",
+      "ambiguousDevice",
+      "outOfRange",
+    ]);
   });
 
   it("closes reason to the six drop reasons, bucket to a whole hour and dropped above zero", () => {

@@ -22,6 +22,7 @@ function body(
     status: states.includes("degraded") ? "degraded" : "operational",
     components,
     dataQuality: { percent: 100, freshAssets: 1, streamingAssets: 1, windowSeconds: 25 },
+    devices: { monitored: 0, offline: 0 },
     checkedAt: "2026-09-25T00:00:00.000Z",
   };
 }

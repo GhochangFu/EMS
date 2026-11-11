@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runDevicesRequiredTest,
   runExtraTopLevelKeyToleratedTest,
   runFullBodyParsesTest,
   runNullPercentParsesTest,
@@ -33,5 +34,9 @@ describe("F3.30 — the system status contract (ADR 0075 decisions 3, 4)", () =>
 
   it("tolerates an extra top-level key", () => {
     runExtraTopLevelKeyToleratedTest();
+  });
+
+  it("requires devices { monitored, offline }", () => {
+    runDevicesRequiredTest();
   });
 });
