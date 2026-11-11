@@ -12,6 +12,10 @@ import {
   runEmptyDashboardsRecordIsKeptTests,
   runEmptyMaintenanceSectionIsKeptTests,
   runEmptySectionWritesAnArrayTests,
+  runHealthNullDeletesOnlyHealthTests,
+  runHealthPatchDoesNotAliasTests,
+  runHealthPatchDropsUnsafeWeightKeysTests,
+  runHealthPatchPreservesOtherSectionsTests,
   runMaintenancePatchPreservesOtherSectionsTests,
   runPreservesEveryOtherKeyTests,
   runInheritedKeyTests,
@@ -78,5 +82,20 @@ describe("template content merge", () => {
 
   it("writes an empty maintenance section as [], never deleting the key", () => {
     runEmptyMaintenanceSectionIsKeptTests();
+  });
+});
+
+describe("F4.355 PR 2 — the health arm (ADR 0038 Amendment 7 B4)", () => {
+  it("replaces health and preserves every other section", () => {
+    runHealthPatchPreservesOtherSectionsTests();
+  });
+  it("null deletes only health", () => {
+    runHealthNullDeletesOnlyHealthTests();
+  });
+  it("drops unsafe weight keys", () => {
+    runHealthPatchDropsUnsafeWeightKeysTests();
+  });
+  it("does not alias the patch", () => {
+    runHealthPatchDoesNotAliasTests();
   });
 });
