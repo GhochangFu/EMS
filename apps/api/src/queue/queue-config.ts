@@ -59,6 +59,16 @@ export const MAX_REPORT_DISPATCH_INTERVAL_MS: number = 3_600_000;
  */
 export const DEFAULT_COPILOT_PURGE_INTERVAL_MS: number = 86_400_000;
 
+/**
+ * `DEVICE_HEALTH_INTERVAL_MS` (`F3.16`, ADR 0127 decisions 12 and 16) — the
+ * device-health sweep's tick: raise the comms-loss and host alarms, prune the
+ * drop buckets. 30 s by default; the bounds are the rule sweep's, named
+ * separately for `REPORT_DISPATCH_INTERVAL_MS`'s reason.
+ */
+export const DEFAULT_DEVICE_HEALTH_INTERVAL_MS: number = 30_000;
+export const MIN_DEVICE_HEALTH_INTERVAL_MS: number = 10_000;
+export const MAX_DEVICE_HEALTH_INTERVAL_MS: number = 3_600_000;
+
 export type RedisConnectionOptions = {
   host: string;
   port: number;
@@ -152,6 +162,7 @@ export type WorkerConfig = {
   readonly ruleSweepIntervalMs: number;
   readonly reportDispatchIntervalMs: number;
   readonly copilotPurgeIntervalMs: number;
+  readonly deviceHealthIntervalMs: number;
 };
 
 const MAX_PORT = 65535;
@@ -238,6 +249,29 @@ function readCopilotPurgeInterval(raw: string | undefined): number {
 }
 
 /**
+ * `DEVICE_HEALTH_INTERVAL_MS` (`F3.16`). Unset or blank is the default; a set
+ * value must be an integer within `[MIN, MAX]` inclusive, or the worker refuses
+ * to start — `readRuleSweepInterval`'s shape on the device-health bounds.
+ */
+function readDeviceHealthInterval(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") {
+    return DEFAULT_DEVICE_HEALTH_INTERVAL_MS;
+  }
+  const trimmed = raw.trim();
+  const value = Number(trimmed);
+  if (
+    !/^\d+$/.test(trimmed) ||
+    value < MIN_DEVICE_HEALTH_INTERVAL_MS ||
+    value > MAX_DEVICE_HEALTH_INTERVAL_MS
+  ) {
+    throw new QueueConfigError(
+      `DEVICE_HEALTH_INTERVAL_MS must be an integer between 10000 and 3600000 milliseconds, got "${raw}"`,
+    );
+  }
+  return value;
+}
+
+/**
  * `readQueueConfig` runs first, so a missing `REDIS_URL` is refused before
  * `WORKER_PORT` is even looked at — the plan's table rules out the port
  * guard firing first on an otherwise-unconfigured worker. `WORKER_PORT` is
@@ -246,6 +280,8 @@ function readCopilotPurgeInterval(raw: string | undefined): number {
  * `REDIS_URL` → `WORKER_PORT` → `RULE_SWEEP_INTERVAL_MS` →
  * `REPORT_DISPATCH_INTERVAL_MS`. `COPILOT_PURGE_INTERVAL_MS` comes last and
  * cannot refuse, so it never changes which guard fires first.
+ * `DEVICE_HEALTH_INTERVAL_MS` (`F3.16`) is read after it, so its refusal
+ * fires only once every earlier guard has passed.
  */
 export function readWorkerConfig(
   env: Record<string, string | undefined>,
@@ -263,5 +299,6 @@ export function readWorkerConfig(
     ruleSweepIntervalMs: readRuleSweepInterval(env.RULE_SWEEP_INTERVAL_MS),
     reportDispatchIntervalMs: readReportDispatchInterval(env.REPORT_DISPATCH_INTERVAL_MS),
     copilotPurgeIntervalMs: readCopilotPurgeInterval(env.COPILOT_PURGE_INTERVAL_MS),
+    deviceHealthIntervalMs: readDeviceHealthInterval(env.DEVICE_HEALTH_INTERVAL_MS),
   };
 }

@@ -229,6 +229,17 @@ const WORKER_LEAVES = [
   "calc/calc-aggregate.ts",
   "calc/calc-schedule.ts",
   "admin/telemetry-entry/notify-chunk.ts",
+  // F3.16 PR B (ADR 0127 decision 12): the device-health sweep — the queue
+  // declaration, the leaf module on AlarmRaiseModule and its service, the
+  // shared alarm rule, the reads and the state rule they judge with, and the
+  // RTU window CTE. Never device-health/device-health.module.ts (the routes).
+  "queue/device-health.ts",
+  "device-health/device-health-sweep.module.ts",
+  "device-health/device-health-sweep.service.ts",
+  "device-health/device-alarm-rule.ts",
+  "device-health/device-health.reads.ts",
+  "device-health/device-state.ts",
+  "telemetry/telemetry-cadence.ts",
 ] as const;
 
 /** Rule 8: the only `copilot/` files the worker's closure may hold. */
@@ -399,7 +410,7 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
     it("WORKER_LEAVES names every leaf file: the count is pinned here so the docblock carries no number that can drift", () => {
       // F3.5b post-merge sweep (ADR 0071 Amendment 2 item 7 F): the docblock
       // once said "the nine files" against a list of twenty-six.
-      expect(WORKER_LEAVES.length).toBe(62);
+      expect(WORKER_LEAVES.length).toBe(69);
     });
 
     it("reaches the modules WorkerModule is built from (the walker follows something)", () => {

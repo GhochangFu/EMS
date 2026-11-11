@@ -30,15 +30,23 @@ export const DROP_HISTORY_DAYS = 30;
 /** The bound on `unattributed` rows (a misconfigured endpoint can name many device keys). */
 const UNATTRIBUTED_LIMIT = 200;
 
-/** Which RTUs a list reads: every RTU, one location, or a set of writable locations. */
+/**
+ * Which RTUs a list reads: every RTU, one location, a set of writable locations, or (`F3.16` PR B)
+ * every RTU the ingest host monitors — the system sweeps' scope, the worker's raise and the
+ * lifecycle's clear, which judge only RTUs with a `monitored_since` (decision 20).
+ */
 export type RtuScope =
   | { readonly kind: "all" }
+  | { readonly kind: "monitored" }
   | { readonly kind: "location"; readonly locationId: string }
   | { readonly kind: "locations"; readonly locationIds: readonly string[] };
 
 function scopePredicate(scope: RtuScope): SQL {
   if (scope.kind === "location") return eq(rtus.locationId, scope.locationId);
   if (scope.kind === "locations") return inArray(rtus.locationId, [...scope.locationIds]);
+  if (scope.kind === "monitored") {
+    return sql`${rtus.id} IN (SELECT mh.rtu_id FROM bms.rtu_health mh WHERE mh.monitored_since IS NOT NULL)`;
+  }
   return sql`TRUE`;
 }
 
@@ -51,6 +59,9 @@ const ms = (column: string): SQL => sql.raw(`(extract(epoch FROM ${column}) * 10
 
 export interface RtuHealthRow extends RtuHealthFacts {
   readonly rtuId: string;
+  readonly organizationId: string;
+  readonly code: string;
+  readonly displayName: string;
   readonly edgeServed: boolean;
   readonly windowSeconds: number;
   readonly clockSkewSeconds: number | null;
@@ -61,6 +72,9 @@ export interface RtuHealthRow extends RtuHealthFacts {
 export async function readRtuHealthRows(db: BmsDb, scope: RtuScope): Promise<RtuHealthRow[]> {
   const result = await db.execute<{
     rtu_id: string;
+    organization_id: string;
+    code: string;
+    display_name: string;
     edge_served: boolean;
     host_key: string | null;
     last_seen_ms: number | null;
@@ -71,7 +85,7 @@ export async function readRtuHealthRows(db: BmsDb, scope: RtuScope): Promise<Rtu
   }>(sql`
     WITH ${scopeCte(scope)},
     ${sql.raw(rtuWindowsCteSql("SELECT id FROM scope"))}
-    SELECT r.id AS rtu_id,
+    SELECT r.id AS rtu_id, r.organization_id, r.code, r.display_name,
            (r.edge_gateway_id IS NOT NULL) AS edge_served,
            h.host_key,
            ${ms("h.last_seen_at")} AS last_seen_ms,
@@ -87,6 +101,9 @@ export async function readRtuHealthRows(db: BmsDb, scope: RtuScope): Promise<Rtu
   `);
   return result.rows.map((row) => ({
     rtuId: row.rtu_id,
+    organizationId: row.organization_id,
+    code: row.code,
+    displayName: row.display_name,
     edgeServed: row.edge_served,
     hostKey: row.host_key,
     lastSeenMs: row.last_seen_ms,

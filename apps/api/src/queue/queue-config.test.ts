@@ -8,6 +8,9 @@ import {
   assertCopilotPurgeIntervalFallsBackToTheDefault,
   assertCopilotPurgeIntervalHonoursAPositiveInteger,
   assertCredentialsAndDbAreParsed,
+  assertDeviceHealthIntervalDefaultsTo30000,
+  assertDeviceHealthIntervalHonoursBothBounds,
+  assertInvalidDeviceHealthIntervalThrowsNamingOnlyItself,
   assertInvalidReportDispatchIntervalThrowsNamingOnlyItself,
   assertInvalidRuleSweepIntervalThrowsNamingOnlyRuleSweep,
   assertInvalidUrlThrowsItsOwnMessageWithoutEchoingTheValue,
@@ -28,6 +31,7 @@ import {
   assertWorkerConfigHonoursExplicitPort,
   assertWorkerConfigRefusesMissingRedisUrlNamingOnlyRedisUrl,
   FALLBACK_COPILOT_PURGE_INTERVALS,
+  INVALID_DEVICE_HEALTH_INTERVALS,
   INVALID_REPORT_DISPATCH_INTERVALS,
   INVALID_RULE_SWEEP_INTERVALS,
   INVALID_URL_ROWS,
@@ -158,4 +162,19 @@ describe("F4.24 — queue and worker configuration readers", () => {
   it("honours a positive integer COPILOT_PURGE_INTERVAL_MS", () => {
     assertCopilotPurgeIntervalHonoursAPositiveInteger();
   });
+
+  it("defaults deviceHealthIntervalMs to 30000 (F3.16)", () => {
+    assertDeviceHealthIntervalDefaultsTo30000();
+  });
+
+  it("accepts the DEVICE_HEALTH_INTERVAL_MS bounds 10000 and 3600000", () => {
+    assertDeviceHealthIntervalHonoursBothBounds();
+  });
+
+  it.each(INVALID_DEVICE_HEALTH_INTERVALS)(
+    "refuses DEVICE_HEALTH_INTERVAL_MS=%j naming only DEVICE_HEALTH_INTERVAL_MS",
+    (raw) => {
+      assertInvalidDeviceHealthIntervalThrowsNamingOnlyItself(raw);
+    },
+  );
 });

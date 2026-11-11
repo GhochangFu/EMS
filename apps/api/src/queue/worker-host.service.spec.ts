@@ -6,6 +6,7 @@ import type { RuleSweepSummary } from "@bms/shared";
 import type { CalcBackfillService } from "../calc-backfill/calc-backfill.service";
 import type { CopilotPurgeService, CopilotPurgeSummary } from "../copilot/copilot-purge.service";
 import type { BmsTx } from "../database/tenant-context";
+import type { DeviceHealthSweepService, DeviceHealthSweepSummary } from "../device-health/device-health-sweep.service";
 import type { MetricsService } from "../observability/metrics.service";
 import type { DiscoveryJobService } from "../onboarding-discovery/discovery-job.service";
 import type { ReportDispatchService, ReportDispatchSummary } from "../reports/report-dispatch.service";
@@ -13,6 +14,7 @@ import type { RenderOutcome, ReportRenderService } from "../reports/report-rende
 import type { RuleSweepService } from "../rules/rule-sweep.service";
 import { calcBackfillQueue } from "./calc-backfill";
 import { copilotPurgeQueue } from "./copilot-purge";
+import { deviceHealthQueue } from "./device-health";
 import { onboardingDiscoveryQueue } from "./onboarding-discovery";
 import type { ProcessorContinuation, ProcessorDbs, ProcessorHandler } from "./queue-processor";
 import type { QueueClient, QueueHandle } from "./queue-registry";
@@ -122,6 +124,21 @@ export const CONFIGURED_DISPATCH_INTERVAL_MS = 23_456;
 /** A third sentinel, distinct from the sweep's and the dispatch's, so no two intervals can be crossed. */
 export const CONFIGURED_PURGE_INTERVAL_MS = 34_567;
 
+/** A fourth interval sentinel (`F3.16` PR B), distinct from the other three. */
+export const CONFIGURED_DEVICE_HEALTH_INTERVAL_MS = 45_678;
+
+/** What the fake `DeviceHealthSweepService.run` resolves; the host interpolates the counts into its log line. */
+export const DEVICE_HEALTH_SUMMARY: DeviceHealthSweepSummary = {
+  organizations: 2,
+  hostAlarms: 0,
+  rtuAlarms: 1,
+  raisedAlarmIds: ["alarm-1"],
+  prunedRtuBuckets: 3,
+  prunedEndpointBuckets: 4,
+  failed: 0,
+  durationMs: 56,
+};
+
 /** What the fake `CopilotPurgeService.purge` resolves; the host interpolates the counts into its log line. */
 export const PURGE_SUMMARY: CopilotPurgeSummary = {
   users: 4,
@@ -186,6 +203,8 @@ export type WorkerHostProbe = {
   readonly discoveryRuns: readonly (readonly [payload: unknown, tx: unknown])[];
   /** Every `(payload, tx)` handed to the fake `CalcBackfillService.run` (`F4.311` PR 5). */
   readonly backfillRuns: readonly (readonly [payload: unknown, tx: unknown])[];
+  /** Every `db` handed to the fake `DeviceHealthSweepService.run` (`F3.16` PR B). */
+  readonly deviceHealthRuns: readonly BmsDb[];
 };
 
 /** A `QueueHandle` whose `client` resolves to a Redis fake that records `set`. */
@@ -209,6 +228,7 @@ export async function initWorkerHost(): Promise<WorkerHostProbe> {
   let purgeRuns = 0;
   const discoveryRuns: (readonly [unknown, unknown])[] = [];
   const backfillRuns: (readonly [unknown, unknown])[] = [];
+  const deviceHealthRuns: BmsDb[] = [];
   const client: QueueClient = {
     kind: "configured",
     prefix: PREFIX,
@@ -256,6 +276,7 @@ export async function initWorkerHost(): Promise<WorkerHostProbe> {
       ruleSweepIntervalMs: CONFIGURED_SWEEP_INTERVAL_MS,
       reportDispatchIntervalMs: CONFIGURED_DISPATCH_INTERVAL_MS,
       copilotPurgeIntervalMs: CONFIGURED_PURGE_INTERVAL_MS,
+      deviceHealthIntervalMs: CONFIGURED_DEVICE_HEALTH_INTERVAL_MS,
     },
     reportDispatch,
     reportRender,
@@ -272,6 +293,12 @@ export async function initWorkerHost(): Promise<WorkerHostProbe> {
         return BACKFILL_CONTINUATION;
       },
     } as unknown as CalcBackfillService,
+    {
+      run: async (db: BmsDb) => {
+        deviceHealthRuns.push(db);
+        return DEVICE_HEALTH_SUMMARY;
+      },
+    } as unknown as DeviceHealthSweepService,
   );
   await service.onModuleInit();
   return {
@@ -283,6 +310,7 @@ export async function initWorkerHost(): Promise<WorkerHostProbe> {
     purgeRuns: () => purgeRuns,
     discoveryRuns,
     backfillRuns,
+    deviceHealthRuns,
   };
 }
 
@@ -590,5 +618,34 @@ export function assertBackfillHandlerReturnsTheJobsContinuation(resolved: void |
   assert(
     resolved === BACKFILL_CONTINUATION,
     "expected the backfill handler to return the job's continuation unchanged — dropped, the walk would never run; awaited inline, it would hold the tenant transaction for the whole backfill",
+  );
+}
+
+/** `F3.16` PR B (ADR 0127 decision 16): the device-health scheduler runs at the configured interval, under the declared id. */
+export function assertDeviceHealthScheduleUpsertedAtTheConfiguredInterval(
+  upserts: readonly RecordedUpsertScheduleCall[],
+): void {
+  const found = upserts.filter(([name]) => name === deviceHealthQueue.name);
+  const expected = JSON.stringify({ schedulerId: "device-health", everyMs: CONFIGURED_DEVICE_HEALTH_INTERVAL_MS });
+  const actual = found.map(([, schedule]) =>
+    JSON.stringify({ schedulerId: schedule.schedulerId, everyMs: schedule.everyMs }),
+  );
+  assert(
+    actual.length === 1 && actual[0] === expected,
+    `expected upsertSchedule("device-health", ${expected}) exactly once — the interval is hard-coded, crossed with another queue's, or the scheduler id drifted; got [${actual.join(", ")}]`,
+  );
+}
+
+/** Runs the recorded `device-health` handler the way `runProcessor` would for a `fleet` queue. */
+export async function invokeDeviceHealthHandler(calls: readonly RecordedRunProcessorCall[]): Promise<void> {
+  const handler = registrationOf(calls, deviceHealthQueue.name)[2] as ProcessorHandler<typeof deviceHealthQueue>;
+  await handler({}, { db: FLEET_SENTINEL });
+}
+
+/** `F3.16` PR B: the sweep runs once, on ctx.db — the fleet handle — and on no other pool. */
+export function assertDeviceHealthHandlerRanTheSweepOnTheHandleItWasGiven(probe: WorkerHostProbe): void {
+  assert(
+    probe.deviceHealthRuns.length === 1 && probe.deviceHealthRuns[0] === FLEET_SENTINEL,
+    `expected DeviceHealthSweepService.run(ctx.db) exactly once with the FLEET_SENTINEL — the handler reads a different pool, or another queue's body is registered against device-health; runs=${probe.deviceHealthRuns.length}`,
   );
 }

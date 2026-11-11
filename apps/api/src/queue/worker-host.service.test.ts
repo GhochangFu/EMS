@@ -54,6 +54,8 @@ import {
   assertBackfillHandlerReturnsTheJobsContinuation,
   assertDiscoveryHandlerRanTheJobOnTheTransactionItWasGiven,
   assertDiscoveryHandlerReturnsTheJobsContinuation,
+  assertDeviceHealthHandlerRanTheSweepOnTheHandleItWasGiven,
+  assertDeviceHealthScheduleUpsertedAtTheConfiguredInterval,
   assertDispatchHandlerRanTheTickOnTheHandleItWasGiven,
   assertDispatchScheduleUpsertedAtTheConfiguredInterval,
   assertHeartbeatRegistrationReceivedTheFleetSentinelAsFleetDb,
@@ -71,6 +73,7 @@ import {
   assertSweepScheduleUpsertedAtTheConfiguredInterval,
   initWorkerHost,
   invokeBackfillHandler,
+  invokeDeviceHealthHandler,
   invokeDiscoveryHandler,
   invokeDispatchHandler,
   invokePurgeHandler,
@@ -201,6 +204,20 @@ describe("F4.24 / F3.11 / F3.5b / F3.85 / F3.24b — WorkerHostService registers
 
     it("returns the job's continuation unchanged", () => {
       assertBackfillHandlerReturnsTheJobsContinuation(resolved);
+    });
+  });
+
+  it('upsertSchedule received ("device-health", { schedulerId: "device-health", everyMs: 45678 }) — the configured interval (F3.16)', () => {
+    assertDeviceHealthScheduleUpsertedAtTheConfiguredInterval(recorded.upsertScheduleCalls);
+  });
+
+  describe("the device-health handler, invoked with ({}, { db: FLEET_SENTINEL }) as runProcessor would for a fleet queue", () => {
+    beforeAll(async () => {
+      await invokeDeviceHealthHandler(recorded.runProcessorCalls);
+    });
+
+    it("runs DeviceHealthSweepService.run once on ctx.db", () => {
+      assertDeviceHealthHandlerRanTheSweepOnTheHandleItWasGiven(probe);
     });
   });
 });
