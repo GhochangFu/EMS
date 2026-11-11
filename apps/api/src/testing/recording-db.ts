@@ -56,6 +56,7 @@ class Builder implements PromiseLike<unknown> {
   private condition: unknown = undefined;
   private payload: Record<string, unknown> | null = null;
   private returningCalled = false;
+  private conflictDoNothing = false;
 
   constructor(
     private readonly executor: string,
@@ -106,6 +107,11 @@ class Builder implements PromiseLike<unknown> {
     this.returningCalled = true;
     return this;
   }
+  /** `F4.340`: an insert's `ON CONFLICT DO NOTHING`, recorded as the op's `text`. */
+  onConflictDoNothing(): this {
+    this.conflictDoNothing = true;
+    return this;
+  }
   then<T1 = unknown, T2 = never>(
     onfulfilled?: ((value: unknown) => T1 | PromiseLike<T1>) | null,
     onrejected?: ((reason: unknown) => T2 | PromiseLike<T2>) | null,
@@ -119,7 +125,7 @@ class Builder implements PromiseLike<unknown> {
       executor: this.executor,
       kind: this.kind,
       table: this.table,
-      text: rendered.text,
+      text: this.conflictDoNothing ? "ON CONFLICT DO NOTHING" : rendered.text,
       params: rendered.params,
       values: this.payload,
       returning: this.returningCalled,

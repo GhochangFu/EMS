@@ -11,7 +11,10 @@ import {
   assertCreateRefusesANonAdminWithoutAnOrganization,
   assertCreateRefusesAnElevenCharacterPassword,
   assertCreateTrimsAndLowerCasesTheEmail,
+  assertListResponseAcceptsARowWithHasEffectiveGrant,
+  assertListResponseRefusesARowWithoutHasEffectiveGrant,
   assertListResponseRefusesARowWithoutLinked,
+  assertWriteResponseNeedsNoHasEffectiveGrant,
   assertTemporaryPasswordBodyAcceptsTwelveCharacters,
   assertTemporaryPasswordBodyRefusesElevenCharacters,
   assertUpdateAcceptsADisplayNameAlone,
@@ -92,6 +95,18 @@ describe("F3.78 — users API contracts (ADR 0089 decision 1)", () => {
 
   it("list response refuses a row without linked", () => {
     assertListResponseRefusesARowWithoutLinked();
+  });
+
+  it("list response refuses a row without hasEffectiveGrant (F4.340)", () => {
+    assertListResponseRefusesARowWithoutHasEffectiveGrant();
+  });
+
+  it("list response accepts a row with hasEffectiveGrant (F4.340)", () => {
+    assertListResponseAcceptsARowWithHasEffectiveGrant();
+  });
+
+  it("a write response needs no hasEffectiveGrant (F4.340)", () => {
+    assertWriteResponseNeedsNoHasEffectiveGrant();
   });
 
   it("the copilot create body refuses a password (F3.86 PR 4)", () => {

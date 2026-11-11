@@ -122,6 +122,10 @@ type Options = {
   readonly users?: UserRow[];
   /** The provider the module returns when Keycloak is unconfigured, instead of the recording fake. */
   readonly notConfigured?: boolean;
+  /** `F4.340`: the home grant already exists, so `ON CONFLICT DO NOTHING` returns no row. */
+  readonly homeGrantExists?: boolean;
+  /** `F4.340`: the home-grant insert throws. */
+  readonly failHomeGrant?: boolean;
 };
 
 function harness(options: Options = {}) {
@@ -146,7 +150,7 @@ function harness(options: Options = {}) {
     if (op.kind === "execute") {
       if (op.text.includes("user_organization_access")) {
         const ids = String(op.params[0]).replace(/[{}]/g, "").split(",");
-        return ids.flatMap((id) => (GRANTS[id] ?? []).map((org) => ({ user_id: id, organization_id: org })));
+        return ids.flatMap((id) => (GRANTS[id] ?? []).map((org) => ({ user_id: id, organization_id: org, kind: "organization" })));
       }
       if (op.text.includes("FOR UPDATE")) {
         const active =
@@ -178,6 +182,10 @@ function harness(options: Options = {}) {
         ];
       }
       return [];
+    }
+    if (op.kind === "insert" && op.table === "user_organization_access") {
+      if (options.failHomeGrant) throw new Error("the grant insert failed");
+      return options.homeGrantExists ? [] : [{ id: "00000000-0000-4000-8000-0000000000g1" }];
     }
     if (op.kind === "insert" && op.table === "audit_log" && options.failAudit) {
       throw new Error("the audit insert failed");
@@ -859,4 +867,101 @@ export async function assertANonManagerRowIsRefusedCreate(): Promise<void> {
   const { service, jwt, identity } = harness({ caller: LOCATION_ADMIN_CALLER, jwtRole: "organization_admin" });
   const err = await refusal(service.create(jwt, createBody()));
   expect([err.getStatus(), err.message, identity.calls.length]).toEqual([403, MANAGER_ROLE_REQUIRED, 0]);
+}
+
+// -- F4.340 / ADR 0128: the home-organization grant ---------------------------
+
+const homeGrantInserts = (timeline: Timeline) =>
+  ops(timeline).filter((op) => op.kind === "insert" && op.table === "user_organization_access");
+
+/** Decision 1: creating an `organization_admin` inserts its home grant in the create transaction, ON CONFLICT DO NOTHING. */
+export async function assertCreatingAnOrganizationAdminInsertsTheHomeGrant(): Promise<void> {
+  const { service, jwt, timeline } = harness();
+  const response = await service.create(jwt, createBody({ role: "organization_admin" }));
+  const [grant, ...rest] = homeGrantInserts(timeline);
+  expect(rest).toEqual([]);
+  expect([grant?.executor, grant?.values, grant?.text]).toEqual([
+    "tenant.tx",
+    { userId: response.user.id, organizationId: ORG_A },
+    "ON CONFLICT DO NOTHING",
+  ]);
+}
+
+/** Decision 3: two committed audit rows — the create, then the grant with `reason: "home_organization"`. */
+export async function assertCreatingAnOrganizationAdminAuditsTheGrant(): Promise<void> {
+  const { service, jwt, timeline } = harness();
+  const response = await service.create(jwt, createBody({ role: "organization_admin" }));
+  expect(committedAuditPayloads(timeline)).toEqual([
+    { role: "organization_admin", organizationId: ORG_A },
+    { userId: response.user.id, kind: "organization", targetId: ORG_A, reason: "home_organization" },
+  ]);
+  const actions = auditInserts(timeline).map((op) => op.values?.action);
+  expect(actions).toEqual(["master.user.create", "master.user_grant.add"]);
+}
+
+/** Decision 4: no other role gets an automatic grant. */
+export async function assertCreatingAScopedNonOrganizationAdminInsertsNoGrant(role: UserRole): Promise<void> {
+  const { service, jwt, timeline } = harness();
+  await service.create(jwt, createBody({ role }));
+  expect(homeGrantInserts(timeline)).toEqual([]);
+}
+
+/** A failed grant insert fails the create: Keycloak's parsed id is undone and nothing commits. */
+export async function assertAFailedHomeGrantUndoesTheCreate(): Promise<void> {
+  const { service, jwt, timeline, identity } = harness({ failHomeGrant: true });
+  await expect(service.create(jwt, createBody({ role: "organization_admin" }))).rejects.toThrow();
+  expect(identity.calls.filter((call) => call.method === "deleteUser")).toHaveLength(1);
+  expect(identity.calls.filter((call) => call.method === "setEnabled")).toEqual([]);
+  expect(committedAuditPayloads(timeline)).toEqual([]);
+}
+
+/** Decision 2: a promotion to `organization_admin` inserts the home grant and audits it. */
+export async function assertAPromotionToOrganizationAdminInsertsTheHomeGrant(): Promise<void> {
+  const { service, jwt, timeline } = harness();
+  await service.update(jwt, VIEWER_A.id, { role: "organization_admin" });
+  const [grant] = homeGrantInserts(timeline);
+  expect([grant?.executor, grant?.values]).toEqual(["tenant.tx", { userId: VIEWER_A.id, organizationId: ORG_A }]);
+  expect(auditInserts(timeline).map((op) => op.values?.action)).toEqual(["master.user.update", "master.user_grant.add"]);
+}
+
+/** A promotion when the grant is already held adds no grant audit row. */
+export async function assertAPromotionWithAHeldGrantAuditsNoGrant(): Promise<void> {
+  const { service, jwt, timeline } = harness({ homeGrantExists: true });
+  await service.update(jwt, VIEWER_A.id, { role: "organization_admin" });
+  expect(homeGrantInserts(timeline)).toHaveLength(1);
+  expect(auditInserts(timeline).map((op) => op.values?.action)).toEqual(["master.user.update"]);
+}
+
+/** Only a role change to `organization_admin` owes the grant: a rename or another role inserts none. */
+export async function assertNoOtherUpdateInsertsAGrant(): Promise<void> {
+  const { service, jwt, timeline } = harness();
+  await service.update(jwt, VIEWER_A.id, { role: "operator" });
+  await service.update(jwt, VIEWER_A.id, { displayName: "Renamed" });
+  expect(homeGrantInserts(timeline)).toEqual([]);
+}
+
+/** ADR 0128 Q6: each list row says whether its user holds a grant its role reads; an admin always does. */
+export async function assertTheListFlagsUsersWithNoEffectiveGrant(): Promise<void> {
+  const { service, jwt } = harness();
+  const { items } = await service.list(jwt);
+  const flag = (id: string) => items.find((item) => item.id === id)?.hasEffectiveGrant;
+  expect([flag(ADMIN_CALLER.id), flag(VIEWER_A_GRANTED_B.id), flag(VIEWER_A.id), flag(ORG_ADMIN_CALLER.id)]).toEqual([
+    true,
+    true,
+    false,
+    false,
+  ]);
+}
+
+/** A role that does not read the grant's kind has no grant in effect: a location_admin with only an organization grant. */
+export async function assertAGrantOfAnUnreadKindIsNotEffective(): Promise<void> {
+  const locationAdmin = user("00000000-0000-4000-8000-0000000000l2", "location_admin", ORG_A);
+  const { service, jwt } = harness({ users: [ADMIN_CALLER, locationAdmin] });
+  GRANTS[locationAdmin.id] = [ORG_A];
+  try {
+    const { items } = await service.list(jwt);
+    expect(items.find((item) => item.id === locationAdmin.id)?.hasEffectiveGrant).toBe(false);
+  } finally {
+    delete GRANTS[locationAdmin.id];
+  }
 }

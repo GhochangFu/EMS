@@ -40,6 +40,8 @@ import {
 } from "../../identity/identity-admin.client";
 import { IDENTITY_ADMIN, NotConfiguredIdentityAdmin } from "../../identity/identity-admin.module";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { usersWithAnEffectiveGrant } from "./effective-grant";
+import { owesHomeOrganizationGrant, writeHomeOrganizationGrant } from "./home-organization-grant";
 // `F3.86` PR 4: from `@bms/shared` itself, so the catalog gate sees the parse (`SERVICE_PARSERS`).
 import { createUserBodySchema, temporaryPasswordBodySchema, updateUserBodySchema } from "@bms/shared";
 import {
@@ -301,21 +303,11 @@ export class UsersService {
       .from(users)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(asc(users.email))) as UserRow[];
-    if (manager.role === "admin") {
-      return { items: rows.map(toAdminUserDto) };
-    }
-    // The same predicate every write applies, so the list never shows a row a write would refuse.
-    const reach = await grantOrganizationIds(this.fleetDb, rows.map((row) => row.id));
+    const visible = manager.role === "admin" ? rows : await this.manageableRows(manager, rows);
+    // F4.340 / ADR 0128 Q6: the "No access" flag.
+    const effective = await usersWithAnEffectiveGrant(this.fleetDb, visible);
     return {
-      items: rows
-        .filter((row) =>
-          canManageTarget(manager.role, manager.writable, {
-            role: row.role,
-            homeOrganizationId: row.organizationId,
-            grantOrganizationIds: reach.get(row.id) ?? [],
-          }),
-        )
-        .map(toAdminUserDto),
+      items: visible.map((row) => ({ ...toAdminUserDto(row), hasEffectiveGrant: effective.has(row.id) })),
     };
   }
 
@@ -399,6 +391,10 @@ export class UsersService {
           },
           tx as BmsDb,
         );
+        if (owesHomeOrganizationGrant(body.role) && body.organizationId !== null) {
+          // F4.340 / ADR 0128 decision 1: the new organization admin's scope is this grant.
+          await writeHomeOrganizationGrant(tx, this.audit, jwt, row.id, body.organizationId);
+        }
         return row;
       });
     } catch (err) {
@@ -490,6 +486,10 @@ export class UsersService {
           },
           tx as BmsDb,
         );
+        if (roleChanges && owesHomeOrganizationGrant(newRole) && newOrganizationId !== null) {
+          // F4.340 / ADR 0128 decision 2: a promotion adds the home grant; a held grant adds nothing.
+          await writeHomeOrganizationGrant(tx, this.audit, jwt, target.id, newOrganizationId);
+        }
       });
     } catch (err) {
       if (keycloakChanged) {
@@ -690,6 +690,18 @@ export class UsersService {
     }
     const writable = identity.role === "admin" ? null : await this.accessControl.writableOrganizationIds(jwt);
     return { identity, role: identity.role, writable };
+  }
+
+  /** The same predicate every write applies, so the list never shows a row a write would refuse. */
+  private async manageableRows(manager: Manager, rows: UserRow[]): Promise<UserRow[]> {
+    const reach = await grantOrganizationIds(this.fleetDb, rows.map((row) => row.id));
+    return rows.filter((row) =>
+      canManageTarget(manager.role, manager.writable, {
+        role: row.role,
+        homeOrganizationId: row.organizationId,
+        grantOrganizationIds: reach.get(row.id) ?? [],
+      }),
+    );
   }
 
   /** Decision 11: local auth keeps user administration read-only. */

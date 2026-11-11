@@ -2,7 +2,12 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect } from "vitest";
 
-import { createUserValues } from "../../components/admin/user-wizards";
+import {
+  createUserValues,
+  NO_GRANT_WARNING,
+  organizationAdminAccessSentence,
+} from "../../components/admin/user-wizards";
+import { NO_ACCESS_PILL } from "./users-page";
 import { useWizardStore } from "../../stores/wizard-store";
 import {
   type Call,
@@ -327,4 +332,61 @@ export async function aFillOfANewKindKeepsItsTarget(): Promise<void> {
       { path: `/api/v1/admin/users/${LINKED_ID}/grants`, method: "POST", body: { kind: "organization", targetId: ORG_ID } },
     ]);
   });
+}
+
+// --- F4.340 / ADR 0128: the create wizard's Review says what access the user gets ---
+
+/** Decision 4: a viewer created without a grant is warned about on Review. */
+export async function theCreateReviewWarnsAViewerSeesNothing(): Promise<void> {
+  stubOidc();
+  stubFetch();
+  renderPage();
+  const dialog = await openCreateModal();
+  await fillCreate(dialog, CREATE_SECRET);
+  expect(within(dialog).getByRole("note")).toHaveTextContent(NO_GRANT_WARNING);
+  expect(within(dialog).queryByText(organizationAdminAccessSentence("Acme Works"))).not.toBeInTheDocument();
+}
+
+/** Decision 1: an organization admin's Review names the organization it gets, and warns of nothing. */
+export async function theCreateReviewSaysAnOrganizationAdminGetsItsOrganization(): Promise<void> {
+  stubOidc();
+  stubFetch();
+  renderPage();
+  const dialog = await openCreateModal();
+  await userEvent.type(within(dialog).getByLabelText("Email"), "new.person@example.test");
+  await userEvent.type(within(dialog).getByLabelText("Display name"), "New Person");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.selectOptions(within(dialog).getByRole("combobox", { name: "Role" }), "organization_admin");
+  await userEvent.selectOptions(within(dialog).getByLabelText("Organization"), ORG_ID);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await within(dialog).findByRole("region", { name: "Create a user" });
+  expect(within(dialog).getByText(organizationAdminAccessSentence("Acme Works"))).toBeInTheDocument();
+  expect(within(dialog).queryByText(NO_GRANT_WARNING)).not.toBeInTheDocument();
+}
+
+// --- F4.340 / ADR 0128 Q6: the Users list flags a user with no grant in effect ---
+
+const NO_GRANT_ID = "44444444-4444-4444-4444-444444444444";
+
+/** `F4.340` (ADR 0128 Q6): an active row with no grant in effect shows "No access"; a deactivated one does not. */
+export async function showsTheNoAccessPillOnAnActiveUserWithoutAGrant(): Promise<void> {
+  stubOidc();
+  stubFetch({
+    "GET /api/v1/admin/users": {
+      status: 200,
+      body: {
+        items: [
+          userRow(LINKED_ID, "Ada Linked"),
+          userRow(NO_GRANT_ID, "Nora Nogrant", { hasEffectiveGrant: false }),
+          userRow(DEACTIVATED_ID, "Dev Deactivated", { disabledAt: new Date(0).toISOString(), hasEffectiveGrant: false }),
+        ],
+      },
+    },
+  });
+  renderPage();
+  const row = (name: string) => screen.getByText(name).closest("tr") as HTMLElement;
+  await screen.findByText("Nora Nogrant");
+  expect(within(row("Nora Nogrant")).getByText(NO_ACCESS_PILL)).toBeInTheDocument();
+  expect(within(row("Ada Linked")).queryByText(NO_ACCESS_PILL)).not.toBeInTheDocument();
+  expect(within(row("Dev Deactivated")).queryByText(NO_ACCESS_PILL)).not.toBeInTheDocument();
 }

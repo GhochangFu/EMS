@@ -50,6 +50,7 @@ export function userRow(id: string, displayName: string, over: Record<string, un
     disabledAt: null,
     lastLoginAt: null,
     createdAt: new Date(0).toISOString(),
+    hasEffectiveGrant: true,
     ...over,
   };
 }

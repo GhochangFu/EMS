@@ -10,7 +10,13 @@ import {
   resolveIntegrationRoleUrl,
 } from "../../testing/integration-db-gate";
 import {
+  assertACreatedOrganizationAdminHoldsItsHomeOrganization,
+  assertACreatedViewerGetsNoGrant,
+  assertADemotionKeepsTheHomeGrant,
   assertAdminCreateInsertLandsOnTheFleetRole,
+  assertAPromotionToOrganizationAdminAddsTheHomeGrant,
+  assertAPromotionWithTheGrantAddsNothing,
+  assertTheListFlagsAUserWithNoGrant,
   assertCreateInsertLandsOnTheTenantRole,
   assertDeactivateUnderTheWrongGucIsRefusedWithNoAudit,
   assertDeactivatingAnAdminWaitsOnTheLastAdminLock,
@@ -75,6 +81,30 @@ describe.skipIf(!connectionString)("F3.78 — users API on the real pool roles (
 
   it("deactivate under another organization's GUC updates zero rows and is refused with no audit row", async () => {
     await assertDeactivateUnderTheWrongGucIsRefusedWithNoAudit(superDb);
+  });
+
+  it("F4.340: a created organization_admin holds its home organization's grant and read scope (ADR 0128)", async () => {
+    await assertACreatedOrganizationAdminHoldsItsHomeOrganization(superDb);
+  });
+
+  it("F4.340: a created viewer gets no automatic grant", async () => {
+    await assertACreatedViewerGetsNoGrant(superDb);
+  });
+
+  it("F4.340: a promotion to organization_admin adds the home grant, audited", async () => {
+    await assertAPromotionToOrganizationAdminAddsTheHomeGrant(superDb);
+  });
+
+  it("F4.340: a promotion when the home grant exists adds no row and no grant audit", async () => {
+    await assertAPromotionWithTheGrantAddsNothing(superDb);
+  });
+
+  it("F4.340: a demotion from organization_admin keeps the home grant", async () => {
+    await assertADemotionKeepsTheHomeGrant(superDb);
+  });
+
+  it("F4.340: the list flags a user with no grant in effect (ADR 0128 Q6)", async () => {
+    await assertTheListFlagsAUserWithNoGrant(superDb);
   });
 
   it("demoting an admin while another admin row is locked fails with 55P03 (the last-admin lock)", async () => {

@@ -517,6 +517,8 @@ export type UpdateAssetGroupBody = z.infer<typeof AGW.updateAssetGroupBodySchema
 export type AddAssetGroupMemberBody = z.infer<typeof AGW.addAssetGroupMemberBodySchema>;
 /** `F3.78` (ADR 0089) — one `bms.users` row for the users admin screen. */
 export type AdminUserDto = z.infer<typeof Us.adminUserDtoSchema>;
+/** `F4.340` (ADR 0128) — a users-list row: the DTO plus `hasEffectiveGrant`. */
+export type AdminUserListItem = z.infer<typeof Us.adminUserListItemSchema>;
 export type AdminUsersListResponse = z.infer<typeof Us.adminUsersListResponseSchema>;
 /** Request bodies: `z.infer` is the parsed output, so the email arrives trimmed and lower-cased. */
 export type CreateUserBody = z.infer<typeof Us.createUserBodySchema>;
