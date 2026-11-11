@@ -1,6 +1,6 @@
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 
 import {
   encodePointRef,
@@ -28,6 +28,7 @@ import {
 import { STALE_TICK_MS } from "../lib/schematic-telemetry";
 import { socketBaseUrl } from "../lib/socket-url";
 import { useAuthStore } from "../stores/auth-store";
+import { openLiveSocket } from "../lib/live-socket";
 
 /**
  * `F3.1d` Unit 6 — the viewer's one telemetry connection.
@@ -201,7 +202,7 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
       return;
     }
     const trackedRefs = new Set(refs);
-    const socket: Socket = io(`${socketBaseUrl()}/ws/telemetry`, {
+    const socket: Socket = openLiveSocket(`${socketBaseUrl()}/ws/telemetry`, {
       transports: ["websocket"],
       auth: { token: accessToken },
     });

@@ -8,7 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { io, type Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 
 import { fetchPointsLatest } from "../../api/telemetry";
 import { fetchAssets } from "../../api/assets";
@@ -23,6 +23,7 @@ import {
 import { socketBaseUrl } from "../../lib/socket-url";
 import { useAuthStore } from "../../stores/auth-store";
 import type { LiveSvgStatus } from "./types";
+import { openLiveSocket } from "../../lib/live-socket";
 
 /**
  * Re-exported so the seven control-room pages that import this type keep their
@@ -249,7 +250,7 @@ export function SchematicTelemetryProvider({
     if (trackedIds.length === 0) {
       return;
     }
-    const socket: Socket = io(`${socketBaseUrl()}/ws/telemetry`, {
+    const socket: Socket = openLiveSocket(`${socketBaseUrl()}/ws/telemetry`, {
       transports: ["websocket"],
       auth: { token: accessToken },
     });

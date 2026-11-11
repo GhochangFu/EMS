@@ -1,3 +1,4 @@
+import { rateLimitedErrorSchema } from "@bms/shared";
 import { render, screen } from "@testing-library/react";
 import { expect } from "vitest";
 
@@ -50,6 +51,27 @@ export function showsTheServerSentenceAndNotItsEnvelope(): void {
   expect(alert.textContent).toContain("12 seconds");
   expect(alert.textContent).not.toContain("statusCode");
   expect(alert.textContent).not.toContain("{");
+}
+
+/**
+ * `F4.17` / ADR 0125, plan §12 (security L4) — once `RATE_LIMIT_MODE=enforce`
+ * is on, the evaluate route has a second 429 body: the limiter's, for the 13th
+ * press in a minute. It is parsed with the shared contract here, so a change
+ * to its shape breaks this fixture rather than the screen. The operator still
+ * reads one sentence with the seconds in it, never the envelope or its `code`.
+ */
+export function showsTheLimitersSentenceToo(): void {
+  const body = rateLimitedErrorSchema.parse({
+    statusCode: 429,
+    error: "Too Many Requests",
+    code: "rate_limited",
+    message: "Too many requests. Try again in 41 seconds.",
+    retryAfterSeconds: 41,
+  });
+  render(<EvaluateRefusalNotice error={new Error(JSON.stringify(body))} />);
+
+  const alert = screen.getByRole("alert");
+  expect(alert.textContent).toBe("Too many requests. Try again in 41 seconds.");
 }
 
 /** A body that is not a Nest envelope — a proxy's HTML page, a gateway

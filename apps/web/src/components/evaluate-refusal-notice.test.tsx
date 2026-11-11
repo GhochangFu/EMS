@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import {
   saysNothingWhenThereIsNoError,
   saysSomethingWhenTheBodyIsNotAnEnvelope,
+  showsTheLimitersSentenceToo,
   showsTheServerSentenceAndNotItsEnvelope,
 } from "./evaluate-refusal-notice.spec";
 
@@ -26,6 +27,10 @@ describe("F3.47 evaluate refusal notice", () => {
 
   it("shows the server's sentence and not its JSON envelope", () => {
     showsTheServerSentenceAndNotItsEnvelope();
+  });
+
+  it("shows the rate limiter's 429 sentence too (F4.17, ADR 0125)", () => {
+    showsTheLimitersSentenceToo();
   });
 
   it("falls back to the raw body when it is not a Nest envelope", () => {

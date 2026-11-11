@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
-import { io, type Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 
 import type { AlarmSocketEvent } from "@bms/shared";
 
 import { useAuthStore } from "../stores/auth-store";
+import { openLiveSocket } from "../lib/live-socket";
 
 function socketBase(): string {
   return (
@@ -28,7 +29,7 @@ export function useAlarmsSocket(onAlarm: (event: AlarmSocketEvent) => void): voi
   onAlarmRef.current = onAlarm;
 
   useEffect(() => {
-    const socket: Socket = io(`${socketBase()}/ws/alarms`, {
+    const socket: Socket = openLiveSocket(`${socketBase()}/ws/alarms`, {
       transports: ["websocket"],
       auth: { token: accessToken },
     });

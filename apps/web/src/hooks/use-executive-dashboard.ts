@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 
 import { fetchDashboardKpis, fetchLoadTrend } from "../api/dashboard";
 import { useAuthStore } from "../stores/auth-store";
 import type { LoadTrendPoint, TelemetryReading } from "@bms/shared";
+import { openLiveSocket } from "../lib/live-socket";
 
 function socketUrl(): string {
   return (
@@ -42,7 +43,7 @@ export function useExecutiveDashboard() {
   });
 
   useEffect(() => {
-    const socket: Socket = io(`${socketUrl()}/ws/telemetry`, {
+    const socket: Socket = openLiveSocket(`${socketUrl()}/ws/telemetry`, {
       transports: ["websocket"],
       auth: { token: accessToken },
     });
