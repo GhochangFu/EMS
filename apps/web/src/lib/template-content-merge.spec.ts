@@ -17,6 +17,7 @@
 import type {
   TemplateAlarm,
   TemplateDashboardView,
+  TemplateHealth,
   TemplateKpi,
   TemplateMaintenancePlan,
 } from "@bms/shared";
@@ -634,4 +635,104 @@ export function runDashboardsPatchDoesNotAliasTests(): void {
   );
   assert(merged !== stored, "the merge returns a new object");
   assert(merged.dashboards !== source, "the dashboards value is copied, not the same reference");
+}
+
+const HEALTH: TemplateHealth = {
+  bands: [
+    { code: "good", label: "Good", minScore: 0.8 },
+    { code: "bad", label: "Bad", minScore: 0 },
+  ],
+  weights: { A: 2 },
+};
+
+/**
+ * The `health` arm (`F4.355`, ADR 0038 Amendment 7). Every other section — the
+ * four authored ones and an unknown key — survives a health save unchanged, and
+ * the new block replaces the stored one.
+ */
+export function runHealthPatchPreservesOtherSectionsTests(): void {
+  const stored = storedWithHealth();
+  const merged = mergeTemplateContent(stored, { section: "health", value: HEALTH });
+
+  for (const key of ["contentVersion", "kpis", "alarms", "maintenance", "dashboards", "someFutureKey"]) {
+    assert(
+      JSON.stringify(merged[key]) === JSON.stringify(stored[key]),
+      `${key} must survive a health edit unchanged — got ${JSON.stringify(merged[key])}`,
+    );
+  }
+  assert(
+    JSON.stringify(merged.health) === JSON.stringify(HEALTH),
+    `the health block must be the new value — got ${JSON.stringify(merged.health)}`,
+  );
+  assert(
+    Object.keys(merged).sort().join(",") === Object.keys(stored).sort().join(","),
+    "a health save adds no key and removes none",
+  );
+
+  const noWeights = mergeTemplateContent(stored, {
+    section: "health",
+    value: { bands: HEALTH.bands },
+  });
+  assert(
+    !Object.prototype.hasOwnProperty.call(noWeights.health, "weights"),
+    "a block without weights is written without a weights key",
+  );
+}
+
+/** `null` removes `health` and nothing else (B4). */
+export function runHealthNullDeletesOnlyHealthTests(): void {
+  const stored = storedWithHealth();
+  const merged = mergeTemplateContent(stored, { section: "health", value: null });
+
+  assert(!Object.prototype.hasOwnProperty.call(merged, "health"), "null deletes the health key");
+  assert(
+    Object.keys(merged).sort().join(",") ===
+      Object.keys(stored)
+        .filter((key) => key !== "health")
+        .sort()
+        .join(","),
+    "null removes health and no other key",
+  );
+  for (const key of Object.keys(merged)) {
+    assert(
+      JSON.stringify(merged[key]) === JSON.stringify(stored[key]),
+      `${key} is carried unchanged by a removal`,
+    );
+  }
+  const nothingStored = mergeTemplateContent({ kpis: [] }, { section: "health", value: null });
+  assert(
+    JSON.stringify(nothingStored) === JSON.stringify({ kpis: [] }),
+    "removing an absent block is a no-op",
+  );
+}
+
+/** A weight keyed `__proto__` never reaches the written object as a property or a prototype. */
+export function runHealthPatchDropsUnsafeWeightKeysTests(): void {
+  const weights = JSON.parse('{"__proto__":5,"constructor":6,"prototype":7,"A":2}') as Record<string, number>;
+  assert(Object.hasOwn(weights, "__proto__"), "fixture must hold an own __proto__");
+  const merged = mergeTemplateContent({}, {
+    section: "health",
+    value: { bands: HEALTH.bands, weights },
+  });
+  const health = merged.health as TemplateHealth;
+  assert(
+    JSON.stringify(Object.keys(health.weights ?? {})) === JSON.stringify(["A"]),
+    `only the safe weight survives — got ${JSON.stringify(Object.keys(health.weights ?? {}))}`,
+  );
+  assert(Object.getPrototypeOf(health.weights) === Object.prototype, "the prototype is untouched");
+}
+
+/** The written block shares no object with the patch, so a later form edit cannot mutate it. */
+export function runHealthPatchDoesNotAliasTests(): void {
+  const value: TemplateHealth = JSON.parse(JSON.stringify(HEALTH)) as TemplateHealth;
+  const merged = mergeTemplateContent({}, { section: "health", value });
+  const health = merged.health as TemplateHealth;
+  assert(health !== value, "the block is a copy");
+  assert(health.bands !== value.bands, "the band list is a copy");
+  assert(health.bands[0] !== value.bands[0], "each band is a copy");
+  assert(health.weights !== value.weights, "the weights are a copy");
+  value.bands[0]!.label = "changed";
+  value.weights!.A = 99;
+  assert(health.bands[0]!.label === "Good", "editing the patch afterwards does not reach the write");
+  assert(health.weights!.A === 2, "nor its weights");
 }
