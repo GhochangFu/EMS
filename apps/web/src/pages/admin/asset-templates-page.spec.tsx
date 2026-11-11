@@ -175,7 +175,7 @@ const ANY_HEADING = /· \d+ entr(y|ies)$/;
  * and the label, for the reason `stock-catalog-groups.spec.ts` records: a
  * picker that sorted by name would pass a lazier fixture.
  */
-function listTemplate(seed: {
+export function listTemplate(seed: {
   code: string;
   domain: string;
   organizationId?: string;

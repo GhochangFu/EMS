@@ -25,10 +25,14 @@
  * a problem instead — so a deletion is always something the author asked for.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import type { AdminAssetTemplateDto } from "@bms/shared";
 
-import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
+import {
+  fetchAdminAssetTemplateVersions,
+  updateAdminAssetTemplate,
+} from "../../api/admin/asset-templates";
 import { ConfirmDialog } from "../confirm-dialog";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { mergeTemplateContent, unwritableContentKeys } from "../../lib/template-content-merge";
@@ -40,11 +44,14 @@ import {
   healthHasChanged,
   healthWriteFrom,
   moveHealthBand,
+  otherVersionsHoldingAssets,
   standardHealthBandRows,
   storedHealth,
   type HealthBandRow,
+  type OtherVersionsHoldingAssets,
   type HealthForm,
 } from "../../lib/template-health-form";
+import { STOCK_VIEW_TEMPLATE_ID_PREFIX } from "../../lib/stock-template-view";
 import { useFollowStoredWhenClean } from "../../lib/use-follow-stored-when-clean";
 
 type HealthTabProps = {
@@ -85,6 +92,24 @@ export function HealthTab({ template, editable, onSaved, onDirtyChange }: Health
   const sentForm = useRef<HealthForm | null>(null);
   const currentForm = useRef(form);
   currentForm.current = form;
+
+  // B5: a published version changes no asset — each asset scores against the
+  // version it is pinned to. When other versions of this code still hold
+  // assets, say how many and link to Versions & migration, from the existing
+  // `GET :id/versions`. Drafts need no hint (nothing is live yet), and the stock
+  // viewer's synthetic `published` entry is no row, so it never calls the API.
+  // A failed read shows nothing rather than a guess.
+  const showsVersionsHint =
+    template.status === "published" && !template.id.startsWith(STOCK_VIEW_TEMPLATE_ID_PREFIX);
+  const versionsQ = useQuery({
+    queryKey: ["admin", "asset-template-versions", template.id],
+    queryFn: () => fetchAdminAssetTemplateVersions(template.id),
+    enabled: showsVersionsHint,
+  });
+  const elsewhere =
+    showsVersionsHint && versionsQ.data
+      ? otherVersionsHoldingAssets(versionsQ.data.items, template.id)
+      : null;
 
   const blockedKeys = unwritableContentKeys(template.content);
   const changed = healthHasChanged(form, stored, template.points);
@@ -156,6 +181,18 @@ export function HealthTab({ template, editable, onSaved, onDirtyChange }: Health
         Bands are listed highest first and the last one must start at 0%. A point weighs 1 unless you
         change it; a heavier point counts for more of the score.
       </p>
+
+      {elsewhere && elsewhere.total > 0 ? (
+        <div className="flex flex-wrap items-center gap-3 rounded border border-info-line bg-info-wash p-3 text-xs text-info-ink">
+          <span>{versionsHintText(elsewhere)}</span>
+          <Link
+            to={`/admin/asset-templates/${template.id}/versions`}
+            className="font-semibold text-accent-strong hover:underline"
+          >
+            Versions &amp; migration
+          </Link>
+        </div>
+      ) : null}
 
       {form.removeBlock ? (
         <div className="flex flex-wrap items-center gap-3 rounded border border-warning-line bg-warning-wash p-3 text-xs text-warning-ink">
@@ -408,6 +445,16 @@ export function HealthTab({ template, editable, onSaved, onDirtyChange }: Health
       ) : null}
     </div>
   );
+}
+
+/** "3 assets are on other versions of this template (v1: 3). They keep …" */
+function versionsHintText(elsewhere: OtherVersionsHoldingAssets): string {
+  const breakdown = elsewhere.versions
+    .map((entry) => `v${entry.version}: ${entry.assetCount}`)
+    .join(", ");
+  return elsewhere.total === 1
+    ? `1 asset is on another version of this template (${breakdown}). It keeps that version's bands until you migrate it.`
+    : `${elsewhere.total} assets are on other versions of this template (${breakdown}). They keep that version's bands until you migrate them.`;
 }
 
 function CellInput({
