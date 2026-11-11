@@ -20,6 +20,7 @@ import { EnergyViewService } from "./energy-view.service";
 import { ReportScopeService } from "./report-scope";
 import { energyReportQuerySchema } from "./reports.schema";
 import { ReportsService } from "./reports.service";
+import { RateLimitClassOf } from "../rate-limit/rate-limit-class.decorator";
 
 /**
  * The energy report routes. `F4.290` (ADR 0099 Amendment 9 E4): each takes an
@@ -56,6 +57,7 @@ export class ReportsController {
   }
 
   @Get("energy/export.csv")
+  @RateLimitClassOf("heavy")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header(
     "Content-Disposition",
@@ -96,6 +98,7 @@ export class ReportsController {
    * `Buffer`, which Nest would otherwise try to serialise as JSON.
    */
   @Get("energy/export.xlsx")
+  @RateLimitClassOf("heavy")
   async energyXlsx(
     @CurrentUser() user: JwtPayload,
     @Query() query: unknown,
@@ -141,6 +144,7 @@ export class ReportsController {
    * Nest would otherwise try to serialise as JSON.
    */
   @Get("energy/export.pdf")
+  @RateLimitClassOf("heavy")
   async energyPdf(
     @CurrentUser() user: JwtPayload,
     @Query() query: unknown,
@@ -201,6 +205,7 @@ export class ReportsController {
    * scope. The file name is fixed: no id, code or name.
    */
   @Get("energy/view/export.csv")
+  @RateLimitClassOf("heavy")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="energy-view.csv"')
   @Header("Cache-Control", "no-store")
@@ -218,6 +223,7 @@ export class ReportsController {
 
   /** `F4.303` — the same rows as `xlsx`, one sheet. `@Res()` for `energyXlsx`'s reason: the body is a `Buffer`. */
   @Get("energy/view/export.xlsx")
+  @RateLimitClassOf("heavy")
   async energyViewXlsx(@CurrentUser() user: JwtPayload, @Query() query: unknown, @Res() res: Response): Promise<void> {
     let body: Buffer;
     try {

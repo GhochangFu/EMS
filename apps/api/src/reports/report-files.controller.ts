@@ -24,6 +24,7 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { listReportFilesQuerySchema, reportFileIdParamSchema } from "./report-files.schema";
 import { ReportFilesService } from "./report-files.service";
+import { RateLimitClassOf } from "../rate-limit/rate-limit-class.decorator";
 
 /**
  * `F3.5a` (ADR 0071 decision 11; Amendment 1 items 1–3) — the four
@@ -86,6 +87,7 @@ export class ReportFilesController {
 
   /** `POST /api/v1/reports/energy/files` — render, store, and answer the new row's DTO; 201. */
   @Post("energy/files")
+  @RateLimitClassOf("heavy")
   @HttpCode(HttpStatus.CREATED)
   async save(@CurrentUser() user: JwtPayload, @Body() body: unknown): Promise<ReportFileDto> {
     const dto = parseRequest(() => saveEnergyReportFileBodySchema.parse(body));

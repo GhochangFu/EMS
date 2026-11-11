@@ -23,6 +23,9 @@ import { SitePointInventoryService } from "./site-point-inventory.service";
   // instance, so it must stay a **singleton** (the default scope). Making it
   // request-scoped would hand every request a fresh Map and throttle nothing,
   // and no unit test in this repository could see that.
+  // Since `F4.17` (ADR 0125 Q9) the shared window lives in Redis and the Map is
+  // the fallback and the local guard `EvaluateThrottle.claim` reads first — so
+  // the singleton rule still holds, for the same reason.
   //
   // `F4.278` (ADR 0099 Amendment 8): `MasterDataAuditService` is the funnel every
   // rule audit row goes through (so a confirmed copilot change carries

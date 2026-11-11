@@ -89,6 +89,7 @@ class RateLimitRedisCloser implements OnModuleDestroy {
         new RateLimiterService(config, store, metrics ?? null),
     },
   ],
-  exports: [RateLimiterService, RATE_LIMIT_CONFIG],
+  // `RateLimitStore` for `EvaluateThrottle` (`F3.47`, ADR 0125 Q9).
+  exports: [RateLimiterService, RateLimitStore, RATE_LIMIT_CONFIG],
 })
 export class RateLimitModule {}

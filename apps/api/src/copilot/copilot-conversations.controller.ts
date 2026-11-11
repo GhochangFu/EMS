@@ -53,6 +53,7 @@ import { checkOpenWizards, parseWizardsField } from "./copilot-open-wizards";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import { CopilotSkillService } from "./copilot-skill.service";
 import { CopilotTurnService } from "./copilot-turn.service";
+import { RateLimitClassOf } from "../rate-limit/rate-limit-class.decorator";
 
 /**
  * The caller's saved conversations (`F3.85` PR 5, ADR 0099 decision 8). The
@@ -238,6 +239,7 @@ export class CopilotConversationsController {
    * `asset-images-write.controller.ts` records.
    */
   @Post(":id/turns")
+  @RateLimitClassOf("heavy")
   @HttpCode(200)
   @UseInterceptors(
     FilesInterceptor("files", COPILOT_ATTACHMENTS_MAX, {

@@ -26,6 +26,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { assetIdParamSchema, assetImageParamsSchema } from "./asset-images.schema";
 import { AssetImagesWriteService } from "./asset-images-write.service";
 import { decodeMulterFilename } from "./multer-filename";
+import { RateLimitClassOf } from "../rate-limit/rate-limit-class.decorator";
 
 /**
  * What multer hands `@UploadedFile()` — structural, not `Express.Multer.File`,
@@ -108,6 +109,7 @@ export class AssetImagesWriteController {
 
   /** `POST /api/v1/assets/:assetId/images` — multipart `file` plus an optional `caption`; 201 with the new row's DTO. */
   @Post()
+  @RateLimitClassOf("heavy")
   @HttpCode(HttpStatus.CREATED)
   // `files: 1` caps the multipart part count for the file field itself;
   // `fields: 2` caps the non-file fields (`caption`, with one of headroom) —

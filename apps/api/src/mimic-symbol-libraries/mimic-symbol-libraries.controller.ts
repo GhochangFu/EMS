@@ -41,6 +41,7 @@ import { CopilotUploadChangeInterceptor } from "../copilot/copilot-upload-change
 import { CopilotUploadRoute } from "../copilot/copilot-upload-route";
 import { mimicLibraryCodeParamSchema, mimicOrgSymbolParamsSchema, mimicSymbolLibrariesQuerySchema } from "./mimic-symbol-libraries.schema";
 import { MimicSymbolLibrariesService } from "./mimic-symbol-libraries.service";
+import { RateLimitClassOf } from "../rate-limit/rate-limit-class.decorator";
 
 /**
  * What multer hands `@UploadedFile()` — structural, not `Express.Multer.File`, because esbuild
@@ -108,6 +109,7 @@ export class MimicSymbolLibrariesController {
   }
 
   @Post(":id/symbols")
+  @RateLimitClassOf("heavy")
   @HttpCode(HttpStatus.CREATED)
   // `F3.87` PR 6a (ADR 0099 Amendment 3 A3): the copilot's multipart Confirm target. Its body hash
   // is compared after multer, by the stage that follows `FileInterceptor` in the same call.

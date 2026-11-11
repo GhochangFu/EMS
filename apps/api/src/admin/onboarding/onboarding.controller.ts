@@ -41,6 +41,7 @@ import { OnboardingCredentialCopyService } from "./onboarding-credential-copy.se
 import { OnboardingSessionLockService } from "./onboarding-session-lock.service";
 import { OnboardingSessionUnlockService } from "./onboarding-session-unlock.service";
 import { OnboardingService } from "./onboarding.service";
+import { RateLimitClassOf } from "../../rate-limit/rate-limit-class.decorator";
 
 @Controller("admin/onboarding")
 @UseGuards(JwtAuthGuard)
@@ -100,6 +101,7 @@ export class OnboardingController {
   }
 
   @Get("template.xlsx")
+  @RateLimitClassOf("heavy")
   async downloadTemplate(@CurrentUser() user: JwtPayload, @Res() res: Response) {
     const buffer = this.service.buildTemplate(user, "");
     res.setHeader(
@@ -154,6 +156,7 @@ export class OnboardingController {
   }
 
   @Post("sessions/:id/upload")
+  @RateLimitClassOf("heavy")
   @HttpCode(HttpStatus.OK)
   // `F4.102`. Until this row the route took an unbounded upload: multer buffered
   // whatever arrived before `parseUpload` saw a byte, and the two sibling
@@ -260,6 +263,7 @@ export class OnboardingController {
    * prefix (security review M5), so the 400 cannot be thrown here.
    */
   @Post("sessions/:id/discovery")
+  @RateLimitClassOf("heavy")
   @HttpCode(HttpStatus.ACCEPTED)
   async startDiscovery(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
     let sessionId: string;

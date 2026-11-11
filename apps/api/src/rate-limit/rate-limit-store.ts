@@ -25,6 +25,31 @@ end
 return {count, ttl}
 `;
 
+/**
+ * `F4.17` / ADR 0125 Q9 — the `F3.47` evaluate-now window, shared across API
+ * processes. Atomic over every key the caller belongs to: refused (returning
+ * the longest remaining window) if **any** key is inside its window, and only
+ * an allowed press stamps — **all** of them. Both rules are the in-process
+ * `EvaluateThrottle.check`'s, kept intact; the script is what keeps them
+ * atomic once two processes share the state.
+ */
+export const CLAIM_ALL_SCRIPT = `
+local longest = 0
+for _, key in ipairs(KEYS) do
+  local ttl = redis.call('PTTL', key)
+  if ttl > longest then
+    longest = ttl
+  end
+end
+if longest > 0 then
+  return longest
+end
+for _, key in ipairs(KEYS) do
+  redis.call('SET', key, '1', 'PX', ARGV[1])
+end
+return 0
+`;
+
 /** Stage 1 keys (`rateLimitKey("ip", …)`), dropped first when the memory store overflows. */
 const IP_STAGE_PREFIX = "rl:v1:ip:";
 
@@ -168,6 +193,37 @@ export class RateLimitStore {
       }
     }
     return { count: this.memory.hit(key, ttlMs, now), resetMs, backend: "memory" };
+  }
+
+  /**
+   * Claims a window of `windowMs` on every key at once (see
+   * {@link CLAIM_ALL_SCRIPT}). Returns `0` when claimed, the longest remaining
+   * milliseconds when refused, or `null` when there is no usable Redis — the
+   * caller then falls back to its own in-process state. Never throws.
+   */
+  async claimAll(keys: string[], windowMs: number): Promise<number | null> {
+    const redis = this.options.redis;
+    if (!redis || keys.length === 0) {
+      return null;
+    }
+    try {
+      if (!redis.isReady) {
+        throw new Error("redis not ready");
+      }
+      const reply = await withTimeout(
+        redis.eval(CLAIM_ALL_SCRIPT, { keys, arguments: [String(windowMs)] }),
+        this.timeoutMs,
+      );
+      if (typeof reply !== "number" || !Number.isFinite(reply) || reply < 0) {
+        throw new Error("unexpected claim script reply");
+      }
+      this.lastRedisFailed = false;
+      return reply;
+    } catch {
+      this.lastRedisFailed = true;
+      this.options.onStoreError?.();
+      return null;
+    }
   }
 }
 

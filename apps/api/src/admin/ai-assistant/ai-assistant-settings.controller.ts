@@ -20,6 +20,7 @@ import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema } from "../admin.schema";
 import { putAiAssistantSettingsBodySchema, testAiAssistantBodySchema } from "./ai-assistant-settings.schema";
 import { AiAssistantSettingsService } from "./ai-assistant-settings.service";
+import { RateLimitClassOf } from "../../rate-limit/rate-limit-class.decorator";
 
 /** One organization's onboarding-agent provider, model and key (`F3.21`, ADR 0090 Amendment 1 A5). */
 @Controller("admin/organizations/:orgId/ai-assistant")
@@ -50,6 +51,7 @@ export class AiAssistantSettingsController {
   }
 
   @Post("test")
+  @RateLimitClassOf("heavy")
   @HttpCode(HttpStatus.OK)
   async test(@Param("orgId") orgId: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
     try {

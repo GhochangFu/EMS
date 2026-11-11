@@ -14,18 +14,26 @@ const MAX_SUBJECT_LENGTH = 64;
 
 export type RateLimitStage = "ip" | "identity";
 
-/** Builds the counter key. A long subject is hashed so keys stay bounded. */
+/** A subject as it may appear inside a key: long or unusual ones are hashed, so keys stay bounded. */
+export function safeSubject(subject: string): string {
+  return subject.length > MAX_SUBJECT_LENGTH || /[^A-Za-z0-9.:_-]/.test(subject)
+    ? `h_${createHash("sha256").update(subject).digest("hex").slice(0, 32)}`
+    : subject;
+}
+
+/** Builds the counter key. */
 export function rateLimitKey(
   stage: RateLimitStage,
   bucket: string,
   subject: string,
   windowIndex: number,
 ): string {
-  const safe =
-    subject.length > MAX_SUBJECT_LENGTH || /[^A-Za-z0-9.:_-]/.test(subject)
-      ? `h_${createHash("sha256").update(subject).digest("hex").slice(0, 32)}`
-      : subject;
-  return `rl:v1:${stage}:${bucket}:${safe}:${windowIndex}`;
+  return `rl:v1:${stage}:${bucket}:${safeSubject(subject)}:${windowIndex}`;
+}
+
+/** `F4.17` / ADR 0125 Q9 — the shared key of one `F3.47` evaluate-now bucket. */
+export function evaluateThrottleKey(bucket: string): string {
+  return `rl:v1:evaluate:${safeSubject(bucket)}`;
 }
 
 /** The fixed window `now` falls in, and the milliseconds until it ends. */

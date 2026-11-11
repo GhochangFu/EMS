@@ -179,6 +179,15 @@ None — no new npm package.
   would be added. And it is one bespoke route throttle — not `ThrottlerModule`,
   not middleware, no new dependency — so `apps/api` still has no general rate
   limiting.*
+  *Discharged in part 2026-11-10 by `F4.17` (ADR 0125): `apps/api` now has a
+  general request limiter (Stage 1 per IP, Stage 2 per user, shared through
+  Redis), this route sits in its `heavy` class (which refuses nothing until the
+  owner sets `RATE_LIMIT_MODE=enforce`; it ships in `shadow`), and the 30 s window above moved
+  into Redis (Q9), so it bounds **per fleet** rather than per API process while
+  Redis is up — the per-process ceiling returns only while it is down. Still
+  open, as before: `AlarmRaiseService`'s writes are unthrottled, and
+  `POST /rules/preview`'s audit row is bounded only by the general `write`
+  class once `enforce` is on.*
 - Decision 3's "only on a raise" applies to the *streaming* engine
   (`AlarmEngineService`, which had no trace mechanism before F3.6). The
   on-demand evaluator's own every-evaluation trace — matched or not, the

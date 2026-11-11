@@ -32,6 +32,7 @@ import {
   updateDashboardTemplateBodySchema,
 } from "@bms/shared";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
+import { RateLimitClassOf } from "../../rate-limit/rate-limit-class.decorator";
 
 /**
  * The section dashboard template admin surface — `F3.36`, ADR 0049.
@@ -94,6 +95,7 @@ export class DashboardTemplatesController {
    * `F3.36` security review.
    */
   @Get("stock")
+  @RateLimitClassOf("heavy")
   async listStock(@CurrentUser() user: JwtPayload) {
     await this.stock.assertCanList(user);
     return this.stock.list();
@@ -111,6 +113,7 @@ export class DashboardTemplatesController {
    * the order. Moved here from below `draft` in `F2.13`.
    */
   @Post("stock/:code/import")
+  @RateLimitClassOf("heavy")
   async importStock(
     @Param("code") code: string,
     @Body() body: unknown,

@@ -37,6 +37,7 @@ import { EvaluateThrottle, throttleKeysFor } from "./evaluate-throttle";
 import { RulesBatchService } from "./rules-batch.service";
 import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "./rules.schema";
 import { RulesService } from "./rules.service";
+import { RateLimitClassOf } from "../rate-limit/rate-limit-class.decorator";
 
 const idParamSchema = z.string().uuid();
 
@@ -187,6 +188,7 @@ export class RulesController {
    * unwraps them. Do not add one half of that pair without the other.
    */
   @Post("evaluate")
+  @RateLimitClassOf("heavy")
   @HttpCode(HttpStatus.OK)
   async evaluateEnabledRules(
     @CurrentUser() user: JwtPayload,
@@ -205,7 +207,8 @@ export class RulesController {
     // the others' button for the life of the process. Block 19 of
     // `evaluate-throttle-route.spec.ts` is the gate; nothing else observes this
     // value, because every other test runs the non-empty branch.
-    const decision = this.throttle.check(
+    // `claim`, not `check`: the shared window (`F4.17`, ADR 0125 Q9).
+    const decision = await this.throttle.claim(
       throttleKeysFor(await this.accessControl.readableOrganizationIds(user), user.sub),
       Date.now(),
     );

@@ -17,6 +17,11 @@ import {
   refusesTheSecondOfTwoPressesInTheSameTick,
   roundsAPartSecondUpNotDown,
   twoGrantlessCallersDoNotDenyEachOther,
+  claimWithoutAStoreIsTheInProcessWindow,
+  aStoreWithNoRedisFallsBackToTheInProcessWindow,
+  aSharedRefusalReportsTheSharedRemainder,
+  aSharedClaimAlsoStampsTheLocalWindow,
+  aLocalStampTakenDuringAnOutageStillRefusesWhenRedisReturns,
 } from "./evaluate-throttle.spec";
 
 /**
@@ -90,5 +95,27 @@ describe("F3.47 evaluate-now throttle", () => {
 
   it("holds the same interval as the automatic sweep", () => {
     holdsTheSameIntervalAsTheAutomaticSweep();
+  });
+});
+
+describe("EvaluateThrottle.claim — the shared window (F4.17, ADR 0125 Q9)", () => {
+  it("without a store, claim is the in-process window", async () => {
+    await claimWithoutAStoreIsTheInProcessWindow();
+  });
+
+  it("a store with no Redis falls back to the in-process window", async () => {
+    await aStoreWithNoRedisFallsBackToTheInProcessWindow();
+  });
+
+  it("a shared refusal reports the shared remainder, rounded up", async () => {
+    await aSharedRefusalReportsTheSharedRemainder();
+  });
+
+  it("a shared claim also stamps the local window", async () => {
+    await aSharedClaimAlsoStampsTheLocalWindow();
+  });
+
+  it("a local stamp taken during an outage still refuses when Redis returns", async () => {
+    await aLocalStampTakenDuringAnOutageStillRefusesWhenRedisReturns();
   });
 });

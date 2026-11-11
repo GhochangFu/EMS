@@ -563,3 +563,39 @@ export async function assertTheThirtyFirstHandshakeIsRefused(): Promise<void> {
 export async function assertNoLimiterAdmitsEveryHandshake(): Promise<void> {
   expect(await refuseRateLimitedHandshake(undefined, fakeSocket("203.0.113.7") as never)).toBe(false);
 }
+
+// ── claimAll (the F3.47 shared window, ADR 0125 Q9) fails open ──────────────
+
+export async function assertClaimAllReturnsTheScriptReply(): Promise<void> {
+  const store = new RateLimitStore({ redis: fakeRedis(async () => 0) });
+  expect(await store.claimAll(["k"], 30_000)).toBe(0);
+  const held = new RateLimitStore({ redis: fakeRedis(async () => 12_000) });
+  expect(await held.claimAll(["k"], 30_000)).toBe(12_000);
+}
+
+export async function assertClaimAllFailsOpenToNullAndCounts(): Promise<void> {
+  const cases: Array<[string, RedisEvalClient]> = [
+    ["no Redis configured", undefined as unknown as RedisEvalClient],
+    ["not ready", fakeRedis(async () => 0, false)],
+    ["eval throws", fakeRedis(async () => {
+      throw new Error("ECONNRESET");
+    })],
+    ["a non-number reply", fakeRedis(async () => "OK")],
+    ["a negative reply", fakeRedis(async () => -2)],
+    ["NaN", fakeRedis(async () => Number.NaN)],
+  ];
+  for (const [why, redis] of cases) {
+    const onStoreError = vi.fn();
+    const store = new RateLimitStore({ redis: redis ?? null, onStoreError, timeoutMs: 10 });
+    expect(await store.claimAll(["k"], 30_000), why).toBeNull();
+    if (redis) {
+      expect(onStoreError, why).toHaveBeenCalledTimes(1);
+      expect(store.state, why).toBe("degraded");
+    }
+  }
+  const slow = new RateLimitStore({ redis: fakeRedis(() => new Promise(() => undefined)), timeoutMs: 10 });
+  expect(await slow.claimAll(["k"], 30_000)).toBeNull();
+  // An empty key list is never sent: nothing to claim.
+  const store = new RateLimitStore({ redis: fakeRedis(async () => 0) });
+  expect(await store.claimAll([], 30_000)).toBeNull();
+}

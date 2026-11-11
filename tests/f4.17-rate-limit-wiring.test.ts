@@ -29,6 +29,16 @@ describe("F4.17 — the limiter is wired where ADR 0125 puts it", () => {
     expect(code("apps/api/src/rate-limit/rate-limit.module.ts")).toMatch(/exports:\s*\[[^\]]*\bRateLimiterService\b/);
   });
 
+  it("EvaluateThrottle receives the shared store (ADR 0125 Q9)", () => {
+    // `@Optional()` resolves to undefined rather than failing boot, so only
+    // these two pins keep the F3.47 window shared across processes.
+    expect(code("apps/api/src/rate-limit/rate-limit.module.ts")).toMatch(/exports:\s*\[[^\]]*\bRateLimitStore\b/);
+    expect(code("apps/api/src/rules/evaluate-throttle.ts")).toMatch(
+      /constructor\(@Optional\(\) private readonly shared\?: RateLimitStore\)/,
+    );
+    expect(code("apps/api/src/rules/rules.controller.ts")).toMatch(/await this\.throttle\.claim\(/);
+  });
+
   it("the worker does not import RateLimitModule", () => {
     expect(code("apps/api/src/worker.module.ts")).not.toMatch(/RateLimitModule/);
   });

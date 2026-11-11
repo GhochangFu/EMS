@@ -29,6 +29,7 @@ import { assetPointBulkUpdateBodySchema, mappingSheetQuerySchema } from "./asset
 import { AssetPointsAdminService } from "./asset-points.service";
 import { MAX_IMPORT_FILE_BYTES } from "./mapping-sheet-rows";
 import { MappingSheetService } from "./mapping-sheet.service";
+import { RateLimitClassOf } from "../../rate-limit/rate-limit-class.decorator";
 
 /** The `file` part Multer hands over, or nothing when the caller sent none. */
 type UploadedMappingSheet = { buffer: Buffer } | undefined;
@@ -48,6 +49,7 @@ export class AssetPointsAdminController {
    * against `:id/deactivate` is the pair that would bite first.
    */
   @Get("mapping-sheet.xlsx")
+  @RateLimitClassOf("heavy")
   async exportMappingSheet(
     @CurrentUser() user: JwtPayload,
     @Query("locationId") locationId: string,
@@ -61,6 +63,7 @@ export class AssetPointsAdminController {
   }
 
   @Post("mapping-sheet/preview")
+  @RateLimitClassOf("heavy")
   @HttpCode(HttpStatus.OK)
   // `files: 1` caps the multipart part count for the file field; `fields: 1`
   // caps the non-file fields, which this route has none of (`locationId` rides
@@ -77,6 +80,7 @@ export class AssetPointsAdminController {
   }
 
   @Post("mapping-sheet/commit")
+  @RateLimitClassOf("heavy")
   @HttpCode(HttpStatus.OK)
   // See `previewMappingSheet` above for the two limits.
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_IMPORT_FILE_BYTES, files: 1, fields: 1 } }))
