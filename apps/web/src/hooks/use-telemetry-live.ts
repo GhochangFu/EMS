@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 
 import { fetchTelemetryRecent } from "../api/telemetry";
 import { useAuthStore } from "../stores/auth-store";
 import { encodePointRef, type TelemetryReading } from "@bms/shared";
+import { openLiveSocket } from "../lib/live-socket";
 
 function socketUrl(): string {
   return (
@@ -35,7 +36,7 @@ export function useTelemetryLive(pointRefEncoded: string | null) {
       return;
     }
 
-    const socket: Socket = io(`${socketUrl()}/ws/telemetry`, {
+    const socket: Socket = openLiveSocket(`${socketUrl()}/ws/telemetry`, {
       transports: ["websocket"],
       auth: { token: accessToken },
     });

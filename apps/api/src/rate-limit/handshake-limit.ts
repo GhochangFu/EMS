@@ -12,7 +12,9 @@ import { rateLimitedBody } from "./rate-limited.exception";
  *
  * The handshake has no `req.ip`, so the client address is derived with the
  * same hop-count rule Express applies (`clientAddress`). A refused socket is
- * sent one `rate_limited` event carrying the 429 body, then disconnected.
+ * sent one `rate_limited` event carrying the 429 body, then disconnected from
+ * its namespace only; the SPA's `openLiveSocket` reconnects it after
+ * `retryAfterSeconds`.
  *
  * Returns `true` when the connection was refused (and is already closed).
  */
@@ -33,6 +35,12 @@ export async function refuseRateLimitedHandshake(
     return false;
   }
   client.emit("rate_limited", rateLimitedBody(decision.refusal));
-  client.disconnect(true);
+  // This namespace only, never `disconnect(true)`: the SPA multiplexes
+  // `/ws/alarms` and `/ws/telemetry` over one connection, and closing it
+  // disconnected the sibling too — with no `rate_limited` event, so its
+  // `openLiveSocket` never reconnected and the alarm rail died with the
+  // refused telemetry socket (`tests/f4.17-live-socket-multiplex.test.ts`).
+  // The client closes the connection itself once no namespace is left on it.
+  client.disconnect();
   return true;
 }

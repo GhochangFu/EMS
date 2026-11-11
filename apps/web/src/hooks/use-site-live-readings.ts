@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { io, type Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 
 import {
   encodePointRef,
@@ -19,6 +19,7 @@ import {
 import { STALE_TICK_MS } from "../lib/schematic-telemetry";
 import { socketBaseUrl } from "../lib/socket-url";
 import { useAuthStore } from "../stores/auth-store";
+import { openLiveSocket } from "../lib/live-socket";
 
 /** What `useSiteLiveReadings` hands each asset card. */
 export type SiteLiveReadings = {
@@ -110,7 +111,7 @@ export function useSiteLiveReadings(
     if (!enabled) {
       return undefined;
     }
-    const socket: Socket = io(`${socketBaseUrl()}/ws/telemetry`, {
+    const socket: Socket = openLiveSocket(`${socketBaseUrl()}/ws/telemetry`, {
       transports: ["websocket"],
       auth: { token: accessToken },
     });

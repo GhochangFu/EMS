@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { io, type Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 
 import { fetchMapSites } from "../api/map";
 import { LiveStatusStrip } from "../components/control-room/live-status-strip";
@@ -13,6 +13,7 @@ import { AppShell } from "../layouts/app-shell";
 import { estateSiteLink, mapLiveCounts } from "../lib/map-site";
 import { socketBaseUrl } from "../lib/socket-url";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
+import { openLiveSocket } from "../lib/live-socket";
 
 type MapPageProps = {
   user: AuthUser;
@@ -38,11 +39,11 @@ export function MapPage({ user }: MapPageProps) {
   useEffect(() => {
     const base = socketBaseUrl();
     const sockets: Socket[] = [
-      io(`${base}/ws/telemetry`, {
+      openLiveSocket(`${base}/ws/telemetry`, {
         transports: ["websocket"],
         auth: { token: accessToken },
       }),
-      io(`${base}/ws/alarms`, {
+      openLiveSocket(`${base}/ws/alarms`, {
         transports: ["websocket"],
         auth: { token: accessToken },
       }),

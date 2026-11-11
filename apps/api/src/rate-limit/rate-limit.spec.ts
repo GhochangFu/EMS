@@ -532,12 +532,14 @@ function fakeSocket(address: string, forwardedFor?: string) {
     handshake: { address, headers: forwardedFor ? { "x-forwarded-for": forwardedFor } : {} },
     emitted: [] as Array<[string, unknown]>,
     disconnected: false,
+    closedTheConnection: false,
     emit(event: string, body: unknown) {
       this.emitted.push([event, body]);
       return true;
     },
-    disconnect() {
+    disconnect(close?: boolean) {
       this.disconnected = true;
+      this.closedTheConnection = close === true;
       return this;
     },
   };
@@ -553,6 +555,9 @@ export async function assertTheThirtyFirstHandshakeIsRefused(): Promise<void> {
   const refused = fakeSocket("172.18.0.4", "203.0.113.7, 172.18.0.1");
   expect(await refuseRateLimitedHandshake(service, refused as never)).toBe(true);
   expect(refused.disconnected).toBe(true);
+  // The namespace only: closing the connection also drops the SPA's sibling
+  // namespace on it (tests/f4.17-live-socket-multiplex.test.ts).
+  expect(refused.closedTheConnection).toBe(false);
   expect(refused.emitted[0]?.[0]).toBe("rate_limited");
   expect(rateLimitedErrorSchema.parse(refused.emitted[0]?.[1]).code).toBe("rate_limited");
   // The bucket is the client behind the proxies, not nginx: another client is fine.
