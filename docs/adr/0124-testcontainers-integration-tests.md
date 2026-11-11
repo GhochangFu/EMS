@@ -227,6 +227,70 @@ the root `vitest.config.ts`); none ships in an image.
 - **Owed.** The AGENTS.md §4.6 edit (decision 11) and, if decision 7's later
   row is taken, removing the CI `services:`.
 
+## Implementation record
+
+Facts measured during the build. They change no decision; each says which line above it
+replaces as an estimate.
+
+**U1 spike, 2026-11-11** (`timescale/timescaledb:2.29.1-pg16`, `redis:7-alpine`, Vitest
+4.1.10, a 4-core 15 GB cloud container; plan *Build record* has the commands):
+
+- **Template build:** `db:roles` 0.6 s, `db:migrate` 1.9 s, `db:seed` 4.4 s — about 7 s, not
+  the 1–2 min estimated under *Consequences*. The seeded database is 18 MB (168 assets, 12
+  TimescaleDB jobs).
+- **Copy:** `CREATE DATABASE … TEMPLATE` takes ~0.12 s with `WAL_LOG` (the PG16 default) and
+  0.17–0.37 s with `FILE_COPY`. A copy per **file** would add ~20 s to a full run at two
+  workers, so ruling 3's per-worker choice is not forced by cost.
+- **TimescaleDB in a copy:** hypertable, four continuous aggregates and RLS all intact
+  (`bms_owner` sees 0 assets with no tenant set, `bms_fleet` sees 168). Each copy gets its
+  own scheduler within ~60 s and every BMS policy reports `Success`. Two background sessions
+  still held the template after `ALLOW_CONNECTIONS false` and had to be terminated before
+  the first copy. The image's "Telemetry Reporter" job fails without outbound network, so the
+  test container sets `timescaledb.telemetry_level=off`.
+- **Vitest 4.1:** `VITEST_POOL_ID` is 1..`maxWorkers`, and a value written to `process.env`
+  in a `setupFiles` entry is already visible to a test file's module-level code.
+- **The whole suite on per-worker copies:** with every file given its own worker's copy of
+  the plain template (no telemetry row, no `db:refresh-aggregates`), the `api`, `ingest` and
+  `tests/` integration projects ran 977 files — 967 passed, 9 skipped (the Keycloak, MinIO and
+  Mosquitto specs, whose services were not started) and 1 failed (this PR's own container test,
+  before `testcontainers` was installed) — 10,444 tests, 384 s. **No suite depends
+  on CI-only preparation or on the database being named `bms`.** The same suite on one
+  shared database, as CI runs it today, took 764 s for all 1,880 files (unit and web
+  included, so the two times are not comparable).
+
+**Refinement of decisions 3 and 5 (drafter, during U2):** in the external mode two runs can
+share one server (two worktrees, a watch beside a full run), so every database a run creates
+there carries a per-run prefix — `bms_t<run id>_template`, `_shared`, `_w<n>` — and the run
+drops its own databases at the end. In the container mode the names stay `bms_template`,
+`bms_shared`, `bms_w<n>`, because each run has its own server.
+
+**Precedence as built (decision 5, made explicit):** `BMS_TEST_DB=containers` beats a set
+`DATABASE_URL` — CI's test step sets it while `DATABASE_URL` stays at job scope for the
+validation steps — and it refuses without Docker even locally, because naming a mode is a
+claim. A set `DATABASE_URL` under `CI` with no Docker is the external mode, not a refusal.
+
+**Security, from the PR 1 review:** testcontainers publishes a container's port on every host
+interface and offers no loopback-only binding, so for the length of a run the test Redis and
+Postgres are reachable from the developer's network. Compose answers the same exposure by
+binding Redis to `127.0.0.1` (ADR 0063 Amendment 2); the harness answers it with a **random
+Redis `requirepass` and a random Postgres superuser password per run**. The four application
+roles keep their dev passwords, as on compose. Ryuk, which a local run still starts, mounts the
+Docker socket and listens on a published port too; CI disables it (decision 7, set on the
+`Run tests` step in PR 1). On a shared network, set Docker's daemon default `"ip": "127.0.0.1"`
+to keep every published port on loopback.
+
+ `testcontainers` `12.2.1`, exact, root `devDependencies`. `pg` is not
+added to the root: the harness loads the copy `packages/db` already depends on, through
+`createRequire`.
+One pnpm override is added beside the existing `jsdom` one:
+`"@types/ssh2>@types/node": "^24.0.0"`. Without it `testcontainers`' types
+(`@types/dockerode` → `@types/ssh2`) bring `@types/node` 18 into the root `typecheck:tests`
+program next to the repo's 24, and Node 18's `ProcessEnv` fails an existing call in
+`apps/api/src/testing/integration-db-gate.ts` (TS2559). Types only; no runtime change.
+`ssh2` and its optional `cpu-features` (SSH to a remote Docker host, which the harness does not
+use) run native install scripts; `pnpm.neverBuiltDependencies` lists both, so `pnpm install`
+does not run them. `ssh2` falls back to plain JavaScript.
+
 ## Open questions for the owner (in order)
 
 All nine answered 2026-11-10 (see *Rulings*). Kept as asked, for the record.

@@ -52,6 +52,8 @@
     "tests/f4.52-auth-failure-status.test.ts",
     "tests/f4.63-query-retry-wiring.test.ts",
     "tests/integration-fixture-isolation.test.ts",
+    "tests/f4.5-test-harness.test.ts",
+    "tests/f4.5-test-harness.integration.test.ts",
     "tests/integration-fixture-sharing.test.ts",
     "tests/adr-0045-owner-and-superuser-url.test.ts",
     "tests/pre-commit-gate.test.ts",
