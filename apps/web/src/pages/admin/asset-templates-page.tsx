@@ -60,6 +60,7 @@ import {
 } from "../../lib/asset-templates-page-tabs";
 import { canAuthorTemplates } from "../../lib/template-authoring-access";
 import { groupStockByDomain } from "../../lib/stock-catalog-groups";
+import { contentHasHealthBands } from "../../lib/template-health-form";
 import {
   clampTemplateListFilters,
   filterTemplateGroups,
@@ -370,6 +371,12 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                         v{version.version}
                       </Link>
                       <StatusPill label={version.status} tone={statusTone(version.status)} />
+                      {/* `F4.355` (ADR 0038 Amendment 7 B6): a version with no
+                          `health.bands` scores its assets but shows no band.
+                          Derived from the list response; no new route. */}
+                      {!contentHasHealthBands(version.content) ? (
+                        <StatusPill label="No health bands" tone="info" />
+                      ) : null}
                     </div>
                     <div className="text-2xs text-ink-muted">
                       {version.pointCount} point{version.pointCount === 1 ? "" : "s"}

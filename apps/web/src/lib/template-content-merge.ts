@@ -45,6 +45,7 @@
 import type {
   TemplateAlarm,
   TemplateDashboardView,
+  TemplateHealth,
   TemplateKpi,
   TemplateMaintenancePlan,
 } from "@bms/shared";
@@ -53,8 +54,9 @@ import type {
 export type StoredTemplateContent = Readonly<Record<string, unknown>>;
 
 /**
- * The four sections `F2.5` / `F3.1e` / `F2.19` author. Everything else is
- * carried, not edited.
+ * The four sections `F2.5` / `F3.1e` / `F2.19` author, and since `F4.355`
+ * `health` (ADR 0038 Amendment 7) — the one arm whose `null` deletes its key.
+ * Everything else is carried, not edited.
  *
  * `dashboards` is a **record**, not an array like its three siblings — a named
  * view keyed by name, not a list of entries. `mergeTemplateContent` branches
@@ -70,7 +72,13 @@ export type TemplateContentPatch =
   | { section: "kpis"; value: readonly TemplateKpi[] }
   | { section: "alarms"; value: readonly TemplateAlarm[] }
   | { section: "maintenance"; value: readonly TemplateMaintenancePlan[] }
-  | { section: "dashboards"; value: Readonly<Record<string, TemplateDashboardView>> };
+  | { section: "dashboards"; value: Readonly<Record<string, TemplateDashboardView>> }
+  /**
+   * `F4.355` (ADR 0038 Amendment 7). An object, not an array, and the only arm
+   * that can **delete** its key: `null` is "Remove health bands" (B4), asked
+   * for through a confirm, never inferred from an empty table.
+   */
+  | { section: "health"; value: TemplateHealth | null };
 
 /**
  * Keys `contentEnvelopeSchema` accepts.
@@ -93,19 +101,20 @@ const WRITABLE_KEYS = ["contentVersion", "kpis", "alarms", "maintenance", "dashb
  * accepts but this file still calls reserved would block a KPI tab save on a
  * template that carries a perfectly valid health section.
  *
- * It has no tab of its own, and since `F2.19` it is the **only** section in
- * that class: writable by the API, carried through this merge byte for byte,
- * and edited by nothing in this UI. `maintenance` used to be its company —
- * ADR 0038 Amendment 5 Part B gave that section a tab, so the sentence now
- * names one section rather than two. ADR 0050 Amendment 1 decision 5 scopes
- * `E1.3` to the score surfaces, so `health` gaining a tab needs its own ruling.
+ * Until `F4.355` it had no tab of its own: from `F2.19` it was the **only**
+ * section writable by the API, carried through this merge byte for byte, and
+ * edited by nothing in this UI (`maintenance` had been its company until ADR
+ * 0038 Amendment 5 Part B gave that section a tab). ADR 0050 Amendment 1
+ * decision 5 scoped `E1.3` to the score surfaces, so `health` needed its own
+ * ruling — ADR 0038 Amendment 7 is that ruling, and the Health tab writes it
+ * through the `health` arm below.
  */
 const RESERVED_KEYS: Readonly<Record<string, string>> = {
   optimisation: "E1.6 (optimisation advisories)",
 };
 
 /** `UNSAFE_KEYS` from `asset-templates-content.schema.ts:116`. */
-const UNSAFE_KEYS = ["__proto__", "constructor", "prototype"];
+export const UNSAFE_KEYS = ["__proto__", "constructor", "prototype"];
 
 /**
  * Copies stored content and replaces one section.
@@ -144,6 +153,36 @@ export function mergeTemplateContent(
       continue;
     }
     merged[key] = stored[key];
+  }
+  if (patch.section === "health") {
+    // `null` deletes the key — B4's explicit removal, and the only deletion
+    // this function performs. Otherwise a fresh object: bands copied one by
+    // one and weights through the same filtered loop as `stored`, so a weight
+    // keyed `__proto__` cannot invoke the prototype setter and nothing in the
+    // write aliases the form's state.
+    if (patch.value === null) {
+      delete merged.health;
+      return merged;
+    }
+    const health: TemplateHealth = {
+      bands: patch.value.bands.map((band) => ({
+        code: band.code,
+        label: band.label,
+        minScore: band.minScore,
+      })),
+    };
+    if (patch.value.weights !== undefined) {
+      const weights: Record<string, number> = {};
+      for (const key of Object.keys(patch.value.weights)) {
+        if (UNSAFE_KEYS.includes(key)) {
+          continue;
+        }
+        weights[key] = patch.value.weights[key] as number;
+      }
+      health.weights = weights;
+    }
+    merged.health = health;
+    return merged;
   }
   if (patch.section === "dashboards") {
     // A record, not an array: `[...patch.value]` would iterate `Object.values`
