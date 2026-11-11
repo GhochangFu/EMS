@@ -120,6 +120,7 @@ export async function anEdgeOutageLandsEveryRowOnceAtItsOriginalRx(pool: pg.Pool
           gatewayId,
           {
             deviceKeys: new Set([EDGE_DEVICE]),
+            rtuIdByDeviceKey: new Map([[EDGE_DEVICE, "edge-rtu-id"]]),
             pointIndex: new Map([[EDGE_DEVICE, new Map(sourceKeys.map((k) => [k, [target()]] as const))]]),
           },
         ],
@@ -136,6 +137,7 @@ export async function anEdgeOutageLandsEveryRowOnceAtItsOriginalRx(pool: pg.Pool
         },
         liveWindowMs: NOTIFY_LIVE_WINDOW_MS,
         logger: createHostLogger({}, () => undefined),
+        recordHealth: () => undefined,
       });
       const receive: typeof real = async (g, batch, digest) => {
         attempts.push(batch);

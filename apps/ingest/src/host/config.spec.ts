@@ -650,3 +650,22 @@ export function runUplinkLimitsConfigTests(): void {
     assert(messageOf(err).startsWith("INGEST_UPLINK_MAX_CONNECTIONS must be"), `got: ${messageOf(err)}`);
   }
 }
+
+/** `F3.16` / ADR 0127 decision 16 — the health flush interval and the host key. */
+export function runDeviceHealthConfigTests(): void {
+  const unset = readHostConfig({ ...BASE });
+  assert(unset.healthFlushMs === 10_000, `default flush is 10 s, got ${unset.healthFlushMs}`);
+  assert(unset.hostKey === "cloud", `default host key is cloud, got ${unset.hostKey}`);
+  const set = readHostConfig({ ...BASE, INGEST_HEALTH_FLUSH_MS: "1000", INGEST_HOST_KEY: " edge-site-7 " });
+  assert(set.healthFlushMs === 1_000 && set.hostKey === "edge-site-7", "the floor and a trimmed key are accepted");
+  assert(readHostConfig({ ...BASE, INGEST_HEALTH_FLUSH_MS: "15000" }).healthFlushMs === 15_000, "the ceiling is accepted");
+  assert(readHostConfig({ ...BASE, INGEST_HOST_KEY: "k".repeat(64) }).hostKey.length === 64, "64 characters are accepted");
+  for (const raw of ["999", "15001", "0", "abc", "1e4"]) {
+    const err = thrownBy(() => readHostConfig({ ...BASE, INGEST_HEALTH_FLUSH_MS: raw }), `INGEST_HEALTH_FLUSH_MS="${raw}"`);
+    assert(messageOf(err).startsWith("INGEST_HEALTH_FLUSH_MS must be"), `INGEST_HEALTH_FLUSH_MS="${raw}": ${messageOf(err)}`);
+  }
+  for (const raw of ["Cloud", "k".repeat(65), "a b", "a_b", "a\nb"]) {
+    const err = thrownBy(() => readHostConfig({ ...BASE, INGEST_HOST_KEY: raw }), `INGEST_HOST_KEY=${JSON.stringify(raw)}`);
+    assert(messageOf(err).startsWith("INGEST_HOST_KEY must be"), `INGEST_HOST_KEY=${JSON.stringify(raw)}: ${messageOf(err)}`);
+  }
+}

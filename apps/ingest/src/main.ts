@@ -16,6 +16,8 @@ import {
   type SkippedBinding,
 } from "./host/bindings.js";
 import { readHostConfig } from "./host/config.js";
+import { createDeviceHealth, monitoredRtuIds } from "./host/device-health.js";
+import { writeDeviceHealth } from "./host/device-health-write.js";
 import { openDiskBufferStore } from "./host/disk-buffer.js";
 import { startHealthServer } from "./host/health-server.js";
 import { createHostLogger, errorKind } from "./host/logger.js";
@@ -68,6 +70,14 @@ async function main(): Promise<void> {
 
   const hostConfig = readHostConfig(process.env);
   const logger = createHostLogger();
+  // F3.16 (ADR 0127 decisions 9, 10, 17): last-seen, skew and drops per RTU,
+  // and this host's heartbeat. Recorded after each successful write, flushed
+  // on a timer below. The decisions are in `host/device-health*.ts`.
+  const deviceHealth = createDeviceHealth({
+    hostKey: hostConfig.hostKey,
+    now: realScheduler.now,
+    flushMs: hostConfig.healthFlushMs,
+  });
 
   // Opened before any database connection is attempted. A directory that
   // cannot be created and written is ruling 4's "same treatment as a missing
@@ -131,6 +141,7 @@ async function main(): Promise<void> {
   // and the reload tick below swaps them — a revoke, a rotation or an RTU
   // assignment bites within one INGEST_RELOAD_MS, with no query per request.
   let edgeServed: EdgeServed = initial.edgeServed;
+  deviceHealth.planChanged(monitoredRtuIds(initial.endpoints, initial.edgeServed), initial.endpoints.length);
   let gatewaySnapshot: GatewaySnapshot = await loadGateways(pool);
   for (const skip of initial.skipped) {
     // Once per RTU per process (§3) — this is the only place it is logged.
@@ -206,6 +217,9 @@ async function main(): Promise<void> {
     // omitted; with several, an omitted key is ambiguous and the normaliser
     // counts it rather than guessing.
     const soleDeviceKey = plan.bindings.length === 1 ? plan.bindings[0].deviceKey : undefined;
+    // F3.16: the device set is fixed for this supervisor's life (a change
+    // replaces it), so this map stays right across a `swap-index`.
+    const rtuIdByDeviceKey = new Map(plan.bindings.map((binding) => [binding.deviceKey, binding.rtuId] as const));
 
     return createSupervisor({
       factory,
@@ -217,7 +231,17 @@ async function main(): Promise<void> {
         // loop stamped a live batch, and a replayed one keeps the `rx` the disk
         // buffer wrote at spill (ADR 0016 Amendment 5) — which is what keeps a
         // re-replayed segment on the same primary key.
-        const { rows, counters, firstDropped } = resolveSamples(samples, index(), soleDeviceKey);
+        const resolved = resolveSamples(samples, index(), soleDeviceKey);
+        const { rows, counters, firstDropped } = resolved;
+        // Called only once nothing is left to fail: a write that throws is
+        // spilled and replayed, and recording it here first would count its
+        // drops and last-seen twice.
+        const recordHealth = (): void =>
+          deviceHealth.record({
+            endpointKey: plan.endpointKey,
+            rtuIdOf: (deviceKey) => rtuIdByDeviceKey.get(deviceKey),
+            result: resolved,
+          });
         // `droppedCount`, not a list summed here: this file summed five buckets
         // by hand and `F2.7`'s `outOfRange` would have been the sixth and the
         // one nobody added, leaving a batch that dropped readings logging
@@ -230,6 +254,7 @@ async function main(): Promise<void> {
           logger.warn("samples discarded", { endpointKey: plan.endpointKey, ...counters, firstDropped });
         }
         if (rows.length === 0) {
+          recordHealth();
           return;
         }
         const client = await pool.connect();
@@ -245,6 +270,7 @@ async function main(): Promise<void> {
         } finally {
           client.release();
         }
+        recordHealth();
         if (written.rowsNotNotified > 0) {
           // History landing silently is the rule (a replay after an outage),
           // not a fault — but it is never invisible. A count, never the values.
@@ -305,6 +331,7 @@ async function main(): Promise<void> {
         connect: () => pool.connect(),
         liveWindowMs: hostConfig.notifyLiveWindowMs,
         logger: uplinkLogger,
+        recordHealth: (record) => deviceHealth.record(record),
       }),
       rateLimit: createSampleRateLimiter(hostConfig.uplinkMaxSamplesPerS, Date.now),
       maxConnections: hostConfig.uplinkMaxConnections,
@@ -325,6 +352,41 @@ async function main(): Promise<void> {
     repairTimer = setInterval(() => void repair.runOnce(), REPAIR_TICK_MS);
   }
 
+  // ── DEVICE HEALTH FLUSH (F3.16, ADR 0127 decisions 10, 16) ──────────────
+  // One flush at a time; a tick that finds one running is skipped (the next
+  // drains both). A failure restores the drained data — bounded in hours —
+  // and the missed beat restarts `healthy_since` on the next success.
+  let healthFlushing: Promise<void> | undefined;
+  const flushHealth = (): Promise<void> => {
+    if (healthFlushing !== undefined) {
+      return healthFlushing;
+    }
+    healthFlushing = (async () => {
+      const flush = deviceHealth.drain();
+      try {
+        const client = await pool.connect();
+        let failure: Error | undefined;
+        try {
+          await writeDeviceHealth(client, flush);
+        } catch (error) {
+          failure = error instanceof Error ? error : new Error("device health flush failed");
+          throw error;
+        } finally {
+          // A failed flush's connection is destroyed, not pooled.
+          client.release(failure);
+        }
+        deviceHealth.committed(flush);
+      } catch (error) {
+        const { discarded } = deviceHealth.restore(flush);
+        logger.error("device health flush failed", { ...errorKind(error), discarded });
+      }
+    })().finally(() => {
+      healthFlushing = undefined;
+    });
+    return healthFlushing;
+  };
+  const healthTimer = setInterval(() => void flushHealth(), hostConfig.healthFlushMs);
+
   // E7.2 (ADR 0123 decision 6): RTUs the edge serves are in no endpoint and no
   // skip list, so without these counts they would vanish from the log silently.
   let edgeCounts = edgeServedCounts(initial.edgeServed);
@@ -335,6 +397,8 @@ async function main(): Promise<void> {
     healthPort: health.port,
     uplinkPort: uplink?.port ?? "off",
     bufferDir: hostConfig.bufferDir,
+    hostKey: hostConfig.hostKey,
+    healthFlushMs: hostConfig.healthFlushMs,
   });
 
   /**
@@ -386,6 +450,8 @@ async function main(): Promise<void> {
         // R6). The tick flag above already serialises ticks; the registry's own
         // "busy" refusal is the second guard, for any other caller.
         await registry.reload(next.endpoints);
+        // F3.16: stamp `monitored_since` on entry, clear it on exit.
+        deviceHealth.planChanged(monitoredRtuIds(next.endpoints, next.edgeServed), next.endpoints.length);
         // Plan R8: the disk buffer's 1 h / 256 MiB bounds are swept by each
         // supervisor's replay loop, so with every endpoint stopped nothing else
         // would call it. Idempotent and enqueued behind any sweep in flight.
@@ -425,6 +491,7 @@ async function main(): Promise<void> {
     void (async () => {
       clearInterval(reloadTimer);
       clearInterval(repairTimer);
+      clearInterval(healthTimer);
       // Stop taking batches first: an edge whose post fails keeps it on disk.
       // Bounded, so no client can keep the supervisors from stopping (H1):
       // `close()` itself destroys every socket after its 2 s grace.
@@ -432,6 +499,10 @@ async function main(): Promise<void> {
         await Promise.race([uplink.close(), new Promise((done) => setTimeout(done, UPLINK_CLOSE_LIMIT_MS))]);
       }
       await registry.stopAll();
+      // F3.16: one last flush, after the supervisors stopped so their final
+      // batches are in it. Never rejects; waits for one already in flight.
+      await healthFlushing;
+      await flushHealth();
       await health.close();
       await pool.end();
       process.exit(0);

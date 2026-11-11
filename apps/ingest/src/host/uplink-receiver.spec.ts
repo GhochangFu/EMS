@@ -1,6 +1,7 @@
 import { NOTIFY_LIVE_WINDOW_MS, type UplinkBatch, type UplinkSample } from "@bms/shared/ingest";
 
 import type { EdgeServed } from "./binding-targets.js";
+import type { HealthRecord } from "./device-health.js";
 import { createHostLogger } from "./logger.js";
 import { assert } from "./normaliser.spec.js";
 import type { PointTarget } from "./normaliser.js";
@@ -38,6 +39,7 @@ const SERVED: EdgeServed = new Map([
     GW.id,
     {
       deviceKeys: new Set(["RTU-1"]),
+      rtuIdByDeviceKey: new Map([["RTU-1", "rtu-1-id"]]),
       pointIndex: new Map([["RTU-1", new Map([["kw", [target("asset-1", "KW")]]])]]),
     },
   ],
@@ -67,6 +69,7 @@ function harness(
   let released = 0;
   const releaseErrors: (Error | undefined)[] = [];
   const lines: string[] = [];
+  const recorded: HealthRecord[] = [];
   const client: ReceiverClient = {
     query: (text, values) =>
       options.hangOn?.test(text) === true ? new Promise<never>(() => undefined) : tx.client.query(text, values),
@@ -81,10 +84,11 @@ function harness(
     connect: async () => client,
     liveWindowMs: NOTIFY_LIVE_WINDOW_MS,
     logger: createHostLogger({}, (line) => lines.push(line)),
+    recordHealth: (record) => recorded.push(record),
     ...(options.writeTimeoutMs === undefined ? {} : { writeTimeoutMs: options.writeTimeoutMs }),
   });
   const receive = (gw: typeof GW, b: UplinkBatch) => receiveBatch(gw, b, DIGEST);
-  return { receive, calls: tx.calls, lines, released: () => released, releaseErrors };
+  return { receive, calls: tx.calls, lines, released: () => released, releaseErrors, recorded };
 }
 
 /** A good sample is resolved through the gateway's own index and counted `accepted`. */
@@ -206,4 +210,24 @@ export async function theRejectionWarnIsThrottled(): Promise<void> {
   await h.receive(GW, foreign);
   assert(warns().length === 2, "a minute later the next one logs");
   assert(warns()[1].includes('"foreignDevice":3'), `the second line sums the held counts: ${warns()[1]}`);
+}
+
+/** `F3.16`: device health is recorded after a committed write only, keyed by the gateway's RTU ids. */
+export async function healthIsRecordedOnlyAfterACommittedWrite(): Promise<void> {
+  const ok = harness();
+  await ok.receive(GW, batch(wire(), wire({ sourceKey: "unmapped" })));
+  assert(ok.recorded.length === 1, `one record per committed batch, got ${ok.recorded.length}`);
+  const [record] = ok.recorded;
+  assert(record.endpointKey === `edge:${GW.id}`, `the gateway is the endpoint: ${record.endpointKey}`);
+  assert(record.rtuIdOf("RTU-1") === "rtu-1-id" && record.rtuIdOf("RTU-OTHER") === undefined, "the plan's map");
+  assert(record.result.devices.get("RTU-1")?.drops.unmappedSourceKey?.count === 1, "the drop is in the record");
+
+  const failed = harness({ failOn: /INSERT INTO telemetry/ });
+  let threw = false;
+  try {
+    await failed.receive(GW, batch(wire()));
+  } catch {
+    threw = true;
+  }
+  assert(threw && failed.recorded.length === 0, "a failed write records nothing: the edge retries it");
 }

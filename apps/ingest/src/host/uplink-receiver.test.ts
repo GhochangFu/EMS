@@ -5,6 +5,7 @@ import {
   aGatewayWithNoRtusCountsEverythingForeign,
   aGoodSampleIsWrittenAndAccepted,
   everyRejectionIsCounted,
+  healthIsRecordedOnlyAfterACommittedWrite,
   aFailedWriteDestroysAGoodOneReturns,
   aTimedOutWriteRejectsAndDestroysTheClient,
   lateRowsAreLoggedAsNotNotified,
@@ -48,5 +49,9 @@ describe("E7.2 — the uplink receiver end to end on a fake client (ADR 0123 dec
 
   it("throttles the rejected-samples line per gateway (M2)", async () => {
     await theRejectionWarnIsThrottled();
+  });
+
+  it("records device health after a committed write only (F3.16)", async () => {
+    await healthIsRecordedOnlyAfterACommittedWrite();
   });
 });

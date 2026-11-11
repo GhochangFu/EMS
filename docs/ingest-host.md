@@ -65,6 +65,8 @@ still the only working credential path (ADR 0016 Amendment 3).
 | `INGEST_UPLINK_PORT` | unset (off) | ADR 0123 decision 4 (`E7.2`). The edge uplink receiver's port, `POST /edge/v1/batches` — see *The uplink receiver* below. Unset or blank starts no listener. Same digits-only rule as the health port, `1`–`65535`, and it must differ from `INGEST_HOST_HEALTH_PORT`; either mistake refuses start-up naming the variable. |
 | `INGEST_UPLINK_MAX_SAMPLES_PER_S` | `2000` | Security review M2. Samples per second one edge gateway may post; a batch that would overdraw its bucket is `429 rate-limited` with `Retry-After`. `500`–`100000`: the floor is one full batch, so a batch can always be admitted. Four times the edge's own replay cap (`EDGE_REPLAY_MAX_SAMPLES_PER_S`, 500). |
 | `INGEST_UPLINK_MAX_CONNECTIONS` | `256` | Security review L2. `server.maxConnections` on the uplink listener. `1`–`10000`. |
+| `INGEST_HEALTH_FLUSH_MS` | `10000` | ADR 0127 decision 16 (`F3.16`). How often the device-health heartbeat and counters are flushed — see [`ingest-device-health.md`](./ingest-device-health.md). `1000`–`15000`, so at least two beats land inside the API's 30 s host-stale bound; anything else refuses start-up naming the variable. |
+| `INGEST_HOST_KEY` | `cloud` | ADR 0127 decision 10 (`F3.16`). This host's row in `bms.ingest_hosts`, and the `host_key` on the RTU rows it writes. Trimmed; `[a-z0-9-]{1,64}` or start-up is refused. Two hosts must not share a key. |
 
 `INGEST_BUFFER_MAX_AGE_MS` and `INGEST_BUFFER_MAX_BYTES` parse through the
 same digits-only, safe-integer rule as `INGEST_RELOAD_MS` and

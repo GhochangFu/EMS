@@ -15,6 +15,13 @@ import type { PointIndex, PointTarget } from "./normaliser.js";
 export type EdgeServedGateway = {
   /** `rtus.rtu_code` of every RTU bound to the gateway — the wire's `deviceKey`. */
   readonly deviceKeys: ReadonlySet<string>;
+  /**
+   * `deviceKey → rtus.id` (`F3.16`, ADR 0127 decision 18): the receiver records
+   * an edge-served RTU's last-seen and drops under its id. Whether an RTU is
+   * edge-served is not stored by the host; the API reads it from
+   * `rtus.edge_gateway_id`.
+   */
+  readonly rtuIdByDeviceKey: ReadonlyMap<string, string>;
   /** `deviceKey → sourceKey → targets`, built exactly as an endpoint's. */
   readonly pointIndex: PointIndex;
 };
@@ -25,7 +32,10 @@ export type EdgeServed = ReadonlyMap<string, EdgeServedGateway>;
 type MutableIndex = Map<string, Map<string, PointTarget[]>>;
 
 /** The mutable accumulator `planEndpoints` fills and returns as `EdgeServed`. */
-export type EdgeServedAccumulator = Map<string, { deviceKeys: Set<string>; pointIndex: MutableIndex }>;
+export type EdgeServedAccumulator = Map<
+  string,
+  { deviceKeys: Set<string>; rtuIdByDeviceKey: Map<string, string>; pointIndex: MutableIndex }
+>;
 
 /**
  * Narrows a stored `quality_policy` to the vocabulary this build knows.
@@ -79,15 +89,17 @@ export function indexPointRows(index: MutableIndex, deviceKey: string, rows: rea
 export function addEdgeServed(
   acc: EdgeServedAccumulator,
   gatewayId: string,
+  rtuId: string,
   deviceKey: string,
   rows: readonly BindingRow[],
 ): void {
   let gateway = acc.get(gatewayId);
   if (gateway === undefined) {
-    gateway = { deviceKeys: new Set(), pointIndex: new Map() };
+    gateway = { deviceKeys: new Set(), rtuIdByDeviceKey: new Map(), pointIndex: new Map() };
     acc.set(gatewayId, gateway);
   }
   gateway.deviceKeys.add(deviceKey);
+  gateway.rtuIdByDeviceKey.set(deviceKey, rtuId);
   indexPointRows(gateway.pointIndex, deviceKey, rows);
 }
 

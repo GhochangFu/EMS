@@ -588,7 +588,7 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
     // and credentials, so the cloud never decrypts a blob or dials a broker for
     // a device the edge serves.
     if (head.edge_gateway_id !== null) {
-      addEdgeServed(edgeServed, head.edge_gateway_id, deviceKey, pointRows);
+      addEdgeServed(edgeServed, head.edge_gateway_id, rtuId, deviceKey, pointRows);
       continue;
     }
 

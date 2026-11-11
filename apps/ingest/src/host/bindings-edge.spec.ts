@@ -141,6 +141,11 @@ export function runEdgeServedCarriesTheEndpointsPointIndexTests(): void {
     [...served.deviceKeys].join(",") === "RTU-1",
     `deviceKeys is the RTU's rtu_code: ${JSON.stringify([...served.deviceKeys])}`,
   );
+  const cloudRtuId = cloud.endpoints[0]?.bindings[0]?.rtuId;
+  assert(
+    cloudRtuId !== undefined && served.rtuIdByDeviceKey.get("RTU-1") === cloudRtuId,
+    `F3.16: rtuIdByDeviceKey maps RTU-1 to its rtus.id: ${JSON.stringify([...served.rtuIdByDeviceKey])}`,
+  );
   const actual = served.pointIndex.get("RTU-1");
   assert(
     JSON.stringify(plainTargets(actual)) === JSON.stringify(plainTargets(expected)),
