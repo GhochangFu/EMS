@@ -163,6 +163,17 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     route: { method: "POST", path: "/admin/onboarding/sessions/:id/unlock" },
     auditMethods: ["unlock"],
   },
+  // `E3.1` (ADR 0122 decision 10): a checklist item is added and ticked on the ticket, by hand.
+  {
+    file: "apps/api/src/work-orders/work-order-task-add.service.ts",
+    route: { method: "POST", path: "/work-orders/:id/tasks" },
+    auditMethods: ["addTask"],
+  },
+  {
+    file: "apps/api/src/work-orders/work-order-tasks.service.ts",
+    route: { method: "PATCH", path: "/work-orders/:id/tasks/:taskId" },
+    auditMethods: ["updateTask"],
+  },
 ];
 
 /** Directories whose write routes the release-1 catalog covers; no file in them may insert into the audit log itself. */

@@ -409,6 +409,13 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   createRtuBodySchema: STRICT(CALLER_ERROR),
   createSessionBodySchema: STRICT(CALLER_ERROR),
   createWorkOrderBodySchema: STRICT(CALLER_ERROR),
+  // `E3.1` (ADR 0122 decision 4): a checklist item, a checklist template and each of its lines.
+  createWorkOrderTaskBodySchema: STRICT(CALLER_ERROR),
+  updateWorkOrderTaskBodySchema: STRICT(CALLER_ERROR),
+  createWorkOrderChecklistTemplateBodySchema: STRICT(CALLER_ERROR),
+  "createWorkOrderChecklistTemplateBodySchema/items[]": STRICT(CALLER_ERROR),
+  updateWorkOrderChecklistTemplateBodySchema: STRICT(CALLER_ERROR),
+  "updateWorkOrderChecklistTemplateBodySchema/items[]": STRICT(CALLER_ERROR),
   instantiateAssetsBodySchema: STRICT(CALLER_ERROR),
   "instantiateAssetsBodySchema/assets[]": STRICT(CALLER_ERROR),
   loginBodySchema: STRICT(CREDENTIAL),
