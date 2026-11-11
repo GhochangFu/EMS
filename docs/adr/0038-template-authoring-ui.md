@@ -1088,3 +1088,109 @@ control there is.
 - Bundle: the entry chunk carries no CodeMirror, and the new components are not
   in the `formula-editor` chunk.
 - N/A: API, database, migrations, worker, ingest/MQTT.
+
+## Amendment 7 — `health` is the eighth tab: health bands and tag weights are authored in the UI (`F4.355`, owner, 2026-11-11)
+
+**Status: Proposed — the owner ruled the questions below in chat on
+2026-11-11; the owner's merge of this text approves it.** Backlog row
+`F4.355`. The text lands ahead of the work that motivated it, as Amendments 4
+to 6 did. Lines marked *drafter choice* were not asked.
+
+This amendment reverses one line of Amendment 5 ("**No eighth tab.**") for
+`health` only. `optimisation` stays out of the strip. It does not change how a
+score is computed (ADR 0050 and its Amendments 1–3 stand), and it adds one
+sentence to ADR 0050 (Amendment 4 there) for the preset in B3.
+
+### Facts the amendment rests on
+
+- On 2026-11-11 the PHE, BCPL and WBLDC organizations on the AWS demo showed
+  "No band cut-points configured" on every asset-health donut: their templates
+  had no `content.health`, and the WBLDC assets had no template. The bands were
+  added by hand through `PATCH /admin/asset-templates/:id` on a draft, publish,
+  then migrate or adopt. No screen could do it.
+- `templateHealthSchema` already lives in `@bms/shared`
+  (`contracts/asset-template-content-writes.ts`), and the API only re-exports
+  it, so the browser can validate with the exact schema the server runs.
+- `template-content-merge.ts`'s `WRITABLE_KEYS` already carries `health`
+  through a save, so a draft with a `health` block saves today.
+- `minScore` is `0..1` on the wire (ADR 0050 Amendment 1 decision 2).
+- A published version changes no asset: the score reads `content` through
+  `assets.template_id`, the pinned version. `GET /admin/asset-templates/:id/versions`
+  already returns each version's asset count, and the "Versions & migration"
+  page already migrates.
+- The five standard bands exist once today, as `HEALTH_BANDS` in
+  `packages/db/src/asset-template-health-seed.ts`, which the web cannot import.
+- The tab count is held at seven by `tests/adr-0038-template-authoring-ui.test.ts`,
+  `apps/web/src/lib/template-tabs.spec.ts` and the `n(n-1)` = 42 count in
+  `apps/web/src/lib/template-tab-guard.spec.ts`, plus the exhaustive
+  `never` arm in `template-tab-body.tsx`.
+
+### Rulings (owner, 2026-11-11)
+
+| # | Question | Ruling |
+|---|---|---|
+| 1 | Where the editor goes | **A new eighth tab, `health`**, after Maintenance |
+| 2 | A preset of the five standard bands | **Yes, as an explicit button**; nothing is pre-filled |
+| 3 | Removing the whole `health` block from a draft | **Allowed**, behind a confirm |
+| 4 | How new bands reach assets | **A hint plus a link** to Versions & migration on a published version |
+
+Taken as the recommended defaults and stated here for the owner's merge
+(*drafter choice*): the tag weights are a column on the Health tab, not on the
+Points tab; the tab edits (it is not read-only only); the stock catalog viewer
+shows it read-only through the same `TemplateTabBody`; this text is its own
+`docs(adr):` PR before any code.
+
+### Decisions
+
+**B1. The eighth tab.** `TEMPLATE_TABS` gains `health` after `maintenance`.
+The three count gates move from 7 to 8 (and 42 ordered pairs to 56) in the
+same change that adds the tab, citing this amendment; `health` leaves their
+closed "never a tab" loops, `optimisation` stays in them. The tab guard's
+unsaved-changes rule applies to it as to every other tab.
+
+**B2. What the tab edits.** A band table — code, label, minimum score — in
+authored order, with add, remove and move up / down; the minimum score is shown
+and typed in percent and stored as `0..1` (conversion at the rendering edge
+only). A weight column lists the version's own points (measured and derived),
+each defaulting to 1; a weight equal to 1 is not written, so an untouched
+template stores no `weights` key (*drafter choice*). The whole block is
+validated with the shared `templateHealthSchema` before save and the server's
+refusal is still shown verbatim if it disagrees.
+
+**B3. The preset.** A **Use the standard five bands** button fills the table
+with Excellent 0.95, Good 0.85, Fair 0.7, Poor 0.5, Critical 0, which the
+author can then edit. It never runs without a click, and an empty table stays
+empty. The five values move to one declaration in `@bms/shared`;
+`packages/db`'s seed imports them from there (§4.8, one declaration).
+
+**B4. Removing the block.** **Remove health bands** clears `content.health`
+on the draft after a confirm that says the assets on this version will show
+as unbanded once it is published and migrated.
+
+**B5. Getting the bands onto assets.** On a published version the tab is
+read-only (decision 3), and when other versions of the same code still hold
+assets it says how many and links to Versions & migration — counts from the
+existing `GET :id/versions`. No new route.
+
+**B6. The list.** The template list marks a version whose `content` has no
+`health.bands`, derived in the browser from the list response.
+
+**B7. Decision 8 unchanged.** No API change, no migration, no new contract,
+no seed data change beyond the import move in B3.
+
+### Not in this amendment
+
+- An `optimisation` tab.
+- Any change to scoring, rule matching or the roll-up (ADR 0050).
+- Bands or weights per asset, per location or per organization.
+- Applying bands to assets automatically on publish.
+
+### Verification owed
+
+- Specs: the three count gates at 8 / 56; the band table's percent ↔ `0..1`
+  round trip; schema refusals (not descending, last band not 0, duplicate code);
+  the preset fills only on click; weights of 1 are not written.
+- Browser: on a draft, apply the preset, save, reload — five bands remain;
+  publish, follow the hint to Versions & migration, migrate one asset, and its
+  donut shows a slice; Remove health bands then save leaves no `health` key.
+- N/A: API, database, migrations, worker, ingest/MQTT.
