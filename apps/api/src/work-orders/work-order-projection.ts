@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { assets, locations, rtus, workOrders } from "@bms/db";
 import { workOrderSlaState } from "@bms/shared";
@@ -33,6 +33,10 @@ export const WORK_ORDER_LIST_COLUMNS = {
   closedAt: workOrders.closedAt,
   slaMinutes: workOrders.slaMinutes,
   slaDueAt: workOrders.slaDueAt,
+  // E3.1 (ADR 0122 decision 4): the checklist in two numbers, counted per row so a page
+  // of tickets costs no second query. `done` is every item that is no longer `pending`.
+  checklistDone: sql<number>`(SELECT count(*)::int FROM bms.work_order_tasks t WHERE t.work_order_id = ${workOrders.id} AND t.result <> 'pending')`,
+  checklistTotal: sql<number>`(SELECT count(*)::int FROM bms.work_order_tasks t WHERE t.work_order_id = ${workOrders.id})`,
   createdAt: workOrders.createdAt,
   updatedAt: workOrders.updatedAt,
   assetCode: assets.code,
@@ -60,6 +64,8 @@ export type WorkOrderListRow = {
   closedAt: Date | null;
   slaMinutes: number | null;
   slaDueAt: Date | null;
+  checklistDone: number;
+  checklistTotal: number;
   createdAt: Date;
   updatedAt: Date;
   assetCode: string;
@@ -110,6 +116,8 @@ export function mapWorkOrderRow(r: WorkOrderListRow, now: Date = new Date()): Wo
       resolvedAt: r.resolvedAt ?? r.closedAt,
       now,
     }),
+    checklistDone: r.checklistDone,
+    checklistTotal: r.checklistTotal,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     assetCode: r.assetCode,

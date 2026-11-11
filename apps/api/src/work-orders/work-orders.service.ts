@@ -27,12 +27,12 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
 import { ASSIGNEE_REFUSAL, readActiveOrganizationUser } from "./assignee";
+import { countPendingMandatoryTasks } from "./work-order-checklist";
 import { insertWorkOrder } from "./work-order-create";
 import { readWorkOrderDetail } from "./work-order-detail";
 import { resolveWorkOrderActor, statusEventType, type WorkOrderActor, writeWorkOrderEvent } from "./work-order-events";
 import { mapWorkOrderRow, readWorkOrderListItem, selectWorkOrderList } from "./work-order-projection";
-
-const terminalStatuses = new Set<WorkOrderStatus>(["closed"]);
+import { needsChecklistGate, reorderMoveRefusal, statusChangeRefusal, throwIfRefused } from "./work-order-transitions";
 
 /** `F4.284` (owner ruling DC7): read options a route query cannot set — the copilot's `list_work_orders`. */
 export type WorkOrderListOptions = {
@@ -322,6 +322,9 @@ export class WorkOrdersService {
         origin: dto.alarmId ? "alarm" : "manual",
         dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
         slaMinutes: dto.slaMinutes,
+        // The person picked this template on the form just now: one that cannot be used
+        // fails the create (decision 4.3).
+        checklist: dto.checklistTemplateId ? { templateId: dto.checklistTemplateId, ifUnusable: "refuse" } : undefined,
       });
 
       // E7.1c (item D): folded into this transaction (was a separate
@@ -339,6 +342,8 @@ export class WorkOrdersService {
             reference: created.reference,
             slaMinutes: created.slaMinutes,
             slaSource: created.slaSource,
+            checklistTemplateId: created.checklistTemplateId,
+            checklistItems: created.checklistItems,
             assetId: dto.assetId,
             alarmId: dto.alarmId ?? null,
             oidcSubject: actor.sub,
@@ -361,9 +366,9 @@ export class WorkOrdersService {
     assetIds?: string[] | null,
   ): Promise<WorkOrderListItem> {
     const current = await this.getById(id, assetIds);
-    if (terminalStatuses.has(current.status)) {
-      throw new BadRequestException("Closed work orders cannot be updated");
-    }
+    // Refused early for a ticket that is already closed, before any transaction opens.
+    // The final answer is the one under the row lock, below (plan D9).
+    throwIfRefused(statusChangeRefusal({ from: current.status, to: dto.status, pendingMandatory: 0 }));
 
     const organizationId = await this.resolveWorkOrderOrg(id, assetIds);
     const who = await this.resolveActor(actor);
@@ -382,9 +387,11 @@ export class WorkOrdersService {
         throw new NotFoundException("Work order not found");
       }
       const fromStatus = locked.status as WorkOrderStatus;
-      if (terminalStatuses.has(fromStatus)) {
-        throw new BadRequestException("Closed work orders cannot be updated");
-      }
+      // E3.1 (decision 4.4): a mandatory checklist item still pending blocks the move
+      // into `resolved`, and into `closed` straight from a live status (409). The count is read under the row lock; a checklist write
+      // takes the same lock first, so it cannot change between this read and the commit.
+      const pendingMandatory = needsChecklistGate(fromStatus, dto.status) ? await countPendingMandatoryTasks(tx, id) : 0;
+      throwIfRefused(statusChangeRefusal({ from: fromStatus, to: dto.status, pendingMandatory }));
       // `F4.285` (DC-D): `null` clears the assignee and an omitted field keeps it — neither reads a user.
       if (typeof dto.assignedTo === "string") {
         await this.assertAssignee(tx, dto.assignedTo, organizationId);
@@ -515,12 +522,8 @@ export class WorkOrdersService {
         if (!currentStatus) {
           throw new NotFoundException("Work order not found");
         }
-        if (currentStatus === "closed" && item.status !== "closed") {
-          throw new BadRequestException("Closed work orders cannot be reopened");
-        }
-        if (currentStatus !== "closed" && item.status === "closed") {
-          throw new BadRequestException("Use the close workflow for Done");
-        }
+        // No drag into or out of Done, and none into Resolved (ruling P1): plan D9.
+        throwIfRefused(reorderMoveRefusal({ from: currentStatus, to: item.status }));
       }
     };
     assertMoves(new Map(currentRows.map((row) => [row.id, row.status as WorkOrderStatus])));
@@ -549,9 +552,8 @@ export class WorkOrdersService {
           .set({
             status: item.status,
             sortOrder: item.sortOrder,
-            // E3.1: the board sends every row on every drag, so stamp only a ticket
-            // that is entering `resolved` — see `updateStatus`.
-            resolvedAt: item.status === "resolved" && currentStatus !== "resolved" ? now : undefined,
+            // No `resolvedAt` stamp here: a reorder can no longer move a ticket into
+            // `resolved` (ruling P1), so only `updateStatus` stamps it.
             updatedAt: now,
           })
           .where(eq(workOrders.id, item.id));

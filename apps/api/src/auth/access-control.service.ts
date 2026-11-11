@@ -38,9 +38,11 @@ import {
   type ReportFileReadScope,
 } from "./report-file-read-scope";
 import {
+  canOverrideWorkOrderSla,
   canPerformOperationsWrite,
   operationsWriteDenialReason,
   type OperationsWriteClass,
+  WORK_ORDER_SLA_OVERRIDE_DENIAL,
 } from "./operations-write";
 
 type DbUser = {
@@ -184,6 +186,16 @@ export class AccessControlService {
     const user = await this.resolveDbUser(jwt);
     if (!canPerformOperationsWrite(user.role, writeClass)) {
       throw new ForbiddenException(operationsWriteDenialReason(writeClass));
+    }
+  }
+
+  /**
+   * `E3.1` (owner ruling, 2026-11-11): only the four admin roles may send the per-ticket
+   * SLA override on `POST /work-orders`. The role is the `bms.users` row's, as above.
+   */
+  async assertWorkOrderSlaOverrideRole(jwt: JwtPayload): Promise<void> {
+    if (!canOverrideWorkOrderSla((await this.resolveDbUser(jwt)).role)) {
+      throw new ForbiddenException(WORK_ORDER_SLA_OVERRIDE_DENIAL);
     }
   }
 

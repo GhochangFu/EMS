@@ -7,18 +7,19 @@ import type { WorkOrderDetail, WorkOrderEventDto, WorkOrderEventType, WorkOrderS
 import { Logger } from "@nestjs/common";
 
 import type { BmsTx } from "../database/tenant-context";
+import { readWorkOrderTasks } from "./work-order-checklist";
 import { readWorkOrderListItem } from "./work-order-projection";
 
 const logger = new Logger("WorkOrderDetail");
 
 /**
- * `E3.1` (ADR 0122 decisions 7.3 and 8) — one work order with its timeline and the
- * alarm it was raised from: `GET /work-orders/:id`.
+ * `E3.1` (ADR 0122 decisions 4, 7.3 and 8) — one work order with its timeline, its
+ * checklist and the alarm it was raised from: `GET /work-orders/:id`.
  *
  * The caller chooses the transaction (`withReadScope`); this only reads on it. The item
  * read enforces the caller's asset scope and throws 404 when the ticket is absent or
- * out of scope, BEFORE any event is read, so the timeline of an unseen ticket is never
- * touched.
+ * out of scope, BEFORE any event or task is read, so the timeline and the checklist of an
+ * unseen ticket are never touched.
  */
 export async function readWorkOrderDetail(
   tx: BmsTx,
@@ -73,5 +74,7 @@ export async function readWorkOrderDetail(
     alarm = row ? { id: row.id, severity: row.severity, message: row.message, raisedAt: row.raisedAt.toISOString() } : null;
   }
 
-  return { ...item, events, alarm };
+  const tasks = await readWorkOrderTasks(tx, id);
+
+  return { ...item, events, alarm, tasks };
 }

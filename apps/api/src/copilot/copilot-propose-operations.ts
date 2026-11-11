@@ -1,5 +1,13 @@
+import type { WorkOrderStatus } from "@bms/shared";
 import type { CatalogEntry } from "@bms/shared/copilot";
 
+import {
+  reorderMoveRefusal,
+  WORK_ORDER_CLOSE_BY_DRAG_REFUSAL,
+  WORK_ORDER_CLOSED_REFUSAL,
+  WORK_ORDER_REOPEN_REFUSAL,
+  WORK_ORDER_RESOLVE_BY_DRAG_REFUSAL,
+} from "../work-orders/work-order-transitions";
 import type { ResolvedTarget } from "./copilot-target-resolver";
 import { PROPOSE_TARGET_ERROR } from "./copilot-template-lifecycle";
 
@@ -29,9 +37,13 @@ export const OPERATIONS_ENTRY_IDS: ReadonlySet<string> = new Set([
 
 /** The routes' own sentences (`alarms.service.ts`, `work-orders.service.ts`, `maintenance.service.ts`). */
 export const ALARM_ALREADY_ACKNOWLEDGED = "Alarm not found or already acknowledged";
-export const WORK_ORDER_CLOSED = "Closed work orders cannot be updated";
-export const WORK_ORDER_REOPEN = "Closed work orders cannot be reopened";
-export const WORK_ORDER_CLOSE_BY_DRAG = "Use the close workflow for Done";
+// `E3.1` (plan D9): the work-order sentences are the transition table's own, by identity,
+// so the copilot's pre-check and the route cannot drift apart.
+export const WORK_ORDER_CLOSED = WORK_ORDER_CLOSED_REFUSAL;
+export const WORK_ORDER_REOPEN = WORK_ORDER_REOPEN_REFUSAL;
+export const WORK_ORDER_CLOSE_BY_DRAG = WORK_ORDER_CLOSE_BY_DRAG_REFUSAL;
+/** `E3.1` (ADR 0122 ruling P1): a drag into Resolved is refused; resolve goes through its form. */
+export const WORK_ORDER_RESOLVE_BY_DRAG = WORK_ORDER_RESOLVE_BY_DRAG_REFUSAL;
 export const WORK_ORDER_DUPLICATE = "Duplicate work order ids in reorder request";
 export const SCHEDULE_NOT_CONVERTIBLE = "Maintenance schedule not found";
 export const SCHEDULE_HAS_WORK_ORDER = "This maintenance item already has an active work order";
@@ -67,8 +79,9 @@ function checkReorder(body: Readonly<Record<string, unknown>>, target: ResolvedT
   for (const item of items) {
     const current = now.get(item.id);
     if (current === undefined) return refuse(PROPOSE_TARGET_ERROR);
-    if (current.status === "closed" && item.status !== "closed") return refuse(WORK_ORDER_REOPEN);
-    if (current.status !== "closed" && item.status === "closed") return refuse(WORK_ORDER_CLOSE_BY_DRAG);
+    // The route's own rule (`reorderMoveRefusal`): no drag into or out of Done, none into Resolved.
+    const refusal = reorderMoveRefusal({ from: current.status as WorkOrderStatus, to: item.status as WorkOrderStatus });
+    if (refusal !== null) return refuse(refusal.message);
     if (current.status === item.status && current.sortOrder === item.sortOrder) continue;
     moves.push({
       id: item.id,
