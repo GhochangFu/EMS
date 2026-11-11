@@ -23,6 +23,7 @@ import { MimicSymbolLibrariesModule } from "./mimic-symbol-libraries/mimic-symbo
 import { NotificationsModule } from "./notifications/notifications.module";
 import { ObservabilityModule } from "./observability/observability.module";
 import { RateLimitModule } from "./rate-limit/rate-limit.module";
+import { ServiceAccountsModule } from "./service-accounts/service-accounts.module";
 import { QueueModule } from "./queue/queue.module";
 import { ReportsModule } from "./reports/reports.module";
 import { RulesModule } from "./rules/rules.module";
@@ -41,6 +42,8 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     // `F4.17` / ADR 0125 — global, so `JwtAuthGuard` and both gateways resolve
     // the limiter wherever they are declared. API only; the worker imports none.
     RateLimitModule,
+    // `F4.17` / ADR 0125 Part B — global, so the guard resolves the token verifier.
+    ServiceAccountsModule,
     QueueModule,
     StorageModule,
     HealthModule,
