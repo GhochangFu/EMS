@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -90,12 +90,29 @@ function template(
   });
 }
 
+/** The client the last `renderTab` used, so a negative case can wait for its query to settle. */
+let lastQueryClient: QueryClient | null = null;
+
+/**
+ * Waits until the versions read has settled AND the render that follows it has
+ * committed. An absence check made any earlier passes on a tab that has not yet
+ * drawn the data (code review, F4.355 PR 4): the mock is called inside
+ * `render()`, so "the mock was called" settles nothing.
+ */
+async function versionsReadSettled(status: "success" | "error"): Promise<void> {
+  await waitFor(() =>
+    expect(lastQueryClient?.getQueryState(["admin", "asset-template-versions", "t1"])?.status).toBe(status),
+  );
+  await act(async () => {});
+}
+
 function renderTab(
   dto: AdminAssetTemplateDto,
   editable: boolean,
   onDirtyChange: (dirty: boolean) => void = vi.fn(),
 ): HTMLElement {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  lastQueryClient = queryClient;
   const { container } = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
@@ -302,8 +319,9 @@ export async function noHintWhenNoOtherVersionHoldsAssets(): Promise<void> {
     items: [VERSIONS.items[0], { ...VERSIONS.items[1], assetCount: 0 }],
   } as never);
   renderTab(template("published", FIVE), false);
-  await waitFor(() => expect(versions).toHaveBeenCalled());
-  expect(screen.queryByText(/on other versions of this template/)).toBeNull();
+  await versionsReadSettled("success");
+  expect(versions).toHaveBeenCalledWith("t1");
+  expect(screen.queryByText(/other version/)).toBeNull();
   expect(screen.queryByRole("link", { name: "Versions & migration" })).toBeNull();
 }
 
@@ -324,7 +342,8 @@ export async function oneAssetReadsInTheSingular(): Promise<void> {
 export async function aFailedVersionsReadShowsNoHint(): Promise<void> {
   const versions = vi.spyOn(api, "fetchAdminAssetTemplateVersions").mockRejectedValue(new Error("boom"));
   renderTab(template("published", FIVE), false);
-  await waitFor(() => expect(versions).toHaveBeenCalled());
+  await versionsReadSettled("error");
+  expect(versions).toHaveBeenCalledWith("t1");
   expect(screen.queryByText(/other version/)).toBeNull();
   expect(screen.queryByText("boom")).toBeNull();
 }
