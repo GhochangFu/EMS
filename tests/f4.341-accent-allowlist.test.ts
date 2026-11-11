@@ -115,6 +115,7 @@ const ACCENT_FILL_FILES: Record<string, number> = {
   "apps/web/src/pages/admin/point-key-states-page.tsx": 1,
   "apps/web/src/pages/admin/point-keys-page.tsx": 1,
   "apps/web/src/pages/admin/rtus-page.tsx": 1,
+  "apps/web/src/pages/admin/service-accounts-page.tsx": 1,
   "apps/web/src/pages/admin/telemetry-import-page.tsx": 1,
   "apps/web/src/pages/admin/trend-points-page.tsx": 1,
   "apps/web/src/pages/admin/unit-roles-page.tsx": 1,
