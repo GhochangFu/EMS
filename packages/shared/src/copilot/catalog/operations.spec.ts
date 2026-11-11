@@ -49,7 +49,8 @@ export function theSixRoutesAreEntries(): void {
 
 /**
  * `F4.284` excluded none. `E3.1` (ADR 0122 decision 10) excludes exactly the routes it
- * names: the two checklist task routes of PR 3. Any other alarm or work-order write
+ * names: the two checklist task routes of PR 3 and the root-cause route of PR 4. Any
+ * other alarm or work-order write
  * route must be a catalog entry.
  */
 export function noOperationsRouteIsExcluded(): void {
@@ -57,7 +58,7 @@ export function noOperationsRouteIsExcluded(): void {
     EXCLUDED_ROUTES.filter((route) => route.path.startsWith("/alarms") || route.path.startsWith("/work-orders")).map(
       (route) => `${route.method} ${route.path}`,
     ),
-  ).toEqual(["POST /work-orders/:id/tasks", "PATCH /work-orders/:id/tasks/:taskId"]);
+  ).toEqual(["POST /work-orders/:id/tasks", "PATCH /work-orders/:id/tasks/:taskId", "PUT /work-orders/:id/root-cause"]);
 }
 
 /** Each body is the route's own export by name. */

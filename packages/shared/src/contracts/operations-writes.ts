@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { alarmSkillCodeSchema, assetDomainCodeSchema, workOrderPrioritySchema, workOrderStatusSchema } from "./operations";
 import { WORK_ORDER_SLA_MAX_MINUTES } from "../work-order-sla";
-import { workOrderTaskResultSchema } from "./work-orders";
+import { workOrderCauseCodeSchema, workOrderTaskResultSchema } from "./work-orders";
 
 /**
  * `F4.284` (ADR 0106 decision 7, ADR 0030) — the request bodies of the alarm
@@ -183,12 +183,46 @@ export const putWorkOrderSlaPoliciesBodySchema = z
   })
   .strict();
 
+/** The shortest and longest a work order's free-text finding may be; the web form reads the same two numbers. */
+export const WORK_ORDER_FINDING_MIN_LENGTH = 3;
+export const WORK_ORDER_FINDING_MAX_LENGTH = 4000;
+
+/**
+ * One free-text finding of a work order (`E3.1`, ADR 0122 decision 5). Trimmed before it
+ * is measured, so three spaces are not a finding: a blank must never satisfy the
+ * resolve gate or overwrite a real one.
+ */
+const workOrderFinding = z.string().trim().min(WORK_ORDER_FINDING_MIN_LENGTH).max(WORK_ORDER_FINDING_MAX_LENGTH);
+
 export const updateWorkOrderStatusBodySchema = z
   .object({
     status: workOrderStatusSchema,
     reason: workOrderReason.optional(),
     sortOrder: workOrderSortOrder.optional(),
     assignedTo: z.string().uuid().nullable().optional(),
+    /**
+     * `E3.1` (ADR 0122 decisions 5.2 and 10): the technician's findings, saved with the
+     * move. A ticket raised from an alarm needs `rootCause`, `correctiveAction` and
+     * `causeCode` — sent here or saved before — to move to `resolved`.
+     */
+    rootCause: workOrderFinding.optional(),
+    correctiveAction: workOrderFinding.optional(),
+    preventiveAction: workOrderFinding.optional(),
+    causeCode: workOrderCauseCodeSchema.optional(),
+  })
+  .strict();
+
+/**
+ * `PUT /work-orders/:id/root-cause` (`E3.1`, ADR 0122 decision 5): the ticket's findings,
+ * replaced whole. `null` clears a field; `preventiveAction` left out is cleared. While
+ * the ticket is `resolved`, the three a resolve requires cannot be cleared.
+ */
+export const putWorkOrderRootCauseBodySchema = z
+  .object({
+    rootCause: workOrderFinding.nullable(),
+    correctiveAction: workOrderFinding.nullable(),
+    preventiveAction: workOrderFinding.nullable().optional(),
+    causeCode: workOrderCauseCodeSchema.nullable(),
   })
   .strict();
 
@@ -235,6 +269,7 @@ export type AlarmAckBody = z.infer<typeof alarmAckBodySchema>;
 export type AlarmEnrichmentUpsertBody = z.infer<typeof alarmEnrichmentUpsertBodySchema>;
 export type CreateWorkOrderBody = z.infer<typeof createWorkOrderBodySchema>;
 export type PutWorkOrderSlaPoliciesBody = z.infer<typeof putWorkOrderSlaPoliciesBodySchema>;
+export type PutWorkOrderRootCauseBody = z.infer<typeof putWorkOrderRootCauseBodySchema>;
 export type CreateWorkOrderTaskBody = z.infer<typeof createWorkOrderTaskBodySchema>;
 export type UpdateWorkOrderTaskBody = z.infer<typeof updateWorkOrderTaskBodySchema>;
 export type CreateWorkOrderChecklistTemplateBody = z.infer<typeof createWorkOrderChecklistTemplateBodySchema>;

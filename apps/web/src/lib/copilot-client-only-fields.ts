@@ -19,6 +19,9 @@ export type ClientOnlyField = {
   readonly shown: boolean;
 };
 
+/** The four findings fields of `PATCH /work-orders/:id/status` (`E3.1`, ADR 0122 decision 5). */
+const WORK_ORDER_FINDING_FIELDS: ReadonlySet<string> = new Set(["rootCause", "correctiveAction", "preventiveAction", "causeCode"]);
+
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -70,6 +73,10 @@ export function clientOnlyFieldsFor(
     if (path === "slaMinutes" && entry.id === "workOrder.create") {
       // `E3.1` (ADR 0122 ruling P4): an SLA override is set on the page, never through the copilot.
       return [{ path, label: "SLA", schema: undefined, required: false, shown: false }];
+    }
+    if (entry.id === "workOrder.setStatus" && WORK_ORDER_FINDING_FIELDS.has(path)) {
+      // `E3.1` (ADR 0122 ruling P4): a ticket's findings are typed on the page, never through the copilot.
+      return [{ path, label: fieldLabel(path), schema: undefined, required: false, shown: false }];
     }
     if (path === "checklistTemplateId") {
       // `E3.1` (ADR 0122 ruling P4): a checklist template is picked on the page, never through the copilot.
