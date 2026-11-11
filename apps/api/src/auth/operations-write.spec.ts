@@ -2,6 +2,8 @@ import type { UserRole } from "@bms/shared";
 
 import {
   canPerformOperationsWrite,
+  OPERATIONS_APPROVAL_DENIAL,
+  operationsWriteDenialReason,
   type OperationsWriteClass,
 } from "./operations-write";
 
@@ -20,16 +22,18 @@ function assert(condition: boolean, message: string): void {
  * the ungated controllers behaved before this gate existed.
  */
 const MATRIX: Record<UserRole, Record<OperationsWriteClass, boolean>> = {
-  admin: { configuration: true, operational: true },
-  organization_admin: { configuration: true, operational: true },
-  location_admin: { configuration: true, operational: true },
-  asset_group_admin: { configuration: true, operational: true },
-  operator: { configuration: false, operational: true },
-  viewer: { configuration: false, operational: false },
+  admin: { configuration: true, operational: true, approval: true },
+  organization_admin: { configuration: true, operational: true, approval: true },
+  location_admin: { configuration: true, operational: true, approval: true },
+  asset_group_admin: { configuration: true, operational: true, approval: true },
+  // E3.1 (ADR 0122 decision 6.2, ruling Q10): an operator does the work and never
+  // approves, rejects or cancels it.
+  operator: { configuration: false, operational: true, approval: false },
+  viewer: { configuration: false, operational: false, approval: false },
 };
 
 const ALL_ROLES = Object.keys(MATRIX) as UserRole[];
-const ALL_CLASSES: OperationsWriteClass[] = ["configuration", "operational"];
+const ALL_CLASSES: OperationsWriteClass[] = ["configuration", "operational", "approval"];
 
 /** Unit checks for the operations write matrix (ADR 0017). */
 export function runOperationsWriteTests(): void {
@@ -75,6 +79,18 @@ export function runOperationsWriteTests(): void {
   assert(
     canPerformOperationsWrite("operator", "operational"),
     "operator must be able to ack alarms and run work orders",
+  );
+  // E3.1 (ADR 0122 decision 6.2): approval is its own class. An operator resolves a
+  // ticket and may not approve, reject or cancel one; the refusal is one fixed sentence.
+  assert(!canPerformOperationsWrite("operator", "approval"), "operator must not approve, reject or cancel a work order");
+  assert(
+    operationsWriteDenialReason("approval") === OPERATIONS_APPROVAL_DENIAL &&
+      OPERATIONS_APPROVAL_DENIAL === "Approving, rejecting or cancelling a work order requires an administrator role",
+    "the approval denial must be its one fixed sentence",
+  );
+  assert(
+    new Set(ALL_CLASSES.map((writeClass) => operationsWriteDenialReason(writeClass))).size === ALL_CLASSES.length,
+    "each write class must have its own denial sentence",
   );
   assert(
     !canPerformOperationsWrite("operator", "configuration"),

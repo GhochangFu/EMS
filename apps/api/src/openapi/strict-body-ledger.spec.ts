@@ -127,6 +127,8 @@ import {
   createWorkOrderTaskBodySchema,
   putWorkOrderRootCauseBodySchema,
   putWorkOrderSlaPoliciesBodySchema,
+  rejectWorkOrderBodySchema,
+  cancelWorkOrderBodySchema,
   reorderWorkOrdersBodySchema,
   updateWorkOrderChecklistTemplateBodySchema,
   updateWorkOrderTaskBodySchema,
@@ -322,6 +324,9 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `E3.1` (ADR 0122 decisions 5 and 5a). `.strict()`: a replace-all set, and the door an
   // `alarmRootCause` sent by a browser must not get through as a dropped key.
   putWorkOrderRootCauseBodySchema,
+  // `E3.1` (ADR 0122 decisions 6.4 and 6.8). `.strict()`: a reason only, on an approval-class write.
+  rejectWorkOrderBodySchema,
+  cancelWorkOrderBodySchema,
   // `E7.2` (ADR 0123 decision 12). `.strict()`: closed shapes, so an unknown key is a caller error.
   createEdgeGatewayBodySchema,
   updateEdgeGatewayBodySchema,

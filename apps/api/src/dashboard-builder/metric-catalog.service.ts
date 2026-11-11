@@ -17,6 +17,7 @@ import type { Pool } from "pg";
 import {
   MAX_DATASET_ROWS,
   METRIC_CATALOG,
+  TERMINAL_WORK_ORDER_STATUSES,
   type DashboardCatalogValuesResponse,
   type MetricCatalogKey,
   type MetricCatalogValueDto,
@@ -554,17 +555,18 @@ const criticalAlarmWhere = (tx: BmsTx, organizationId: string, scope: readonly s
   );
 
 /**
- * An open work order is one that is neither resolved nor closed.
+ * An open work order is one that is neither resolved, closed nor cancelled.
  *
- * `workOrderStatusSchema` is `open | assigned | in_progress | resolved | closed`, so this is
- * equivalent to naming the first three TODAY. It is written as the negative deliberately: this
- * number is outstanding work, and a status added later should default to counted rather than to
- * hidden. Over-reporting outstanding work is visible; under-reporting it is not.
+ * `workOrderStatusSchema` is `open | assigned | in_progress | resolved | closed | cancelled`, so
+ * this is equivalent to naming the first three TODAY. It is written as the negative deliberately:
+ * this number is outstanding work, and a status added later should default to counted rather than
+ * to hidden. Over-reporting outstanding work is visible; under-reporting it is not. `cancelled`
+ * (`E3.1`, ADR 0122 decision 6.8) was decided on those terms: a cancelled ticket is not owed.
  */
 const openWorkOrderWhere = (organizationId: string, scope: readonly string[]) =>
   and(
     eq(workOrders.organizationId, organizationId),
-    notInArray(workOrders.status, ["resolved", "closed"]),
+    notInArray(workOrders.status, ["resolved", ...TERMINAL_WORK_ORDER_STATUSES]),
     scopedTo(workOrders.assetId, scope),
   );
 

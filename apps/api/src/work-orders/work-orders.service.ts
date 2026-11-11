@@ -10,7 +10,6 @@ import { alarms, assets, workOrders } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   WorkOrderDetail,
-  CloseWorkOrderBody,
   CreateWorkOrderBody,
   JwtPayload,
   ReorderWorkOrdersBody,
@@ -367,7 +366,10 @@ export class WorkOrdersService {
     return this.readBackWorkOrder(createdId, organizationId, assetIds);
   }
 
-  /** Updates a work order status and records the state change in audit log. */
+  /**
+   * Updates a work order status and records the state change in audit log. One of the
+   * four settable statuses: `closed` and `cancelled` belong to `WorkOrderApprovalService`.
+   */
   async updateStatus(
     id: string,
     dto: UpdateWorkOrderStatusBody,
@@ -375,7 +377,7 @@ export class WorkOrdersService {
     assetIds?: string[] | null,
   ): Promise<WorkOrderListItem> {
     const current = await this.getById(id, assetIds);
-    // Refused early for a ticket that is already closed, before any transaction opens.
+    // Refused early for a ticket that is already closed or cancelled, before any transaction opens.
     // The final answer is the one under the row lock, below (plan D9).
     throwIfRefused(statusChangeRefusal({ from: current.status, to: dto.status, pendingMandatory: 0, rootCauseMissing: false }));
 
@@ -435,9 +437,8 @@ export class WorkOrdersService {
         );
       }
       // E3.1 (decisions 4.4 and 5.2): the two resolve gates, read under the row lock. A
-      // mandatory checklist item still pending blocks the move into `resolved`, and into
-      // `closed` straight from a live status (409); so does a missing root cause on a
-      // ticket raised from an alarm. A checklist write and a root-cause write take the
+      // mandatory checklist item still pending blocks the move into `resolved` (409); so
+      // does a missing root cause on a ticket raised from an alarm. A checklist write and a root-cause write take the
       // same lock first, so neither can change between this read and the commit.
       const gated = needsChecklistGate(fromStatus, dto.status);
       throwIfRefused(
@@ -467,7 +468,8 @@ export class WorkOrdersService {
           // (ruling P3): the ticket is not resolved any more and its clock runs again.
           ...(entersResolved ? { resolvedAt: now, resolvedBy: who.id } : {}),
           ...(backToWork ? { resolvedAt: null, resolvedBy: null } : {}),
-          closedAt: dto.status === "closed" ? now : undefined,
+          // No `closedAt` here: `closed` is the approval's (`WorkOrderApprovalService`)
+          // and this body cannot carry it (ADR 0122 decision 6.5).
           updatedAt: now,
         })
         .where(eq(workOrders.id, id));
@@ -531,21 +533,6 @@ export class WorkOrdersService {
     });
 
     return this.readBackWorkOrder(id, organizationId, assetIds);
-  }
-
-  /** Closes a work order and records the closure reason. */
-  async close(
-    id: string,
-    actor: Pick<JwtPayload, "sub" | "email">,
-    dto: CloseWorkOrderBody,
-    assetIds?: string[] | null,
-  ): Promise<WorkOrderListItem> {
-    return this.updateStatus(
-      id,
-      { status: "closed", reason: dto.reason, sortOrder: dto.sortOrder },
-      actor,
-      assetIds,
-    );
   }
 
   /** Persists Kanban order and audited status transitions from drag/drop. */

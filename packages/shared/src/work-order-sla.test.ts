@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   atRiskStartsBelowTwentyPercent,
+  aCancelledTicketReadsNone,
   defaultsAreTheRuledFour,
   formatsLikeTheReference,
   noSlaReadsNone,
@@ -17,6 +18,10 @@ describe("E3.1 — work-order SLA (ADR 0122 decision 3)", () => {
 
   it("reads none for a ticket with no SLA", () => {
     noSlaReadsNone();
+  });
+
+  it("reads none for a cancelled ticket, whatever it read before", () => {
+    aCancelledTicketReadsNone();
   });
 
   it("is met when resolved on or before the due instant, missed after it", () => {

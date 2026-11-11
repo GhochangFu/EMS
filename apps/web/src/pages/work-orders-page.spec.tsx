@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Profiler } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -10,7 +10,7 @@ import type { WorkOrderDetail, WorkOrderListItem } from "@bms/shared";
 import * as assetsApi from "../api/assets";
 import * as workOrdersApi from "../api/work-orders";
 import type { AuthUser } from "../stores/auth-store";
-import { priorityRailStyle, priorityStyle, WorkOrdersPage } from "./work-orders-page";
+import { APPROVE_NEEDS_ADMIN, APPROVE_NEEDS_RESOLVED, priorityRailStyle, priorityStyle, WorkOrdersPage } from "./work-orders-page";
 import * as copilotApi from "../api/copilot";
 import { ROOT_CAUSE_REQUIRED } from "../components/work-orders/work-order-status-wizard";
 
@@ -106,6 +106,9 @@ const ROW: WorkOrderListItem = {
   siteName: "Plant A",
 };
 
+/** `E3.1` (ADR 0122 decision 6.5): only a resolved ticket is approved and closed. */
+const RESOLVED_ROW: WorkOrderListItem = { ...ROW, status: "resolved", resolvedAt: "2026-10-01T10:00:00.000Z" };
+
 const ASSET = {
   id: "0f4e1d2c-0000-4000-8000-0000000000a1",
   code: "PMP-01",
@@ -134,12 +137,14 @@ class CommitBoundExceeded extends Error {}
  * first case instead of failing it. The guard disarms once the row is on screen,
  * because the cases' own typing and dragging commit many more times.
  */
-async function renderPage(row: WorkOrderListItem = ROW): Promise<void> {
+async function renderPage(shown: WorkOrderListItem | WorkOrderListItem[] = ROW, as: AuthUser = user): Promise<void> {
+  const rows = Array.isArray(shown) ? shown : [shown];
+  const row = rows[0] as WorkOrderListItem;
   vi.stubGlobal(
     "fetch",
     vi.fn(() => Promise.reject(new Error("work-orders-page.spec: no fetch expected"))),
   );
-  vi.spyOn(workOrdersApi, "fetchWorkOrders").mockResolvedValue({ items: [row] });
+  vi.spyOn(workOrdersApi, "fetchWorkOrders").mockResolvedValue({ items: rows });
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([ASSET]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   let armed = true;
@@ -155,7 +160,7 @@ async function renderPage(row: WorkOrderListItem = ROW): Promise<void> {
     <Profiler id="work-orders" onRender={onRender}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
-          <WorkOrdersPage user={user} />
+          <WorkOrdersPage user={as} />
         </MemoryRouter>
       </QueryClientProvider>
     </Profiler>,
@@ -210,11 +215,11 @@ export async function aRefusedStatusChangeShowsTheSentence(): Promise<void> {
 /** A refused close shows the server sentence, not the JSON envelope. */
 export async function aRefusedCloseShowsTheSentence(): Promise<void> {
   vi.spyOn(workOrdersApi, "closeWorkOrder").mockRejectedValue(envelope(CLOSE_SENTENCE));
-  await renderPage();
+  await renderPage(RESOLVED_ROW);
 
-  await userEvent.click(screen.getByRole("button", { name: "Close" }));
-  const dialog = await screen.findByRole("dialog", { name: "Close work order" });
-  await userEvent.type(within(dialog).getByLabelText("Closure reason"), "Bearing replaced");
+  await userEvent.click(screen.getByRole("button", { name: "Approve and close" }));
+  const dialog = await screen.findByRole("dialog", { name: "Approve and close work order" });
+  await userEvent.type(within(dialog).getByLabelText("Approval note"), "Bearing replaced");
   await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
   await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
 
@@ -334,20 +339,20 @@ export async function theStatusWizardOffersNoClosed(): Promise<void> {
 
 /** `F4.284` (ADR 0106 decision 4): the close's Review card is red and says it cannot be undone. */
 export async function theCloseReviewSaysItCannotBeUndone(): Promise<void> {
-  await renderPage();
-  await userEvent.click(screen.getByRole("button", { name: "Close" }));
-  const dialog = await screen.findByRole("dialog", { name: "Close work order" });
-  await userEvent.type(within(dialog).getByLabelText("Closure reason"), "Bearing replaced");
+  await renderPage(RESOLVED_ROW);
+  await userEvent.click(screen.getByRole("button", { name: "Approve and close" }));
+  const dialog = await screen.findByRole("dialog", { name: "Approve and close work order" });
+  await userEvent.type(within(dialog).getByLabelText("Approval note"), "Bearing replaced");
   await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
   expect(within(dialog).getByText("This cannot be undone.")).toBeTruthy();
 }
 
 /** `F4.284`: a closure reason that trims below 3 characters stays on the Reason step. */
 export async function aCloseReasonThatTrimsShortStaysOnTheReasonStep(): Promise<void> {
-  await renderPage();
-  await userEvent.click(screen.getByRole("button", { name: "Close" }));
-  const dialog = await screen.findByRole("dialog", { name: "Close work order" });
-  await userEvent.type(within(dialog).getByLabelText("Closure reason"), "ok ");
+  await renderPage(RESOLVED_ROW);
+  await userEvent.click(screen.getByRole("button", { name: "Approve and close" }));
+  const dialog = await screen.findByRole("dialog", { name: "Approve and close work order" });
+  await userEvent.type(within(dialog).getByLabelText("Approval note"), "ok ");
   await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
   expect(within(dialog).queryByRole("button", { name: "Submit" })).toBeNull();
 }
@@ -391,7 +396,7 @@ export async function theCardsWherePartWraps(): Promise<void> {
  */
 const ALARM_ROW: WorkOrderListItem = { ...ROW, alarmId: "0f4e1d2c-0000-4000-8000-0000000000b1", title: "Breaker tripped on feeder 2" };
 
-const NO_FINDINGS = { events: [], alarm: null, tasks: [], rootCause: null, correctiveAction: null, preventiveAction: null, resolvedBy: null, alarmSnapshot: null };
+const NO_FINDINGS = { events: [], alarm: null, tasks: [], rootCause: null, correctiveAction: null, preventiveAction: null, resolvedBy: null, approvedBy: null, cancelledBy: null, cancelledAt: null, alarmSnapshot: null };
 
 /** Renders the page and stubs the two reads the Root cause section makes. */
 async function renderForRootCause(row: WorkOrderListItem, detail: Partial<WorkOrderDetail> = {}): Promise<void> {
@@ -523,4 +528,140 @@ export async function findingsAreNotSentWithAnotherStatus(): Promise<void> {
   await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
   await userEvent.click(await within(dialog).findByRole("button", { name: "Submit" }));
   expect(save.mock.calls[0]?.[0]).toEqual({ id: ALARM_ROW.id, status: "in_progress" });
+}
+
+/**
+ * `E3.1` (ADR 0122 decisions 6.2, 6.5 and 6.8; plan T5.5) — the board with approval and
+ * with a cancelled ticket: who sees Approve and close enabled, on which row, and what a
+ * drag sends when a cancelled row is in the list.
+ */
+const OPERATOR: AuthUser = { ...user, id: "u2", email: "operator@bms.local", displayName: "Operator", role: "operator" } as AuthUser;
+const CANCELLED_ROW: WorkOrderListItem = {
+  ...ROW,
+  id: "0f4e1d2c-0000-4000-8000-000000000002",
+  title: "Raised by mistake",
+  reference: "GEN-000002",
+  status: "cancelled",
+};
+
+function approveButton(title: string): HTMLButtonElement {
+  const card = screen.getByText(title).closest("article");
+  if (!card) {
+    throw new Error(`no card for ${title}`);
+  }
+  return within(card as HTMLElement).getByRole("button", { name: "Approve and close" }) as HTMLButtonElement;
+}
+
+/** An admin sees Approve and close enabled on a resolved row only; the old "Close" label is gone. */
+export async function anAdminApprovesAResolvedRowOnly(): Promise<void> {
+  const open: WorkOrderListItem = { ...ROW, id: "0f4e1d2c-0000-4000-8000-000000000003", title: "Still being worked on", status: "in_progress" };
+  await renderPage([RESOLVED_ROW, open]);
+  expect(approveButton(RESOLVED_ROW.title).disabled).toBe(false);
+  expect(approveButton(open.title).disabled).toBe(true);
+  expect(approveButton(open.title).title).toBe(APPROVE_NEEDS_RESOLVED);
+  expect(screen.queryByRole("button", { name: "Close" }), "the action is named for what it does").toBeNull();
+}
+
+/** An operator sees no enabled Approve and close, on a resolved row included, and still has Edit. */
+export async function anOperatorSeesNoEnabledApprove(): Promise<void> {
+  await renderPage([RESOLVED_ROW], OPERATOR);
+  const button = approveButton(RESOLVED_ROW.title);
+  expect(button.disabled).toBe(true);
+  expect(button.title).toBe(APPROVE_NEEDS_ADMIN);
+  await userEvent.click(button);
+  expect(screen.queryByRole("dialog"), "a disabled button opens nothing").toBeNull();
+  expect((screen.getByRole("button", { name: "Edit" }) as HTMLButtonElement).disabled).toBe(false);
+}
+
+function dropOn(card: HTMLElement, column: HTMLElement): void {
+  const dataTransfer = { setData: vi.fn(), effectAllowed: "", dropEffect: "" };
+  fireEvent.dragStart(card, { dataTransfer });
+  fireEvent.dragOver(column, { dataTransfer });
+  fireEvent.drop(column, { dataTransfer });
+}
+
+function cardOf(title: string): HTMLElement {
+  const card = screen.getByText(title).closest("article");
+  if (!card) {
+    throw new Error(`no card for ${title}`);
+  }
+  return card as HTMLElement;
+}
+
+/**
+ * With one cancelled row in the list, a drag still sends a reorder body with no
+ * `cancelled` item: the route would refuse the whole batch for one (400).
+ */
+export async function aDragWithACancelledRowSendsNoCancelledItem(): Promise<void> {
+  const reorder = vi.spyOn(workOrdersApi, "reorderWorkOrders").mockResolvedValue({ items: [] });
+  await renderPage([ROW, CANCELLED_ROW]);
+
+  // The first empty column is Assigned: the Open column holds the one board row.
+  dropOn(cardOf(ROW.title), screen.getAllByText("Drop work orders here")[0] as HTMLElement);
+
+  await waitFor(() => expect(reorder).toHaveBeenCalledTimes(1));
+  const sent = reorder.mock.calls[0]?.[0] ?? [];
+  expect(sent).toEqual([{ id: ROW.id, status: "assigned", sortOrder: 0 }]);
+  expect(sent.map((item) => item.id)).not.toContain(CANCELLED_ROW.id);
+  expect(screen.queryByRole("alert"), "no error alert").toBeNull();
+}
+
+/** A cancelled row is on no column; the Cancelled filter lists it, in place of the board. */
+export async function aCancelledRowIsOnNoColumnAndUnderItsFilter(): Promise<void> {
+  await renderPage([ROW, CANCELLED_ROW]);
+  expect(screen.queryByText(CANCELLED_ROW.title), "not on the board").toBeNull();
+  expect(screen.getAllByText("Drop work orders here"), "four of the five columns are empty").toHaveLength(4);
+
+  const filter = screen.getByLabelText("Status") as HTMLSelectElement;
+  expect(Array.from(filter.options).map((option) => option.text)).toEqual([
+    "All statuses",
+    "Open",
+    "Assigned",
+    "In progress",
+    "Resolved",
+    "Closed",
+    "Cancelled",
+  ]);
+  await userEvent.selectOptions(filter, "cancelled");
+  const list = screen.getByRole("region", { name: "Cancelled work orders" });
+  expect(within(list).getByText(CANCELLED_ROW.title)).toBeTruthy();
+  expect(within(list).getByText("GEN-000002")).toBeTruthy();
+  expect(within(list).getByText("Cancelled")).toBeTruthy();
+  expect(within(list).queryByRole("button"), "a cancelled ticket has no action").toBeNull();
+  expect(screen.queryByText(ROW.title), "the board is replaced by the list").toBeNull();
+}
+
+/**
+ * A drop on Done is the approval: for an approver on a resolved card it opens the
+ * approval wizard; on a card that is not resolved it says why and opens nothing; for
+ * an operator it says why and opens nothing. No reorder is sent in any of the three.
+ */
+export async function aDropOnDoneIsTheApproval(): Promise<void> {
+  const reorder = vi.spyOn(workOrdersApi, "reorderWorkOrders");
+  const done = (): HTMLElement => screen.getAllByText("Drop work orders here").at(-1) as HTMLElement;
+
+  await renderPage(ROW);
+  dropOn(cardOf(ROW.title), done());
+  expect((await screen.findByRole("alert")).textContent).toBe(APPROVE_NEEDS_RESOLVED);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(reorder).not.toHaveBeenCalled();
+}
+
+/** The same drop by an approver on a resolved card opens the approval wizard. */
+export async function aDropOnDoneByAnApproverOpensTheApproval(): Promise<void> {
+  const reorder = vi.spyOn(workOrdersApi, "reorderWorkOrders");
+  await renderPage(RESOLVED_ROW);
+  dropOn(cardOf(RESOLVED_ROW.title), screen.getAllByText("Drop work orders here").at(-1) as HTMLElement);
+  expect(await screen.findByRole("dialog", { name: "Approve and close work order" })).toBeTruthy();
+  expect(reorder).not.toHaveBeenCalled();
+}
+
+/** The same drop by an operator says an administrator is needed, and opens nothing. */
+export async function aDropOnDoneByAnOperatorIsRefused(): Promise<void> {
+  const reorder = vi.spyOn(workOrdersApi, "reorderWorkOrders");
+  await renderPage(RESOLVED_ROW, OPERATOR);
+  dropOn(cardOf(RESOLVED_ROW.title), screen.getAllByText("Drop work orders here").at(-1) as HTMLElement);
+  expect((await screen.findByRole("alert")).textContent).toBe(APPROVE_NEEDS_ADMIN);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(reorder).not.toHaveBeenCalled();
 }

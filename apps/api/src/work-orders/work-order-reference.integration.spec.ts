@@ -243,12 +243,17 @@ export async function assertResolvedAtIsStampedOnce(ctx: WorkOrderReferenceFixtu
   expect((await stamps(ctx.fleetPool, created.id)).resolved_at, "re-entering resolved stamps again").not.toEqual(first);
 }
 
-/** A ticket closed without being resolved stops its clock at the close: `met`, not `breached` for good. */
+/**
+ * A ticket closed without being resolved stops its clock at the close: `met`, not
+ * `breached` for good. Such rows predate the approval (ADR 0122 decision 6.5), so the row
+ * is put in that state in the table.
+ */
 export async function assertACloseStopsTheSlaClock(ctx: WorkOrderReferenceFixtures): Promise<void> {
   const created = await ctx.svc.create({ assetId: ctx.domainAssetId, title: TITLE, priority: "high", slaMinutes: 60 }, ctx.actor, null);
-  const closed = await ctx.svc.close(created.id, ctx.actor, { reason: "Closed without a resolve" }, null);
+  await ctx.fleetPool.query("UPDATE bms.work_orders SET status = 'closed', closed_at = now() WHERE id = $1", [created.id]);
   expect((await stamps(ctx.fleetPool, created.id)).resolved_at, "the ticket was never resolved").toBeNull();
-  expect(closed.slaState, "closed inside its window").toBe("met");
+  const closedNow = await ctx.svc.list({ limit: 100, assetIds: [ctx.domainAssetId] });
+  expect(closedNow.items.find((item) => item.id === created.id)?.slaState, "closed inside its window").toBe("met");
   // Push the due time into the past: an open ticket would now read breached.
   await ctx.fleetPool.query(
     "UPDATE bms.work_orders SET created_at = created_at - interval '3 hours', sla_due_at = sla_due_at - interval '3 hours', closed_at = closed_at - interval '3 hours' WHERE id = $1",

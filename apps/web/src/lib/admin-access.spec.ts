@@ -1,4 +1,5 @@
 import {
+  canApproveWorkOrders,
   canAccessOnboarding,
   canManageAiAssistant,
   canAuthorDashboards,
@@ -551,5 +552,24 @@ export function runEdgeGatewaysTabIsGlobalAdminOnlyTest(): void {
     assert(!canManageEdgeGateways(role), `${role} does not manage the edge gateways`);
     const visible = visibleMasterDataTabs(role).map((entry) => entry.path);
     assert(!visible.includes("/admin/edge-gateways"), `${role} must not see the Edge Gateways tab`);
+  }
+}
+
+/**
+ * `E3.1` (ADR 0122 decision 6.2, plan T5.5) — the truth table of the API's `approval`
+ * write class, role by role: the four admin roles approve, reject and cancel a work
+ * order; an `operator` and a `viewer` do not.
+ */
+export function runCanApproveWorkOrdersTruthTableTest(): void {
+  const table = {
+    admin: true,
+    organization_admin: true,
+    location_admin: true,
+    asset_group_admin: true,
+    operator: false,
+    viewer: false,
+  } as const;
+  for (const [role, expected] of Object.entries(table) as Array<[keyof typeof table, boolean]>) {
+    assert(canApproveWorkOrders(role) === expected, `${role} must ${expected ? "" : "not "}approve work orders`);
   }
 }

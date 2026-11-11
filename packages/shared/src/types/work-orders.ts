@@ -11,6 +11,10 @@ import type * as Op from "../contracts/operations";
 import type * as Wo from "../contracts/work-orders";
 
 export type WorkOrderStatus = z.infer<typeof Op.workOrderStatusSchema>;
+/** The four statuses `PATCH /work-orders/:id/status` may set (`E3.1`, plan D19). */
+export type SettableWorkOrderStatus = z.infer<typeof Op.settableWorkOrderStatusSchema>;
+/** The five Kanban columns: every status but `cancelled` (`E3.1`, plan D19). */
+export type BoardWorkOrderStatus = z.infer<typeof Op.boardWorkOrderStatusSchema>;
 export type WorkOrderPriority = z.infer<typeof Op.workOrderPrioritySchema>;
 /** One work order row for Phase 5 Sprint A API responses. */
 export type WorkOrderListItem = z.infer<typeof Op.workOrderListItemSchema>;

@@ -277,8 +277,8 @@ export async function assertARenameDoesNotRewriteHistory(ctx: WorkOrderEventsFix
   expect((await eventsOf(ctx.fleetPool, created.id))[1]?.actor_name, "a later event takes the new name").toBe("E3.1 Renamed User");
 }
 
-/** Closing through the close route writes a status event with the reason; an upper-case id of the current assignee is not a change. */
-export async function assertCloseAndASameAssigneeWriteWhatTheyShould(ctx: WorkOrderEventsFixtures): Promise<void> {
+/** An upper-case id of the current assignee is not a change: it writes no event. */
+export async function assertASameAssigneeReSentWritesNoEvent(ctx: WorkOrderEventsFixtures): Promise<void> {
   const created = await ctx.svc.create(
     { assetId: ctx.assetId, title: TITLE, priority: "medium", assignedTo: ctx.actorUserId },
     ctx.actor,
@@ -286,15 +286,6 @@ export async function assertCloseAndASameAssigneeWriteWhatTheyShould(ctx: WorkOr
   );
   await ctx.svc.updateStatus(created.id, { status: "assigned", assignedTo: ctx.actorUserId.toUpperCase() }, ctx.actor, null);
   expect((await eventsOf(ctx.fleetPool, created.id)).length, "re-sending the current assignee is not an event").toBe(2);
-
-  await ctx.svc.close(created.id, ctx.actor, { reason: "Duplicate of another ticket" }, null);
-  const rows = await eventsOf(ctx.fleetPool, created.id);
-  expect(shape(rows).at(-1)).toEqual(["status_changed", "assigned", "closed"]);
-  expect(rows.at(-1)?.detail).toEqual({ reason: "Duplicate of another ticket" });
-  await expect(ctx.svc.updateStatus(created.id, { status: "in_progress" }, ctx.actor, null), "a closed ticket stays closed").rejects.toMatchObject({
-    status: 400,
-  });
-  expect((await eventsOf(ctx.fleetPool, created.id)).length, "and writes no further event").toBe(rows.length);
 }
 
 /** The status audit row carries the reference and both statuses. */

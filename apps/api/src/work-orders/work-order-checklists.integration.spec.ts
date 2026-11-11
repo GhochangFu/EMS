@@ -516,15 +516,6 @@ export async function assertABlockedResolveWritesNothing(ctx: ChecklistFixtures)
   expect(events.rows.map((row: { event_type: string }) => row.event_type)).toEqual(["created"]);
 }
 
-/** Closing a ticket that was never resolved is gated the same way, so the checklist cannot be stepped around. */
-export async function assertACloseThatSkipsResolvedIsGatedToo(ctx: ChecklistFixtures): Promise<void> {
-  const created = await withChecklist(ctx);
-  const blocked = ctx.svc.close(created.id, ctx.actor, { reason: "Closing without the checklist" }, null);
-  await expect(blocked).rejects.toBeInstanceOf(ConflictException);
-  await expect(blocked).rejects.toThrow(WORK_ORDER_MANDATORY_PENDING_REFUSAL);
-  expect(await statusOf(ctx.fleetPool, created.id)).toBe("open");
-}
-
 /** A ticket with no checklist, or with optional items only, resolves as before. */
 export async function assertATicketWithNoMandatoryItemResolves(ctx: ChecklistFixtures): Promise<void> {
   const bare = await ctx.svc.create({ assetId: ctx.assetId, title: TITLE, priority: "low" }, ctx.actor, null);
@@ -538,7 +529,7 @@ export async function assertATicketWithNoMandatoryItemResolves(ctx: ChecklistFix
   expect((await ctx.svc.updateStatus(optionalOnly.id, { status: "resolved" }, ctx.actor, null)).status).toBe("resolved");
 }
 
-/** Once a ticket is `resolved` or `closed`, a checklist write answers 409 and changes nothing; back in progress it works again. */
+/** Once a ticket is `resolved`, `closed` or `cancelled`, a checklist write answers 409 and changes nothing; back in progress it works again. */
 export async function assertAResolvedOrClosedTicketFreezesItsChecklist(ctx: ChecklistFixtures): Promise<void> {
   const created = await ctx.svc.create(
     { assetId: ctx.assetId, title: TITLE, priority: "low", checklistTemplateId: ctx.electricalTemplateId },
@@ -557,8 +548,17 @@ export async function assertAResolvedOrClosedTicketFreezesItsChecklist(ctx: Chec
   await ctx.svc.updateStatus(created.id, { status: "in_progress" }, ctx.actor, null);
   expect((await ctx.tasks.updateTask(created.id, only.id, { result: "done" }, ctx.actor, null)).result).toBe("done");
 
-  await ctx.svc.close(created.id, ctx.actor, { reason: "Work complete" }, null);
-  await expect(ctx.tasks.updateTask(created.id, only.id, { result: "pending" }, ctx.actor, null)).rejects.toBeInstanceOf(ConflictException);
+  // Set straight in the table: `closed` and `cancelled` are reached only through the approval
+  // service (`work-orders.approval.integration.spec.ts`), and this suite is about the freeze.
+  for (const terminal of ["closed", "cancelled"]) {
+    await ctx.fleetPool.query("UPDATE bms.work_orders SET status = $2 WHERE id = $1", [created.id, terminal]);
+    const frozen = ctx.tasks.updateTask(created.id, only.id, { result: "pending" }, ctx.actor, null);
+    await expect(frozen, terminal).rejects.toBeInstanceOf(ConflictException);
+    await expect(frozen, terminal).rejects.toThrow(WORK_ORDER_TASKS_FROZEN_REFUSAL);
+    await expect(ctx.taskAdd.addTask(created.id, { title: "Too late", mandatory: false }, ctx.actor, null), terminal).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  }
   expect((await tasksOf(ctx.fleetPool, created.id)).map((row) => [row.title, row.result])).toEqual([[only.title, "done"]]);
 }
 

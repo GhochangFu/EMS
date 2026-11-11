@@ -16,11 +16,13 @@ import { ZodError, z } from "zod";
 
 // F4.284 (ADR 0030): the write bodies live in `@bms/shared`, the copilot catalog's exports by identity.
 import {
+  cancelWorkOrderBodySchema,
   closeWorkOrderBodySchema,
   createWorkOrderBodySchema,
   createWorkOrderTaskBodySchema,
   type JwtPayload,
   putWorkOrderRootCauseBodySchema,
+  rejectWorkOrderBodySchema,
   reorderWorkOrdersBodySchema,
   updateWorkOrderStatusBodySchema,
   updateWorkOrderTaskBodySchema,
@@ -29,6 +31,7 @@ import {
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { WorkOrderApprovalService } from "./work-order-approval.service";
 import { WorkOrderFindingsService } from "./work-order-findings.service";
 import { WorkOrderTaskAddService } from "./work-order-task-add.service";
 import { WorkOrderTasksService } from "./work-order-tasks.service";
@@ -45,6 +48,7 @@ export class WorkOrdersController {
     private readonly tasks: WorkOrderTasksService,
     private readonly taskAdd: WorkOrderTaskAddService,
     private readonly findings: WorkOrderFindingsService,
+    private readonly approval: WorkOrderApprovalService,
   ) {}
 
   @Get()
@@ -228,23 +232,53 @@ export class WorkOrdersController {
     }
   }
 
+  /**
+   * `E3.1` (ADR 0122 decision 6.2): the APPROVAL of a `resolved` work order. The
+   * `approval` class — the four admin roles, never an `operator` — is asked first, before
+   * the id, the body or the scope is read. 409 when the ticket is not `resolved`.
+   */
   @Post(":id/close")
   @HttpCode(HttpStatus.OK)
-  async close(
-    @Param("id") id: string,
-    @Body() body: unknown,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    await this.accessControl.assertOperationsWriteRole(user, "operational");
+  async close(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    await this.accessControl.assertOperationsWriteRole(user, "approval");
     try {
       const workOrderId = idParamSchema.parse(id);
       const dto = closeWorkOrderBodySchema.parse(body);
-      return await this.workOrders.close(
-        workOrderId,
-        user,
-        dto,
-        await this.accessControl.readableAssetIds(user),
-      );
+      return await this.approval.approve(workOrderId, dto, user, await this.accessControl.readableAssetIds(user));
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /** `E3.1` (ADR 0122 decision 6.4): the approver sends a `resolved` work order back to work, with a reason. */
+  @Post(":id/reject")
+  @HttpCode(HttpStatus.OK)
+  async reject(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    await this.accessControl.assertOperationsWriteRole(user, "approval");
+    try {
+      const workOrderId = idParamSchema.parse(id);
+      const dto = rejectWorkOrderBodySchema.parse(body);
+      return await this.approval.reject(workOrderId, dto, user, await this.accessControl.readableAssetIds(user));
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /** `E3.1` (ADR 0122 decision 6.8): a live or resolved work order is cancelled, with a reason. Terminal. */
+  @Post(":id/cancel")
+  @HttpCode(HttpStatus.OK)
+  async cancel(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    await this.accessControl.assertOperationsWriteRole(user, "approval");
+    try {
+      const workOrderId = idParamSchema.parse(id);
+      const dto = cancelWorkOrderBodySchema.parse(body);
+      return await this.approval.cancel(workOrderId, dto, user, await this.accessControl.readableAssetIds(user));
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

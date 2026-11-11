@@ -15,7 +15,7 @@ import { SEEDED, jwtFor, primeSeededSubjects } from "../testing/seeded-subjects"
 import { deleteFixtureUsers, deleteWorkOrderEvents } from "../testing/work-order-events-cleanup";
 import {
   assertAFailedAuditLeavesNoChangeAndNoEvent,
-  assertCloseAndASameAssigneeWriteWhatTheyShould,
+  assertASameAssigneeReSentWritesNoEvent,
   assertAForeignSettingCannotFileAnEvent,
   assertARenameDoesNotRewriteHistory,
   assertCreateWritesItsFirstEvents,
@@ -285,8 +285,8 @@ describe.skipIf(!connectionString)("E3.1 — work-order timeline under real RLS"
     await assertARenameDoesNotRewriteHistory(ctx);
   });
 
-  it("writes a status event on close and none for the same assignee re-sent", async () => {
-    await assertCloseAndASameAssigneeWriteWhatTheyShould(ctx);
+  it("writes no event for the same assignee re-sent", async () => {
+    await assertASameAssigneeReSentWritesNoEvent(ctx);
   });
 
   it("puts the reference and both statuses in the status audit row", async () => {

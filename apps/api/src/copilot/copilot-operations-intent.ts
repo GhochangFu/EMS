@@ -12,7 +12,11 @@
  * a tool returns can turn it on.
  */
 export const ACKNOWLEDGE_WORDS = ["acknowledge", "acknowledged", "ack", "acked"] as const;
-export const CLOSE_WORDS = ["close", "closed", "closing"] as const;
+/**
+ * `E3.1` (ADR 0122 decision 6.2): the close is the approval of a resolved work order and
+ * its card reads "Approve and close", so "approve" asks for it as "close" does.
+ */
+export const CLOSE_WORDS = ["close", "closed", "closing", "approve", "approved", "approving"] as const;
 export const OPERATIONAL_WORDS = [...ACKNOWLEDGE_WORDS, ...CLOSE_WORDS] as const;
 
 const wholeWord = (words: readonly string[]): RegExp => new RegExp(`(?:^|[^a-z0-9-])(?:${words.join("|")})(?![a-z0-9-])`, "i");

@@ -7,6 +7,8 @@ ADR 0009 established for master data.
 
 Blocks `F4.11`. Fixes a hole that exists **independently** of `F4.11`.
 
+**Amended by [ADR 0122](./0122-work-order-depth.md) decision 6 (2026-11-11, `E3.1`):** a third write class, `approval` — the four admin roles ✅, `operator` ❌, `viewer` ❌ — gates `POST /work-orders/:id/close`, `/reject` and `/cancel`. ADR 0122 stands as the amendment (ruling P11).
+
 ## Context
 
 Sixteen mutating endpoints across four controllers carry

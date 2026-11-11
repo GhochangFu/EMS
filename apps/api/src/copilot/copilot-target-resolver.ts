@@ -49,7 +49,7 @@ import { pointKeyStateName, readPointKeyState, seededAtPropose, seededPointKeySt
 import { lifecycleStatusOf, refKindOf } from "./copilot-target-kinds";
 import { CopilotTargetRefusal, mayWriteTelemetry, telemetryRowRefusal } from "./copilot-telemetry-targets";
 // prettier-ignore
-import { findWorkOrderBatch, isActiveAlarmSkill, mayWriteOperationalAssets, type OperationsAlarm, type OperationsBatchRow, type OperationsWorkOrder, readAlarmRow, readConvertibleSchedule, readOrganizationUserName, readWorkOrderRow, unknownAlarmSkillMessage } from "./copilot-operations-targets";
+import { findWorkOrderBatch, isActiveAlarmSkill, mayApproveWorkOrderAsset, mayWriteOperationalAssets, type OperationsAlarm, type OperationsBatchRow, type OperationsWorkOrder, readAlarmRow, readConvertibleSchedule, readOrganizationUserName, readWorkOrderRow, unknownAlarmSkillMessage } from "./copilot-operations-targets";
 
 /** What a proposal's target resolved to. */
 export type ResolvedTarget = {
@@ -687,7 +687,8 @@ export class CopilotTargetResolver implements CopilotTargets {
         const row = await readAlarmRow(tx, id, organizationId);
         return row ? { organizationId, name: row.alarm.assetName, assetId: row.assetId, alarm: row.alarm } : null;
       }
-      case "workOrder": {
+      case "workOrder":
+      case "workOrderApproval": {
         const row = await readWorkOrderRow(tx, id, organizationId);
         return row ? { organizationId, name: row.workOrder.title, assetId: row.assetId, workOrder: row.workOrder } : null;
       }
@@ -940,6 +941,9 @@ export class CopilotTargetResolver implements CopilotTargets {
       case "maintenanceScheduleConvert":
       case "workOrder":
         return this.mayWriteOperational(user, found.assetId ?? null);
+      // `E3.1` (ADR 0122 decision 6.2): the close route's `approval` gate — never an operator.
+      case "workOrderApproval":
+        return mayApproveWorkOrderAsset(this.access, user, found.assetId ?? null);
       // `F4.284`: an enrichment's `affectedAssetIds` too — each readable and of the alarm's organization.
       case "alarm": {
         const affected = mode === "record" || !Array.isArray(body.affectedAssetIds) ? [] : (body.affectedAssetIds as unknown[]);

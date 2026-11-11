@@ -10,6 +10,8 @@ ruling; *drafter choice* lines were not asked. Drafted before any
 implementation code; the merge of the record approves it. Code citations are to
 `main` at `5d8249e9`.
 
+**Amended by [ADR 0122](./0122-work-order-depth.md) decisions 6 and 10 (2026-11-11, `E3.1`):** `workOrder.close` is now the approval of a `resolved` work order — its card reads *Approve and close*, and its target mirrors the route's `approval` class, so an `operator` is not offered it; the status route's body also leaves out `closed` and `cancelled`. ADR 0122 stands as the amendment (ruling P11).
+
 This record **reverses part of ADR 0099 decision 1** — *"It cannot: acknowledge,
 clear or edit alarms or work orders"* — and decides whether the *Not in this
 ADR* item *"Operator and viewer use of the copilot; operator writes"* moves.

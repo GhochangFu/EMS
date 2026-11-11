@@ -114,10 +114,12 @@ export function mapWorkOrderRow(r: WorkOrderListRow, now: Date = new Date()): Wo
     slaState: workOrderSlaState({
       slaMinutes: r.slaMinutes,
       slaDueAt: r.slaDueAt,
-      // The clock stops at `resolved`. Until close is limited to a resolved ticket
-      // (ADR 0122 decision 6.5, a later PR) a ticket can be closed without ever being
-      // resolved; its clock stops at the close, or it would read `breached` for good.
+      // The clock stops at `resolved`. A ticket closed before close was limited to a
+      // resolved ticket (ADR 0122 decision 6.5) may never have been resolved; its clock
+      // stops at the close, or it would read `breached` for good.
       resolvedAt: r.resolvedAt ?? r.closedAt,
+      // Decision 6.8: a cancelled ticket reads `none`.
+      cancelled: r.status === "cancelled",
       now,
     }),
     checklistDone: r.checklistDone,

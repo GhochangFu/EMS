@@ -181,11 +181,11 @@ export function eventRowRoundTrips(): void {
 /** The detail is an intersection with the list item, so it follows the item; it is not a flattened copy. */
 export function detailIsAnIntersectionWithTheListItem(): void {
   assert(workOrderDetailSchema instanceof ZodIntersection, "workOrderDetailSchema is a z.intersection");
-  const detail = { ...ITEM, tasks: [], rootCause: null, correctiveAction: null, preventiveAction: null, resolvedBy: null, alarmSnapshot: null, events: [EVENT], alarm: { id: "a1", severity: "critical", message: "Breaker tripped", raisedAt: "2026-11-05T00:00:00.000Z" } };
+  const detail = { ...ITEM, tasks: [], rootCause: null, correctiveAction: null, preventiveAction: null, resolvedBy: null, approvedBy: null, cancelledBy: null, cancelledAt: null, alarmSnapshot: null, events: [EVENT], alarm: { id: "a1", severity: "critical", message: "Breaker tripped", raisedAt: "2026-11-05T00:00:00.000Z" } };
   const parsed = workOrderDetailSchema.safeParse(detail);
   assert(parsed.success, "the detail parses");
   assert(parsed.success && parsed.data.reference === ITEM.reference && parsed.data.events.length === 1, "it carries the item and the events");
   assert(workOrderDetailSchema.safeParse({ ...detail, alarm: null, events: [] }).success, "no alarm and no events parses");
   assert(!workOrderDetailSchema.safeParse({ ...ITEM, alarm: null }).success, "a detail without events is refused");
-  assert(!workOrderDetailSchema.safeParse({ ...without("reference"), events: [], alarm: null, tasks: [], rootCause: null, correctiveAction: null, preventiveAction: null, resolvedBy: null, alarmSnapshot: null }).success, "the item's own rule still holds");
+  assert(!workOrderDetailSchema.safeParse({ ...without("reference"), events: [], alarm: null, tasks: [], rootCause: null, correctiveAction: null, preventiveAction: null, resolvedBy: null, approvedBy: null, cancelledBy: null, cancelledAt: null, alarmSnapshot: null }).success, "the item's own rule still holds");
 }

@@ -17,7 +17,6 @@ import { SEEDED, jwtFor, primeSeededSubjects } from "../testing/seeded-subjects"
 import { deleteFixtureUsers, deleteWorkOrderEvents } from "../testing/work-order-events-cleanup";
 import {
   assertABlockedResolveWritesNothing,
-  assertACloseThatSkipsResolvedIsGatedToo,
   assertAFailedAuditLeavesNoTaskChange,
   assertAFullChecklistRefusesOneMoreAndTheAddAuditHoldsNoTitle,
   assertATaskCannotPointAtAnotherOrganizationsTemplateItem,
@@ -397,15 +396,11 @@ describe.skipIf(!connectionString)("E3.1 — work-order checklists under real RL
       await assertABlockedResolveWritesNothing(ctx);
     });
 
-    it("gates a close that skips resolved", async () => {
-      await assertACloseThatSkipsResolvedIsGatedToo(ctx);
-    });
-
     it("resolves a ticket with no mandatory item as before", async () => {
       await assertATicketWithNoMandatoryItemResolves(ctx);
     });
 
-    it("freezes the checklist of a resolved or closed ticket (409)", async () => {
+    it("freezes the checklist of a resolved, closed or cancelled ticket (409)", async () => {
       await assertAResolvedOrClosedTicketFreezesItsChecklist(ctx);
     });
 

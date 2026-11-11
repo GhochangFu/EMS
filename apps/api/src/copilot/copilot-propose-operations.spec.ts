@@ -141,11 +141,44 @@ export async function aClosedWorkOrderCloseIsRefused(): Promise<void> {
   expect((await h.call("propose_workOrder_close", { id: WO_1, body: { reason: "Repaired and tested" } }, ASKED)).error).toBe(WORK_ORDER_CLOSED);
 }
 
-/** A stored close is `operational`, with the reason in the body. */
+const RESOLVED_TARGET: ResolvedTarget = {
+  ...WORK_ORDER_TARGET,
+  workOrder: { title: "Check the breaker", status: "resolved", assetName: "MCC-1" },
+};
+
+/** A stored close — the approval of a resolved work order — is `operational`, with the reason in the body. */
 export async function aStoredCloseIsOperational(): Promise<void> {
-  const h = proposeHarness({ target: WORK_ORDER_TARGET });
+  const h = proposeHarness({ target: RESOLVED_TARGET });
   expect((await h.call("propose_workOrder_close", { id: WO_1, body: { reason: "Repaired and tested" } }, ASKED)).ok).toBe(true);
   expect(h.stored[0]).toMatchObject({ risk: "operational", body: { reason: "Repaired and tested" } });
+  expect(h.stored[0]?.summary).toContain("Approve and close the work order");
+}
+
+/**
+ * `E3.1` (ADR 0122 decision 6.5, ruling P2): a close of a work order that is not
+ * `resolved` is refused before the card, with the approval route's own sentence.
+ */
+export async function aCloseOfAnUnresolvedWorkOrderIsRefused(): Promise<void> {
+  for (const status of ["open", "assigned", "in_progress"]) {
+    const h = proposeHarness({ target: { ...WORK_ORDER_TARGET, workOrder: { title: "Check the breaker", status, assetName: "MCC-1" } } });
+    const outcome = await h.call("propose_workOrder_close", { id: WO_1, body: { reason: "Repaired and tested" } }, ASKED);
+    expect(outcome.error, status).toBe("Only a resolved work order can be approved and closed");
+    expect(h.stored, `${status}: no card is stored`).toHaveLength(0);
+  }
+}
+
+/** Decision 6.8: a cancelled work order takes no status change and no close, each with the route's sentence. */
+export async function aCancelledWorkOrderIsRefused(): Promise<void> {
+  const cancelled = { ...WORK_ORDER_TARGET, workOrder: { title: "Check the breaker", status: "cancelled", assetName: "MCC-1" } };
+  const status = proposeHarness({ target: cancelled });
+  expect((await status.call("propose_workOrder_setStatus", { id: WO_1, body: { status: "open" } })).error).toBe(
+    "Cancelled work orders cannot be updated",
+  );
+  const close = proposeHarness({ target: cancelled });
+  expect((await close.call("propose_workOrder_close", { id: WO_1, body: { reason: "Repaired and tested" } }, ASKED)).error).toBe(
+    "Cancelled work orders cannot be updated",
+  );
+  expect([status.stored.length, close.stored.length]).toEqual([0, 0]);
 }
 
 /** Decision 2: the status tool refuses `closed` — a close carries a reason through its own route. */

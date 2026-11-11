@@ -133,13 +133,42 @@ export const alarmSocketEventSchema = z.discriminatedUnion("type", [
 // Work orders and maintenance
 // ---------------------------------------------------------------------------
 
+/**
+ * Every status a work order can hold, as a response reads it. `resolved` means "done,
+ * waiting for approval"; `closed` means "approved"; `cancelled` is the other terminal
+ * status (`E3.1`, ADR 0122 decisions 6.1 and 6.8).
+ *
+ * A request never takes this whole set: see the two narrower schemas below (plan D19).
+ */
 export const workOrderStatusSchema = z.enum([
   "open",
   "assigned",
   "in_progress",
   "resolved",
   "closed",
+  "cancelled",
 ]);
+
+/**
+ * The two statuses nothing leaves. A reader that asks "is this ticket still live" — a
+ * schedule's active work order, an open count — excludes exactly these (plan D20).
+ */
+export const TERMINAL_WORK_ORDER_STATUSES = ["closed", "cancelled"] as const satisfies readonly z.infer<
+  typeof workOrderStatusSchema
+>[];
+
+/**
+ * The statuses `PATCH /work-orders/:id/status` may set (ADR 0122 decision 6.5). `closed`
+ * is reached only through the approval (`POST /work-orders/:id/close`) and `cancelled`
+ * only through `POST /work-orders/:id/cancel`, each of which needs the `approval` class.
+ */
+export const settableWorkOrderStatusSchema = z.enum(["open", "assigned", "in_progress", "resolved"]);
+
+/**
+ * The statuses a `PATCH /work-orders/reorder` item may carry: the five Kanban columns.
+ * A cancelled ticket is on no column (decision 6.8), so it is never sent.
+ */
+export const boardWorkOrderStatusSchema = z.enum(["open", "assigned", "in_progress", "resolved", "closed"]);
 
 export const workOrderPrioritySchema = z.enum(["low", "medium", "high", "critical"]);
 

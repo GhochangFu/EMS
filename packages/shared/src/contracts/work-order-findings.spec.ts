@@ -73,6 +73,9 @@ const DETAIL = {
   correctiveAction: "Bearing replaced",
   preventiveAction: null,
   resolvedBy: "u1",
+  approvedBy: null,
+  cancelledBy: null,
+  cancelledAt: null,
   alarmSnapshot: SNAPSHOT,
 };
 
@@ -96,7 +99,7 @@ export function detailCarriesFindingsAndTheSnapshot(): void {
   assert(parsed.success && parsed.data.alarmSnapshot?.rootCause === SNAPSHOT.rootCause, "it carries the snapshot");
   assert(parsed.success && parsed.data.rootCause === DETAIL.rootCause && parsed.data.causeCode === ITEM.causeCode, "and the findings");
   assert(workOrderDetailSchema.safeParse({ ...DETAIL, alarmSnapshot: null }).success, "a ticket with no snapshot parses");
-  for (const key of ["alarmSnapshot", "rootCause", "correctiveAction", "preventiveAction", "resolvedBy"]) {
+  for (const key of ["alarmSnapshot", "rootCause", "correctiveAction", "preventiveAction", "resolvedBy", "approvedBy", "cancelledBy", "cancelledAt"]) {
     assert(!workOrderDetailSchema.safeParse(without(DETAIL, key)).success, `a detail without ${key} is refused`);
   }
 }

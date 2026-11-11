@@ -12,8 +12,10 @@ import {
   canPerformOperationsWrite,
   operationsWriteDenialReason,
   type OperationsWriteClass,
+  OPERATIONS_APPROVAL_DENIAL,
   WORK_ORDER_SLA_OVERRIDE_DENIAL,
 } from "../auth/operations-write";
+import type { WorkOrderApprovalService } from "./work-order-approval.service";
 import type { WorkOrderFindingsService } from "./work-order-findings.service";
 import type { WorkOrderTaskAddService } from "./work-order-task-add.service";
 import type { WorkOrderTasksService } from "./work-order-tasks.service";
@@ -70,7 +72,29 @@ function harness(): Harness {
       calls.push(`create:${dto.slaMinutes ?? "policy"}`);
       return { id: WORK_ORDER_ID };
     },
+    async updateStatus(_id: string, dto: { status: string }): Promise<{ id: string }> {
+      calls.push(`status:${dto.status}`);
+      return { id: WORK_ORDER_ID };
+    },
+    async reorder(): Promise<{ items: never[] }> {
+      calls.push("reorder");
+      return { items: [] };
+    },
   } as unknown as WorkOrdersService;
+  const approval = {
+    async approve(): Promise<{ id: string }> {
+      calls.push("approve");
+      return { id: WORK_ORDER_ID };
+    },
+    async reject(): Promise<{ id: string }> {
+      calls.push("reject");
+      return { id: WORK_ORDER_ID };
+    },
+    async cancel(): Promise<{ id: string }> {
+      calls.push("cancel");
+      return { id: WORK_ORDER_ID };
+    },
+  } as unknown as WorkOrderApprovalService;
   const tasks = {
     async updateTask(): Promise<{ id: string }> {
       calls.push("updateTask");
@@ -97,7 +121,7 @@ function harness(): Harness {
       return { items: [] };
     },
   } as unknown as WorkOrderFindingsService;
-  return { controller: new WorkOrdersController(workOrders, access, tasks, taskAdd, findings), calls };
+  return { controller: new WorkOrdersController(workOrders, access, tasks, taskAdd, findings, approval), calls };
 }
 
 const CREATE = { assetId: ASSET_ID, title: "Replace bearing" };
@@ -249,4 +273,93 @@ export async function theCauseCodeListIsAPlainRead(): Promise<void> {
   const { controller, calls } = harness();
   await expect(controller.listCauseCodes()).resolves.toEqual({ items: [] });
   expect(calls).toEqual(["causeCodes"]);
+}
+
+const REASON = { reason: "Checked on site" };
+const APPROVAL_ROUTES = ["close", "reject", "cancel"] as const;
+const SERVICE_CALL = { close: "approve", reject: "reject", cancel: "cancel" } as const;
+
+/**
+ * ADR 0122 decision 6.2: close, reject and cancel ask for the `approval` class FIRST —
+ * before the id is parsed, before the body is parsed and before the scope is read. An
+ * operator and a viewer are refused with the one fixed sentence and reach no service.
+ */
+export async function theApprovalRoutesAskForApprovalBeforeAnythingElse(): Promise<void> {
+  for (const route of APPROVAL_ROUTES) {
+    for (const role of ["operator", "viewer"] as const) {
+      const { controller, calls } = harness();
+      const attempt = controller[route]("not-a-uuid", { nope: true }, user(role));
+      await expect(attempt, `${route} as ${role}`).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(attempt, `${route} as ${role}`).rejects.toThrow(OPERATIONS_APPROVAL_DENIAL);
+      expect(calls, `${route} as ${role}`).toEqual(["role:approval"]);
+    }
+  }
+}
+
+/** Each of the four admin roles may close, reject and cancel; the gate, then the scope, then the service. */
+export async function theFourAdminRolesMayApproveRejectAndCancel(): Promise<void> {
+  for (const route of APPROVAL_ROUTES) {
+    for (const role of ["admin", "organization_admin", "location_admin", "asset_group_admin"] as const) {
+      const { controller, calls } = harness();
+      await expect(controller[route](WORK_ORDER_ID, REASON, user(role)), `${route} as ${role}`).resolves.toEqual({ id: WORK_ORDER_ID });
+      expect(calls, `${route} as ${role}`).toEqual(["role:approval", "scope", SERVICE_CALL[route]]);
+    }
+  }
+}
+
+/** A bad id, a missing reason or a stray key is a 400 on each approval route and reaches no service. */
+export async function aBadApprovalRequestIs400(): Promise<void> {
+  for (const route of APPROVAL_ROUTES) {
+    const { controller, calls } = harness();
+    await expect(controller[route]("not-a-uuid", REASON, user("admin")), route).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller[route](WORK_ORDER_ID, {}, user("admin")), route).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller[route](WORK_ORDER_ID, { reason: "x" }, user("admin")), route).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller[route](WORK_ORDER_ID, { ...REASON, status: "open" }, user("admin")), route).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(calls, route).toEqual(["role:approval", "role:approval", "role:approval", "role:approval"]);
+  }
+}
+
+/** The three approval routes sit where ADR 0122 decision 10 says, each a `POST` answering 200. */
+export function theApprovalRoutesAreWhereTheAdrSays(): void {
+  const proto = WorkOrdersController.prototype;
+  for (const route of APPROVAL_ROUTES) {
+    expect([Reflect.getMetadata(METHOD_METADATA, proto[route]), Reflect.getMetadata(PATH_METADATA, proto[route])], route).toEqual([
+      RequestMethod.POST,
+      `:id/${route}`,
+    ]);
+    expect(Reflect.getMetadata("__httpCode__", proto[route]), route).toBe(200);
+  }
+}
+
+/**
+ * Decision 6.5: the status route takes the four settable statuses only. `closed` and
+ * `cancelled` are a 400 from the body schema — for an admin too — and reach no service;
+ * an operator still resolves.
+ */
+export async function theStatusRouteRefusesClosedAndCancelled(): Promise<void> {
+  for (const status of ["closed", "cancelled"]) {
+    const { controller, calls } = harness();
+    await expect(controller.updateStatus(WORK_ORDER_ID, { status }, user("admin")), status).rejects.toBeInstanceOf(BadRequestException);
+    expect(calls, status).toEqual(["role:operational"]);
+  }
+  const ok = harness();
+  await expect(ok.controller.updateStatus(WORK_ORDER_ID, { status: "resolved" }, user("operator"))).resolves.toEqual({ id: WORK_ORDER_ID });
+  expect(ok.calls).toEqual(["role:operational", "scope", "status:resolved"]);
+}
+
+/** Decision 6.8: a reorder item may not carry `cancelled` (400); the five columns pass. */
+export async function aReorderItemMayNotBeCancelled(): Promise<void> {
+  const refused = harness();
+  await expect(
+    refused.controller.reorder({ items: [{ id: WORK_ORDER_ID, status: "cancelled", sortOrder: 0 }] }, user("admin")),
+  ).rejects.toBeInstanceOf(BadRequestException);
+  expect(refused.calls).toEqual(["role:operational"]);
+
+  const ok = harness();
+  await expect(ok.controller.reorder({ items: [{ id: WORK_ORDER_ID, status: "closed", sortOrder: 0 }] }, user("operator"))).resolves.toEqual({
+    items: [],
+  });
+  expect(ok.calls).toEqual(["role:operational", "scope", "reorder"]);
 }

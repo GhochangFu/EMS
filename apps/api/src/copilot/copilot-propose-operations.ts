@@ -2,6 +2,7 @@ import type { WorkOrderStatus } from "@bms/shared";
 import type { CatalogEntry } from "@bms/shared/copilot";
 
 import {
+  approvalRefusal,
   reorderMoveRefusal,
   statusChangeRefusal,
   WORK_ORDER_CLOSE_BY_DRAG_REFUSAL,
@@ -104,20 +105,25 @@ export function checkOperations(entry: CatalogEntry, body: Readonly<Record<strin
       return target.alarm.acknowledgedAt === null ? NOTHING : refuse(ALARM_ALREADY_ACKNOWLEDGED);
     case "alarm.enrichment.set":
       return target.alarm === undefined ? refuse(PROPOSE_TARGET_ERROR) : NOTHING;
-    case "workOrder.setStatus":
-    case "workOrder.close": {
+    case "workOrder.setStatus": {
       if (target.workOrder === undefined) return refuse(PROPOSE_TARGET_ERROR);
       // The route's own rule (`statusChangeRefusal`), for what can be known before the
-      // write: a closed ticket takes no status write, and a resolved one goes back to In
-      // progress only (`E3.1`, ruling P3). The checklist and the root cause are read under
-      // the route's row lock, so they are not judged here.
-      const to = entry.id === "workOrder.close" ? "closed" : (body.status as WorkOrderStatus);
+      // write: a closed or cancelled ticket takes no status write, and a resolved one goes
+      // back to In progress only (`E3.1`, ruling P3). The checklist and the root cause are
+      // read under the route's row lock, so they are not judged here.
       const refusal = statusChangeRefusal({
         from: target.workOrder.status as WorkOrderStatus,
-        to,
+        to: body.status as WorkOrderStatus,
         pendingMandatory: 0,
         rootCauseMissing: false,
       });
+      return refusal === null ? NOTHING : refuse(refusal.message);
+    }
+    case "workOrder.close": {
+      if (target.workOrder === undefined) return refuse(PROPOSE_TARGET_ERROR);
+      // The approval's own rule (`approvalRefusal`, ADR 0122 decision 6.5): only a
+      // `resolved` ticket is approved and closed.
+      const refusal = approvalRefusal(target.workOrder.status as WorkOrderStatus);
       return refusal === null ? NOTHING : refuse(refusal.message);
     }
     case "workOrder.reorder":

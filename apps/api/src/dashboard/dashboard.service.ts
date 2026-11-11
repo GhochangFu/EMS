@@ -344,7 +344,7 @@ export class DashboardService {
       work_order_rollup AS (
         SELECT
           wo.asset_id,
-          COUNT(*) FILTER (WHERE wo.status <> 'closed')::int AS open_work_order_count
+          COUNT(*) FILTER (WHERE wo.status NOT IN ('closed', 'cancelled'))::int AS open_work_order_count
         FROM bms.work_orders wo
         INNER JOIN scoped_assets sa ON sa.id = wo.asset_id
         GROUP BY wo.asset_id
@@ -382,7 +382,7 @@ export class DashboardService {
       FROM bms.work_orders wo
       INNER JOIN bms.assets a ON a.id = wo.asset_id
       WHERE a.location_id = $1
-        AND wo.status <> 'closed'
+        AND wo.status NOT IN ('closed', 'cancelled')
         AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
       `,
       [locationId, opts?.assetIds ?? null],

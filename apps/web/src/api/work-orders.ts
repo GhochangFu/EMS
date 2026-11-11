@@ -5,12 +5,12 @@ import {
   workOrdersListResponseSchema,
 } from "@bms/shared/contracts";
 import type {
+  BoardWorkOrderStatus,
   CreateWorkOrderInput as SharedCreateWorkOrderInput,
   UpdateWorkOrderStatusBody,
   WorkOrderCauseCodesResponse,
   WorkOrderDetail,
   WorkOrderListItem,
-  WorkOrderStatus,
 } from "@bms/shared";
 
 import { clearSessionOnAuthFailure, withAuth } from "./http";
@@ -30,7 +30,8 @@ export type UpdateWorkOrderStatusInput = { id: string } & UpdateWorkOrderStatusB
 
 export type ReorderWorkOrderItem = {
   id: string;
-  status: WorkOrderStatus;
+  /** One of the five columns: a cancelled ticket is never sent (ADR 0122 decision 6.8). */
+  status: BoardWorkOrderStatus;
   sortOrder: number;
 };
 

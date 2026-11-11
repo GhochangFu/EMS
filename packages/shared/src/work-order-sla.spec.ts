@@ -24,6 +24,7 @@ function stateAt(nowMs: number, resolvedAt: Date | null = null): string {
     slaMinutes: MINUTES,
     slaDueAt: DUE,
     resolvedAt,
+    cancelled: false,
     now: new Date(nowMs),
   });
 }
@@ -36,12 +37,12 @@ export function defaultsAreTheRuledFour(): void {
 /** A ticket with no SLA (older than the columns) reads `none`, whatever the clock says. */
 export function noSlaReadsNone(): void {
   assertEqual(
-    workOrderSlaState({ slaMinutes: null, slaDueAt: null, resolvedAt: null, now: new Date(DUE.getTime() + 1) }),
+    workOrderSlaState({ slaMinutes: null, slaDueAt: null, resolvedAt: null, cancelled: false, now: new Date(DUE.getTime() + 1) }),
     "none",
     "no sla",
   );
   assertEqual(
-    workOrderSlaState({ slaMinutes: MINUTES, slaDueAt: null, resolvedAt: null, now: CREATED }),
+    workOrderSlaState({ slaMinutes: MINUTES, slaDueAt: null, resolvedAt: null, cancelled: false, now: CREATED }),
     "none",
     "minutes without a due time",
   );
@@ -77,4 +78,17 @@ export function formatsLikeTheReference(): void {
   assertEqual(formatSlaMinutes(90), "1h 30 mins", "90");
   assertEqual(formatSlaMinutes(1), "1 min", "1");
   assertEqual(formatSlaMinutes(0), "0 mins", "0");
+}
+
+/** ADR 0122 decision 6.8: a cancelled ticket reads `none` — on track, breached, met or missed before it was cancelled. */
+export function aCancelledTicketReadsNone(): void {
+  const base = { slaMinutes: MINUTES, slaDueAt: DUE, cancelled: true };
+  const early = new Date(CREATED.getTime() + 60_000);
+  const late = new Date(DUE.getTime() + 60_000);
+  assertEqual(workOrderSlaState({ ...base, resolvedAt: null, now: early }), "none", "cancelled while on track");
+  assertEqual(workOrderSlaState({ ...base, resolvedAt: null, now: late }), "none", "cancelled after a breach");
+  assertEqual(workOrderSlaState({ ...base, resolvedAt: early, now: late }), "none", "cancelled after it was met");
+  assertEqual(workOrderSlaState({ ...base, resolvedAt: late, now: late }), "none", "cancelled after it was missed");
+  // The control: the same ticket, not cancelled, still reads its state.
+  assertEqual(workOrderSlaState({ ...base, cancelled: false, resolvedAt: early, now: late }), "met", "not cancelled");
 }

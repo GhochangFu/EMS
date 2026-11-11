@@ -167,8 +167,11 @@ export const OPERATIONS_ENTRIES: readonly CatalogEntry[] = [
     },
   },
   {
+    // `E3.1` (ADR 0122 decision 6.2): the id, the route and the body are unchanged, so a
+    // stored change keeps its hash; the route is now the APPROVAL of a resolved ticket,
+    // and the card says so.
     id: "workOrder.close",
-    title: "Close a work order",
+    title: "Approve and close a work order",
     method: "POST",
     path: "/work-orders/:id/close",
     params: { id: uuidParam },
@@ -176,12 +179,13 @@ export const OPERATIONS_ENTRIES: readonly CatalogEntry[] = [
     bodyName: "closeWorkOrderBodySchema",
     clientOnly: [],
     risk: "operational",
-    target: { kind: "workOrder", param: "id" },
+    // The `approval` class, not `operational`: an operator is not offered this card.
+    target: { kind: "workOrderApproval", param: "id" },
     refs: [],
     formulas: [],
     steps: [{ id: "reason", title: "Reason", fields: ["reason", "sortOrder"] }],
     summary: ({ body, targetName, workOrder }) =>
-      `Close the work order ${quoted(targetName)}${workOrder ? ` (now ${statusText(workOrder.status)}, on ${workOrder.assetName})` : ""}.${reasonLine(body)}`,
+      `Approve and close the work order ${quoted(targetName)}${workOrder ? ` (now ${statusText(workOrder.status)}, on ${workOrder.assetName})` : ""}.${reasonLine(body)}`,
   },
   {
     id: "workOrder.reorder",

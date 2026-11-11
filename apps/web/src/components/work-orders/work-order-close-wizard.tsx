@@ -6,6 +6,7 @@ import { closeWorkOrder } from "../../api/work-orders";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { AdminWizardFrame, fieldClass, labelClass } from "../admin/admin-wizard-frame";
 import { operationsWizardEntry, reasonText, withTrimmedReason } from "../alarm-ack-wizard";
+import { APPROVE_AND_CLOSE_LABEL } from "./work-order-labels";
 import { WizardShell } from "../wizard/wizard-shell";
 
 export type WorkOrderCloseWizardProps = {
@@ -19,7 +20,11 @@ export type WorkOrderCloseWizardProps = {
 /**
  * `F4.284` (ADR 0099 decision 6; ADR 0106 decisions 3, 4) — a work order's Close on the
  * shared `WizardShell`: Reason → Review, the red `operational` card that says it cannot
- * be undone. Used by operators too; Submit sends the plain `POST /work-orders/:id/close`.
+ * be undone. Submit sends the plain `POST /work-orders/:id/close`.
+ *
+ * `E3.1` (ADR 0122 decision 6.2): that route is now the APPROVAL of a `resolved` ticket,
+ * for the four admin roles. The page opens this only for an approver on a resolved row;
+ * the route decides either way.
  */
 export function WorkOrderCloseWizard({ row, sortOrder, onCancel, onDone }: WorkOrderCloseWizardProps) {
   const [values, setValues] = useState<Record<string, unknown>>(sortOrder === undefined ? {} : { sortOrder });
@@ -30,7 +35,7 @@ export function WorkOrderCloseWizard({ row, sortOrder, onCancel, onDone }: WorkO
   });
   const entry = operationsWizardEntry("workOrder.close");
   return (
-    <AdminWizardFrame title="Close work order">
+    <AdminWizardFrame title={`${APPROVE_AND_CLOSE_LABEL} work order`}>
       <p className="text-xs text-ink-muted">{row.title}</p>
       <WizardShell
         entry={operationsWizardEntry("workOrder.close")}
@@ -40,7 +45,7 @@ export function WorkOrderCloseWizard({ row, sortOrder, onCancel, onDone }: WorkO
         onChange={(next) => setValues(withTrimmedReason(sortOrder === undefined ? next : { ...next, sortOrder }, next.reason))}
         renderStep={() => (
           <label className={labelClass}>
-            Closure reason
+            Approval note
             <textarea
               className={fieldClass}
               rows={3}
