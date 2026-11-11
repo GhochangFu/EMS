@@ -8,13 +8,14 @@ import type { BmsDb } from "@bms/db";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertEmptyScopeRunsNoQuery,
-  assertFreshSimulatorDoesNotMakeFieldDataOk,
+  assertFreshHostWithSilentDevicesIsOk,
   assertNoMqttInScopeIsNotMonitored,
   assertNoRtuIsNotStreaming,
   assertOneFreshOfTwoStreaming,
   assertOutOfScopeFreshMqttIsNotCounted,
+  assertRecentlyHeardRtuIsNotOffline,
   assertSixtySecondMqttSampleIsReporting,
-  assertStaleMqttIsDegraded,
+  assertStaleHostIsDegraded,
   assertStaleQueueDegradesTheVerdict,
   assertThreeSamplesCountOneFreshAsset,
 } from "./system-status.integration.spec";
@@ -53,8 +54,8 @@ describe.skipIf(!connectionString)("F3.30 — GET /system/status read (real data
     await assertOneFreshOfTwoStreaming(db);
   }, 60_000);
 
-  it("a 200 s old mqtt sample, beyond a 60 s device's 150 s window, reads field_data degraded", async () => {
-    await assertStaleMqttIsDegraded(db);
+  it("an ingest host 31 s past its beat, or with no row, reads field_data degraded (F3.16)", async () => {
+    await assertStaleHostIsDegraded(db);
   }, 60_000);
 
   it("a scope with no mqtt asset reads field_data not_monitored", async () => {
@@ -73,8 +74,12 @@ describe.skipIf(!connectionString)("F3.30 — GET /system/status read (real data
     await assertStaleQueueDegradesTheVerdict(db);
   }, 60_000);
 
-  it("a fresh simulator asset beside a silent mqtt asset reads field_data degraded at 50 %", async () => {
-    await assertFreshSimulatorDoesNotMakeFieldDataOk(db);
+  it("a beating host with every mqtt device silent reads field_data ok and one device offline (F3.16)", async () => {
+    await assertFreshHostWithSilentDevicesIsOk(db);
+  }, 60_000);
+
+  it("a monitored RTU heard 60 s ago is not offline (F3.16)", async () => {
+    await assertRecentlyHeardRtuIsNotOffline(db);
   }, 60_000);
 
   it("a fresh mqtt asset outside the scope reaches neither count", async () => {

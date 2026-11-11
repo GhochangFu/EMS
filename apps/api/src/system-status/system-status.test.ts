@@ -4,15 +4,15 @@ import {
   assertAllFreshIs100,
   assertAllOkIsOperational,
   assertDisconnectedQueueIsDegraded,
+  assertFreshHostIsOk,
   assertHealthyQueueIsOk,
-  assertNoFreshMqttAssetIsDegraded,
   assertNoMqttAssetIsNotMonitored,
   assertNotConfiguredAndNotMonitoredAreOperational,
   assertOneDegradedIsDegraded,
-  assertOneFreshMqttAssetIsOk,
   assertOneOfThreeIs33Point3,
   assertReachableStorageIsOk,
   assertStaleHeartbeatQueueIsDegraded,
+  assertStaleOrAbsentHostIsDegraded,
   assertUnconfiguredQueueIsNotConfigured,
   assertUnconfiguredStorageIsNotConfigured,
   assertUnreachableStorageIsDegraded,
@@ -61,12 +61,12 @@ describe("F3.30 — system status rules", () => {
       assertNoMqttAssetIsNotMonitored();
     });
 
-    it("mqtt assets with none fresh read degraded", () => {
-      assertNoFreshMqttAssetIsDegraded();
+    it("a stale or absent ingest host reads degraded", () => {
+      assertStaleOrAbsentHostIsDegraded();
     });
 
-    it("one fresh mqtt asset reads ok", () => {
-      assertOneFreshMqttAssetIsOk();
+    it("a fresh ingest host reads ok, whatever the devices send", () => {
+      assertFreshHostIsOk();
     });
   });
 

@@ -1,4 +1,5 @@
 import type {
+  IngestHostState,
   QueueHealth,
   StorageHealth,
   SystemComponent,
@@ -40,19 +41,20 @@ export function storageComponentState(storage: StorageHealth): SystemComponentSt
 }
 
 /**
- * The `field_data` component, inferred from the caller's own assets on
- * `source_type = 'mqtt'` RTUs (ADR 0075 decision 3). The accepted limit: when
- * every MQTT device is silent this reads `degraded` although the ingest host
- * runs — the API has no ingest heartbeat until `F3.16`.
+ * The `field_data` component (ADR 0075 decision 3, rewritten by `F3.16` / ADR
+ * 0127 decision 21): `not_monitored` when the caller has no asset on an `mqtt`
+ * RTU; otherwise the ingest host's heartbeat decides — `ok` when it is fresh,
+ * `degraded` when it is stale or there has never been one. Silent devices no
+ * longer degrade it; they show in `devices.offline` and in data quality.
  */
-export function fieldDataState(counts: {
+export function fieldDataState(input: {
   readonly mqttAssets: number;
-  readonly mqttFresh: number;
+  readonly host: IngestHostState;
 }): SystemComponentState {
-  if (counts.mqttAssets === 0) {
+  if (input.mqttAssets === 0) {
     return "not_monitored";
   }
-  return counts.mqttFresh > 0 ? "ok" : "degraded";
+  return input.host === "ok" ? "ok" : "degraded";
 }
 
 /** `operational` when no component is `degraded`, otherwise `degraded`. */

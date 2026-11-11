@@ -89,18 +89,26 @@ export function assertReachableStorageIsOk(): void {
 // --- fieldDataState ----------------------------------------------------------
 
 export function assertNoMqttAssetIsNotMonitored(): void {
-  const state = fieldDataState({ mqttAssets: 0, mqttFresh: 0 });
-  assert(state === "not_monitored", `no mqtt asset in scope must read not_monitored, got ${state}`);
+  // F3.16 (ADR 0127 decision 21): not_monitored even with a fresh host, and with none.
+  const states = [fieldDataState({ mqttAssets: 0, host: "ok" }), fieldDataState({ mqttAssets: 0, host: "never" })];
+  assert(
+    states.every((state) => state === "not_monitored"),
+    `no mqtt asset in scope must read not_monitored, got ${states.join(", ")}`,
+  );
 }
 
-export function assertNoFreshMqttAssetIsDegraded(): void {
-  const state = fieldDataState({ mqttAssets: 3, mqttFresh: 0 });
-  assert(state === "degraded", `mqtt assets with none fresh must read degraded, got ${state}`);
+export function assertStaleOrAbsentHostIsDegraded(): void {
+  const states = [fieldDataState({ mqttAssets: 3, host: "stale" }), fieldDataState({ mqttAssets: 3, host: "never" })];
+  assert(
+    states.every((state) => state === "degraded"),
+    `a stale or absent ingest host must read degraded, got ${states.join(", ")}`,
+  );
 }
 
-export function assertOneFreshMqttAssetIsOk(): void {
-  const state = fieldDataState({ mqttAssets: 3, mqttFresh: 1 });
-  assert(state === "ok", `at least one fresh mqtt asset must read ok, got ${state}`);
+export function assertFreshHostIsOk(): void {
+  // Silent devices no longer degrade field_data: only the host's heartbeat does (decision 21).
+  const state = fieldDataState({ mqttAssets: 3, host: "ok" });
+  assert(state === "ok", `a fresh ingest host must read ok, got ${state}`);
 }
 
 // --- verdict -----------------------------------------------------------------
