@@ -17,7 +17,7 @@ import { z } from "zod";
  * |---|---|---|---|---|
  * | `queue` | `QueueHealthService.read()` | connected, heartbeat fresh | disconnected, or `heartbeatStale` | `not_configured` — no `REDIS_URL` |
  * | `storage` | `StorageHealthService.read()` | reachable | configured, unreachable | `not_configured` |
- * | `field_data` | mqtt-sourced assets in scope | at least one fresh | mqtt assets exist, none fresh | `not_monitored` — no mqtt asset in scope |
+ * | `field_data` | the ingest host heartbeat (`bms.ingest_hosts`, `F3.16` / ADR 0127 decision 21) | heartbeat fresh (≤ 30 s) | heartbeat stale or no host row | `not_monitored` — no mqtt asset in scope |
  *
  * `not_configured` and `not_monitored` never degrade `status` — the same
  * rule `/health` uses for an unconfigured queue.
