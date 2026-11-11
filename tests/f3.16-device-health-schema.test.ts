@@ -244,4 +244,21 @@ describe("F3.16 — device health tables (migration 0149)", () => {
       expect(mirror).toContain(`export const ${name} = bmsSchema.table(`);
     }
   });
+
+  it("0150 replaces both bucket checks with the UTC form, inside the bms_owner bracket, after 0149 in the journal", () => {
+    const fix = sqlOnly(read("packages/db/drizzle/0150_device_health_utc_bucket.sql"));
+    for (const table of ["rtu_drop_hours", "ingest_endpoint_drop_hours"]) {
+      expect(fix).toContain(`DROP CONSTRAINT IF EXISTS ${table}_bucket_check`);
+      expect(fix).toContain(`ADD CONSTRAINT ${table}_bucket_check CHECK (bucket = date_trunc('hour', bucket, 'UTC'))`);
+    }
+    expect(fix.indexOf("SET ROLE bms_owner")).toBeLessThan(fix.indexOf("ALTER TABLE"));
+    expect(fix.indexOf("RESET ROLE")).toBeGreaterThan(fix.lastIndexOf("ALTER TABLE"));
+    expect(fix).not.toMatch(/\bGRANT\b/);
+    const entries = (JSON.parse(read("packages/db/drizzle/meta/_journal.json")) as {
+      entries: { tag: string; when: number }[];
+    }).entries;
+    const a = entries.find((e) => e.tag === "0149_device_health");
+    const b = entries.find((e) => e.tag === "0150_device_health_utc_bucket");
+    expect(a && b && b.when > a.when).toBe(true);
+  });
 });

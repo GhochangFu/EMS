@@ -208,6 +208,21 @@ describe.skipIf(!has)("F3.16 — device health schema against a live database", 
     });
   });
 
+  it("a whole UTC hour is a valid bucket in a half-hour session time zone (Asia/Kolkata)", async () => {
+    await inTx("bms_fleet", null, async (run) => {
+      await run("SET LOCAL timezone = 'Asia/Kolkata'");
+      const drop = await probe(run, INSERT_DROP, [eskom, eskomRtu, HOUR, "badQuality", 1]);
+      expect(drop.code, drop.message).toBeUndefined();
+      const platform = await probe(
+        run,
+        `INSERT INTO bms.ingest_endpoint_drop_hours (host_key, endpoint_key, bucket, reason, dropped)
+         VALUES ('h', 'e', $1::timestamptz, 'unknownDevice', 1)`,
+        [HOUR],
+      );
+      expect(platform.code, platform.message).toBeUndefined();
+    });
+  });
+
   it("an unknown reason, a non-hour bucket and a zero count are refused with 23514", async () => {
     await inTx("bms_fleet", null, async (run) => {
       const reason = await probe(run, INSERT_DROP, [eskom, eskomRtu, HOUR, "seventh", 1]);
