@@ -3,6 +3,7 @@ import { and, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { alarms, alarmSeverities } from "@bms/db";
 import type { MetricCatalogKey, SustainabilityAggregate } from "@bms/shared";
 
+import { alarmVisibleTo } from "../alarms/alarm-scope";
 import type { BmsTx } from "../database/tenant-context";
 import { readRollupRows, rollup } from "./sustainability-rollup";
 
@@ -53,6 +54,7 @@ export function priorOf(at: Date, value: number | null): { readonly asOf: string
 /**
  * The alarms in scope that were open at `at`: raised by then (`raised_at <= at`) and not cleared
  * by then (`cleared_at IS NULL OR cleared_at > at`) — the estate `priorOpenAlarms` rule.
+ * The scope is `alarmVisibleTo`, as the live count's (`F3.16`, ADR 0127 decision 14).
  * `criticalOnly` adds the `alarms.critical.count` predicate: severity tone `critical`. Never
  * null: `bms.alarms` is the whole history, so no row is zero. An empty scope is `0` before SQL.
  */
@@ -70,7 +72,8 @@ export async function priorOpenAlarmsInScope(
     .where(
       and(
         eq(alarms.organizationId, organizationId),
-        inArray(alarms.assetId, [...scope]),
+        // `F3.16`: the live count's own visibility rule, device alarms included.
+        alarmVisibleTo(scope),
         lte(alarms.raisedAt, at),
         or(isNull(alarms.clearedAt), gt(alarms.clearedAt, at)),
         criticalOnly
