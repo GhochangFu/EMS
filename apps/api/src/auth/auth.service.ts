@@ -1,7 +1,7 @@
 import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import bcrypt from "bcrypt";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { JwtPayload, LoginResponse, UserRole } from "@bms/shared";
 import { users } from "@bms/db";
@@ -45,7 +45,8 @@ export class AuthService {
         disabledAt: users.disabledAt,
       })
       .from(users)
-      .where(eq(users.email, body.email))
+      // F4.17 / ADR 0125 decision 10: a service account never signs in.
+      .where(and(eq(users.email, body.email), eq(users.kind, "human")))
       .limit(1);
 
     const user = row[0];
