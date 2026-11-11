@@ -372,3 +372,52 @@ describe("F3.78 — a non-manager row is 403 on every route, whatever the token 
     await spec.assertANonManagerRowIsRefusedAWrite("temporary-password");
   });
 });
+
+describe("F4.340 — an organization admin gets its home organization's grant (ADR 0128)", () => {
+  it("creating an organization_admin inserts the home grant in the create transaction", async () => {
+    await spec.assertCreatingAnOrganizationAdminInsertsTheHomeGrant();
+  });
+
+  it("creating an organization_admin commits the create audit and a home_organization grant audit", async () => {
+    await spec.assertCreatingAnOrganizationAdminAuditsTheGrant();
+  });
+
+  it.each(["location_admin", "asset_group_admin", "operator", "viewer"] as const)(
+    "creating a %s inserts no automatic grant",
+    async (role) => {
+      await spec.assertCreatingAScopedNonOrganizationAdminInsertsNoGrant(role);
+    },
+  );
+
+  it("a failed home-grant insert undoes the Keycloak account and commits nothing", async () => {
+    await spec.assertAFailedHomeGrantUndoesTheCreate();
+  });
+
+  it("a promotion to organization_admin inserts and audits the home grant", async () => {
+    await spec.assertAPromotionToOrganizationAdminInsertsTheHomeGrant();
+  });
+
+  it("a promotion when the home grant is held writes no grant audit", async () => {
+    await spec.assertAPromotionWithAHeldGrantAuditsNoGrant();
+  });
+
+  it("no other update inserts a grant", async () => {
+    await spec.assertNoOtherUpdateInsertsAGrant();
+  });
+
+  it("a demotion from admin to organization_admin grants the body's organization on fleet", async () => {
+    await spec.assertADemotionFromAdminToOrganizationAdminGrantsTheBodysOrganization();
+  });
+
+  it("an organization_admin's promotion grants the target's home under its GUC", async () => {
+    await spec.assertAnOrganizationAdminsPromotionGrantsTheTargetsHome();
+  });
+
+  it("the list flags each user with no grant in effect", async () => {
+    await spec.assertTheListFlagsUsersWithNoEffectiveGrant();
+  });
+
+  it("a grant of a kind the role does not read is not in effect", async () => {
+    await spec.assertAGrantOfAnUnreadKindIsNotEffective();
+  });
+});

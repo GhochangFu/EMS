@@ -9,6 +9,7 @@ import { fetchAdminLocations } from "../../api/admin/locations";
 import {
   addAdminUserGrant,
   adminUserGrantsQueryKey,
+  adminUsersQueryKey,
   fetchAdminUserGrants,
   removeAdminUserGrant,
 } from "../../api/admin/users";
@@ -95,6 +96,8 @@ export function GrantsDrawer({
   const settle = {
     onSuccess: (response: { items: UserGrantDto[] }) => {
       queryClient.setQueryData(adminUserGrantsQueryKey(target.id), response);
+      // F4.340: the list's "No access" pill is derived from the grants, so refetch the list too.
+      void queryClient.invalidateQueries({ queryKey: adminUsersQueryKey, exact: true });
       setFeedback(null);
     },
     onError: (err: unknown) => setFeedback(failureFeedback(err, "grant")),

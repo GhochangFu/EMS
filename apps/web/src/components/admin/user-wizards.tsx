@@ -161,6 +161,32 @@ function WizardFrame({ title, children }: { title: string; children: ReactNode }
   );
 }
 
+/** `F4.340` (ADR 0128 decision 1): the Review line for a new organization admin. */
+export function organizationAdminAccessSentence(organizationName: string): string {
+  return `This organization admin gets access to ${organizationName} when it is created.`;
+}
+
+/** `F4.340` (ADR 0128 decision 4): the Review warning for a scoped role created without a grant. */
+export const NO_GRANT_WARNING =
+  "This user will see nothing until you add a grant. After you create it, open Grants on its row.";
+
+/**
+ * The create wizard's Review note on access (ADR 0128): an `organization_admin`
+ * gets its organization's grant on create; every other role but `admin` sees
+ * nothing until a grant is added, so Review says so.
+ */
+function CreateUserAccessNote({ role, organizationName }: { role: UserRole; organizationName: string }) {
+  if (role === "admin") return null;
+  if (role === "organization_admin") {
+    return <p className="mt-3 text-xs text-ink-muted">{organizationAdminAccessSentence(organizationName)}</p>;
+  }
+  return (
+    <p role="note" className="mt-3 rounded border border-warning-line bg-warning-wash p-3 text-xs text-warning-ink">
+      {NO_GRANT_WARNING}
+    </p>
+  );
+}
+
 /** What the create wizard's form holds. The temporary password is not here: it is the ref's. */
 export type CreateUserForm = { email: string; displayName: string; role: UserRole; organizationId: string };
 
@@ -203,6 +229,7 @@ export function CreateUserWizard({
   const organizationId = form.organizationId || (organizations.length === 1 ? (organizations[0]?.id ?? "") : "");
   const values = createUserValues({ ...form, organizationId });
   const entry = wizardEntry("user.create");
+  const organizationName = organizations.find((org) => org.id === organizationId)?.name ?? "the organization";
 
   function fromValues(next: Record<string, unknown>): void {
     setForm({
@@ -276,8 +303,9 @@ export function CreateUserWizard({
           body: values,
           params: {},
           targetName: "",
-          organizationName: organizations.find((org) => org.id === organizationId)?.name ?? "the organization",
+          organizationName,
         })}
+        review={{ omit: [], detail: <CreateUserAccessNote role={form.role} organizationName={organizationName} /> }}
       />
       <PasswordField inputRef={passwordRef} />
       {localError ? (

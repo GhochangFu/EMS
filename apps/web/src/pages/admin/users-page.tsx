@@ -50,6 +50,8 @@ type UsersAdminPageProps = { user: AuthUser };
 export const LOCAL_MODE_SENTENCE = "User administration needs Keycloak; this deployment runs local sign-in.";
 /** Shown on an unlinked row: the Keycloak account is made on the first sign-in. */
 export const UNLINKED_SENTENCE = "This user must sign in once before it can be changed.";
+/** `F4.340` (ADR 0128 Q6): an active user whose role reads grants and who holds none in effect. */
+export const NO_ACCESS_PILL = "No access";
 
 /** The shared contract's own floor (`temporaryPasswordSchema`), checked before any request. */
 export { MIN_TEMPORARY_PASSWORD_LENGTH };
@@ -281,6 +283,7 @@ function UsersAdminScreen({ user }: UsersAdminPageProps) {
                           <StatusPill label="Active" tone="ok" />
                         )}
                         {row.linked ? null : <StatusPill label="Not signed in yet" tone="info" />}
+                        {!row.disabledAt && !row.hasEffectiveGrant ? <StatusPill label={NO_ACCESS_PILL} tone="warning" /> : null}
                       </div>
                     </td>
                     <td className="px-2 py-2">

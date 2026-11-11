@@ -231,3 +231,42 @@ set) and re-create the API-created users.
 
 After the switch the volume persists: later recreates change nothing in the
 realm, keys or ids.
+
+## 7. An organization admin with no organization grant (F4.340 / ADR 0128)
+
+Since `F4.340`, creating an `organization_admin`, or changing a user's role to
+`organization_admin`, also writes the grant for its home organization, with
+its own `master.user_grant.add` audit row (`reason: "home_organization"`). An
+organization admin created **before** that change may have no organization
+grant. It then sees "No sites in your access scope" and cannot manage users.
+The Users list marks it **No access**.
+
+Run this once on each host after the deploy. It only reads:
+
+```sql
+-- as the superuser (DATABASE_URL_SUPERUSER, `bms_app` in compose)
+SELECT u.id, u.email, o.code AS home_organization
+  FROM bms.users u
+  JOIN bms.organizations o ON o.id = u.organization_id
+ WHERE u.role = 'organization_admin'
+   AND u.disabled_at IS NULL
+   AND NOT EXISTS (
+     SELECT 1 FROM bms.user_organization_access a WHERE a.user_id = u.id
+   )
+ ORDER BY u.email;
+```
+
+For each row, decide whether the user should have access. Someone may have
+removed the grant on purpose. If the user should have access, open **Users &
+Access → Grants** on that row and add an **Organization** grant for its home
+organization. The screen writes the audit row with you as the actor. Do not
+insert the grant with SQL: that leaves no audit row.
+
+This is not a migration on purpose (ADR 0128 Q5). A migration would run on
+every host and add back a grant that an admin removed on purpose.
+
+A demotion keeps the grant (ADR 0128 decision 2). An organization admin
+demoted to `operator` or `viewer` therefore still reads its whole home
+organization, because `organization` is the first read source for both
+roles. If that is not wanted, remove the grant in **Grants** after the
+demotion.

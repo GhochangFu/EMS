@@ -9,6 +9,7 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload, UserRole } from "@bms/shared";
 
 import type { AccessControlService } from "../../auth/access-control.service";
+import { directOrganizationIds, scopeFromSource } from "../../auth/access-scope-sources";
 import { rememberIdentity } from "../../auth/identity-resolver";
 import { withTenant } from "../../database/tenant-context";
 import type { NewIdentityUser } from "../../identity/identity-admin.client";
@@ -277,6 +278,240 @@ export async function assertDeactivateUnderTheWrongGucIsRefusedWithNoAudit(super
   expect(outcome.rightGucUpdated, "positive control: the same statement under the row's organization updates it").toBe(true);
   expect((outcome.error as Error | null)?.message).toBe(CHANGED_UNDER_YOU);
   expect(outcome.audits).toBe(0);
+}
+
+// -- F4.340 / ADR 0128: an organization admin holds its home organization ---
+
+type HomeGrant = {
+  roles: string[];
+  grantOrganizations: string[];
+  readLocations: number;
+  foreignReadLocations: number;
+  eskomLocations: number;
+  grantAudits: { organization_id: string | null; payload: Record<string, unknown> }[];
+  userAudits: string[];
+  home: string;
+};
+
+/** What the scope readers see for `userId`, and the audit rows about it, read on the superuser `db`. */
+async function readHomeGrant(db: BmsDb, userId: string, role: UserRole, home: string, roles: string[]): Promise<HomeGrant> {
+  const grantOrganizations = await directOrganizationIds(db, userId);
+  const scope = await scopeFromSource(db, { id: userId, role }, "organization");
+  const ids = scope.locations.map((location) => location.id);
+  const foreign = ids.length === 0
+    ? []
+    : rowsOf<{ id: string }>(
+        await db.execute(sql`SELECT id FROM bms.locations WHERE id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}) AND organization_id <> ${home}`),
+      );
+  const [eskom] = rowsOf<{ n: number }>(
+    await db.execute(sql`SELECT count(*)::int AS n FROM bms.locations WHERE organization_id = ${home} AND active`),
+  );
+  const grantAudits = rowsOf<{ organization_id: string | null; payload: Record<string, unknown> }>(
+    await db.execute(sql`
+      SELECT organization_id, payload FROM bms.audit_log
+       WHERE action = 'master.user_grant.add' AND payload->>'userId' = ${userId}
+    `),
+  );
+  const userAudits = rowsOf<{ action: string }>(
+    await db.execute(sql`SELECT action FROM bms.audit_log WHERE entity_id = ${userId} ORDER BY action`),
+  ).map((row) => row.action);
+  return {
+    roles,
+    grantOrganizations,
+    readLocations: ids.length,
+    foreignReadLocations: foreign.length,
+    eskomLocations: eskom?.n ?? 0,
+    grantAudits,
+    userAudits,
+    home,
+  };
+}
+
+async function createAndReadHomeGrant(superDb: BmsDb, role: UserRole): Promise<HomeGrant> {
+  let outcome: HomeGrant | undefined;
+  await withRollback(superDb, async (tx) => {
+    const db = tx as unknown as BmsDb;
+    const eskom = await organizationId(db, "ESKOM");
+    const caller = await insertUser(db, "admin", null, false);
+    const roles: string[] = [];
+    const service = buildService(asRole(db, "bms_fleet", roles), asRole(db, "bms_tenant", roles), new UniqueIdentityAdmin());
+    const response = await service.create(callerJwt(caller), {
+      email: `f3.78-pr2-${randomUUID()}@fixture.local`,
+      displayName: "F4.340 created",
+      role,
+      organizationId: eskom,
+      temporaryPassword: PASSWORD,
+    });
+    outcome = await readHomeGrant(db, response.user.id, role, eskom, roles);
+    tx.rollback();
+  });
+  if (!outcome) throw new Error("F4.340: the create case never ran");
+  return outcome;
+}
+
+/**
+ * The defect: before ADR 0128 a created `organization_admin` had no
+ * `user_organization_access` row, so `directOrganizationIds` was `[]` and the
+ * organization read scope held no location. Now the grant lands on
+ * `bms_tenant` in the create transaction, with its own audit row.
+ */
+export async function assertACreatedOrganizationAdminHoldsItsHomeOrganization(superDb: BmsDb): Promise<void> {
+  const outcome = await createAndReadHomeGrant(superDb, "organization_admin");
+  expect(outcome.roles).toEqual(["bms_tenant"]);
+  expect(outcome.grantOrganizations).toEqual([outcome.home]);
+  expect(outcome.eskomLocations, "fixture: the seeded ESKOM organization has active locations").toBeGreaterThan(0);
+  expect(outcome.readLocations).toBeGreaterThan(0);
+  expect(outcome.foreignReadLocations).toBe(0);
+  expect(outcome.userAudits).toEqual(["master.user.create"]);
+  expect(outcome.grantAudits).toHaveLength(1);
+  expect(outcome.grantAudits[0]?.organization_id).toBe(outcome.home);
+  expect(outcome.grantAudits[0]?.payload).toMatchObject({
+    kind: "organization",
+    targetId: outcome.home,
+    reason: "home_organization",
+  });
+}
+
+/** ADR 0128 decision 4: a `viewer` gets no automatic grant. */
+export async function assertACreatedViewerGetsNoGrant(superDb: BmsDb): Promise<void> {
+  const outcome = await createAndReadHomeGrant(superDb, "viewer");
+  expect(outcome.grantOrganizations).toEqual([]);
+  expect(outcome.grantAudits).toEqual([]);
+}
+
+async function changeRoleAndReadHomeGrant(
+  superDb: BmsDb,
+  from: UserRole,
+  to: UserRole,
+  existingGrant: boolean,
+): Promise<HomeGrant> {
+  let outcome: HomeGrant | undefined;
+  await withRollback(superDb, async (tx) => {
+    const db = tx as unknown as BmsDb;
+    const eskom = await organizationId(db, "ESKOM");
+    const caller = await insertUser(db, "admin", null, false);
+    const target = await insertUser(db, from, eskom, true);
+    if (existingGrant) {
+      await db.execute(sql`INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES (${target.id}, ${eskom})`);
+    }
+    const roles: string[] = [];
+    const service = buildService(asRole(db, "bms_fleet", roles), asRole(db, "bms_tenant", roles), new UniqueIdentityAdmin());
+    await service.update(callerJwt(caller), target.id, { role: to });
+    outcome = await readHomeGrant(db, target.id, to, eskom, roles);
+    tx.rollback();
+  });
+  if (!outcome) throw new Error("F4.340: the role-change case never ran");
+  return outcome;
+}
+
+/** ADR 0128 decision 2: a promotion to `organization_admin` adds the home grant, audited. */
+export async function assertAPromotionToOrganizationAdminAddsTheHomeGrant(superDb: BmsDb): Promise<void> {
+  const outcome = await changeRoleAndReadHomeGrant(superDb, "viewer", "organization_admin", false);
+  expect(outcome.roles).toEqual(["bms_tenant"]);
+  expect(outcome.grantOrganizations).toEqual([outcome.home]);
+  expect(outcome.readLocations).toBeGreaterThan(0);
+  expect(outcome.grantAudits).toHaveLength(1);
+  expect(outcome.grantAudits[0]?.payload).toMatchObject({ reason: "home_organization" });
+}
+
+/** A promotion when the grant already exists adds no second row and no grant audit row. */
+export async function assertAPromotionWithTheGrantAddsNothing(superDb: BmsDb): Promise<void> {
+  const outcome = await changeRoleAndReadHomeGrant(superDb, "viewer", "organization_admin", true);
+  expect(outcome.grantOrganizations).toEqual([outcome.home]);
+  expect(outcome.grantAudits).toEqual([]);
+  expect(outcome.userAudits).toEqual(["master.user.update"]);
+}
+
+/** A demotion keeps the grant (F3.78 plan D2). */
+export async function assertADemotionKeepsTheHomeGrant(superDb: BmsDb): Promise<void> {
+  const outcome = await changeRoleAndReadHomeGrant(superDb, "organization_admin", "viewer", true);
+  expect(outcome.grantOrganizations).toEqual([outcome.home]);
+  expect(outcome.grantAudits).toEqual([]);
+}
+
+/** ADR 0128 Q6: the list's `hasEffectiveGrant`, on the real tables. */
+export async function assertTheListFlagsAUserWithNoGrant(superDb: BmsDb): Promise<void> {
+  let flags: (boolean | undefined)[] = [];
+  await withRollback(superDb, async (tx) => {
+    const db = tx as unknown as BmsDb;
+    const eskom = await organizationId(db, "ESKOM");
+    const caller = await insertUser(db, "admin", null, false);
+    const service = buildService(asRole(db, "bms_fleet", []), asRole(db, "bms_tenant", []), new UniqueIdentityAdmin());
+    const orgAdmin = await service.create(callerJwt(caller), {
+      email: `f3.78-pr2-${randomUUID()}@fixture.local`,
+      displayName: "F4.340 org admin",
+      role: "organization_admin",
+      organizationId: eskom,
+      temporaryPassword: PASSWORD,
+    });
+    const viewer = await insertUser(db, "viewer", eskom, true);
+    const { items } = await service.list(callerJwt(caller));
+    const flag = (id: string) => items.find((item) => item.id === id)?.hasEffectiveGrant;
+    flags = [flag(caller.id), flag(orgAdmin.user.id), flag(viewer.id)];
+    tx.rollback();
+  });
+  expect(flags).toEqual([true, true, false]);
+}
+
+/**
+ * Code review F4.340: the location and asset-group branches of the flag, and
+ * the active-site rule. A grant counts only when it reaches an active
+ * location, as the Grants drawer's `effective` does.
+ */
+export async function assertTheListFlagFollowsEachGrantKindAndTheActiveRule(superDb: BmsDb): Promise<void> {
+  let flags: Record<string, boolean | undefined> = {};
+  await withRollback(superDb, async (tx) => {
+    const db = tx as unknown as BmsDb;
+    const eskom = await organizationId(db, "ESKOM");
+    const caller = await insertUser(db, "admin", null, false);
+    const [active, inactive] = rowsOf<{ id: string }>(
+      await db.execute(sql`
+        SELECT l.id FROM bms.locations l
+         WHERE l.organization_id = ${eskom} AND l.active
+           AND EXISTS (SELECT 1 FROM bms.asset_groups g WHERE g.location_id = l.id)
+         ORDER BY l.id LIMIT 2
+      `),
+    );
+    if (!active || !inactive) throw new Error("F4.340: the seed needs two active ESKOM locations with asset groups");
+    await db.execute(sql`UPDATE bms.locations SET active = false WHERE id = ${inactive.id}`);
+    const [group] = rowsOf<{ id: string }>(
+      await db.execute(sql`SELECT id FROM bms.asset_groups WHERE location_id = ${active.id} LIMIT 1`),
+    );
+    const [deadGroup] = rowsOf<{ id: string }>(
+      await db.execute(sql`SELECT id FROM bms.asset_groups WHERE location_id = ${inactive.id} LIMIT 1`),
+    );
+    const locationAdmin = await insertUser(db, "location_admin", eskom, true);
+    const groupAdmin = await insertUser(db, "asset_group_admin", eskom, true);
+    const operator = await insertUser(db, "operator", eskom, true);
+    const deadLocationAdmin = await insertUser(db, "location_admin", eskom, true);
+    const deadGroupAdmin = await insertUser(db, "asset_group_admin", eskom, true);
+    const wrongKind = await insertUser(db, "location_admin", eskom, true);
+    await db.execute(sql`INSERT INTO bms.user_location_access (user_id, location_id) VALUES
+      (${locationAdmin.id}, ${active.id}), (${operator.id}, ${active.id}), (${deadLocationAdmin.id}, ${inactive.id})`);
+    await db.execute(sql`INSERT INTO bms.user_asset_group_access (user_id, asset_group_id) VALUES
+      (${groupAdmin.id}, ${group?.id}), (${deadGroupAdmin.id}, ${deadGroup?.id})`);
+    await db.execute(sql`INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES (${wrongKind.id}, ${eskom})`);
+    const service = buildService(asRole(db, "bms_fleet", []), asRole(db, "bms_tenant", []), new UniqueIdentityAdmin());
+    const { items } = await service.list(callerJwt(caller));
+    const flag = (id: string) => items.find((item) => item.id === id)?.hasEffectiveGrant;
+    flags = {
+      locationAdmin: flag(locationAdmin.id),
+      groupAdmin: flag(groupAdmin.id),
+      operator: flag(operator.id),
+      deadLocationAdmin: flag(deadLocationAdmin.id),
+      deadGroupAdmin: flag(deadGroupAdmin.id),
+      wrongKind: flag(wrongKind.id),
+    };
+    tx.rollback();
+  });
+  expect(flags).toEqual({
+    locationAdmin: true,
+    groupAdmin: true,
+    operator: true,
+    deadLocationAdmin: false,
+    deadGroupAdmin: false,
+    wrongKind: false,
+  });
 }
 
 // -- the last-admin lock: committed fixtures, a second connection -----------

@@ -119,6 +119,21 @@ export function assertListResponseRefusesARowWithoutLinked(): void {
   expect(adminUsersListResponseSchema.safeParse({ items: [withoutLinked] }).success).toBe(false);
 }
 
+/** `F4.340` / ADR 0128 Q6: a list row must say whether the user has a grant in effect. */
+export function assertListResponseRefusesARowWithoutHasEffectiveGrant(): void {
+  expect(adminUsersListResponseSchema.safeParse({ items: [USER] }).success).toBe(false);
+}
+
+/** The positive control: the same row with the field parses. */
+export function assertListResponseAcceptsARowWithHasEffectiveGrant(): void {
+  expect(adminUsersListResponseSchema.safeParse({ items: [{ ...USER, hasEffectiveGrant: false }] }).success).toBe(true);
+}
+
+/** The write responses keep the plain DTO: `hasEffectiveGrant` is a list field only. */
+export function assertWriteResponseNeedsNoHasEffectiveGrant(): void {
+  expect(userWriteResponseSchema.safeParse({ user: USER, followUp: null }).success).toBe(true);
+}
+
 // --- F3.86 PR 4 / ADR 0099 decision 3: the copilot's user bodies ---------------
 
 /** The copilot's create body refuses a temporary password: the admin types it on the Confirm card. */

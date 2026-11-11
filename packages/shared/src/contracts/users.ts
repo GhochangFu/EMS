@@ -26,8 +26,18 @@ export const adminUserDtoSchema = z.object({
   createdAt: z.string(),
 });
 
+/**
+ * `F4.340` / ADR 0128 Q6 — one row of the users list. `hasEffectiveGrant` is
+ * `true` for an `admin`, and otherwise whether the user holds at least one
+ * grant of a kind its role reads (`readScopeSourcesForRole`). An active row
+ * with `false` sees nothing, and the Users page flags it.
+ */
+export const adminUserListItemSchema = adminUserDtoSchema.extend({
+  hasEffectiveGrant: z.boolean(),
+});
+
 export const adminUsersListResponseSchema = z.object({
-  items: z.array(adminUserDtoSchema),
+  items: z.array(adminUserListItemSchema),
 });
 
 /** A temporary password Keycloak makes the user change at the next sign-in (decision 6). */

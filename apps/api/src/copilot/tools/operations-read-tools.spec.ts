@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import type { AdminUserDto, JwtPayload, WorkOrderListItem } from "@bms/shared";
+import type { AdminUserListItem, JwtPayload, WorkOrderListItem } from "@bms/shared";
 
 import type { ResolvedIdentity } from "../../auth/identity-resolver";
 import type { CopilotToolContext, CopilotToolResult } from "../copilot-read-tools";
@@ -77,7 +77,7 @@ function workOrder(index: number, assetId: string, over: Partial<WorkOrderListIt
   };
 }
 
-function user(id: string, organizationId: string | null, over: Partial<AdminUserDto> = {}): AdminUserDto {
+function user(id: string, organizationId: string | null, over: Partial<AdminUserListItem> = {}): AdminUserListItem {
   return {
     id,
     email: `${id.slice(0, 4)}@example.com`,
@@ -88,13 +88,14 @@ function user(id: string, organizationId: string | null, over: Partial<AdminUser
     disabledAt: null,
     lastLoginAt: null,
     createdAt: "2026-10-01T06:00:00.000Z",
+    hasEffectiveGrant: true,
     ...over,
   };
 }
 
 type Call = { opts: { limit: number; assetIds?: string[] | null }; options: unknown };
 
-function fake(rows: WorkOrderListItem[], users: AdminUserDto[] = []) {
+function fake(rows: WorkOrderListItem[], users: AdminUserListItem[] = []) {
   const log: Call[] = [];
   const services = {
     access: {
