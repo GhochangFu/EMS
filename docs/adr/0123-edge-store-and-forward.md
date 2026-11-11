@@ -525,6 +525,12 @@ dependency line is added and the loop is wired in `main.ts`, dirty windows
 accumulate on `bms.edge_gateways`. They are durable, so nothing is lost, but
 the aggregates are not repaired.
 
+*2026-11-11:* the owner approved the manifest edit (plan P8). `apps/ingest`
+now depends on `@bms/db` (`workspace:*`), gains the `start:edge` script
+(`node dist/edge-main.js`), and its Dockerfile copies and builds `@bms/db`.
+The loop is still not wired in `main.ts`, so the sentence above still holds
+until that PR merges.
+
 **(d) Accepted risk, as built.**
 
 - A stolen token can overwrite up to 6.5 days of its own gateway's points,

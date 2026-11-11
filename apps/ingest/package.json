@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "start": "node dist/main.js",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "tsc -p tsconfig.build.json",
+    "start:edge": "node dist/edge-main.js"
   },
   "dependencies": {
+    "@bms/db": "workspace:*",
     "@bms/shared": "workspace:*",
     "dotenv": "^16.4.7",
     "mqtt": "^5.10.4",

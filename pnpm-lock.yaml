@@ -180,6 +180,9 @@ importers:
 
   apps/ingest:
     dependencies:
+      '@bms/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@bms/shared':
         specifier: workspace:*
         version: link:../../packages/shared
