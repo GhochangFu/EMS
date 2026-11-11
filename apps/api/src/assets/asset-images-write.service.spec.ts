@@ -42,7 +42,8 @@ export const JWT: JwtPayload = { sub: ACTOR_ID, email: "admin@bms.local", name: 
 
 // F3.78: the actor lookup is the shared resolveIdentity, whose projection is the
 // seven identity columns (identity-resolver.ts), keyed here by their sorted names.
-const IDENTITY_SHAPE = "disabledAt,displayName,email,id,oidcSubject,organizationId,role";
+// F4.17 / ADR 0125: `kind` joined the identity projection (migration 0146).
+const IDENTITY_SHAPE = "disabledAt,displayName,email,id,kind,oidcSubject,organizationId,role";
 const IDENTITY_ROW = {
   id: ACTOR_ID,
   email: "admin@bms.local",

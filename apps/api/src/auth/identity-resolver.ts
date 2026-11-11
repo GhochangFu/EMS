@@ -34,13 +34,20 @@ import { resolveAuthMode } from "./auth-mode";
  */
 
 /** The seven identity columns, named as the schema names them. */
-type IdentityKey = "id" | "email" | "displayName" | "role" | "organizationId" | "oidcSubject" | "disabledAt";
+type IdentityKey = "id" | "email" | "displayName" | "role" | "organizationId" | "oidcSubject" | "disabledAt" | "kind";
 
 /** A `bms.users` row as the projection returns it — derived from the schema, so it cannot drift. */
 type IdentityRow = Pick<typeof users.$inferSelect, IdentityKey>;
 
-/** The resolved identity: the row, with `role` narrowed to the role vocabulary. */
-export type ResolvedIdentity = Readonly<Omit<IdentityRow, "role"> & { role: UserRole }>;
+/**
+ * The resolved identity: the row, with `role` narrowed to the role vocabulary.
+ * `kind` (F4.17 / ADR 0125) is optional on the type so a hand-built fixture
+ * need not name it: absent reads as `human`, and only an explicit `service` is
+ * ever acted on. Every row the resolver reads carries it.
+ */
+export type ResolvedIdentity = Readonly<
+  Omit<IdentityRow, "role" | "kind"> & { role: UserRole; kind?: "human" | "service" }
+>;
 
 /** What a lookup needs from a pool or a transaction: a select, and the link's update. */
 export type IdentityDb = Pick<BmsDb, "select" | "update">;
@@ -54,7 +61,7 @@ const memo = new WeakMap<object, ResolvedIdentity>();
  * `select()`: `password_hash` is not granted to `bms_fleet` or `bms_tenant`,
  * and a bare select names it.
  */
-const IDENTITY_COLUMNS = (({ id, email, displayName, role, organizationId, oidcSubject, disabledAt }) => ({
+const IDENTITY_COLUMNS = (({ id, email, displayName, role, organizationId, oidcSubject, disabledAt, kind }) => ({
   id,
   email,
   displayName,
@@ -62,12 +69,22 @@ const IDENTITY_COLUMNS = (({ id, email, displayName, role, organizationId, oidcS
   organizationId,
   oidcSubject,
   disabledAt,
+  // F4.17 / ADR 0125 decision 10: the guard refuses a JWT that names a service row.
+  kind,
 }))(getTableColumns(users));
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function toIdentity(row: IdentityRow): ResolvedIdentity {
-  return { ...row, role: row.role as UserRole };
+  const { kind, ...rest } = row;
+  return {
+    ...rest,
+    role: row.role as UserRole,
+    // Every real row carries `kind`; only a hand-built fixture omits it. A
+    // value outside the vocabulary (unreachable under users_kind_check) reads
+    // as `service`, the direction the guard refuses (security review, L3).
+    ...(kind === undefined ? {} : { kind: kind === "human" ? ("human" as const) : ("service" as const) }),
+  };
 }
 
 /** Stores `row` as the identity of this payload object. */
@@ -157,7 +174,15 @@ export async function linkIdentity(
   const rows = await authDb
     .update(users)
     .set({ oidcSubject })
-    .where(and(sql`lower(${users.email}) = ${jwt.email.toLowerCase()}`, isNull(users.oidcSubject)))
+    // `kind = 'human'` (F4.17 / ADR 0125 decision 10): an IdP account whose
+    // verified email equals a service row's must never take that row over.
+    .where(
+      and(
+        sql`lower(${users.email}) = ${jwt.email.toLowerCase()}`,
+        isNull(users.oidcSubject),
+        eq(users.kind, "human"),
+      ),
+    )
     .returning(IDENTITY_COLUMNS);
 
   if (rows.length > 1) {

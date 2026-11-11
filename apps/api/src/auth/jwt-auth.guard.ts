@@ -229,6 +229,12 @@ export class JwtAuthGuard implements CanActivate {
         code: "account_deactivated",
       } satisfies UnauthorizedEnvelope);
     }
+    if (identity?.kind === "service") {
+      // F4.17 / ADR 0125 decision 10 — a service row is reached only through
+      // a `bms_sat_` token (PR 4), never through a JWT: no login issues one
+      // for it, so a JWT naming it is forged or mis-issued.
+      throw new UnauthorizedException("Invalid token");
+    }
     if (identity) {
       rememberIdentity(payload, identity);
     }

@@ -1016,6 +1016,20 @@
       "when": 1794357696714,
       "tag": "0145_work_order_checklists",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1794358690829,
+      "tag": "0146_service_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1794358690830,
+      "tag": "0147_service_account_token_guard",
+      "breakpoints": true
     }
   ]
 }
