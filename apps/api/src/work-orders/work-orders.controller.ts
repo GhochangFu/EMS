@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -19,6 +20,7 @@ import {
   createWorkOrderBodySchema,
   createWorkOrderTaskBodySchema,
   type JwtPayload,
+  putWorkOrderRootCauseBodySchema,
   reorderWorkOrdersBodySchema,
   updateWorkOrderStatusBodySchema,
   updateWorkOrderTaskBodySchema,
@@ -27,6 +29,7 @@ import {
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { WorkOrderFindingsService } from "./work-order-findings.service";
 import { WorkOrderTaskAddService } from "./work-order-task-add.service";
 import { WorkOrderTasksService } from "./work-order-tasks.service";
 import { WorkOrdersService } from "./work-orders.service";
@@ -41,6 +44,7 @@ export class WorkOrdersController {
     private readonly accessControl: AccessControlService,
     private readonly tasks: WorkOrderTasksService,
     private readonly taskAdd: WorkOrderTaskAddService,
+    private readonly findings: WorkOrderFindingsService,
   ) {}
 
   @Get()
@@ -74,13 +78,22 @@ export class WorkOrdersController {
   }
 
   /**
+   * `E3.1` (ADR 0122 decision 10) — the active cause codes, for the root-cause form's
+   * select. A read for every signed-in user: the codes are platform vocabulary and say
+   * nothing about any organization. A literal path, declared above `@Get(":id")`.
+   */
+  @Get("cause-codes")
+  async listCauseCodes() {
+    return this.findings.listCauseCodes();
+  }
+
+  /**
    * `E3.1` (ADR 0122 decision 10) — one work order with its timeline. A read: no
    * operations write gate. The caller's readable assets are the scope, and a ticket
    * outside it answers 404, the same as one that does not exist.
    *
    * Declared above every other `:id` route on purpose (plan D13). A literal `GET` path
-   * (`checklist-templates` above; `cause-codes` in a later PR) must be declared above
-   * this one.
+   * (`checklist-templates` and `cause-codes`, above) must be declared above this one.
    */
   @Get(":id")
   async getOne(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
@@ -150,6 +163,25 @@ export class WorkOrdersController {
         user,
         await this.accessControl.readableAssetIds(user),
       );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `E3.1` (ADR 0122 decision 5): the ticket's findings, replaced whole. Allowed while
+   * the ticket is `resolved` or earlier; 409 once it is `closed`.
+   */
+  @Put(":id/root-cause")
+  async putRootCause(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    await this.accessControl.assertOperationsWriteRole(user, "operational");
+    try {
+      const workOrderId = idParamSchema.parse(id);
+      const dto = putWorkOrderRootCauseBodySchema.parse(body);
+      return await this.findings.putRootCause(workOrderId, dto, user, await this.accessControl.readableAssetIds(user));
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

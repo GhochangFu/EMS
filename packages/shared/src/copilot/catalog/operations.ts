@@ -144,7 +144,10 @@ export const OPERATIONS_ENTRIES: readonly CatalogEntry[] = [
     bodyName: "updateWorkOrderStatusBodySchema",
     modelBody: copilotWorkOrderSetStatusModelBodySchema,
     modelBodyName: "copilotWorkOrderSetStatusModelBodySchema",
-    clientOnly: [],
+    // `E3.1` (ADR 0122 ruling P4): the copilot never writes a ticket's findings; a person
+    // types them on the page. The Confirm card shows no box for them, so its resolve of
+    // an alarm ticket with no saved root cause is refused and finished on the page.
+    clientOnly: ["rootCause", "correctiveAction", "preventiveAction", "causeCode"],
     risk: "edit",
     target: { kind: "workOrder", param: "id" },
     refs: [{ field: "assignedTo", kind: "user" }],

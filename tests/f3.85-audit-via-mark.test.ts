@@ -170,6 +170,11 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     auditMethods: ["addTask"],
   },
   {
+    file: "apps/api/src/work-orders/work-order-findings.service.ts",
+    route: { method: "PUT", path: "/work-orders/:id/root-cause" },
+    auditMethods: ["putRootCause"],
+  },
+  {
     file: "apps/api/src/work-orders/work-order-tasks.service.ts",
     route: { method: "PATCH", path: "/work-orders/:id/tasks/:taskId" },
     auditMethods: ["updateTask"],

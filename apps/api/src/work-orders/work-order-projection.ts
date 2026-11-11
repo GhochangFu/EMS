@@ -37,6 +37,8 @@ export const WORK_ORDER_LIST_COLUMNS = {
   // of tickets costs no second query. `done` is every item that is no longer `pending`.
   checklistDone: sql<number>`(SELECT count(*)::int FROM bms.work_order_tasks t WHERE t.work_order_id = ${workOrders.id} AND t.result <> 'pending')`,
   checklistTotal: sql<number>`(SELECT count(*)::int FROM bms.work_order_tasks t WHERE t.work_order_id = ${workOrders.id})`,
+  causeCode: workOrders.causeCode,
+  approvedAt: workOrders.approvedAt,
   createdAt: workOrders.createdAt,
   updatedAt: workOrders.updatedAt,
   assetCode: assets.code,
@@ -66,6 +68,8 @@ export type WorkOrderListRow = {
   slaDueAt: Date | null;
   checklistDone: number;
   checklistTotal: number;
+  causeCode: string | null;
+  approvedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   assetCode: string;
@@ -118,6 +122,8 @@ export function mapWorkOrderRow(r: WorkOrderListRow, now: Date = new Date()): Wo
     }),
     checklistDone: r.checklistDone,
     checklistTotal: r.checklistTotal,
+    causeCode: r.causeCode,
+    approvedAt: r.approvedAt?.toISOString() ?? null,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     assetCode: r.assetCode,

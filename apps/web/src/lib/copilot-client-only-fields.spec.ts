@@ -80,6 +80,18 @@ export function theWorkOrderSlaShowsNoBox(): void {
   ]);
 }
 
+/** `E3.1` (ruling P4): a status change shows no box for any of the four findings, and Confirm waits for none. */
+export function theWorkOrderFindingsShowNoBox(): void {
+  const entry = catalogEntry("workOrder.setStatus");
+  if (!entry) throw new Error("workOrder.setStatus");
+  expect(clientOnlyFieldsFor(entry, { status: "resolved" }, null).map((field) => [field.path, field.shown, field.required])).toEqual([
+    ["rootCause", false, false],
+    ["correctiveAction", false, false],
+    ["preventiveAction", false, false],
+    ["causeCode", false, false],
+  ]);
+}
+
 /** `E3.1` (ruling P4): a schedule's checklist template has no box on any of its three entries. */
 export function aChecklistTemplateHasNoBoxOnAScheduleEntry(): void {
   for (const id of ["maintenanceSchedule.create", "maintenanceSchedule.activate", "maintenanceSchedule.deactivate"]) {

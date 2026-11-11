@@ -31,8 +31,17 @@ import { countPendingMandatoryTasks } from "./work-order-checklist";
 import { insertWorkOrder } from "./work-order-create";
 import { readWorkOrderDetail } from "./work-order-detail";
 import { resolveWorkOrderActor, statusEventType, type WorkOrderActor, writeWorkOrderEvent } from "./work-order-events";
+import { assertActiveCauseCode } from "./work-order-findings";
 import { mapWorkOrderRow, readWorkOrderListItem, selectWorkOrderList } from "./work-order-projection";
-import { needsChecklistGate, reorderMoveRefusal, statusChangeRefusal, throwIfRefused } from "./work-order-transitions";
+import {
+  clearsResolveStamps,
+  needsChecklistGate,
+  reorderMoveRefusal,
+  rootCauseMissing,
+  rootCauseWriteRefusal,
+  statusChangeRefusal,
+  throwIfRefused,
+} from "./work-order-transitions";
 
 /** `F4.284` (owner ruling DC7): read options a route query cannot set — the copilot's `list_work_orders`. */
 export type WorkOrderListOptions = {
@@ -368,7 +377,7 @@ export class WorkOrdersService {
     const current = await this.getById(id, assetIds);
     // Refused early for a ticket that is already closed, before any transaction opens.
     // The final answer is the one under the row lock, below (plan D9).
-    throwIfRefused(statusChangeRefusal({ from: current.status, to: dto.status, pendingMandatory: 0 }));
+    throwIfRefused(statusChangeRefusal({ from: current.status, to: dto.status, pendingMandatory: 0, rootCauseMissing: false }));
 
     const organizationId = await this.resolveWorkOrderOrg(id, assetIds);
     const who = await this.resolveActor(actor);
@@ -379,7 +388,16 @@ export class WorkOrdersService {
       // both act on the same old status: one could reopen a ticket the other just
       // closed, and the timeline would record a move that never happened, or none.
       const [locked] = await tx
-        .select({ status: workOrders.status, assignedTo: workOrders.assignedTo, sortOrder: workOrders.sortOrder })
+        .select({
+          status: workOrders.status,
+          assignedTo: workOrders.assignedTo,
+          sortOrder: workOrders.sortOrder,
+          alarmId: workOrders.alarmId,
+          rootCause: workOrders.rootCause,
+          correctiveAction: workOrders.correctiveAction,
+          preventiveAction: workOrders.preventiveAction,
+          causeCode: workOrders.causeCode,
+        })
         .from(workOrders)
         .where(eq(workOrders.id, id))
         .for("update");
@@ -387,25 +405,68 @@ export class WorkOrdersService {
         throw new NotFoundException("Work order not found");
       }
       const fromStatus = locked.status as WorkOrderStatus;
-      // E3.1 (decision 4.4): a mandatory checklist item still pending blocks the move
-      // into `resolved`, and into `closed` straight from a live status (409). The count is read under the row lock; a checklist write
-      // takes the same lock first, so it cannot change between this read and the commit.
-      const pendingMandatory = needsChecklistGate(fromStatus, dto.status) ? await countPendingMandatoryTasks(tx, id) : 0;
-      throwIfRefused(statusChangeRefusal({ from: fromStatus, to: dto.status, pendingMandatory }));
+      // E3.1 (decision 5): the findings as this write leaves them — what the body sends
+      // over what the ticket already holds. The status body sets a finding, never clears
+      // one; `PUT /work-orders/:id/root-cause` clears.
+      // A code the ticket already carries may stay, retired or not; a new one must be
+      // active. The same rule as the root-cause route.
+      if (dto.causeCode !== undefined && dto.causeCode !== locked.causeCode) {
+        await assertActiveCauseCode(tx, dto.causeCode);
+      }
+      const findings = {
+        rootCause: dto.rootCause ?? locked.rootCause,
+        correctiveAction: dto.correctiveAction ?? locked.correctiveAction,
+        preventiveAction: dto.preventiveAction ?? locked.preventiveAction,
+        causeCode: dto.causeCode ?? locked.causeCode,
+      };
+      const findingsChanged =
+        findings.rootCause !== locked.rootCause ||
+        findings.correctiveAction !== locked.correctiveAction ||
+        findings.preventiveAction !== locked.preventiveAction ||
+        findings.causeCode !== locked.causeCode;
+      // The same rule as `PUT /work-orders/:id/root-cause`, so the two doors cannot
+      // differ: findings are frozen at `closed`, and a resolved alarm ticket keeps the
+      // three it resolved with. The body schema already refuses a blank finding; this
+      // holds for any caller of the service.
+      if (findingsChanged) {
+        const hasAlarm = locked.alarmId !== null;
+        throwIfRefused(
+          rootCauseWriteRefusal({ status: fromStatus, hasAlarm, missingAfter: rootCauseMissing({ hasAlarm, ...findings }) }),
+        );
+      }
+      // E3.1 (decisions 4.4 and 5.2): the two resolve gates, read under the row lock. A
+      // mandatory checklist item still pending blocks the move into `resolved`, and into
+      // `closed` straight from a live status (409); so does a missing root cause on a
+      // ticket raised from an alarm. A checklist write and a root-cause write take the
+      // same lock first, so neither can change between this read and the commit.
+      const gated = needsChecklistGate(fromStatus, dto.status);
+      throwIfRefused(
+        statusChangeRefusal({
+          from: fromStatus,
+          to: dto.status,
+          pendingMandatory: gated ? await countPendingMandatoryTasks(tx, id) : 0,
+          rootCauseMissing: gated && rootCauseMissing({ hasAlarm: locked.alarmId !== null, ...findings }),
+        }),
+      );
       // `F4.285` (DC-D): `null` clears the assignee and an omitted field keeps it — neither reads a user.
       if (typeof dto.assignedTo === "string") {
         await this.assertAssignee(tx, dto.assignedTo, organizationId);
       }
+      const entersResolved = dto.status === "resolved" && fromStatus !== "resolved";
+      const backToWork = clearsResolveStamps(fromStatus, dto.status);
       await tx
         .update(workOrders)
         .set({
           status: dto.status,
           sortOrder: dto.sortOrder,
           assignedTo: dto.assignedTo === undefined ? undefined : dto.assignedTo,
+          ...(findingsChanged ? findings : {}),
           // E3.1: stamp only on the real transition. The SLA state reads `resolvedAt`
           // (ADR 0122 decision 3.4), so re-stamping a ticket that is already resolved
-          // would turn a `met` SLA into `missed`.
-          resolvedAt: dto.status === "resolved" && fromStatus !== "resolved" ? now : undefined,
+          // would turn a `met` SLA into `missed`. Going back to work clears both stamps
+          // (ruling P3): the ticket is not resolved any more and its clock runs again.
+          ...(entersResolved ? { resolvedAt: now, resolvedBy: who.id } : {}),
+          ...(backToWork ? { resolvedAt: null, resolvedBy: null } : {}),
           closedAt: dto.status === "closed" ? now : undefined,
           updatedAt: now,
         })
@@ -424,6 +485,10 @@ export class WorkOrdersService {
             fromStatus,
             toStatus: dto.status,
             sortOrder: dto.sortOrder ?? locked.sortOrder,
+            // The findings' text stays on the ticket: the audit row says that they
+            // changed and names the coded cause.
+            findingsChanged,
+            causeCode: findings.causeCode,
             oidcSubject: actor.sub,
             actorEmail: actor.email,
           },
@@ -444,6 +509,14 @@ export class WorkOrdersService {
           fromStatus,
           toStatus: dto.status,
           detail: { assignedTo },
+        });
+      }
+      if (findingsChanged) {
+        // The coded cause only: `detail` holds no free text beyond a typed reason (decision 7.4).
+        await writeWorkOrderEvent(tx, {
+          ...event,
+          eventType: "root_cause_set",
+          detail: findings.causeCode === null ? {} : { causeCode: findings.causeCode },
         });
       }
       if (dto.status !== fromStatus) {
@@ -553,7 +626,9 @@ export class WorkOrdersService {
             status: item.status,
             sortOrder: item.sortOrder,
             // No `resolvedAt` stamp here: a reorder can no longer move a ticket into
-            // `resolved` (ruling P1), so only `updateStatus` stamps it.
+            // `resolved` (ruling P1), so only `updateStatus` stamps it. A drag back to
+            // In progress clears both resolve stamps, as the status route does (ruling P3).
+            ...(currentStatus && clearsResolveStamps(currentStatus, item.status) ? { resolvedAt: null, resolvedBy: null } : {}),
             updatedAt: now,
           })
           .where(eq(workOrders.id, item.id));

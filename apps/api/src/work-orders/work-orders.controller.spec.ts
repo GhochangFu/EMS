@@ -14,6 +14,7 @@ import {
   type OperationsWriteClass,
   WORK_ORDER_SLA_OVERRIDE_DENIAL,
 } from "../auth/operations-write";
+import type { WorkOrderFindingsService } from "./work-order-findings.service";
 import type { WorkOrderTaskAddService } from "./work-order-task-add.service";
 import type { WorkOrderTasksService } from "./work-order-tasks.service";
 import { WorkOrdersController } from "./work-orders.controller";
@@ -86,7 +87,17 @@ function harness(): Harness {
       return { id: TASK_ID };
     },
   } as unknown as WorkOrderTaskAddService;
-  return { controller: new WorkOrdersController(workOrders, access, tasks, taskAdd), calls };
+  const findings = {
+    async putRootCause(): Promise<{ id: string }> {
+      calls.push("putRootCause");
+      return { id: WORK_ORDER_ID };
+    },
+    async listCauseCodes(): Promise<{ items: never[] }> {
+      calls.push("causeCodes");
+      return { items: [] };
+    },
+  } as unknown as WorkOrderFindingsService;
+  return { controller: new WorkOrdersController(workOrders, access, tasks, taskAdd, findings), calls };
 }
 
 const CREATE = { assetId: ASSET_ID, title: "Replace bearing" };
@@ -186,9 +197,11 @@ export function theLiteralReadIsDeclaredAboveTheIdRead(): void {
     .filter((name) => name !== "constructor")
     .filter((name) => Reflect.getMetadata(METHOD_METADATA, proto[name as keyof WorkOrdersController]) === RequestMethod.GET)
     .map((name) => Reflect.getMetadata(PATH_METADATA, proto[name as keyof WorkOrdersController]) as string);
-  expect(gets).toContain("checklist-templates");
   expect(gets).toContain(":id");
-  expect(gets.indexOf("checklist-templates")).toBeLessThan(gets.indexOf(":id"));
+  for (const literal of ["checklist-templates", "cause-codes"]) {
+    expect(gets, literal).toContain(literal);
+    expect(gets.indexOf(literal), `${literal} is declared above :id`).toBeLessThan(gets.indexOf(":id"));
+  }
 }
 
 /** The two checklist routes sit where ADR 0122 decision 10 says. */
@@ -202,4 +215,38 @@ export function theChecklistRoutesAreWhereTheAdrSays(): void {
     RequestMethod.PATCH,
     ":id/tasks/:taskId",
   ]);
+}
+
+const ROOT_CAUSE = { rootCause: "Bearing worn out", correctiveAction: "Bearing replaced", causeCode: "wear_and_tear" };
+
+/** The root-cause route is operational: a viewer is refused before the id and the body are parsed, an operator may write. */
+export async function theRootCauseRouteIsOperational(): Promise<void> {
+  const refused = harness();
+  await expect(refused.controller.putRootCause("not-a-uuid", { nope: true }, user("viewer"))).rejects.toBeInstanceOf(ForbiddenException);
+  expect(refused.calls).toEqual(["role:operational"]);
+
+  const ok = harness();
+  await expect(ok.controller.putRootCause(WORK_ORDER_ID, ROOT_CAUSE, user("operator"))).resolves.toEqual({ id: WORK_ORDER_ID });
+  expect(ok.calls).toEqual(["role:operational", "scope", "putRootCause"]);
+  const proto = WorkOrdersController.prototype;
+  expect([Reflect.getMetadata(METHOD_METADATA, proto.putRootCause), Reflect.getMetadata(PATH_METADATA, proto.putRootCause)]).toEqual([
+    RequestMethod.PUT,
+    ":id/root-cause",
+  ]);
+}
+
+/** A root-cause body that carries a snapshot key, or lacks a required one, is a 400 and reaches no service. */
+export async function aBadRootCauseBodyIs400(): Promise<void> {
+  const { controller, calls } = harness();
+  for (const body of [{ ...ROOT_CAUSE, alarmRootCause: "forged" }, { rootCause: "Bearing worn out" }, { ...ROOT_CAUSE, rootCause: "x" }]) {
+    await expect(controller.putRootCause(WORK_ORDER_ID, body, user("operator"))).rejects.toBeInstanceOf(BadRequestException);
+  }
+  expect(calls).toEqual(["role:operational", "role:operational", "role:operational"]);
+}
+
+/** The cause-code list is a read with no gate at all beyond the sign-in guard. */
+export async function theCauseCodeListIsAPlainRead(): Promise<void> {
+  const { controller, calls } = harness();
+  await expect(controller.listCauseCodes()).resolves.toEqual({ items: [] });
+  expect(calls).toEqual(["causeCodes"]);
 }

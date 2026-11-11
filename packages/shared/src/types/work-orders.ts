@@ -29,3 +29,6 @@ export type WorkOrderTaskDto = z.infer<typeof Wo.workOrderTaskDtoSchema>;
 export type WorkOrderChecklistTemplateItemDto = z.infer<typeof Wo.workOrderChecklistTemplateItemDtoSchema>;
 export type WorkOrderChecklistTemplateDto = z.infer<typeof Wo.workOrderChecklistTemplateDtoSchema>;
 export type WorkOrderChecklistTemplatesResponse = z.infer<typeof Wo.workOrderChecklistTemplatesResponseSchema>;
+export type WorkOrderCauseCodeDto = z.infer<typeof Wo.workOrderCauseCodeDtoSchema>;
+export type WorkOrderCauseCodesResponse = z.infer<typeof Wo.workOrderCauseCodesResponseSchema>;
+export type WorkOrderAlarmSnapshot = z.infer<typeof Wo.workOrderAlarmSnapshotSchema>;

@@ -2,6 +2,13 @@ import { describe, it } from "vitest";
 
 import {
   aClosedTicketRefusesEveryStatusWrite,
+  aMissingRootCauseBlocksResolve,
+  aResolvedAlarmTicketKeepsItsFindings,
+  aResolvedTicketGoesBackToInProgressOnly,
+  findingsAreFrozenAtClosed,
+  onlyAnAlarmTicketOwesARootCause,
+  theChecklistIsNamedBeforeTheRootCause,
+  theResolveStampsClearOnTheWayBack,
   aFullChecklistRefusesOneMore,
   aPendingMandatoryItemBlocksResolve,
   aRefusalThrowsTheErrorOfItsStatus,
@@ -17,7 +24,7 @@ import {
 } from "./work-order-transitions.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
-describe("E3.1 — work-order transitions (ADR 0122, plan D9, the rows PR 3 builds)", () => {
+describe("E3.1 — work-order transitions (ADR 0122, plan D9, the rows PRs 3 and 4 build)", () => {
   it("lets open, assigned and in_progress move freely among themselves", () => {
     liveStatusesMoveFreely();
   });
@@ -50,7 +57,7 @@ describe("E3.1 — work-order transitions (ADR 0122, plan D9, the rows PR 3 buil
     aReorderIntoResolvedIsRefused();
   });
 
-  it("allows a reorder within or out of resolved", () => {
+  it("allows a reorder within resolved and back to in_progress", () => {
     aReorderWithinOrOutOfResolvedIsAllowed();
   });
 
@@ -68,5 +75,35 @@ describe("E3.1 — work-order transitions (ADR 0122, plan D9, the rows PR 3 buil
 
   it("throws the HTTP error of a refusal's status", () => {
     aRefusalThrowsTheErrorOfItsStatus();
+  });
+
+  describe("root cause and leaving resolved (PR 4)", () => {
+    it("owes a root cause only on a ticket raised from an alarm", () => {
+      onlyAnAlarmTicketOwesARootCause();
+    });
+
+    it("blocks resolved while an alarm ticket's root cause is missing (409)", () => {
+      aMissingRootCauseBlocksResolve();
+    });
+
+    it("names the checklist before the root cause", () => {
+      theChecklistIsNamedBeforeTheRootCause();
+    });
+
+    it("lets a resolved ticket go back to in_progress only (ruling P3)", () => {
+      aResolvedTicketGoesBackToInProgressOnly();
+    });
+
+    it("clears the resolve stamps exactly on the way back to work", () => {
+      theResolveStampsClearOnTheWayBack();
+    });
+
+    it("freezes the findings at closed (409)", () => {
+      findingsAreFrozenAtClosed();
+    });
+
+    it("keeps a resolved alarm ticket's findings", () => {
+      aResolvedAlarmTicketKeepsItsFindings();
+    });
   });
 });

@@ -164,17 +164,61 @@ export const workOrderChecklistTemplatesResponseSchema = z.object({
   items: z.array(workOrderChecklistTemplateDtoSchema),
 });
 
+// ---------------------------------------------------------------------------
+// Root cause and the alarm snapshot (ADR 0122 decisions 5 and 5a)
+// ---------------------------------------------------------------------------
+
+/**
+ * One coded cause (`bms.work_order_cause_codes`, migration `0148`). An OPEN vocabulary
+ * in the ADR 0031 shape: the set is data, so this is a shape and not an enum, and the
+ * route checks a code against the table.
+ */
+export const workOrderCauseCodeSchema = z.string().min(1).max(64);
+
+/** One row of `GET /work-orders/cause-codes`: the active codes, in `sortOrder`. */
+export const workOrderCauseCodeDtoSchema = z.object({
+  code: z.string(),
+  label: z.string(),
+  sortOrder: z.number().int(),
+});
+
+/** `GET /work-orders/cause-codes`. */
+export const workOrderCauseCodesResponseSchema = z.object({
+  items: z.array(workOrderCauseCodeDtoSchema),
+});
+
+/**
+ * `E3.4` (decision 5a) — the alarm's enrichment as it stood when the ticket was created.
+ * A frozen copy: a later edit of the enrichment does not reach it. Shown read-only as
+ * *From the alarm*; it is not the technician's findings and does not satisfy the
+ * resolve gate.
+ */
+export const workOrderAlarmSnapshotSchema = z.object({
+  rootCause: z.string().nullable(),
+  correctiveActions: z.string().nullable(),
+  skillCode: z.string().nullable(),
+  etrAt: z.string().nullable(),
+});
+
 const workOrderDetailExtrasSchema = z.object({
   /** Oldest first: `created_at`, then `id`. Empty for a ticket older than the events table (ruling P10). */
   events: z.array(workOrderEventDtoSchema),
   alarm: workOrderAlarmSummarySchema.nullable(),
   /** The checklist, in `sortOrder`. Empty for a ticket with none. */
   tasks: z.array(workOrderTaskDtoSchema),
+  /** The technician's own findings (decision 5); the coded cause is the item's `causeCode`. */
+  rootCause: z.string().nullable(),
+  correctiveAction: z.string().nullable(),
+  preventiveAction: z.string().nullable(),
+  /** Who resolved it, as a user id; null while it is not resolved, and on an older ticket. */
+  resolvedBy: z.string().nullable(),
+  /** Null for a ticket with no alarm, an alarm with no enrichment, or one older than the snapshot. */
+  alarmSnapshot: workOrderAlarmSnapshotSchema.nullable(),
 });
 
 /**
- * `GET /work-orders/:id` — the list item plus the timeline, the alarm summary and the
- * checklist.
+ * `GET /work-orders/:id` — the list item plus the timeline, the alarm summary, the
+ * checklist, the findings and the alarm snapshot.
  *
  * `z.intersection`, on purpose (ADR 0030 Amendment 1 rule 2): never `.merge()` or
  * `.extend()`. A flattened copy would still typecheck and would silently stop following

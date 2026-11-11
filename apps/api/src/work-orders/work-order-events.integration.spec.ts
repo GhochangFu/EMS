@@ -321,7 +321,14 @@ export async function assertTheDetailReadIsScopedAndOrdered(ctx: WorkOrderEvents
     null,
   );
   await ctx.svc.updateStatus(created.id, { status: "in_progress" }, ctx.actor, null);
-  await ctx.svc.updateStatus(created.id, { status: "resolved" }, ctx.actor, null);
+  // A ticket raised from an alarm owes its findings to resolve (decision 5.2, PR 4); they
+  // are saved with the move and write their own event first.
+  await ctx.svc.updateStatus(
+    created.id,
+    { status: "resolved", rootCause: "Breaker contacts worn", correctiveAction: "Contacts replaced", causeCode: "wear_and_tear" },
+    ctx.actor,
+    null,
+  );
 
   // A scoped, single-organization reader: served on the tenant pool under the setting.
   const detail = await ctx.svc.getDetail(created.id, [ctx.assetId]);
@@ -330,8 +337,10 @@ export async function assertTheDetailReadIsScopedAndOrdered(ctx: WorkOrderEvents
   expect(detail.events.map((event) => [event.eventType, event.fromStatus, event.toStatus])).toEqual([
     ["created", null, "open"],
     ["status_changed", "open", "in_progress"],
+    ["root_cause_set", null, null],
     ["resolved", "in_progress", "resolved"],
   ]);
+  expect(detail.events[2]?.detail, "the coded cause, never the typed text").toEqual({ causeCode: "wear_and_tear" });
   expect(detail.events[0]?.actorName, "a tenant reader sees the global admin's name").toBe(ctx.globalAdminDisplayName);
   expect(detail.events[0]?.detail).toEqual({ origin: "alarm" });
   expect(detail.events[1]?.actorName).toBe(ctx.actorDisplayName);
@@ -340,7 +349,7 @@ export async function assertTheDetailReadIsScopedAndOrdered(ctx: WorkOrderEvents
   expect([...stamps].sort()).toEqual(stamps);
 
   // An unscoped reader (a global admin) reads the same ticket.
-  expect((await ctx.svc.getDetail(created.id, null)).events.length).toBe(3);
+  expect((await ctx.svc.getDetail(created.id, null)).events.length).toBe(4);
 
   await expect(ctx.svc.getDetail(created.id, [ctx.otherAssetId]), "another asset's scope").rejects.toMatchObject({ status: 404 });
   await expect(ctx.svc.getDetail(created.id, []), "no readable asset").rejects.toMatchObject({ status: 404 });

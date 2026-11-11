@@ -152,6 +152,8 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
   // `F4.284` (ADR 0099 decision 6): the create, status and close forms are `WizardShell`s; `null` is closed.
   const [createInitial, setCreateInitial] = useState<Record<string, unknown> | null>(null);
   const [editTarget, setEditTarget] = useState<WorkOrderListItem | null>(null);
+  // `E3.1` (ADR 0122 ruling P1): a card dropped on Review opens the status wizard on `resolved`.
+  const [editInitialStatus, setEditInitialStatus] = useState<WorkOrderStatus | undefined>(undefined);
   const [closeTarget, setCloseTarget] = useState<WorkOrderListItem | null>(null);
   const [localOrder, setLocalOrder] = useState<string[]>([]);
   const [dragState, setDragState] = useState<DragState | null>(null);
@@ -280,6 +282,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
   }
 
   function openStatusEditor(row: WorkOrderListItem): void {
+    setEditInitialStatus(undefined);
     setEditTarget(row);
   }
 
@@ -376,6 +379,16 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
     if (status === "closed" && dragged.status !== "closed") {
       setCloseTarget(dragged);
       setCloseSortOrder(index * 1000);
+      return;
+    }
+
+    // `E3.1` (ADR 0122 ruling P1): resolve always goes through its form, which carries
+    // the checklist gate and the root cause. The reorder route refuses this move (400),
+    // so the drop opens the status wizard on `resolved` and sends no reorder.
+    // A closed card keeps its old path: the reorder route refuses to reopen it.
+    if (status === "resolved" && dragged.status !== "resolved" && dragged.status !== "closed") {
+      setEditInitialStatus("resolved");
+      setEditTarget(dragged);
       return;
     }
 
@@ -655,9 +668,14 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
       {editTarget ? (
         <WorkOrderStatusWizard
           row={editTarget}
-          onCancel={() => setEditTarget(null)}
+          initialStatus={editInitialStatus}
+          onCancel={() => {
+            setEditTarget(null);
+            setEditInitialStatus(undefined);
+          }}
           onDone={async () => {
             setEditTarget(null);
+            setEditInitialStatus(undefined);
             await refresh();
           }}
         />

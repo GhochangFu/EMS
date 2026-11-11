@@ -490,6 +490,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // escape. An unknown key beside `pointKeys` has nowhere to land, and dropping it
   // silently would hide a caller's typo behind a 200.
   putOrgTrendPointsBodySchema: STRICT(CALLER_ERROR),
+  // `E3.1` (ADR 0122 decision 5): the findings replace-all; a stray snapshot key must not be dropped at 200.
+  putWorkOrderRootCauseBodySchema: STRICT(CALLER_ERROR),
   // `E3.1` (ADR 0122 decision 3.2, plan D8): the replace-all SLA set and each of its rows.
   putWorkOrderSlaPoliciesBodySchema: STRICT(CALLER_ERROR),
   "putWorkOrderSlaPoliciesBodySchema/policies[]": STRICT(CALLER_ERROR),

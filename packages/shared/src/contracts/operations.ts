@@ -203,6 +203,10 @@ export const workOrderListItemSchema = z.object({
    */
   checklistDone: z.number().int(),
   checklistTotal: z.number().int(),
+  /** `E3.1` (ADR 0122 decision 5): the coded cause of the technician's findings, or null. */
+  causeCode: z.string().nullable(),
+  /** `E3.1` (ADR 0122 decision 6): when closure was approved. Null until the approval route exists and is used. */
+  approvedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   assetCode: z.string(),
