@@ -113,7 +113,7 @@ const RESERVED_KEYS: Readonly<Record<string, string>> = {
 };
 
 /** `UNSAFE_KEYS` from `asset-templates-content.schema.ts:116`. */
-const UNSAFE_KEYS = ["__proto__", "constructor", "prototype"];
+export const UNSAFE_KEYS = ["__proto__", "constructor", "prototype"];
 
 /**
  * Copies stored content and replaces one section.

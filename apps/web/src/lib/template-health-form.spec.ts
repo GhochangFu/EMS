@@ -83,11 +83,13 @@ export function runPercentRoundTripTests(): void {
 }
 
 export function runPercentTextRefusalTests(): void {
-  for (const text of ["", "   ", "abc", "1e2", "0x10", "Infinity", "NaN", "5%", "1.2.3"]) {
+  for (const text of ["", "   ", "abc", "e2", "1e", "0x10", "Infinity", "NaN", "5%", "1.2.3"]) {
     assert(percentTextToMinScore(text) === null, `"${text}" is not a percent`);
   }
   same(percentTextToMinScore(" 85 "), 0.85, "surrounding spaces are ignored");
   same(percentTextToMinScore(".5"), 0.005, "a bare fraction parses");
+  same(percentTextToMinScore("1e-7"), 1e-9, "exponent text parses, so a value String() writes reads back");
+  same(minScoreToPercentText(1e-9), "1e-7", "a tiny score shows as String() writes it");
 }
 
 export function runStoredHealthTests(): void {
@@ -337,4 +339,59 @@ export function runOtherVersionsHoldingAssetsTests(): void {
     "only the current version → nothing",
   );
   same(otherVersionsHoldingAssets([], "x"), { total: 0, versions: [] }, "no versions");
+}
+
+/**
+ * The other direction, which `runAgreesWithTheSchemaTests` cannot reach: a
+ * stored block the schema accepts must open clean, and one it refuses must not.
+ * Code review found the first two rows: a tiny value reads back in exponent
+ * text, and two cut-points closer than 12 significant digits render alike.
+ */
+export function runStoredBlockAgreesWithTheSchemaTests(): void {
+  const stored: TemplateHealth[] = [
+    FIVE,
+    { bands: [{ code: "a", label: "A", minScore: 0.5 }, { code: "b", label: "B", minScore: 1e-9 }, { code: "c", label: "C", minScore: 0 }] },
+    { bands: [{ code: "a", label: "A", minScore: 0.5000000000001 }, { code: "b", label: "B", minScore: 0.5 }, { code: "c", label: "C", minScore: 0 }] },
+    { ...FIVE, weights: { flow_rate: 1e-7 } },
+    { ...FIVE, weights: { flow_rate: 999.9999999999999 } },
+    { bands: [{ code: "a", label: "A", minScore: 0.5 }, { code: "b", label: "B", minScore: 0.5 }] },
+    { ...FIVE, weights: { flow_rate: 0 } },
+  ];
+  for (const block of stored) {
+    const schemaOk = templateHealthSchema.safeParse(block).success;
+    const form = healthFormFrom(block, POINTS);
+    const libOk = healthFormErrors(form, block).length === 0;
+    assert(schemaOk === libOk, `stored ${JSON.stringify(block)}: schema ${schemaOk}, lib ${libOk}`);
+    assert(!healthHasChanged(form, block, POINTS), `untouched is clean: ${JSON.stringify(block)}`);
+  }
+  const close = stored[2]!;
+  const write = healthWriteFrom(healthFormFrom(close, POINTS));
+  same(
+    write.kind === "set" ? write.value.bands.map((band) => band.minScore) : null,
+    [0.5000000000001, 0.5, 0],
+    "an unedited cut-point is written back exactly as stored",
+  );
+  const edited = healthFormFrom(close, POINTS);
+  edited.bands[0] = { ...edited.bands[0]!, minPercent: "60" };
+  const editedWrite = healthWriteFrom(edited);
+  same(
+    editedWrite.kind === "set" ? editedWrite.value.bands[0]!.minScore : null,
+    0.6,
+    "an edited cut-point takes the typed value",
+  );
+}
+
+/** A refusal of a weight's key is not reworded as a refusal of its value. */
+export function runWeightKeyRefusalKeepsTheSchemaMessageTests(): void {
+  const stored: TemplateHealth = { ...FIVE, weights: { "": 2 } };
+  const problems = healthFormErrors(healthFormFrom(stored, POINTS), stored);
+  assert(problems.length === 1, `one problem, got ${JSON.stringify(problems)}`);
+  assert(!problems[0]!.message.startsWith("Enter a weight"), `not worded as a value problem: ${problems[0]!.message}`);
+}
+
+/** With nothing stored there is nothing to remove, so the message does not offer it. */
+export function runWeightsOnlyDraftWordingTests(): void {
+  const problems = healthFormErrors(formWith([], { flow_rate: "2" }));
+  same(where(problems), ["bands:null:null"], "weights without bands");
+  assert(!problems[0]!.message.includes("Remove"), `no remove offered: ${problems[0]!.message}`);
 }

@@ -12,10 +12,13 @@ import {
   runPresetTests,
   runRemoveTests,
   runSchemaRefusalTests,
+  runStoredBlockAgreesWithTheSchemaTests,
   runStoredHealthTests,
   runUndeclaredWeightIsNeverDroppedTests,
   runUntouchedIsCleanTests,
+  runWeightKeyRefusalKeepsTheSchemaMessageTests,
   runWeightOfOneIsNotWrittenTests,
+  runWeightsOnlyDraftWordingTests,
   runWriteKindsTests,
 } from "./template-health-form.spec";
 
@@ -83,5 +86,17 @@ describe("F4.355 PR 2 — the Health tab's form rules (ADR 0038 Amendment 7)", (
 
   it("other versions holding assets", () => {
     runOtherVersionsHoldingAssetsTests();
+  });
+
+  it("stored block agrees with the schema", () => {
+    runStoredBlockAgreesWithTheSchemaTests();
+  });
+
+  it("weight key refusal keeps the schema message", () => {
+    runWeightKeyRefusalKeepsTheSchemaMessageTests();
+  });
+
+  it("weights only draft wording", () => {
+    runWeightsOnlyDraftWordingTests();
   });
 });

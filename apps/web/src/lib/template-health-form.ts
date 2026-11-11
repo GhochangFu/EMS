@@ -11,7 +11,7 @@ import type {
   TemplateVersionSummaryDto,
 } from "@bms/shared";
 
-import type { StoredTemplateContent } from "./template-content-merge";
+import { UNSAFE_KEYS, type StoredTemplateContent } from "./template-content-merge";
 
 /**
  * The Health tab's form rules (`F4.355`, ADR 0038 Amendment 7, ADR 0050
@@ -49,6 +49,13 @@ export type HealthBandRow = {
   code: string;
   label: string;
   minPercent: string;
+  /**
+   * The stored `minScore` this row was read from. While `minPercent` still reads
+   * as this value rendered, the write sends it back unchanged, so a cut-point
+   * with more than 12 significant digits is not rewritten by a save of another
+   * field, and two stored cut-points that render alike stay distinct.
+   */
+  storedMinScore?: number;
 };
 
 /** One weight. `declared: false` is a stored weight whose key is no point on this version. */
@@ -83,8 +90,12 @@ export type HealthFormProblem = {
 
 export { MAX_HEALTH_BANDS, MAX_HEALTH_WEIGHT };
 
-const UNSAFE_KEYS = ["__proto__", "constructor", "prototype"];
-const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)$/;
+/**
+ * A plain decimal, optionally with an exponent. The exponent is accepted because
+ * `String(number)` writes one below `1e-6`, and a value this module rendered must
+ * parse back (code review, F4.355 PR 2). Hex, `Infinity` and `NaN` are refused.
+ */
+const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
 function parseDecimal(text: string): number | null {
   const trimmed = text.trim();
@@ -160,6 +171,7 @@ export function healthFormFrom(
     code: band.code,
     label: band.label,
     minPercent: minScoreToPercentText(band.minScore),
+    storedMinScore: band.minScore,
   }));
   const storedWeights = stored?.weights ?? {};
   const has = (key: string) => Object.prototype.hasOwnProperty.call(storedWeights, key);
@@ -194,6 +206,7 @@ export function standardHealthBandRows(): HealthBandRow[] {
   }));
 }
 
+/** An empty row for "Add a band". */
 export function blankHealthBandRow(): HealthBandRow {
   return { code: "", label: "", minPercent: "" };
 }
@@ -233,6 +246,17 @@ function writtenWeights(rows: readonly HealthWeightRow[]): Record<string, number
   return weights;
 }
 
+/** The row's cut-point: the stored value while its text is unedited, else the typed one. */
+function rowMinScore(band: HealthBandRow): number {
+  if (
+    band.storedMinScore !== undefined &&
+    band.minPercent === minScoreToPercentText(band.storedMinScore)
+  ) {
+    return band.storedMinScore;
+  }
+  return percentTextToMinScore(band.minPercent) ?? Number.NaN;
+}
+
 /** What a save sends. A `set` value may be invalid; `healthFormErrors` says why. */
 export function healthWriteFrom(form: HealthForm): HealthWrite {
   if (form.removeBlock) {
@@ -247,7 +271,7 @@ export function healthWriteFrom(form: HealthForm): HealthWrite {
     bands: form.bands.map((band) => ({
       code: band.code,
       label: band.label,
-      minScore: percentTextToMinScore(band.minPercent) ?? Number.NaN,
+      minScore: rowMinScore(band),
     })),
   };
   if (hasWeights) {
@@ -300,7 +324,7 @@ export function healthFormErrors(
   };
 
   form.bands.forEach((band, row) => {
-    if (percentTextToMinScore(band.minPercent) === null) {
+    if (Number.isNaN(rowMinScore(band))) {
       add({
         section: "bands",
         row,
@@ -320,6 +344,12 @@ export function healthFormErrors(
     }
   });
 
+  // With nothing stored there is nothing to remove, so only offer it when there is.
+  const addABand =
+    stored === undefined
+      ? "Add at least one band."
+      : "Add at least one band, or use Remove health bands to clear the health block.";
+
   const parsed = templateHealthSchema.safeParse(write.value);
   if (parsed.success) {
     return problems;
@@ -335,7 +365,7 @@ export function healthFormErrors(
           field: null,
           message:
             issue.code === "too_small"
-              ? "Add at least one band, or use Remove health bands to clear the health block."
+              ? addABand
               : issue.code === "too_big"
                 ? `At most ${MAX_HEALTH_BANDS} bands.`
                 : issue.message,
@@ -361,7 +391,7 @@ export function healthFormErrors(
             : issue.code === "too_small"
               ? `Enter a ${field}.`
               : issue.code === "too_big"
-                ? `At most ${field === "code" ? 64 : 128} characters.`
+                ? `At most ${"maximum" in issue ? String(issue.maximum) : "the allowed number of"} characters.`
                 : issue.message;
         add({ section: "bands", row: index, field, message });
         continue;
@@ -372,12 +402,18 @@ export function healthFormErrors(
     if (section === "weights") {
       const row =
         typeof index === "string" ? form.weights.findIndex((weight) => weight.pointKey === index) : -1;
+      // A record's key and value issues share the path `["weights", key]`, so
+      // only a numeric-range or type refusal is about the weight itself; a key
+      // refusal (an empty or over-long point key) keeps the schema's message.
+      const aboutTheValue =
+        issue.code === "invalid_type" ||
+        ((issue.code === "too_small" || issue.code === "too_big") && issue.type === "number");
       add({
         section: "weights",
         row: row >= 0 ? row : null,
         field: row >= 0 ? "weight" : null,
         message:
-          row >= 0
+          row >= 0 && aboutTheValue
             ? `Enter a weight greater than 0 and at most ${MAX_HEALTH_WEIGHT}.`
             : issue.message,
       });
