@@ -36,8 +36,10 @@ const WRITE_STATEMENTS = [
  *
  * Listed here rather than derived from the export, so that this file is a second
  * statement of the requirement and not an echo of it. Whether the list is a
- * *valid* band list is not asserted here — `packages/db` cannot import
- * `templateHealthSchema`, and the API-side spec parses the same literal with it.
+ * *valid* band list is not asserted here — the shared
+ * `standard-health-bands.spec.ts` parses the declaration with
+ * `templateHealthSchema`, and the API-side `seeded-health-baseline.spec.ts`
+ * parses the seeded content.
  */
 export function assertTheClientsFiveBandsAreSeeded(): void {
   expect(HEALTH_BANDS.map((band) => band.label)).toEqual([
@@ -57,6 +59,7 @@ export function assertTheClientsFiveBandsAreSeeded(): void {
  */
 export function assertTheSeedBandsAreTheSharedDeclaration(): void {
   expect(HEALTH_BANDS).toBe(STANDARD_HEALTH_BANDS);
+  expect(HEALTH_BASELINE_CONTENT.health?.bands).toEqual(STANDARD_HEALTH_BANDS);
 }
 
 /**

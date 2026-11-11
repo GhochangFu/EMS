@@ -110,7 +110,7 @@ import type pg from "pg";
  * strictly with the last band at `0` — the two rules `templateHealthSchema`
  * enforces on the write path, so that every score in `0..1` lands in exactly one
  * band and `band: null` keeps the single meaning Amendment 1 decision 3 gives
- * it. `asset-template-health-seed.spec.ts` in `apps/api` parses this literal
+ * it. The API-side `seeded-health-baseline.spec.ts` parses the seeded content
  * with that schema rather than restating the rules here.
  *
  * The values are conventional rather than tuned. Against the counters the
