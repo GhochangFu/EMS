@@ -267,3 +267,26 @@ export function runParameterTextIsCutAtTheDashTests(): void {
   const says = parameterSays();
   assert(!says.startsWith("$") && !says.startsWith("ey"), `the $key text is cut in the wrong place: ${says}`);
 }
+
+/**
+ * `F4.353` (ADR 0070 Amendment 8): the `delta` window entry says what happens
+ * when the counter fell — the calc writes nothing for that run
+ * (`window_decreasing`) — so an author does not read a missing value as a fault.
+ * Checked on every dialect that lists window functions, so a dialect added
+ * later cannot carry an older sentence.
+ *
+ * Mutation: restore "last minus first, for cumulative counters" alone.
+ */
+export function runDeltaNamesTheFallingCounterRefusalTests(): void {
+  const deltas = CALC_DIALECTS.flatMap((dialect) => formulaHelpEntries(dialect)).filter(
+    (entry) => entry.group === "window" && entry.label === "delta over a window",
+  );
+  assert(deltas.length > 0, "at least one dialect lists the delta window entry");
+  for (const entry of deltas) {
+    assert(
+      entry.says.includes("for cumulative counters") && entry.says.includes("if the counter fell") &&
+        entry.says.includes("window_decreasing"),
+      `the delta entry must name the falling-counter refusal, got: ${entry.says}`,
+    );
+  }
+}

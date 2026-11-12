@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runDeltaNamesTheFallingCounterRefusalTests,
   runDialectsAreSupersetsTests,
   runEveryExampleParsesTests,
   runEachArityKeyHasOneFunctionEntryTests,
@@ -78,5 +79,9 @@ describe("formula help entries (F4.314)", () => {
 
   it("the $key text is cut at the dash, not inside $key", () => {
     runParameterTextIsCutAtTheDashTests();
+  });
+
+  it("the delta entry names the falling-counter refusal (F4.353, ADR 0070 Amendment 8)", () => {
+    runDeltaNamesTheFallingCounterRefusalTests();
   });
 });

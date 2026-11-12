@@ -99,7 +99,12 @@ const WINDOW_TEACHING: Record<CalcWindowFnName, { does: string; example: string 
   avg: { does: "average over the window", example: "avg({kw}, this_week)" },
   min: { does: "lowest value in the window", example: "min({kw}, 15m)" },
   max: { does: "highest value in the window", example: "max({kw}, today)" },
-  delta: { does: "last minus first, for cumulative counters", example: "delta({kwh_total}, today)" },
+  // F4.353 (ADR 0070 Amendment 8): a fall is a bad sample or a reset, never a
+  // negative quantity, so the run writes nothing rather than a negative value.
+  delta: {
+    does: "last minus first, for cumulative counters; if the counter fell in the window, nothing is written (window_decreasing)",
+    example: "delta({kwh_total}, today)",
+  },
 };
 
 function functionEntries(): FormulaHelpEntry[] {
