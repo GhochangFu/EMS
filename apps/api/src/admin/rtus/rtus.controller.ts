@@ -19,16 +19,22 @@ import type { JwtPayload } from "@bms/shared";
 import { createRtuBodySchema, updateRtuBodySchema } from "@bms/shared";
 // `F4.334` (ADR 0116 decision 4, plan R9): the RTU's payload format.
 import { setRtuPayloadFormatBodySchema } from "@bms/shared";
+// `F4.333` (ADR 0129 decision 2): the write-only credential replace.
+import { replaceRtuCredentialsBodySchema } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema, parseActiveFilter } from "../admin.schema";
+import { RtusCredentialsService } from "./rtus-credentials.service";
 import { RtusAdminService } from "./rtus.service";
 
 @Controller("admin/rtus")
 @UseGuards(JwtAuthGuard)
 export class RtusAdminController {
-  constructor(private readonly service: RtusAdminService) {}
+  constructor(
+    private readonly service: RtusAdminService,
+    private readonly credentials: RtusCredentialsService,
+  ) {}
 
   @Get()
   async list(
@@ -92,6 +98,23 @@ export class RtusAdminController {
         idParamSchema.parse(id),
         setRtuPayloadFormatBodySchema.parse(body),
       );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F4.333` (ADR 0129 decision 2) — replaces the RTU's broker credential. The
+   * body is plaintext, encrypted before storage, never echoed, logged or
+   * audited; the answer is the RTU row with `credentialsSet` only.
+   */
+  @Put(":id/credentials")
+  async replaceCredentials(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    try {
+      return await this.credentials.replace(user, idParamSchema.parse(id), replaceRtuCredentialsBodySchema.parse(body));
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

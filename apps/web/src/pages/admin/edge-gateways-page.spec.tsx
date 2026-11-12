@@ -93,6 +93,7 @@ function rtu(id: string, code: string, organizationCode: string): AdminRtuDto {
     createdAt: "2026-11-09T00:00:00.000Z",
     tls: true,
     payloadFormat: null,
+    credentialsSet: null,
   };
 }
 

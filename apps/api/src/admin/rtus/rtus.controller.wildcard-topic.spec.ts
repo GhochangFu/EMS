@@ -41,7 +41,8 @@ function build(): { controller: RtusAdminController; calls: Recorded } {
       return { id: RTU_ID };
     },
   } as unknown as RtusAdminService;
-  return { controller: new RtusAdminController(fake), calls };
+  // F4.333: the credential service is not reached by these routes.
+  return { controller: new RtusAdminController(fake, {} as never), calls };
 }
 
 function createBody(mqttTopic: string): Record<string, unknown> {

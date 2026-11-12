@@ -21,6 +21,13 @@ export function hasControlChars(value: string): boolean {
   return CONTROL_CHARS.test(value);
 }
 
+/**
+ * The 400 for an MQTT credential holding a control character. Answered by the
+ * onboarding credential write and, since `F4.333`, by `PUT /admin/rtus/:id/credentials`,
+ * so the two writes give one answer.
+ */
+export const MQTT_CREDENTIAL_CONTROL_CHARS = "An MQTT username or password must not contain control characters such as a line break.";
+
 export type DiscoveryCredentials = { readonly username?: string; readonly password?: string };
 
 export type CredentialRead =

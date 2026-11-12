@@ -92,6 +92,8 @@ export class RtusAdminService {
         organizationIngestEnabled: organizations.ingestEnabled,
         connectionProtocol: rtuConnectionConfigs.protocol,
         connectionConfig: rtuConnectionConfigs.config,
+        // F4.333 (ADR 0129 decision 2): whether a blob is stored — never the column itself.
+        connectionHasCredential: sql<boolean | null>`CASE WHEN ${rtuConnectionConfigs.rtuId} IS NULL THEN NULL ELSE ${rtuConnectionConfigs.credentialsCiphertext} IS NOT NULL END`,
       })
       .from(rtus)
       .innerJoin(locations, eq(rtus.locationId, locations.id))
@@ -664,7 +666,11 @@ export class RtusAdminService {
     return existing.organizationId;
   }
 
-  private async fetchRow(id: string): Promise<AdminRtuDto> {
+  /**
+   * The full admin row for one RTU, no scope check: the caller has already
+   * passed its own gate (`F4.333`'s `RtusCredentialsService` answers with it).
+   */
+  async fetchRow(id: string): Promise<AdminRtuDto> {
     const [row] = await this.fleetDb
       .select({
         rtu: rtus,
@@ -674,6 +680,8 @@ export class RtusAdminService {
         organizationIngestEnabled: organizations.ingestEnabled,
         connectionProtocol: rtuConnectionConfigs.protocol,
         connectionConfig: rtuConnectionConfigs.config,
+        // F4.333 (ADR 0129 decision 2): whether a blob is stored — never the column itself.
+        connectionHasCredential: sql<boolean | null>`CASE WHEN ${rtuConnectionConfigs.rtuId} IS NULL THEN NULL ELSE ${rtuConnectionConfigs.credentialsCiphertext} IS NOT NULL END`,
       })
       .from(rtus)
       .innerJoin(locations, eq(rtus.locationId, locations.id))
@@ -700,6 +708,7 @@ export class RtusAdminService {
     organizationIngestEnabled: boolean;
     connectionProtocol: string | null;
     connectionConfig: unknown;
+    connectionHasCredential: boolean | null;
   }): AdminRtuDto {
     const rtu = row.rtu;
     return {
@@ -725,6 +734,7 @@ export class RtusAdminService {
       createdAt: rtu.createdAt.toISOString(),
       tls: connectionTlsOf(row.connectionProtocol, row.connectionConfig),
       payloadFormat: connectionPayloadFormatOf(row.connectionProtocol, row.connectionConfig),
+      credentialsSet: row.connectionHasCredential,
     };
   }
 }

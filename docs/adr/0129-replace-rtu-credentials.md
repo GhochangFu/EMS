@@ -278,6 +278,35 @@ unblocks the LALMATI draft at once.
   *(recommended)*
 - B. One PR for everything.
 
+## Build notes (PR 3, 2026-11-12)
+
+- **Shared broker** *(drafter, for the owner to confirm)*. The PR 2 security
+  review (L2) found that one ingest endpoint can serve two organizations
+  (`host:port`, first non-empty credential wins), so a credential replaced on
+  organization B's RTU could break organization A's connection within one
+  reload. Decision 2 now refuses an `organization_admin` with **409** ("Another
+  organization's RTUs use this broker, so a global administrator must replace
+  this credential") when an active MQTT RTU of another organization uses the
+  same host, port and TLS. A global `admin` proceeds. Alternatives: refuse
+  everyone, or only warn. The match **fails closed** (PR 3 security review
+  M1): ingest fills an absent host or port from `MQTT_HOST` / `MQTT_PORT`, so a
+  stored `null` on either side matches any broker. The PR 3 review's Lows are
+  also closed: the `UPDATE` re-checks `edge_gateway_id IS NULL` at write time,
+  and each sibling gets the `F4.138` organization agreement check. The PR 3
+  code review added that an RTU with **no connection row** counts too (ingest
+  plans it as MQTT by `source_type` on the environment broker). **Effect the
+  owner should know:** while another organization has an active row-less MQTT
+  RTU (the PHE pilot's), every **TLS** broker reads as possibly shared, so an
+  `organization_admin` is refused on TLS brokers and only a global `admin` can
+  replace there. Plain brokers (BCPL's) are unaffected. Narrowing it needs the
+  environment broker known to the API (`MQTT_HOST`/`MQTT_PORT`); a follow-up if
+  wanted.
+- `MQTT_CREDENTIAL_CONTROL_CHARS` moved beside `hasControlChars`
+  (`onboarding-discovery/discovery-credentials.ts`), so the draft write and
+  this route give one answer.
+- The route lives in its own `RtusCredentialsService`: it is catalog-excluded,
+  so `tests/f3.85-audit-via-mark.test.ts` lists it as a NOT-catalog writer.
+
 ## Consequences
 
 - A leaked broker password can be replaced in the product, before or after

@@ -171,6 +171,12 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     route: { method: "POST", path: "/admin/onboarding/sessions/:id/unlock" },
     auditMethods: ["unlock"],
   },
+  // `F4.333` (ADR 0129 decision 2): a credential is typed on a form, never through chat (ADR 0022).
+  {
+    file: "apps/api/src/admin/rtus/rtus-credentials.service.ts",
+    route: { method: "PUT", path: "/admin/rtus/:id/credentials" },
+    auditMethods: ["replace"],
+  },
   // `E3.1` (ADR 0122 decision 10): a checklist item is added and ticked on the ticket, by hand.
   {
     file: "apps/api/src/work-orders/work-order-task-add.service.ts",

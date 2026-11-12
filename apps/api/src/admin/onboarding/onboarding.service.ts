@@ -27,7 +27,7 @@ import type {
 import { AccessControlService } from "../../auth/access-control.service";
 import { recalledIdentity, resolveActorId } from "../../auth/identity-resolver";
 import { parseStoredContract } from "../../common/parse-stored-contract";
-import { hasControlChars } from "../../onboarding-discovery/discovery-credentials";
+import { hasControlChars, MQTT_CREDENTIAL_CONTROL_CHARS } from "../../onboarding-discovery/discovery-credentials";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
@@ -82,7 +82,7 @@ import {
 export { SESSION_NO_LONGER_DRAFT, DRAFT_CHANGED_DURING_TURN, DRAFT_TOO_DEEP_FOR_TURN } from "./onboarding-locked-writes";
 
 /** `F3.24b` (ADR 0103 Amendment 1, C1): the MQTT CONNECT packet carries the credential, so a control character in it is refused. */
-export const MQTT_CREDENTIAL_CONTROL_CHARS = "An MQTT username or password must not contain control characters such as a line break.";
+export { MQTT_CREDENTIAL_CONTROL_CHARS }; // F4.333: defined beside `hasControlChars`, shared with the RTU route.
 
 /** `F4.255`: the global administrator's draft list names no organization — it has no home organization to fall back to. */
 export const ONBOARDING_DRAFTS_GLOBAL_NEEDS_ORGANIZATION = "A global administrator must name the organization whose drafts to list";
