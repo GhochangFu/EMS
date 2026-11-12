@@ -118,6 +118,11 @@ export const adminRtuDtoSchema = z.object({
    * MQTT, or it names none (the built-in envelope).
    */
   payloadFormat: z.string().nullable(),
+  /**
+   * `F4.333` (ADR 0129 decision 2) — whether the RTU's connection row holds a
+   * stored credential; `null` when there is no connection row. Never the value.
+   */
+  credentialsSet: z.boolean().nullable(),
 });
 
 export const adminAssetDtoSchema = z.object({

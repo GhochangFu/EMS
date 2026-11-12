@@ -66,6 +66,7 @@ export function runTheResponsesRequireTheSwitch(): void {
     createdAt: "2026-11-07T00:00:00.000Z",
     tls: null,
     payloadFormat: null,
+    credentialsSet: null,
   };
   const parsed = adminRtuDtoSchema.safeParse({ ...rtu, organizationIngestEnabled: false });
   expect(parsed.success).toBe(true);

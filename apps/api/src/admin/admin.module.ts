@@ -87,6 +87,7 @@ import { OnboardingValidateService } from "./onboarding/onboarding-validate.serv
 import { OrganizationsAdminController } from "./organizations/organizations.controller";
 import { OrganizationsAdminService } from "./organizations/organizations.service";
 import { RtusAdminController } from "./rtus/rtus.controller";
+import { RtusCredentialsService } from "./rtus/rtus-credentials.service";
 import { RtusAdminService } from "./rtus/rtus.service";
 import { ManualReadingsController } from "./telemetry-entry/manual-readings.controller";
 import { TelemetryProposalCheckService } from "./telemetry-entry/telemetry-proposal-check.service";
@@ -192,6 +193,7 @@ import { WorkOrderSlaPoliciesAdminService } from "./work-order-sla-policies/work
     OrganizationsAdminService,
     LocationsAdminService,
     RtusAdminService,
+    RtusCredentialsService,
     AssetGroupsAdminService,
     AssetsAdminService,
     AssetPointsAdminService,

@@ -56,6 +56,7 @@ function rtu(id: string, code: string, sourceType = "mqtt"): AdminRtuDto {
     createdAt: new Date(0).toISOString(),
     tls: sourceType === "mqtt" ? true : null,
     payloadFormat: null,
+    credentialsSet: null,
   } as AdminRtuDto;
 }
 

@@ -584,6 +584,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
       "destructive read of an additive intent (`F3.37`, ADR 0049 decision 5).",
   ),
   rollbackBodySchema: STRICT(CALLER_ERROR),
+  // `F4.333` (ADR 0129 decision 2): a `host`/`config` key must be a 400, never ignored.
+  replaceRtuCredentialsBodySchema: STRICT(ALREADY),
   setCredentialsBodySchema: STRICT(ALREADY),
   setEscalationDefaultsBodySchema: STRICT(CALLER_ERROR),
   "setEscalationDefaultsBodySchema/items[]": STRICT(ESCALATION_MAP_ITEM),

@@ -7,6 +7,7 @@ export {
   rtuSourceTypeSchema,
   createRtuBodySchema,
   updateRtuBodySchema,
+  replaceRtuCredentialsBodySchema,
   type CreateRtuBody,
   type UpdateRtuBody,
 } from "@bms/shared";

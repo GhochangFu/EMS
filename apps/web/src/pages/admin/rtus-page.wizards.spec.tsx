@@ -52,6 +52,7 @@ const RTU: AdminRtuDto = {
   createdAt: new Date(0).toISOString(),
   tls: true,
   payloadFormat: null,
+  credentialsSet: null,
 };
 
 function stubApi(rows: AdminRtuDto[] = [RTU]): void {

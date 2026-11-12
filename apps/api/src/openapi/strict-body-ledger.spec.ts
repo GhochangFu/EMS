@@ -112,6 +112,7 @@ import {
 } from "../admin/point-keys/point-keys.schema";
 import {
   createRtuBodySchema,
+  replaceRtuCredentialsBodySchema,
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
 import { manualReadingsBodySchema } from "../admin/telemetry-entry/manual-readings.schema";
@@ -285,6 +286,9 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.86` PR 5. Strict: a key beside `draftHash` must be a 400, and `draftHash` is required.
   commitOnboardingBodySchema,
   createRtuBodySchema,
+  // `F4.333` (ADR 0129 decision 2). Strict: a `host` or `config` key must be a 400 —
+  // the route writes the credential columns only, never the broker it connects to.
+  replaceRtuCredentialsBodySchema,
   createSessionBodySchema,
   createWorkOrderBodySchema,
   instantiateAssetsBodySchema,

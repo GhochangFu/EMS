@@ -30,6 +30,7 @@ import {
   ONBOARDING_DRAFT_STRING_MAX,
   locationTypeCodeSchema,
   refineFloorAreaM2,
+  RTU_CREDENTIAL_MAX_CHARS,
   SOURCE_KEY_RESERVED_VAR,
 } from "@bms/shared";
 import { z } from "zod";
@@ -534,7 +535,7 @@ export const createSessionBodySchema = z
  * the draft at all — `parseRtus` pushes it to `rtuCredentials` — so it is not
  * one of the draft's string fields and must not be counted among them.
  */
-export const MAX_RTU_CREDENTIAL_CHARS = 4096;
+export const MAX_RTU_CREDENTIAL_CHARS = RTU_CREDENTIAL_MAX_CHARS; // F4.333: declared once, shared with the RTU route.
 
 /**
  * `POST :id/credentials` (ADR 0022 decision 1). Values are plaintext in the

@@ -127,6 +127,7 @@ import {
 } from "../admin/point-keys/point-keys.schema";
 import {
   createRtuBodySchema,
+  replaceRtuCredentialsBodySchema,
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
 import { manualReadingsBodySchema } from "../admin/telemetry-entry/manual-readings.schema";
@@ -451,6 +452,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   ReportsController_energyXlsx: energyReportQuerySchema,
   RtusAdminController_create: createRtuBodySchema,
   RtusAdminController_update: updateRtuBodySchema,
+  // `F4.333` (ADR 0129 decision 2): the write-only credential replace.
+  RtusAdminController_replaceCredentials: replaceRtuCredentialsBodySchema,
   RulesController_archiveRule: ruleLifecycleBodySchema,
   RulesController_createDraft: ruleDraftBodySchema,
   // `F4.289`: `POST /rules/batch` (excluded from the copilot catalog until PR 2).

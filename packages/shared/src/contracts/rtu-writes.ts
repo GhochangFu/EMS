@@ -44,3 +44,30 @@ export const updateRtuBodySchema = createRtuBodySchema.omit({ locationId: true }
 
 export type CreateRtuBody = z.infer<typeof createRtuBodySchema>;
 export type UpdateRtuBody = z.infer<typeof updateRtuBodySchema>;
+
+/**
+ * `F4.333` (ADR 0129 decision 2) — the longest credential value, in characters.
+ * Declared once: the API's onboarding `MAX_RTU_CREDENTIAL_CHARS` is this
+ * constant, so the draft write and the RTU route give one answer.
+ */
+export const RTU_CREDENTIAL_MAX_CHARS = 4096;
+
+/** `F4.333` (ADR 0129 decision 2, Q3): the most sibling RTUs one replace may cover. */
+export const RTU_CREDENTIAL_SIBLINGS_MAX = 100;
+
+/**
+ * `PUT /admin/rtus/:id/credentials` (ADR 0129 decision 2). Write-only: the
+ * values are encrypted at the current key version and never echoed, logged or
+ * audited. A full replacement — both fields, never a merge (ADR 0012 decision 4
+ * forbids decrypting the old blob in the API). `alsoApplyTo` (Q3) names other
+ * RTUs of the same organization on the same broker that get the same new blob.
+ */
+export const replaceRtuCredentialsBodySchema = z
+  .object({
+    username: z.string().min(1).max(RTU_CREDENTIAL_MAX_CHARS),
+    password: z.string().min(1).max(RTU_CREDENTIAL_MAX_CHARS),
+    alsoApplyTo: z.array(z.string().uuid()).max(RTU_CREDENTIAL_SIBLINGS_MAX).optional(),
+  })
+  .strict();
+
+export type ReplaceRtuCredentialsBody = z.infer<typeof replaceRtuCredentialsBodySchema>;

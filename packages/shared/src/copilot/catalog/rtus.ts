@@ -118,5 +118,10 @@ export const RTU_ENTRIES: readonly CatalogEntry[] = [
   },
 ];
 
-/** The area's write routes that are not entries. All four are entries since PR 3a. */
-export const RTU_PENDING: readonly ExcludedRoute[] = [];
+/**
+ * The area's write routes that are not entries. `F4.333` (ADR 0129 decision 2):
+ * a credential is typed on a form, never through chat (ADR 0022).
+ */
+export const RTU_PENDING: readonly ExcludedRoute[] = [
+  { method: "PUT", path: "/admin/rtus/:id/credentials", reason: "a credential route (ADR 0022, ADR 0129)" },
+];
