@@ -389,7 +389,7 @@ export function deliveryEventIsRequiredOnEveryRow(): void {
   );
 }
 
-const alarmSummaryRow = { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 1 };
+const alarmSummaryRow = { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 1, unacknowledged: 1 };
 
 /**
  * `F3.28` — `alarmSummaryResponseSchema` carries every active severity's row,
@@ -398,7 +398,7 @@ const alarmSummaryRow = { code: "critical", label: "Critical", tone: "critical",
 export function alarmSummaryResponseAcceptsAZeroCountRow(): void {
   expectAccepts(
     alarmSummaryResponseSchema,
-    { items: [alarmSummaryRow, { ...alarmSummaryRow, code: "warning", tone: "warning", rank: 20, count: 0 }], total: 1 },
+    { items: [alarmSummaryRow, { ...alarmSummaryRow, code: "warning", tone: "warning", rank: 20, count: 0, unacknowledged: 0 }], total: 1 },
     "a zero-count severity row must parse — every active severity is represented",
   );
 }

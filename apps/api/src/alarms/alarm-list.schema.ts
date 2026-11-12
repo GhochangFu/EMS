@@ -13,7 +13,27 @@ import { assetIdsQueryField } from "../auth/asset-scope.schema";
 export const organizationIdQueryField = z.string().uuid().optional();
 
 /**
+ * `F4.357` U2 (ADR 0130 decision 15) — an optional location to narrow either
+ * read to: the alarms of that location and every location under it. Like
+ * `organizationId` it only ever **narrows**: the service ANDs it onto the
+ * intersected readable scope, and a node the caller cannot read answers empty
+ * (owner ruling P2), never 403.
+ */
+export const locationIdQueryField = z
+  .string()
+  .uuid()
+  // Security review I1: the database's ids are lower case and `uuid` ignores
+  // case, so the P2 check (`readableLocationIds.includes`) must see the same
+  // spelling the walk does.
+  .transform((id) => id.toLowerCase())
+  .optional();
+
+/**
  * `GET /api/v1/alarms` (`F3.28`, ADR 0074, plan decisions 1 and 4).
+ *
+ * `F4.357` U2b (plan Q1 ruling): `"unacknowledged"` is active and not
+ * acknowledged, ordered by severity rank, then newest — the alarm bar's read.
+ * It is one page (no `cursor`), and `minSeverityRank` drops lower ranks.
  *
  * `state` defaults to `"all"` — today's behaviour, unchanged for a caller who
  * sends nothing. `"active"` is the alarms rail's read: raised and not yet
@@ -37,11 +57,28 @@ export const alarmListQuerySchema = z
       (value) => (value === "" ? undefined : value),
       z.coerce.number().optional(),
     ),
-    state: z.enum(["all", "active"]).default("all"),
+    state: z.enum(["all", "active", "unacknowledged"]).default("all"),
     assetIds: assetIdsQueryField,
     organizationId: organizationIdQueryField,
+    locationId: locationIdQueryField,
+    // F4.357 U2b (plan Q1): keep alarms whose severity ranks at or above this.
+    // An empty value is absent, as `limit`'s is; the bound keeps the value
+    // inside the `integer` column it is compared with (a 400, never a 500).
+    minSeverityRank: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.coerce.number().int().min(0).max(2_147_483_647).optional(),
+    ),
   })
-  .strict();
+  .strict()
+  // `.strict()` must precede `.superRefine` (it returns a `ZodEffects`), and the
+  // `.describe` must follow it, or the OpenAPI document loses the rule
+  // (ADR 0029 Amendment 1 fact F).
+  .superRefine((query, ctx) => {
+    if (query.state === "unacknowledged" && query.cursor !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["cursor"], message: "state=unacknowledged is one page; cursor is not allowed" });
+    }
+  })
+  .describe("`cursor` is refused with `state=unacknowledged`: that state answers one page of at most `limit` rows.");
 
 export type AlarmListQuery = z.infer<typeof alarmListQuerySchema>;
 
@@ -55,6 +92,7 @@ export const alarmSummaryQuerySchema = z
   .object({
     assetIds: assetIdsQueryField,
     organizationId: organizationIdQueryField,
+    locationId: locationIdQueryField,
   })
   .strict();
 

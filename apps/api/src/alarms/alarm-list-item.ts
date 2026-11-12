@@ -1,6 +1,6 @@
 import { alarms, assets, type BmsDb, locations, rtus } from "@bms/db";
 import { type AlarmListItem, alarmSourceSchema } from "@bms/shared";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 /**
@@ -37,6 +37,13 @@ import { alias } from "drizzle-orm/pg-core";
  * left-joins `assets` (`readAlarmListItem` below does); a reader that keeps the
  * inner join keeps excluding device alarms, and says so.
  *
+ * **`F4.357` (ADR 0130 decision 17) adds two scalar sub-selects**, not joins,
+ * so no consumer has a fifth join to forget: `severityRank` is the
+ * `bms.alarm_severities` rank of the alarm's severity (`alarms.severity` is NOT
+ * NULL with an FK to `alarm_severities.code`, so it always finds one), and
+ * `locationName` is the asset's location or, for an `rtu_comms` alarm, its
+ * RTU's (`null` for an `ingest_host` alarm). The four joins are unchanged.
+ *
  * `normal_since` is deliberately absent: it is the sweep's own bookkeeping
  * (ADR 0057 decision 5), not a fact the alarm centre shows.
  */
@@ -61,6 +68,8 @@ export const alarmListItemColumns = {
   source: alarms.source,
   rtuId: alarms.rtuId,
   rtuCode: alarmRtus.code,
+  severityRank: sql<number>`(SELECT sev.rank FROM bms.alarm_severities sev WHERE sev.code = ${alarms.severity})`.mapWith(Number),
+  locationName: sql<string | null>`COALESCE(${locations.name}, (SELECT rl.name FROM bms.locations rl WHERE rl.id = ${alarmRtus.locationId}))`,
 };
 
 /**
@@ -89,6 +98,8 @@ export type AlarmListItemRow = {
   source: string;
   rtuId: string | null;
   rtuCode: string | null;
+  severityRank: number;
+  locationName: string | null;
 };
 
 /**
@@ -124,6 +135,8 @@ export function toAlarmListItem(r: AlarmListItemRow): AlarmListItem {
     source: sourceOf(r),
     rtuId: r.rtuId,
     rtuCode: r.rtuCode,
+    severityRank: r.severityRank,
+    locationName: r.locationName,
   };
 }
 

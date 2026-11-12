@@ -90,6 +90,8 @@ function alarm(i: number) {
     source: "rule" as const,
     rtuId: null,
     rtuCode: null,
+    severityRank: 30,
+    locationName: null,
   };
 }
 

@@ -110,6 +110,7 @@ export function assertAlarmSeverityCountAllowsZero(): void {
     tone: "critical",
     rank: 30,
     count: 0,
+    unacknowledged: 0,
   });
   assert(
     result.success === true,
@@ -127,6 +128,7 @@ export function assertAlarmSeverityCountRefusesNegative(): void {
     tone: "critical",
     rank: 30,
     count: -1,
+    unacknowledged: 0,
   });
   assert(
     result.success === false,
@@ -159,6 +161,9 @@ const ALARM_LIST_ITEM = {
   source: "rule",
   rtuId: null,
   rtuCode: null,
+  // F4.357 / ADR 0130 decision 17: the severity's rank and the alarm's own location.
+  severityRank: 30,
+  locationName: "Plant A",
 };
 
 const AFFECTED_ASSET = {
@@ -255,6 +260,44 @@ export function assertAlarmSocketEventRequiresAssetRtuName(): void {
     alarmSocketEventSchema.safeParse({ type: "cleared", alarm: without }).success === false,
     "alarmSocketEventSchema accepted an alarm with no assetRtuName",
   );
+}
+
+/**
+ * `F4.357` / ADR 0130 decision 17 — `severityRank` is a required integer (the
+ * popup, the blink and the tone read the rank, never a name), and
+ * `locationName` is required-nullable (`null` on an `ingest_host` alarm). The
+ * socket payload takes the list item by reference, so it inherits both.
+ */
+export function assertAlarmListItemRequiresSeverityRankAndLocationName(): void {
+  assertRefusesWithout(alarmListItemSchema, ALARM_LIST_ITEM, "severityRank", "alarmListItemSchema");
+  assertRefusesWithout(alarmListItemSchema, ALARM_LIST_ITEM, "locationName", "alarmListItemSchema");
+  for (const bad of ["30", 30.5, null]) {
+    assert(
+      alarmListItemSchema.safeParse({ ...ALARM_LIST_ITEM, severityRank: bad }).success === false,
+      `alarmListItemSchema accepted severityRank ${JSON.stringify(bad)}`,
+    );
+  }
+  assert(alarmListItemSchema.safeParse({ ...ALARM_LIST_ITEM, locationName: null }).success, "alarmListItemSchema refused a null locationName");
+  const { severityRank: _dropped, ...without } = ALARM_LIST_ITEM;
+  assert(
+    alarmSocketEventSchema.safeParse({ type: "created", alarm: without }).success === false,
+    "the created event accepted an alarm with no severityRank",
+  );
+}
+
+/**
+ * `F4.357` U2b (plan Q1) — each summary row carries its unacknowledged count:
+ * required, a non-negative integer, zero allowed.
+ */
+export function assertAlarmSeverityCountRequiresUnacknowledged(): void {
+  const row = { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 2, unacknowledged: 0 };
+  assertRefusesWithout(alarmSeverityCountSchema, row, "unacknowledged", "alarmSeverityCountSchema");
+  for (const bad of [-1, 1.5, "1"]) {
+    assert(
+      alarmSeverityCountSchema.safeParse({ ...row, unacknowledged: bad }).success === false,
+      `alarmSeverityCountSchema accepted unacknowledged ${JSON.stringify(bad)}`,
+    );
+  }
 }
 
 export const assertAlarmDetailsRequiresAssetRtuName = (): void =>

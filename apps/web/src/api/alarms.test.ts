@@ -1,5 +1,6 @@
 import { afterEach, describe, it, vi } from "vitest";
 
+import * as spec from "./alarms.spec";
 import {
   activeAlarmsHitsTheListPath,
   activeAlarmsSendsLimitEightByDefault,
@@ -85,4 +86,9 @@ describe("F3.66 alarms web client — the organization scope", () => {
   it("sends no organizationId on the id-scoped summary read", async () => {
     await alarmSummaryForIdsSendsNoOrganizationId();
   });
+});
+
+describe("fetchUnacknowledgedAlarms (F4.357 U2b)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("sends state=unacknowledged, minSeverityRank and limit in the scope", () => spec.unacknowledgedAlarmsSendsStateRankAndLimit());
 });

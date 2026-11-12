@@ -64,10 +64,10 @@ const SEVERITIES: AlarmSeverityDto[] = [
 
 /** Ascending rank, as `GET /alarms/summary` returns it. */
 const SUMMARY_ITEMS: AlarmSeverityCount[] = [
-  { code: "info", label: "Info", tone: "info", rank: 10, count: 1 },
-  { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 2 },
-  { code: "high", label: "High", tone: "warning", rank: 25, count: 3 },
-  { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 4 },
+  { code: "info", label: "Info", tone: "info", rank: 10, count: 1, unacknowledged: 1 },
+  { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 2, unacknowledged: 2 },
+  { code: "high", label: "High", tone: "warning", rank: 25, count: 3, unacknowledged: 3 },
+  { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 4, unacknowledged: 4 },
 ];
 
 function alarm(index: number, overrides: Partial<AlarmListItem> = {}): AlarmListItem {
@@ -90,6 +90,8 @@ function alarm(index: number, overrides: Partial<AlarmListItem> = {}): AlarmList
     source: "rule",
     rtuId: null,
     rtuCode: null,
+    severityRank: 30,
+    locationName: null,
     ...overrides,
   };
 }

@@ -346,9 +346,14 @@ async function severityCounts(
             .from(alarmSeverities)
             .where(eq(alarmSeverities.active, true))
             .orderBy(asc(alarmSeverities.rank))
-        ).map((severity) => ({ ...severity, count: 0 }))
+        ).map((severity) => ({ ...severity, count: 0, unacknowledged: 0 }))
       : await tx
-          .select({ ...columns, count: sql<number>`count(${alarms.id})::int` })
+          .select({
+            ...columns,
+            count: sql<number>`count(${alarms.id})::int`,
+            // F4.357 U2b: the summary row's shape (`alarmSeverityCountSchema`) carries it.
+            unacknowledged: sql<number>`(count(${alarms.id}) FILTER (WHERE ${alarms.acknowledgedAt} IS NULL))::int`,
+          })
           .from(alarmSeverities)
           .leftJoin(
             alarms,
@@ -368,6 +373,7 @@ async function severityCounts(
     ...row,
     rank: Number(row.rank),
     count: Number(row.count),
+    unacknowledged: Number(row.unacknowledged),
     tone: row.tone as AlarmSeverityCount["tone"],
   }));
 }

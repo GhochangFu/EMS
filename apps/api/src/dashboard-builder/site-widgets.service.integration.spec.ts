@@ -285,6 +285,33 @@ export async function assertGroupTabScopesTheRail(db: BmsDb): Promise<void> {
   }, db);
 }
 
+/**
+ * S6b — `F4.357` (ADR 0130 decision 17): the rail's rows carry the stored rank
+ * of their severity, through the shared `alarmListItemColumns` projection.
+ */
+export async function assertTheRailCarriesTheSeverityRank(db: BmsDb): Promise<void> {
+  await inSite(async (site) => {
+    const [first] = (await readAs(site, "b")).alarms.active;
+    expect(first, "the rail holds b1's active alarm").toBeDefined();
+    const stored = await db.execute<{ rank: number }>(sql`SELECT rank FROM bms.alarm_severities WHERE code = ${first!.severity}`);
+    expect(first!.severityRank).toBe(Number(stored.rows[0]?.rank));
+  }, db);
+}
+
+/**
+ * S6c — `F4.357` U2b: the summary's `unacknowledged` leaves out an acknowledged
+ * alarm, while `count` keeps it.
+ */
+export async function assertTheSummaryCountsTheUnacknowledged(db: BmsDb): Promise<void> {
+  await inSite(async (site) => {
+    const before = (await readAs(site, "b")).alarms.summary.find((row) => row.code === "critical");
+    expect({ count: before?.count, unacknowledged: before?.unacknowledged }, "the positive neighbour").toEqual({ count: 1, unacknowledged: 1 });
+    await site.txDb.execute(sql`UPDATE bms.alarms SET acknowledged_at = now() WHERE asset_id = ${site.b1} AND cleared_at IS NULL`);
+    const after = (await readAs(site, "b")).alarms.summary.find((row) => row.code === "critical");
+    expect({ count: after?.count, unacknowledged: after?.unacknowledged }).toEqual({ count: 1, unacknowledged: 0 });
+  }, db);
+}
+
 /** S7 — the Overview reads the dashboard's site: all three assets. */
 export async function assertOverviewReadsTheSite(db: BmsDb): Promise<void> {
   await inSite(async (site) => {

@@ -193,3 +193,67 @@ export function assertSummaryOrganizationIdAloneParses(): void {
     `organizationId alone must parse on the summary: ${JSON.stringify(result.success ? result.data : result.error.issues)}`,
   );
 }
+
+/**
+ * `F4.357` U2 (ADR 0130 decision 15) — `locationId` on both reads: a uuid, and
+ * both schemas stay `.strict()`.
+ */
+export function assertBothQueriesAcceptALocationId(): void {
+  const id = randomUUID();
+  for (const [name, schema] of [["list", alarmListQuerySchema], ["summary", alarmSummaryQuerySchema]] as const) {
+    const result = schema.safeParse({ locationId: id });
+    assert(
+      result.success && result.data.locationId === id,
+      `locationId must parse on the ${name}: ${JSON.stringify(result.success ? result.data : result.error.issues)}`,
+    );
+  }
+}
+
+/** A non-uuid `locationId` is refused on both reads, and an unknown key still is. */
+export function assertBothQueriesRefuseANonUuidLocationId(): void {
+  for (const [name, schema] of [["list", alarmListQuerySchema], ["summary", alarmSummaryQuerySchema]] as const) {
+    assert(schema.safeParse({ locationId: "abc" }).success === false, `locationId=abc must be refused on the ${name}`);
+    assert(schema.safeParse({ locationId: randomUUID(), siteId: "x" }).success === false, `an unknown key beside locationId must be refused on the ${name}`);
+  }
+}
+
+/**
+ * `F4.357` U2b (plan Q1 ruling) — `state=unacknowledged` (active and not
+ * acknowledged, ordered by rank then newest) and `minSeverityRank` on the list.
+ * That state is one page of at most 50 rows, so a `cursor` beside it is refused.
+ */
+export function assertUnacknowledgedStateAndMinRankParse(): void {
+  const result = alarmListQuerySchema.safeParse({ state: "unacknowledged", minSeverityRank: "20" });
+  assert(
+    result.success && result.data.state === "unacknowledged" && result.data.minSeverityRank === 20,
+    `state=unacknowledged&minSeverityRank=20 must parse: ${JSON.stringify(result.success ? result.data : result.error.issues)}`,
+  );
+}
+
+/** A negative or non-numeric `minSeverityRank` is refused; the summary does not take it. */
+export function assertABadMinSeverityRankIsRefused(): void {
+  for (const bad of ["-1", "x", "2.5", "3000000000", "1e21"]) {
+    assert(alarmListQuerySchema.safeParse({ minSeverityRank: bad }).success === false, `minSeverityRank=${bad} must be refused`);
+  }
+  assert(alarmSummaryQuerySchema.safeParse({ minSeverityRank: "20" }).success === false, "the summary must refuse minSeverityRank");
+}
+
+/** `cursor` with `state=unacknowledged` is refused; with `state=active` it still parses. */
+export function assertACursorWithUnacknowledgedIsRefused(): void {
+  assert(
+    alarmListQuerySchema.safeParse({ state: "unacknowledged", cursor: "abc" }).success === false,
+    "cursor beside state=unacknowledged must be refused",
+  );
+  assert(alarmListQuerySchema.safeParse({ state: "active", cursor: "abc" }).success, "cursor beside state=active must still parse");
+}
+
+/** Review fixes: an empty `minSeverityRank` is absent, and an upper-case `locationId` reads in lower case. */
+export function assertAnEmptyRankIsAbsentAndALocationIdIsLowerCased(): void {
+  const empty = alarmListQuerySchema.safeParse({ minSeverityRank: "" });
+  assert(empty.success && empty.data.minSeverityRank === undefined, "an empty minSeverityRank must be absent");
+  const id = randomUUID();
+  for (const [name, schema] of [["list", alarmListQuerySchema], ["summary", alarmSummaryQuerySchema]] as const) {
+    const result = schema.safeParse({ locationId: id.toUpperCase() });
+    assert(result.success && result.data.locationId === id, `the ${name} must lower-case locationId`);
+  }
+}

@@ -1,5 +1,6 @@
 import { describe, it } from "vitest";
 
+import * as spec from "./alarm-list.schema.spec";
 import {
   assertAbsentStateDefaultsToAll,
   assertActiveStateParses,
@@ -113,4 +114,19 @@ describe("F3.66 — organizationId on the alarm list and summary queries", () =>
   it("parses organizationId alone on the summary", () => {
     assertSummaryOrganizationIdAloneParses();
   });
+});
+
+describe("alarm list/summary queries — locationId (F4.357 U2, ADR 0130 decision 15)", () => {
+  it("accepts a uuid locationId on both reads", () => spec.assertBothQueriesAcceptALocationId());
+  it("refuses a non-uuid locationId on both reads, and still refuses an unknown key", () =>
+    spec.assertBothQueriesRefuseANonUuidLocationId());
+});
+
+describe("alarm list query — state=unacknowledged and minSeverityRank (F4.357 U2b, plan Q1)", () => {
+  it("parses state=unacknowledged and minSeverityRank", () => spec.assertUnacknowledgedStateAndMinRankParse());
+  it("refuses a negative, fractional or non-numeric minSeverityRank, and the summary refuses it", () =>
+    spec.assertABadMinSeverityRankIsRefused());
+  it("refuses a cursor beside state=unacknowledged", () => spec.assertACursorWithUnacknowledgedIsRefused());
+  it("reads an empty minSeverityRank as absent and lower-cases locationId", () =>
+    spec.assertAnEmptyRankIsAbsentAndALocationIdIsLowerCased());
 });

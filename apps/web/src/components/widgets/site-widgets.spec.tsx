@@ -61,6 +61,8 @@ function alarm(id: string, assetCode: string, message: string): AlarmListItem {
     source: "rule",
     rtuId: null,
     rtuCode: null,
+    severityRank: 30,
+    locationName: null,
   };
 }
 
@@ -102,8 +104,8 @@ function response(overrides: Partial<SiteWidgetsResponse> = {}): SiteWidgetsResp
     alarms: {
       active: [alarm("a1", "UPS-01", "Bypass open"), alarm("a2", "UPS-02", "Fan failure"), alarm("a3", "HVAC-01", "High temp")],
       summary: [
-        { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 2 },
-        { code: "critical", label: "Critical", tone: "critical", rank: 40, count: 3 },
+        { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 2, unacknowledged: 2 },
+        { code: "critical", label: "Critical", tone: "critical", rank: 40, count: 3, unacknowledged: 3 },
       ],
     },
     roles: [ROLE],

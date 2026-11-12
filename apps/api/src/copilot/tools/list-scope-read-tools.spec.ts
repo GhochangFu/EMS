@@ -79,6 +79,8 @@ function alarmRow(i: number, asset: string) {
     source: "rule" as const,
     rtuId: null,
     rtuCode: null,
+    severityRank: 30,
+    locationName: null,
   };
 }
 

@@ -74,6 +74,30 @@ export async function fetchActiveAlarms(
 }
 
 /**
+ * `F4.357` U2b (plan Q1 ruling) — the alarm bar's read: the active,
+ * unacknowledged alarms of `minRank` and above in the given scope, highest
+ * rank first, then newest. One page of at most `limit` rows (no cursor).
+ */
+export async function fetchUnacknowledgedAlarms(
+  scope: AlarmScope,
+  options: { readonly minRank: number; readonly limit: number },
+): Promise<AlarmsListResponse> {
+  const params = new URLSearchParams({
+    state: "unacknowledged",
+    minSeverityRank: String(options.minRank),
+    limit: String(options.limit),
+  });
+  appendScope(params, scope);
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/alarms?${params}`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new Error(`alarms ${res.status}`);
+  }
+  return checkResponse(alarmsListResponseSchema, await res.json(), "alarms");
+}
+
+/**
  * `GET /api/v1/alarms/summary` — active-alarm counts per severity, every
  * active severity present (`count: 0` allowed), in ascending rank.
  */

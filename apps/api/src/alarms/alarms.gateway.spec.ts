@@ -90,6 +90,8 @@ function alarm(over: Partial<AlarmListItem>): AlarmListItem {
     source: "rtu_comms",
     rtuId: RTU_1,
     rtuCode: "R1",
+    severityRank: 30,
+    locationName: null,
     ...over,
   };
 }

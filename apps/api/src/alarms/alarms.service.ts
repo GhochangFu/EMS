@@ -22,8 +22,16 @@ import { withTenant } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
 import { activeAlarmFilter } from "./active-alarm-filter";
 import { alarmListItemColumns, alarmRtus, toAlarmListItem } from "./alarm-list-item";
+import { alarmInLocations, alarmLocationIds, type AlarmLocationFilter } from "./alarm-location-scope";
 import { alarmVisibleTo } from "./alarm-scope";
 import { AlarmsGateway } from "./alarms.gateway";
+
+/**
+ * `F4.357` U2b: the alarm's severity rank — the same sub-select as the list
+ * item's `severityRank` (`alarm-list-item.ts`), for the unacknowledged order
+ * and `minSeverityRank`.
+ */
+const severityRankOf = alarmListItemColumns.severityRank;
 
 function encodeCursor(raisedAt: Date, id: string): string {
   return Buffer.from(
@@ -110,29 +118,46 @@ export class AlarmsService {
    * `F4.291` (ADR 0099 Amendment 9 E5(b)): `severity` (the code), and
    * `raisedFrom` (inclusive) / `raisedTo` (exclusive) on `raised_at`, ANDed
    * on as the others. Only the copilot's `list_alarms` passes them; the
-   * route's `alarmListQuerySchema` does not change.
+   * route's `alarmListQuerySchema` does not take them.
+   *
+   * `F4.357` U2 (ADR 0130 decision 15): `location` keeps the alarms of that
+   * location and every location under it (`alarmInLocations`), resolved once
+   * before the read. An empty resolution keeps the predicate (it is false),
+   * so a node the caller cannot read lists nothing.
+   *
+   * `F4.357` U2b (plan Q1 ruling): `state: "unacknowledged"` is active and not
+   * acknowledged, ordered by `alarm_severities.rank DESC, raised_at DESC, id
+   * DESC` — the alarm bar's read, so the highest-ranked alarms fill the page
+   * first. It is one page: the keyset cursor is `(raised_at, id)` and does not
+   * page this order, so `nextCursor` is always `null` (the route refuses a
+   * `cursor` beside it). `minSeverityRank` keeps ranks at or above it.
    */
   async list(opts: {
     cursor?: string;
     limit: number;
     assetIds?: string[] | null;
-    state?: "all" | "active";
+    state?: "all" | "active" | "unacknowledged";
+    minSeverityRank?: number;
     organizationId?: string;
     severity?: string;
     raisedFrom?: Date;
     raisedTo?: Date;
     /** `F3.16` — rule alarms only (`source = 'rule'`); the copilot's `list_alarms` sets it. */
     ruleOnly?: boolean;
+    location?: AlarmLocationFilter;
   }): Promise<{ items: AlarmListItem[]; nextCursor: string | null }> {
     // Truncated after the clamp (plan decision 4): the schema lets a fractional
     // `limit` through, as the old `Number(limitRaw)` did, and SQL's `LIMIT`
     // must never see one — `50.5` asks for 50 rows.
     const limit = Math.trunc(Math.min(100, Math.max(1, opts.limit)));
     const cursor = opts.cursor;
+    const locationIds = opts.location ? await alarmLocationIds(this.fleetDb, opts.location) : null;
     const filters = [
       // F3.16 (ADR 0127 decision 14): the scope rule over rule and device alarms.
       ...(opts.assetIds ? [alarmVisibleTo(opts.assetIds)] : []),
       ...(opts.state === "active" ? [activeAlarmFilter] : []),
+      ...(opts.state === "unacknowledged" ? [activeAlarmFilter, isNull(alarms.acknowledgedAt)] : []),
+      ...(opts.minSeverityRank !== undefined ? [sql`${severityRankOf} >= ${opts.minSeverityRank}`] : []),
       // A rule alarm's organization is its asset's; a device alarm (no asset)
       // has only its own `organization_id`.
       ...(opts.organizationId
@@ -147,6 +172,7 @@ export class AlarmsService {
       ...(opts.raisedFrom !== undefined ? [gte(alarms.raisedAt, opts.raisedFrom)] : []),
       ...(opts.raisedTo !== undefined ? [lt(alarms.raisedAt, opts.raisedTo)] : []),
       ...(opts.ruleOnly ? [eq(alarms.source, "rule")] : []),
+      ...(locationIds !== null ? [alarmInLocations(locationIds)] : []),
     ];
 
     return withReadScope(
@@ -163,6 +189,14 @@ export class AlarmsService {
           .leftJoin(rtus, eq(assets.rtuId, rtus.id))
           .leftJoin(locations, eq(assets.locationId, locations.id))
           .leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id));
+
+        if (opts.state === "unacknowledged") {
+          const rows = await base
+            .where(and(...filters))
+            .orderBy(desc(severityRankOf), desc(alarms.raisedAt), desc(alarms.id))
+            .limit(limit);
+          return { items: rows.map((r) => toAlarmListItem(r)), nextCursor: null };
+        }
 
         const c = cursor ? decodeCursor(cursor) : null;
         const cursorFilter = c
@@ -224,11 +258,16 @@ export class AlarmsService {
    * `F3.66` (step-5 fix): `organizationId` adds a second `ON` predicate —
    * the alarm's asset is one of that organization's assets — ANDed onto the
    * scope predicate, so it only narrows.
+   *
+   * `F4.357` U2: `location` adds `alarmInLocations` to the same `ON` clause,
+   * resolved once, so the counts agree with `list`'s for the same filter.
    */
   async activeCountsBySeverity(
     assetIds: string[] | null | undefined,
     organizationId?: string,
+    location?: AlarmLocationFilter,
   ): Promise<AlarmSummaryResponse> {
+    const locationIds = location ? await alarmLocationIds(this.fleetDb, location) : null;
     const severityColumns = {
       code: alarmSeverities.code,
       label: alarmSeverities.label,
@@ -237,7 +276,7 @@ export class AlarmsService {
     };
     // `tone` is closed by `alarm_severities_tone_check` in SQL, so the
     // column's `string` is narrowed to the contract's palette here.
-    const toCount = (r: { code: string; label: string; tone: string; rank: number; count: number }) =>
+    const toCount = (r: { code: string; label: string; tone: string; rank: number; count: number; unacknowledged: number }) =>
       ({ ...r, tone: r.tone as AlarmSeverityCount["tone"] }) satisfies AlarmSeverityCount;
 
     const counted = await withReadScope(
@@ -250,6 +289,8 @@ export class AlarmsService {
           .select({
             ...severityColumns,
             count: sql<number>`count(${alarms.id})::int`,
+            // F4.357 U2b: the same rows, not yet acknowledged.
+            unacknowledged: sql<number>`(count(${alarms.id}) FILTER (WHERE ${alarms.acknowledgedAt} IS NULL))::int`,
           })
           .from(alarmSeverities)
           .leftJoin(
@@ -273,6 +314,7 @@ export class AlarmsService {
                     ),
                   ]
                 : []),
+              ...(locationIds !== null ? [alarmInLocations(locationIds)] : []),
             ),
           )
           .where(eq(alarmSeverities.active, true))
@@ -292,7 +334,7 @@ export class AlarmsService {
           .from(alarmSeverities)
           .where(eq(alarmSeverities.active, true))
           .orderBy(asc(alarmSeverities.rank))
-      ).map((s) => ({ ...s, count: 0 }));
+      ).map((s) => ({ ...s, count: 0, unacknowledged: 0 }));
     const items = rows.map(toCount);
     return { items, total: items.reduce((sum, i) => sum + i.count, 0) };
   }

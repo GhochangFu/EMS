@@ -88,6 +88,8 @@ function alarm(overrides: Partial<AlarmListItem>): AlarmListItem {
     source: "rule",
     rtuId: null,
     rtuCode: null,
+    severityRank: 30,
+    locationName: null,
     ...overrides,
   };
 }

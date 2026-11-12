@@ -21,6 +21,7 @@ import { alarmAckBodySchema, alarmEnrichmentUpsertBodySchema, type JwtPayload } 
 import { AccessControlService } from "../auth/access-control.service";
 import { intersectReadable } from "../auth/asset-scope";
 import { alarmListQuerySchema, alarmSummaryQuerySchema } from "./alarm-list.schema";
+import type { AlarmLocationFilter } from "./alarm-location-scope";
 import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmsService } from "./alarms.service";
@@ -45,6 +46,23 @@ function parseQuery<S extends z.ZodTypeAny>(schema: S, query: unknown): z.output
     }
     throw err;
   }
+}
+
+/**
+ * `F4.357` U2: the `locationId` filter with the caller's two readable sets
+ * (owner rulings P2 and P3), or `undefined` — and then no location read runs.
+ */
+async function locationFilter(
+  accessControl: AccessControlService,
+  user: JwtPayload,
+  locationId: string | undefined,
+): Promise<AlarmLocationFilter | undefined> {
+  if (locationId === undefined) return undefined;
+  return {
+    id: locationId,
+    readableLocationIds: await accessControl.readableLocationIds(user),
+    readableOrganizationIds: await accessControl.readableOrganizationIds(user),
+  };
 }
 
 @Controller("alarms")
@@ -73,6 +91,11 @@ export class AlarmsController {
    * intersection holds**: `assetIds` below must stay
    * `intersectReadable(readableAssetIds(user), …)` whether or not
    * `organizationId` is present.
+   *
+   * `F4.357` U2 (ADR 0130 decision 15): an optional `locationId` narrows the
+   * read to the alarms of that location and its sub-locations, the same way —
+   * ANDed onto the intersected scope, so it **narrows and cannot widen**. A
+   * node the caller cannot read answers empty (owner ruling P2), not 403.
    */
   @Get()
   async list(@CurrentUser() user: JwtPayload, @Query() query: Record<string, unknown>) {
@@ -81,8 +104,10 @@ export class AlarmsController {
       cursor: dto.cursor,
       limit: dto.limit ?? 20,
       state: dto.state,
+      minSeverityRank: dto.minSeverityRank,
       assetIds: intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
       organizationId: dto.organizationId,
+      location: await locationFilter(this.accessControl, user, dto.locationId),
     });
   }
 
@@ -100,6 +125,11 @@ export class AlarmsController {
    * intersection holds**: `assetIds` below must stay
    * `intersectReadable(readableAssetIds(user), …)` whether or not
    * `organizationId` is present.
+   *
+   * `F4.357` U2 (ADR 0130 decision 15): an optional `locationId` narrows the
+   * read to the alarms of that location and its sub-locations, the same way —
+   * ANDed onto the intersected scope, so it **narrows and cannot widen**. A
+   * node the caller cannot read answers empty (owner ruling P2), not 403.
    */
   @Get("summary")
   async summary(@CurrentUser() user: JwtPayload, @Query() query: Record<string, unknown>) {
@@ -107,6 +137,7 @@ export class AlarmsController {
     return this.alarms.activeCountsBySeverity(
       intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
       dto.organizationId,
+      await locationFilter(this.accessControl, user, dto.locationId),
     );
   }
 

@@ -272,6 +272,8 @@ export function fakeDeps(opts: {
                 source: "source" in alarm ? alarm.source : ("rule" as const),
                 rtuId: "source" in alarm ? alarm.rtuId : null,
                 rtuCode: null,
+                severityRank: 30,
+                locationName: null,
               };
             }),
         );
