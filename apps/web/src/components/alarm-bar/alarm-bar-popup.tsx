@@ -40,25 +40,40 @@ export function AlarmBarPopup({ feed, readOnly }: AlarmBarPopupProps) {
   const list = useAlarmBarStore((state) => state.list);
   const summary = useAlarmBarStore((state) => state.summary);
   const seenIds = useAlarmBarStore((state) => state.seenIds);
+  const rows = list === null ? [] : popupRows(list, seenIds);
+  if (rows.length === 0) return null;
+  const more = summary === null || list === null ? 0 : moreActiveCount(summary, list);
+  // The body holds the form, the run line and the details panel, and mounts only while there are
+  // rows: a popup that hides and returns for a new alarm opens clean (code review, PR 3).
+  return <PopupBody feed={feed} readOnly={readOnly} rows={rows} more={more} />;
+}
+
+function PopupBody({
+  feed,
+  readOnly,
+  rows,
+  more,
+}: AlarmBarPopupProps & { rows: readonly AlarmListItem[]; more: number }) {
   const [asking, setAsking] = useState<readonly string[] | null>(null);
   const [reason, setReason] = useState("");
   const [running, setRunning] = useState(false);
   const [run, setRun] = useState<Run | null>(null);
   const [detailsId, setDetailsId] = useState<string | null>(null);
 
-  const rows = list === null ? [] : popupRows(list, seenIds);
-  if (rows.length === 0) return null;
-
-  const more = summary === null || list === null ? 0 : moreActiveCount(summary, list);
+  // A form whose rows all left (acknowledged elsewhere, cleared) is gone; Confirm sends only rows shown.
+  const shown = new Set(rows.map((row) => row.id));
+  const askingShown = asking === null ? null : asking.filter((id) => shown.has(id));
+  const formOpen = askingShown !== null && askingShown.length > 0;
   const trimmed = reason.trim();
   const valid = alarmAckBodySchema.safeParse({ reason: trimmed }).success;
 
   const confirm = async (): Promise<void> => {
-    if (asking === null || !valid) return;
+    if (!formOpen || !valid) return;
+    const ids = askingShown;
     setRunning(true);
-    const result = await feed.acknowledge(asking, trimmed);
+    const result = await feed.acknowledge(ids, trimmed);
     setRunning(false);
-    setRun({ done: result.done, total: asking.length, errors: new Map(result.failed.map((f) => [f.id, f.message])) });
+    setRun({ done: result.done, total: ids.length, errors: new Map(result.failed.map((f) => [f.id, f.message])) });
     setAsking(null);
     setReason("");
   };
@@ -84,7 +99,12 @@ export function AlarmBarPopup({ feed, readOnly }: AlarmBarPopupProps) {
               Acknowledge all
             </button>
           )}
-          <button type="button" onClick={() => feed.closePopup()} className="surface-button rounded px-2 py-1 font-semibold">
+          <button
+            type="button"
+            disabled={running}
+            onClick={() => feed.closePopup()}
+            className="surface-button rounded px-2 py-1 font-semibold"
+          >
             Close
           </button>
         </div>
@@ -94,7 +114,7 @@ export function AlarmBarPopup({ feed, readOnly }: AlarmBarPopupProps) {
           {run.done} of {run.total} acknowledged
         </p>
       )}
-      {asking === null ? null : (
+      {!formOpen ? null : (
         <form
           className="space-y-1 border-b border-line px-3 py-2"
           onSubmit={(event) => {
@@ -103,7 +123,7 @@ export function AlarmBarPopup({ feed, readOnly }: AlarmBarPopupProps) {
           }}
         >
           <label htmlFor="alarm-bar-reason" className="block font-semibold">
-            Reason for {asking.length === 1 ? "this alarm" : `${asking.length} alarms`}
+            Reason for {askingShown.length === 1 ? "this alarm" : `${askingShown.length} alarms`}
           </label>
           <textarea
             id="alarm-bar-reason"

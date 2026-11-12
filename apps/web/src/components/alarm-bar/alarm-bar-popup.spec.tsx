@@ -6,6 +6,7 @@ import { expect, vi } from "vitest";
 
 import type { AlarmListItem, AlarmSummaryResponse, UserRole } from "@bms/shared";
 
+import * as alarmsApi from "../../api/alarms";
 import { alarmItem } from "../../lib/alarm-bar.spec";
 import { EMPTY_SUMMARY, flush, installOnFakes } from "../../lib/alarm-bar-feed.spec";
 import { alarmBarFeed } from "../../lib/alarm-bar-feed";
@@ -119,8 +120,9 @@ export async function seenSurvivesNavigationButNotASession(): Promise<void> {
   await withPopup({ list: [alarmItem({ id: "a", message: "First" })] }, async (f) => {
     await userEvent.setup().click(within(popup()!).getByRole("button", { name: "Close" }));
     cleanup();
-    mount("/control-room");
+    mount("/control-room/org/11111111-1111-4111-8111-111111111111");
     await act(flush);
+    expect(f.listCalls.at(-1), "the new page read its own scope").toEqual({ organizationId: "11111111-1111-4111-8111-111111111111" });
     expect(popup(), "another page, the same tab").toBeNull();
     await act(async () => {
       f.session.setState({ accessToken: null, user: null });
@@ -214,5 +216,41 @@ export async function namesTheAlarmsBeyondTheList(): Promise<void> {
   await withPopup({ list, summary }, async () => {
     const link = within(popup()!).getByRole("link", { name: "and 10 more active alarms" });
     expect(link.getAttribute("href")).toBe("/alarms");
+  });
+}
+
+/**
+ * Code review (PR 3) — the reason form, the details panel and the run line belong to the popup that
+ * opened them: a row that leaves while its form is open takes the form with it, and a popup that
+ * hides and comes back for a new alarm opens clean, so Confirm can only send what is shown.
+ */
+export async function theFormAndTheRunLineDieWithTheirRows(): Promise<void> {
+  const a = alarmItem({ id: "a", message: "A" });
+  const b = alarmItem({ id: "b", message: "B" });
+  await withPopup({ list: [a, b] }, async (f) => {
+    const user = userEvent.setup();
+    const rowOf = (message: string) => within(popup()!).getAllByRole("listitem").find((li) => li.textContent?.includes(message))!;
+    await user.click(within(rowOf("A")).getByRole("button", { name: "Acknowledge" }));
+    await user.type(within(popup()!).getByLabelText(/Reason/), "Checked on site");
+    await serverHolds(f, [b]);
+    expect(within(popup()!).queryByLabelText(/Reason/), "the form for a row that left is gone").toBeNull();
+    await serverHolds(f, []);
+    expect(popup()).toBeNull();
+    await serverHolds(f, [alarmItem({ id: "c", message: "C" })]);
+    expect(within(popup()!).queryByLabelText(/Reason/), "a new popup opens without a form").toBeNull();
+    expect(within(popup()!).queryByRole("status"), "and without an old run line").toBeNull();
+    expect(f.ackCalls).toEqual([]);
+  });
+}
+
+/** Code review (PR 3) — the popup paints above an open All alarms list, so Close stays reachable. */
+export async function thePopupComesAfterTheList(): Promise<void> {
+  // F4.160: the list's read is stubbed, so nothing reaches a local API.
+  vi.spyOn(alarmsApi, "fetchActiveAlarms").mockResolvedValue({ items: [], nextCursor: null });
+  await withPopup({ list: [alarmItem({ id: "a" })] }, async () => {
+    await userEvent.setup().click(screen.getByRole("button", { name: "All alarms" }));
+    const list = document.getElementById("alarm-bar-list");
+    expect(list, "the list is open").not.toBeNull();
+    expect(list!.compareDocumentPosition(popup()!) & Node.DOCUMENT_POSITION_FOLLOWING, "the popup follows the list").toBeTruthy();
   });
 }

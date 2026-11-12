@@ -119,8 +119,6 @@ export function AlarmBar() {
           All alarms
         </button>
       </div>
-      {/* U6 (decisions 6-8): renders nothing while no unseen alarm of popup rank is unacknowledged. */}
-      <AlarmBarPopup feed={feed} readOnly={!mayAcknowledge} />
       {listOpen ? (
         <AlarmBarList
           scope={scope}
@@ -129,6 +127,11 @@ export function AlarmBar() {
           onClose={() => setListOpen(false)}
         />
       ) : null}
+      {/*
+        U6 (decisions 6-8): renders nothing while no unseen alarm of popup rank is unacknowledged.
+        After the list, so it paints above an open All alarms list and Close stays reachable.
+      */}
+      <AlarmBarPopup feed={feed} readOnly={!mayAcknowledge} />
       {acknowledging !== null
         ? createPortal(
             <AlarmAckWizard

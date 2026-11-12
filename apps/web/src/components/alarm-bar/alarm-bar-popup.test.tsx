@@ -14,4 +14,6 @@ describe("alarm bar popup (F4.357, ADR 0130 decisions 6–8, 18, 21)", () => {
   it("a failed row stays with its error and the count", () => spec.aFailedRowStaysWithItsError());
   it("a viewer sees Close only", () => spec.aViewerSeesCloseOnly());
   it("names the alarms beyond the list", () => spec.namesTheAlarmsBeyondTheList());
+  it("the form and the run line die with their rows", () => spec.theFormAndTheRunLineDieWithTheirRows());
+  it("the popup paints after the All alarms list", () => spec.thePopupComesAfterTheList());
 });
