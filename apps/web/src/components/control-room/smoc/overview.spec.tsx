@@ -299,8 +299,8 @@ const RAIL_ALARM: AlarmListItem = {
 /** Ascending rank, as `GET /alarms/summary` returns it. */
 const RAIL_SUMMARY: AlarmSummaryResponse = {
   items: [
-    { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 2 },
-    { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 1 },
+    { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 2, unacknowledged: 2 },
+    { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 1, unacknowledged: 1 },
   ],
   total: 3,
 };

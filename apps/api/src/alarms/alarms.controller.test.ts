@@ -113,3 +113,7 @@ describe("alarms.controller — locationId on GET /alarms and /alarms/summary (F
   it("passes no filter and reads no locations without locationId on the summary", () =>
     spec.assertSummaryWithoutLocationIdReadsNoLocations());
 });
+
+describe("alarms.controller — the unacknowledged read (F4.357 U2b)", () => {
+  it("passes state=unacknowledged and minSeverityRank through to the list", () => spec.assertTheUnacknowledgedReadPassesThrough());
+});

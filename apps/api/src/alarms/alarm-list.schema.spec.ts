@@ -216,3 +216,33 @@ export function assertBothQueriesRefuseANonUuidLocationId(): void {
     assert(schema.safeParse({ locationId: randomUUID(), siteId: "x" }).success === false, `an unknown key beside locationId must be refused on the ${name}`);
   }
 }
+
+/**
+ * `F4.357` U2b (plan Q1 ruling) — `state=unacknowledged` (active and not
+ * acknowledged, ordered by rank then newest) and `minSeverityRank` on the list.
+ * That state is one page of at most 50 rows, so a `cursor` beside it is refused.
+ */
+export function assertUnacknowledgedStateAndMinRankParse(): void {
+  const result = alarmListQuerySchema.safeParse({ state: "unacknowledged", minSeverityRank: "20" });
+  assert(
+    result.success && result.data.state === "unacknowledged" && result.data.minSeverityRank === 20,
+    `state=unacknowledged&minSeverityRank=20 must parse: ${JSON.stringify(result.success ? result.data : result.error.issues)}`,
+  );
+}
+
+/** A negative or non-numeric `minSeverityRank` is refused; the summary does not take it. */
+export function assertABadMinSeverityRankIsRefused(): void {
+  for (const bad of ["-1", "x", "2.5"]) {
+    assert(alarmListQuerySchema.safeParse({ minSeverityRank: bad }).success === false, `minSeverityRank=${bad} must be refused`);
+  }
+  assert(alarmSummaryQuerySchema.safeParse({ minSeverityRank: "20" }).success === false, "the summary must refuse minSeverityRank");
+}
+
+/** `cursor` with `state=unacknowledged` is refused; with `state=active` it still parses. */
+export function assertACursorWithUnacknowledgedIsRefused(): void {
+  assert(
+    alarmListQuerySchema.safeParse({ state: "unacknowledged", cursor: "abc" }).success === false,
+    "cursor beside state=unacknowledged must be refused",
+  );
+  assert(alarmListQuerySchema.safeParse({ state: "active", cursor: "abc" }).success, "cursor beside state=active must still parse");
+}

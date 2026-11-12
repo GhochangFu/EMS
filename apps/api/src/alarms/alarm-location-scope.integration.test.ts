@@ -68,4 +68,9 @@ describe.skipIf(!connectionString)("F4.357 — the alarm list and summary filter
   it("8 the subtree holds on the tenant path", () => spec.assertTheSubtreeHoldsOnTheTenantPath(fixture()));
   it("9 a location of another organization than organizationId answers nothing", () =>
     spec.assertALocationOfAnotherOrganizationAnswersNothing(fixture()));
+  it("10 the unacknowledged read omits acknowledged alarms and orders by rank, then newest", () =>
+    spec.assertTheUnacknowledgedReadOrdersByRankThenNewest(fixture()));
+  it("11 minSeverityRank drops the lower ranks", () => spec.assertMinSeverityRankDropsLowerRanks(fixture()));
+  it("12 the summary counts the unacknowledged alarms per severity", () => spec.assertTheSummaryCountsTheUnacknowledged(fixture()));
+  it("13 a cleared alarm is not unacknowledged", () => spec.assertAClearedAlarmIsNotUnacknowledged(fixture()));
 });

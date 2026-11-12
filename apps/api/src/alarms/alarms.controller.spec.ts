@@ -331,3 +331,14 @@ export async function assertSummaryWithoutLocationIdReadsNoLocations(): Promise<
   assert(h.summaryLocations[0] === undefined, "an absent locationId reached the summary as a filter");
   assert(h.locationReads() === 0, "readableLocationIds ran without a locationId");
 }
+
+/** `F4.357` U2b: `state=unacknowledged` and `minSeverityRank` reach the list unchanged. */
+export async function assertTheUnacknowledgedReadPassesThrough(): Promise<void> {
+  const h = harness([READABLE_A]);
+  await h.controller.list(USER, { state: "unacknowledged", minSeverityRank: "20", limit: "50" });
+  const call = h.listCalls[0];
+  assert(
+    call?.state === "unacknowledged" && call.minSeverityRank === 20 && call.limit === 50,
+    `the list got ${JSON.stringify({ state: call?.state, minSeverityRank: call?.minSeverityRank, limit: call?.limit })}`,
+  );
+}

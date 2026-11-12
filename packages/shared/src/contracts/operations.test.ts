@@ -67,6 +67,8 @@ describe("alarm list items carry device alarms (F3.16, ADR 0127 decision 12)", (
 describe("alarm list items carry the severity rank and the location (F4.357, ADR 0130 decision 17)", () => {
   it("alarmListItemSchema requires an integer severityRank and a nullable locationName", () =>
     spec.assertAlarmListItemRequiresSeverityRankAndLocationName());
+  it("alarmSeverityCountSchema requires a non-negative integer unacknowledged count (U2b)", () =>
+    spec.assertAlarmSeverityCountRequiresUnacknowledged());
 });
 
 describe("work-order and maintenance-schedule items name the asset's RTU and location (F4.316 PR 4a, ADR 0111)", () => {

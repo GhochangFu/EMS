@@ -121,3 +121,10 @@ describe("alarm list/summary queries — locationId (F4.357 U2, ADR 0130 decisio
   it("refuses a non-uuid locationId on both reads, and still refuses an unknown key", () =>
     spec.assertBothQueriesRefuseANonUuidLocationId());
 });
+
+describe("alarm list query — state=unacknowledged and minSeverityRank (F4.357 U2b, plan Q1)", () => {
+  it("parses state=unacknowledged and minSeverityRank", () => spec.assertUnacknowledgedStateAndMinRankParse());
+  it("refuses a negative, fractional or non-numeric minSeverityRank, and the summary refuses it", () =>
+    spec.assertABadMinSeverityRankIsRefused());
+  it("refuses a cursor beside state=unacknowledged", () => spec.assertACursorWithUnacknowledgedIsRefused());
+});

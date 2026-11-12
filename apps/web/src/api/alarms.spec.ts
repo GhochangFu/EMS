@@ -1,6 +1,6 @@
 import { expect, vi } from "vitest";
 
-import { fetchActiveAlarms, fetchAlarmSummary } from "./alarms";
+import { fetchActiveAlarms, fetchAlarmSummary, fetchUnacknowledgedAlarms } from "./alarms";
 
 /**
  * `F3.28` (ADR 0074 decision 4) — what the `/cr-overview` alarms rail's two
@@ -140,4 +140,22 @@ export async function alarmSummaryForIdsSendsNoOrganizationId(): Promise<void> {
   const seen = captureUrl(EMPTY_SUMMARY);
   await fetchAlarmSummary(IDS);
   expect(seen().searchParams.has("organizationId")).toBe(false);
+}
+
+/**
+ * `F4.357` U2b (plan Q1) — the alarm bar's read: `state=unacknowledged`, the
+ * minimum rank and the page size, in the given scope.
+ */
+export async function unacknowledgedAlarmsSendsStateRankAndLimit(): Promise<void> {
+  const seen = captureUrl(EMPTY_LIST);
+  await fetchUnacknowledgedAlarms({ organizationId: ORG }, { minRank: 20, limit: 50 });
+  const url = seen();
+  expect({
+    path: url.pathname,
+    state: url.searchParams.get("state"),
+    minSeverityRank: url.searchParams.get("minSeverityRank"),
+    limit: url.searchParams.get("limit"),
+    organizationId: url.searchParams.get("organizationId"),
+    cursor: url.searchParams.get("cursor"),
+  }).toEqual({ path: "/api/v1/alarms", state: "unacknowledged", minSeverityRank: "20", limit: "50", organizationId: ORG, cursor: null });
 }

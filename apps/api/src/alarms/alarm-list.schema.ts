@@ -24,6 +24,10 @@ export const locationIdQueryField = z.string().uuid().optional();
 /**
  * `GET /api/v1/alarms` (`F3.28`, ADR 0074, plan decisions 1 and 4).
  *
+ * `F4.357` U2b (plan Q1 ruling): `"unacknowledged"` is active and not
+ * acknowledged, ordered by severity rank, then newest — the alarm bar's read.
+ * It is one page (no `cursor`), and `minSeverityRank` drops lower ranks.
+ *
  * `state` defaults to `"all"` — today's behaviour, unchanged for a caller who
  * sends nothing. `"active"` is the alarms rail's read: raised and not yet
  * cleared, acknowledged or not (`activeAlarmFilter`, task 1.5).
@@ -46,12 +50,23 @@ export const alarmListQuerySchema = z
       (value) => (value === "" ? undefined : value),
       z.coerce.number().optional(),
     ),
-    state: z.enum(["all", "active"]).default("all"),
+    state: z.enum(["all", "active", "unacknowledged"]).default("all"),
     assetIds: assetIdsQueryField,
     organizationId: organizationIdQueryField,
     locationId: locationIdQueryField,
+    // F4.357 U2b (plan Q1): keep alarms whose severity ranks at or above this.
+    minSeverityRank: z.coerce.number().int().min(0).optional(),
   })
-  .strict();
+  .strict()
+  // `.strict()` must precede `.superRefine` (it returns a `ZodEffects`), and the
+  // `.describe` must follow it, or the OpenAPI document loses the rule
+  // (ADR 0029 Amendment 1 fact F).
+  .superRefine((query, ctx) => {
+    if (query.state === "unacknowledged" && query.cursor !== undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["cursor"], message: "state=unacknowledged is one page; cursor is not allowed" });
+    }
+  })
+  .describe("`cursor` is refused with `state=unacknowledged`: that state answers one page of at most `limit` rows.");
 
 export type AlarmListQuery = z.infer<typeof alarmListQuerySchema>;
 

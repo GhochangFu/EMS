@@ -465,6 +465,9 @@ export const alarmSeverityCountSchema = z.object({
   tone: pillToneSchema,
   rank: z.number(),
   count: z.number().int().nonnegative(),
+  // F4.357 U2b (plan Q1): of `count`, the alarms not yet acknowledged. The
+  // alarm bar's "and N more" is exact from it.
+  unacknowledged: z.number().int().nonnegative(),
 });
 
 /** One row of `bms.alarm_skills` (ADR 0034). No `tone`, no `rank` — a skill

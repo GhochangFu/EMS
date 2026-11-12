@@ -104,6 +104,7 @@ export class AlarmsController {
       cursor: dto.cursor,
       limit: dto.limit ?? 20,
       state: dto.state,
+      minSeverityRank: dto.minSeverityRank,
       assetIds: intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
       organizationId: dto.organizationId,
       location: await locationFilter(this.accessControl, user, dto.locationId),

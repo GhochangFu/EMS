@@ -45,9 +45,15 @@ export type LocationScopeFixture = {
     readonly clearedC: string;
     readonly comms: string;
     readonly host: string;
+    /** U2b: an active, acknowledged `high` alarm at S. */
+    readonly ackedS: string;
+    /** U2b: an active, unacknowledged `lowest` alarm at S. */
+    readonly infoS: string;
   };
   readonly high: string;
   readonly low: string;
+  /** U2b: the lowest-ranked severity (`info` in the seed), below `low`. */
+  readonly lowest: string;
 };
 
 function fail(message: string): never {
@@ -65,6 +71,11 @@ export async function buildLocationScopeFixture(
   created: (organizationId: string) => void,
 ): Promise<LocationScopeFixture> {
   const { high, low } = await twoSeverities(db);
+  const { rows: lowestRows } = await db.query<{ code: string }>(
+    "SELECT code FROM bms.alarm_severities WHERE active = true ORDER BY rank ASC LIMIT 1",
+  );
+  const lowest = lowestRows[0]?.code ?? fail("bms.alarm_severities is empty — run pnpm db:seed");
+  if (lowest === low || lowest === high) fail("need three active alarm_severities rows — run pnpm db:seed");
   const orgA = await insertOrganization(db, `F4357-A-${run}`);
   created(orgA);
   const orgB = await insertOrganization(db, `F4357-B-${run}`);
@@ -106,8 +117,10 @@ export async function buildLocationScopeFixture(
     clearedC: await insertAlarm(db, orgA, { assetId: asset.C, severity: high, raisedAt: minutesAgo(30), clearedAt: minutesAgo(20) }),
     comms: await deviceAlarm("rtu_comms", high, minutesAgo(6)),
     host: await deviceAlarm("ingest_host", low, minutesAgo(5)),
+    ackedS: await insertAlarm(db, orgA, { assetId: asset.S, severity: high, raisedAt: minutesAgo(4), acknowledgedAt: minutesAgo(2) }),
+    infoS: await insertAlarm(db, orgA, { assetId: asset.S, severity: lowest, raisedAt: minutesAgo(3) }),
   };
-  return { svc, orgA, orgB, site: { S, C, T, U }, asset, alarm, high, low };
+  return { svc, orgA, orgB, site: { S, C, T, U }, asset, alarm, high, low, lowest };
 }
 
 /** Every row of both organizations, the RTU included (it holds a location). */
@@ -138,13 +151,14 @@ function countsOf(summary: AlarmSummaryResponse): Record<string, number> {
   return Object.fromEntries(summary.items.map((row) => [row.code, row.count]));
 }
 
-/** The S subtree's active alarms: S, C and C's RTU — not T, not the host alarm, not B. */
-const subtreeOfS = (fx: LocationScopeFixture): string[] => sorted([fx.alarm.S, fx.alarm.C, fx.alarm.comms]);
+/** The S subtree's active alarms: S's three, C and C's RTU — not T, not the host alarm, not B. */
+const subtreeOfS = (fx: LocationScopeFixture): string[] =>
+  sorted([fx.alarm.S, fx.alarm.ackedS, fx.alarm.infoS, fx.alarm.C, fx.alarm.comms]);
 
 /** 1 — the positive neighbour: `organizationId` A, no location, lists every active A alarm. */
 export async function assertTheOrganizationListsEveryActiveAlarm(fx: LocationScopeFixture): Promise<void> {
   expect(await listedIds(fx, { assetIds: null, organizationId: fx.orgA })).toEqual(
-    sorted([fx.alarm.S, fx.alarm.C, fx.alarm.T, fx.alarm.comms, fx.alarm.host]),
+    sorted([fx.alarm.S, fx.alarm.ackedS, fx.alarm.infoS, fx.alarm.C, fx.alarm.T, fx.alarm.comms, fx.alarm.host]),
   );
 }
 
@@ -163,15 +177,16 @@ export async function assertTheSiteSummaryAgreesWithTheList(fx: LocationScopeFix
   const summary = await fx.svc.activeCountsBySeverity(null, undefined, adminAt(fx.site.S));
   expect(summary.total).toBe(subtreeOfS(fx).length);
   const counts = countsOf(summary);
-  expect({ high: counts[fx.high], low: counts[fx.low] }).toEqual({ high: 2, low: 1 });
-  for (const row of summary.items.filter((item) => item.code !== fx.high && item.code !== fx.low)) {
-    expect(row.count, `${row.code} keeps its row at 0`).toBe(0);
-  }
+  expect({ high: counts[fx.high], low: counts[fx.low], lowest: counts[fx.lowest] }).toEqual({ high: 3, low: 1, lowest: 1 });
+  const child = countsOf(await fx.svc.activeCountsBySeverity(null, undefined, adminAt(fx.site.C)));
+  expect(child[fx.lowest], "C has no info alarm: the row stays, at 0").toBe(0);
 }
 
-/** 5 — a scoped caller (the S asset only) at S sees the S alarm only; the comms alarm stays hidden. */
+/** 5 — a scoped caller (the S asset only) at S sees the S alarms only; the comms alarm stays hidden. */
 export async function assertTheReadScopeStillBinds(fx: LocationScopeFixture): Promise<void> {
-  expect(await listedIds(fx, { assetIds: [fx.asset.S], location: adminAt(fx.site.S) })).toEqual([fx.alarm.S]);
+  expect(await listedIds(fx, { assetIds: [fx.asset.S], location: adminAt(fx.site.S) })).toEqual(
+    sorted([fx.alarm.S, fx.alarm.ackedS, fx.alarm.infoS]),
+  );
 }
 
 /** 6 — owner ruling P2: a caller who reads C but not S, asking for S, gets nothing — list and summary. */
@@ -205,4 +220,45 @@ export async function assertTheSubtreeHoldsOnTheTenantPath(fx: LocationScopeFixt
 export async function assertALocationOfAnotherOrganizationAnswersNothing(fx: LocationScopeFixture): Promise<void> {
   expect(await listedIds(fx, { assetIds: null, location: adminAt(fx.site.S), organizationId: fx.orgB })).toEqual([]);
   expect((await fx.svc.activeCountsBySeverity(null, fx.orgB, adminAt(fx.site.S))).total).toBe(0);
+}
+
+/*
+ * `F4.357` U2b (plan Q1 ruling) — the unacknowledged read: active and not
+ * acknowledged, ordered by severity rank then newest; `minSeverityRank`; and
+ * the summary's per-severity `unacknowledged` count.
+ */
+
+async function unacknowledgedAt(fx: LocationScopeFixture, locationId: string, minSeverityRank?: number): Promise<string[]> {
+  const page = await fx.svc.list({
+    limit: 50,
+    state: "unacknowledged",
+    assetIds: null,
+    location: adminAt(locationId),
+    ...(minSeverityRank === undefined ? {} : { minSeverityRank }),
+  });
+  return page.items.map((item) => item.id);
+}
+
+/** 10 — S's unacknowledged alarms: no acknowledged one; critical, then warning, then info; newest first in a rank. */
+export async function assertTheUnacknowledgedReadOrdersByRankThenNewest(fx: LocationScopeFixture): Promise<void> {
+  // comms (high, 6 min ago) is newer than S (high, 10 min ago); C (low) is newer than S but ranks lower.
+  expect(await unacknowledgedAt(fx, fx.site.S)).toEqual([fx.alarm.comms, fx.alarm.S, fx.alarm.C, fx.alarm.infoS]);
+}
+
+/** 11 — `minSeverityRank` 20 drops the info alarm and keeps the rest in order. */
+export async function assertMinSeverityRankDropsLowerRanks(fx: LocationScopeFixture): Promise<void> {
+  expect(await unacknowledgedAt(fx, fx.site.S, 20)).toEqual([fx.alarm.comms, fx.alarm.S, fx.alarm.C]);
+}
+
+/** 12 — the summary's `unacknowledged` for the high severity at S is its `count` less the acknowledged one. */
+export async function assertTheSummaryCountsTheUnacknowledged(fx: LocationScopeFixture): Promise<void> {
+  const row = (await fx.svc.activeCountsBySeverity(null, undefined, adminAt(fx.site.S))).items.find((item) => item.code === fx.high);
+  expect({ count: row?.count, unacknowledged: row?.unacknowledged }).toEqual({ count: 3, unacknowledged: 2 });
+}
+
+/** 13 — a cleared, unacknowledged alarm (C's) is in neither the unacknowledged list nor the counts. */
+export async function assertAClearedAlarmIsNotUnacknowledged(fx: LocationScopeFixture): Promise<void> {
+  expect(await unacknowledgedAt(fx, fx.site.C)).toEqual([fx.alarm.comms, fx.alarm.C]);
+  const row = (await fx.svc.activeCountsBySeverity(null, undefined, adminAt(fx.site.C))).items.find((item) => item.code === fx.high);
+  expect({ count: row?.count, unacknowledged: row?.unacknowledged }).toEqual({ count: 1, unacknowledged: 1 });
 }

@@ -110,6 +110,7 @@ export function assertAlarmSeverityCountAllowsZero(): void {
     tone: "critical",
     rank: 30,
     count: 0,
+    unacknowledged: 0,
   });
   assert(
     result.success === true,
@@ -127,6 +128,7 @@ export function assertAlarmSeverityCountRefusesNegative(): void {
     tone: "critical",
     rank: 30,
     count: -1,
+    unacknowledged: 0,
   });
   assert(
     result.success === false,
@@ -281,6 +283,21 @@ export function assertAlarmListItemRequiresSeverityRankAndLocationName(): void {
     alarmSocketEventSchema.safeParse({ type: "created", alarm: without }).success === false,
     "the created event accepted an alarm with no severityRank",
   );
+}
+
+/**
+ * `F4.357` U2b (plan Q1) — each summary row carries its unacknowledged count:
+ * required, a non-negative integer, zero allowed.
+ */
+export function assertAlarmSeverityCountRequiresUnacknowledged(): void {
+  const row = { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 2, unacknowledged: 0 };
+  assertRefusesWithout(alarmSeverityCountSchema, row, "unacknowledged", "alarmSeverityCountSchema");
+  for (const bad of [-1, 1.5, "1"]) {
+    assert(
+      alarmSeverityCountSchema.safeParse({ ...row, unacknowledged: bad }).success === false,
+      `alarmSeverityCountSchema accepted unacknowledged ${JSON.stringify(bad)}`,
+    );
+  }
 }
 
 export const assertAlarmDetailsRequiresAssetRtuName = (): void =>
