@@ -106,6 +106,12 @@ export class RtusAdminController {
     }
   }
 
+  /** `F4.333` (Q3): the RTUs a replace may also cover, for the page to pre-tick. Ids and names only. */
+  @Get(":id/credentials/siblings")
+  async credentialSiblings(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    return this.credentials.siblings(user, idParamSchema.parse(id));
+  }
+
   /**
    * `F4.333` (ADR 0129 decision 2) — replaces the RTU's broker credential. The
    * body is plaintext, encrypted before storage, never echoed, logged or

@@ -9,6 +9,10 @@ import {
   runReplaceSharedBrokerTests,
   runReplaceSiblingTests,
   runReplaceWriteTests,
+  runSiblingsGateTests,
+  runSiblingsListTests,
+  runSiblingsNoneTests,
+  runSiblingsQueryTests,
 } from "./rtus-credentials.service.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -39,6 +43,22 @@ describe("PUT /admin/rtus/:id/credentials (F4.333, ADR 0129 decisions 2, 3 and 5
 
   it("matches a broker fail-closed: a stored null host or port matches anything (review M1)", () => {
     runMayShareBrokerTests();
+  });
+
+  it("siblings: the replace's gate — Q4 roles, scope, F4.138", async () => {
+    await runSiblingsGateTests();
+  });
+
+  it("siblings: same broker and in scope only, ids and names only (Q3)", async () => {
+    await runSiblingsListTests();
+  });
+
+  it("siblings: the query filters on the sibling rules and joins on the location's organization", async () => {
+    await runSiblingsQueryTests();
+  });
+
+  it("siblings: none for a non-MQTT or edge-served target", async () => {
+    await runSiblingsNoneTests();
   });
 
   it("T3.5 no request body reaches an audit payload", () => {
