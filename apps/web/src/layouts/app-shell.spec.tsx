@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -17,6 +17,7 @@ import {
   navIconEntries,
 } from "./app-shell";
 import * as copilotApi from "../api/copilot";
+import { installOnFakes } from "../lib/alarm-bar-feed.spec";
 import { LUCIDE_SHAPES } from "../components/widgets/mimic-symbol-libraries/lucide.generated";
 
 /**
@@ -590,4 +591,27 @@ export function keepsTheStoredChoiceOnADesktopWidth(): void {
   expect(sidebar()).toHaveClass("w-60");
   expect(sidebar()).not.toHaveClass("absolute");
   expect(screen.getByTestId("shell-sidebar-slot")).not.toHaveClass("w-16");
+}
+
+/**
+ * `F4.357` (ADR 0130 decision 1) — with a feed installed, the alarm bar renders in both shells:
+ * the sidebar (`nexus-soft`) and the rail (`control-room-dark`). Without one (every other case in
+ * this file) it renders nothing, which is why the 34 shell specs stay inert.
+ */
+export async function rendersTheAlarmBarInBothShells(): Promise<void> {
+  const previous = useThemeStore.getState().design;
+  useAuthStore.setState({ accessToken: "token-1", user: asUser("operator") });
+  const feed = installOnFakes({}, useAuthStore);
+  try {
+    for (const design of ["nexus-soft", "control-room-dark"] as const) {
+      useThemeStore.getState().setDesign(design);
+      renderShell(GLOBAL, "/alarms", "operator");
+      expect(screen.getAllByRole("region", { name: "Alarms" }), design).toHaveLength(1);
+      cleanup();
+    }
+  } finally {
+    feed.uninstall();
+    useThemeStore.getState().setDesign(previous);
+    useAuthStore.setState({ accessToken: null, user: null });
+  }
 }

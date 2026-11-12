@@ -336,6 +336,15 @@ export function canApproveWorkOrders(role: UserRole): boolean {
 }
 
 /**
+ * `F4.357` (plan D14) — the `operational` write class (`apps/api/src/auth/operations-write.ts`):
+ * every role but `viewer` may acknowledge an alarm. The server decides; this only hides the
+ * alarm bar's Acknowledge from a role the route would refuse.
+ */
+export function canAcknowledgeAlarms(role: UserRole): boolean {
+  return role !== "viewer";
+}
+
+/**
  * Where `AdminRoute` sends a master-data role it refuses. Not the landing page:
  * `/admin` renders the Master Data Hub since `F3.76`.
  */

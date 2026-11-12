@@ -69,7 +69,7 @@ export function ControlRoomOrganizationsPage({ user, entry = false }: ControlRoo
   return (
     <AppShell
       user={user}
-      kpiRibbon={<span className="text-ink">Control Room · organizations in your access scope</span>}
+      kpiRibbon={<span className="text-ink">Control Room · Estate</span>}
     >
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <PageHeader

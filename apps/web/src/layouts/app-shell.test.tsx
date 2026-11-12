@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "../stores/auth-store";
+import * as spec from "./app-shell.spec";
 import {
   describesTheLockedSettingsReason,
   drawsNoImgElementInTheHeader,
@@ -259,4 +260,5 @@ describe("F4.318 the sidebar on a phone width", () => {
   it("N3 keeps the stored expanded choice in the row at 1280 px", () => {
     keepsTheStoredChoiceOnADesktopWidth();
   });
+  it("renders the alarm bar in both shells when a feed is installed (F4.357)", () => spec.rendersTheAlarmBarInBothShells());
 });

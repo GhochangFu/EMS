@@ -60,9 +60,10 @@ const MODE_BUTTONS: readonly { mode: CopilotWindowMode; label: string; icon: Rea
 // The maximized 90 vw × 90 vh, centred, is the E6 ruling's size (ADR 0099 Amendment 9).
 const SHAPE: Record<CopilotWindowMode | "sheet", string> = {
   sheet: "fixed inset-0 z-50",
-  floating: "fixed bottom-28 right-6 z-50 rounded-lg",
+  // F4.357 (ADR 0130 decisions 14, 19): the floating window and the docked panel clear the alarm bar.
+  floating: "fixed bottom-[calc(7rem+var(--alarm-bar-h))] right-6 z-50 rounded-lg",
   maximized: "fixed left-[5vw] top-[5vh] z-50 h-[90vh] w-[90vw] rounded-lg",
-  docked: "fixed right-0 top-0 z-40 h-screen border-l border-line",
+  docked: "fixed right-0 top-0 z-40 h-[calc(100vh-var(--alarm-bar-h))] border-l border-line",
 };
 
 type ResizeStart = CopilotSize & { x: number; y: number; pointerId: number };
@@ -158,7 +159,7 @@ export function CopilotDockFrame({
   const shown = clampCopilotSize(size, bounds);
   const style =
     shape === "floating"
-      ? { width: shown.width, height: shown.height, maxWidth: "calc(100vw - 3rem)", maxHeight: "calc(100vh - 8rem)" }
+      ? { width: shown.width, height: shown.height, maxWidth: "calc(100vw - 3rem)", maxHeight: "calc(100vh - 8rem - var(--alarm-bar-h))" }
       : shape === "docked"
         ? { width: shown.width }
         : undefined;

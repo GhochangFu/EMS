@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { AlarmBar } from "../components/alarm-bar/alarm-bar";
 import { SHELL_OF_DESIGN } from "../lib/design";
 import { useShownDesignSystem } from "../stores/theme-store";
 import { RailShell } from "./shells/rail-shell";
@@ -46,6 +47,8 @@ export function AppShell({ children, ...props }: AppShellProps) {
       </Shell>
       {createPortal(children, body)}
       <MyAppearanceDialogHost />
+      {/* F4.357 (ADR 0130 decision 1): the alarm bar, in both shells and every design system. */}
+      <AlarmBar />
     </>
   );
 }
