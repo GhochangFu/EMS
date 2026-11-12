@@ -2,11 +2,14 @@
 
 ## Status
 
-**Proposed — 2026-11-12.** Drafted by an agent for backlog row `F4.357` from a
-design conversation with the owner on 2026-11-12. The owner ruled each
-behaviour in chat, one question at a time; those rulings are marked
-*(owner, 2026-11-12)* below. Lines marked *(recommended)* are the agent's calls
-that the owner has not ruled yet; acceptance of this ADR makes them rulings.
+**Accepted — 2026-11-12** (owner, in chat: "Accept ADR 0130"; proposed the
+same day). Drafted by an agent for backlog row `F4.357` from a design
+conversation with the owner on 2026-11-12. The owner ruled each behaviour in
+chat, one question at a time; those rulings are marked
+*(owner, 2026-11-12)* below. Lines marked *(recommended)* were the agent's
+calls; the owner accepted the ADR with them as written, so **every
+*(recommended)* line is now a ruling**. The step-3 plan comes next, and the
+build waits for the owner's "yes" to it.
 The owner's mockup choice was layout **B, the bottom alarm bar**, over a right
 side dock and a floating button.
 
@@ -238,10 +241,8 @@ None. The Web Audio API and CSS animation are browser built-ins.
 
 ## Open questions
 
-The owner ruled the behaviour questions in chat. The *(recommended)* lines
-above are open until this ADR is accepted; the ones most worth a look:
-
-1. Decision 6 — rank thresholds (20 pops up, 30 blinks and sounds).
-2. Decision 10 — the 30-second repeat.
-3. Decision 12 — the bar counts as ADR 0118 decision 6's bell.
-4. Decision 15 — where an `rtu_comms` and an `ingest_host` alarm belong.
+None. The four the draft flagged were accepted as recommended on
+2026-11-12: decision 6 (rank 20 pops up, 30 blinks and sounds), decision 10
+(the 30-second repeat), decision 12 (the bar is ADR 0118 decision 6's bell)
+and decision 15 (an `rtu_comms` alarm belongs to its RTU's location; an
+`ingest_host` alarm to its organization only).
