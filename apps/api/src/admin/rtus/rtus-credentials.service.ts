@@ -13,7 +13,7 @@ import { and, eq, inArray, ne, sql } from "drizzle-orm";
 
 import { locations, rtuConnectionConfigs, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AdminRtuDto, JwtPayload, ReplaceRtuCredentialsBody } from "@bms/shared";
+import type { AdminRtuDto, JwtPayload, ReplaceRtuCredentialsBody, RtuCredentialSiblingsResponse } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
@@ -218,6 +218,63 @@ export class RtusCredentialsService {
     });
     this.logger.log(`RTU ${id}: credentials replaced on ${written.length} RTU(s)`);
     return this.rtusService.fetchRow(id);
+  }
+
+  /**
+   * `F4.333` (Q3) — the RTUs a replace on `id` may also cover, for the page to
+   * pre-tick. The same gate as {@link replace} on the target, and the same
+   * sibling rules, so every id listed is one `replace` accepts. Ids and names
+   * only.
+   */
+  async siblings(jwt: JwtPayload, id: string): Promise<RtuCredentialSiblingsResponse> {
+    const [target] = await this.read([id]);
+    if (!target) {
+      throw new NotFoundException("RTU not found");
+    }
+    const user = await this.accessControl.requireMasterDataUser(jwt);
+    if (user.role !== "admin" && user.role !== "organization_admin") {
+      throw new ForbiddenException(RTU_CREDENTIALS_ROLE_MESSAGE);
+    }
+    if (!(await this.accessControl.canManageLocation(jwt, target.locationId))) {
+      throw new ForbiddenException("RTU is outside your access scope");
+    }
+    if (!(await this.orgAgrees(target))) {
+      this.logger.error(`RTU ${target.id}: organization_id does not match its location's; siblings refused`);
+      throw new InternalServerErrorException(RTU_ORG_MISMATCH_MESSAGE);
+    }
+    const broker = brokerOf(target.config);
+    if (target.protocol !== "mqtt" || target.edgeGatewayId !== null || broker.host === null || broker.port === null) {
+      return { items: [] };
+    }
+    const writable = await this.accessControl.writableLocationIds(jwt);
+    const rows = await this.fleetDb
+      .select({
+        id: rtus.id,
+        code: rtus.code,
+        displayName: rtus.displayName,
+        locationId: rtus.locationId,
+        config: rtuConnectionConfigs.config,
+      })
+      .from(rtus)
+      .innerJoin(rtuConnectionConfigs, eq(rtuConnectionConfigs.rtuId, rtus.id))
+      // F4.138: only an RTU whose organization agrees with its location's.
+      .innerJoin(locations, and(eq(locations.id, rtus.locationId), eq(locations.organizationId, rtus.organizationId)))
+      .where(
+        and(
+          eq(rtus.organizationId, target.organizationId),
+          eq(rtus.active, true),
+          sql`${rtus.edgeGatewayId} IS NULL`,
+          eq(rtuConnectionConfigs.protocol, "mqtt"),
+          ne(rtus.id, id),
+        ),
+      )
+      .orderBy(rtus.code);
+    return {
+      items: rows
+        .filter((row) => sameBroker(broker, brokerOf(row.config)))
+        .filter((row) => writable === null || writable.includes(row.locationId))
+        .map((row) => ({ id: row.id, code: row.code, displayName: row.displayName })),
+    };
   }
 
   /** The RTUs and their connection rows, on `fleetDb`; the callers' grant checks are the isolation control. */

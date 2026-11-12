@@ -27,6 +27,7 @@ import { RtuDropHistoryDrawer } from "../../components/admin/rtu-drop-history-dr
 import { DeviceHealthTiles } from "../../components/admin/device-health-tiles";
 import { IngestHostBanner } from "../../components/admin/ingest-host-banner";
 import { RtuHealthCells } from "../../components/admin/rtu-health-cells";
+import { RtuCredentialsDialog } from "../../components/admin/rtu-credentials-dialog";
 import { RtuPayloadFormatWizard } from "../../components/admin/rtu-payload-format-wizard";
 import { RtuStatusWizard, RtuWizard } from "../../components/admin/rtu-wizards";
 import { UnregisteredDevicesSection } from "../../components/admin/unregistered-devices-section";
@@ -79,6 +80,9 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
   const [statusTarget, setStatusTarget] = useState<AdminRtuDto | null>(null);
   /** `F4.334` (plan T5.4) — the MQTT RTU whose payload format wizard is open. */
   const [formatTarget, setFormatTarget] = useState<AdminRtuDto | null>(null);
+  /** `F4.333` (ADR 0129 decisions 3 and 6) — the MQTT RTU whose credential replace is open. */
+  const [credentialsTarget, setCredentialsTarget] = useState<AdminRtuDto | null>(null);
+  const canReplaceCredentials = user.role === "admin" || user.role === "organization_admin";
   /** `F3.16` — the RTU whose drop history drawer is open. */
   const [dropsTarget, setDropsTarget] = useState<AdminRtuDto | null>(null);
 
@@ -229,6 +233,8 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                     {item.tls !== null ? (
                       <StatusPill label={`Payload format: ${item.payloadFormat ?? "thinkiot-envelope"}`} tone="info" />
                     ) : null}
+                    {/* F4.333: whether a credential is stored — never the value. */}
+                    {item.credentialsSet === true ? <StatusPill label="Credentials set" tone="ok" /> : null}
                   </div>
                   {releasedTopicLine(item) !== null ? (
                     <p className="mt-1 text-2xs text-ink-muted">{releasedTopicLine(item)}</p>
@@ -269,6 +275,15 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                         Payload format
                       </button>
                     ) : null}
+                    {item.tls !== null && canReplaceCredentials ? (
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-ink-muted"
+                        onClick={() => setCredentialsTarget(item)}
+                      >
+                        Replace credentials
+                      </button>
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -304,6 +319,10 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
       ) : null}
 
       {formatTarget ? <RtuPayloadFormatWizard rtu={formatTarget} onDone={() => setFormatTarget(null)} /> : null}
+
+      {credentialsTarget ? (
+        <RtuCredentialsDialog rtu={credentialsTarget} onDone={() => setCredentialsTarget(null)} />
+      ) : null}
 
       {statusTarget ? (
         <RtuStatusWizard

@@ -84,6 +84,7 @@ function world(opts: {
   fleet: unknown[][];
   updated?: number;
   outOfScope?: readonly string[];
+  writable?: readonly string[];
 }) {
   const fleetQueue = [...opts.fleet];
   // Code review 1: an unexpected read fails loudly; an empty answer would let a
@@ -93,9 +94,19 @@ function world(opts: {
     return fleetQueue.shift()!;
   };
   const chain: Record<string, unknown> = {};
-  for (const method of ["from", "leftJoin", "innerJoin", "where"]) {
+  const selectWheres: unknown[] = [];
+  const joins: unknown[] = [];
+  for (const method of ["from", "leftJoin", "orderBy"]) {
     chain[method] = () => chain;
   }
+  chain.innerJoin = (_table: unknown, condition: unknown) => {
+    joins.push(condition);
+    return chain;
+  };
+  chain.where = (condition: unknown) => {
+    selectWheres.push(condition);
+    return chain;
+  };
   chain.limit = () => Promise.resolve(nextFleet());
   chain.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
     Promise.resolve(nextFleet()).then(resolve, reject);
@@ -121,6 +132,8 @@ function world(opts: {
   const accessControl = {
     requireMasterDataUser: async () => ({ id: "u-1", role: opts.role ?? "admin" }),
     canManageLocation: async (_jwt: unknown, locationId: string) => !(opts.outOfScope ?? []).includes(locationId),
+    // `siblings` reads the writable set once: null (global) unless a test narrows it.
+    writableLocationIds: async () => (opts.writable === undefined ? null : [...opts.writable]),
   };
   const audit = { writeMany: async (inputs: unknown[]) => void audits.push(inputs) };
   const rtusService = { fetchRow: async (id: string) => ({ id, credentialsSet: true }) };
@@ -132,7 +145,7 @@ function world(opts: {
     new CredentialCryptoService(),
     rtusService as never,
   );
-  return { service, sets, wheres, audits, remaining: () => fleetQueue.length };
+  return { service, sets, wheres, selectWheres, joins, audits, remaining: () => fleetQueue.length };
 }
 
 const LOCATION_OK = [{ organizationId: ORG }];
@@ -427,4 +440,53 @@ export function runReplaceNoBodyInAuditTests(): void {
   const service = readFileSync(join(here, "rtus-credentials.service.ts"), "utf8");
   assert(!/payload:\s*body\b/.test(service) && !/payload:\s*\{[^}]*body\./.test(service), "no request body in an audit payload");
   assert(!/password|username/.test(service.split("payload: {")[1]?.split("}")[0] ?? ""), "the audit payload names no credential field");
+}
+
+/** `F4.333` (Q3) — the siblings route keeps the replace's gate: Q4's roles, the caller's scope, F4.138. */
+export async function runSiblingsGateTests(): Promise<void> {
+  const locationAdmin = world({ role: "location_admin", fleet: [[rtuRow("a")]] });
+  const role = await refusal(() => locationAdmin.service.siblings(JWT, "a"));
+  assert(role === `ForbiddenException: ${RTU_CREDENTIALS_ROLE_MESSAGE}`, `a location_admin is refused: ${role}`);
+  const outside = world({ role: "organization_admin", fleet: [[rtuRow("a")]], outOfScope: ["loc-a"] });
+  assert((await refusal(() => outside.service.siblings(JWT, "a"))).startsWith("ForbiddenException"), "out of scope is refused");
+  const drifted = world({ fleet: [[rtuRow("a")], [{ organizationId: OTHER_ORG }]] });
+  assert((await refusal(() => drifted.service.siblings(JWT, "a"))).startsWith("InternalServerErrorException"), "a drifted target is refused");
+}
+
+const CANDIDATES = [
+  { id: "b", code: "B", displayName: "B", locationId: "loc-b", config: { ...BROKER } },
+  { id: "c", code: "C", displayName: "C", locationId: "loc-c", config: { ...BROKER, port: 8883 } },
+  { id: "d", code: "D", displayName: "D", locationId: "loc-d", config: { ...BROKER } },
+];
+
+/** Q3 — only the same broker and the caller's writable locations; ids and names only. */
+export async function runSiblingsListTests(): Promise<void> {
+  const w = world({ fleet: [[rtuRow("a")], LOCATION_OK, CANDIDATES], writable: ["loc-a", "loc-b"] });
+  const listed = await w.service.siblings(JWT, "a");
+  assert(JSON.stringify(listed) === JSON.stringify({ items: [{ id: "b", code: "B", displayName: "B" }] }), `same broker and in scope only: ${JSON.stringify(listed)}`);
+  assert(!JSON.stringify(listed).includes(BROKER.host), "no host in the answer");
+}
+
+/** The candidate query filters in SQL on the replace's sibling rules, and joins on F4.138's agreement. */
+export async function runSiblingsQueryTests(): Promise<void> {
+  const w = world({ fleet: [[rtuRow("a")], LOCATION_OK, CANDIDATES] });
+  await w.service.siblings(JWT, "a");
+  const dialect = new PgDialect();
+  const rendered = dialect.sqlToQuery(w.selectWheres[2] as SQL).sql;
+  for (const term of ['"organization_id" = $', '"active" = $', '"edge_gateway_id" IS NULL', '"protocol" = $', '"id" <> $']) {
+    assert(rendered.includes(term), `the candidate query filters on ${term}: ${rendered}`);
+  }
+  const joined = w.joins.map((j) => dialect.sqlToQuery(j as SQL).sql).join("\n");
+  assert(
+    joined.includes('"bms"."locations"."organization_id" = "bms"."rtus"."organization_id"'),
+    `the candidate query joins on the location's organization (F4.138): ${joined}`,
+  );
+}
+
+/** A target that is not MQTT, or is edge-served, has no siblings. */
+export async function runSiblingsNoneTests(): Promise<void> {
+  const plainTarget = world({ fleet: [[rtuRow("a", { protocol: "modbus_tcp" })], LOCATION_OK] });
+  assert((await plainTarget.service.siblings(JWT, "a")).items.length === 0, "a non-MQTT target has none");
+  const edge = world({ fleet: [[rtuRow("a", { edgeGatewayId: "gw-1" })], LOCATION_OK] });
+  assert((await edge.service.siblings(JWT, "a")).items.length === 0, "an edge-served target has none");
 }

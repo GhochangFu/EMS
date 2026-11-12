@@ -125,6 +125,20 @@ export const adminRtuDtoSchema = z.object({
   credentialsSet: z.boolean().nullable(),
 });
 
+/**
+ * `F4.333` (ADR 0129 decision 2, Q3) — `GET /admin/rtus/:id/credentials/siblings`:
+ * the RTUs a credential replace on `:id` may also cover (same organization,
+ * same broker, active, not edge-served, in the caller's scope). Ids and names
+ * only — never a host, a port or a credential.
+ */
+export const rtuCredentialSiblingDtoSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  displayName: z.string(),
+});
+export const rtuCredentialSiblingsResponseSchema = z.object({ items: z.array(rtuCredentialSiblingDtoSchema) });
+export type RtuCredentialSiblingsResponse = z.infer<typeof rtuCredentialSiblingsResponseSchema>;
+
 export const adminAssetDtoSchema = z.object({
   id: z.string(),
   code: z.string(),

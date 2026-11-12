@@ -280,7 +280,8 @@ unblocks the LALMATI draft at once.
 
 ## Build notes (PR 3, 2026-11-12)
 
-- **Shared broker** *(drafter, for the owner to confirm)*. The PR 2 security
+- **Shared broker** — **ruled by the owner 2026-11-12: "keep"** (refuse an
+  `organization_admin`; a global `admin` proceeds). The PR 2 security
   review (L2) found that one ingest endpoint can serve two organizations
   (`host:port`, first non-empty credential wins), so a credential replaced on
   organization B's RTU could break organization A's connection within one
@@ -306,6 +307,26 @@ unblocks the LALMATI draft at once.
   this route give one answer.
 - The route lives in its own `RtusCredentialsService`: it is catalog-excluded,
   so `tests/f3.85-audit-via-mark.test.ts` lists it as a NOT-catalog writer.
+
+## Build notes (PR 4, 2026-11-12)
+
+- **Siblings come from the API.** The RTU row carries `tls` but no host or
+  port, so the page cannot work out the same-broker siblings itself.
+  `GET /admin/rtus/:id/credentials/siblings` answers ids, codes and names
+  only, under decision 3's gate and decision 2's sibling rules, so every id it
+  lists is one the replace accepts. The dialog pre-ticks all of them.
+- **Edge-served rows are not hidden** (a departure from decision 6): the RTU
+  row carries no edge flag. The action shows on every MQTT row for the two
+  roles, and the API answers decision 5's 409, which the dialog shows.
+- The password field is uncontrolled and uses `autocomplete="new-password"`,
+  not decision 6's `off`: browsers ignore `off` on a password field and could
+  fill the operator's saved sign-in password in as the broker credential. Each
+  sibling is ticked when first offered; a refetch never re-ticks one the user
+  unticked. Save waits for the sibling list (a failed read is shown and blocks
+  it, so no target-only replace goes out by accident) and is blocked above the
+  PUT's 100 siblings. Cancel is disabled while a save is in flight.
+- **Closed 2026-11-12** with PRs #1277, #1284, #1286 and the PR 4 pull
+  request. The shared-endpoint gap is row `F4.358`.
 
 ## Consequences
 
