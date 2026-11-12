@@ -3,7 +3,6 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { ALARM_BAR_HEIGHT_PX } from "../apps/web/src/lib/alarm-bar";
 import { repoRoot, withoutComments } from "./support/source-scan";
 
 /**
@@ -28,13 +27,23 @@ function barHeightDeclarations(css: string): string[] {
   return [...withoutComments(css).matchAll(/--alarm-bar-h\s*:\s*([^;]+);/g)].map((match) => match[1]!.trim());
 }
 
+/**
+ * `ALARM_BAR_HEIGHT_PX` as `lib/alarm-bar.ts` spells it. Read as text: importing the module would
+ * pull `api/alarms.ts` (and `import.meta.env`) into the root `tsc -p tsconfig.typecheck-tests.json`.
+ */
+function barHeightPx(source: string): number | undefined {
+  const match = /export const ALARM_BAR_HEIGHT_PX = (\d+);/.exec(withoutComments(source));
+  return match ? Number(match[1]) : undefined;
+}
+
 const installsTheFeed = (source: string): boolean => /\binstallAlarmBarFeed\(/.test(withoutComments(source));
 const rendersTheBar = (source: string): boolean => /<AlarmBar\b/.test(withoutComments(source));
 
 describe("F4.357 alarm bar gate (ADR 0130)", () => {
   it("G1 --alarm-bar-h is declared once, as 3rem, and ALARM_BAR_HEIGHT_PX is 48", () => {
     expect(barHeightDeclarations(read("index.css"))).toEqual(["3rem"]);
-    expect(ALARM_BAR_HEIGHT_PX).toBe(48);
+    expect(barHeightPx(read("lib/alarm-bar.ts"))).toBe(48);
+    expect(barHeightPx("export const ALARM_BAR_HEIGHT_PX = 40;"), "the scan reads the value").toBe(40);
     expect(barHeightDeclarations("html { --alarm-bar-h: 3rem; } .x { --alarm-bar-h: 4rem; }"), "the scan sees a second one").toHaveLength(2);
     expect(barHeightDeclarations("/* --alarm-bar-h: 3rem; */"), "a comment is not a declaration").toEqual([]);
   });

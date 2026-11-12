@@ -6,6 +6,7 @@ import type { AlarmReadScope } from "../api/alarms";
 import { useAlarmBarStore } from "../stores/alarm-bar-store";
 import { alarmItem } from "./alarm-bar.spec";
 import {
+  ALARM_BAR_READ_TIMEOUT_MS,
   ALARM_BAR_REFETCH_MS,
   ALARM_BAR_RETRY_MS,
   alarmBarFeed,
@@ -259,10 +260,12 @@ export async function aRenewedTokenReopensTheSocketAndKeepsTheList(): Promise<vo
   );
 }
 
-/** A session end: the socket closes, no timer is left, the store is reset. */
+/** A session end: the socket closes, no timer is left, the store is reset but for the page's scope. */
 export async function aSessionEndLeavesNothing(): Promise<void> {
   await withFeed(
     async (f) => {
+      await flush();
+      alarmBarFeed()?.setScope({ kind: "organization", organizationId: ORG });
       await flush();
       f.socket().event();
       f.failNext();
@@ -271,7 +274,14 @@ export async function aSessionEndLeavesNothing(): Promise<void> {
       f.session.setState({ accessToken: null, user: null });
       expect(f.sockets.every((s) => s.closed)).toBe(true);
       expect(vi.getTimerCount()).toBe(0);
-      expect(useAlarmBarStore.getState()).toMatchObject({ list: null, summary: null, feed: "live", scope: { kind: "all" } });
+      expect(useAlarmBarStore.getState()).toMatchObject({
+        list: null,
+        summary: null,
+        feed: "live",
+        scope: { kind: "organization", organizationId: ORG },
+      });
+      f.session.setState({ accessToken: "token-2", user: { id: "user-2" } });
+      expect(f.listCalls.at(-1), "the next session reads the page's scope").toEqual({ organizationId: ORG });
     },
     { list: [alarmItem()] },
   );
@@ -301,4 +311,57 @@ export async function aSignInOpensTheSocket(): Promise<void> {
     f.uninstall();
     vi.useRealTimers();
   }
+}
+
+/** D7 — within one scope, an older read that answers after a newer one is dropped, and its failure too. */
+export async function anOlderReadOfTheSameScopeIsDropped(): Promise<void> {
+  await withFeed(async (f) => {
+    await flush();
+    const older = f.holdNext();
+    alarmBarFeed()?.refreshNow();
+    f.answer({ list: [] });
+    alarmBarFeed()?.refreshNow();
+    await flush();
+    older.resolve({ items: [alarmItem({ id: "acknowledged-since" })], nextCursor: null });
+    await flush();
+    expect(useAlarmBarStore.getState().list).toEqual([]);
+    const failing = f.holdNext();
+    alarmBarFeed()?.refreshNow();
+    alarmBarFeed()?.refreshNow();
+    await flush();
+    failing.reject(new Error("alarms 503"));
+    await flush();
+    expect(useAlarmBarStore.getState().feed, "an older read's failure marks nothing").toBe("live");
+    expect(vi.getTimerCount(), "and arms no retry").toBe(0);
+  });
+}
+
+/** A lost socket stays stale through a successful read; a reconnect's read is live again. */
+export async function aReadDoesNotHideALostSocket(): Promise<void> {
+  await withFeed(async (f) => {
+    await flush();
+    f.socket().disconnect();
+    alarmBarFeed()?.refreshNow();
+    await flush();
+    expect(useAlarmBarStore.getState().feed).toBe("stale");
+    f.socket().connect();
+    await vi.advanceTimersByTimeAsync(ALARM_BAR_REFETCH_MS);
+    expect(useAlarmBarStore.getState().feed).toBe("live");
+  });
+}
+
+/** A read that never answers fails at 15 s: stale, then the 30 s retry, and events read again. */
+export async function aHungReadFailsAndTheFeedRecovers(): Promise<void> {
+  await withFeed(async (f) => {
+    await flush();
+    f.holdNext();
+    alarmBarFeed()?.refreshNow();
+    await vi.advanceTimersByTimeAsync(ALARM_BAR_READ_TIMEOUT_MS);
+    expect(useAlarmBarStore.getState().feed).toBe("stale");
+    const before = f.listCalls.length;
+    f.socket().event();
+    await vi.advanceTimersByTimeAsync(ALARM_BAR_REFETCH_MS);
+    expect(f.listCalls.length, "an event reads again once the hung read has failed").toBe(before + 1);
+    expect(useAlarmBarStore.getState().feed).toBe("live");
+  });
 }

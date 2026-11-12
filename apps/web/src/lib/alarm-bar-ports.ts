@@ -18,7 +18,11 @@ export function browserAlarmBarPorts(): AlarmBarPorts {
       const socket = openLiveSocket(`${socketBaseUrl()}/ws/alarms`, { transports: ["websocket"], auth: { token } });
       socket.on("alarm", () => on.event());
       socket.on("connect", () => on.connect());
-      socket.on("disconnect", () => on.disconnect());
+      // Our own close (a token renewal, a sign-out) is not a lost socket; a refused handshake is.
+      socket.on("disconnect", (reason: string) => {
+        if (reason !== "io client disconnect") on.disconnect();
+      });
+      socket.on("connect_error", () => on.disconnect());
       return { close: () => void socket.disconnect() };
     },
     fetchList: (scope) => fetchUnacknowledgedAlarms(scope, { minRank: ALARM_POPUP_MIN_RANK, limit: ALARM_BAR_LIST_LIMIT }),

@@ -15,4 +15,7 @@ describe("alarm bar feed (F4.357, ADR 0130 decisions 13, 16)", () => {
   it("a session end closes the socket, clears every timer and resets the store", () => spec.aSessionEndLeavesNothing());
   it("a second install opens no second socket", () => spec.aSecondInstallOpensNothing());
   it("a sign-in opens the socket and reads", () => spec.aSignInOpensTheSocket());
+  it("an older read of the same scope is dropped, its failure too (D7)", () => spec.anOlderReadOfTheSameScopeIsDropped());
+  it("a successful read does not hide a lost socket", () => spec.aReadDoesNotHideALostSocket());
+  it("a hung read fails at 15 s and the feed recovers", () => spec.aHungReadFailsAndTheFeedRecovers());
 });

@@ -22,7 +22,10 @@ import { sessionChanged } from "./query-cache-session";
  *   answer that is not the latest, or is for another scope, is dropped.
  * - **D15, a failure.** The last list and summary stay, the feed reads
  *   `"stale"` (the bar says "Alarms not updating"), and one retry runs 30 s
- *   later.
+ *   later. A read that does not answer in 15 s is a failure.
+ * - **The socket.** A lost or refused socket also reads `"stale"`, and a
+ *   successful read does not hide it: only a (re)connect lets the next read
+ *   say `"live"` again, because without the socket no event arrives.
  *
  * Installed once at module level in `main.tsx` (plan D4), beside
  * `bindSessionStores`. Not installed — in every spec that renders `AppShell` —
@@ -37,8 +40,10 @@ import { sessionChanged } from "./query-cache-session";
 export const ALARM_BAR_REFETCH_MS = 1_000;
 /** Plan D15: the wait before a failed read is retried. */
 export const ALARM_BAR_RETRY_MS = 30_000;
+/** A read that has not answered by now counts as failed (D15), so one hung request cannot stop the feed. */
+export const ALARM_BAR_READ_TIMEOUT_MS = 15_000;
 
-/** What the socket reports back to the feed. */
+/** What the socket reports back to the feed (`disconnect` covers a refused connect too). */
 export type AlarmBarSocketHandlers = {
   readonly event: () => void;
   readonly connect: () => void;
@@ -92,6 +97,8 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
   let pendingAfterFlight = false;
   let refetchTimer: Timer | null = null;
   let retryTimer: Timer | null = null;
+  // Set by a disconnect or a refused connect, cleared by a connect: the bar is "live" only with a socket.
+  let socketDown = false;
 
   const store = useAlarmBarStore;
 
@@ -109,12 +116,16 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
     const key = alarmBarScopeKey(scope);
     const readScope = alarmReadScopeOf(scope);
     inFlight += 1;
-    Promise.all([ports.fetchList(readScope), ports.fetchSummary(readScope)])
+    let timeout: Timer | null = null;
+    const timedOut = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error("alarm bar read timed out")), ALARM_BAR_READ_TIMEOUT_MS);
+    });
+    Promise.race([Promise.all([ports.fetchList(readScope), ports.fetchSummary(readScope)]), timedOut])
       .then(([list, summary]) => {
         if (number !== request || key !== alarmBarScopeKey(store.getState().scope)) return;
         if (retryTimer !== null) clearTimeout(retryTimer);
         retryTimer = null;
-        store.setState({ list: list.items, summary, feed: "live" });
+        store.setState({ list: list.items, summary, feed: socketDown ? "stale" : "live" });
       })
       .catch(() => {
         if (number !== request) return;
@@ -127,6 +138,7 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
         }
       })
       .finally(() => {
+        if (timeout !== null) clearTimeout(timeout);
         inFlight -= 1;
         if (inFlight === 0 && pendingAfterFlight) {
           pendingAfterFlight = false;
@@ -152,8 +164,14 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
     token = nextToken;
     socket = ports.openSocket(nextToken, {
       event: schedule,
-      connect: schedule,
-      disconnect: () => store.setState({ feed: "stale" }),
+      connect: () => {
+        socketDown = false;
+        schedule();
+      },
+      disconnect: () => {
+        socketDown = true;
+        store.setState({ feed: "stale" });
+      },
     });
   }
 
@@ -162,14 +180,19 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
     socket = null;
   }
 
-  /** A session ended or changed hands: nothing of the last one survives. */
+  /**
+   * A session ended or changed hands: nothing of the last one survives but the page's scope, which
+   * belongs to the page the bar is on, not to the session (a mounted bar re-sends it only when its
+   * path changes).
+   */
   function endSession(): void {
     close();
     clearTimers();
     token = null;
+    socketDown = false;
     request += 1;
     pendingAfterFlight = false;
-    store.setState(INITIAL_ALARM_BAR_STATE, true);
+    store.setState({ ...INITIAL_ALARM_BAR_STATE, scope: store.getState().scope }, true);
   }
 
   function follow(state: AlarmBarSession, prev: AlarmBarSession): void {
@@ -204,6 +227,7 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
   return () => {
     unsubscribe();
     endSession();
+    store.setState(INITIAL_ALARM_BAR_STATE, true);
     installed = null;
   };
 }

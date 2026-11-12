@@ -151,7 +151,6 @@ export async function namesTheNewestUnacknowledgedAlarm(): Promise<void> {
 export async function saysNoAlarmsAndNotUpdating(): Promise<void> {
   await withBar({ summary: EMPTY_SUMMARY }, "/alarms", async (f) => {
     expect(within(region()).getByText("No active alarms")).toBeTruthy();
-    f.failNext();
     await act(async () => {
       f.socket().disconnect();
       await flush();

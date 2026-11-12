@@ -21,7 +21,7 @@ export function fakeSocket() {
   };
 }
 
-/** The socket goes to `/ws/alarms` with the token; `alarm`, `connect` and `disconnect` reach the feed; close disconnects. */
+/** The socket goes to `/ws/alarms` with the token; `alarm`, `connect`, a lost socket and a refused connect reach the feed; close disconnects. */
 export function theSocketReachesTheFeed(): void {
   const socket = fakeSocket();
   vi.mocked(openLiveSocket).mockReturnValue(socket as unknown as ReturnType<typeof openLiveSocket>);
@@ -33,7 +33,12 @@ export function theSocketReachesTheFeed(): void {
   socket.handlers.get("alarm")?.({ type: "created" });
   socket.handlers.get("connect")?.();
   socket.handlers.get("disconnect")?.("transport close");
-  expect([on.event.mock.calls.length, on.connect.mock.calls.length, on.disconnect.mock.calls.length]).toEqual([1, 1, 1]);
+  socket.handlers.get("disconnect")?.("io client disconnect");
+  socket.handlers.get("connect_error")?.(new Error("websocket error"));
+  expect(
+    [on.event.mock.calls.length, on.connect.mock.calls.length, on.disconnect.mock.calls.length],
+    "our own close is not a lost socket; a refused connect is",
+  ).toEqual([1, 1, 2]);
   handle.close();
   expect(socket.disconnect).toHaveBeenCalledTimes(1);
 }
