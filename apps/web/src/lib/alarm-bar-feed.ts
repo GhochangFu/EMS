@@ -185,9 +185,19 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
       });
   }
 
-  /** U8: plays once; a refusal shows "Sound blocked — click to enable". */
+  /**
+   * U8: plays once. "Sound blocked — click to enable" follows the latest answer, so a tone that
+   * plays (a click elsewhere unlocked audio) clears it. A tone that throws (no audio device, a
+   * restricted browser) counts as blocked; it must never reach the read's failure path.
+   */
   function playTone(): void {
-    if (ports.tone.play() === "blocked") store.setState({ soundBlocked: true });
+    let answer: "played" | "blocked";
+    try {
+      answer = ports.tone.play();
+    } catch {
+      answer = "blocked";
+    }
+    if (store.getState().soundBlocked !== (answer === "blocked")) store.setState({ soundBlocked: answer === "blocked" });
   }
 
   function stopTone(): void {
@@ -311,6 +321,9 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
       const shown = popupRows(state.list, state.seenIds).map((alarm) => alarm.id);
       store.setState({ seenIds: new Set([...state.seenIds, ...shown]) });
     },
+    // Mutes the critical alarms in the list — at most 50 (Q1). In a storm of more than 50
+    // unacknowledged critical alarms at once, one beyond the list is not muted and sounds when it
+    // enters the list (a consequence of D9 and the 50-row read, recorded in the build record).
     mute() {
       const { list, mutedIds } = store.getState();
       if (list === null) return;
@@ -320,8 +333,9 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
     async unlockSound() {
       await ports.tone.unlock();
       store.setState({ soundBlocked: false });
-      const { list, mutedIds } = store.getState();
-      if (list !== null && toneWanted(list, mutedIds)) playTone();
+      // Play now and restart the 30 s cadence from this tone, so no second tone follows at once.
+      stopTone();
+      evaluateTone();
     },
     async acknowledge(ids, reason) {
       let done = 0;

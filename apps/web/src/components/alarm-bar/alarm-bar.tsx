@@ -126,7 +126,8 @@ export function AlarmBar() {
         {soundBlocked && sounding ? (
           <button
             type="button"
-            onClick={() => void feed.unlockSound()}
+            // A refused resume leaves the button up; nothing else to do with it.
+            onClick={() => void feed.unlockSound().catch(() => undefined)}
             className="surface-button shrink-0 rounded px-2 py-1 font-semibold text-critical-ink"
           >
             Sound blocked — click to enable

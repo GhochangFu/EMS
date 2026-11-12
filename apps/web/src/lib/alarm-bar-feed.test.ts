@@ -29,4 +29,7 @@ describe("alarm bar feed (F4.357, ADR 0130 decisions 13, 16)", () => {
   it("U8 7: a blocked tone waits for a click", () => spec.aBlockedToneWaitsForAClick());
   it("U8 8: a scope change keeps the cadence", () => spec.aScopeChangeKeepsTheCadence());
   it("U8 9: a session end stops the tone", () => spec.aSessionEndStopsTheTone());
+  it("a played tone clears Sound blocked (review C1)", () => spec.aPlayedToneClearsSoundBlocked());
+  it("a throwing tone is blocked, never a failed read (review C2)", () => spec.aThrowingToneIsBlockedNotStale());
+  it("an unlock restarts the cadence (review C3)", () => spec.anUnlockRestartsTheCadence());
 });

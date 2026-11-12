@@ -87,6 +87,7 @@ function PopupBody({
       data-wall-bar
       className="surface-raised fixed bottom-[calc(var(--alarm-bar-h)+0.5rem)] left-1/2 z-40 flex max-h-[28rem] w-[min(40rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-lg text-xs text-ink"
     >
+      {/* A div, not <header>: inside the shell or the wall a <header> is a banner landmark (U9). */}
       <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
         <h2 data-blink={blink ? "true" : undefined} className={`font-semibold${blink ? " alarm-bar-blink" : ""}`}>
           {rows.length} new {rows.length === 1 ? "alarm" : "alarms"}

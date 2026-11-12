@@ -619,9 +619,67 @@ export async function aSessionEndStopsTheTone(): Promise<void> {
       f.session.setState({ accessToken: null, user: null });
       await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS * 2);
       expect(f.tone.plays).toBe(1);
+      expect(vi.getTimerCount(), "the cycle is gone").toBe(0);
       expect(useAlarmBarStore.getState()).toMatchObject({ soundBlocked: false });
       expect(useAlarmBarStore.getState().mutedIds.size).toBe(0);
     },
     { list: [critical("c1")] },
   );
+}
+
+/** Review C1 — a later tone that plays clears "Sound blocked" (a click elsewhere unlocked audio). */
+export async function aPlayedToneClearsSoundBlocked(): Promise<void> {
+  vi.useFakeTimers();
+  const fake = fakeAlarmBarPorts({ list: [critical("c1")] });
+  fake.tone.answer = "blocked";
+  const uninstall = installAlarmBarFeed(fakeSession(), fake.ports);
+  try {
+    await flush();
+    expect(useAlarmBarStore.getState().soundBlocked).toBe(true);
+    fake.tone.answer = "played";
+    await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS);
+    expect(useAlarmBarStore.getState().soundBlocked).toBe(false);
+  } finally {
+    uninstall();
+    vi.useRealTimers();
+  }
+}
+
+/** Review C2 — a tone that throws is "blocked", never a failed read: the feed stays live. */
+export async function aThrowingToneIsBlockedNotStale(): Promise<void> {
+  vi.useFakeTimers();
+  const fake = fakeAlarmBarPorts({ list: [critical("c1")] });
+  const ports = { ...fake.ports, tone: { play: (): "played" => { throw new Error("no audio device"); }, unlock: async () => undefined } };
+  const uninstall = installAlarmBarFeed(fakeSession(), ports);
+  try {
+    await flush();
+    expect(useAlarmBarStore.getState()).toMatchObject({ feed: "live", soundBlocked: true });
+    await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS);
+    expect(useAlarmBarStore.getState().feed).toBe("live");
+  } finally {
+    uninstall();
+    vi.useRealTimers();
+  }
+}
+
+/** Review C3 — the unlock plays now and restarts the 30 s cadence from that tone. */
+export async function anUnlockRestartsTheCadence(): Promise<void> {
+  vi.useFakeTimers();
+  const fake = fakeAlarmBarPorts({ list: [critical("c1")] });
+  fake.tone.answer = "blocked";
+  const uninstall = installAlarmBarFeed(fakeSession(), fake.ports);
+  try {
+    await flush();
+    await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS - 1_000);
+    const before = fake.tone.plays;
+    await alarmBarFeed()!.unlockSound();
+    expect(fake.tone.plays, "plays at once").toBe(before + 1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fake.tone.plays, "no second tone a second later").toBe(before + 1);
+    await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS - 1_000);
+    expect(fake.tone.plays, "the next one 30 s after the unlock").toBe(before + 2);
+  } finally {
+    uninstall();
+    vi.useRealTimers();
+  }
 }

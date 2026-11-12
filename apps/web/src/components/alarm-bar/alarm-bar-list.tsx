@@ -37,6 +37,7 @@ export function AlarmBarList({ scope, scopeLabel, readOnly, onClose }: AlarmBarL
       aria-label={`All alarms — ${scopeLabel}`}
       className="surface-raised fixed bottom-[var(--alarm-bar-h)] right-4 z-40 flex max-h-[24rem] w-[min(32rem,calc(100%-2rem))] flex-col rounded-t-lg text-xs text-ink"
     >
+      {/* A div, not <header>: inside the shell or the wall a <header> is a banner landmark (U9). */}
       <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
         <h2 className="font-semibold">{scopeLabel}</h2>
         <button type="button" onClick={onClose} className="rounded px-2 py-0.5 hover:bg-well">

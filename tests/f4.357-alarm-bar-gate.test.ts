@@ -79,9 +79,15 @@ function blinkProblems(css: string): string[] {
     const properties = [...body.matchAll(/([a-z-]+)\s*:/g)].map((m) => m[1]);
     if (properties.some((p) => p !== "opacity")) problems.push(`the keyframe sets ${properties.join(", ")}`);
   }
-  const animated = rules.filter(([, body]) => /animation\s*:\s*alarm-bar-blink/.test(body));
+  // Every rule that animates the blink, by name or on its class: a longhand counts too.
+  const animated = rules.filter(
+    ([prelude, body]) =>
+      !prelude.startsWith("@keyframes") &&
+      (/animation(-name)?\s*:[^;]*alarm-bar-blink/.test(body) || /\.alarm-bar-blink[^{]*\{[^}]*animation[a-z-]*\s*:/.test(`${prelude} {${body}}`)),
+  );
   for (const [prelude, body] of animated) {
     if (prelude !== "@media (prefers-reduced-motion: no-preference)") problems.push(`the animation sits in "${prelude}"`);
+    if (/animation-[a-z-]+\s*:/.test(body)) problems.push(`a longhand animation property in "${prelude}"`);
     const value = /animation\s*:\s*([^;]+);/.exec(body)?.[1]?.trim();
     if (value !== "alarm-bar-blink 1s step-end infinite") problems.push(`the animation is "${value}"`);
   }
@@ -93,11 +99,16 @@ function blinkProblems(css: string): string[] {
   return problems;
 }
 
-/** G3's rule: every selector that names a design attribute and the alarm bar. */
+/** Every style rule's selector in `css`, at-rules entered at any depth (keyframe steps left out). */
+function selectorsOf(css: string): string[] {
+  return topLevelRules(css).flatMap(([prelude, body]) =>
+    prelude.startsWith("@keyframes") ? [] : prelude.startsWith("@") ? selectorsOf(body) : [prelude],
+  );
+}
+
+/** G3's rule: every selector that names a design attribute and the alarm bar or its blink marker. */
 function designScopedBarSelectors(css: string): string[] {
-  return topLevelRules(css)
-    .flatMap(([prelude, body]) => (prelude.startsWith("@") ? topLevelRules(body).map(([inner]) => inner) : [prelude]))
-    .filter((selector) => /data-(design|profile|surface|theme)/.test(selector) && /alarm-bar/.test(selector));
+  return selectorsOf(css).filter((selector) => /data-(design|profile|surface|theme)/.test(selector) && /alarm-bar|data-blink/.test(selector));
 }
 
 describe("F4.357 alarm bar gate (ADR 0130)", () => {
@@ -123,11 +134,18 @@ describe("F4.357 alarm bar gate (ADR 0130)", () => {
       "the animation outside the media query",
     ).not.toEqual([]);
     expect(blinkProblems(good.join("\n").replace("opacity: 0.35", "background: red")), "a colour step").not.toEqual([]);
+    expect(blinkProblems(`${good.join("\n")}\n.alarm-bar-blink { animation-duration: 0.25s; }`), "a longhand outside the query").not.toEqual([]);
+    expect(blinkProblems(`${good.join("\n")}\n.x { animation-name: alarm-bar-blink; }`), "the name on another rule").not.toEqual([]);
   });
 
   it("G3 no design-system selector names the alarm bar", () => {
     expect(designScopedBarSelectors(read("index.css"))).toEqual([]);
     expect(designScopedBarSelectors('html[data-design="bento-ops"] .alarm-bar-blink { animation: none; }'), "the scan sees one").toHaveLength(1);
+    expect(designScopedBarSelectors('html[data-design="bento-ops"] [data-blink="true"] { animation: none; }'), "by data-blink").toHaveLength(1);
+    expect(
+      designScopedBarSelectors('@supports (zoom: 1) { @media screen { html[data-theme="dark"] .alarm-bar-blink { opacity: 1; } } }'),
+      "nested at-rules",
+    ).toHaveLength(1);
   });
 
   it("G4 main.tsx installs the feed, AppShell renders the bar, no shell renders another", () => {
