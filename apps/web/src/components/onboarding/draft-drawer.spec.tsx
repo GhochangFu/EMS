@@ -121,6 +121,8 @@ const COMMITTED_RTU = {
   createdAt: "2026-11-07T00:00:00.000Z",
   tls: true,
   payloadFormat: null,
+  // F4.333 (ADR 0129 decision 2): the list's parse requires it.
+  credentialsSet: true,
 };
 
 type Sent = { url: string; method: string; body: string };
