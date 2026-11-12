@@ -3369,6 +3369,20 @@ Do not add top-level folders without updating this section.
   that silently skipped the database tests asserts nothing. A *set* one is a
   claim that a database exists, so a failed connection fails everywhere rather
   than skipping. Coverage thresholds assume these suites ran.
+- **Since ADR 0124 (`F4.5`) the run brings its own database.** `globalSetup`
+  picks one mode, in this order: `BMS_TEST_DB=containers` (what CI sets)
+  starts one TimescaleDB and one Redis container, and refuses without Docker
+  even locally; `BMS_TEST_DB=external` or a set `DATABASE_URL` uses that
+  server; otherwise a Docker that answers starts the containers; otherwise
+  the run skips locally and **refuses under `CI`**, so the asymmetry above
+  holds. It builds one seeded template per run (about 7 s, serialised per
+  server by an advisory lock), and **every database suite runs on its own
+  worker's copy** of it (about 0.12 s), with Redis on database index
+  `VITEST_POOL_ID`. `NOT_YET_ISOLATED` (`tests/harness/not-yet-isolated.ts`,
+  held by `tests/f4.5-isolation-ratchet.test.ts`) must stay empty: a suite never goes back onto a shared database.
+  `BMS_TEST_DB=shared` is the one opt-back, and the only way `F4.65` can still
+  happen; `BMS_TEST_DB=none` starts nothing. `maxWorkers` stays 2 because of
+  `F4.356` (a disk-timing test), not the database.
 - **CI's database is created per run, so it has no history — and the asymmetry
   runs the other way too** (`F4.40`). Everything that accrues over a database's
   life is absent there by construction: compressed chunks, retention having
