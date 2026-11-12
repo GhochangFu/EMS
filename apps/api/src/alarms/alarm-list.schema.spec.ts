@@ -232,7 +232,7 @@ export function assertUnacknowledgedStateAndMinRankParse(): void {
 
 /** A negative or non-numeric `minSeverityRank` is refused; the summary does not take it. */
 export function assertABadMinSeverityRankIsRefused(): void {
-  for (const bad of ["-1", "x", "2.5"]) {
+  for (const bad of ["-1", "x", "2.5", "3000000000", "1e21"]) {
     assert(alarmListQuerySchema.safeParse({ minSeverityRank: bad }).success === false, `minSeverityRank=${bad} must be refused`);
   }
   assert(alarmSummaryQuerySchema.safeParse({ minSeverityRank: "20" }).success === false, "the summary must refuse minSeverityRank");
@@ -245,4 +245,15 @@ export function assertACursorWithUnacknowledgedIsRefused(): void {
     "cursor beside state=unacknowledged must be refused",
   );
   assert(alarmListQuerySchema.safeParse({ state: "active", cursor: "abc" }).success, "cursor beside state=active must still parse");
+}
+
+/** Review fixes: an empty `minSeverityRank` is absent, and an upper-case `locationId` reads in lower case. */
+export function assertAnEmptyRankIsAbsentAndALocationIdIsLowerCased(): void {
+  const empty = alarmListQuerySchema.safeParse({ minSeverityRank: "" });
+  assert(empty.success && empty.data.minSeverityRank === undefined, "an empty minSeverityRank must be absent");
+  const id = randomUUID();
+  for (const [name, schema] of [["list", alarmListQuerySchema], ["summary", alarmSummaryQuerySchema]] as const) {
+    const result = schema.safeParse({ locationId: id.toUpperCase() });
+    assert(result.success && result.data.locationId === id, `the ${name} must lower-case locationId`);
+  }
 }

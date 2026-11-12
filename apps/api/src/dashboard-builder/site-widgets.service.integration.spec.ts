@@ -298,6 +298,20 @@ export async function assertTheRailCarriesTheSeverityRank(db: BmsDb): Promise<vo
   }, db);
 }
 
+/**
+ * S6c — `F4.357` U2b: the summary's `unacknowledged` leaves out an acknowledged
+ * alarm, while `count` keeps it.
+ */
+export async function assertTheSummaryCountsTheUnacknowledged(db: BmsDb): Promise<void> {
+  await inSite(async (site) => {
+    const before = (await readAs(site, "b")).alarms.summary.find((row) => row.code === "critical");
+    expect({ count: before?.count, unacknowledged: before?.unacknowledged }, "the positive neighbour").toEqual({ count: 1, unacknowledged: 1 });
+    await site.txDb.execute(sql`UPDATE bms.alarms SET acknowledged_at = now() WHERE asset_id = ${site.b1} AND cleared_at IS NULL`);
+    const after = (await readAs(site, "b")).alarms.summary.find((row) => row.code === "critical");
+    expect({ count: after?.count, unacknowledged: after?.unacknowledged }).toEqual({ count: 1, unacknowledged: 0 });
+  }, db);
+}
+
 /** S7 — the Overview reads the dashboard's site: all three assets. */
 export async function assertOverviewReadsTheSite(db: BmsDb): Promise<void> {
   await inSite(async (site) => {

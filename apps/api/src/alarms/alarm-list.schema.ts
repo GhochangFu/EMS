@@ -19,7 +19,14 @@ export const organizationIdQueryField = z.string().uuid().optional();
  * intersected readable scope, and a node the caller cannot read answers empty
  * (owner ruling P2), never 403.
  */
-export const locationIdQueryField = z.string().uuid().optional();
+export const locationIdQueryField = z
+  .string()
+  .uuid()
+  // Security review I1: the database's ids are lower case and `uuid` ignores
+  // case, so the P2 check (`readableLocationIds.includes`) must see the same
+  // spelling the walk does.
+  .transform((id) => id.toLowerCase())
+  .optional();
 
 /**
  * `GET /api/v1/alarms` (`F3.28`, ADR 0074, plan decisions 1 and 4).
@@ -55,7 +62,12 @@ export const alarmListQuerySchema = z
     organizationId: organizationIdQueryField,
     locationId: locationIdQueryField,
     // F4.357 U2b (plan Q1): keep alarms whose severity ranks at or above this.
-    minSeverityRank: z.coerce.number().int().min(0).optional(),
+    // An empty value is absent, as `limit`'s is; the bound keeps the value
+    // inside the `integer` column it is compared with (a 400, never a 500).
+    minSeverityRank: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.coerce.number().int().min(0).max(2_147_483_647).optional(),
+    ),
   })
   .strict()
   // `.strict()` must precede `.superRefine` (it returns a `ZodEffects`), and the

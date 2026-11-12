@@ -118,7 +118,7 @@ export class AlarmsService {
    * `F4.291` (ADR 0099 Amendment 9 E5(b)): `severity` (the code), and
    * `raisedFrom` (inclusive) / `raisedTo` (exclusive) on `raised_at`, ANDed
    * on as the others. Only the copilot's `list_alarms` passes them; the
-   * route's `alarmListQuerySchema` does not change.
+   * route's `alarmListQuerySchema` does not take them.
    *
    * `F4.357` U2 (ADR 0130 decision 15): `location` keeps the alarms of that
    * location and every location under it (`alarmInLocations`), resolved once

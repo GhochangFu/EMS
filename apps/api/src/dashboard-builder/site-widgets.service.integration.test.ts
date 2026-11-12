@@ -20,6 +20,7 @@ import {
   assertRetiredMemberIsNotOnTheRail,
   assertRetiredMemberTabStatusAgrees,
   assertTheRailCarriesTheSeverityRank,
+  assertTheSummaryCountsTheUnacknowledged,
   assertTheReadRunsOnTheTenantHandle,
   assertUnreadableTabGroupCountsNoRole,
   assertStampedTabIsNotFound,
@@ -69,6 +70,7 @@ describe.skipIf(!connectionString)("F3.73 — SiteWidgetsService (real database)
   it("S5 a group tab's roles are its group's role summary", () => assertGroupTabRolesAreNonEmpty(db), 60_000);
   it("S6 a group tab scopes the rail and the summary", () => assertGroupTabScopesTheRail(db), 60_000);
   it("S6b the rail's rows carry the severity's stored rank (F4.357)", () => assertTheRailCarriesTheSeverityRank(db), 60_000);
+  it("S6c the summary's unacknowledged count leaves out an acknowledged alarm (F4.357)", () => assertTheSummaryCountsTheUnacknowledged(db), 60_000);
   it("S7 the Overview reads the dashboard's site", () => assertOverviewReadsTheSite(db), 60_000);
   it("S8 an unknown tab is a 404", () => assertUnknownTabIsNotFound(db), 60_000);
   it("S9a control: the foreign-stamped tab row exists", () => assertStampedTabRowExists(db), 60_000);

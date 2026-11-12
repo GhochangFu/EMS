@@ -127,4 +127,6 @@ describe("alarm list query — state=unacknowledged and minSeverityRank (F4.357 
   it("refuses a negative, fractional or non-numeric minSeverityRank, and the summary refuses it", () =>
     spec.assertABadMinSeverityRankIsRefused());
   it("refuses a cursor beside state=unacknowledged", () => spec.assertACursorWithUnacknowledgedIsRefused());
+  it("reads an empty minSeverityRank as absent and lower-cases locationId", () =>
+    spec.assertAnEmptyRankIsAbsentAndALocationIdIsLowerCased());
 });
