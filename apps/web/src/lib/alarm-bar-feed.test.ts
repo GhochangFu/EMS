@@ -21,4 +21,5 @@ describe("alarm bar feed (F4.357, ADR 0130 decisions 13, 16)", () => {
   it("Close marks the shown rows seen; a new alarm pops up alone (U6)", () => spec.closeMarksTheShownRowsSeen());
   it("seen lasts for the tab's session, not past it (U6, decision 21)", () => spec.seenLastsForTheTabsSession());
   it("acknowledge calls once per alarm in order, keeps failures, then reads (U6)", () => spec.acknowledgeCallsOncePerAlarmInOrder());
+  it("acknowledge stops when its session ends (security review)", () => spec.acknowledgeStopsWhenTheSessionEnds());
 });

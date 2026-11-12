@@ -53,6 +53,7 @@ export function fakeAlarmBarPorts(answer: { list?: readonly AlarmListItem[]; sum
   const ackCalls: { id: string; reason: string }[] = [];
   const refuse = new Map<string, string>();
   let ackInFlight = 0;
+  let afterAck: ((id: string) => void) | null = null;
   let ackOverlap = false;
   const current = { list: answer.list ?? [], summary: answer.summary ?? EMPTY_SUMMARY };
   let hold: Deferred<AlarmsListResponse> | null = null;
@@ -86,6 +87,7 @@ export function fakeAlarmBarPorts(answer: { list?: readonly AlarmListItem[]; sum
       if (ackInFlight > 1) ackOverlap = true;
       await Promise.resolve();
       ackInFlight -= 1;
+      afterAck?.(id);
       const refusal = refuse.get(id);
       if (refusal !== undefined) throw new Error(refusal);
       return alarmItem({ id, acknowledgedAt: "2026-11-12T12:00:00.000Z" });
@@ -99,6 +101,10 @@ export function fakeAlarmBarPorts(answer: { list?: readonly AlarmListItem[]; sum
     ackCalls,
     /** True when two acknowledge calls ever ran at once. */
     ackOverlapped: () => ackOverlap,
+    /** Runs `run` after each acknowledge call answers. */
+    afterAcknowledge(run: (id: string) => void) {
+      afterAck = run;
+    },
     /** The acknowledge of `id` fails with `message`. */
     refuseAcknowledge(id: string, message: string) {
       refuse.set(id, message);
@@ -446,5 +452,27 @@ export async function acknowledgeCallsOncePerAlarmInOrder(): Promise<void> {
     expect(f.ackOverlapped(), "one at a time").toBe(false);
     expect(result).toEqual({ done: 2, failed: [{ id: "b", message: "Alarm already acknowledged" }] });
     expect(f.listCalls.length, "a read follows").toBe(reads + 1);
+  });
+}
+
+/**
+ * Security review (PR 3, Low) — an Acknowledge all stops when its session ends: the rest are not
+ * sent under the next user's token, and each is reported as not sent.
+ */
+export async function acknowledgeStopsWhenTheSessionEnds(): Promise<void> {
+  await withFeed(async (f) => {
+    await flush();
+    f.afterAcknowledge((id) => {
+      if (id === "a") f.session.setState({ accessToken: null, user: null });
+    });
+    const result = await alarmBarFeed()!.acknowledge(["a", "b", "c"], "Checked on site");
+    expect(f.ackCalls.map((call) => call.id)).toEqual(["a"]);
+    expect(result).toEqual({
+      done: 1,
+      failed: [
+        { id: "b", message: "Not sent: the session ended." },
+        { id: "c", message: "Not sent: the session ended." },
+      ],
+    });
   });
 }

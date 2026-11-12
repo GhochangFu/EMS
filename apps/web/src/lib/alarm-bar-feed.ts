@@ -84,7 +84,8 @@ export type AlarmBarFeed = {
   closePopup(): void;
   /**
    * U6 (decisions 8, 18): one acknowledge per id, in order, one at a time, with the same reason;
-   * a failure is kept with its message and the rest go on; then a read.
+   * a failure is kept with its message and the rest go on; then a read. A run stops sending when
+   * its session ends, and reports the rest as not sent.
    */
   acknowledge(ids: readonly string[], reason: string): Promise<AlarmBarAcknowledgeResult>;
 };
@@ -115,6 +116,8 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
   let retryTimer: Timer | null = null;
   // Set by a disconnect or a refused connect, cleared by a connect: the bar is "live" only with a socket.
   let socketDown = false;
+  // Bumped by every session end: a run started in one session never sends in the next.
+  let generation = 0;
 
   const store = useAlarmBarStore;
 
@@ -205,6 +208,7 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
     close();
     clearTimers();
     token = null;
+    generation += 1;
     socketDown = false;
     request += 1;
     pendingAfterFlight = false;
@@ -248,7 +252,14 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
     async acknowledge(ids, reason) {
       let done = 0;
       const failed: { id: string; message: string }[] = [];
+      const started = generation;
       for (const id of ids) {
+        // Security review (PR 3): the requests read the current token, so a run must not outlive
+        // its session — the rest would be sent, and audited, as the next user.
+        if (generation !== started || token === null) {
+          failed.push({ id, message: "Not sent: the session ended." });
+          continue;
+        }
         try {
           await ports.acknowledge(id, reason);
           done += 1;
