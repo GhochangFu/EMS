@@ -317,6 +317,44 @@ Facts the build settled; none changes a ruling.
 - **`DEVICE_HEALTH_INTERVAL_MS`** sets the worker sweep (default 30000, bounds
   10000–3600000; outside them the worker refuses to start).
 
+## Amendment 1 — a five-minute raise delay for "Communication lost" (2026-11-12)
+
+**Accepted by the owner, 2026-11-12** (in chat, after the AWS check found the
+flapping: "Fix the flapping first", and the raise delay ruled at **5 minutes**,
+the recommended option).
+
+**Why.** Decision 5 raised "Communication lost" as soon as last-seen passed the
+freshness window. The BCPL RTUs report every 10 s (median over 24 h), so their
+window sits at its 25 s floor (`clamp(ceil(2.5 × 10), 25, 900)`), while their
+p99 gap is 20–120 s. A normal 30–60 s pause therefore read Offline, the 30 s
+sweep raised the alarm, and the 120 s hold cleared it: on 2026-11-12 LEPPLT1
+raised four alarms in an hour, DULPLT3 three and BARTS2 two, each open for 2–10
+minutes and each a notification through the escalation profile.
+
+**Decision.** Decision 5 is amended: a per-RTU "Communication lost" alarm is
+raised when the RTU is Offline (decision 11, unchanged) **and** has been silent
+at least `RTU_COMMS_RAISE_AFTER_SECONDS` = **300 s**, counted the same way as
+the state (`rtuSilentSecondsAt`: from the latest of last-seen,
+`monitored_since` and the host's `healthy_since`). Decision 16 gains that
+number. Everything else stands:
+
+- The Online / Stale / Offline display, the offline count and `field_data` keep
+  the window; only the alarm waits.
+- A window longer than 300 s (up to the 900 s cap) still governs: the alarm
+  needs Offline first.
+- The 120 s clear hold, the host-down hold-back (decision 6) and the
+  per-organization host alarm are unchanged.
+
+**Cost.** A real outage now alarms 5 minutes after the last reading, not after
+the window: in practice 300 s, plus up to 10 s for the host's beat, plus up to
+30 s for the sweep. The 300 s also count again from each host restart or
+missed beat (`healthy_since`, decision 10), so for 5 minutes after one no RTU
+raises "Communication lost"; decision 11's "one full window after a restart"
+now holds for the display only. A host whose beat gaps past 30 s more often
+than every 5 minutes would therefore hold every comms alarm — rare, since it
+takes three failed flushes, and the host alarm covers a gap it catches. Tests: `device-health-sweep.service.spec.ts` (299 s raises
+nothing, 300 s raises one; a 900 s window still governs).
+
 ## Dependencies
 
 None added. Uses BullMQ (ADR 0063) and the pools of ADR 0045.

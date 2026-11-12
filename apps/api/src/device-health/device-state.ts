@@ -42,15 +42,28 @@ export function rtuStateAt(
   host: HostBeat | undefined,
   windowSeconds: number,
 ): RtuHealthState {
-  if (rtu.monitoredSinceMs === null || host === undefined) {
+  // One null guard, in the helper: the state and the alarm's silence can never disagree on it.
+  const ageSeconds = rtuSilentSecondsAt(rtu, host);
+  if (ageSeconds === null) {
     return "not_monitored";
   }
-  const reference = Math.max(rtu.monitoredSinceMs, rtu.lastSeenMs ?? -Infinity, host.healthySinceMs ?? -Infinity);
-  const ageSeconds = (host.lastBeatMs - reference) / 1000;
   if (ageSeconds <= STALE_BAND_FRACTION * windowSeconds) {
     return "online";
   }
   return ageSeconds <= windowSeconds ? "stale" : "offline";
+}
+
+/**
+ * The `age` of {@link rtuStateAt}: seconds of silence judged against the host's beat, counted from
+ * the latest of last-seen, `monitored_since` and the host's `healthy_since` (so a host restart gives
+ * every RTU a fresh start). `null` when the RTU is not monitored or its host has no row.
+ */
+export function rtuSilentSecondsAt(rtu: RtuHealthFacts, host: HostBeat | undefined): number | null {
+  if (rtu.monitoredSinceMs === null || host === undefined) {
+    return null;
+  }
+  const reference = Math.max(rtu.monitoredSinceMs, rtu.lastSeenMs ?? -Infinity, host.healthySinceMs ?? -Infinity);
+  return (host.lastBeatMs - reference) / 1000;
 }
 
 /** The host is stale strictly after {@link INGEST_HOST_STALE_SECONDS} with no beat, judged on the database clock. */

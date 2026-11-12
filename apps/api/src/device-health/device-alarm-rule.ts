@@ -1,3 +1,5 @@
+import type { RtuHealthState } from "@bms/shared";
+
 import { hostStateAt, hostSummaryFor, type HostBeat } from "./device-state";
 import type { RtuHealthRow } from "./device-health.reads";
 
@@ -18,6 +20,20 @@ export const INGEST_HOST_SEVERITY = "critical";
 
 /** Decision 16: a device alarm clears after this long back to normal. */
 export const DEVICE_ALARM_CLEAR_HOLD_SECONDS = 120;
+
+/**
+ * ADR 0127 Amendment 1 (owner ruling 2026-11-12): "Communication lost" also needs this much
+ * silence, not only an Offline state. An RTU reporting every 10 s has a window at its 25 s floor,
+ * so on AWS a normal 30–60 s pause (p99 gap 20–120 s over 24 h) read Offline and raised and
+ * cleared the alarm every few minutes — LEPPLT1 four times in an hour, each a notification.
+ * The display states keep the window; only the alarm waits.
+ */
+export const RTU_COMMS_RAISE_AFTER_SECONDS = 300;
+
+/** Offline, and silent at least {@link RTU_COMMS_RAISE_AFTER_SECONDS}: the one raise test for `rtu_comms`. */
+export function rtuCommsDue(state: RtuHealthState, silentSeconds: number | null): boolean {
+  return state === "offline" && silentSeconds !== null && silentSeconds >= RTU_COMMS_RAISE_AFTER_SECONDS;
+}
 
 export const INGEST_HOST_ALARM_MESSAGE = "Ingest host not reporting";
 
