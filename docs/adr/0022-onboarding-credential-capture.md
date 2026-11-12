@@ -613,3 +613,11 @@ reproduction, not landed coverage. A reader would take it as coverage. It is not
 - **`docs/BACKLOG.md`** — flip `E8.3` after tests pass, and **correct its row**:
   the "any authenticated user" claim is false and should not survive as
   provenance.
+
+## Amended by ADR 0129 (2026-11-12, `F4.333`)
+
+Decision 1's endpoint is also how a set credential is **replaced** in a draft
+(a "Replace" button beside the "Set" pill), and it now writes an audit row,
+`master.onboarding.credentials.set`, with no value — so Amendment 4's
+*Observation* that it "writes no audit row" no longer holds. See
+[ADR 0129](./0129-replace-rtu-credentials.md) decision 1.

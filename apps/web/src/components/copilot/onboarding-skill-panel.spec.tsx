@@ -204,7 +204,8 @@ export async function credentialsGoToTheirRouteAndNeverToATurn(): Promise<void> 
   await waitFor(() => expect(sent).toHaveLength(1));
   expect(sent[0]!.url).toMatch(new RegExp(`/api/v1/admin/onboarding/sessions/${SESSION}/credentials$`));
   expect(sent[0]!.method).toBe("POST");
-  expect(JSON.parse(sent[0]!.body)).toEqual({ rtuIndex: 0, credentials: { username: "ops", password: SECRET } });
+  // F4.333 (security review M2): the write carries the code the form was opened for.
+  expect(JSON.parse(sent[0]!.body)).toEqual({ rtuIndex: 0, rtuCode: "RTU-1", credentials: { username: "ops", password: SECRET } });
   expect(stubs.turn).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(stubs.turn.mock.calls)).not.toContain(SECRET);
 }

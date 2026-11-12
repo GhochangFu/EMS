@@ -38,10 +38,11 @@ function mqtt(code: string, tls: unknown): Record<string, unknown> {
   return { code, displayName: code, protocol: "mqtt", credentialsSet: true, config };
 }
 
-function mount(s: OnboardingSessionDto): void {
+function mount(s: OnboardingSessionDto): QueryClient {
   vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } })));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider client={client}>
       <DraftDrawer
         open
         session={s}
@@ -55,6 +56,7 @@ function mount(s: OnboardingSessionDto): void {
       />
     </QueryClientProvider>,
   );
+  return client;
 }
 
 /** D1 — one pill for the plain RTU, none for its TLS, absent, string and non-MQTT twins. */
@@ -206,4 +208,97 @@ export async function aRefusalIsShown(): Promise<void> {
   fireEvent.change(select, { target: { value: `c:${COMMITTED_ID}` } });
   fireEvent.click(screen.getByRole("button", { name: "Copy credentials" }));
   expect(await screen.findByText(message)).toBeTruthy();
+}
+
+/**
+ * The credentials row of one RTU: the `li` whose first mono label is the code
+ * and that carries a credentials button (the discovery panel lists RTUs too).
+ */
+function rowOf(code: string): HTMLElement {
+  const rows = [...document.querySelectorAll<HTMLElement>("li.surface-raised-sm")].filter(
+    (li) =>
+      li.querySelector("span.font-mono")?.textContent === code &&
+      within(li).queryAllByRole("button", { name: /^(Replace|Add credentials|Cancel)$/ }).length > 0,
+  );
+  if (rows.length !== 1) throw new Error(`expected one row for ${code}, found ${rows.length}`);
+  return rows[0]!;
+}
+
+/**
+ * D6 — `F4.333` (ADR 0129 decision 1): a set RTU shows the "Set" pill AND a
+ * "Replace" button; an unset RTU shows "Add credentials" and no pill.
+ */
+export function aSetCredentialCanBeReplaced(): void {
+  mount(session([mqtt("SET-1", true), { ...mqtt("NEW-1", true), credentialsSet: false }]));
+  const set = within(rowOf("SET-1"));
+  expect(set.getByText("Set")).toBeTruthy();
+  expect(set.getByRole("button", { name: "Replace" })).toBeTruthy();
+  expect(set.queryByRole("button", { name: "Add credentials" })).toBeNull();
+  const unset = within(rowOf("NEW-1"));
+  expect(unset.queryByText("Set")).toBeNull();
+  expect(unset.getByRole("button", { name: "Add credentials" })).toBeTruthy();
+  expect(unset.queryByRole("button", { name: "Replace" })).toBeNull();
+}
+
+/**
+ * D7 — Replace opens the same form, empty, with the never-shown line, and saves
+ * through the same `POST sessions/:id/credentials`; Cancel closes it.
+ */
+export async function replacePostsThroughTheSameWrite(): Promise<void> {
+  const client = mount(session([mqtt("A-1", true), mqtt("B-2", true)]));
+  const row = within(rowOf("B-2"));
+  fireEvent.click(row.getByRole("button", { name: "Replace" }));
+  expect(row.getByText("The stored credential is never shown. Saving replaces it.")).toBeTruthy();
+  const username = row.getByPlaceholderText("Username") as HTMLInputElement;
+  const password = row.getByPlaceholderText("Password") as HTMLInputElement;
+  expect(username.value).toBe("");
+  expect(password.value).toBe("");
+  fireEvent.change(username, { target: { value: "bcpl" } });
+  fireEvent.change(password, { target: { value: "rotated" } });
+  fireEvent.click(row.getByRole("button", { name: "Save encrypted" }));
+  const fetchMock = globalThis.fetch as unknown as { mock: { calls: [RequestInfo | URL, RequestInit?][] } };
+  const credentialPosts = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/credentials"));
+  await waitFor(() => expect(credentialPosts()).toHaveLength(1));
+  const posts = credentialPosts();
+  const [url, init] = posts[0]!;
+  expect(String(url)).toContain("/admin/onboarding/sessions/11111111-1111-4111-8111-111111111111/credentials");
+  expect(init?.method).toBe("POST");
+  expect(JSON.parse(String(init?.body))).toEqual({ rtuIndex: 1, rtuCode: "B-2", credentials: { username: "bcpl", password: "rotated" } });
+  // The form clears on settle (success or failure), so no value lingers in state.
+  await waitFor(() => expect(row.queryByDisplayValue("rotated")).toBeNull());
+  // Security review L1: nor in the mutation cache (`gcTime: 0` and `reset()` on settle).
+  await waitFor(() => expect(JSON.stringify(client.getMutationCache().getAll().map((m) => m.state.variables))).not.toContain("rotated"));
+
+  fireEvent.click(within(rowOf("A-1")).getByRole("button", { name: "Replace" }));
+  fireEvent.click(within(rowOf("A-1")).getByRole("button", { name: "Cancel" }));
+  expect(within(rowOf("A-1")).queryByPlaceholderText("Password")).toBeNull();
+}
+
+/**
+ * D8 — `F4.333` (security review M1): typed values never survive a Cancel or a
+ * switch to another RTU, so one broker's password cannot pre-fill another's form.
+ */
+export function typedValuesDoNotFollowToAnotherRtu(): void {
+  mount(session([mqtt("A-1", true), mqtt("B-2", true)]));
+  const typeInto = (code: string) => {
+    const row = within(rowOf(code));
+    fireEvent.change(row.getByPlaceholderText("Username"), { target: { value: "user-a" } });
+    fireEvent.change(row.getByPlaceholderText("Password"), { target: { value: "secret-a" } });
+  };
+  const empty = (code: string) => {
+    const row = within(rowOf(code));
+    expect((row.getByPlaceholderText("Username") as HTMLInputElement).value).toBe("");
+    expect((row.getByPlaceholderText("Password") as HTMLInputElement).value).toBe("");
+  };
+  // Cancel, then open another RTU.
+  fireEvent.click(within(rowOf("A-1")).getByRole("button", { name: "Replace" }));
+  typeInto("A-1");
+  fireEvent.click(within(rowOf("A-1")).getByRole("button", { name: "Cancel" }));
+  fireEvent.click(within(rowOf("B-2")).getByRole("button", { name: "Replace" }));
+  empty("B-2");
+  // Switch straight from one open form to another.
+  typeInto("B-2");
+  fireEvent.click(within(rowOf("A-1")).getByRole("button", { name: "Replace" }));
+  empty("A-1");
+  expect(screen.queryByDisplayValue("secret-a")).toBeNull();
 }

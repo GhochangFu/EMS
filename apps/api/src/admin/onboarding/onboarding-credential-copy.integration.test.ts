@@ -141,6 +141,7 @@ describe.skipIf(!connectionString)("F4.339 — the onboarding credential copy (r
       vocabularies as never,
       templates as never,
       { listParentCandidates: async () => [] } as never,
+      audit,
     );
     const crypto = new CredentialCryptoService();
     let n = 0;

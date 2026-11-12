@@ -91,6 +91,28 @@ export function assertMergeDraftForwardsTheKeyVersionOntoTheBlob(): void {
 }
 
 /**
+ * `F4.333` (ADR 0129 decision 1) — a second credential write through the real
+ * `mergeDraft` replaces the first: a new ciphertext and IV, one entry for the
+ * code. Red if the credential loop gains a "set once" guard.
+ */
+export function assertMergeDraftReplacesAStoredCredential(): void {
+  withEnv(
+    { CREDENTIAL_ENCRYPTION_KEY: KEY_A, CREDENTIAL_ENCRYPTION_KEY_VERSION: "2" },
+    () => {
+      const service = buildChatService();
+      type Stored = { _secrets?: Record<string, { c?: string; iv?: string; v?: unknown }>; rtus?: { credentialsSet?: unknown }[] };
+      const first = service.mergeDraft(draftWithOneRtu(), {}, { rtuIndex: 0, credentials: { password: "old" } }) as Stored;
+      const second = service.mergeDraft(first, {}, { rtuIndex: 0, credentials: { password: "new" } }) as Stored;
+      const [a, b] = [first._secrets?.R1, second._secrets?.R1];
+      assert(typeof a?.c === "string" && typeof b?.c === "string", "both writes stored a blob");
+      assert(a?.c !== b?.c && a?.iv !== b?.iv, "the second write replaced the ciphertext and the IV");
+      assert(Object.keys(second._secrets ?? {}).length === 1, "one entry remains for the code");
+      assert(b?.v === 2 && second.rtus?.[0]?.credentialsSet === true, "at the current version, still flagged set");
+    },
+  );
+}
+
+/**
  * Positive control for the row below: with a key configured, attaching a
  * credential does flag the owning RTU.
  */

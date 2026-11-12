@@ -544,6 +544,13 @@ export const MAX_RTU_CREDENTIAL_CHARS = 4096;
 export const setCredentialsBodySchema = z
   .object({
     rtuIndex: z.number().int().min(0),
+    /**
+     * `F4.333` (ADR 0129, security review M2): the code of the RTU the form was
+     * opened for. When sent, a draft whose RTU at `rtuIndex` now has another
+     * code is a 409 and nothing is stored. Optional, so an older client still
+     * writes as before.
+     */
+    rtuCode: z.string().trim().min(1).max(ONBOARDING_DRAFT_STRING_MAX["rtus.code"]).optional(),
     credentials: z
       .record(z.string().min(1).max(MAX_RTU_CREDENTIAL_CHARS))
       .refine((value) => Object.keys(value).length > 0, {

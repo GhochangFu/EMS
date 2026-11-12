@@ -4,9 +4,12 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aCommittedSourcePostsItsId,
+  aSetCredentialCanBeReplaced,
   aDraftSourceCopiesAndTheRowReadsSet,
   aRefusalIsShown,
   onlyAPlainMqttRtuGetsThePill,
+  replacePostsThroughTheSameWrite,
+  typedValuesDoNotFollowToAnotherRtu,
   theDrawerSummaryDisclosesTlsOff,
 } from "./draft-drawer.spec";
 
@@ -21,4 +24,7 @@ describe("F4.326 — the draft drawer discloses plain MQTT (ADR 0114 decision 6)
   it("D3 copies from a draft RTU on the same broker; the row then reads Set (F4.339)", aDraftSourceCopiesAndTheRowReadsSet);
   it("D4 copies from a committed RTU by id (F4.339)", aCommittedSourcePostsItsId);
   it("D5 shows the server's refusal; the committed list is read only on open (F4.339)", aRefusalIsShown);
+  it("D6 a set credential shows Set and Replace; an unset one shows Add credentials (F4.333)", aSetCredentialCanBeReplaced);
+  it("D7 Replace opens an empty form and posts through the same write (F4.333)", replacePostsThroughTheSameWrite);
+  it("D8 typed values never follow to another RTU or survive a Cancel (F4.333, review M1)", typedValuesDoNotFollowToAnotherRtu);
 });
