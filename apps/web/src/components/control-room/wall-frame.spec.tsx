@@ -4,7 +4,10 @@ import { useContext, useEffect } from "react";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi } from "vitest";
 
+import { alarmItem } from "../../lib/alarm-bar.spec";
+import { flush, installOnFakes } from "../../lib/alarm-bar-feed.spec";
 import { FRESH_MS } from "../../lib/schematic-telemetry";
+import { type AuthUser, useAuthStore } from "../../stores/auth-store";
 import { CanvasFitContext } from "../dashboards/dashboard-canvas";
 import { useReportNewestRead } from "../dashboards/newest-read-context";
 import { WallFrame } from "./wall-frame";
@@ -205,13 +208,14 @@ function wallRoot(): HTMLElement {
 
 /**
  * F10a (`F3.77` follow-up, plan D5) — the wall root's zoom is the computed fit of the bar plus the
- * content wrapper: 1080 / (48 + 1000) → 1.03, not the stylesheet's old constant 1.25. Mutation: a
- * fixed `zoom: 1.25`, or `contentRef` on another element => red.
+ * content wrapper plus the alarm bar's clearance (`F4.357` U9): 1080 / (48 + 1000 + 48) → 0.98, not
+ * the stylesheet's old constant 1.25. Mutation: a fixed `zoom: 1.25`, `contentRef` on another
+ * element, or the clearance left out (1.03) => red.
  */
 export function theRootZoomIsTheComputedFit(): void {
   layOut(1000);
   renderFrame();
-  expect(wallRoot().style.zoom).toBe("1.03");
+  expect(wallRoot().style.zoom).toBe("0.98");
 }
 
 /**
@@ -231,13 +235,13 @@ export function theScreenHeightIsOutsideTheZoom(): void {
 
 /**
  * F11a (`F3.77` follow-up, owner ruling Q4) — the frame gives the canvas inside it a fixed-aspect
- * cap of 60 % of the screen in the zoomed box's px: 0.6 × 1080 / 1.03 → 629. Mutation: the frame
- * provides no context, or does not divide by the zoom (648) => red.
+ * cap of 60 % of the screen in the zoomed box's px: 0.6 × 1080 / 0.98 → 661 (F10a's zoom). Mutation:
+ * the frame provides no context, or does not divide by the zoom (648) => red.
  */
 export function theFrameProvidesTheAspectCap(): void {
   layOut(1000);
   renderFrame(READ_AT, true);
-  expect([wallRoot().style.zoom, screen.getByTestId("fit-cap").textContent]).toEqual(["1.03", "629"]);
+  expect([wallRoot().style.zoom, screen.getByTestId("fit-cap").textContent]).toEqual(["0.98", "661"]);
 }
 
 /**
@@ -264,8 +268,9 @@ export function aResizeMovesTheCapAtTheSameZoom(): void {
 /**
  * F12 (review finding) — the fit is keyed on the tab: a rotation does not remount the frame, so
  * the frame hands `currentKey` to `useWallFit`, which clears its overflow ceiling and re-measures.
- * The first tab overflows at 1.25 (1.03, ceiling 1.25); the next tab's content fits, so it gets
- * the base back. Mutation: `useWallFit(undefined)` => no re-measure, the zoom stays 1.03 => red.
+ * The first tab overflows at 1.25 (0.98 with the alarm bar's clearance, ceiling 1.25); the next
+ * tab's content fits, so it gets the base back. Mutation: `useWallFit(undefined)` => no
+ * re-measure, the zoom stays 0.98 => red.
  */
 export function aNewTabRefitsTheZoom(): void {
   layOut(1000);
@@ -280,7 +285,7 @@ export function aNewTabRefitsTheZoom(): void {
   const before = wallRoot().style.zoom;
   laidOutContentPx = 500;
   rerender(frame("sld"));
-  expect([before, wallRoot().style.zoom]).toEqual(["1.03", "1.25"]);
+  expect([before, wallRoot().style.zoom]).toEqual(["0.98", "1.25"]);
 }
 
 /**
@@ -299,4 +304,49 @@ export function theClockTickDoesNotRerenderTheCanvas(): void {
   });
   expect(screen.getByTestId("wall-clock").textContent, "the clock did not tick").not.toBe(clockBefore);
   expect(fitProbeRenders - rendersBefore).toBe(0);
+}
+
+/**
+ * F13 — `F4.357` U9 (ADR 0130 decisions 12, 20): with a feed installed, the wall shows the alarm
+ * bar inside the zoomed root, scoped to the wall's location, and still has no shell landmark. A
+ * pointer on the bar's controls (`data-wall-bar`) does not pause the rotation; one on the content does.
+ */
+export async function theWallShowsTheAlarmBarForItsLocation(): Promise<void> {
+  const LOCATION = "33333333-3333-4333-8333-333333333333";
+  useAuthStore.setState({
+    accessToken: "token-1",
+    user: { id: "user-1", email: "op@bms.local", displayName: "op", role: "operator" } as unknown as AuthUser,
+  });
+  const feed = installOnFakes({ list: [alarmItem({ id: "c", message: "Critical one" })] }, useAuthStore);
+  try {
+    render(
+      <MemoryRouter initialEntries={[`/control-room/site/${LOCATION}/main?wall=1&every=30`]}>
+        <Routes>
+          <Route
+            path="/control-room/site/:locationId/:tab?"
+            element={
+              <WallFrame siteName="Lotapata" sitePath={`/control-room/site/${LOCATION}`} tabKeys={["main", "sld"]} currentKey="main" everyS={30}>
+                <p data-testid="wall-content-body">content</p>
+              </WallFrame>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await act(flush);
+    const region = screen.getByRole("region", { name: "Alarms" });
+    expect(region.closest("[data-wall-root]"), "inside the zoomed root").not.toBeNull();
+    expect(feed.listCalls.at(-1)).toEqual({ locationId: LOCATION });
+    expect(screen.queryByRole("banner")).toBeNull();
+    expect(screen.queryByRole("navigation")).toBeNull();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Mute" }));
+    fireEvent.pointerDown(screen.getByRole("region", { name: "New alarms" }));
+    expect(screen.queryByRole("button", { name: "Paused — Resume" }), "the bar and the popup do not pause").toBeNull();
+    fireEvent.pointerDown(screen.getByTestId("wall-content-body"));
+    expect(screen.getByRole("button", { name: "Paused — Resume" }), "the content does").toBeInTheDocument();
+  } finally {
+    cleanup();
+    feed.uninstall();
+    useAuthStore.setState({ accessToken: null, user: null });
+  }
 }

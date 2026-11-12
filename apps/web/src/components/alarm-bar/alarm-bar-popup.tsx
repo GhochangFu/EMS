@@ -84,9 +84,10 @@ function PopupBody({
     <section
       role="region"
       aria-label="New alarms"
+      data-wall-bar
       className="surface-raised fixed bottom-[calc(var(--alarm-bar-h)+0.5rem)] left-1/2 z-40 flex max-h-[28rem] w-[min(40rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-lg text-xs text-ink"
     >
-      <header className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
+      <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
         <h2 data-blink={blink ? "true" : undefined} className={`font-semibold${blink ? " alarm-bar-blink" : ""}`}>
           {rows.length} new {rows.length === 1 ? "alarm" : "alarms"}
         </h2>
@@ -110,7 +111,7 @@ function PopupBody({
             Close
           </button>
         </div>
-      </header>
+      </div>
       {run === null ? null : (
         <p role="status" className="border-b border-line px-3 py-1">
           {run.done} of {run.total} acknowledged
@@ -159,11 +160,11 @@ function PopupBody({
         ))}
       </ul>
       {more > 0 ? (
-        <footer className="border-t border-line px-3 py-2">
+        <div className="border-t border-line px-3 py-2">
           <Link to="/alarms" className="font-semibold text-accent hover:underline">
             and {more} more active alarms
           </Link>
-        </footer>
+        </div>
       ) : null}
       {detailsId !== null
         ? createPortal(<AlarmDetailsPanel alarmId={detailsId} readOnly={readOnly} onClose={() => setDetailsId(null)} />, document.body)

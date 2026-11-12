@@ -33,15 +33,16 @@ export function AlarmBarList({ scope, scopeLabel, readOnly, onClose }: AlarmBarL
   return (
     <section
       id="alarm-bar-list"
+      data-wall-bar
       aria-label={`All alarms — ${scopeLabel}`}
       className="surface-raised fixed bottom-[var(--alarm-bar-h)] right-4 z-40 flex max-h-[24rem] w-[min(32rem,calc(100%-2rem))] flex-col rounded-t-lg text-xs text-ink"
     >
-      <header className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
+      <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
         <h2 className="font-semibold">{scopeLabel}</h2>
         <button type="button" onClick={onClose} className="rounded px-2 py-0.5 hover:bg-well">
           Close
         </button>
-      </header>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {query.isPending ? (
           <p className="px-3 py-2 text-ink-muted">Loading…</p>
@@ -70,11 +71,11 @@ export function AlarmBarList({ scope, scopeLabel, readOnly, onClose }: AlarmBarL
           </ul>
         )}
       </div>
-      <footer className="border-t border-line px-3 py-2">
+      <div className="border-t border-line px-3 py-2">
         <Link to="/alarms" className="font-semibold text-accent hover:underline">
           Open the Alarm Centre
         </Link>
-      </footer>
+      </div>
       {detailsId !== null
         ? createPortal(<AlarmDetailsPanel alarmId={detailsId} readOnly={readOnly} onClose={() => setDetailsId(null)} />, document.body)
         : null}

@@ -20,7 +20,8 @@ import { repoRoot, withoutComments } from "./support/source-scan";
  *  - **G3** (decision 9: "no design system may change, remove or add to this blink") no selector
  *    that names `data-design`, `data-profile`, `data-surface` or `data-theme` names `alarm-bar`.
  *  - **G4** the bar is mounted where the ADR puts it: `main.tsx` installs the one feed, `AppShell`
- *    renders `<AlarmBar`, and no shell under `layouts/shells/` renders a second one.
+ *    and the control room wall (`WallFrame`, decision 12) render `<AlarmBar`, and no shell under
+ *    `layouts/shells/` renders a second one.
  *
  * Every scan strips comments first, so a docblock that spells the call cannot pass the gate, and
  * each rule is also run on a mutated source to prove it can fail.
@@ -132,6 +133,8 @@ describe("F4.357 alarm bar gate (ADR 0130)", () => {
   it("G4 main.tsx installs the feed, AppShell renders the bar, no shell renders another", () => {
     expect(installsTheFeed(read("main.tsx")), "main.tsx calls installAlarmBarFeed(").toBe(true);
     expect(rendersTheBar(read("layouts/app-shell.tsx")), "app-shell.tsx renders <AlarmBar").toBe(true);
+    // U9 (decision 12): the wall renders without AppShell, so it mounts its own.
+    expect(rendersTheBar(read("components/control-room/wall-frame.tsx")), "wall-frame.tsx renders <AlarmBar").toBe(true);
     const shells = readdirSync(join(WEB_SRC, "layouts/shells")).filter((name) => name.endsWith(".tsx") && !name.includes(".spec") && !name.includes(".test"));
     expect(shells.length, "the shells directory holds the shells").toBeGreaterThan(1);
     for (const name of shells) {

@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, it } from "vitest";
 
 import {
+  theWallShowsTheAlarmBarForItsLocation,
   aNewTabRefitsTheZoom,
   aResizeMovesTheCapAtTheSameZoom,
   theClockTickDoesNotRerenderTheCanvas,
@@ -93,4 +94,7 @@ describe("F3.77 WallFrame (plan D8, D9)", () => {
   it("F12 re-fits the zoom on a new tab (the fit is keyed on currentKey)", () => {
     aNewTabRefitsTheZoom();
   });
+
+  it("F13 shows the alarm bar inside the zoomed root, scoped to the wall's location (F4.357)", () =>
+    theWallShowsTheAlarmBarForItsLocation());
 });
