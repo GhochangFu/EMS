@@ -37,6 +37,7 @@ export const assetKpiStateSchema = z.enum([
   "parameter_unset",
   "window_empty",
   "window_sparse",
+  "window_decreasing",
   "windows_unresolved",
   "timezone_unset",
   "non_finite",

@@ -14,6 +14,7 @@ import {
   runV2IsScheduledOnlyTests,
   runV3HintNamesLocalMidnightTests,
   runV3LabelNamesWindowsTests,
+  runV3WindowHelpNamesTheDecreasingRefusalTests,
   runV3WindowHelpNamesTheSparseRefusalTests,
   runValidConfigTests,
 } from "./template-calc-config.spec";
@@ -74,6 +75,10 @@ describe("template calc config", () => {
 
   it("names window_sparse and the 90% threshold in the window help (E4.4)", () => {
     runV3WindowHelpNamesTheSparseRefusalTests();
+  });
+
+  it("says delta refuses window_decreasing when the counter fell (ADR 0070 Amendment 8, F4.353)", () => {
+    runV3WindowHelpNamesTheDecreasingRefusalTests();
   });
 
   it("names timezone_unset and Administration → Sites & Equipment → Locations in the calendar warning", () => {

@@ -25,6 +25,7 @@ import {
   runSumJustBelowFloatBoundaryCoverageRefusesTests,
   runSumJustBelowTheThresholdRefusesTests,
   runDeltaOfTests,
+  runDeltaRefusesFallingCounterTests,
   runWindowBoundsTests,
   runWindowPlanEmptyTests,
   runWindowPlanIstDayTests,
@@ -64,6 +65,9 @@ describe("calc window plan — segment composition over the continuous aggregate
   });
   it("P9 reads a delta as last minus first, and one sample or none is window_empty", () => {
     runDeltaOfTests();
+  });
+  it("P9b refuses window_decreasing when the counter fell inside the window (ADR 0070 Amendment 8)", () => {
+    runDeltaRefusesFallingCounterTests();
   });
   it("P10 floors the window end to the minute and measures hours as elapsed time", () => {
     runWindowBoundsTests();

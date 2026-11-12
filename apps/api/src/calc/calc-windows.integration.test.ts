@@ -14,6 +14,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import {
   assertACalendarWindowWithNoZoneRefuses,
   assertADeltaOverOneSampleIsEmpty,
+  assertAFallingCounterRefusesThenRecovers,
   assertAnUnknownStoredZoneRefusesNotThrows,
   assertARollingWeekReadsThe1dViewAndTodayDoesNot,
   assertAStalledPolicyRefusesALongReadNotTheDatabase,
@@ -113,6 +114,11 @@ describe.skipIf(!connectionString)("E4.1b — calc window resolver", () => {
   it("W5 — a delta over one sample is window_empty", async () => {
     if (!pool) throw new Error("pool required");
     await assertADeltaOverOneSampleIsEmpty(pool, fixture);
+  });
+
+  it("W5b — F4.353: a delta over a register with one bad 0 refuses window_decreasing, then answers 78 once the register is back (today, this_month, this_year)", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertAFallingCounterRefusesThenRecovers(pool, fixture);
   });
 
   it("W6 — a calendar window at a NULL-zone location is timezone_unset; the other read in the batch is unaffected", async () => {

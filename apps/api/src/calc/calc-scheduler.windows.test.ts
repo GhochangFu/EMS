@@ -8,6 +8,7 @@ import {
   parameterUnsetStillBatchesWindows,
   requestsAreTheDistinctSetOfDueDefinitions,
   sparseWindowRefusesWithoutARow,
+  decreasingWindowRefusesKwhAndCostWithoutARow,
   staleInputWinsOverEmptyWindow,
   subMinuteIntervalEndsOnTheMinute,
   unsetZoneRefusesWithoutARow,
@@ -28,6 +29,10 @@ describe("window reads in the scheduled sweep (ADR 0070 decision 5, E4.1b)", () 
 
   it("H11 window_sparse (E4.4) → exactly one skip and no row, as window_empty; the v1 sibling still writes", async () => {
     await sparseWindowRefusesWithoutARow();
+  });
+
+  it("H12 window_decreasing (F4.353) → the kWh and the cost point each skip once and write no row", async () => {
+    await decreasingWindowRefusesKwhAndCostWithoutARow();
   });
 
   it("H3 timezone_unset → exactly one skip and no row", async () => {

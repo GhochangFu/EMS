@@ -41,6 +41,8 @@ export const TEST_CODE = `E41B-WIN-${randomUUID().replace(/-/g, "").slice(0, 10)
 /** Per-run point keys, so two instances of this file never read each other's rows. */
 const KWH = `e41b_kwh_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 const KW = `e41b_kw_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
+/** `F4.353` — a cumulative register with one bad `0`, on its own key so no other case reads it. */
+const KWH_FALL = `f4353_kwh_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 
 export type WindowsFixture = {
   readonly k: string;
@@ -146,8 +148,18 @@ export async function seedWindowsFixture(pool: pg.Pool, fx: Fixtures): Promise<W
   const tailMs = [tail0, tail0 + 30_000];
   const kwTail: [number, number][] = tailMs.map((t) => [t, 300]);
 
+  // W5b — `F4.353`, the AWS sequence after IST midnight (18:30Z) of D−1:
+  // the register, then one bad `0`, then the register again
+  const kwhFallK: [number, number][] = [
+    [at(dMinus1, "19:00"), 74067],
+    [at(dMinus1, "19:10"), 74145],
+    [at(dMinus1, "19:11"), 0],
+    [at(dMinus1, "19:14"), 74145],
+  ];
+
   const values: { assetId: string; key: string; timeMs: number; value: number }[] = [
     ...kwhK.map(([timeMs, value]) => ({ assetId: k, key: KWH, timeMs, value })),
+    ...kwhFallK.map(([timeMs, value]) => ({ assetId: k, key: KWH_FALL, timeMs, value })),
     ...kwU.map(([timeMs, value]) => ({ assetId: u, key: KW, timeMs, value })),
     ...kwhN.map(([timeMs, value]) => ({ assetId: n, key: KWH, timeMs, value })),
     ...kwTail.map(([timeMs, value]) => ({ assetId: u, key: KW, timeMs, value })),
@@ -304,6 +316,31 @@ export async function assertADeltaOverOneSampleIsEmpty(pool: pg.Pool, fixture: W
   // positive control: the same shape over K's six samples has a value
   const seven = await resolveOne(pool, fixture.k, windowFn("delta", KWH, rolling(1440)), fixture.dMs);
   assert(seven !== undefined && seven.ok === true && seven.value === 899, `W5 control: delta over K's seven samples is 999 − 100, got ${JSON.stringify(seven)}`);
+}
+
+/**
+ * W5b — ADR 0070 Amendment 8 (`F4.353`): while the bad `0` is the newest
+ * sample, every calendar `delta` over the register refuses
+ * `window_decreasing` (it was written as −74,067 on the AWS demo); once the
+ * register is back, each answers 74145 − 74067 = 78.
+ */
+export async function assertAFallingCounterRefusesThenRecovers(pool: pg.Pool, fixture: WindowsFixture): Promise<void> {
+  const dMinus1 = fixture.dMs - DAY_MS;
+  const whileZero = at(dMinus1, "19:12");
+  const afterReturn = at(dMinus1, "19:15");
+  for (const period of ["today", "this_month", "this_year"] as const) {
+    const node = windowFn("delta", KWH_FALL, calendar(period));
+    const during = await resolveOne(pool, fixture.k, node, whileZero);
+    assert(
+      during !== undefined && during.ok === false && during.reason === "window_decreasing",
+      `W5b: delta({kwh_total}, ${period}) with a 0 as the newest sample refuses window_decreasing, got ${JSON.stringify(during)}`,
+    );
+    const after = await resolveOne(pool, fixture.k, node, afterReturn);
+    assert(
+      after !== undefined && after.ok === true && after.value === 78,
+      `W5b: delta({kwh_total}, ${period}) after the register returns is 78, got ${JSON.stringify(after)}`,
+    );
+  }
 }
 
 // ---- W6 — timezone_unset ------------------------------------------------------------------------------

@@ -150,14 +150,16 @@ export const V3_PARAMETER_HELP =
  * not the hour, so one sample anywhere in that day counts it as covered;
  * `delta` is last minus first and so means something only on a cumulative
  * counter (ruling Q7: the grammar cannot know cumulativeness, so the sentence
- * says it and no per-point warning does); `hours` prorates.
+ * says it and no per-point warning does), and since `F4.353` (ADR 0070
+ * Amendment 8) refuses `window_decreasing` when the counter fell; `hours`
+ * prorates.
  */
 export const V3_WINDOW_HELP =
   "sum({kw}, 24h) is the time integral (avg × hours: a kW point gives kWh over the whole window) " +
   "and refuses window_sparse when less than 90% of the elapsed window holds samples — an hour with " +
   "a sample counts as covered, and on a completed day old enough to be served from daily storage " +
   "(about two days back) one sample anywhere in that day counts the whole day as covered; " +
-  "delta({kwh}, today) is last minus first, for cumulative counters; " +
+  "delta({kwh}, today) is last minus first, for cumulative counters, and refuses window_decreasing when the counter fell; " +
   "hours(today) prorates a daily baseline; a rolling window is <n>m/<n>h/<n>d up to 366d.";
 
 /**

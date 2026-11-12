@@ -48,7 +48,12 @@ import type { CalcSkipReason } from "../calc/calc-definition";
  * the samples that arrived would be extrapolated across the gap). The host
  * treats it exactly as `window_empty`: the formula writes nothing, this
  * counter counts it and `CalcStatusRegistry` records it; `window_empty` keeps
- * precedence. */
+ * precedence.
+ *
+ * And `F4.353`'s (ADR 0070 Amendment 8): `window_decreasing` (a `delta` whose
+ * last sample is below its first — a cumulative counter that fell, from a
+ * bad sample or a reset). Handled exactly as `window_sparse`: nothing is
+ * written, never a negative number. */
 export type CalcRuntimeSkipReason =
   | CalcSkipReason
   | "missing_input"
@@ -64,7 +69,8 @@ export type CalcRuntimeSkipReason =
   | "window_empty"
   | "timezone_unset"
   | "windows_unresolved"
-  | "window_sparse";
+  | "window_sparse"
+  | "window_decreasing";
 
 @Injectable()
 export class MetricsService {
