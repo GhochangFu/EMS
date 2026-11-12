@@ -285,6 +285,19 @@ export async function assertGroupTabScopesTheRail(db: BmsDb): Promise<void> {
   }, db);
 }
 
+/**
+ * S6b — `F4.357` (ADR 0130 decision 17): the rail's rows carry the stored rank
+ * of their severity, through the shared `alarmListItemColumns` projection.
+ */
+export async function assertTheRailCarriesTheSeverityRank(db: BmsDb): Promise<void> {
+  await inSite(async (site) => {
+    const [first] = (await readAs(site, "b")).alarms.active;
+    expect(first, "the rail holds b1's active alarm").toBeDefined();
+    const stored = await db.execute<{ rank: number }>(sql`SELECT rank FROM bms.alarm_severities WHERE code = ${first!.severity}`);
+    expect(first!.severityRank).toBe(Number(stored.rows[0]?.rank));
+  }, db);
+}
+
 /** S7 — the Overview reads the dashboard's site: all three assets. */
 export async function assertOverviewReadsTheSite(db: BmsDb): Promise<void> {
   await inSite(async (site) => {

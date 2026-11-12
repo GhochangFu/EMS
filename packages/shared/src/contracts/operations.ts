@@ -134,6 +134,13 @@ export const alarmListItemSchema = z.object({
   // F3.16: the silent RTU of an `rtu_comms` alarm and its code; null otherwise.
   rtuId: z.string().nullable(),
   rtuCode: z.string().nullable(),
+  // F4.357 / ADR 0130 decision 17: the `bms.alarm_severities` rank of
+  // `severity`. The alarm bar's popup (rank >= 20), blink and tone (rank >= 30)
+  // read it, because the severity vocabulary is open (ADR 0032).
+  severityRank: z.number().int(),
+  // F4.357 (plan Q2): the alarm's own location — the asset's for a rule alarm,
+  // the RTU's for `rtu_comms`, null for `ingest_host` (it has none).
+  locationName: z.string().nullable(),
 });
 
 /** Socket.IO `/ws/alarms` event payload. */

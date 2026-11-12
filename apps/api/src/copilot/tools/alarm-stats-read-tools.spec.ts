@@ -293,6 +293,8 @@ const ALARM_ITEM = {
   source: "rule" as const,
   rtuId: null,
   rtuCode: null,
+  severityRank: 30,
+  locationName: null,
 };
 
 /** `list_alarms` passes the item through its contract: `assetRtuName` and `assetLocationName` reach the model. */

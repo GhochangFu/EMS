@@ -37,6 +37,8 @@ const validAlarm = {
   source: "rule",
   rtuId: null,
   rtuCode: null,
+  severityRank: 30,
+  locationName: null,
 };
 
 describe("checkResponse", () => {

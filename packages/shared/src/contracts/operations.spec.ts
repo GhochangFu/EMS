@@ -159,6 +159,9 @@ const ALARM_LIST_ITEM = {
   source: "rule",
   rtuId: null,
   rtuCode: null,
+  // F4.357 / ADR 0130 decision 17: the severity's rank and the alarm's own location.
+  severityRank: 30,
+  locationName: "Plant A",
 };
 
 const AFFECTED_ASSET = {
@@ -254,6 +257,29 @@ export function assertAlarmSocketEventRequiresAssetRtuName(): void {
   assert(
     alarmSocketEventSchema.safeParse({ type: "cleared", alarm: without }).success === false,
     "alarmSocketEventSchema accepted an alarm with no assetRtuName",
+  );
+}
+
+/**
+ * `F4.357` / ADR 0130 decision 17 — `severityRank` is a required integer (the
+ * popup, the blink and the tone read the rank, never a name), and
+ * `locationName` is required-nullable (`null` on an `ingest_host` alarm). The
+ * socket payload takes the list item by reference, so it inherits both.
+ */
+export function assertAlarmListItemRequiresSeverityRankAndLocationName(): void {
+  assertRefusesWithout(alarmListItemSchema, ALARM_LIST_ITEM, "severityRank", "alarmListItemSchema");
+  assertRefusesWithout(alarmListItemSchema, ALARM_LIST_ITEM, "locationName", "alarmListItemSchema");
+  for (const bad of ["30", 30.5, null]) {
+    assert(
+      alarmListItemSchema.safeParse({ ...ALARM_LIST_ITEM, severityRank: bad }).success === false,
+      `alarmListItemSchema accepted severityRank ${JSON.stringify(bad)}`,
+    );
+  }
+  assert(alarmListItemSchema.safeParse({ ...ALARM_LIST_ITEM, locationName: null }).success, "alarmListItemSchema refused a null locationName");
+  const { severityRank: _dropped, ...without } = ALARM_LIST_ITEM;
+  assert(
+    alarmSocketEventSchema.safeParse({ type: "created", alarm: without }).success === false,
+    "the created event accepted an alarm with no severityRank",
   );
 }
 

@@ -292,6 +292,8 @@ const RAIL_ALARM: AlarmListItem = {
   source: "rule",
   rtuId: null,
   rtuCode: null,
+  severityRank: 30,
+  locationName: null,
 };
 
 /** Ascending rank, as `GET /alarms/summary` returns it. */

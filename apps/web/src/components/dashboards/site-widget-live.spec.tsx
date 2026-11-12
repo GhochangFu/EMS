@@ -141,6 +141,8 @@ function response(tabKey: string | null, alarmMessage: string): SiteWidgetsRespo
           source: "rule",
           rtuId: null,
           rtuCode: null,
+          severityRank: 30,
+          locationName: null,
         },
       ],
       summary: [],
