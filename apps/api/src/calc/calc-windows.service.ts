@@ -35,10 +35,11 @@ export type WindowReadRequest = {
 
 /** `windows_unresolved` here is the budget refusal (`MAX_WINDOW_BUCKETS` / `MAX_LIVE_MINUTES`):
  * the read was not attempted, and `detail` names the watermarks so the host
- * can warn once per sweep. The other three are data: `window_sparse` is a
+ * can warn once per sweep. The other four are data: `window_sparse` is a
  * `sum` whose covered time is below `MIN_WINDOW_COVERAGE` of its elapsed
- * window (ADR 0070 Amendment 3, `E4.4`). */
-export type WindowReadReason = "window_empty" | "window_sparse" | "timezone_unset" | "windows_unresolved";
+ * window (ADR 0070 Amendment 3, `E4.4`), and `window_decreasing` a `delta`
+ * whose last sample is below its first (ADR 0070 Amendment 8, `F4.353`). */
+export type WindowReadReason = "window_empty" | "window_sparse" | "window_decreasing" | "timezone_unset" | "windows_unresolved";
 
 export type WindowReadResult = { ok: true; value: number } | { ok: false; reason: WindowReadReason; detail?: string };
 

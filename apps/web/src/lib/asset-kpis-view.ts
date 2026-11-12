@@ -17,6 +17,7 @@ export const KPI_STATE_SENTENCE: Readonly<Record<AssetKpiState, string>> = {
   parameter_unset: "A parameter has no value set",
   window_empty: "No reading inside the window",
   window_sparse: "Too few readings inside the window",
+  window_decreasing: "The counter fell inside the window",
   windows_unresolved: "The window read was refused",
   timezone_unset: "The location has no time zone",
   non_finite: "The result is not a finite number",

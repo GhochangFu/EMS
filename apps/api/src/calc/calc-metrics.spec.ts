@@ -42,6 +42,8 @@ const ALL_REASONS_RECORD: Record<CalcRuntimeSkipReason, true> = {
   windows_unresolved: true,
   // ADR 0070 Amendment 3 (E4.4): a window sum below 90% coverage.
   window_sparse: true,
+  // ADR 0070 Amendment 8 (F4.353): a delta whose counter fell.
+  window_decreasing: true,
 };
 const ALL_REASONS = Object.keys(ALL_REASONS_RECORD) as CalcRuntimeSkipReason[];
 

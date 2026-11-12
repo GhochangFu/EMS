@@ -35,4 +35,6 @@ export function everyStateHasASentence(): void {
     expect(sentence.length, `state ${state} needs a sentence`).toBeGreaterThan(0);
   }
   expect(KPI_STATE_SENTENCE.stale_input).toMatch(/stale/i);
+  // ADR 0070 Amendment 8 (`F4.353`): a delta over a counter that fell.
+  expect(KPI_STATE_SENTENCE.window_decreasing).toBe("The counter fell inside the window");
 }

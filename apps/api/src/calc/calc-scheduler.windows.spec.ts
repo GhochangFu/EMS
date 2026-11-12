@@ -31,7 +31,7 @@ function count(skips: readonly string[], reason: string): number {
  */
 const V3 = { dialect: CALC_DIALECT_V3 } as const;
 const ok = (value: number): WindowReadResult => ({ ok: true, value });
-const refused = (reason: "window_empty" | "window_sparse" | "timezone_unset"): WindowReadResult => ({ ok: false, reason });
+const refused = (reason: "window_empty" | "window_sparse" | "window_decreasing" | "timezone_unset"): WindowReadResult => ({ ok: false, reason });
 
 function readsOf(formula: string): CalcWindowRead[] {
   return def({ ...V3, formula }).windowReads;
@@ -87,6 +87,31 @@ export async function sparseWindowRefusesWithoutARow(): Promise<void> {
   assert(count(skips, "window_sparse") === 1 && skips.length === 1, `exactly one window_sparse skip, got ${JSON.stringify(skips)}`);
   const recorded = status.get("asset-1", "tp-kwh");
   assert(recorded?.outcome === "skipped" && recorded.reason === "window_sparse", `the registry reads skipped/window_sparse, got ${JSON.stringify(recorded)}`);
+}
+
+/**
+ * H12 — `window_decreasing` (ADR 0070 Amendment 8, `F4.353`): the kWh point
+ * and the cost point that multiplies the same `delta` both write nothing and
+ * are each counted; the v1 sibling still writes. On the AWS demo these two
+ * were stored as −74,067 kWh and −555,502.
+ */
+export async function decreasingWindowRefusesKwhAndCostWithoutARow(): Promise<void> {
+  const kwh = def({ ...V3, pointKey: "KWH_TODAY", templatePointId: "tp-kwh", formula: "delta({kwh_total}, today)" });
+  const cost = def({ ...V3, pointKey: "ENERGY_COST_TODAY", templatePointId: "tp-cost", formula: "delta({kwh_total}, today) * 7.5" });
+  const plain = def({ pointKey: "PLAIN", templatePointId: "tp-plain", formula: "{kwh_total} * 2" });
+  const [deltaRead] = readsOf("delta({kwh_total}, today)");
+  const samples = new Map([["asset-1:kwh_total", { value: 0, timeMs: 0 }]]);
+  const windows = new Map([[windowFakeKey("asset-1", deltaRead), refused("window_decreasing")]]);
+  const { deps, writes, skips, status } = buildSweepDeps([kwh, cost, plain], samples, { windows });
+  await runScheduledSweep(deps, new Map(), 0);
+  const batch = writes.flat();
+  assert(batch.length === 1 && batch[0]?.pointKey === "PLAIN", `only the v1 sibling writes, got ${JSON.stringify(batch)}`);
+  assert(!batch.some((w) => w.value < 0), `no negative row is written, got ${JSON.stringify(batch)}`);
+  assert(count(skips, "window_decreasing") === 2 && skips.length === 2, `the kWh and the cost point are each one window_decreasing skip, got ${JSON.stringify(skips)}`);
+  for (const id of ["tp-kwh", "tp-cost"]) {
+    const recorded = status.get("asset-1", id);
+    assert(recorded?.outcome === "skipped" && recorded.reason === "window_decreasing", `the registry reads skipped/window_decreasing for ${id}, got ${JSON.stringify(recorded)}`);
+  }
 }
 
 /** H3 — timezone_unset likewise */

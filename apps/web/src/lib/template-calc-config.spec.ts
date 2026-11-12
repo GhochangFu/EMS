@@ -636,6 +636,17 @@ export function runV3WindowHelpNamesTheSparseRefusalTests(): void {
 }
 
 /**
+ * ADR 0070 Amendment 8 (`F4.353`): the help names the refusal an operator
+ * sees as `skipped: window_decreasing` when a counter fell inside the window.
+ */
+export function runV3WindowHelpNamesTheDecreasingRefusalTests(): void {
+  assert(
+    V3_WINDOW_HELP.includes("delta({kwh}, today) is last minus first, for cumulative counters, and refuses window_decreasing when the counter fell"),
+    `the window help says delta refuses window_decreasing when the counter fell — got ${V3_WINDOW_HELP}`,
+  );
+}
+
+/**
  * The calendar warning names the counter the sweep records and where the
  * fix lives, so an author who sees it knows what to do (`E4.1b` plan design
  * decision 15). A static sentence: it carries no fragment of the formula.

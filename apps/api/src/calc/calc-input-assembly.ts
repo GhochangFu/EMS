@@ -69,6 +69,7 @@ export type AssemblyRefusalReason = Extract<
   | "windows_unresolved"
   | "window_empty"
   | "window_sparse"
+  | "window_decreasing"
   | "timezone_unset"
 >;
 

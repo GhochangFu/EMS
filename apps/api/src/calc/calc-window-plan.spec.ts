@@ -294,11 +294,33 @@ export function runDeltaOfTests(): void {
   assert(one.ok === false && one.reason === "window_empty", "P9: one sample (first === last) is window_empty");
   const none = deltaOf(null, null);
   assert(none.ok === false && none.reason === "window_empty", "P9: no sample is window_empty");
-  const negative = deltaOf({ timeMs: 1, value: 10 }, { timeMs: 2, value: 4 });
+  const flat = deltaOf({ timeMs: 1, value: 74145 }, { timeMs: 2, value: 74145 });
+  assert(flat.ok === true && flat.value === 0, `P9: last equal to first is a delta of 0, not a refusal — got ${JSON.stringify(flat)}`);
+}
+
+/**
+ * P9b — ADR 0070 Amendment 8 (`F4.353`): a counter that fell inside the window
+ * refuses `window_decreasing` instead of writing a negative number. The AWS
+ * sequence: `kwh_total` at 74,067 at the start of the day, then one bad `0`
+ * as the newest sample — the stored `kwh_today` was −74,067.
+ */
+export function runDeltaRefusesFallingCounterTests(): void {
+  const falling = deltaOf({ timeMs: 1, value: 10 }, { timeMs: 2, value: 4 });
   assert(
-    negative.ok === true && negative.value === -6,
-    "P9: a decreasing counter gives a negative delta (the author's problem, not a refusal)",
+    falling.ok === false && falling.reason === "window_decreasing",
+    `P9b: last below first refuses window_decreasing — got ${JSON.stringify(falling)}`,
   );
+  const badZero = deltaOf({ timeMs: 1, value: 74067 }, { timeMs: 2, value: 0 });
+  assert(
+    badZero.ok === false && badZero.reason === "window_decreasing",
+    `P9b: one bad 0 as the newest kwh_total sample refuses, never −74067 — got ${JSON.stringify(badZero)}`,
+  );
+  const tiny = deltaOf({ timeMs: 1, value: 74145 }, { timeMs: 2, value: 74144.999 });
+  assert(tiny.ok === false && tiny.reason === "window_decreasing", "P9b: any fall refuses — there is no threshold");
+  const back = deltaOf({ timeMs: 1, value: 74067 }, { timeMs: 3, value: 74145 });
+  assert(back.ok === true && back.value === 78, `P9b: once the register is back, the delta is 78 — got ${JSON.stringify(back)}`);
+  const one = deltaOf({ timeMs: 3, value: 0 }, { timeMs: 3, value: 0 });
+  assert(one.ok === false && one.reason === "window_empty", "P9b: one sample is still window_empty (a same-instant pair is one row, so this pins the result, not the check order)");
 }
 
 /** P10 — windowEndMs floors the tick's bucket to the minute */

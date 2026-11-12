@@ -288,7 +288,7 @@ export interface SegmentRow extends SegmentCoverage {
   readonly maxValue: number | null;
 }
 
-export type WindowValue = { ok: true; value: number } | { ok: false; reason: "window_empty" | "window_sparse" };
+export type WindowValue = { ok: true; value: number } | { ok: false; reason: "window_empty" | "window_sparse" | "window_decreasing" };
 
 /**
  * Folds the per-segment rows into the window's value (plan design decision
@@ -368,12 +368,22 @@ export interface Sample {
  * `delta` — the last sample minus the first inside the window (ADR 0070
  * decision 5). One sample or none is `window_empty`: the two probes return
  * the same row when only one exists, and a delta of one reading means
- * nothing. A negative delta (a counter reset) is returned as it is — that is
- * the author's rule to write, not this function's refusal.
+ * nothing.
+ *
+ * **A counter that fell refuses `window_decreasing`** (ADR 0070 Amendment 8,
+ * `F4.353`). `delta` reads cumulative counters, so `last < first` is a bad
+ * sample or a reset, never a negative quantity: on the AWS demo one `0` from
+ * a ~74,000 kWh register was written as `kwh_today` = −74,067 and its cost
+ * as −555,502. Any fall refuses — there is no threshold — and an equal pair
+ * is a delta of `0`, a value. The two probes are all this reads, so a bad
+ * FIRST sample is not seen here; the ingest engineering range is its cover.
  */
 export function deltaOf(first: Sample | null, last: Sample | null): WindowValue {
   if (first === null || last === null || first.timeMs === last.timeMs) {
     return { ok: false, reason: "window_empty" };
+  }
+  if (last.value < first.value) {
+    return { ok: false, reason: "window_decreasing" };
   }
   return { ok: true, value: last.value - first.value };
 }
