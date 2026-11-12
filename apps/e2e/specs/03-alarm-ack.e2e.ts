@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { apiGet, apiPost, authFile, E2eApiError, readFixtures, tokenFromStorageState } from "../src/api.js";
 import { RUN_ID } from "../src/run-id.js";
+import { closeAlarmPopupWhenInTheWay } from "../src/alarm-popup.js";
 
 /**
  * ADR 0100 path 3 — an operator acknowledges an active alarm.
@@ -63,6 +64,7 @@ test.describe("path 3 — alarm acknowledgement", () => {
   });
 
   test("an active alarm is acknowledged and stays acknowledged after a reload", async ({ page }) => {
+    await closeAlarmPopupWhenInTheWay(page);
     const token = tokenFromStorageState(authFile("admin"));
     const { crMainBusAssetId } = readFixtures();
 

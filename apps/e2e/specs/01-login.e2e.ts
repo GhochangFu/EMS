@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { BASE_URL, DEMO_PASSWORD, ROLES } from "../src/api.js";
+import { closeAlarmPopupWhenInTheWay } from "../src/alarm-popup.js";
 
 /**
  * ADR 0100 path 1 — local login through the form, and the session survives a
@@ -20,6 +21,7 @@ const ADMIN_EMAIL = ROLES.admin;
 
 test.describe("path 1 — local login", () => {
   test("the form signs in and the session survives a reload", async ({ page }) => {
+    await closeAlarmPopupWhenInTheWay(page);
     await page.goto("/login");
     await page.locator("#email").fill(ADMIN_EMAIL);
     await page.locator("#password").fill(DEMO_PASSWORD);

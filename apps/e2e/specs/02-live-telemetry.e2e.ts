@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { apiGet, authFile, tokenFromStorageState } from "../src/api.js";
+import { closeAlarmPopupWhenInTheWay } from "../src/alarm-popup.js";
 
 /**
  * ADR 0100 path 2 — a live value from `apps/sim` reaches the screen.
@@ -54,6 +55,7 @@ test.use({ storageState: authFile("admin") });
 
 test.describe("path 2 — live telemetry", () => {
   test("a point value on the site view follows the simulator", async ({ page }) => {
+    await closeAlarmPopupWhenInTheWay(page);
     const token = tokenFromStorageState(authFile("admin"));
 
     const locations = await apiGet<{ items: { id: string; code: string; name: string; organizationCode?: string }[] }>(

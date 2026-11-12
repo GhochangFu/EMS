@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { apiGet, apiStatus, authFile, readFixtures, tokenFromStorageState } from "../src/api.js";
+import { closeAlarmPopupWhenInTheWay } from "../src/alarm-popup.js";
 
 /**
  * ADR 0100 path 5 — a location-scoped administrator sees only the locations
@@ -25,6 +26,7 @@ test.use({ storageState: authFile("wc-admin") });
 
 test.describe("path 5 — location scope", () => {
   test("the location list shows the granted site and not the other one", async ({ page }) => {
+    await closeAlarmPopupWhenInTheWay(page);
     await page.goto("/admin/locations");
     await expect(page.getByRole("heading", { level: 1, name: "Locations" })).toBeVisible();
 
@@ -38,6 +40,7 @@ test.describe("path 5 — location scope", () => {
   });
 
   test("a direct URL to the other site is refused", async ({ page }) => {
+    await closeAlarmPopupWhenInTheWay(page);
     const { wcLocationId, gautengLocationId } = readFixtures();
 
     await page.goto(`/control-room/site/${wcLocationId}`);

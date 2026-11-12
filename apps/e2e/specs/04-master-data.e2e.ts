@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { apiGet, authFile, readFixtures, tokenFromStorageState } from "../src/api.js";
 import { RUN_ID, slugOf } from "../src/run-id.js";
+import { closeAlarmPopupWhenInTheWay } from "../src/alarm-popup.js";
 
 /**
  * ADR 0100 path 4 — an administrator builds the master-data chain through the
@@ -83,6 +84,7 @@ test.use({ storageState: authFile("admin") });
 
 test.describe("path 4 — master data", () => {
   test("location, RTU, asset and point mapping are created through the admin pages", async ({ page }) => {
+    await closeAlarmPopupWhenInTheWay(page);
     const token = tokenFromStorageState(authFile("admin"));
     const { eskomOrganizationId } = readFixtures();
     let locationId = "";
