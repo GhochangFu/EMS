@@ -12,6 +12,13 @@ import { repoRoot, withoutComments } from "./support/source-scan";
  *  - **G1** `--alarm-bar-h` is declared exactly once in `index.css`, as `3rem`, and
  *    `ALARM_BAR_HEIGHT_PX` is its pixel twin (48 at the 16 px root): the page clearance, the
  *    Copilot offsets and the wall's fit (PR 4) read one height.
+ *  - **G2** (decision 9, WCAG 2.3.1) the blink: `@keyframes alarm-bar-blink` sets only `opacity`; the
+ *    animation is `alarm-bar-blink 1s step-end infinite` and sits only inside
+ *    `@media (prefers-reduced-motion: no-preference)`; under `reduce` the class gets a static
+ *    `double` outline instead. jsdom computes no media query and `javascript_tool` cannot switch
+ *    one, so this static gate is where the reduced-motion claim is held.
+ *  - **G3** (decision 9: "no design system may change, remove or add to this blink") no selector
+ *    that names `data-design`, `data-profile`, `data-surface` or `data-theme` names `alarm-bar`.
  *  - **G4** the bar is mounted where the ADR puts it: `main.tsx` installs the one feed, `AppShell`
  *    renders `<AlarmBar`, and no shell under `layouts/shells/` renders a second one.
  *
@@ -39,6 +46,59 @@ function barHeightPx(source: string): number | undefined {
 const installsTheFeed = (source: string): boolean => /\binstallAlarmBarFeed\(/.test(withoutComments(source));
 const rendersTheBar = (source: string): boolean => /<AlarmBar\b/.test(withoutComments(source));
 
+/** Each top-level rule of `css` (comments stripped): `[prelude, body]`, at-rules with their nested body. */
+function topLevelRules(css: string): [string, string][] {
+  const source = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const out: [string, string][] = [];
+  let depth = 0;
+  let start = 0;
+  let open = -1;
+  for (let i = 0; i < source.length; i += 1) {
+    if (source[i] === "{") {
+      if (depth === 0) open = i;
+      depth += 1;
+    } else if (source[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        out.push([source.slice(start, open).trim(), source.slice(open + 1, i)]);
+        start = i + 1;
+      }
+    }
+  }
+  return out;
+}
+
+/** G2's rule over one stylesheet: the problems found, `[]` when the blink is as ruled. */
+function blinkProblems(css: string): string[] {
+  const rules = topLevelRules(css);
+  const problems: string[] = [];
+  const keyframes = rules.filter(([prelude]) => prelude === "@keyframes alarm-bar-blink");
+  if (keyframes.length !== 1) problems.push(`${keyframes.length} @keyframes alarm-bar-blink`);
+  for (const [, body] of keyframes) {
+    const properties = [...body.matchAll(/([a-z-]+)\s*:/g)].map((m) => m[1]);
+    if (properties.some((p) => p !== "opacity")) problems.push(`the keyframe sets ${properties.join(", ")}`);
+  }
+  const animated = rules.filter(([, body]) => /animation\s*:\s*alarm-bar-blink/.test(body));
+  for (const [prelude, body] of animated) {
+    if (prelude !== "@media (prefers-reduced-motion: no-preference)") problems.push(`the animation sits in "${prelude}"`);
+    const value = /animation\s*:\s*([^;]+);/.exec(body)?.[1]?.trim();
+    if (value !== "alarm-bar-blink 1s step-end infinite") problems.push(`the animation is "${value}"`);
+  }
+  if (animated.length !== 1) problems.push(`${animated.length} rules animate alarm-bar-blink`);
+  const reduce = rules.filter(([prelude]) => prelude === "@media (prefers-reduced-motion: reduce)");
+  if (!reduce.some(([, body]) => /\.alarm-bar-blink\s*\{[^}]*outline\s*:[^;]*double/.test(body))) {
+    problems.push("no double outline for .alarm-bar-blink under reduce");
+  }
+  return problems;
+}
+
+/** G3's rule: every selector that names a design attribute and the alarm bar. */
+function designScopedBarSelectors(css: string): string[] {
+  return topLevelRules(css)
+    .flatMap(([prelude, body]) => (prelude.startsWith("@") ? topLevelRules(body).map(([inner]) => inner) : [prelude]))
+    .filter((selector) => /data-(design|profile|surface|theme)/.test(selector) && /alarm-bar/.test(selector));
+}
+
 describe("F4.357 alarm bar gate (ADR 0130)", () => {
   it("G1 --alarm-bar-h is declared once, as 3rem, and ALARM_BAR_HEIGHT_PX is 48", () => {
     expect(barHeightDeclarations(read("index.css"))).toEqual(["3rem"]);
@@ -46,6 +106,27 @@ describe("F4.357 alarm bar gate (ADR 0130)", () => {
     expect(barHeightPx("export const ALARM_BAR_HEIGHT_PX = 40;"), "the scan reads the value").toBe(40);
     expect(barHeightDeclarations("html { --alarm-bar-h: 3rem; } .x { --alarm-bar-h: 4rem; }"), "the scan sees a second one").toHaveLength(2);
     expect(barHeightDeclarations("/* --alarm-bar-h: 3rem; */"), "a comment is not a declaration").toEqual([]);
+  });
+
+  it("G2 the blink is an opacity step at 1 Hz, only without reduced motion; a double outline with it", () => {
+    expect(blinkProblems(read("index.css"))).toEqual([]);
+    const good = [
+      "@keyframes alarm-bar-blink { 50% { opacity: 0.35; } }",
+      "@media (prefers-reduced-motion: no-preference) { .alarm-bar-blink { animation: alarm-bar-blink 1s step-end infinite; } }",
+      "@media (prefers-reduced-motion: reduce) { .alarm-bar-blink { outline: 3px double red; } }",
+    ];
+    expect(blinkProblems(good.join("\n")), "the scan passes the ruled form").toEqual([]);
+    expect(blinkProblems(good.join("\n").replace("1s step-end", "0.25s step-end")), "four flashes a second").not.toEqual([]);
+    expect(
+      blinkProblems([good[0], ".alarm-bar-blink { animation: alarm-bar-blink 1s step-end infinite; }", good[2]].join("\n")),
+      "the animation outside the media query",
+    ).not.toEqual([]);
+    expect(blinkProblems(good.join("\n").replace("opacity: 0.35", "background: red")), "a colour step").not.toEqual([]);
+  });
+
+  it("G3 no design-system selector names the alarm bar", () => {
+    expect(designScopedBarSelectors(read("index.css"))).toEqual([]);
+    expect(designScopedBarSelectors('html[data-design="bento-ops"] .alarm-bar-blink { animation: none; }'), "the scan sees one").toHaveLength(1);
   });
 
   it("G4 main.tsx installs the feed, AppShell renders the bar, no shell renders another", () => {

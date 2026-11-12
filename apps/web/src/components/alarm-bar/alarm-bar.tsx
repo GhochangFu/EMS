@@ -9,6 +9,7 @@ import {
   alarmBarScopeLabel,
   alarmBarScopeOf,
   alarmLocationLabel,
+  blinkingSeverityCodes,
   countsByRankDescending,
   newestUnacknowledged,
 } from "../../lib/alarm-bar";
@@ -51,6 +52,7 @@ export function AlarmBar() {
   const list = useAlarmBarStore((state) => state.list);
   const summary = useAlarmBarStore((state) => state.summary);
   const status = useAlarmBarStore((state) => state.feed);
+  const seenIds = useAlarmBarStore((state) => state.seenIds);
   const role = useAuthStore((state) => state.user?.role);
   const [listOpen, setListOpen] = useState(false);
   const [acknowledging, setAcknowledging] = useState<AlarmListItem | null>(null);
@@ -65,6 +67,7 @@ export function AlarmBar() {
 
   const newest = list === null ? null : newestUnacknowledged(list);
   const counts = summary === null ? [] : countsByRankDescending(summary);
+  const blinking = list === null ? new Set<string>() : blinkingSeverityCodes(list, seenIds);
   const mayAcknowledge = role !== undefined && canAcknowledgeAlarms(role);
 
   return (
@@ -78,7 +81,9 @@ export function AlarmBar() {
           {counts.map((row) => (
             <li
               key={row.code}
-              className={`surface-pill inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-2xs font-semibold ${COUNT_TONE[row.tone]}`}
+              // U7 (decision 9): the one uniform blink, identical in every design system (index.css).
+              data-blink={blinking.has(row.code) ? "true" : undefined}
+              className={`surface-pill inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-2xs font-semibold ${COUNT_TONE[row.tone]}${blinking.has(row.code) ? " alarm-bar-blink" : ""}`}
             >
               <span>{row.label}</span>
               <span className="tabular-nums">{row.count}</span>

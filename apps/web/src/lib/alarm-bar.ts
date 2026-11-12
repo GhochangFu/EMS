@@ -125,3 +125,16 @@ export function moreActiveCount(summary: AlarmSummaryResponse, list: readonly Al
     .reduce((sum, row) => sum + row.unacknowledged, 0);
   return Math.max(0, unacknowledged - list.length);
 }
+
+/**
+ * `F4.357` U7 (decision 9) — the severity codes whose count blinks: those of an unacknowledged
+ * alarm of rank >= {@link ALARM_CRITICAL_MIN_RANK} that this tab has not seen. Close (seen) or an
+ * acknowledge stops it; a warning never blinks.
+ */
+export function blinkingSeverityCodes(list: readonly AlarmListItem[], seenIds: ReadonlySet<string>): ReadonlySet<string> {
+  return new Set(
+    list
+      .filter((alarm) => alarm.acknowledgedAt === null && alarm.severityRank >= ALARM_CRITICAL_MIN_RANK && !seenIds.has(alarm.id))
+      .map((alarm) => alarm.severity),
+  );
+}

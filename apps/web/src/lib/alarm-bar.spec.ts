@@ -7,6 +7,7 @@ import {
   alarmBarScopeOf,
   alarmLocationLabel,
   alarmReadScopeOf,
+  blinkingSeverityCodes,
   countsByRankDescending,
   moreActiveCount,
   newestUnacknowledged,
@@ -157,4 +158,17 @@ export function moreActiveCountIsExactAndNeverNegative(): void {
   expect(moreActiveCount(summary(10, 50), fifty)).toBe(10);
   expect(moreActiveCount(summary(0, 2), fifty.slice(0, 2))).toBe(0);
   expect(moreActiveCount(summary(0, 1), fifty.slice(0, 3)), "a stale summary never goes negative").toBe(0);
+}
+
+/** `F4.357` U7 (decision 9) — the severities that blink: unacknowledged, unseen, rank >= 30. */
+export function blinkingSeverityCodesAreUnseenCriticalOnly(): void {
+  const list = [
+    alarmItem({ id: "c" }),
+    alarmItem({ id: "s", severity: "severe", severityRank: 40 }),
+    alarmItem({ id: "w", severity: "warning", severityRank: 20 }),
+    alarmItem({ id: "k", severity: "acked", acknowledgedAt: "2026-11-12T10:00:00.000Z" }),
+    alarmItem({ id: "seen", severity: "seen-sev" }),
+  ];
+  expect([...blinkingSeverityCodes(list, new Set(["seen"]))].sort()).toEqual(["critical", "severe"]);
+  expect(blinkingSeverityCodes([alarmItem({ id: "c" })], new Set(["c"])).size, "a seen alarm stops it").toBe(0);
 }
