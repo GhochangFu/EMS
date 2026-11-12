@@ -1,8 +1,9 @@
-import type { AlarmsListResponse, AlarmSummaryResponse } from "@bms/shared";
+import type { AlarmListItem, AlarmsListResponse, AlarmSummaryResponse } from "@bms/shared";
 
 import type { AlarmReadScope } from "../api/alarms";
 import { INITIAL_ALARM_BAR_STATE, useAlarmBarStore } from "../stores/alarm-bar-store";
-import { type AlarmBarScope, alarmBarScopeKey, alarmReadScopeOf } from "./alarm-bar";
+import { type AlarmBarScope, alarmBarScopeKey, alarmReadScopeOf, popupRows } from "./alarm-bar";
+import { apiErrorMessage } from "./api-error-message";
 import { sessionChanged } from "./query-cache-session";
 
 /**
@@ -55,6 +56,14 @@ export type AlarmBarPorts = {
   readonly openSocket: (token: string, on: AlarmBarSocketHandlers) => { close(): void };
   readonly fetchList: (scope: AlarmReadScope) => Promise<AlarmsListResponse>;
   readonly fetchSummary: (scope: AlarmReadScope) => Promise<AlarmSummaryResponse>;
+  /** The existing `POST /api/v1/alarms/:id/ack` (U6; no bulk endpoint, decision 8). */
+  readonly acknowledge: (id: string, reason: string) => Promise<AlarmListItem>;
+};
+
+/** What one Acknowledge or Acknowledge all did: how many succeeded, and each failure's message. */
+export type AlarmBarAcknowledgeResult = {
+  readonly done: number;
+  readonly failed: readonly { readonly id: string; readonly message: string }[];
 };
 
 /** The session store the feed follows (`useAuthStore`'s shape). */
@@ -71,6 +80,13 @@ export type AlarmBarFeed = {
   setScope(scope: AlarmBarScope): void;
   /** Reads now — after an acknowledge, say. */
   refreshNow(): void;
+  /** U6 (decision 8): Close — the popup's current rows are seen; they stay on the bar, unacknowledged. */
+  closePopup(): void;
+  /**
+   * U6 (decisions 8, 18): one acknowledge per id, in order, one at a time, with the same reason;
+   * a failure is kept with its message and the rest go on; then a read.
+   */
+  acknowledge(ids: readonly string[], reason: string): Promise<AlarmBarAcknowledgeResult>;
 };
 
 let installed: AlarmBarFeed | null = null;
@@ -192,7 +208,8 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
     socketDown = false;
     request += 1;
     pendingAfterFlight = false;
-    store.setState({ ...INITIAL_ALARM_BAR_STATE, scope: store.getState().scope }, true);
+    // `seenIds` goes with the session: a login treats every unacknowledged alarm as unseen (decision 21).
+    store.setState({ ...INITIAL_ALARM_BAR_STATE, seenIds: new Set<string>(), scope: store.getState().scope }, true);
   }
 
   function follow(state: AlarmBarSession, prev: AlarmBarSession): void {
@@ -222,6 +239,26 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
       read();
     },
     refreshNow: read,
+    closePopup() {
+      const state = store.getState();
+      if (state.list === null) return;
+      const shown = popupRows(state.list, state.seenIds).map((alarm) => alarm.id);
+      store.setState({ seenIds: new Set([...state.seenIds, ...shown]) });
+    },
+    async acknowledge(ids, reason) {
+      let done = 0;
+      const failed: { id: string; message: string }[] = [];
+      for (const id of ids) {
+        try {
+          await ports.acknowledge(id, reason);
+          done += 1;
+        } catch (cause) {
+          failed.push({ id, message: apiErrorMessage(cause) });
+        }
+      }
+      read();
+      return { done, failed };
+    },
   };
 
   return () => {

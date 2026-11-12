@@ -18,4 +18,7 @@ describe("alarm bar feed (F4.357, ADR 0130 decisions 13, 16)", () => {
   it("an older read of the same scope is dropped, its failure too (D7)", () => spec.anOlderReadOfTheSameScopeIsDropped());
   it("a successful read does not hide a lost socket", () => spec.aReadDoesNotHideALostSocket());
   it("a hung read fails at 15 s and the feed recovers", () => spec.aHungReadFailsAndTheFeedRecovers());
+  it("Close marks the shown rows seen; a new alarm pops up alone (U6)", () => spec.closeMarksTheShownRowsSeen());
+  it("seen lasts for the tab's session, not past it (U6, decision 21)", () => spec.seenLastsForTheTabsSession());
+  it("acknowledge calls once per alarm in order, keeps failures, then reads (U6)", () => spec.acknowledgeCallsOncePerAlarmInOrder());
 });

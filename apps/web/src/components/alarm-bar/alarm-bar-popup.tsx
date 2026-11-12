@@ -1,0 +1,184 @@
+import type { AlarmListItem } from "@bms/shared";
+import { alarmAckBodySchema } from "@bms/shared/contracts";
+import { useState } from "react";
+import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
+
+import { alarmLocationLabel, moreActiveCount, popupRows } from "../../lib/alarm-bar";
+import type { AlarmBarFeed } from "../../lib/alarm-bar-feed";
+import { alarmSubjectName } from "../../lib/alarm-source";
+import { useAlarmBarStore } from "../../stores/alarm-bar-store";
+import { AlarmDetailsPanel } from "../alarm-details-panel";
+
+type AlarmBarPopupProps = {
+  feed: AlarmBarFeed;
+  /** A viewer (no `operational` write class) sees Close only (decision 8). */
+  readOnly: boolean;
+};
+
+type Run = { readonly done: number; readonly total: number; readonly errors: ReadonlyMap<string, string> };
+
+/**
+ * `F4.357` U6 (ADR 0130 decisions 6–8, 18, 21) — the one popup for new alarms.
+ *
+ * It lists every unacknowledged alarm of rank >= 20 in the page's scope that
+ * this tab has not seen (`popupRows`): critical first, newest first in a rank,
+ * at most 50, and "and N more active alarms" beyond. An alarm that arrives
+ * while it is open joins it. It sits fixed above the bar at the bottom centre,
+ * `z-40`, a region and not a dialog (the page stays usable; the e2e suite
+ * selects dialogs by name).
+ *
+ * **Close** marks the shown rows seen; they stay unacknowledged on the bar.
+ * **Acknowledge** on a row, or **Acknowledge all**, asks for one reason
+ * (`alarmAckBodySchema`: 3 to 2,000 characters, trimmed) and calls the
+ * existing route once per alarm (no bulk endpoint); a row whose call fails
+ * stays with its error, and the line reads "N of M acknowledged". Rows leave
+ * when the refetch drops them — an acknowledge here or by another operator,
+ * or a clear.
+ */
+export function AlarmBarPopup({ feed, readOnly }: AlarmBarPopupProps) {
+  const list = useAlarmBarStore((state) => state.list);
+  const summary = useAlarmBarStore((state) => state.summary);
+  const seenIds = useAlarmBarStore((state) => state.seenIds);
+  const [asking, setAsking] = useState<readonly string[] | null>(null);
+  const [reason, setReason] = useState("");
+  const [running, setRunning] = useState(false);
+  const [run, setRun] = useState<Run | null>(null);
+  const [detailsId, setDetailsId] = useState<string | null>(null);
+
+  const rows = list === null ? [] : popupRows(list, seenIds);
+  if (rows.length === 0) return null;
+
+  const more = summary === null || list === null ? 0 : moreActiveCount(summary, list);
+  const trimmed = reason.trim();
+  const valid = alarmAckBodySchema.safeParse({ reason: trimmed }).success;
+
+  const confirm = async (): Promise<void> => {
+    if (asking === null || !valid) return;
+    setRunning(true);
+    const result = await feed.acknowledge(asking, trimmed);
+    setRunning(false);
+    setRun({ done: result.done, total: asking.length, errors: new Map(result.failed.map((f) => [f.id, f.message])) });
+    setAsking(null);
+    setReason("");
+  };
+
+  return (
+    <section
+      role="region"
+      aria-label="New alarms"
+      className="surface-raised fixed bottom-[calc(var(--alarm-bar-h)+0.5rem)] left-1/2 z-40 flex max-h-[28rem] w-[min(40rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-lg text-xs text-ink"
+    >
+      <header className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
+        <h2 className="font-semibold">
+          {rows.length} new {rows.length === 1 ? "alarm" : "alarms"}
+        </h2>
+        <div className="flex items-center gap-2">
+          {readOnly ? null : (
+            <button
+              type="button"
+              disabled={running}
+              onClick={() => setAsking(rows.map((row) => row.id))}
+              className="surface-button rounded px-2 py-1 font-semibold"
+            >
+              Acknowledge all
+            </button>
+          )}
+          <button type="button" onClick={() => feed.closePopup()} className="surface-button rounded px-2 py-1 font-semibold">
+            Close
+          </button>
+        </div>
+      </header>
+      {run === null ? null : (
+        <p role="status" className="border-b border-line px-3 py-1">
+          {run.done} of {run.total} acknowledged
+        </p>
+      )}
+      {asking === null ? null : (
+        <form
+          className="space-y-1 border-b border-line px-3 py-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void confirm();
+          }}
+        >
+          <label htmlFor="alarm-bar-reason" className="block font-semibold">
+            Reason for {asking.length === 1 ? "this alarm" : `${asking.length} alarms`}
+          </label>
+          <textarea
+            id="alarm-bar-reason"
+            value={reason}
+            maxLength={2000}
+            rows={2}
+            onChange={(event) => setReason(event.target.value)}
+            className="surface-field w-full rounded px-2 py-1"
+          />
+          <p className="text-ink-muted">This cannot be undone.</p>
+          <div className="flex gap-2">
+            <button type="submit" disabled={!valid || running} className="surface-button rounded px-2 py-1 font-semibold">
+              Confirm
+            </button>
+            <button type="button" onClick={() => setAsking(null)} className="surface-button rounded px-2 py-1">
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+      <ul className="min-h-0 flex-1 overflow-y-auto">
+        {rows.map((alarm) => (
+          <PopupRow
+            key={alarm.id}
+            alarm={alarm}
+            error={run?.errors.get(alarm.id) ?? null}
+            readOnly={readOnly || running}
+            onOpen={() => setDetailsId(alarm.id)}
+            onAcknowledge={() => setAsking([alarm.id])}
+          />
+        ))}
+      </ul>
+      {more > 0 ? (
+        <footer className="border-t border-line px-3 py-2">
+          <Link to="/alarms" className="font-semibold text-accent hover:underline">
+            and {more} more active alarms
+          </Link>
+        </footer>
+      ) : null}
+      {detailsId !== null
+        ? createPortal(<AlarmDetailsPanel alarmId={detailsId} readOnly={readOnly} onClose={() => setDetailsId(null)} />, document.body)
+        : null}
+    </section>
+  );
+}
+
+function PopupRow({
+  alarm,
+  error,
+  readOnly,
+  onOpen,
+  onAcknowledge,
+}: {
+  alarm: AlarmListItem;
+  error: string | null;
+  readOnly: boolean;
+  onOpen: () => void;
+  onAcknowledge: () => void;
+}) {
+  return (
+    <li className="flex items-start gap-2 border-b border-line px-3 py-2 last:border-b-0">
+      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 flex-col items-start text-left">
+        <span className="font-semibold">{alarm.message}</span>
+        <span className="text-ink-muted">
+          {[alarm.severity, alarmSubjectName(alarm), alarmLocationLabel(alarm), new Date(alarm.raisedAt).toLocaleString()]
+            .filter((part) => part !== null && part !== "")
+            .join(" · ")}
+        </span>
+        {error === null ? null : <span className="text-critical-ink">{error}</span>}
+      </button>
+      {readOnly ? null : (
+        <button type="button" onClick={onAcknowledge} className="surface-button shrink-0 rounded px-2 py-1 font-semibold">
+          Acknowledge
+        </button>
+      )}
+    </li>
+  );
+}

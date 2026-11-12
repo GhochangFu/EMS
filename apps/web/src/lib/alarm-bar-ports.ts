@@ -1,4 +1,4 @@
-import { fetchAlarmSummary, fetchUnacknowledgedAlarms } from "../api/alarms";
+import { ackAlarm, fetchAlarmSummary, fetchUnacknowledgedAlarms } from "../api/alarms";
 import { ALARM_BAR_LIST_LIMIT, ALARM_POPUP_MIN_RANK } from "./alarm-bar";
 import type { AlarmBarPorts } from "./alarm-bar-feed";
 import { openLiveSocket } from "./live-socket";
@@ -27,5 +27,6 @@ export function browserAlarmBarPorts(): AlarmBarPorts {
     },
     fetchList: (scope) => fetchUnacknowledgedAlarms(scope, { minRank: ALARM_POPUP_MIN_RANK, limit: ALARM_BAR_LIST_LIMIT }),
     fetchSummary: (scope) => fetchAlarmSummary(scope),
+    acknowledge: (id, reason) => ackAlarm(id, reason),
   };
 }
