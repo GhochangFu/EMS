@@ -34,11 +34,17 @@ const FOREIGN = "33333333-3333-4333-8333-333333333333";
 
 type ListCall = Parameters<AlarmsService["list"]>[0];
 
+const SITE = "55555555-5555-4555-8555-555555555555";
+const READABLE_LOCATIONS = [SITE, "66666666-6666-4666-8666-666666666666"];
+const READABLE_ORGANIZATIONS = ["77777777-7777-4777-8777-777777777777"];
+
 function harness(readable: string[] | null) {
   const listCalls: ListCall[] = [];
   const summaryCalls: (string[] | null | undefined)[] = [];
   const summaryOrgs: (string | undefined)[] = [];
+  const summaryLocations: unknown[] = [];
   let scopeReads = 0;
+  let locationReads = 0;
   const service = {
     list: async (opts: ListCall) => {
       listCalls.push(opts);
@@ -47,9 +53,11 @@ function harness(readable: string[] | null) {
     activeCountsBySeverity: async (
       assetIds: string[] | null | undefined,
       organizationId?: string,
+      location?: unknown,
     ) => {
       summaryCalls.push(assetIds);
       summaryOrgs.push(organizationId);
+      summaryLocations.push(location);
       return { items: [], total: 0 };
     },
   } as unknown as AlarmsService;
@@ -58,6 +66,12 @@ function harness(readable: string[] | null) {
       scopeReads += 1;
       return readable;
     },
+    // F4.357 U2: the two sets a `locationId` filter carries (owner rulings P2, P3).
+    readableLocationIds: async () => {
+      locationReads += 1;
+      return READABLE_LOCATIONS;
+    },
+    readableOrganizationIds: async () => READABLE_ORGANIZATIONS,
   } as unknown as AccessControlService;
   const controller = new AlarmsController(
     service,
@@ -65,7 +79,15 @@ function harness(readable: string[] | null) {
     {} as unknown as AlarmDetailsService,
     {} as unknown as AlarmEnrichmentService,
   );
-  return { controller, listCalls, summaryCalls, summaryOrgs, scopeReads: () => scopeReads };
+  return {
+    controller,
+    listCalls,
+    summaryCalls,
+    summaryOrgs,
+    summaryLocations,
+    scopeReads: () => scopeReads,
+    locationReads: () => locationReads,
+  };
 }
 
 /** `GET /alarms/summary`: a requested id outside the readable set is dropped, as on the list. */
@@ -262,4 +284,50 @@ export async function assertSummaryNonUuidOrganizationIdIsABadRequest(): Promise
     thrown = err;
   }
   assert(thrown instanceof BadRequestException, `organizationId=not-a-uuid threw ${String(thrown)}, not a 400`);
+}
+
+/*
+ * `F4.357` U2 (ADR 0130 decision 15) — `locationId` narrows both reads to a
+ * location and its sub-locations. The controller passes the node with the
+ * caller's readable locations and organizations (the `asset-health` filter's
+ * shape, owner rulings P2 and P3), and `assetIds` stays the intersected set.
+ */
+
+const LOCATION_FILTER = { id: SITE, readableLocationIds: READABLE_LOCATIONS, readableOrganizationIds: READABLE_ORGANIZATIONS };
+
+function same(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** `GET /alarms?locationId=`: the service gets the filter and the unchanged intersected scope. */
+export async function assertListPassesTheLocationFilter(): Promise<void> {
+  const h = harness([READABLE_A]);
+  await h.controller.list(USER, { locationId: SITE, assetIds: [READABLE_A, FOREIGN] });
+  const call = h.listCalls[0];
+  assert(same(call?.location, LOCATION_FILTER), `the list got location ${JSON.stringify(call?.location)}`);
+  assert(same(call?.assetIds, [READABLE_A]), `the list's assetIds became ${JSON.stringify(call?.assetIds)}`);
+}
+
+/** `GET /alarms` with no `locationId`: no filter, and no location read. */
+export async function assertListWithoutLocationIdReadsNoLocations(): Promise<void> {
+  const h = harness([READABLE_A]);
+  await h.controller.list(USER, {});
+  assert(h.listCalls[0]?.location === undefined, "an absent locationId reached the list as a filter");
+  assert(h.locationReads() === 0, "readableLocationIds ran without a locationId");
+}
+
+/** `GET /alarms/summary?locationId=`: the summary gets the same filter, the scope still intersected. */
+export async function assertSummaryPassesTheLocationFilter(): Promise<void> {
+  const h = harness([READABLE_A]);
+  await h.controller.summary(USER, { locationId: SITE, assetIds: [READABLE_A, FOREIGN] });
+  assert(same(h.summaryLocations[0], LOCATION_FILTER), `the summary got location ${JSON.stringify(h.summaryLocations[0])}`);
+  assert(same(h.summaryCalls[0], [READABLE_A]), `the summary's assetIds became ${JSON.stringify(h.summaryCalls[0])}`);
+}
+
+/** `GET /alarms/summary` with no `locationId`: no filter, and no location read. */
+export async function assertSummaryWithoutLocationIdReadsNoLocations(): Promise<void> {
+  const h = harness([READABLE_A]);
+  await h.controller.summary(USER, {});
+  assert(h.summaryLocations[0] === undefined, "an absent locationId reached the summary as a filter");
+  assert(h.locationReads() === 0, "readableLocationIds ran without a locationId");
 }

@@ -193,3 +193,26 @@ export function assertSummaryOrganizationIdAloneParses(): void {
     `organizationId alone must parse on the summary: ${JSON.stringify(result.success ? result.data : result.error.issues)}`,
   );
 }
+
+/**
+ * `F4.357` U2 (ADR 0130 decision 15) — `locationId` on both reads: a uuid, and
+ * both schemas stay `.strict()`.
+ */
+export function assertBothQueriesAcceptALocationId(): void {
+  const id = randomUUID();
+  for (const [name, schema] of [["list", alarmListQuerySchema], ["summary", alarmSummaryQuerySchema]] as const) {
+    const result = schema.safeParse({ locationId: id });
+    assert(
+      result.success && result.data.locationId === id,
+      `locationId must parse on the ${name}: ${JSON.stringify(result.success ? result.data : result.error.issues)}`,
+    );
+  }
+}
+
+/** A non-uuid `locationId` is refused on both reads, and an unknown key still is. */
+export function assertBothQueriesRefuseANonUuidLocationId(): void {
+  for (const [name, schema] of [["list", alarmListQuerySchema], ["summary", alarmSummaryQuerySchema]] as const) {
+    assert(schema.safeParse({ locationId: "abc" }).success === false, `locationId=abc must be refused on the ${name}`);
+    assert(schema.safeParse({ locationId: randomUUID(), siteId: "x" }).success === false, `an unknown key beside locationId must be refused on the ${name}`);
+  }
+}

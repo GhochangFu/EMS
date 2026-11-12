@@ -1,5 +1,6 @@
 import { describe, it } from "vitest";
 
+import * as spec from "./alarms.controller.spec";
 import {
   assertAMalformedListQueryIsABadRequest,
   assertAMalformedListQueryRunsNothing,
@@ -103,4 +104,12 @@ describe("alarms.controller — organizationId on GET /alarms and /alarms/summar
   it("answers a non-uuid organizationId on the summary with 400", async () => {
     await assertSummaryNonUuidOrganizationIdIsABadRequest();
   });
+});
+
+describe("alarms.controller — locationId on GET /alarms and /alarms/summary (F4.357 U2)", () => {
+  it("passes the location filter and the intersected scope to the list", () => spec.assertListPassesTheLocationFilter());
+  it("passes no filter and reads no locations without locationId on the list", () => spec.assertListWithoutLocationIdReadsNoLocations());
+  it("passes the location filter and the intersected scope to the summary", () => spec.assertSummaryPassesTheLocationFilter());
+  it("passes no filter and reads no locations without locationId on the summary", () =>
+    spec.assertSummaryWithoutLocationIdReadsNoLocations());
 });

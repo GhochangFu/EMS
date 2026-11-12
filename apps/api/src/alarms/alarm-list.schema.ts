@@ -13,6 +13,15 @@ import { assetIdsQueryField } from "../auth/asset-scope.schema";
 export const organizationIdQueryField = z.string().uuid().optional();
 
 /**
+ * `F4.357` U2 (ADR 0130 decision 15) — an optional location to narrow either
+ * read to: the alarms of that location and every location under it. Like
+ * `organizationId` it only ever **narrows**: the service ANDs it onto the
+ * intersected readable scope, and a node the caller cannot read answers empty
+ * (owner ruling P2), never 403.
+ */
+export const locationIdQueryField = z.string().uuid().optional();
+
+/**
  * `GET /api/v1/alarms` (`F3.28`, ADR 0074, plan decisions 1 and 4).
  *
  * `state` defaults to `"all"` — today's behaviour, unchanged for a caller who
@@ -40,6 +49,7 @@ export const alarmListQuerySchema = z
     state: z.enum(["all", "active"]).default("all"),
     assetIds: assetIdsQueryField,
     organizationId: organizationIdQueryField,
+    locationId: locationIdQueryField,
   })
   .strict();
 
@@ -55,6 +65,7 @@ export const alarmSummaryQuerySchema = z
   .object({
     assetIds: assetIdsQueryField,
     organizationId: organizationIdQueryField,
+    locationId: locationIdQueryField,
   })
   .strict();
 
