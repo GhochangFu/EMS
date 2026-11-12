@@ -42,7 +42,7 @@ export function SidebarShell({ user, children, kpiRibbon }: AppShellProps) {
   } = useCollapsibleNav("bms-sidebar-collapsed", location.pathname, viewport.width);
 
   return (
-    <div className="flex min-h-screen flex-col surface-page text-ink" style={{ paddingRight: `${copilotPush}px` }}>
+    <div className="alarm-bar-clearance flex min-h-screen flex-col surface-page text-ink" style={{ paddingRight: `${copilotPush}px` }}>
       <ShellHeader
         user={user}
         locationScopeLabel={locationScopeLabel}

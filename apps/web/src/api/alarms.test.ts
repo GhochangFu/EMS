@@ -91,4 +91,5 @@ describe("F3.66 alarms web client — the organization scope", () => {
 describe("fetchUnacknowledgedAlarms (F4.357 U2b)", () => {
   afterEach(() => vi.unstubAllGlobals());
   it("sends state=unacknowledged, minSeverityRank and limit in the scope", () => spec.unacknowledgedAlarmsSendsStateRankAndLimit());
+  it("sends locationId alone for a location scope (F4.357 U3)", () => spec.aLocationScopeSendsItsIdOnly());
 });

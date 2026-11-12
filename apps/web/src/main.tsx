@@ -15,6 +15,8 @@ import "@fontsource-variable/archivo";
 import "@fontsource-variable/bricolage-grotesque";
 import { App } from "./app";
 import "./index.css";
+import { installAlarmBarFeed } from "./lib/alarm-bar-feed";
+import { browserAlarmBarPorts } from "./lib/alarm-bar-ports";
 import { bindSessionStores } from "./lib/query-cache-session";
 import { shouldRetryQuery } from "./lib/query-retry";
 import { useAuthStore } from "./stores/auth-store";
@@ -44,6 +46,14 @@ const queryClient = new QueryClient({
  * subscribe twice. The rule and its spec are in `lib/query-cache-session.ts`.
  */
 bindSessionStores(useAuthStore, queryClient);
+
+/**
+ * `F4.357` (ADR 0130 decisions 13, 16; plan D4) — the alarm bar's one socket
+ * and its scoped reads, per tab, installed here beside the session binding so
+ * they outlive `AppShell` (every page mounts it afresh). It follows the same
+ * session store, and resets on the same transitions.
+ */
+installAlarmBarFeed(useAuthStore, browserAlarmBarPorts());
 
 const root = document.getElementById("root");
 if (!root) {

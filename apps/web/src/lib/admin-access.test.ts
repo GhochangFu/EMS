@@ -1,5 +1,6 @@
 import { describe, it } from "vitest";
 
+import * as spec from "./admin-access.spec";
 import {
   runAdminAccessTests,
   runCanApproveWorkOrdersTruthTableTest,
@@ -148,5 +149,8 @@ describe("admin-access", () => {
 
   it("canApproveWorkOrders admits the four admin roles and refuses operator and viewer (E3.1)", () => {
     runCanApproveWorkOrdersTruthTableTest();
+  });
+  it("canAcknowledgeAlarms admits every role but viewer (F4.357)", () => {
+    spec.runCanAcknowledgeAlarmsTruthTableTest();
   });
 });

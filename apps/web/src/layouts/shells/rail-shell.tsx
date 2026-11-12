@@ -79,7 +79,7 @@ export function RailShell({ user, children, kpiRibbon }: AppShellProps) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col surface-page text-ink" style={{ paddingRight: `${model.copilotPush}px` }}>
+    <div className="alarm-bar-clearance flex min-h-screen flex-col surface-page text-ink" style={{ paddingRight: `${model.copilotPush}px` }}>
       <header className="flex h-10 shrink-0 items-center justify-between gap-3 bg-chrome px-4 text-xs text-on-dark">
         <div className="flex items-center gap-3">
           <Wordmark variant="header" />

@@ -1,0 +1,83 @@
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
+
+import { fetchActiveAlarms } from "../../api/alarms";
+import { ALARM_BAR_LIST_LIMIT, type AlarmBarScope, alarmBarScopeKey, alarmLocationLabel, alarmReadScopeOf } from "../../lib/alarm-bar";
+import { alarmSubjectName } from "../../lib/alarm-source";
+import { AlarmDetailsPanel } from "../alarm-details-panel";
+
+type AlarmBarListProps = {
+  scope: AlarmBarScope;
+  /** Plan Q4: "Estate", "This organization", … */
+  scopeLabel: string;
+  /** A viewer reads the details panel without its write half. */
+  readOnly: boolean;
+  onClose: () => void;
+};
+
+/**
+ * `F4.357` U5 (ADR 0130 decisions 2 and 4) — "All alarms": the scope's active
+ * alarms (info included, at most 50, newest first), opened upward over the
+ * page from the bar. Read through TanStack Query only while it is open (plan
+ * Q1 ruling). A row opens `AlarmDetailsPanel`; the page does not change.
+ */
+export function AlarmBarList({ scope, scopeLabel, readOnly, onClose }: AlarmBarListProps) {
+  const [detailsId, setDetailsId] = useState<string | null>(null);
+  const query = useQuery({
+    queryKey: ["alarms", "alarm-bar", "active", alarmBarScopeKey(scope)],
+    queryFn: () => fetchActiveAlarms(alarmReadScopeOf(scope), ALARM_BAR_LIST_LIMIT),
+  });
+  const items = query.data?.items ?? [];
+  return (
+    <section
+      id="alarm-bar-list"
+      aria-label={`All alarms — ${scopeLabel}`}
+      className="surface-raised fixed bottom-[var(--alarm-bar-h)] right-4 z-40 flex max-h-[24rem] w-[min(32rem,calc(100%-2rem))] flex-col rounded-t-lg text-xs text-ink"
+    >
+      <header className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
+        <h2 className="font-semibold">{scopeLabel}</h2>
+        <button type="button" onClick={onClose} className="rounded px-2 py-0.5 hover:bg-well">
+          Close
+        </button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {query.isPending ? (
+          <p className="px-3 py-2 text-ink-muted">Loading…</p>
+        ) : query.isError ? (
+          <p className="px-3 py-2 text-critical-ink">Could not load the alarms.</p>
+        ) : items.length === 0 ? (
+          <p className="px-3 py-2 text-ink-muted">No active alarms</p>
+        ) : (
+          <ul>
+            {items.map((alarm) => (
+              <li key={alarm.id} className="border-b border-line last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => setDetailsId(alarm.id)}
+                  className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-well"
+                >
+                  <span className="font-semibold">{alarm.message}</span>
+                  <span className="text-ink-muted">
+                    {[alarm.severity, alarmSubjectName(alarm), alarmLocationLabel(alarm), new Date(alarm.raisedAt).toLocaleString()]
+                      .filter((part) => part !== null && part !== "")
+                      .join(" · ")}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <footer className="border-t border-line px-3 py-2">
+        <Link to="/alarms" className="font-semibold text-accent hover:underline">
+          Open the Alarm Centre
+        </Link>
+      </footer>
+      {detailsId !== null
+        ? createPortal(<AlarmDetailsPanel alarmId={detailsId} readOnly={readOnly} onClose={() => setDetailsId(null)} />, document.body)
+        : null}
+    </section>
+  );
+}

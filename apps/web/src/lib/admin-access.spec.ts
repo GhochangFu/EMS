@@ -1,4 +1,5 @@
 import {
+  canAcknowledgeAlarms,
   canApproveWorkOrders,
   canManageAssetDomains,
   canManageWorkOrderSettings,
@@ -613,4 +614,22 @@ export function runWorkOrderSettingsAccessTests(): void {
   assert(seen("admin").join() === "true,true,true", "admin must see all three tabs");
   assert(seen("organization_admin").join() === "false,true,true", "organization_admin must see the SLA and template tabs only");
   assert(seen("location_admin").join() === "false,false,false", "location_admin must see none of the three");
+}
+
+/**
+ * `F4.357` (plan D14) — the `operational` write class, role by role: every role
+ * but `viewer` acknowledges an alarm (`apps/api/src/auth/operations-write.ts`).
+ */
+export function runCanAcknowledgeAlarmsTruthTableTest(): void {
+  const table = {
+    admin: true,
+    organization_admin: true,
+    location_admin: true,
+    asset_group_admin: true,
+    operator: true,
+    viewer: false,
+  } as const;
+  for (const [role, expected] of Object.entries(table) as Array<[keyof typeof table, boolean]>) {
+    assert(canAcknowledgeAlarms(role) === expected, `${role} must ${expected ? "" : "not "}acknowledge alarms`);
+  }
 }

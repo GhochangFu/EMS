@@ -2060,3 +2060,20 @@ body {
 .leaflet-container a.leaflet-popup-close-button:focus {
   color: rgb(var(--ink));
 }
+
+/*
+ * F4.357 (ADR 0130 decision 19, plan D10, D12, D13) — the alarm bar's height, one variable read by
+ * the page clearance, the Copilot offsets and any page that sizes to the viewport. Declared here in
+ * the plain-CSS tail, outside the token blocks, so the token-set gates do not read it.
+ * It sits on `body`, not `html`: `tests/support/design-tokens.ts` reads every `html` block as a
+ * design-token block, and every element that reads the variable (portals included) is in `body`.
+ * `ALARM_BAR_HEIGHT_PX` (lib/alarm-bar.ts) is its pixel twin; `tests/f4.357-alarm-bar-gate.test.ts`
+ * holds the two together. The clearance is a class, because an arbitrary padding utility is barred.
+ */
+body {
+  --alarm-bar-h: 3rem;
+}
+
+.alarm-bar-clearance {
+  padding-bottom: var(--alarm-bar-h);
+}
