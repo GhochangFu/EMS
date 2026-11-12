@@ -11,7 +11,9 @@ import {
   alarmLocationLabel,
   blinkingSeverityCodes,
   countsByRankDescending,
+  criticalUnacknowledgedIds,
   newestUnacknowledged,
+  toneWanted,
 } from "../../lib/alarm-bar";
 import { alarmBarFeed } from "../../lib/alarm-bar-feed";
 import { alarmSubjectName } from "../../lib/alarm-source";
@@ -53,6 +55,8 @@ export function AlarmBar() {
   const summary = useAlarmBarStore((state) => state.summary);
   const status = useAlarmBarStore((state) => state.feed);
   const seenIds = useAlarmBarStore((state) => state.seenIds);
+  const mutedIds = useAlarmBarStore((state) => state.mutedIds);
+  const soundBlocked = useAlarmBarStore((state) => state.soundBlocked);
   const role = useAuthStore((state) => state.user?.role);
   const [listOpen, setListOpen] = useState(false);
   const [acknowledging, setAcknowledging] = useState<AlarmListItem | null>(null);
@@ -68,6 +72,9 @@ export function AlarmBar() {
   const newest = list === null ? null : newestUnacknowledged(list);
   const counts = summary === null ? [] : countsByRankDescending(summary);
   const blinking = list === null ? new Set<string>() : blinkingSeverityCodes(list, seenIds);
+  // U8 (decisions 10, 11): the tone sounds while a critical alarm is unacknowledged and not muted.
+  const sounding = list !== null && toneWanted(list, mutedIds);
+  const muted = list !== null && !sounding && criticalUnacknowledgedIds(list).length > 0;
   const mayAcknowledge = role !== undefined && canAcknowledgeAlarms(role);
 
   return (
@@ -114,6 +121,24 @@ export function AlarmBar() {
             Acknowledge
           </button>
         ) : null}
+        {soundBlocked && sounding ? (
+          <button
+            type="button"
+            onClick={() => void feed.unlockSound()}
+            className="surface-button shrink-0 rounded px-2 py-1 font-semibold text-critical-ink"
+          >
+            Sound blocked — click to enable
+          </button>
+        ) : null}
+        <button
+          type="button"
+          aria-pressed={muted}
+          disabled={!sounding}
+          onClick={() => feed.mute()}
+          className="surface-button shrink-0 rounded px-2 py-1 font-semibold"
+        >
+          {muted ? "Muted" : "Mute"}
+        </button>
         <button
           type="button"
           aria-expanded={listOpen}

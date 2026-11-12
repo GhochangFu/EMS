@@ -9,6 +9,7 @@ import type { AlarmListItem, AlarmSummaryResponse, UserRole } from "@bms/shared"
 import * as alarmsApi from "../../api/alarms";
 import * as vocabApi from "../../api/vocabularies";
 import { alarmItem } from "../../lib/alarm-bar.spec";
+import { alarmBarFeed } from "../../lib/alarm-bar-feed";
 import { EMPTY_SUMMARY, flush, installOnFakes } from "../../lib/alarm-bar-feed.spec";
 import { useAlarmBarStore } from "../../stores/alarm-bar-store";
 import { type AuthUser, useAuthStore } from "../../stores/auth-store";
@@ -191,4 +192,41 @@ export async function offersAcknowledgeToAnOperatorOnly(): Promise<void> {
     },
     "viewer",
   );
+}
+
+/**
+ * `F4.357` U8 (decision 11) — Mute silences the current critical alarms (pressed, "Muted"); a
+ * blocked tone shows the exact "Sound blocked — click to enable", whose click unlocks and plays.
+ */
+export async function mutesAndOffersToEnableBlockedSound(): Promise<void> {
+  await withBar({ summary: SUMMARY, list: [alarmItem({ id: "c" })] }, "/alarms", async (f) => {
+    const user = userEvent.setup();
+    const mute = within(region()).getByRole("button", { name: "Mute" });
+    expect(mute.getAttribute("aria-pressed")).toBe("false");
+    await user.click(mute);
+    const muted = within(region()).getByRole("button", { name: "Muted" });
+    expect(muted.getAttribute("aria-pressed")).toBe("true");
+    expect(f.tone.plays, "muted after the first tone").toBe(1);
+  });
+  signIn("operator");
+  const fake = installOnFakes({ summary: SUMMARY, list: [alarmItem({ id: "c" })] }, useAuthStore);
+  fake.tone.answer = "blocked";
+  try {
+    renderBar("/alarms");
+    await act(async () => {
+      alarmBarFeed()?.refreshNow();
+      await flush();
+    });
+    const enable = within(region()).getByRole("button", { name: "Sound blocked — click to enable" });
+    await act(async () => {
+      await userEvent.setup().click(enable);
+      await flush();
+    });
+    expect(within(region()).queryByText("Sound blocked — click to enable")).toBeNull();
+    expect(fake.tone.unlocks).toBe(1);
+  } finally {
+    cleanup();
+    fake.uninstall();
+    useAuthStore.setState({ accessToken: null, user: null });
+  }
 }

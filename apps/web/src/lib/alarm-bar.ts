@@ -138,3 +138,13 @@ export function blinkingSeverityCodes(list: readonly AlarmListItem[], seenIds: R
       .map((alarm) => alarm.severity),
   );
 }
+
+/** `F4.357` U8 (decisions 10, 11) — the unacknowledged alarms of rank >= 30: what the tone is about. */
+export function criticalUnacknowledgedIds(list: readonly AlarmListItem[]): string[] {
+  return list.filter((alarm) => alarm.acknowledgedAt === null && alarm.severityRank >= ALARM_CRITICAL_MIN_RANK).map((alarm) => alarm.id);
+}
+
+/** U8 (plan D8) — the tone is wanted while one of them is not muted. */
+export function toneWanted(list: readonly AlarmListItem[], mutedIds: ReadonlySet<string>): boolean {
+  return criticalUnacknowledgedIds(list).some((id) => !mutedIds.has(id));
+}

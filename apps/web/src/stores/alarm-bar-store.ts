@@ -24,6 +24,10 @@ export type AlarmBarState = {
   readonly summary: AlarmSummaryResponse | null;
   readonly feed: "live" | "stale";
   readonly seenIds: ReadonlySet<string>;
+  /** U8 (decision 11, plan D9): the alarms the operator muted — a set of ids, never a flag, so the next one sounds. */
+  readonly mutedIds: ReadonlySet<string>;
+  /** U8 (decision 11): the browser refused to play; the bar offers "Sound blocked — click to enable". */
+  readonly soundBlocked: boolean;
 };
 
 /** The state of a tab with no session, or a fresh one. */
@@ -33,6 +37,8 @@ export const INITIAL_ALARM_BAR_STATE: AlarmBarState = {
   summary: null,
   feed: "live",
   seenIds: new Set<string>(),
+  mutedIds: new Set<string>(),
+  soundBlocked: false,
 };
 
 export const useAlarmBarStore = create<AlarmBarState>()(() => INITIAL_ALARM_BAR_STATE);
