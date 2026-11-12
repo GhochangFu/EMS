@@ -21,10 +21,16 @@ import type { Supervisor, SupervisorHealth } from "./supervisor.js";
  *   running supervisors and the point index each one reads, and is the only
  *   thing `main.ts` asks for the health roster.
  *
- * **What is not detected.** A connection-config or credential change on a
- * running endpoint whose device set is unchanged is a `swap-index`, so it still
- * needs a restart (plan R5): detecting it would mean fingerprinting the
- * plaintext credentials (AGENTS.md §9.6).
+ * **What is not detected.** A connection-config change on a running endpoint
+ * whose device set is unchanged is a `swap-index`, so it still needs a restart
+ * (plan R5). A committed RTU's host, port and TLS have no write route
+ * (ADR 0129 context 3), and a change to them moves the endpoint key anyway.
+ *
+ * **Credentials are (ADR 0129 decision 4, `F4.333`).** A stored credential write
+ * — a replace, a copy, a key rotation — moves `EndpointPlan.credentialFingerprint`
+ * (RTU id, key version and IV; no secret), and is a `replace` with
+ * `reason: "credentials-changed"`. The device set and the decoder fingerprint
+ * are checked first, so their reasons win when both move.
  *
  * **What is (ADR 0116 decision 6, `F4.334` plan R8).** A change to the payload
  * format an endpoint decodes with — or to a binding's topic, which the same
@@ -40,8 +46,11 @@ export type ReconcileAction =
       readonly plan: EndpointPlan;
       readonly added: readonly string[];
       readonly removed: readonly string[];
-      /** Set when the device set is unchanged and only the decoder fingerprint moved. */
-      readonly reason?: "payload-format-changed";
+      /**
+       * Set when the device set is unchanged: the decoder fingerprint moved, or
+       * only the credential fingerprint did (`F4.333`).
+       */
+      readonly reason?: "payload-format-changed" | "credentials-changed";
     }
   | { readonly kind: "stop"; readonly key: string }
   | { readonly kind: "swap-index"; readonly key: string; readonly pointIndex: PointIndex };
@@ -66,6 +75,8 @@ function byKey(a: { key: string }, b: { key: string }): number {
 export type RunningEndpoint = {
   readonly devices: ReadonlySet<string>;
   readonly fingerprint: string;
+  /** `F4.333`: the plan's `credentialFingerprint` when it was launched. */
+  readonly credentialFingerprint: string;
 };
 
 export function diffEndpoints(
@@ -100,6 +111,8 @@ export function diffEndpoints(
       closing.push({ kind: "replace", key, plan, added, removed });
     } else if (current.fingerprint !== plan.decoderFingerprint) {
       closing.push({ kind: "replace", key, plan, added, removed, reason: "payload-format-changed" });
+    } else if (current.credentialFingerprint !== plan.credentialFingerprint) {
+      closing.push({ kind: "replace", key, plan, added, removed, reason: "credentials-changed" });
     } else {
       swaps.push({ kind: "swap-index", key, pointIndex: plan.pointIndex });
     }
@@ -222,7 +235,11 @@ export function createEndpointRegistry(deps: EndpointRegistryDeps): EndpointRegi
   async function apply(next: readonly EndpointPlan[]): Promise<void> {
     const served = new Map<string, RunningEndpoint>();
     for (const [key, entry] of running) {
-      served.set(key, { devices: entry.devices, fingerprint: entry.plan.decoderFingerprint });
+      served.set(key, {
+        devices: entry.devices,
+        fingerprint: entry.plan.decoderFingerprint,
+        credentialFingerprint: entry.plan.credentialFingerprint,
+      });
     }
     for (const action of diffEndpoints(served, next)) {
       const current = running.get(action.key);

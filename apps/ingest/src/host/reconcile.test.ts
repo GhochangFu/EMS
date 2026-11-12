@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runDiffChangedDeviceSetReplacesTests,
+  runDiffCredentialFingerprintReplacesTests,
   runDiffFingerprintChangeReplacesTests,
   runDiffGoneEndpointStopsTests,
   runDiffOrderingTests,
@@ -11,6 +12,7 @@ import {
   runRegistryBootTests,
   runRegistryFailedLaunchListedTests,
   runRegistryFailureIsolationTests,
+  runRegistryCredentialReplaceTests,
   runRegistryFingerprintReplaceLogsReasonTests,
   runRegistryLogsNoCredentialsTests,
   runRegistryNoOverlapTests,
@@ -122,5 +124,15 @@ describe("reload reconciliation — the decoder fingerprint (ADR 0116 decision 6
 
   it("rebuilds on a fingerprint change and logs payload-format-changed", async () => {
     await runRegistryFingerprintReplaceLogsReasonTests();
+  });
+});
+
+describe("reload reconciliation — the credential fingerprint (ADR 0129 decision 4, F4.333)", () => {
+  it("replaces an endpoint whose credential fingerprint moved, with its own reason", () => {
+    runDiffCredentialFingerprintReplacesTests();
+  });
+
+  it("rebuilds with the new credential and logs no secret or fingerprint", async () => {
+    await runRegistryCredentialReplaceTests();
   });
 });

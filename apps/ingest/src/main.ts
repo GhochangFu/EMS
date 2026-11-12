@@ -293,9 +293,11 @@ async function main(): Promise<void> {
    * reconnects), an endpoint no longer in the plan is stopped, and an unchanged
    * one only has its point index swapped. So enabling or disabling an RTU, or
    * switching an organization's ingest off or on, takes effect within one
-   * `INGEST_RELOAD_MS` plus the reconnect, with no restart. A change of
-   * connection config or credential on an endpoint whose device set is
-   * unchanged is still restart-only (plan R5). The decisions and their tests
+   * `INGEST_RELOAD_MS` plus the reconnect, with no restart. So does a stored
+   * credential write (`F4.333`, ADR 0129 decision 4: the credential fingerprint)
+   * and a payload format edit (ADR 0116: the decoder fingerprint). A change of
+   * connection config on an endpoint whose device set is unchanged is still
+   * restart-only (plan R5). The decisions and their tests
    * are in `host/reconcile.ts`; this file only wires them.
    */
   const registry = createEndpointRegistry({

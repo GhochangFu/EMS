@@ -245,3 +245,118 @@ export function runNonMqttPlainErrorNoDetailTests(): void {
     `a cipher failure carries no detail, got ${String(skipped[0].detail)}`,
   );
 }
+
+// ---- F4.333 (ADR 0129 decision 4, plan T2.2): the credential fingerprint ----
+
+/** Two Modbus RTUs on one endpoint (10.0.0.5:502), each with its own blob. */
+function twoOnOneEndpoint(a: Partial<BindingRow> = {}, b: Partial<BindingRow> = {}): BindingRow[] {
+  return [
+    modbusRow({ rtu_id: "rtu-a", rtu_code: "A", credentials_iv: Buffer.from("iv-a"), ...a }),
+    modbusRow({
+      rtu_id: "rtu-b",
+      rtu_code: "B",
+      connection_config: { host: "10.0.0.5", port: 502, device: { unitId: 2 } },
+      credentials_iv: Buffer.from("iv-b"),
+      ...b,
+    }),
+  ];
+}
+
+function credentialFingerprintOf(rows: readonly BindingRow[], options = makeOptions()): string | undefined {
+  const plan = planEndpoints(rows, options);
+  assert(plan.endpoints.length === 1, `one endpoint expected, got ${plan.endpoints.length}`);
+  assert(plan.endpoints[0]!.bindings.length === rows.length, "every RTU is bound");
+  return plan.endpoints[0]?.credentialFingerprint;
+}
+
+/** The fingerprint follows one RTU's IV and key version, and nothing about order. */
+export function runCredentialFingerprintFollowsIvAndVersionTests(): void {
+  const base = credentialFingerprintOf(twoOnOneEndpoint());
+  assert(/^[0-9a-f]{64}$/.test(base ?? ""), `a sha256 hex digest, got ${String(base)}`);
+  assert(credentialFingerprintOf(twoOnOneEndpoint()) === base, "the same rows give the same fingerprint");
+  assert(credentialFingerprintOf([...twoOnOneEndpoint()].reverse()) === base, "row order does not move it");
+  assert(
+    credentialFingerprintOf(twoOnOneEndpoint({}, { credentials_iv: Buffer.from("iv-b2") })) !== base,
+    "a new IV on one RTU (a replace or a copy) moves it",
+  );
+  assert(
+    credentialFingerprintOf(twoOnOneEndpoint({ key_version: 3 })) !== base,
+    "a new key version on one RTU (a rotation) moves it",
+  );
+}
+
+/**
+ * No secret and nothing derived from one: two different plaintexts, or two
+ * different ciphertexts, under the same IV and version give the same fingerprint.
+ */
+export function runCredentialFingerprintHoldsNoSecretTests(): void {
+  const base = credentialFingerprintOf(twoOnOneEndpoint());
+  const otherPlaintext = credentialFingerprintOf(
+    twoOnOneEndpoint(),
+    makeOptions({ decryptCredentials: () => ({ username: "someone-else", password: "another-secret" }) }),
+  );
+  assert(otherPlaintext === base, "the plaintext does not reach the fingerprint");
+  const otherCiphertext = credentialFingerprintOf(
+    twoOnOneEndpoint({ credentials_ciphertext: Buffer.from("other-cipher") }),
+  );
+  assert(otherCiphertext === base, "the ciphertext does not reach the fingerprint");
+}
+
+/** An MQTT RTU with no stored blob has a stable fingerprint; gaining one moves it. */
+export function runCredentialFingerprintNoBlobTests(): void {
+  const none = credentialFingerprintOf([row({ connection_config: {} })]);
+  assert(credentialFingerprintOf([row({ connection_config: {} })]) === none, "stable with no blob");
+  const withBlob = credentialFingerprintOf([
+    row({ connection_config: {}, credentials_ciphertext: Buffer.from("c"), credentials_iv: Buffer.from("iv"), key_version: 1 }),
+  ]);
+  assert(withBlob !== none, "a first credential on the RTU moves it");
+}
+
+/**
+ * Security review I3: only a bound RTU adds a mark. An RTU skipped before the
+ * grouping (here a credential that will not decrypt) does not move the
+ * endpoint's fingerprint; one bound with an `endpoint-credential-conflict`
+ * does — a deliberate choice: an extra reconnect, never a missed one.
+ */
+export function runCredentialFingerprintOnlyBoundRtusTests(): void {
+  const [a, b] = twoOnOneEndpoint();
+  const alone = credentialFingerprintOf([a!]);
+  const failing = makeOptions({
+    decryptCredentials: (_c: Buffer, iv: Buffer) => {
+      if (iv.toString() === "iv-b") throw new Error("bad tag");
+      return { username: "db-user", password: "db-secret" };
+    },
+  });
+  const plan = planEndpoints([a!, b!], failing);
+  assert(plan.skipped.some((s) => s.rtuId === "rtu-b"), "the undecryptable RTU is skipped");
+  assert(plan.endpoints[0]?.credentialFingerprint === alone, "a skipped RTU adds no mark");
+
+  const conflicting = makeOptions({
+    decryptCredentials: (_c: Buffer, iv: Buffer) =>
+      iv.toString() === "iv-b" ? { token: "other-shape" } : { username: "db-user", password: "db-secret" },
+  });
+  const bound = planEndpoints([a!, b!], conflicting);
+  assert(
+    bound.skipped.some((s) => s.rtuId === "rtu-b" && s.reason === "endpoint-credential-conflict"),
+    "the second RTU is reported as an endpoint-credential-conflict",
+  );
+  assert(bound.endpoints[0]?.bindings.length === 2, "and stays bound");
+  assert(bound.endpoints[0]?.credentialFingerprint !== alone, "so its credential write still moves the fingerprint");
+}
+
+/** Security review I1: a ciphertext that disappears under an unchanged IV still moves it. */
+export function runCredentialFingerprintCiphertextPresenceTests(): void {
+  const [a] = twoOnOneEndpoint();
+  const withBlob = credentialFingerprintOf([a!]);
+  const withoutBlob = credentialFingerprintOf([{ ...a!, credentials_ciphertext: null }]);
+  assert(withoutBlob !== withBlob, "a ciphertext removed under the same IV moves the fingerprint");
+}
+
+/** Code review 6: the RTU id is in the mark, so two RTUs swapping blobs moves it. */
+export function runCredentialFingerprintBindsTheRtuTests(): void {
+  const base = credentialFingerprintOf(twoOnOneEndpoint());
+  const swapped = credentialFingerprintOf(
+    twoOnOneEndpoint({ credentials_iv: Buffer.from("iv-b") }, { credentials_iv: Buffer.from("iv-a") }),
+  );
+  assert(swapped !== base, "two RTUs swapping their blobs moves the fingerprint");
+}

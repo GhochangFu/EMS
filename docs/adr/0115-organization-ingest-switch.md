@@ -229,4 +229,5 @@ this section corrects and extends them.
 Decision 6 (R5) said a credential change on a running endpoint needs a
 restart. [ADR 0129](./0129-replace-rtu-credentials.md) decision 4 replaces
 that: a non-secret credential fingerprint makes the reload replace the
-endpoint. Not built yet; this line becomes true with the `F4.333` ingest PR.
+endpoint. Built in the `F4.333` ingest PR (`apps/ingest/src/host/reconcile.ts`,
+`reason: "credentials-changed"`).

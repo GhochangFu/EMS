@@ -35,6 +35,7 @@ function plan(endpointKey: string, devices: readonly string[], protocol: IngestP
     bindings: devices.map((d) => ({ rtuId: `id-${d}`, rtuCode: d, deviceKey: d, device: {}, sourceKeys: ["flow"] })),
     pointIndex: new Map(devices.map((d) => [d, new Map()])),
     decoderFingerprint: "fp-0",
+    credentialFingerprint: "cred-0",
   };
 }
 
@@ -45,9 +46,13 @@ function key(endpointKey: string, protocol: IngestProtocol = "mqtt"): string {
 function running(
   entries: Record<string, readonly string[]>,
   fingerprint = "fp-0",
+  credentialFingerprint = "cred-0",
 ): ReadonlyMap<string, RunningEndpoint> {
   return new Map(
-    Object.entries(entries).map(([k, devices]) => [key(k), { devices: new Set(devices), fingerprint }]),
+    Object.entries(entries).map(([k, devices]) => [
+      key(k),
+      { devices: new Set(devices), fingerprint, credentialFingerprint },
+    ]),
   );
 }
 
@@ -160,6 +165,7 @@ function world(options: { scanned?: readonly { protocol: IngestProtocol; endpoin
   const buffered = new Map<string, number>();
   const indexes = new Map<string, () => PointIndex>();
   let builds = 0;
+  let lastBuilt: EndpointPlan | undefined;
 
   function health(p: EndpointPlan): SupervisorHealth {
     return {
@@ -187,6 +193,7 @@ function world(options: { scanned?: readonly { protocol: IngestProtocol; endpoin
         throw new Error(`build refused ${name}`);
       }
       builds += 1;
+      lastBuilt = p;
       events.push(`build:${name}`);
       indexes.set(name, index);
       return {
@@ -236,6 +243,8 @@ function world(options: { scanned?: readonly { protocol: IngestProtocol; endpoin
     buffered,
     indexes,
     builds: () => builds,
+    /** `F4.333`: the plan the last supervisor was built from. */
+    lastBuilt: () => lastBuilt,
     roster: () =>
       registry
         .health()
@@ -561,5 +570,65 @@ export async function runRegistryFingerprintReplaceLogsReasonTests(): Promise<vo
     `the replace names its reason: ${JSON.stringify(line?.fields)}`,
   );
   await w.registry.reload([withFingerprint(plan("a:1", ["R1"]), "fp-B")]);
+  assert(w.builds() === 2, "the new fingerprint is what the registry now compares against");
+}
+
+// ---- the credential fingerprint (ADR 0129 decision 4, F4.333 plan T2.1/T2.3) ---
+
+function withCredentials(p: EndpointPlan, credentialFingerprint: string, password = "pw"): EndpointPlan {
+  return { ...p, credentialFingerprint, credentials: { username: "u", password } };
+}
+
+/** Same devices and decoder: a moved credential fingerprint replaces with its own reason. */
+export function runDiffCredentialFingerprintReplacesTests(): void {
+  const same = diffEndpoints(running({ "a:1": ["R1"] }, "fp-0", "cred-A"), [withCredentials(plan("a:1", ["R1"]), "cred-A")]);
+  assert(kinds(same) === "swap-index:a:1", `same credential fingerprint → swap-index: ${kinds(same)}`);
+
+  const moved = diffEndpoints(running({ "a:1": ["R1"] }, "fp-0", "cred-A"), [withCredentials(plan("a:1", ["R1"]), "cred-B")]);
+  const only = moved[0];
+  assert(
+    moved.length === 1 && only.kind === "replace" && only.reason === "credentials-changed" && only.added.length === 0,
+    `a moved credential fingerprint → replace with credentials-changed: ${JSON.stringify(only)}`,
+  );
+
+  // The device set and the decoder fingerprint keep their own reasons when they move too.
+  const devices = diffEndpoints(running({ "a:1": ["R1"] }, "fp-0", "cred-A"), [withCredentials(plan("a:1", ["R2"]), "cred-B")]);
+  assert(devices[0]?.kind === "replace" && devices[0].reason === undefined, "a device change wins over a credential change");
+  const decoder = diffEndpoints(running({ "a:1": ["R1"] }, "fp-A", "cred-A"), [
+    withCredentials(withFingerprint(plan("a:1", ["R1"]), "fp-B"), "cred-B"),
+  ]);
+  assert(
+    decoder[0]?.kind === "replace" && decoder[0].reason === "payload-format-changed",
+    "a decoder change wins over a credential change",
+  );
+
+  // Ordering (plan R10): a credential replace still closes before any start.
+  const ordered = diffEndpoints(running({ "b:1": ["R1"] }, "fp-0", "cred-A"), [
+    plan("a:1", ["R9"]),
+    withCredentials(plan("b:1", ["R1"]), "cred-B"),
+  ]);
+  assert(kinds(ordered) === "replace:b:1,start:a:1", `closing before starts: ${kinds(ordered)}`);
+}
+
+/**
+ * The registry rebuilds the endpoint with the new credential, logs the reason
+ * and the endpoint key, and never a credential or a fingerprint (§9.6).
+ */
+export async function runRegistryCredentialReplaceTests(): Promise<void> {
+  const w = world();
+  await w.registry.reload([withCredentials(plan("a:1", ["R1"]), "cred-A", "old-secret")]);
+  await w.registry.reload([withCredentials(plan("a:1", ["R1"]), "cred-A", "old-secret")]);
+  assert(w.builds() === 1, "an unchanged credential fingerprint does not rebuild");
+  await w.registry.reload([withCredentials(plan("a:1", ["R1"]), "cred-B", "new-secret")]);
+  assert(w.builds() === 2, "a changed credential fingerprint rebuilds the endpoint");
+  assert(w.lastBuilt()?.credentials.password === "new-secret", "the new supervisor gets the new credential");
+  const line = w.logged("endpoint replaced")[0];
+  assert(line?.fields?.reason === "credentials-changed", `the replace names its reason: ${JSON.stringify(line?.fields)}`);
+  assert(line?.fields?.endpointKey === "a:1", "and the endpoint key");
+  const all = JSON.stringify(w.logs);
+  for (const leak of ["old-secret", "new-secret", "cred-A", "cred-B", "password", "username"]) {
+    assert(!all.includes(leak), `no log line carries ${leak}`);
+  }
+  await w.registry.reload([withCredentials(plan("a:1", ["R1"]), "cred-B", "new-secret")]);
   assert(w.builds() === 2, "the new fingerprint is what the registry now compares against");
 }

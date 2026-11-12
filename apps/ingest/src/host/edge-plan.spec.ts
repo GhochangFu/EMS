@@ -60,6 +60,8 @@ export function oneBrokerIsOnePlan(): void {
   assert(binding?.rtuCode === "RTU-2" && binding.rtuId === "RTU-2", "rtuCode and rtuId are the device key");
   assert(binding.sourceKeys.join(",") === "kw,kwh", "sourceKeys carried");
   assert(plan.pointIndex.size === 0, "the edge holds no point mapping");
+  // F4.333 (ADR 0129 decision 4): the edge plan never reloads, so it carries no credential fingerprint.
+  assert(plan.credentialFingerprint === "", "the edge plan's credential fingerprint is empty");
 }
 
 /** A connection-per-device protocol gets one plan per `factory.endpointKey`; `sourceKeys` default `[]`. */

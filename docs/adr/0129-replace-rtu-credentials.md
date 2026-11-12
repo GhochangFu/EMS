@@ -197,7 +197,7 @@ no way to enter the new one. BCPL LALMATI onboarding waits on this row.
      `INGEST_RELOAD_MS` (60 s by default) after the commit. The endpoint
      reconnects once, so every RTU on that endpoint has a gap of a few seconds.
      A key rotation also changes every IV, so after a rotation each endpoint
-     reconnects once — harmless, and it proves the new key decrypts.
+     reconnects at least once — harmless, and it proves the new key decrypts.
    - **No restart is needed.** The `reconcile.ts` header and ADR 0115 R5's
      "needs a restart" line are corrected by this decision.
    - Edge plans keep `credentialFingerprint: ""`, like `decoderFingerprint`.
