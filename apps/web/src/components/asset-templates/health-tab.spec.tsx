@@ -99,9 +99,9 @@ let lastQueryClient: QueryClient | null = null;
  * drawn the data (code review, F4.355 PR 4): the mock is called inside
  * `render()`, so "the mock was called" settles nothing.
  */
-async function versionsReadSettled(status: "success" | "error"): Promise<void> {
+async function versionsReadSettled(status: "success" | "error", templateId = "t1"): Promise<void> {
   await waitFor(() =>
-    expect(lastQueryClient?.getQueryState(["admin", "asset-template-versions", "t1"])?.status).toBe(status),
+    expect(lastQueryClient?.getQueryState(["admin", "asset-template-versions", templateId])?.status).toBe(status),
   );
   await act(async () => {});
 }
@@ -304,7 +304,7 @@ export async function aPublishedVersionNamesTheAssetsOnOtherVersions(): Promise<
   renderTab(template("published", FIVE), false);
   expect(
     await screen.findByText(
-      "3 assets are on other versions of this template (v1: 3). They keep that version's bands until you migrate them.",
+      "3 assets use other versions of this template (v1: 3). Their health uses the bands of the version they are on. To give them these bands, migrate them to this version.",
     ),
   ).toBeInTheDocument();
   expect(versions).toHaveBeenCalledWith("t1");
@@ -333,9 +333,26 @@ export async function oneAssetReadsInTheSingular(): Promise<void> {
   renderTab(template("published", FIVE), false);
   expect(
     await screen.findByText(
-      "1 asset is on another version of this template (v1: 1). It keeps that version's bands until you migrate it.",
+      "1 asset uses another version of this template (v1: 1). Its health uses the bands of the version it is on. To give it these bands, migrate it to this version.",
     ),
   ).toBeInTheDocument();
+}
+
+/**
+ * An OLDER published version shows no hint: v2 (t1) is newer and published, so
+ * the hint on v1 (t0) would invite migrating assets back to it. The read still
+ * runs, so this proves the rule, not a skipped query; the positive twin is
+ * `aPublishedVersionNamesTheAssetsOnOtherVersions` on the newest version.
+ */
+export async function anOlderPublishedVersionShowsNoHint(): Promise<void> {
+  const versions = vi.spyOn(api, "fetchAdminAssetTemplateVersions").mockResolvedValue({
+    items: [{ ...VERSIONS.items[0], assetCount: 3 }, { ...VERSIONS.items[1], assetCount: 0 }],
+  } as never);
+  renderTab({ ...template("published", FIVE), id: "t0", version: 1 }, false);
+  await versionsReadSettled("success", "t0");
+  expect(versions).toHaveBeenCalledWith("t0");
+  expect(screen.queryByText(/other version/)).toBeNull();
+  expect(screen.queryByRole("link", { name: "Versions & migration" })).toBeNull();
 }
 
 /** A failed read shows nothing rather than a guess. */

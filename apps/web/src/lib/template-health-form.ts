@@ -453,11 +453,25 @@ export type OtherVersionsHoldingAssets = {
   versions: { version: number; assetCount: number }[];
 };
 
-/** Assets on other versions of this code, oldest version first (B5). */
+/**
+ * Assets on other versions of this code, oldest version first (B5).
+ *
+ * Empty unless the current version is the NEWEST PUBLISHED one: on an older
+ * published version the hint would invite migrating assets back to it. A newer
+ * draft or archived version does not count — only a published one can be a
+ * migration target the author should prefer.
+ */
 export function otherVersionsHoldingAssets(
-  versions: readonly Pick<TemplateVersionSummaryDto, "id" | "version" | "assetCount">[],
+  versions: readonly Pick<TemplateVersionSummaryDto, "id" | "version" | "status" | "assetCount">[],
   currentId: string,
 ): OtherVersionsHoldingAssets {
+  const current = versions.find((entry) => entry.id === currentId);
+  const newerPublished =
+    current !== undefined &&
+    versions.some((entry) => entry.status === "published" && entry.version > current.version);
+  if (newerPublished) {
+    return { total: 0, versions: [] };
+  }
   const held = versions
     .filter((entry) => entry.id !== currentId && entry.assetCount > 0)
     .map((entry) => ({ version: entry.version, assetCount: entry.assetCount }))
