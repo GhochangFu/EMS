@@ -1044,3 +1044,99 @@ fail-closed rule for any future caller that sums across organizations.
   dashboards need one CHECK widening; ADR 0112 Amendment 3.)
 - No new dependency. No stored cost history, no backfill job.
 - The calc engine, the meter templates and the stored cost points.
+
+## Amendment 8 (2026-11-12, `F4.353`) — `delta` refuses when the counter fell inside the window
+
+**Status: Proposed — accepted when the PR that adds it merges** (owner gate).
+Source: owner ruling of 2026-11-12, asked in the cloud session that took
+backlog row `F4.353`. Code citations are to `main` at `4d02c59`.
+
+### The question
+
+Decision 5 defines `delta` as the last sample minus the first sample inside
+the window, and `deltaOf` (`apps/api/src/calc/calc-window-plan.ts:374`) says
+so in terms: "A negative delta (a counter reset) is returned as it is — that
+is the author's rule to write, not this function's refusal." Amendment 2 of
+ADR 0073 (item 3) leans on the same fact to keep `delta` off the softener's
+resetting totalizer.
+
+On the AWS demo that rule wrote large negative energy and cost figures. Live
+facts read 2026-11-12: the `PHE-ENERGY-METER` v3 points `kwh_today`,
+`kwh_this_month`, `kwh_this_year` read `delta({kwh_total}, <period>)` and the
+three `energy_cost_*` points multiply that by `$energy_tariff_per_kwh`. The
+measured register `kwh_total` (normally about 74,145 kWh) sent **one sample of
+`0`**:
+
+| Meter | Register samples | Derived result |
+| --- | --- | --- |
+| `PHE-MFM-000000004` | 74145 at 13:18:39, **0 at 2026-11-08 13:19:22 UTC**, 74145 at 13:22:15 | `kwh_today` / `_this_month` / `_this_year` negative for 3 ticks (13:20–13:22), min −74,067 / −73,331 / −70,969 |
+| `PHE-MFM-000000003` | **0 at 2026-11-10 04:18:08 UTC** | 5 negative ticks 04:19–04:23, min −1,651 |
+
+While the `0` is the newest sample, it is the window's "last", so the delta is
+`0 − first`. The cost points reached −555,502. No other meter did this in 30
+days.
+
+### The decision (owner ruling, 2026-11-12)
+
+1. **`delta` refuses when the last sample is below the first.** `deltaOf`
+   returns a refusal instead of a negative number, under a **new reason,
+   `window_decreasing`**. The formula writes nothing for that tick, the
+   calc skip counter counts it, and `CalcStatusRegistry` records it — the same
+   handling `window_empty` and `window_sparse` get (ADR 0037 decision 9). A
+   KPI read shows it as its own state ("The counter fell inside the window").
+2. **Still two index lookups.** The rule compares the two probes decision 5
+   already reads; no range scan, no new statement, the per-sweep budget of
+   seven is unchanged.
+3. **Order:** one sample or none is still `window_empty`, decided first. A
+   delta of exactly `0` (last equals first) is a value, not a refusal.
+4. **Every `delta` reader gets this, not only the energy meter.** Every stock
+   `delta` reads a cumulative counter (`kwh_total`, `energy_total_kwh`,
+   `start_count`, `run_hours_h`, `trip_count`, `door_cycle_count`,
+   `oltc_operation_count`, `step_operation_count`), where a fall is never a
+   real negative quantity.
+
+### What this costs (accepted)
+
+- **A real reset or rollover is refused, then under-reported.** After a
+  reset, `delta` refuses while the counter is still below the window's first
+  sample. Once it climbs past that sample, `delta` writes again, but the value
+  is too small (`last − first` across the reset) until the period rolls over.
+  Example: `delta({start_count}, this_year)` with 12 on 1 January and a reset
+  to 0 in March writes `1` when the counter reaches 13. On a large register
+  such as the ~74,000 kWh PHE meters the refusal lasts the rest of a `today`
+  window in practice; on a small counter (`start_count`, `trip_count`,
+  `run_hours_h`, `door_cycle_count`, or a new meter's `kwh_this_year`) the
+  under-report is the longer part. A reset-aware `delta` (sum the rising
+  steps, treat a drop as a new segment) is the only full cure. It was offered
+  and declined at the gate because it needs a range scan over the window
+  instead of two lookups.
+- **A bad sample as the window's FIRST sample is not caught.** A bad `0`
+  first gives `last − 0`, the whole register, and positive. A bad *high*
+  first sample now refuses `window_decreasing` for the rest of the period
+  (all year for `this_year`). This rule sees neither. The ingest engineering
+  range does: `eng_min` / `eng_max` on the counter point drop a sample
+  outside the band before it is stored (`isInEngineeringRange`,
+  `apps/ingest/src/host/normaliser.ts:376`). That is configuration, not code,
+  and is the owner's step on each deployment.
+- **A custom `delta` over a point that may fall now refuses on any fall.**
+  `delta` is open to any template author. Over a non-cumulative point (a
+  bidirectional net meter, a tank level) a fall used to be a negative number
+  and is now a refusal, with no opt-out. `delta` is documented for
+  cumulative counters (decision 5); a signed change over such a point is not
+  expressible in `bms-calc-v3` after this amendment.
+- **Stored rows are not recomputed.** Negative rows already written stay
+  until removed by hand (§"Not in this ADR", Backfill, and ADR 0037). The
+  ADR 0109 decision 7 backfill never overwrites a stored value, so it cannot
+  repair them either; it does run through `deltaOf`, so a backfill run after
+  this change refuses the same ticks instead of writing negatives.
+
+### What does not change
+
+- No migration, no new dependency, no grammar change: `bms-calc-v3` parses
+  exactly as before.
+- **ADR 0073 Amendment 2 item 3 stands.** The softener's
+  `outlet_flow_totalizer_kl` resets at every regeneration. Under this rule a
+  window holding a regeneration refuses or under-reports instead of going
+  negative, which is still wrong, so the softener stays without `delta`
+  rows.
+- `avg`, `min`, `max`, `sum` and `hours` are untouched.
