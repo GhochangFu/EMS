@@ -16,6 +16,7 @@ import {
   aDraftMakesNoVersionsRead,
   aFailedVersionsReadShowsNoHint,
   aPublishedVersionNamesTheAssetsOnOtherVersions,
+  anOlderPublishedVersionShowsNoHint,
   noHintWhenNoOtherVersionHoldsAssets,
   oneAssetReadsInTheSingular,
   theStockViewerMakesNoVersionsRead,
@@ -78,6 +79,10 @@ describe("F4.355 health tab — ADR 0038 Amendment 7, ADR 0050 Amendment 4", () 
 
   it("B5: no hint when no other version holds an asset", async () => {
     await noHintWhenNoOtherVersionHoldsAssets();
+  });
+
+  it("B5: an older published version shows no hint (no invitation to migrate back)", async () => {
+    await anOlderPublishedVersionShowsNoHint();
   });
 
   it("B5: one asset reads in the singular", async () => {

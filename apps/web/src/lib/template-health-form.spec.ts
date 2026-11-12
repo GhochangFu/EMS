@@ -319,22 +319,37 @@ export function runAgreesWithTheSchemaTests(): void {
 
 export function runOtherVersionsHoldingAssetsTests(): void {
   const versions = [
-    { id: "v3", version: 3, assetCount: 0 },
-    { id: "v2", version: 2, assetCount: 7 },
-    { id: "v1", version: 1, assetCount: 3 },
+    { id: "v3", version: 3, status: "published" as const, assetCount: 0 },
+    { id: "v2", version: 2, status: "archived" as const, assetCount: 7 },
+    { id: "v1", version: 1, status: "published" as const, assetCount: 3 },
   ];
   same(
     otherVersionsHoldingAssets(versions, "v3"),
     { total: 10, versions: [{ version: 1, assetCount: 3 }, { version: 2, assetCount: 7 }] },
-    "other versions with assets, oldest first",
+    "the newest published version: other versions with assets, oldest first",
   );
   same(
-    otherVersionsHoldingAssets(versions, "v2"),
-    { total: 3, versions: [{ version: 1, assetCount: 3 }] },
-    "the current version is never counted",
+    otherVersionsHoldingAssets(versions, "v1"),
+    { total: 0, versions: [] },
+    "an older published version never invites a migration back to it (v3 is newer)",
+  );
+  // Positive twin of the rule above: a newer DRAFT or ARCHIVED version does not
+  // count, so v2 here is the newest published version and the hint shows.
+  same(
+    otherVersionsHoldingAssets(
+      [
+        { id: "v4", version: 4, status: "draft" as const, assetCount: 0 },
+        { id: "v3", version: 3, status: "archived" as const, assetCount: 5 },
+        { id: "v2", version: 2, status: "published" as const, assetCount: 0 },
+        { id: "v1", version: 1, status: "published" as const, assetCount: 3 },
+      ],
+      "v2",
+    ),
+    { total: 8, versions: [{ version: 1, assetCount: 3 }, { version: 3, assetCount: 5 }] },
+    "a newer draft or archived version does not hide the hint; the current version is never counted",
   );
   same(
-    otherVersionsHoldingAssets([{ id: "v1", version: 1, assetCount: 4 }], "v1"),
+    otherVersionsHoldingAssets([{ id: "v1", version: 1, status: "published" as const, assetCount: 4 }], "v1"),
     { total: 0, versions: [] },
     "only the current version → nothing",
   );

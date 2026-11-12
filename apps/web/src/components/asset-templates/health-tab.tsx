@@ -447,14 +447,18 @@ export function HealthTab({ template, editable, onSaved, onDirtyChange }: Health
   );
 }
 
-/** "3 assets are on other versions of this template (v1: 3). They keep …" */
+/**
+ * "3 assets use other versions of this template (v1: 3). Their health uses …"
+ * Shown on the newest published version only (`otherVersionsHoldingAssets`), so
+ * "migrate them to this version" always points forward.
+ */
 function versionsHintText(elsewhere: OtherVersionsHoldingAssets): string {
   const breakdown = elsewhere.versions
     .map((entry) => `v${entry.version}: ${entry.assetCount}`)
     .join(", ");
   return elsewhere.total === 1
-    ? `1 asset is on another version of this template (${breakdown}). It keeps that version's bands until you migrate it.`
-    : `${elsewhere.total} assets are on other versions of this template (${breakdown}). They keep that version's bands until you migrate them.`;
+    ? `1 asset uses another version of this template (${breakdown}). Its health uses the bands of the version it is on. To give it these bands, migrate it to this version.`
+    : `${elsewhere.total} assets use other versions of this template (${breakdown}). Their health uses the bands of the version they are on. To give them these bands, migrate them to this version.`;
 }
 
 function CellInput({
