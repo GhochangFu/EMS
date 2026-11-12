@@ -43,7 +43,19 @@ export async function fetchAlarmsPage(
  */
 export type AlarmScope = readonly string[] | { readonly organizationId: string };
 
-function appendScope(params: URLSearchParams, scope: AlarmScope): void {
+/**
+ * `F4.357` (ADR 0130 decision 15) — what the alarm bar reads about: an
+ * {@link AlarmScope}, or one location and every location under it. A separate
+ * type, so `AlarmScope` (whose id-list form the rail reads `.length` of) does
+ * not widen.
+ */
+export type AlarmReadScope = AlarmScope | { readonly locationId: string };
+
+function appendScope(params: URLSearchParams, scope: AlarmReadScope): void {
+  if ("locationId" in scope) {
+    params.set("locationId", scope.locationId);
+    return;
+  }
   if ("organizationId" in scope) {
     params.set("organizationId", scope.organizationId);
     return;
@@ -59,7 +71,7 @@ function appendScope(params: URLSearchParams, scope: AlarmScope): void {
  * first. An id list is one repeated `assetIds` parameter per id.
  */
 export async function fetchActiveAlarms(
-  scope: AlarmScope,
+  scope: AlarmReadScope,
   limit = 8,
 ): Promise<AlarmsListResponse> {
   const params = new URLSearchParams({ state: "active", limit: String(limit) });
@@ -79,7 +91,7 @@ export async function fetchActiveAlarms(
  * rank first, then newest. One page of at most `limit` rows (no cursor).
  */
 export async function fetchUnacknowledgedAlarms(
-  scope: AlarmScope,
+  scope: AlarmReadScope,
   options: { readonly minRank: number; readonly limit: number },
 ): Promise<AlarmsListResponse> {
   const params = new URLSearchParams({
@@ -101,7 +113,7 @@ export async function fetchUnacknowledgedAlarms(
  * `GET /api/v1/alarms/summary` — active-alarm counts per severity, every
  * active severity present (`count: 0` allowed), in ascending rank.
  */
-export async function fetchAlarmSummary(scope: AlarmScope): Promise<AlarmSummaryResponse> {
+export async function fetchAlarmSummary(scope: AlarmReadScope): Promise<AlarmSummaryResponse> {
   const params = new URLSearchParams();
   appendScope(params, scope);
   const sent = withAuth();

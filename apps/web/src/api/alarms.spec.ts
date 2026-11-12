@@ -159,3 +159,19 @@ export async function unacknowledgedAlarmsSendsStateRankAndLimit(): Promise<void
     cursor: url.searchParams.get("cursor"),
   }).toEqual({ path: "/api/v1/alarms", state: "unacknowledged", minSeverityRank: "20", limit: "50", organizationId: ORG, cursor: null });
 }
+
+/** `F4.357`: a location scope sends one `locationId` and nothing else, on both reads. */
+export async function aLocationScopeSendsItsIdOnly(): Promise<void> {
+  const LOCATION = "55555555-5555-4555-8555-555555555555";
+  const list = captureUrl(EMPTY_LIST);
+  await fetchActiveAlarms({ locationId: LOCATION }, 50);
+  const summary = captureUrl(EMPTY_SUMMARY);
+  await fetchAlarmSummary({ locationId: LOCATION });
+  for (const url of [list(), summary()]) {
+    expect({
+      locationId: url.searchParams.get("locationId"),
+      organizationId: url.searchParams.get("organizationId"),
+      assetIds: url.searchParams.getAll("assetIds"),
+    }).toEqual({ locationId: LOCATION, organizationId: null, assetIds: [] });
+  }
+}
