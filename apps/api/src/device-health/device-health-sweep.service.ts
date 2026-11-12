@@ -14,10 +14,18 @@ import {
   INGEST_HOST_SEVERITY,
   organizationHostReporting,
   RTU_COMMS_SEVERITY,
+  rtuCommsDue,
   rtuCommsEligible,
   rtuCommsMessage,
 } from "./device-alarm-rule";
-import { DROP_HISTORY_DAYS, readIngestHosts, readRtuHealthRows, stateOf, type RtuHealthRow } from "./device-health.reads";
+import {
+  DROP_HISTORY_DAYS,
+  readIngestHosts,
+  readRtuHealthRows,
+  silentSecondsOf,
+  stateOf,
+  type RtuHealthRow,
+} from "./device-health.reads";
 import type { HostBeat } from "./device-state";
 
 /**
@@ -33,7 +41,9 @@ import type { HostBeat } from "./device-state";
  *   **no** `rtu_comms` alarm this tick: a stopped host freezes every state, so
  *   the per-RTU alarms are held (decision 6);
  * - otherwise each monitored, cloud-served RTU whose decision-11 state is
- *   `offline` → one `rtu_comms` alarm (`warning`). Edge-served RTUs (decision
+ *   `offline` **and** that has been silent at least
+ *   `RTU_COMMS_RAISE_AFTER_SECONDS` (300 s, ADR 0127 Amendment 1) → one
+ *   `rtu_comms` alarm (`warning`). Edge-served RTUs (decision
  *   18) and RTUs with no `monitored_since` (decision 20) raise nothing.
  *
  * Every raise goes through `AlarmRaiser.raiseDevice` — the one raiser, under the
@@ -132,7 +142,7 @@ export async function runDeviceHealthSweep(
       continue;
     }
     for (const row of ofOrganization) {
-      if (!rtuCommsEligible(row) || stateOf(row, hostsByKey) !== "offline") {
+      if (!rtuCommsEligible(row) || !rtuCommsDue(stateOf(row, hostsByKey), silentSecondsOf(row, hostsByKey))) {
         continue;
       }
       if (

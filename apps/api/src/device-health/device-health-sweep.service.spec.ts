@@ -1,4 +1,5 @@
 import type { DeviceAlarmRaiseInput, DeviceAlarmRaiseResult } from "../alarms/alarm-raise.service";
+import { RTU_COMMS_RAISE_AFTER_SECONDS } from "./device-alarm-rule";
 import type { RtuHealthRow } from "./device-health.reads";
 import { runDeviceHealthSweep, type DeviceHealthSweepDeps } from "./device-health-sweep.service";
 import type { HostBeat } from "./device-state";
@@ -77,9 +78,9 @@ function fakeDeps(opts: {
 
 const describeRaises = (raises: DeviceAlarmRaiseInput[]) => JSON.stringify(raises);
 
-/** An Offline, monitored, cloud-served RTU raises one `rtu_comms` warning naming it. */
+/** An Offline, monitored, cloud-served RTU silent past the raise delay raises one `rtu_comms` warning naming it. */
 export async function assertAnOfflineRtuRaisesOneCommsAlarm(): Promise<void> {
-  const { deps, recorded } = fakeDeps({ rows: [rtu("1", 61)] });
+  const { deps, recorded } = fakeDeps({ rows: [rtu("1", 301)] });
   const summary = await runDeviceHealthSweep(deps);
   const [only] = recorded.raises;
   assert(
@@ -102,6 +103,56 @@ export async function assertAnRtuInsideItsWindowRaisesNothing(): Promise<void> {
   const { deps, recorded } = fakeDeps({ rows: [rtu("online", 10), rtu("stale", 59)] });
   await runDeviceHealthSweep(deps);
   assert(recorded.raises.length === 0, `expected no raise inside the window, got ${describeRaises(recorded.raises)}`);
+}
+
+/**
+ * ADR 0127 Amendment 1 (the flapping found on AWS 2026-11-12): Offline is not enough to raise.
+ * BCPL RTUs report every 10 s, so their window sits at its 25 s floor and a normal 30–60 s pause
+ * read Offline and raised "Communication lost" every few minutes. The alarm now also needs
+ * {@link RTU_COMMS_RAISE_AFTER_SECONDS} of silence: 299 s raises nothing, 300 s raises.
+ */
+export async function assertAnOfflineRtuInsideTheRaiseDelayRaisesNothing(): Promise<void> {
+  assert(RTU_COMMS_RAISE_AFTER_SECONDS === 300, "the raise delay is five minutes (owner ruling 2026-11-12)");
+  const short = { windowSeconds: 25 };
+  const { deps, recorded } = fakeDeps({ rows: [rtu("gap", 60, short), rtu("edge-of-delay", 299, short)] });
+  await runDeviceHealthSweep(deps);
+  assert(recorded.raises.length === 0, `expected no raise inside the raise delay, got ${describeRaises(recorded.raises)}`);
+
+  const due = fakeDeps({ rows: [rtu("due", 300, short)] });
+  await runDeviceHealthSweep(due.deps);
+  assert(
+    due.recorded.raises.length === 1 && due.recorded.raises[0]?.rtuId === "due",
+    `expected one raise at exactly the delay, got ${describeRaises(due.recorded.raises)}`,
+  );
+}
+
+/**
+ * The silence counts from the host's `healthy_since` too (decision 10): after a host restart an RTU
+ * silent for an hour is judged from the restart, so the alarm waits 300 s from it — not 25 s.
+ * Counting from last-seen alone would raise every short-window RTU right after any restart.
+ */
+export async function assertTheDelayCountsFromAHostRestart(): Promise<void> {
+  const restarted = (secondsAgo: number): HostBeat => ({ ...host(), healthySinceMs: DB_NOW - secondsAgo * 1000 });
+  const short = { windowSeconds: 25 };
+  const early = fakeDeps({ rows: [rtu("long-silent", 3_600, short)], hosts: [restarted(200)] });
+  await runDeviceHealthSweep(early.deps);
+  assert(early.recorded.raises.length === 0, `expected no raise 200 s after a restart, got ${describeRaises(early.recorded.raises)}`);
+
+  const late = fakeDeps({ rows: [rtu("long-silent", 3_600, short)], hosts: [restarted(306)] });
+  await runDeviceHealthSweep(late.deps);
+  assert(late.recorded.raises.length === 1, `expected one raise 300 s after a restart, got ${describeRaises(late.recorded.raises)}`);
+}
+
+/** A window longer than the delay still governs: past the delay but inside a 900 s window is Online/Stale, no raise. */
+export async function assertTheWindowStillGovernsWhenItIsLongerThanTheDelay(): Promise<void> {
+  const long = { windowSeconds: 900 };
+  const { deps, recorded } = fakeDeps({ rows: [rtu("slow", 600, long)] });
+  await runDeviceHealthSweep(deps);
+  assert(recorded.raises.length === 0, `expected no raise inside a long window, got ${describeRaises(recorded.raises)}`);
+
+  const past = fakeDeps({ rows: [rtu("slow", 901, long)] });
+  await runDeviceHealthSweep(past.deps);
+  assert(past.recorded.raises.length === 1, `expected one raise past a long window, got ${describeRaises(past.recorded.raises)}`);
 }
 
 /** Decision 18: an edge-served RTU raises nothing, Offline or not. */

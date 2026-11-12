@@ -5,7 +5,7 @@ import type { BmsDb } from "@bms/db";
 import type { DropFirst, DropReason, RtuDropCount, UnattributedDrop } from "@bms/shared";
 
 import { FRESHNESS_FLOOR_SECONDS, rtuWindowsCteSql } from "../telemetry/telemetry-cadence";
-import { rtuStateAt, type HostBeat, type RtuHealthFacts } from "./device-state";
+import { rtuSilentSecondsAt, rtuStateAt, type HostBeat, type RtuHealthFacts } from "./device-state";
 
 /**
  * `F3.16` / ADR 0127 decisions 3, 11, 14, 17 — the device-health SQL. Every
@@ -117,6 +117,11 @@ export async function readRtuHealthRows(db: BmsDb, scope: RtuScope): Promise<Rtu
 /** Judges one row against its serving host (decision 11): the one call of the state rule on this path. */
 export function stateOf(row: RtuHealthRow, hostsByKey: ReadonlyMap<string, HostBeat>) {
   return rtuStateAt(row, row.hostKey === null ? undefined : hostsByKey.get(row.hostKey), row.windowSeconds);
+}
+
+/** The seconds of silence {@link stateOf} judges, against the same host (ADR 0127 Amendment 1's raise delay). */
+export function silentSecondsOf(row: RtuHealthRow, hostsByKey: ReadonlyMap<string, HostBeat>): number | null {
+  return rtuSilentSecondsAt(row, row.hostKey === null ? undefined : hostsByKey.get(row.hostKey));
 }
 
 interface FirstColumns extends Record<string, unknown> {
