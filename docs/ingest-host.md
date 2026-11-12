@@ -305,8 +305,9 @@ re-plans, and reconciles the running endpoints with the plan
 | In the plan, not running | build and start a supervisor | `endpoint started` |
 | Running, device set changed | `stop()` the old supervisor, **then** build and start a new one | `endpoint replaced` with `added`/`removed` device keys |
 | Running, same device set, decoder fingerprint changed (ADR 0116 decision 6) | the same replace | `endpoint replaced` with `reason=payload-format-changed` |
+| Running, same device set and decoder, credential fingerprint changed (ADR 0129 decision 4) | the same replace | `endpoint replaced` with `reason=credentials-changed` |
 | Running, not in the plan (no enabled RTU left) | `stop()` it — the broker connection closes and the endpoint leaves the roster | `endpoint stopped` |
-| Running, same device set | swap the point index only | none |
+| Running, same device set, decoder and credential fingerprint | swap the point index only | none |
 
 - **Stops and replaces run before starts**, and a replace waits for the old
   `stop()` before it dials — up to about 15 s (the adapter's 5 s disconnect
@@ -329,10 +330,31 @@ re-plans, and reconciles the running endpoints with the plan
   cannot read the database logs `binding reload failed` and changes nothing.
 - **After applying, the tick sweeps the disk buffer** (`bufferStore.sweep()`),
   so the 1 h / 256 MiB bounds keep running when no supervisor is left to sweep.
-- **Still restart-only:** a change of connection config or credential on an
-  endpoint whose device set is unchanged is a point-index swap, not a replace
-  (ADR 0115 decision 6, plan R5) — detecting it would mean fingerprinting the
-  decrypted credentials. See *Known limits*.
+- **A stored credential change reaches a running endpoint without a restart**
+  (ADR 0129 decision 4, `F4.333`). Each plan carries a `credentialFingerprint`:
+  sha256 over the sorted `(rtu_id, key_version, IV)` of its bound RTUs — never
+  the plaintext or the ciphertext, and never logged. The IV is random per
+  encrypt, so a replace, a copy or a key rotation moves it, and the next reload
+  replaces the endpoint (`endpoint replaced … reason=credentials-changed`)
+  within one `INGEST_RELOAD_MS`. **A replace rebuilds the endpoint; it does
+  not choose which credential it uses** — still the first non-empty one among
+  its RTUs in `rtu_id` order (*Known limits*). So replace a broker password on
+  every RTU that shares that broker (the `/admin/rtus` sibling list of ADR 0129
+  decision 2), or the old password may stay in use. Every RTU on that endpoint has a short gap
+  while it reconnects. **Every bound RTU on the endpoint counts**, including
+  one whose credential the endpoint does not use, so a credential write on any
+  RTU sharing a `host:port` — another organization's too — reconnects the
+  shared endpoint (at most one replace per reload). A key rotation reconnects
+  every endpoint with a stored blob at least once (more if the rotation spans
+  a reload tick). An
+  edge-served RTU's credential lives in the gateway's own file and is not
+  covered.
+- **Still restart-only:** a change of connection config on an endpoint whose
+  device set is unchanged is a point-index swap, not a replace (ADR 0115
+  decision 6, plan R5). A committed RTU's host, port and TLS have no write
+  route (ADR 0129 context 3), and changing them moves the endpoint key anyway.
+  An environment-variable credential (the pilot fallback) changes
+  only with a restart. See *Known limits*.
 
 **Time to effect** of the organization switch and of an RTU's *Ingest enabled*
 box: within one `INGEST_RELOAD_MS` plus the reconnect.
@@ -840,16 +862,17 @@ deleted at §6 commit 4; the comparison is kept because it says which limits the
 host **inherited** from the ADR 0007 pilot rather than introduced, which is what
 decides whether a fix belongs to `F1.7`/`F1.10` or to this host.
 
-- **A connection-config or credential change on a running endpoint whose
-  device set is unchanged still needs a restart** (ADR 0115 decision 6, plan
-  R5). Enabling, disabling, adding or removing an RTU — and the organization
-  switch — no longer do: the reload starts, replaces or stops the endpoint (see
+- **A connection-config change on a running endpoint whose device set is
+  unchanged still needs a restart** (ADR 0115 decision 6, plan R5). Enabling,
+  disabling, adding or removing an RTU — and the organization switch — no
+  longer do: the reload starts, replaces or stops the endpoint (see
   *Reloads*). But an edit that leaves the endpoint key and its device set as
-  they were — a new password, a timeout — is a point-index swap: the running
-  supervisor keeps the config and credentials it was built with until the host
-  restarts. Detecting it would mean fingerprinting the decrypted credentials
-  (AGENTS.md §9.6). A change that moves the endpoint key (a new host or port)
-  is a stop of the old key and a start of the new one, so it applies.
+  they were — a timeout — is a point-index swap: the running supervisor keeps
+  the config it was built with until the host restarts. **A stored credential
+  change no longer needs one** (ADR 0129 decision 4, `F4.333`): it moves the
+  endpoint's non-secret `credentialFingerprint` and is a replace. A change that
+  moves the endpoint key (a new host or port) is a stop of the old key and a
+  start of the new one, so it applies.
 - **~~A device's clock is trusted without check.~~ Closed by `F4.57`
   (ADR 0061).** A device timestamp no longer reaches the row's `time`. The host
   stamps its own **receive** time on every row and stores what the device

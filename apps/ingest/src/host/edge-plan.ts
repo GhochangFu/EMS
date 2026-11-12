@@ -77,6 +77,8 @@ export function planEdgeEndpoints(
             pointIndex: EMPTY_INDEX,
             // Only the cloud's reload registry reads this; the edge plan never changes while running.
             decoderFingerprint: "",
+            // F4.333: nor this one; the edge reads its credentials from its own file.
+            credentialFingerprint: "",
           },
         };
         plans.set(key, entry);

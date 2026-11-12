@@ -235,6 +235,16 @@ export type EndpointPlan = {
    * empty list.
    */
   readonly decoderFingerprint: string;
+  /**
+   * `F4.333` (ADR 0129 decision 4): sha256 over the sorted
+   * `(rtu_id, key_version, base64(credentials_iv))` of every RTU bound to this
+   * endpoint. The IV is random per encrypt, so any credential write — a
+   * replace, a copy, a key rotation — moves it, and a reload replaces the
+   * endpoint without a restart. Built from **no secret and nothing derived from
+   * one**: never the plaintext, never the ciphertext. Never logged (§9.6). The
+   * edge plan, which never reloads, carries `""`.
+   */
+  readonly credentialFingerprint: string;
 };
 
 /**
@@ -453,6 +463,25 @@ function resolvePayloadFormat(
   return { format: { code: head.payload_format_code, definition: parsed.data } };
 }
 
+/**
+ * `F4.333`: one bound RTU's part of `credentialFingerprint` — the id, the key
+ * version, the IV and whether a ciphertext is present (security review I1: no
+ * CHECK ties the two columns together). Never the ciphertext itself.
+ */
+function credentialMark(
+  rtuId: string,
+  row: Pick<BindingRow, "key_version" | "credentials_iv" | "credentials_ciphertext">,
+): string {
+  const iv = row.credentials_iv === null ? "-" : row.credentials_iv.toString("base64");
+  const present = row.credentials_ciphertext === null ? "0" : "1";
+  return [rtuId, String(row.key_version ?? "-"), iv, present].join("\u0000");
+}
+
+/** `F4.333` (ADR 0129 decision 4): `credentialFingerprint` from the bound RTUs' marks. */
+function credentialFingerprint(marks: readonly string[]): string {
+  return createHash("sha256").update([...marks].sort().join("\n")).digest("hex");
+}
+
 /** `decoderFingerprint` for one endpoint's bindings (plan R8). */
 function decoderFingerprint(protocol: IngestProtocol, bindings: readonly RtuBinding<unknown>[]): string {
   const parts =
@@ -499,6 +528,8 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
     index: Map<string, Map<string, PointTarget[]>>;
     /** `topic → format code` on this endpoint, for `payload-format-conflict`. */
     formatByTopic: Map<string, string>;
+    /** `F4.333`: one `credentialMark` per bound RTU. */
+    credentialMarks: string[];
   };
   const endpoints = new Map<string, Accumulator>();
 
@@ -846,6 +877,7 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         bindings: [],
         index: new Map(),
         formatByTopic: new Map(),
+        credentialMarks: [],
       };
       endpoints.set(groupKey, group);
     } else if (!sameConnection(group.config, configParsed.data)) {
@@ -897,6 +929,7 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
     }
 
     const sourceKeys = [...new Set(pointRows.map((row) => row.source_data_key))];
+    group.credentialMarks.push(credentialMark(rtuId, head));
     group.bindings.push({
       rtuId,
       rtuCode: deviceKey,
@@ -917,6 +950,7 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       bindings: group.bindings,
       pointIndex: group.index,
       decoderFingerprint: decoderFingerprint(group.protocol, group.bindings),
+      credentialFingerprint: credentialFingerprint(group.credentialMarks),
     })),
     skipped,
     warnings,

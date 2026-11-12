@@ -2,6 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   runBindingQuerySelectsKeyVersionTests,
+  runCredentialFingerprintBindsTheRtuTests,
+  runCredentialFingerprintCiphertextPresenceTests,
+  runCredentialFingerprintFollowsIvAndVersionTests,
+  runCredentialFingerprintHoldsNoSecretTests,
+  runCredentialFingerprintNoBlobTests,
+  runCredentialFingerprintOnlyBoundRtusTests,
   runEnvFallbackWarningTests,
   runMqttPlainErrorNoDetailTests,
   runMqttResolverReceivesStoredVersionTests,
@@ -53,5 +59,30 @@ describe("host binding plan — credentials (ADR 0062)", () => {
 
   it("leaves the ADR 0012 skip detail unset for any other cipher failure", () => {
     runNonMqttPlainErrorNoDetailTests();
+  });
+
+  // F4.333 (ADR 0129 decision 4): what makes a credential write reach a running endpoint.
+  it("moves the credential fingerprint with one RTU's IV or key version, not with row order", () => {
+    runCredentialFingerprintFollowsIvAndVersionTests();
+  });
+
+  it("builds the credential fingerprint from no plaintext and no ciphertext", () => {
+    runCredentialFingerprintHoldsNoSecretTests();
+  });
+
+  it("keeps a blob-less RTU's fingerprint stable, and moves it when a blob appears", () => {
+    runCredentialFingerprintNoBlobTests();
+  });
+
+  it("adds a mark only for a bound RTU (an endpoint-credential-conflict RTU stays bound)", () => {
+    runCredentialFingerprintOnlyBoundRtusTests();
+  });
+
+  it("moves the fingerprint when a ciphertext disappears under the same IV", () => {
+    runCredentialFingerprintCiphertextPresenceTests();
+  });
+
+  it("binds each mark to its RTU, so swapped blobs move the fingerprint", () => {
+    runCredentialFingerprintBindsTheRtuTests();
   });
 });
