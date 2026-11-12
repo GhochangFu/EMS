@@ -23,3 +23,8 @@ requires protocol-specific connection config and secrets stored per gateway.
 
 - Key rotation requires `key_version` support in a future sprint.
 - Non-MQTT protocols persist config only until adapter sprints land.
+
+**Amended by [ADR 0129](./0129-replace-rtu-credentials.md) (2026-11-12, `F4.333`):**
+a committed MQTT RTU's credential can be replaced through a write-only API
+route (encrypt only, at the current key version), so decision 1's columns gain
+a second writer after commit.

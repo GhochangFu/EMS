@@ -32,7 +32,9 @@ import { CredentialCryptoService } from "../../security/credential-crypto.servic
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import { MasterDataAuditService } from "../master-data-audit.service";
 import { OnboardingChatService } from "./onboarding-chat.service";
+import { CREDENTIALS_RTU_MOVED, credentialsSetAudit } from "./onboarding-credentials-audit";
 import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
@@ -115,6 +117,7 @@ export class OnboardingService {
     private readonly vocabularies: VocabulariesService,
     private readonly templateCatalog: OnboardingTemplateCatalogService,
     private readonly inventory: OnboardingInventoryService, // F4.243: validate's parent candidates (ADR 0098 Amendment 2, B4).
+    private readonly audit: MasterDataAuditService, // F4.333: the credential write's audit row.
   ) {}
 
   /** Creates a new onboarding session for an organization. */
@@ -323,6 +326,9 @@ export class OnboardingService {
       // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
       const locked = await lockSession(tx, sessionId);
       assertTurnStillBound(locked, expectedHash);
+      if (body.rtuCode !== undefined && rtuSecretKey(locked.draft, body.rtuIndex) !== body.rtuCode) {
+        throw new ConflictException(CREDENTIALS_RTU_MOVED); // F4.333 (security review M2)
+      }
       const mergedDraft = this.chatService.mergeDraft(locked.draft, {}, {
         rtuIndex: body.rtuIndex,
         credentials: body.credentials,
@@ -333,6 +339,20 @@ export class OnboardingService {
         // Defence in depth behind the lock's status check above.
         .where(and(eq(onboardingSessions.id, sessionId), eq(onboardingSessions.status, "draft")))
         .returning();
+      // F4.333 (ADR 0129 decision 1, Q5): audited from the drafts, never the body; no row, no audit.
+      if (row) {
+        await this.audit.write(
+          credentialsSetAudit({
+            actor: jwt,
+            sessionId,
+            organizationId: session.organizationId,
+            rtuIndex: body.rtuIndex,
+            before: locked.draft,
+            after: mergedDraft,
+          }),
+          tx,
+        );
+      }
       return row;
     });
     if (!updated) {

@@ -2,12 +2,15 @@
 
 ## Status
 
-**Proposed — 2026-11-12.** Drafted by an agent for backlog row `F4.333` (P1),
-raised by the owner on 2026-11-07. Nothing is built. The owner holds the
-AGENTS.md §10 gate: the questions under *Open questions* need a ruling, and the
-plan [`docs/plans/f4.333-credential-replace.md`](../plans/f4.333-credential-replace.md)
-needs an explicit "yes", before any build. Lines marked *(recommended)* depend
-on a question; lines marked *(drafter)* are drafter calls the plan may refine.
+**Accepted — 2026-11-12** (owner, in chat: "Accept all recommendations, yes
+to the plan"; proposed the same day). Drafted by an agent for backlog row
+`F4.333` (P1), raised by the owner on 2026-11-07. The owner chose the
+recommended option on all eight questions, so every line marked
+*(recommended)* below is now a ruling, and each question under *Open
+questions* carries its ruling. Lines marked *(drafter)* are drafter calls the
+build may refine. The owner said "yes" to the plan
+[`docs/plans/f4.333-credential-replace.md`](../plans/f4.333-credential-replace.md)
+the same day.
 
 **Why a new ADR and not an amendment.** Part (1) — the draft — needs no new
 rule: the endpoint of [ADR 0022](./0022-onboarding-credential-capture.md)
@@ -97,10 +100,19 @@ no way to enter the new one. BCPL LALMATI onboarding waits on this row.
    "Replace" button. It opens the same credential form, posts to the same
    `POST sessions/:id/credentials`, and replaces the blob for that RTU's code.
    The form starts empty and says "The stored credential is never shown.
-   Saving replaces it." No API change: the endpoint already overwrites
-   (Context 1). The plan adds a test that proves it does, so a later change
-   cannot quietly turn the write into "set once". The copy of ADR 0117
-   decision 7 (`SameCredentialsCopy`) does not change.
+   Saving replaces it." The endpoint already overwrites (Context 1); a test
+   drives two writes through the real `mergeDraft`, so a later change cannot
+   quietly turn the write into "set once". The copy of ADR 0117 decision 7
+   (`SameCredentialsCopy`) does not change.
+   - *(build, from the PR 1 security review M2)* The body gains an optional
+     `rtuCode`: the code of the RTU the form was opened for. Under the session
+     row lock, an RTU at `rtuIndex` with another code answers **409** ("The
+     draft changed: that RTU is no longer at this position. Nothing was
+     stored."), so a reorder or removal between opening the form and saving
+     cannot put one broker's password on another RTU. The drawer always sends
+     it; an older client that omits it writes as before. The form also clears
+     typed values on Cancel or on switching RTU, and the submitted values are
+     not kept in the TanStack mutation cache (review M1, L1).
    - *(recommended, Q5)* The draft write gains an audit entry,
      `master.onboarding.credentials.set`, payload
      `{ sessionId, rtuCode, replaced: boolean, keyVersion }` — never a value,
@@ -211,7 +223,9 @@ no way to enter the new one. BCPL LALMATI onboarding waits on this row.
    Pushing a credential to an edge gateway. A copilot tool. Any change to key
    rotation.
 
-## Open questions (for the owner, in order)
+## Open questions — all ruled as recommended (owner, 2026-11-12)
+
+**Ruling on every question: option A, the recommended one.**
 
 **Q1 — Record.** Where is this decided?
 - A. This new ADR 0129, amending ADR 0012, 0022 and 0115 in one line each.

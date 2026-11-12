@@ -45,6 +45,7 @@ import {
 } from "./onboarding-chat-lock.integration.spec";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
+import { MasterDataAuditService } from "../master-data-audit.service";
 import { OnboardingService } from "./onboarding.service";
 
 /**
@@ -178,6 +179,7 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
       { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
       // F4.243: the parent candidates validate reads.
       { listParentCandidates: async () => [] } as never,
+      new MasterDataAuditService(tenantDb, fleetDb),
     );
 
     Object.assign(ctx, {
@@ -319,6 +321,8 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
     if (previousKey === undefined) delete process.env.CREDENTIAL_ENCRYPTION_KEY;
     else process.env.CREDENTIAL_ENCRYPTION_KEY = previousKey;
     if (holderPool && sessionIds.length > 0) {
+      // F4.333: a successful setCredentials now writes an audit row per session.
+      await holderPool.query("DELETE FROM bms.audit_log WHERE entity_id = ANY($1)", [sessionIds]);
       await holderPool.query("DELETE FROM bms.onboarding_sessions WHERE id = ANY($1)", [sessionIds]);
     }
     await Promise.all([fleetPool?.end(), tenantPool?.end(), authPool?.end(), holderPool?.end()]);

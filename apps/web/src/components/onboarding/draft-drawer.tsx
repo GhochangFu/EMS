@@ -86,11 +86,19 @@ export function DraftDrawer({
   }, []);
 
   const credentialsMutation = useMutation({
-    mutationFn: (vars: { rtuIndex: number; username: string; password: string }) =>
-      setOnboardingCredentials(session!.id, vars.rtuIndex, {
-        username: vars.username,
-        password: vars.password,
-      }),
+    mutationFn: (vars: { rtuIndex: number; rtuCode: string | null; username: string; password: string }) =>
+      setOnboardingCredentials(
+        session!.id,
+        vars.rtuIndex,
+        { username: vars.username, password: vars.password },
+        // F4.333 (security review M2): the code the form was opened for; the server refuses a moved index.
+        vars.rtuCode,
+      ),
+    // F4.333 (security review L1): the submitted plaintext is not kept in the mutation cache.
+    gcTime: 0,
+    onSettled: (): void => {
+      credentialsMutation.reset();
+    },
     onSuccess: (updated) => {
       // The response is the ordinary redacted session — it never echoes what
       // was sent. Clearing the form is what keeps the plaintext from lingering
@@ -187,20 +195,23 @@ export function DraftDrawer({
                           <StatusPill label="Plain MQTT" tone="warning" />
                         ) : null}
                       </span>
-                      {rtu.credentialsSet ? (
-                        <StatusPill label="Set" />
-                      ) : (
+                      {/* F4.333 (ADR 0129 decision 1): a set credential can be replaced, through the same write. */}
+                      <span className="flex items-center gap-2">
+                        {rtu.credentialsSet ? <StatusPill label="Set" /> : null}
                         <button
                           type="button"
                           className="text-2xs underline"
                           onClick={() => {
                             setCredError(null);
+                            // F4.333 (security review M1): never carry typed values to another RTU or past a Cancel.
+                            setCredUsername("");
+                            setCredPassword("");
                             setCredRtuIndex(index === credRtuIndex ? null : index);
                           }}
                         >
-                          {credRtuIndex === index ? "Cancel" : "Add credentials"}
+                          {credRtuIndex === index ? "Cancel" : rtu.credentialsSet ? "Replace" : "Add credentials"}
                         </button>
-                      )}
+                      </span>
                     </div>
                     {/* F4.339 (ADR 0117 decision 7): copy a stored credential from an RTU on the same broker. */}
                     {session && credRtuIndex !== index && (
@@ -261,11 +272,17 @@ export function DraftDrawer({
                           event.preventDefault();
                           credentialsMutation.mutate({
                             rtuIndex: index,
+                            rtuCode: rtu.code ?? null,
                             username: credUsername,
                             password: credPassword,
                           });
                         }}
                       >
+                        {rtu.credentialsSet ? (
+                          <p className="text-2xs text-ink-muted">
+                            The stored credential is never shown. Saving replaces it.
+                          </p>
+                        ) : null}
                         <input
                           className="w-full surface-field px-2 py-1 text-2xs"
                           placeholder="Username"
@@ -285,6 +302,7 @@ export function DraftDrawer({
                           type="submit"
                           disabled={
                             credentialsMutation.isPending ||
+                            busy ||
                             (!credUsername && !credPassword)
                           }
                           aria-busy={credentialsMutation.isPending}

@@ -207,6 +207,7 @@ export function buildService(opts: { session: ReturnType<typeof sessionRow>; res
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     // F4.243: the parent candidates validate reads.
     { listParentCandidates: async () => [] } as never,
+    { write: async () => undefined } as never, // F4.333: the credential write's audit.
   );
   return { service, record };
 }

@@ -1,6 +1,8 @@
 import { setCredentialsBodySchema } from "./onboarding.schema";
 import { MQTT_CREDENTIAL_CONTROL_CHARS, OnboardingService } from "./onboarding.service";
-import { redactDraftForClient } from "./onboarding-redaction";
+import { CredentialCryptoService } from "../../security/credential-crypto.service";
+import { CREDENTIALS_RTU_MOVED, CREDENTIALS_SET_ACTION } from "./onboarding-credentials-audit";
+import { attachEncryptedCredentials, ownBlobAt, redactDraftForClient } from "./onboarding-redaction";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
 function assert(condition: boolean, message: string): void {
@@ -81,6 +83,7 @@ function buildService(opts: {
   mergeDraft?: (...args: unknown[]) => unknown;
 }) {
   const calls: unknown[][] = [];
+  const audits: unknown[] = [];
   const chatService = {
     mergeDraft: (...args: unknown[]) => {
       calls.push(args);
@@ -101,8 +104,10 @@ function buildService(opts: {
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     // F4.243: the parent candidates validate reads.
     { listParentCandidates: async () => [] } as never,
+    // F4.333 (ADR 0129 Q5): records each audit input the credential write hands over.
+    { write: async (input: unknown) => void audits.push(input) } as never,
   );
-  return { service, calls };
+  return { service, calls, audits };
 }
 
 async function rejects(run: () => Promise<unknown>, expect: string): Promise<string> {
@@ -268,9 +273,9 @@ export async function runOnboardingCredentialsAsyncTests(): Promise<void> {
     // --- decision 1: the plaintext is never echoed back ---------------------
     const stored = {
       rtus: [{ code: "R1", protocol: "mqtt", config: {}, credentialsSet: true }],
-      _secrets: { R1: { c: "Y2lwaGVy", iv: "aXY=" } },
+      _secrets: { R1: { c: "Y2lwaGVy", iv: "aXY=", v: 1 } },
     };
-    const { service, calls } = buildService({
+    const { service, calls, audits } = buildService({
       results: [
         [SESSION_ROW],
         [{ ...SESSION_ROW, draft: stored }],
@@ -295,6 +300,76 @@ export async function runOnboardingCredentialsAsyncTests(): Promise<void> {
       calls.length === 1 && (calls[0][2] as { rtuIndex: number }).rtuIndex === 0,
       "the credential is handed to mergeDraft for the requested RTU",
     );
+
+    // --- F4.333 (ADR 0129 decision 1, Q5): one audit row, never a value ----
+    assert(audits.length === 1, `one audit row per credential write, got ${audits.length}`);
+    const firstAudit = audits[0] as { action: string; entityId: string; payload: Record<string, unknown> };
+    assert(firstAudit.action === CREDENTIALS_SET_ACTION, `the action, got ${firstAudit.action}`);
+    assert(firstAudit.entityId === "s-1", "the row names the session");
+    assert(
+      JSON.stringify(firstAudit.payload) ===
+        JSON.stringify({ sessionId: "s-1", rtuCode: "R1", replaced: false, keyVersion: 1 }),
+      `exactly the four fields, got ${JSON.stringify(firstAudit.payload)}`,
+    );
+    assert(!JSON.stringify(audits).includes("hunter2") && !JSON.stringify(audits).includes("pheadmin"), "no value in the audit row");
+
+    // A second write over a stored blob is a replace, and says so.
+    const before = { ...stored, _secrets: { R1: { c: "b2xk", iv: "aXY=", v: 1 } } };
+    const after = { ...stored, _secrets: { R1: { c: "bmV3", iv: "aXYy", v: 2 } } };
+    const replace = buildService({
+      results: [[{ ...SESSION_ROW, draft: before }], [{ ...SESSION_ROW, draft: after }], [{ code: "ORG", name: "Org" }]],
+      mergeDraft: () => after,
+    });
+    const replacedResult = JSON.stringify(
+      await replace.service.setCredentials(JWT, "s-1", { rtuIndex: 0, credentials: { password: "new-pw", username: "u" } }),
+    );
+    assert(
+      !replacedResult.includes("new-pw") && !replacedResult.includes("_secrets") && !replacedResult.includes("bmV3"),
+      "the replace's response carries no plaintext, no store and no ciphertext",
+    );
+    const replaced = (replace.audits[0] as { payload: Record<string, unknown> }).payload;
+    assert(replaced.replaced === true && replaced.keyVersion === 2, `a replace is audited as one, got ${JSON.stringify(replaced)}`);
+    assert(!JSON.stringify(replace.audits).includes("new-pw"), "no value in the replace's audit row");
+
+    // No row written, no audit row (the write that hit nothing is a 409).
+    const missed = buildService({ results: [[SESSION_ROW], []], mergeDraft: () => stored });
+    await rejects(() => missed.service.setCredentials(JWT, "s-1", { rtuIndex: 0, credentials: { password: "x" } }), "a write that hit nothing");
+    assert(missed.audits.length === 0, "no audit row for a write that hit nothing");
+
+    // --- F4.333 (security review M2): the write is bound to the code the form saw
+    const moved = buildService({ mergeDraft: () => stored });
+    const movedMessage = await rejects(
+      () => moved.service.setCredentials(JWT, "s-1", { rtuIndex: 0, rtuCode: "R2", credentials: { password: "x" } }),
+      "a code that is no longer at the index",
+    );
+    assert(movedMessage === `ConflictException: ${CREDENTIALS_RTU_MOVED}`, `a moved RTU is 409, got: ${movedMessage}`);
+    assert(moved.calls.length === 0 && moved.audits.length === 0, "nothing is merged and nothing audited");
+    const bound = buildService({
+      results: [[SESSION_ROW], [{ ...SESSION_ROW, draft: stored }], [{ code: "ORG", name: "Org" }]],
+      mergeDraft: () => stored,
+    });
+    await bound.service.setCredentials(JWT, "s-1", { rtuIndex: 0, rtuCode: "R1", credentials: { password: "x" } });
+    assert(bound.calls.length === 1, "the matching code writes");
+    assert(
+      setCredentialsBodySchema.safeParse({ rtuIndex: 0, rtuCode: " R1 ", credentials: { password: "x" } }).data?.rtuCode === "R1",
+      "the code is trimmed like the draft's",
+    );
+    assert(
+      !setCredentialsBodySchema.safeParse({ rtuIndex: 0, rtuCode: "", credentials: { password: "x" } }).success,
+      "an empty code is refused",
+    );
+
+    // --- F4.333 (ADR 0129 decision 1): the store overwrites, never "set once" -
+    const crypto = new CredentialCryptoService();
+    const draft = { rtus: [{ code: "R1", protocol: "mqtt", config: {} }] };
+    const one = crypto.encrypt({ password: "old" });
+    const first = attachEncryptedCredentials(draft as never, 0, one.ciphertext, one.iv, one.keyVersion);
+    const two = crypto.encrypt({ password: "new" });
+    const second = attachEncryptedCredentials(first, 0, two.ciphertext, two.iv, two.keyVersion);
+    const blob = ownBlobAt(second, 0);
+    assert(blob !== null && blob.c === two.ciphertext.toString("base64"), "a second write replaces the stored blob");
+    assert(blob?.iv !== ownBlobAt(first, 0)?.iv, "with a fresh IV");
+    assert(Object.keys((second as { _secrets: object })._secrets).length === 1, "and leaves one entry for the code");
 
     // --- Amendment 1 regression: the client view is not less redacted than
     // the LLM view. Nothing in the tree caught this being reintroduced.

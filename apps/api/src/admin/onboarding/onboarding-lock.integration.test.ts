@@ -129,6 +129,7 @@ describe.skipIf(!connectionString)("F4.339 — the onboarding draft lock (real P
       vocabularies as never,
       templates as never,
       { listParentCandidates: async () => [] } as never,
+      audit,
     );
     let n = 0;
     Object.assign(ctx, {

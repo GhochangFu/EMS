@@ -114,11 +114,13 @@ export async function setOnboardingCredentials(
   sessionId: string,
   rtuIndex: number,
   credentials: Record<string, string>,
+  rtuCode?: string | null,
 ): Promise<OnboardingSessionDto> {
   return adminFetch(`/admin/onboarding/sessions/${sessionId}/credentials`, onboardingSessionDtoSchema, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rtuIndex, credentials }),
+    // F4.333: `rtuCode` binds the write to the RTU the form was opened for.
+    body: JSON.stringify(rtuCode ? { rtuIndex, rtuCode, credentials } : { rtuIndex, credentials }),
   });
 }
 

@@ -85,6 +85,9 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/onboarding/onboarding-discovery.service.ts",
   // `F4.339` PR 9 (ADR 0099 Amendment 18): the `onboarding.credentials.copy` handler audits its copy row here.
   "apps/api/src/admin/onboarding/onboarding-credential-copy.service.ts",
+  // `F4.333` (ADR 0129 decision 1, Q5): `setCredentials` audits here. Its route is catalog-excluded,
+  // but the class is reached by onboarding catalog entries, so it is listed as a catalog writer.
+  "apps/api/src/admin/onboarding/onboarding.service.ts",
   "apps/api/src/control-room/site-control-room-view.service.ts",
   // `F3.87` PR 2 (plan §4.7): every service a release-3 entry's handler reaches.
   "apps/api/src/mimic-layouts/mimic-layouts.service.ts",
