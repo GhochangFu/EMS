@@ -488,3 +488,17 @@ those assets read offline during them, which is the intended reading. WBLDC's
 longest gap (about 120 s) is inside its 150 s window, so no WBLDC room flickers.
 The ESKOM simulator was not measured; it is taken as the 1–5 s devices the
 simulator is configured for.
+
+## Note (2026-11-12) — `field_data` reads the ingest heartbeat (ADR 0127)
+
+[ADR 0127](./0127-device-health.md) decision 21 (`F3.16`, PR A
+[#1270](https://github.com/GhochangFu/EMS/pull/1270)) replaced the inference
+that *Consequences* accepted "until `F3.16` gives a heartbeat". `field_data` is
+now `degraded` when the heartbeat in `bms.ingest_hosts` of a host serving the
+caller's monitored RTUs is stale (more than 30 s on the database clock) or
+absent, and `ok` when it is fresh; with no RTU served yet, every host is judged.
+`not_monitored` is unchanged (ruled here 5). Silent devices no longer degrade
+it: they show in the offline-devices count and in data quality. Decision 4 is
+unchanged: only the state crosses into the body. Checked on AWS 2026-11-12:
+`bms-ctl ingest stop` turned it `degraded` inside a minute, and `start`
+restored `ok`.

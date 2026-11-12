@@ -358,3 +358,17 @@ nothing, 300 s raises one; a 900 s window still governs).
 ## Dependencies
 
 None added. Uses BullMQ (ADR 0063) and the pools of ADR 0045.
+
+## Owner rulings after closure (2026-11-12)
+
+Asked in chat one at a time; both ruled as recommended.
+
+- **The host-alarm acknowledge stays as decision 14 ruled.** Any user who sees
+  an organization's "Ingest host not reporting" alarm and holds the
+  operational write role can acknowledge it and stop its escalation for
+  everyone. The acknowledge is audited with the user, so it is attributable. No
+  code change.
+- **`F3.88`'s gateway stale threshold is 5 minutes**, the same as
+  Amendment 1's raise delay: "Edge gateway not reporting" is raised when
+  `edge_gateways.last_seen_at` is more than 300 s old. The row still needs its
+  own plan and migration.
