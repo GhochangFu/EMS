@@ -425,13 +425,23 @@
 > gate and four plan questions, one ruled against the recommendation; three
 > reviews): a `sum` over a window whose covered time is below 90% of the elapsed
 > window refuses `window_sparse` rather than extrapolating the observed mean
-> across the gap. `avg`, `min`, `max` and `delta` are not guarded. Coverage is
+> across the gap. `avg`, `min`, `max` and `delta` are not coverage-guarded
+> (`delta` has its own refusal, `window_decreasing`, below). Coverage is
 > counted inside the level statement the read already runs: a `1d` bucket counts
 > its day, finer levels count clock hours, and a clock hour that two segments
 > share is covered when any part of it holds a sample. `window_empty` keeps
-> precedence. **And the content that waited on both**
-> (`E4.1c`, 2026-09-20, PRs #502, #503 and #504 — twelve plan rulings, three
-> against the recommendation; fourteen reviews and a post-merge sweep applied;
+> precedence. **And a window `delta` over a counter that fell refuses**
+> (`F4.353`, 2026-11-12, PRs #1279 and #1281 — ADR 0070 Amendment 8, an owner
+> ruling): a `delta` whose last sample is below its first refuses
+> `window_decreasing` and writes nothing, never a negative number (one bad `0`
+> from a PHE `kwh_total` register had written `kwh_today` = −74,067). Equal
+> first and last is `0`; one sample is still `window_empty`; it is still two
+> index probes. Accepted costs: a real reset refuses, then under-reports until
+> the period rolls over; a bad *first* sample is not seen — the ingest
+> `eng_min` / `eng_max` band is the cover; a custom `delta` over a point that
+> may fall refuses on any fall. **And the content that waited on both** the
+> parameter store and the time windows (`E4.1c`, 2026-09-20, PRs #502, #503
+> and #504 — twelve plan rulings, three against the recommendation; fourteen reviews and a post-merge sweep applied;
 > ADR 0070 Amendment 2): the Rand tariff is gone — `DashboardService` and
 > `ReportsService` price energy per asset at the nearest-scope
 > `energy_tariff_per_kwh`, the Energy Centre and the report DTOs carry
