@@ -112,3 +112,14 @@ export function runAlarmStateSearchTextTests(): void {
     );
   }
 }
+
+/** `F4.359` U12 — a suppressed alarm is findable by "suppressed" and "maintenance"; others are not. */
+export function runSuppressedSearchTextTests(): void {
+  const base = stamps(null, null);
+  const on = alarmStateSearchText({ ...base, suppressed: true }).toLowerCase();
+  assert(on.includes("suppressed") && on.includes("maintenance"), `a suppressed alarm must match: ${on}`);
+  const off = alarmStateSearchText({ ...base, suppressed: false }).toLowerCase();
+  assert(!off.includes("suppressed") && !off.includes("maintenance"), `an unsuppressed alarm must not match: ${off}`);
+  const none = alarmStateSearchText(base).toLowerCase();
+  assert(!none.includes("maintenance"), `absent suppressed must not match: ${none}`);
+}

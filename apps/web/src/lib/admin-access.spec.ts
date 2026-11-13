@@ -1,6 +1,7 @@
 import {
   canAcknowledgeAlarms,
   canApproveWorkOrders,
+  canManageMaintenanceWindows,
   canManageAssetDomains,
   canManageWorkOrderSettings,
   canAccessOnboarding,
@@ -631,5 +632,26 @@ export function runCanAcknowledgeAlarmsTruthTableTest(): void {
   } as const;
   for (const [role, expected] of Object.entries(table) as Array<[keyof typeof table, boolean]>) {
     assert(canAcknowledgeAlarms(role) === expected, `${role} must ${expected ? "" : "not "}acknowledge alarms`);
+  }
+}
+
+/**
+ * `F4.359` (ADR 0131) — the API's `configuration` write class, role by role: the four admin roles
+ * manage maintenance windows; an `operator` and a `viewer` do not.
+ */
+export function runCanManageMaintenanceWindowsTruthTableTest(): void {
+  const table = {
+    admin: true,
+    organization_admin: true,
+    location_admin: true,
+    asset_group_admin: true,
+    operator: false,
+    viewer: false,
+  } as const;
+  for (const [role, expected] of Object.entries(table) as Array<[keyof typeof table, boolean]>) {
+    assert(
+      canManageMaintenanceWindows(role) === expected,
+      `${role} must ${expected ? "" : "not "}manage maintenance windows`,
+    );
   }
 }

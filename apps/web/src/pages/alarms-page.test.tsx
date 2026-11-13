@@ -9,6 +9,11 @@ import {
   aDeviceAlarmIsAcknowledged,
   aDeviceAlarmNamesItsRtuOrTheIngestHost,
   aReasonThatTrimsShortStaysOnTheReasonStep,
+  aNonSuppressedRowShowsNoBadge,
+  aReturnedRowShowsNoBadge,
+  aSuppressedRowShowsTheBadge,
+  searchingMaintenanceFindsTheSuppressedRow,
+  theSuppressedControlSendsStateSuppressed,
   countsActiveAsUnclearedAndAcknowledgedAsStamped,
   offersAckOnExactlyTheUnacknowledgedRows,
   rendersAllFourLifecycleStates,
@@ -85,5 +90,25 @@ describe("F3.10 alarm lifecycle on the alarms page", () => {
 
   it("F3.16 a device alarm is acknowledged, the Review card naming the device", async () => {
     await aDeviceAlarmIsAcknowledged();
+  });
+
+  it("F4.359 a suppressed row shows the Maintenance badge", async () => {
+    await aSuppressedRowShowsTheBadge();
+  });
+
+  it("F4.359 a non-suppressed row shows no badge", async () => {
+    await aNonSuppressedRowShowsNoBadge();
+  });
+
+  it("F4.359 a returned row (window id kept, suppressed false) shows no badge", async () => {
+    await aReturnedRowShowsNoBadge();
+  });
+
+  it("F4.359 the Suppressed only control reads state=suppressed", async () => {
+    await theSuppressedControlSendsStateSuppressed();
+  });
+
+  it("F4.359 searching maintenance finds the suppressed row", async () => {
+    await searchingMaintenanceFindsTheSuppressedRow();
   });
 });

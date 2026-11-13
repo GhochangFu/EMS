@@ -6,6 +6,7 @@ import type { AlarmListItem, AlarmSeverityCount, AlarmSeverityDto } from "@bms/s
 
 import { alarmSeverityTone } from "../../lib/alarm-severity";
 import { deviceAlarmLabel } from "../../lib/alarm-source";
+import { MaintenanceBadge } from "../maintenance/maintenance-badge";
 import { StatusPill } from "../status-pill";
 
 /** The reference rail's row budget (`docs/ux/ion-exchange-reference-alignment.md`, page 10). */
@@ -144,6 +145,8 @@ export function ActiveAlarmsRailBody({
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="min-w-0 break-words text-ink">{alarm.message}</span>
                         <StatusPill label={alarm.severity} tone={alarmSeverityTone(alarm.severity, severities)} />
+                        {/* F4.359: keyed on `suppressed`, never `maintenanceWindowId` — a returned alarm keeps its window id. */}
+                        {alarm.suppressed ? <MaintenanceBadge /> : null}
                       </div>
                     </td>
                   </tr>

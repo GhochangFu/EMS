@@ -426,3 +426,50 @@ export async function aDeviceAlarmCountsUnderIt(): Promise<void> {
   expect(countOf("Battery"), "the comms message names a battery RTU, not a battery").toBe("0 / 3");
   expect(countOf("Security"), "only the rule alarm falls through").toBe("1 / 3");
 }
+
+/**
+ * `F4.359` U12 (plan D18) — the State cell's Maintenance badge keys on `suppressed`, not on
+ * `maintenanceWindowId`: a RETURNED alarm (suppressed false, window id and `unsuppressedAt` set) keeps its
+ * window id and must show no badge.
+ */
+const SUPPRESSED = alarm({ id: "s1", message: "Suppressed row", suppressed: true, maintenanceWindowId: "w1" });
+const RETURNED = alarm({
+  id: "s2",
+  message: "Returned row",
+  suppressed: false,
+  maintenanceWindowId: "w1",
+  unsuppressedAt: "2026-09-06T09:20:00.000Z",
+});
+const PLAIN = alarm({ id: "s3", message: "Plain row" });
+
+export async function aSuppressedRowShowsTheBadge(): Promise<void> {
+  await renderPage([SUPPRESSED, PLAIN, RETURNED]);
+  expect(within(rowFor("Suppressed row")).getByText("Maintenance")).toBeInTheDocument();
+}
+
+export async function aNonSuppressedRowShowsNoBadge(): Promise<void> {
+  await renderPage([SUPPRESSED, PLAIN, RETURNED]);
+  expect(within(rowFor("Plain row")).queryByText("Maintenance")).toBeNull();
+}
+
+export async function aReturnedRowShowsNoBadge(): Promise<void> {
+  await renderPage([SUPPRESSED, PLAIN, RETURNED]);
+  expect(within(rowFor("Returned row")).queryByText("Maintenance")).toBeNull();
+}
+
+/** The control reads `state=suppressed`; the default read sends none. */
+export async function theSuppressedControlSendsStateSuppressed(): Promise<void> {
+  await renderPage([SUPPRESSED, PLAIN]);
+  const spy = vi.spyOn(alarmsApi, "fetchAlarmsPage");
+  expect(spy.mock.calls.every((call) => call[2] === undefined)).toBe(true);
+  await userEvent.click(screen.getByRole("checkbox", { name: "Suppressed only" }));
+  await vi.waitFor(() => expect(spy.mock.calls.some((call) => call[2] === "suppressed")).toBe(true));
+}
+
+/** Searching `maintenance` finds a suppressed alarm. */
+export async function searchingMaintenanceFindsTheSuppressedRow(): Promise<void> {
+  await renderPage([SUPPRESSED, PLAIN]);
+  await userEvent.type(screen.getByPlaceholderText(/Asset, site/), "maintenance");
+  expect(within(screen.getByRole("table")).queryByText("Plain row")).toBeNull();
+  expect(within(screen.getByRole("table")).getByText("Suppressed row")).toBeInTheDocument();
+}

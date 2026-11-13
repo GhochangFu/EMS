@@ -336,6 +336,15 @@ export function canApproveWorkOrders(role: UserRole): boolean {
 }
 
 /**
+ * `F4.359` (ADR 0131) — who may create, extend, end or cancel a maintenance window: the four admin
+ * roles the API's `configuration` write class admits (`apps/api/src/auth/operations-write.ts`). The
+ * server decides; this only keeps a control the route would refuse off the screen.
+ */
+export function canManageMaintenanceWindows(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin" || role === "location_admin" || role === "asset_group_admin";
+}
+
+/**
  * `F4.357` (plan D14) — the `operational` write class (`apps/api/src/auth/operations-write.ts`):
  * every role but `viewer` may acknowledge an alarm. The server decides; this only hides the
  * alarm bar's Acknowledge from a role the route would refuse.

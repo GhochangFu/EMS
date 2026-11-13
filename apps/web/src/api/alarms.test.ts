@@ -93,3 +93,8 @@ describe("fetchUnacknowledgedAlarms (F4.357 U2b)", () => {
   it("sends state=unacknowledged, minSeverityRank and limit in the scope", () => spec.unacknowledgedAlarmsSendsStateRankAndLimit());
   it("sends locationId alone for a location scope (F4.357 U3)", () => spec.aLocationScopeSendsItsIdOnly());
 });
+
+describe("fetchAlarmsPage (F4.359 U12)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("sends state only when given", () => spec.alarmsPageSendsTheStateOnlyWhenGiven());
+});

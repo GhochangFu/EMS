@@ -4,6 +4,7 @@ import {
   runAlarmLifecycleStateTests,
   runAlarmStateLabelTests,
   runAlarmStateSearchTextTests,
+  runSuppressedSearchTextTests,
   runCanAcknowledgeTests,
 } from "./alarm-state.spec";
 
@@ -23,5 +24,9 @@ describe("alarm-state", () => {
 
   it("makes a cleared alarm findable by searching for cleared", () => {
     runAlarmStateSearchTextTests();
+  });
+
+  it("makes a suppressed alarm findable by maintenance (F4.359)", () => {
+    runSuppressedSearchTextTests();
   });
 });

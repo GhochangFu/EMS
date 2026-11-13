@@ -420,3 +420,20 @@ export async function aDeviceAlarmNamesItsRtuOrTheIngestHost(): Promise<void> {
   expect(byWholeText(await railRow("Alarm message 3"), "CR-Q1 · RTU 1")).toBeInTheDocument();
   expect((await railRow("Ingest host not reporting")).textContent).not.toMatch(/null/);
 }
+
+/**
+ * `F4.359` U12 (plan D18) — the Maintenance badge is drawn on a suppressed alarm's row only. The same
+ * body feeds the site widget's rail, so the one assertion holds for both.
+ */
+export async function theBadgeIsOnTheSuppressedRowOnly(): Promise<void> {
+  renderRail({
+    items: [
+      alarm(1, { suppressed: true, maintenanceWindowId: "w1" }),
+      alarm(2),
+      alarm(3, { suppressed: false, maintenanceWindowId: "w1", unsuppressedAt: "2026-09-24T10:30:00.000Z" }),
+    ],
+  });
+  expect(within(await railRow("Alarm message 1")).getByText("Maintenance")).toBeInTheDocument();
+  expect(within(await railRow("Alarm message 2")).queryByText("Maintenance")).toBeNull();
+  expect(within(await railRow("Alarm message 3")).queryByText("Maintenance")).toBeNull();
+}
