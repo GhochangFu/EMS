@@ -34,6 +34,7 @@ function raise(overrides: Partial<AlarmRaiseResult> = {}): AlarmRaiseResult {
     alarmId: ALARM_ID,
     severity: "critical",
     message: MESSAGE,
+    suppressed: false,
     ...overrides,
   };
 }
@@ -247,4 +248,33 @@ export async function assertUntilFailsLoudly(): Promise<void> {
     propagated instanceof Error && propagated.message === "spec bug",
     "a throwing check propagates its own error",
   );
+}
+
+/**
+ * `F4.359` U7 (ADR 0131 decisions 6 and 10; plan D9) — the one choke point for
+ * the three rule engines: a raise a maintenance window covered starts no
+ * dispatch and returns `false`, before the action is even read; the same raise
+ * unsuppressed still dispatches (the positive twin). A suppressed raise is a
+ * real raise (`raised: true`), so the early return is the only thing between it
+ * and the channels.
+ */
+export async function assertSuppressedRaiseStartsNoDispatch(): Promise<void> {
+  const suppressed = fakeDeps();
+  assert(
+    notifyOnRaise(suppressed.deps, rule(), raise({ suppressed: true })) === false,
+    "a suppressed raise must report that no dispatch started",
+  );
+  await tick();
+  assert(suppressed.calls.length === 0, `a suppressed raise must start no dispatch, got ${suppressed.calls.length}`);
+  assert(suppressed.warns.length === 0, `a suppressed raise is not a failure and warns nothing, got ${suppressed.warns.join(" | ")}`);
+
+  // Before the organization check too: a suppressed raise on an un-orgd rule is silent, not a warn.
+  const noOrg = fakeDeps();
+  assert(notifyOnRaise(noOrg.deps, rule({ organizationId: null }), raise({ suppressed: true })) === false, "suppressed, no org");
+  assert(noOrg.warns.length === 0, "the suppressed return comes before the organization warn");
+
+  const twin = fakeDeps();
+  assert(notifyOnRaise(twin.deps, rule(), raise({ suppressed: false })) === true, "the unsuppressed twin must dispatch");
+  await tick();
+  assert(twin.calls.length === 1, `the unsuppressed twin must start exactly one dispatch, got ${twin.calls.length}`);
 }

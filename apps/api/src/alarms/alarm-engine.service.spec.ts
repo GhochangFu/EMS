@@ -134,6 +134,7 @@ const RAISED: AlarmRaiseResult = {
   alarmId: ALARM_ID,
   severity: "warning",
   message: "m",
+  suppressed: false,
 };
 
 const NOT_RAISED: AlarmRaiseResult = {
@@ -141,6 +142,7 @@ const NOT_RAISED: AlarmRaiseResult = {
   alarmId: null,
   severity: "warning",
   message: "m",
+  suppressed: false,
 };
 
 /**

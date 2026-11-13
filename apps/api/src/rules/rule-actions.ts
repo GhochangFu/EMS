@@ -82,6 +82,12 @@ export function toDispatchInput(
  * §9.6: both warn lines name the rule code and a reason only — never the alarm
  * text, a channel config or a recipient.
  *
+ * `F4.359` (ADR 0131 decisions 6 and 10; plan D9): a raise a maintenance
+ * window covered (`raise.suppressed`) returns `false` first — before the action
+ * is read — so none of the three engines that call this can notify for a
+ * suppressed alarm. Its notification is owed when the window ends (the
+ * lifecycle sweep's raise-retry phase), not here.
+ *
  * @returns whether a dispatch was started — for specs, never for control flow.
  */
 export function notifyOnRaise(
@@ -92,6 +98,9 @@ export function notifyOnRaise(
   rule: NotifiableRule,
   raise: AlarmRaiseResult,
 ): boolean {
+  if (raise.suppressed) {
+    return false;
+  }
   if (!shouldNotify(rule.action)) {
     return false;
   }

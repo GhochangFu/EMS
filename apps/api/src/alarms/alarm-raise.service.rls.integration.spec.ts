@@ -3,10 +3,11 @@ import pg from "pg";
 
 import { createDb } from "@bms/db";
 
-import type { AlarmRaiseRule } from "./alarm-raise.service";
+import type { AlarmRaiseResult, AlarmRaiseRule } from "./alarm-raise.service";
 import type { AlarmRaiser } from "./alarm-raise.service";
 import { ALARM_NOTIFY_CHANNEL } from "./alarm-notify-channel";
 import { readAlarmListItem } from "./alarm-list-item";
+import { type CoverOrganization, insertWindow } from "./maintenance-cover.reads.integration.spec";
 
 /**
  * `E7.1b` — the org-stamping and relocation-guard proof for `AlarmRaiser`
@@ -240,4 +241,154 @@ export async function assertRaiseDeviceRefusesForeignRtu(ctx: DeviceRaiseRlsFixt
   expect(heard.filter((n) => n.organizationId === organizationId)).toEqual([]);
   const rows = await ownerPool.query(`SELECT 1 FROM bms.alarms WHERE rtu_id = $1`, [foreignRtuId]);
   expect(rows.rows, "no alarm row names the foreign RTU").toHaveLength(0);
+}
+
+/**
+ * `F4.359` U7 (ADR 0131 decisions 4–6; plan Q1 (a), D8) — the raiser decides
+ * suppression inside its own raise transaction, as `bms_tenant`: the cover read
+ * needs no fleet handle. The fixture is an organization of its own
+ * (`insertCoverOrganization`) and one foreign organization; each assertion
+ * opens the windows it needs, raises on an `(asset, rule)` pair no other
+ * assertion uses, and ends its windows before it returns.
+ */
+export type SuppressionRlsFixtures = {
+  raiser: AlarmRaiser;
+  /** Superuser: windows and reads. */
+  admin: pg.Pool;
+  org: CoverOrganization;
+  foreign: CoverOrganization;
+};
+
+type StampRow = { suppressed_at: Date | null; suppressed_by_window_id: string | null; unsuppressed_at: Date | null };
+
+async function stampOf(admin: pg.Pool, alarmId: string | null): Promise<StampRow | undefined> {
+  const { rows } = await admin.query<StampRow>(
+    "SELECT suppressed_at, suppressed_by_window_id, unsuppressed_at FROM bms.alarms WHERE id = $1",
+    [alarmId],
+  );
+  return rows[0];
+}
+
+async function endWindows(admin: pg.Pool, org: CoverOrganization): Promise<void> {
+  await admin.query(
+    "UPDATE bms.maintenance_windows SET ended_at = now(), ended_by = $2 WHERE organization_id = $1 AND ended_at IS NULL",
+    [org.organizationId, org.userId],
+  );
+}
+
+function coverRule(org: CoverOrganization, ruleId: string): AlarmRaiseRule {
+  return {
+    id: ruleId,
+    code: `F4359-${ruleId.slice(0, 8)}`,
+    name: "F4.359 suppression rule",
+    pointKey: "f4359_point",
+    severity: "warning",
+    organizationId: org.organizationId,
+    alarmMessage: null,
+    unit: null,
+  };
+}
+
+/**
+ * A raise on an asset target inside an active window stamps both columns in the
+ * raise transaction; the `created` NOTIFY still goes out, and the list item the
+ * listener reads by its id after commit already reads `suppressed: true`.
+ */
+export async function assertRaiseInsideAWindowIsStamped(ctx: SuppressionRlsFixtures): Promise<void> {
+  const { raiser, admin, org } = ctx;
+  const windowId = await insertWindow(admin, org, { startsInSeconds: -60, endsInSeconds: 3600, assetIds: [org.assetIds[0]] });
+  try {
+    let result: AlarmRaiseResult | undefined;
+    const heard = await notificationsDuring(admin, async () => {
+      result = await raiser.raise(org.assetIds[0], org.organizationId, coverRule(org, org.ruleId), 999_999);
+    });
+    expect(result).toMatchObject({ raised: true, suppressed: true });
+    const alarmId = result?.alarmId ?? null;
+    const row = await stampOf(admin, alarmId);
+    expect(row?.suppressed_at, "suppressed_at is stamped").toBeInstanceOf(Date);
+    expect(row?.suppressed_by_window_id, "suppressed_by_window_id names the window").toBe(windowId);
+    expect(row?.unsuppressed_at).toBeNull();
+
+    const created = heard.filter((n) => n.alarmId === alarmId);
+    expect(created, "a suppressed raise still announces itself (the list and history keep it)").toEqual([
+      { type: "created", alarmId, organizationId: org.organizationId },
+    ]);
+    const item = await readAlarmListItem(createDb(admin), alarmId as string);
+    expect(item).toMatchObject({ id: alarmId, suppressed: true, maintenanceWindowId: windowId, unsuppressedAt: null });
+  } finally {
+    await endWindows(admin, org);
+  }
+}
+
+/**
+ * Not stamped: after `ended_at`, after `ends_at`, before `starts_at`, and under
+ * another organization's window that covers its whole tree. The positive
+ * neighbour — an active window over another asset, raised in the same
+ * assertion — is stamped, so the negatives cannot pass by stamping nothing.
+ */
+export async function assertRaiseOutsideAnActiveWindowIsNotStamped(ctx: SuppressionRlsFixtures): Promise<void> {
+  const { raiser, admin, org, foreign } = ctx;
+  const target = org.assetIds[1];
+  await insertWindow(admin, org, { startsInSeconds: -600, endsInSeconds: 3600, ended: true, assetIds: [target] });
+  await insertWindow(admin, org, { startsInSeconds: -7200, endsInSeconds: -3600, assetIds: [target] });
+  await insertWindow(admin, org, { startsInSeconds: 3600, endsInSeconds: 7200, assetIds: [target] });
+  await insertWindow(admin, foreign, { startsInSeconds: -60, endsInSeconds: 3600, locationIds: [foreign.site] });
+  const active = await insertWindow(admin, org, { startsInSeconds: -60, endsInSeconds: 3600, assetIds: [org.assetIds[2]] });
+  try {
+    const outside = await raiser.raise(target, org.organizationId, coverRule(org, org.ruleId), 999_999);
+    expect(outside).toMatchObject({ raised: true, suppressed: false });
+    expect(await stampOf(admin, outside.alarmId)).toEqual({ suppressed_at: null, suppressed_by_window_id: null, unsuppressed_at: null });
+    const item = await readAlarmListItem(createDb(admin), outside.alarmId as string);
+    expect(item).toMatchObject({ suppressed: false, maintenanceWindowId: null });
+
+    const inside = await raiser.raise(org.assetIds[2], org.organizationId, coverRule(org, org.ruleId), 999_999);
+    expect(inside).toMatchObject({ raised: true, suppressed: true });
+    expect((await stampOf(admin, inside.alarmId))?.suppressed_by_window_id).toBe(active);
+
+    // A dedupe is not a raise: nothing to suppress.
+    const again = await raiser.raise(org.assetIds[2], org.organizationId, coverRule(org, org.ruleId), 999_999);
+    expect(again).toMatchObject({ raised: false, alarmId: null, suppressed: false });
+  } finally {
+    await endWindows(admin, org);
+    await endWindows(admin, foreign);
+  }
+}
+
+/** `rtu_comms` under a target location is stamped (decision 5); `ingest_host` never is, under a window over everything. */
+export async function assertDeviceRaiseStampsRtuCommsAndNeverIngestHost(ctx: SuppressionRlsFixtures): Promise<void> {
+  const { raiser, admin, org } = ctx;
+  const windowId = await insertWindow(admin, org, {
+    startsInSeconds: -60,
+    endsInSeconds: 3600,
+    locationIds: [org.site, org.room],
+    assetIds: [...org.assetIds],
+  });
+  try {
+    const rtu = await raiser.raiseDevice({
+      organizationId: org.organizationId,
+      source: "rtu_comms",
+      rtuId: org.rtuId,
+      severity: "warning",
+      message: "Communication lost",
+    });
+    expect(rtu.raised).toBe(true);
+    const rtuRow = await stampOf(admin, rtu.alarmId);
+    expect(rtuRow?.suppressed_at, "an rtu_comms alarm under a target location is stamped").toBeInstanceOf(Date);
+    expect(rtuRow?.suppressed_by_window_id).toBe(windowId);
+
+    const host = await raiser.raiseDevice({
+      organizationId: org.organizationId,
+      source: "ingest_host",
+      severity: "critical",
+      message: "Ingest host not reporting",
+    });
+    expect(host.raised).toBe(true);
+    expect(await stampOf(admin, host.alarmId), "an ingest_host alarm is never suppressed").toEqual({
+      suppressed_at: null,
+      suppressed_by_window_id: null,
+      unsuppressed_at: null,
+    });
+  } finally {
+    await endWindows(admin, org);
+  }
 }

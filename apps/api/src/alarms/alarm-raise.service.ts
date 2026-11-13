@@ -5,12 +5,13 @@ import { alarms, ruleExecutions, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { TENANT_DRIZZLE } from "../database/database.tokens";
-import { withTenant } from "../database/tenant-context";
+import { type BmsTx, withTenant } from "../database/tenant-context";
 import type { AlarmMessageRule } from "../rules/alarm-message";
 import { composeAlarmMessage } from "../rules/alarm-message";
 import { defaultAlarmSeverity } from "../rules/alarm-severity-default";
 import type { EvaluationResult, RuleRow } from "../rules/rules.types";
 import { ALARM_NOTIFY_CHANNEL, encodeAlarmNotification } from "./alarm-notify-channel";
+import { type CoverAlarm, coverForAlarm } from "./maintenance-cover.reads";
 
 /**
  * Gates *whether* a rule evaluation should raise an alarm — the decision
@@ -122,6 +123,14 @@ export type AlarmRaiseResult = {
    */
   severity: string;
   message: string;
+  /**
+   * `F4.359` (ADR 0131 decisions 6 and 10; plan D9): `true` when a maintenance
+   * window covered the alarm and this raise stamped it suppressed. `false` on a
+   * dedupe and on a refusal, which raise nothing. Required, so every caller —
+   * and every fake — says it: `notifyOnRaise` returns on it before reading the
+   * rule's action, the one choke point for the three rule engines.
+   */
+  suppressed: boolean;
 };
 
 /**
@@ -185,6 +194,21 @@ export type DeviceAlarmRaiseResult = {
  * `AlarmLifecycleService` has cleared the previous one and the condition
  * breaches again. Nothing in this class encodes that: the predicate is the
  * database's, which is why `alarm-raise.integration.spec.ts` proves it.
+ *
+ * **It decides suppression at the raise** (`F4.359`, ADR 0131 decisions 4–6;
+ * plan Q1 (a), D8). After the insert returns a row — never on a dedupe or a
+ * refusal — the same tenant transaction reads the organization's active
+ * maintenance windows (`coverForAlarm`, one keyed read, no cache) and, when one
+ * covers the alarm, stamps `suppressed_at` and `suppressed_by_window_id` with an
+ * `UPDATE` before the `pg_notify`. So no outside observer ever sees the row
+ * unstamped, the listener's read after commit already says `suppressed`, and a
+ * failing cover read rolls the insert and the announcement back with it. The
+ * stamp is an `UPDATE`, so this stays the one inserter of `bms.alarms`
+ * (`tests/repo-invariants.test.ts`). An `ingest_host` alarm is never covered
+ * (decision 5; `alarms_suppressed_shape_check` refuses the stamp on one). The
+ * raiser still notifies nobody: `AlarmRaiseResult.suppressed` is what tells
+ * `notifyOnRaise` to stay silent. The lifecycle sweep is the second writer of
+ * the stamps, and the one that lifts them.
  */
 @Injectable()
 export class AlarmRaiser {
@@ -239,7 +263,7 @@ export class AlarmRaiser {
         `alarm raise skipped for rule ${rule.id} on asset ${assetId}: rule org ` +
           `${rule.organizationId} != asset org ${organizationId}`,
       );
-      return { raised: false, alarmId: null, severity, message };
+      return { raised: false, alarmId: null, severity, message, suppressed: false };
     }
 
     // One tenant transaction: the dedupe insert, the trace and the NOTIFY all
@@ -265,8 +289,17 @@ export class AlarmRaiser {
       if (!row) {
         // Already active (raised, not yet cleared) for this (asset, rule) —
         // the dedupe, not a failure. No trace, no NOTIFY.
-        return { raised: false as const, alarmId: null as string | null };
+        return { raised: false as const, alarmId: null as string | null, suppressed: false };
       }
+
+      // F4.359 (Q1 (a), D8): the cover, decided in this transaction, after the
+      // insert and before the trace and the NOTIFY — see the class doc.
+      const suppressed = await stampIfCovered(tx, row.id, {
+        source: "rule",
+        organizationId,
+        assetId,
+        ruleId: rule.id,
+      });
 
       // Traced only on a raise (ADR 0033 decision 3) — bms.rule_executions has
       // no retention policy, and an every-evaluation trace is (readings × rules)
@@ -307,10 +340,10 @@ export class AlarmRaiser {
         })})`,
       );
 
-      return { raised: true as const, alarmId: row.id };
+      return { raised: true as const, alarmId: row.id, suppressed };
     });
 
-    return { raised: outcome.raised, alarmId: outcome.alarmId, severity, message };
+    return { raised: outcome.raised, alarmId: outcome.alarmId, severity, message, suppressed: outcome.suppressed };
   }
 
   /**
@@ -321,6 +354,11 @@ export class AlarmRaiser {
    * `pg_notify` last in `raise`'s channel and payload shape, so the listener
    * broadcasts it like any other. No `rule_executions` row: there is no rule to
    * trace, and the worker sweep that calls this records nothing per evaluation.
+   *
+   * `F4.359`: an `rtu_comms` alarm is stamped suppressed in the same transaction
+   * when a window covers its RTU (decision 5, plan D7), as `raise` does; an
+   * `ingest_host` alarm never is. The device notifications are the lifecycle
+   * sweep's, so the result does not carry the stamp.
    *
    * An `rtu_comms` raise for an RTU the organization does not hold is refused
    * before the write — the tenant cannot see another organization's RTU, and the
@@ -354,6 +392,11 @@ export class AlarmRaiser {
         return { raised: false, alarmId: null };
       }
 
+      // F4.359: never for `ingest_host` (decision 5) — it is not read, not stamped.
+      if (rtuId !== null) {
+        await stampIfCovered(tx, row.id, { source: "rtu_comms", organizationId, rtuId });
+      }
+
       await tx.execute(
         sql`select pg_notify(${ALARM_NOTIFY_CHANNEL}, ${encodeAlarmNotification({
           type: "created",
@@ -364,4 +407,19 @@ export class AlarmRaiser {
       return { raised: true, alarmId: row.id };
     });
   }
+}
+
+/**
+ * `F4.359` (plan D8) — reads the alarm's cover inside the raise transaction and,
+ * when a window covers it, stamps it with an `UPDATE` (never a second insert).
+ * Returns whether it stamped.
+ */
+async function stampIfCovered(tx: BmsTx, alarmId: string, alarm: CoverAlarm): Promise<boolean> {
+  const windowId = await coverForAlarm(tx, alarm);
+  if (windowId === null) return false;
+  await tx
+    .update(alarms)
+    .set({ suppressedAt: sql`now()`, suppressedByWindowId: windowId })
+    .where(eq(alarms.id, alarmId));
+  return true;
 }

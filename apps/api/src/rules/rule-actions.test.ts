@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertNotifyOnRaiseIsFireAndForget,
   assertShouldNotifyReadsOnlyTheNotifyType,
+  assertSuppressedRaiseStartsNoDispatch,
   assertToDispatchInputMapsFieldForField,
   assertUntilFailsLoudly,
 } from "./rule-actions.spec";
@@ -19,6 +20,10 @@ describe("F3.7 rule actions", () => {
 
   it("notifyOnRaise dispatches fire-and-forget, warns on a rejection, and never throws", async () => {
     await assertNotifyOnRaiseIsFireAndForget();
+  });
+
+  it("F4.359: a suppressed raise starts no dispatch; the unsuppressed twin does", async () => {
+    await assertSuppressedRaiseStartsNoDispatch();
   });
 
   it("until polls to the condition and fails loudly on timeout", async () => {
