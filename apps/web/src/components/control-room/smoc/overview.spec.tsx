@@ -306,6 +306,7 @@ const RAIL_SUMMARY: AlarmSummaryResponse = {
     { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 1, unacknowledged: 1 },
   ],
   total: 3,
+  suppressed: 0,
 };
 
 type Setup = {

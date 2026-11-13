@@ -102,6 +102,7 @@ export async function ordersByRankThenNewestAndAnArrivalJoins(): Promise<void> {
 /** Decision 8 — Close hides it; the alarm stays the bar's newest; a later new id pops up alone. */
 const ONE_CRITICAL: AlarmSummaryResponse = {
   total: 1,
+  suppressed: 0,
   items: [{ code: "critical", label: "Critical", tone: "critical", rank: 30, count: 1, unacknowledged: 1 }],
 };
 
@@ -230,6 +231,7 @@ export async function namesTheAlarmsBeyondTheList(): Promise<void> {
   const list = Array.from({ length: 50 }, (_, i) => alarmItem({ id: `a${i}`, message: `Alarm ${i}` }));
   const summary: AlarmSummaryResponse = {
     total: 60,
+    suppressed: 0,
     items: [
       { code: "info", label: "Info", tone: "info", rank: 10, count: 0, unacknowledged: 0 },
       { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 60, unacknowledged: 60 },
@@ -279,6 +281,7 @@ export async function thePopupComesAfterTheList(): Promise<void> {
 
 const SUMMARY_CW: AlarmSummaryResponse = {
   total: 2,
+  suppressed: 0,
   items: [
     { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 1, unacknowledged: 1 },
     { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 1, unacknowledged: 1 },

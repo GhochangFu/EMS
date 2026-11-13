@@ -73,6 +73,7 @@ async function withBar(
 
 const SUMMARY: AlarmSummaryResponse = {
   total: 6,
+  suppressed: 0,
   items: [
     { code: "info", label: "Info", tone: "info", rank: 10, count: 1, unacknowledged: 1 },
     { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 2, unacknowledged: 2 },
@@ -130,6 +131,7 @@ export async function showsTheCountsByRank(): Promise<void> {
 export async function showsActiveAndUnacknowledged(): Promise<void> {
   const summary: AlarmSummaryResponse = {
     total: 23,
+    suppressed: 0,
     items: [
       { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 3, unacknowledged: 2 },
       { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 20, unacknowledged: 0 },

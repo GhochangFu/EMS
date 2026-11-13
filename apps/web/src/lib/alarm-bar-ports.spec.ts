@@ -65,7 +65,7 @@ export async function theSummaryReadSendsTheScope(): Promise<void> {
   let seen = "";
   vi.stubGlobal("fetch", async (url: string) => {
     seen = url;
-    return new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 });
+    return new Response(JSON.stringify({ items: [], total: 0, suppressed: 0 }), { status: 200 });
   });
   await browserAlarmBarPorts().fetchSummary({ organizationId: "11111111-1111-4111-8111-111111111111" });
   const url = new URL(seen);

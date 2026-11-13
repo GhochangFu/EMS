@@ -398,7 +398,7 @@ const alarmSummaryRow = { code: "critical", label: "Critical", tone: "critical",
 export function alarmSummaryResponseAcceptsAZeroCountRow(): void {
   expectAccepts(
     alarmSummaryResponseSchema,
-    { items: [alarmSummaryRow, { ...alarmSummaryRow, code: "warning", tone: "warning", rank: 20, count: 0, unacknowledged: 0 }], total: 1 },
+    { items: [alarmSummaryRow, { ...alarmSummaryRow, code: "warning", tone: "warning", rank: 20, count: 0, unacknowledged: 0 }], total: 1, suppressed: 0 },
     "a zero-count severity row must parse — every active severity is represented",
   );
 }
@@ -407,9 +407,25 @@ export function alarmSummaryResponseAcceptsAZeroCountRow(): void {
 export function alarmSummaryResponseRequiresTotal(): void {
   expectRejects(
     alarmSummaryResponseSchema,
-    { items: [alarmSummaryRow] },
+    { items: [alarmSummaryRow], suppressed: 0 },
     "alarmSummaryResponseSchema must require total",
   );
+}
+
+/**
+ * `F4.359` U5 (ADR 0131 decision 19) — the summary carries `suppressed`, the
+ * active alarms a maintenance window suppresses: required, and a non-negative
+ * integer.
+ */
+export function alarmSummaryResponseRequiresSuppressed(): void {
+  expectAccepts(
+    alarmSummaryResponseSchema,
+    { items: [alarmSummaryRow], total: 1, suppressed: 2 },
+    "a summary with a suppressed count must parse",
+  );
+  expectRejects(alarmSummaryResponseSchema, { items: [alarmSummaryRow], total: 1 }, "alarmSummaryResponseSchema must require suppressed");
+  expectRejects(alarmSummaryResponseSchema, { items: [alarmSummaryRow], total: 1, suppressed: -1 }, "suppressed must be non-negative");
+  expectRejects(alarmSummaryResponseSchema, { items: [alarmSummaryRow], total: 1, suppressed: 0.5 }, "suppressed must be an integer");
 }
 
 /**

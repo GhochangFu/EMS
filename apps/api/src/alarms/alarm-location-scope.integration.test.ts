@@ -73,4 +73,12 @@ describe.skipIf(!connectionString)("F4.357 — the alarm list and summary filter
   it("11 minSeverityRank drops the lower ranks", () => spec.assertMinSeverityRankDropsLowerRanks(fixture()));
   it("12 the summary counts the unacknowledged alarms per severity", () => spec.assertTheSummaryCountsTheUnacknowledged(fixture()));
   it("13 a cleared alarm is not unacknowledged", () => spec.assertAClearedAlarmIsNotUnacknowledged(fixture()));
+  it("14 state=suppressed lists the stamped active alarm alone", () =>
+    spec.assertTheSuppressedStateListsTheStampedAlarmAlone(fixture()));
+  it("15 unacknowledged omits a suppressed alarm", () => spec.assertUnacknowledgedOmitsTheSuppressedAlarm(fixture()));
+  it("16 active and all keep a suppressed alarm", () => spec.assertActiveAndAllKeepTheSuppressedAlarm(fixture()));
+  it("17 the summary leaves a suppressed alarm out of count and unacknowledged and counts it in suppressed", () =>
+    spec.assertTheSummaryLeavesTheSuppressedAlarmOut(fixture()));
+  it("18 a cleared suppressed alarm is in all only", () => spec.assertAClearedSuppressedAlarmIsInAllOnly(fixture()));
+  it("19 the tenant and fleet paths agree on suppression", () => spec.assertTheTenantAndFleetPathsAgreeOnSuppression(fixture()));
 });

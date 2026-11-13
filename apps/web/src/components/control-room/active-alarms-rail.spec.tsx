@@ -120,7 +120,7 @@ function renderRail({
     (): Promise<AlarmsListResponse> => Promise.resolve({ items, nextCursor: null }),
   );
   mocks.fetchAlarmSummary.mockImplementation(
-    (): Promise<AlarmSummaryResponse> => Promise.resolve({ items: SUMMARY_ITEMS, total: 10 }),
+    (): Promise<AlarmSummaryResponse> => Promise.resolve({ items: SUMMARY_ITEMS, total: 10, suppressed: 0 }),
   );
   mocks.fetchVocabularies.mockImplementation(
     (): Promise<VocabulariesResponse> =>

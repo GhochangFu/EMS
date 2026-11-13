@@ -27,6 +27,10 @@ import type { AlarmsService } from "./alarms.service";
  * `ingest_host` alarm of A. A rule alarm belongs to its asset's location, an
  * `rtu_comms` alarm to its RTU's, an `ingest_host` alarm to no location.
  *
+ * `F4.359` U5 (owner ruling Q4, ADR 0131 decision 19): one active,
+ * unacknowledged `high` alarm at S and one cleared `high` alarm at S carry a
+ * suppression stamp (a real window row of A, for the foreign key).
+ *
  * The service runs on the real `bms_tenant` / `bms_fleet` pair. Vitest entry
  * point: the sibling `.test.ts` (ADR 0014).
  */
@@ -49,6 +53,10 @@ export type LocationScopeFixture = {
     readonly ackedS: string;
     /** U2b: an active, unacknowledged `lowest` alarm at S. */
     readonly infoS: string;
+    /** F4.359 U5: an active, unacknowledged `high` alarm at S, stamped by a maintenance window. */
+    readonly suppressedS: string;
+    /** F4.359 U5: a cleared `high` alarm at S that a window had stamped. */
+    readonly clearedSuppressedS: string;
   };
   readonly high: string;
   readonly low: string;
@@ -119,7 +127,21 @@ export async function buildLocationScopeFixture(
     host: await deviceAlarm("ingest_host", low, minutesAgo(5)),
     ackedS: await insertAlarm(db, orgA, { assetId: asset.S, severity: high, raisedAt: minutesAgo(4), acknowledgedAt: minutesAgo(2) }),
     infoS: await insertAlarm(db, orgA, { assetId: asset.S, severity: lowest, raisedAt: minutesAgo(3) }),
+    suppressedS: await insertAlarm(db, orgA, { assetId: asset.S, severity: high, raisedAt: minutesAgo(1) }),
+    clearedSuppressedS: await insertAlarm(db, orgA, { assetId: asset.S, severity: high, raisedAt: minutesAgo(40), clearedAt: minutesAgo(35) }),
   };
+  const { rows: userRows } = await db.query<{ id: string }>("SELECT id FROM bms.users LIMIT 1");
+  const userId = userRows[0]?.id ?? fail("need a users row — run pnpm db:seed");
+  const { rows: windowRows } = await db.query<{ id: string }>(
+    `INSERT INTO bms.maintenance_windows (organization_id, reason, starts_at, ends_at, created_by)
+     VALUES ($1, 'F4.359 U5', now() - interval '1 hour', now() + interval '1 hour', $2) RETURNING id`,
+    [orgA, userId],
+  );
+  const windowId = windowRows[0]?.id ?? fail("the maintenance window was not inserted");
+  await db.query(
+    "UPDATE bms.alarms SET suppressed_at = now(), suppressed_by_window_id = $1 WHERE id = ANY($2::uuid[])",
+    [windowId, [alarm.suppressedS, alarm.clearedSuppressedS]],
+  );
   return { svc, orgA, orgB, site: { S, C, T, U }, asset, alarm, high, low, lowest };
 }
 
@@ -151,14 +173,17 @@ function countsOf(summary: AlarmSummaryResponse): Record<string, number> {
   return Object.fromEntries(summary.items.map((row) => [row.code, row.count]));
 }
 
-/** The S subtree's active alarms: S's three, C and C's RTU — not T, not the host alarm, not B. */
+/** The S subtree's active alarms: S's four (the suppressed one too), C and C's RTU — not T, not the host alarm, not B. */
 const subtreeOfS = (fx: LocationScopeFixture): string[] =>
-  sorted([fx.alarm.S, fx.alarm.ackedS, fx.alarm.infoS, fx.alarm.C, fx.alarm.comms]);
+  sorted([fx.alarm.S, fx.alarm.ackedS, fx.alarm.infoS, fx.alarm.suppressedS, fx.alarm.C, fx.alarm.comms]);
+
+/** F4.359 U5 (ADR 0131 decision 19): the summary counts the subtree less its suppressed alarm. */
+const countedInS = (fx: LocationScopeFixture): string[] => subtreeOfS(fx).filter((id) => id !== fx.alarm.suppressedS);
 
 /** 1 — the positive neighbour: `organizationId` A, no location, lists every active A alarm. */
 export async function assertTheOrganizationListsEveryActiveAlarm(fx: LocationScopeFixture): Promise<void> {
   expect(await listedIds(fx, { assetIds: null, organizationId: fx.orgA })).toEqual(
-    sorted([fx.alarm.S, fx.alarm.ackedS, fx.alarm.infoS, fx.alarm.C, fx.alarm.T, fx.alarm.comms, fx.alarm.host]),
+    sorted([fx.alarm.S, fx.alarm.ackedS, fx.alarm.infoS, fx.alarm.suppressedS, fx.alarm.C, fx.alarm.T, fx.alarm.comms, fx.alarm.host]),
   );
 }
 
@@ -172,10 +197,13 @@ export async function assertTheChildListsItselfOnly(fx: LocationScopeFixture): P
   expect(await listedIds(fx, { assetIds: null, location: adminAt(fx.site.C) })).toEqual(sorted([fx.alarm.C, fx.alarm.comms]));
 }
 
-/** 4 — the summary for S agrees with claim 2, per severity; a severity with no alarm keeps its row at 0. */
+/**
+ * 4 — the summary for S agrees with claim 2 less the suppressed alarm, per
+ * severity; a severity with no alarm keeps its row at 0.
+ */
 export async function assertTheSiteSummaryAgreesWithTheList(fx: LocationScopeFixture): Promise<void> {
   const summary = await fx.svc.activeCountsBySeverity(null, undefined, adminAt(fx.site.S));
-  expect(summary.total).toBe(subtreeOfS(fx).length);
+  expect(summary.total).toBe(countedInS(fx).length);
   const counts = countsOf(summary);
   expect({ high: counts[fx.high], low: counts[fx.low], lowest: counts[fx.lowest] }).toEqual({ high: 3, low: 1, lowest: 1 });
   const child = countsOf(await fx.svc.activeCountsBySeverity(null, undefined, adminAt(fx.site.C)));
@@ -185,7 +213,7 @@ export async function assertTheSiteSummaryAgreesWithTheList(fx: LocationScopeFix
 /** 5 — a scoped caller (the S asset only) at S sees the S alarms only; the comms alarm stays hidden. */
 export async function assertTheReadScopeStillBinds(fx: LocationScopeFixture): Promise<void> {
   expect(await listedIds(fx, { assetIds: [fx.asset.S], location: adminAt(fx.site.S) })).toEqual(
-    sorted([fx.alarm.S, fx.alarm.ackedS, fx.alarm.infoS]),
+    sorted([fx.alarm.S, fx.alarm.ackedS, fx.alarm.infoS, fx.alarm.suppressedS]),
   );
 }
 
@@ -213,7 +241,7 @@ export async function assertAForeignSiteAnswersNothing(fx: LocationScopeFixture)
 export async function assertTheSubtreeHoldsOnTheTenantPath(fx: LocationScopeFixture): Promise<void> {
   expect(await listedIds(fx, { assetIds: assetsOfA(fx), location: adminAt(fx.site.S) })).toEqual(subtreeOfS(fx));
   const summary = await fx.svc.activeCountsBySeverity(assetsOfA(fx), undefined, adminAt(fx.site.S));
-  expect(summary.total).toBe(subtreeOfS(fx).length);
+  expect(summary.total).toBe(countedInS(fx).length);
 }
 
 /** 9 — `location` S with `organizationId` B: the two narrowings meet in nothing. */
@@ -261,4 +289,79 @@ export async function assertAClearedAlarmIsNotUnacknowledged(fx: LocationScopeFi
   expect(await unacknowledgedAt(fx, fx.site.C)).toEqual([fx.alarm.comms, fx.alarm.C]);
   const row = (await fx.svc.activeCountsBySeverity(null, undefined, adminAt(fx.site.C))).items.find((item) => item.code === fx.high);
   expect({ count: row?.count, unacknowledged: row?.unacknowledged }).toEqual({ count: 1, unacknowledged: 1 });
+}
+
+/*
+ * `F4.359` U5 (owner ruling Q4, ADR 0131 decision 19) — the suppressed state.
+ * `state=suppressed` is active and stamped; `unacknowledged` leaves a stamped
+ * alarm out; `active` and `all` keep it; the summary's `count` and
+ * `unacknowledged` leave it out and its `suppressed` counts it.
+ */
+
+async function idsIn(
+  fx: LocationScopeFixture,
+  state: "all" | "active" | "unacknowledged" | "suppressed",
+  opts: { assetIds?: string[] | null; locationId?: string } = {},
+): Promise<string[]> {
+  const page = await fx.svc.list({
+    limit: 100,
+    state,
+    assetIds: opts.assetIds ?? null,
+    location: adminAt(opts.locationId ?? fx.site.S),
+  });
+  return page.items.map((item) => item.id).sort();
+}
+
+/** 14 — `suppressed` at S lists the stamped active alarm alone; at the organization too. */
+export async function assertTheSuppressedStateListsTheStampedAlarmAlone(fx: LocationScopeFixture): Promise<void> {
+  expect(await idsIn(fx, "suppressed")).toEqual([fx.alarm.suppressedS]);
+  const page = await fx.svc.list({ limit: 100, state: "suppressed", assetIds: null, organizationId: fx.orgA });
+  expect(page.items.map((item) => item.id)).toEqual([fx.alarm.suppressedS]);
+  expect(page.items[0]?.suppressed).toBe(true);
+}
+
+/** 15 — `unacknowledged` omits the stamped alarm, which is otherwise active and not acknowledged. */
+export async function assertUnacknowledgedOmitsTheSuppressedAlarm(fx: LocationScopeFixture): Promise<void> {
+  const unacknowledged = await idsIn(fx, "unacknowledged");
+  expect(unacknowledged, "the positive neighbour: S's own unacknowledged alarm").toContain(fx.alarm.S);
+  expect(unacknowledged).not.toContain(fx.alarm.suppressedS);
+}
+
+/** 16 — `active` and `all` keep the stamped alarm. */
+export async function assertActiveAndAllKeepTheSuppressedAlarm(fx: LocationScopeFixture): Promise<void> {
+  expect(await idsIn(fx, "active")).toContain(fx.alarm.suppressedS);
+  expect(await idsIn(fx, "all")).toContain(fx.alarm.suppressedS);
+}
+
+/**
+ * 17 — the summary at S: the high `count` and `unacknowledged` each leave the
+ * stamped alarm out (the active list holds four high alarms, three of them
+ * unacknowledged), `suppressed` is 1, and `total` is the sum of the counts.
+ */
+export async function assertTheSummaryLeavesTheSuppressedAlarmOut(fx: LocationScopeFixture): Promise<void> {
+  const summary = await fx.svc.activeCountsBySeverity(null, undefined, adminAt(fx.site.S));
+  const row = summary.items.find((item) => item.code === fx.high);
+  expect({ count: row?.count, unacknowledged: row?.unacknowledged }).toEqual({ count: 3, unacknowledged: 2 });
+  expect(summary.suppressed).toBe(1);
+  expect(summary.total).toBe(countedInS(fx).length);
+  expect(summary.total).toBe(summary.items.reduce((sum, item) => sum + item.count, 0));
+}
+
+/** 18 — a cleared stamped alarm is in `all` only: not `suppressed`, not `active`, not counted. */
+export async function assertAClearedSuppressedAlarmIsInAllOnly(fx: LocationScopeFixture): Promise<void> {
+  expect(await idsIn(fx, "all")).toContain(fx.alarm.clearedSuppressedS);
+  expect(await idsIn(fx, "suppressed")).not.toContain(fx.alarm.clearedSuppressedS);
+  expect(await idsIn(fx, "active")).not.toContain(fx.alarm.clearedSuppressedS);
+  expect((await fx.svc.activeCountsBySeverity(null, undefined, adminAt(fx.site.S))).suppressed).toBe(1);
+}
+
+/** 19 — the tenant path (every A asset) and the fleet path agree on the list and the summary. */
+export async function assertTheTenantAndFleetPathsAgreeOnSuppression(fx: LocationScopeFixture): Promise<void> {
+  for (const state of ["suppressed", "unacknowledged", "active", "all"] as const) {
+    expect(await idsIn(fx, state, { assetIds: assetsOfA(fx) }), state).toEqual(await idsIn(fx, state));
+  }
+  const fleet = await fx.svc.activeCountsBySeverity(null, undefined, adminAt(fx.site.S));
+  const tenant = await fx.svc.activeCountsBySeverity(assetsOfA(fx), undefined, adminAt(fx.site.S));
+  expect(tenant).toEqual(fleet);
+  expect(tenant.suppressed).toBe(1);
 }

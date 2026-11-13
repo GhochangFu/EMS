@@ -39,6 +39,11 @@ export const locationIdQueryField = z
  * sends nothing. `"active"` is the alarms rail's read: raised and not yet
  * cleared, acknowledged or not (`activeAlarmFilter`, task 1.5).
  *
+ * `F4.359` U5 (owner ruling Q4, ADR 0131 decision 19): `"suppressed"` is
+ * active and stamped by a maintenance window (`suppressed_at IS NOT NULL`). It
+ * pages as `"active"` does, so a `cursor` beside it is allowed. `"active"`
+ * keeps a suppressed alarm; `"unacknowledged"` leaves it out.
+ *
  * `limit` keeps today's semantics exactly (plan decision 4): the old read was
  * `limitRaw ? Number(limitRaw) : 20`, and the service owns the
  * `Math.min(100, Math.max(1, …))` clamp. So every numeric value parses and
@@ -57,7 +62,7 @@ export const alarmListQuerySchema = z
       (value) => (value === "" ? undefined : value),
       z.coerce.number().optional(),
     ),
-    state: z.enum(["all", "active", "unacknowledged"]).default("all"),
+    state: z.enum(["all", "active", "unacknowledged", "suppressed"]).default("all"),
     assetIds: assetIdsQueryField,
     organizationId: organizationIdQueryField,
     locationId: locationIdQueryField,

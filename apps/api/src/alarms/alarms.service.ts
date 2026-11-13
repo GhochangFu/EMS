@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 
 import { alarms, alarmSeverities, assets, locations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -131,12 +131,17 @@ export class AlarmsService {
    * first. It is one page: the keyset cursor is `(raised_at, id)` and does not
    * page this order, so `nextCursor` is always `null` (the route refuses a
    * `cursor` beside it). `minSeverityRank` keeps ranks at or above it.
+   *
+   * `F4.359` U5 (owner ruling Q4, ADR 0131 decision 19): `state: "suppressed"`
+   * is active and stamped by a maintenance window (`suppressed_at IS NOT
+   * NULL`), keyset-paged as `"active"`; `"unacknowledged"` adds `suppressed_at
+   * IS NULL`; `"active"` and `"all"` keep a suppressed alarm.
    */
   async list(opts: {
     cursor?: string;
     limit: number;
     assetIds?: string[] | null;
-    state?: "all" | "active" | "unacknowledged";
+    state?: "all" | "active" | "unacknowledged" | "suppressed";
     minSeverityRank?: number;
     organizationId?: string;
     severity?: string;
@@ -156,7 +161,10 @@ export class AlarmsService {
       // F3.16 (ADR 0127 decision 14): the scope rule over rule and device alarms.
       ...(opts.assetIds ? [alarmVisibleTo(opts.assetIds)] : []),
       ...(opts.state === "active" ? [activeAlarmFilter] : []),
-      ...(opts.state === "unacknowledged" ? [activeAlarmFilter, isNull(alarms.acknowledgedAt)] : []),
+      ...(opts.state === "unacknowledged"
+        ? [activeAlarmFilter, isNull(alarms.acknowledgedAt), isNull(alarms.suppressedAt)]
+        : []),
+      ...(opts.state === "suppressed" ? [activeAlarmFilter, isNotNull(alarms.suppressedAt)] : []),
       ...(opts.minSeverityRank !== undefined ? [sql`${severityRankOf} >= ${opts.minSeverityRank}`] : []),
       // A rule alarm's organization is its asset's; a device alarm (no asset)
       // has only its own `organization_id`.
@@ -261,6 +269,12 @@ export class AlarmsService {
    *
    * `F4.357` U2: `location` adds `alarmInLocations` to the same `ON` clause,
    * resolved once, so the counts agree with `list`'s for the same filter.
+   *
+   * `F4.359` U5 (ADR 0131 decision 19): `count` and `unacknowledged` each leave
+   * a suppressed alarm out (`suppressed_at IS NULL` in their `FILTER`), a third
+   * per-row `FILTER` counts the suppressed ones, summed into `suppressed`, and
+   * `total` stays the sum of `count`. The active predicate in the `ON` clause
+   * keeps a cleared suppressed alarm out of all three.
    */
   async activeCountsBySeverity(
     assetIds: string[] | null | undefined,
@@ -276,8 +290,16 @@ export class AlarmsService {
     };
     // `tone` is closed by `alarm_severities_tone_check` in SQL, so the
     // column's `string` is narrowed to the contract's palette here.
+    // The per-row `suppressed` is summed into the response, not carried on the item.
     const toCount = (r: { code: string; label: string; tone: string; rank: number; count: number; unacknowledged: number }) =>
-      ({ ...r, tone: r.tone as AlarmSeverityCount["tone"] }) satisfies AlarmSeverityCount;
+      ({
+        code: r.code,
+        label: r.label,
+        tone: r.tone as AlarmSeverityCount["tone"],
+        rank: r.rank,
+        count: r.count,
+        unacknowledged: r.unacknowledged,
+      }) satisfies AlarmSeverityCount;
 
     const counted = await withReadScope(
       this.db,
@@ -288,9 +310,11 @@ export class AlarmsService {
         tx
           .select({
             ...severityColumns,
-            count: sql<number>`count(${alarms.id})::int`,
+            // F4.359 U5: a suppressed alarm is in neither `count` nor `unacknowledged`.
+            count: sql<number>`(count(${alarms.id}) FILTER (WHERE ${alarms.suppressedAt} IS NULL))::int`,
             // F4.357 U2b: the same rows, not yet acknowledged.
-            unacknowledged: sql<number>`(count(${alarms.id}) FILTER (WHERE ${alarms.acknowledgedAt} IS NULL))::int`,
+            unacknowledged: sql<number>`(count(${alarms.id}) FILTER (WHERE ${alarms.acknowledgedAt} IS NULL AND ${alarms.suppressedAt} IS NULL))::int`,
+            suppressed: sql<number>`(count(${alarms.id}) FILTER (WHERE ${alarms.suppressedAt} IS NOT NULL))::int`,
           })
           .from(alarmSeverities)
           .leftJoin(
@@ -334,9 +358,13 @@ export class AlarmsService {
           .from(alarmSeverities)
           .where(eq(alarmSeverities.active, true))
           .orderBy(asc(alarmSeverities.rank))
-      ).map((s) => ({ ...s, count: 0, unacknowledged: 0 }));
+      ).map((s) => ({ ...s, count: 0, unacknowledged: 0, suppressed: 0 }));
     const items = rows.map(toCount);
-    return { items, total: items.reduce((sum, i) => sum + i.count, 0) };
+    return {
+      items,
+      total: items.reduce((sum, i) => sum + i.count, 0),
+      suppressed: rows.reduce((sum, r) => sum + r.suppressed, 0),
+    };
   }
 
   /**
