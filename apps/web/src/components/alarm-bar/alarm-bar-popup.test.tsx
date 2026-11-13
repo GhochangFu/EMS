@@ -11,6 +11,7 @@ describe("alarm bar popup (F4.357, ADR 0130 decisions 6–8, 18, 21)", () => {
   it("seen survives an in-app navigation, not a new session", () => spec.seenSurvivesNavigationButNotASession());
   it("a row leaves when acknowledged elsewhere or cleared", () => spec.rowsLeaveWhenAcknowledgedElsewhereOrCleared());
   it("Acknowledge all asks one reason and calls once per row in order", () => spec.acknowledgeAllAsksOneReasonAndCallsInOrder());
+  it("the reason label names the action", () => spec.theReasonLabelNamesTheAction());
   it("a failed row stays with its error and the count", () => spec.aFailedRowStaysWithItsError());
   it("a viewer sees Close only", () => spec.aViewerSeesCloseOnly());
   it("names the alarms beyond the list", () => spec.namesTheAlarmsBeyondTheList());

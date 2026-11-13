@@ -90,12 +90,15 @@ export function AlarmBar() {
           {counts.map((row) => (
             <li
               key={row.code}
+              // Amendment 1: the active count, then the unacknowledged one (acknowledging lowers only it).
+              aria-label={`${row.label}: ${row.count} active, ${row.unacknowledged} unacknowledged`}
               // U7 (decision 9): the one uniform blink, identical in every design system (index.css).
               data-blink={blinking.has(row.code) ? "true" : undefined}
               className={`surface-pill inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-2xs font-semibold ${COUNT_TONE[row.tone]}${blinking.has(row.code) ? " alarm-bar-blink" : ""}`}
             >
               <span>{row.label}</span>
               <span className="tabular-nums">{row.count}</span>
+              <span className="font-normal tabular-nums">{` · ${row.unacknowledged} unacked`}</span>
             </li>
           ))}
         </ul>

@@ -115,10 +115,33 @@ export async function showsTheCountsByRank(): Promise<void> {
   await withBar({ summary: SUMMARY }, "/alarms", async () => {
     const counts = within(region()).getByRole("list", { name: "Active alarms by severity" });
     expect(within(counts).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
-      "Critical1",
-      "Urgent2",
-      "Warning2",
-      "Info1",
+      "Critical1 · 1 unacked",
+      "Urgent2 · 2 unacked",
+      "Warning2 · 2 unacked",
+      "Info1 · 1 unacked",
+    ]);
+  });
+}
+
+/**
+ * ADR 0130 Amendment 1 (owner, 2026-11-13: "Show both numbers") — each count shows the active
+ * alarms and, beside them, the unacknowledged ones; acknowledging lowers only the second number.
+ */
+export async function showsActiveAndUnacknowledged(): Promise<void> {
+  const summary: AlarmSummaryResponse = {
+    total: 23,
+    items: [
+      { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 3, unacknowledged: 2 },
+      { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 20, unacknowledged: 0 },
+    ],
+  };
+  await withBar({ summary }, "/alarms", async () => {
+    const counts = within(region()).getByRole("list", { name: "Active alarms by severity" });
+    const items = within(counts).getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual(["Critical20 · 0 unacked", "Warning3 · 2 unacked"]);
+    expect(items.map((item) => item.getAttribute("aria-label"))).toEqual([
+      "Critical: 20 active, 0 unacknowledged",
+      "Warning: 3 active, 2 unacknowledged",
     ]);
   });
 }
