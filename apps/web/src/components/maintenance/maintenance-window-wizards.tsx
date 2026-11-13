@@ -556,7 +556,6 @@ function CloseWindowWizard({
     maintenanceWindow: summaryWindow(item),
   };
   const shared = {
-    params: { id: item.id },
     values,
     onChange: (next: Record<string, unknown>) => setReason(typeof next.reason === "string" ? next.reason : reason),
     renderStep: () => (
@@ -577,6 +576,7 @@ function CloseWindowWizard({
         <WizardShell
           key={`end-${item.id}`}
           {...shared}
+          params={{ id: item.id }}
           entry={maintenanceWindowWizardEntry("maintenanceWindow.end")}
           summary={maintenanceWindowWizardEntry("maintenanceWindow.end").summary(context)}
         />
@@ -588,6 +588,7 @@ function CloseWindowWizard({
       <WizardShell
         key={`cancel-${item.id}`}
         {...shared}
+        params={{ id: item.id }}
         entry={maintenanceWindowWizardEntry("maintenanceWindow.cancel")}
         summary={maintenanceWindowWizardEntry("maintenanceWindow.cancel").summary(context)}
       />
