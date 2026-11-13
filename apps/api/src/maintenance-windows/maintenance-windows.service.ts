@@ -66,6 +66,10 @@ export const WORK_ORDER_REFUSED = "The work order does not exist in the window's
 export const SCHEDULE_REFUSED = "The maintenance schedule does not exist in the window's organization or is outside your access scope";
 export const WINDOW_NOT_FOUND = "Maintenance window not found or outside your access scope";
 export const NOT_PROVISIONED = "This account is not provisioned, so it cannot change maintenance windows";
+/** The 409 of a write on a window in the wrong state; the Copilot's propose check refuses with the same text (ADR 0099 Amendment 19 decision 8). */
+export const EXTEND_NOT_ACTIVE = "Only an active maintenance window can be extended";
+export const END_NOT_ACTIVE = "Only an active maintenance window can be ended";
+export const CANCEL_NOT_FUTURE = "Only a future maintenance window can be cancelled";
 
 const ENTITY_TYPE = "maintenance_window";
 
@@ -234,7 +238,7 @@ export class MaintenanceWindowsService {
         .set({ endsAt, updatedAt: sql`now()` })
         .where(and(eq(maintenanceWindows.id, id), isNull(maintenanceWindows.endedAt), windowClockIs("active"), lt(maintenanceWindows.endsAt, endsAt)))
         .returning({ id: maintenanceWindows.id });
-      if (updated.length === 0) throw new ConflictException("Only an active maintenance window can be extended");
+      if (updated.length === 0) throw new ConflictException(EXTEND_NOT_ACTIVE);
       await this.audit.write(
         {
           actor,
@@ -280,9 +284,7 @@ export class MaintenanceWindowsService {
         .where(and(eq(maintenanceWindows.id, id), isNull(maintenanceWindows.endedAt), windowClockIs(from)))
         .returning({ id: maintenanceWindows.id });
       if (updated.length === 0) {
-        throw new ConflictException(
-          verb === "end" ? "Only an active maintenance window can be ended" : "Only a future maintenance window can be cancelled",
-        );
+        throw new ConflictException(verb === "end" ? END_NOT_ACTIVE : CANCEL_NOT_FUTURE);
       }
       await this.audit.write(
         {

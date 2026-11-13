@@ -7,6 +7,7 @@ import {
   anAlarmTextCannotAskForAnAck,
   aTurnThatAsksOffersTheAckTool,
   aTurnThatDoesNotAskOffersNeither,
+  aSuppressTurnOffersTheWindowCreateOnly,
 } from "./copilot-turn.operational.spec";
 
 /** `F4.284` — Vitest entry point; assertions live in the sibling `.spec` (§4.6). */
@@ -17,4 +18,6 @@ describe("F4.284 — the own-message gate for an acknowledge and a close (ADR 01
   it("refuses an ack an alarm's own text asks for", () => anAlarmTextCannotAskForAnAck());
   it("offers the close tool, not the ack tool, for a close word", () => aCloseWordOffersNoAckTool());
   it("offers the ack tool, not the close tool, for an ack word", () => anAckWordOffersNoCloseTool());
+  it("F4.359: a suppress turn offers the window create, not the extend; an explain turn neither", () =>
+    aSuppressTurnOffersTheWindowCreateOnly());
 });

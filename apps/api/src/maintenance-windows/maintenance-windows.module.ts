@@ -13,5 +13,7 @@ import { MaintenanceWindowsService } from "./maintenance-windows.service";
 @Module({
   controllers: [MaintenanceWindowsController],
   providers: [MaintenanceWindowsService, MasterDataAuditService, JwtAuthGuard],
+  // `F4.359` PR 6 (ADR 0099 Amendment 19 decision 6): `list_maintenance_windows` reads through the service.
+  exports: [MaintenanceWindowsService],
 })
 export class MaintenanceWindowsModule {}

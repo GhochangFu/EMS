@@ -82,3 +82,22 @@ export async function anAckWordOffersNoCloseTool(): Promise<void> {
   const offered = llm.offered[0] ?? [];
   expect([offered.includes(ACK_TOOL), offered.includes(CLOSE_TOOL)]).toEqual([true, false]);
 }
+
+const WINDOW_CREATE_TOOL = proposeToolName({ id: "maintenanceWindow.create" });
+const WINDOW_EXTEND_TOOL = proposeToolName({ id: "maintenanceWindow.extend" });
+
+/**
+ * `F4.359` PR 6 (ADR 0099 Amendment 19 Q2): the turn reads the window words too, not only the
+ * operational ones. "suppress Chiller 2 until six" offers the window create and not the extend;
+ * "explain this alarm" offers neither. Reds if the turn reverts to `operationalIntentOf`.
+ */
+export async function aSuppressTurnOffersTheWindowCreateOnly(): Promise<void> {
+  const asks = new ToolRecordingLlm([{ kind: "final", text: "ok" }]);
+  await turn(harness(asks), "suppress Chiller 2 until six");
+  const offered = asks.offered[0] ?? [];
+  expect([offered.includes(WINDOW_CREATE_TOOL), offered.includes(WINDOW_EXTEND_TOOL)]).toEqual([true, false]);
+  const quiet = new ToolRecordingLlm([{ kind: "final", text: "ok" }]);
+  await turn(harness(quiet), "explain this alarm");
+  const none = quiet.offered[0] ?? [];
+  expect([none.includes(WINDOW_CREATE_TOOL), none.includes(WINDOW_EXTEND_TOOL)]).toEqual([false, false]);
+}

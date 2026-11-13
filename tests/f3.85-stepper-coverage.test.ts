@@ -114,7 +114,19 @@ const CATALOG_IDS = COPILOT_CATALOG.map((entry) => entry.id);
  * `location.siteLayout.replace`; `components/dashboard-templates/replace-site-layouts-wizard.tsx`:
  * `dashboardTemplate.replaceSiteLayouts`), so the list is empty again.
  */
-const NOT_YET: readonly { id: string; reason: string }[] = [];
+const WINDOW_WIZARDS_IN_PR_7 =
+  "F4.359 PR 6 (ADR 0099 Amendment 19) lands the entry; its WizardShell wizard is the Maintenance windows page of plan PR 7";
+/**
+ * `F4.359` PR 6 (ADR 0099 Amendment 19 Consequences): the four maintenance-window entries land
+ * before their wizards, which are plan PR 7 (`components/maintenance/maintenance-window-wizards.tsx`).
+ * PR 7 empties the list again.
+ */
+const NOT_YET: readonly { id: string; reason: string }[] = [
+  { id: "maintenanceWindow.create", reason: WINDOW_WIZARDS_IN_PR_7 },
+  { id: "maintenanceWindow.extend", reason: WINDOW_WIZARDS_IN_PR_7 },
+  { id: "maintenanceWindow.end", reason: WINDOW_WIZARDS_IN_PR_7 },
+  { id: "maintenanceWindow.cancel", reason: WINDOW_WIZARDS_IN_PR_7 },
+];
 
 /** `F3.87` PR 5 / ruling Q1(a): each canvas entry, the editor page that is its form, and the write that page calls. */
 const CANVAS_ENTRIES: readonly { id: string; page: string; write: string }[] = [

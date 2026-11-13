@@ -28,6 +28,8 @@ import { ReportSchedulesService } from "../reports/report-schedules.service";
 import { ReportsModule } from "../reports/reports.module";
 import { MaintenanceModule } from "../maintenance/maintenance.module";
 import { MaintenanceService } from "../maintenance/maintenance.service";
+import { MaintenanceWindowsModule } from "../maintenance-windows/maintenance-windows.module";
+import { MaintenanceWindowsService } from "../maintenance-windows/maintenance-windows.service";
 import { WorkOrdersModule } from "../work-orders/work-orders.module";
 import { WorkOrdersService } from "../work-orders/work-orders.service";
 import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
@@ -320,4 +322,14 @@ export function assertTheAdminModuleExportsThePointKeyStates(): void {
 /** `F4.309` PR 3: the read tools' slot 28 is `PointKeyStatesAdminService`, by `@Inject`. */
 export function assertTheReadToolsInjectThePointKeyStates(): void {
   expect(injected(CopilotReadToolSet).get(28)).toBe(PointKeyStatesAdminService);
+}
+
+/**
+ * `F4.359` PR 6 (ADR 0099 Amendment 19 decision 6): `CopilotModule` imports `MaintenanceWindowsModule`,
+ * which exports its service, and the read tools' slot 31 is that service, by `@Inject`.
+ */
+export function assertTheReadToolsInjectTheMaintenanceWindowsService(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(MaintenanceWindowsModule);
+  expect(moduleList(MaintenanceWindowsModule, "exports")).toContain(MaintenanceWindowsService);
+  expect(injected(CopilotReadToolSet).get(31)).toBe(MaintenanceWindowsService);
 }

@@ -79,6 +79,8 @@ const ALARMS_LIST: QueryKey = ["alarms", "list"];
 const ALARM_DETAILS: QueryKey = ["alarms", "details"];
 const DASHBOARD_KPIS: QueryKey = ["dashboard", "kpis"];
 const WORK_ORDERS: QueryKey = ["work-orders", "list"];
+/** `F4.359` PR 6: every maintenance-window read (the page's list, the active-cover reads behind the badges). */
+const MAINTENANCE_WINDOWS: QueryKey = ["maintenance-windows"];
 /** `F4.283`: an asset's image list (`asset-images-panel.tsx`, keyed by the asset under the prefix). */
 const ASSET_IMAGES: QueryKey = ["asset-images"];
 const ESCALATION_PROFILES: QueryKey = ["escalation", "profiles"];
@@ -258,6 +260,12 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "telemetry.import": [ASSET_POINTS],
   "telemetryReading.create": [ASSET_POINTS],
   "assetImage.upload": [ASSET_IMAGES],
+  // `F4.359` PR 6 (ADR 0099 Amendment 19): the window writes. An end or a cancel can return suppressed
+  // alarms to the alarm list (ADR 0131), so it re-reads the list too.
+  "maintenanceWindow.create": [MAINTENANCE_WINDOWS],
+  "maintenanceWindow.extend": [MAINTENANCE_WINDOWS],
+  "maintenanceWindow.end": [MAINTENANCE_WINDOWS, ALARMS_LIST],
+  "maintenanceWindow.cancel": [MAINTENANCE_WINDOWS, ALARMS_LIST],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

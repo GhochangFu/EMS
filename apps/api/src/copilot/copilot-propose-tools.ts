@@ -57,6 +57,12 @@ import {
   PROPOSE_OPERATIONAL_ON_FOLLOW_UP_ERROR,
 } from "./copilot-operations-intent";
 import { checkOperations, OPERATIONS_ENTRY_IDS, operationsSummaryInput } from "./copilot-propose-operations";
+import {
+  MAINTENANCE_WINDOW_INTENT_IDS,
+  PROPOSE_MAINTENANCE_WINDOW_NOT_ASKED_ERROR,
+  PROPOSE_MAINTENANCE_WINDOW_ON_FOLLOW_UP_ERROR,
+} from "./copilot-maintenance-window-intent";
+import { checkMaintenanceWindow, maintenanceWindowSummaryInput } from "./copilot-propose-maintenance-windows";
 import { RuleProposalCheckService } from "../rules/rule-proposal-check.service";
 import { COPILOT_TARGETS, type CopilotTargets } from "./copilot-target-resolver";
 import { PROPOSE_TARGET_ERROR, templateLifecycleRefusal } from "./copilot-template-lifecycle";
@@ -157,6 +163,13 @@ const accessAsked = (ctx: CopilotToolContext): boolean => ctx.turnKind === "user
 /** `F4.284` (ADR 0106 decision 3): the same rule for an acknowledge or a close — a tool result cannot pre-fill one either. */
 const operationalAsked = (ctx: CopilotToolContext, entryId: string): boolean =>
   ctx.turnKind === "user" && (ctx.operationalIntent ?? []).includes(entryId);
+
+/**
+ * `F4.359` PR 6 (ADR 0099 Amendment 19 decision 4, Q2): every entry offered only on the user's own
+ * ask, each by its own id in `operationalIntent` — the acknowledge and the close, and a window's
+ * create and extend (`ownMessageIntentOf`).
+ */
+const OWN_MESSAGE_ENTRY_IDS: ReadonlySet<string> = new Set([...OPERATIONAL_ENTRY_IDS, ...MAINTENANCE_WINDOW_INTENT_IDS]);
 
 /**
  * `F3.87` PR 7, plan D11: a layout card proposed from a file says so, so the
@@ -394,9 +407,10 @@ export function createCopilotProposeTools(
   const outwardTools = [...byTool].filter(([, entry]) => OUTWARD_ENTRY_IDS.has(entry.id)).map(([name]) => name);
   // `F4.284` (ADR 0106 decision 3): the acknowledge and the close are dropped unless the user's own message asked.
   // Each by its own words: an asked acknowledge keeps the close dropped, and the other way round.
-  const operationalTools = [...byTool].filter(([, entry]) => OPERATIONAL_ENTRY_IDS.has(entry.id));
+  // `F4.359` PR 6 (Amendment 19 Q2): a window's create and extend, the same way.
+  const operationalTools = [...byTool].filter(([, entry]) => OWN_MESSAGE_ENTRY_IDS.has(entry.id));
   const registryFor = ({ access, role, assetCreate = true, outward = false, operational = [] }: RegistryOptions): ToolRegistry<string> => {
-    const kept = [...new Set(operational.filter((id) => OPERATIONAL_ENTRY_IDS.has(id)))].sort();
+    const kept = [...new Set(operational.filter((id) => OWN_MESSAGE_ENTRY_IDS.has(id)))].sort();
     const key = `${access ? "access" : "no-access"}:${assetCreate ? "assets" : "no-assets"}:${outward ? "outward" : "no-outward"}:${kept.join(",")}:${role}`;
     const known = registries.get(key);
     if (known !== undefined) return known;
@@ -413,8 +427,8 @@ export function createCopilotProposeTools(
   };
   // The full registry keeps every tool for its existing callers (a spec, the definitions budget);
   // a turn always builds its own through `registryFor`.
-  const registry = registryFor({ access: true, role: "admin", outward: true, operational: [...OPERATIONAL_ENTRY_IDS] });
-  const registryWithoutAccess = registryFor({ access: false, role: "admin", outward: true, operational: [...OPERATIONAL_ENTRY_IDS] });
+  const registry = registryFor({ access: true, role: "admin", outward: true, operational: [...OWN_MESSAGE_ENTRY_IDS] });
+  const registryWithoutAccess = registryFor({ access: false, role: "admin", outward: true, operational: [...OWN_MESSAGE_ENTRY_IDS] });
 
   /**
    * `F3.87` PR 5 — a layout proposal's checks, in the order the owner ruled:
@@ -490,6 +504,10 @@ export function createCopilotProposeTools(
     // `F4.284` (ADR 0106 decision 3): an acknowledge or a close, the same two guards.
     if (OPERATIONAL_ENTRY_IDS.has(entry.id) && ctx.turnKind === "follow_up") return { ok: false, error: PROPOSE_OPERATIONAL_ON_FOLLOW_UP_ERROR };
     if (OPERATIONAL_ENTRY_IDS.has(entry.id) && !operationalAsked(ctx, entry.id)) return { ok: false, error: PROPOSE_OPERATIONAL_NOT_ASKED_ERROR };
+    // `F4.359` PR 6 (Amendment 19 decision 4, Q2): a window's create or extend, the same two guards.
+    const windowGated = MAINTENANCE_WINDOW_INTENT_IDS.has(entry.id);
+    if (windowGated && ctx.turnKind === "follow_up") return { ok: false, error: PROPOSE_MAINTENANCE_WINDOW_ON_FOLLOW_UP_ERROR };
+    if (windowGated && !operationalAsked(ctx, entry.id)) return { ok: false, error: PROPOSE_MAINTENANCE_WINDOW_NOT_ASKED_ERROR };
     // `F3.87` PR 2 (Amendment 3 A1): the registry withholds the tool from another role; this is the second guard.
     if (!offeredToRole(entry, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
     // `F3.87` PR 7, plan D8: the registry withholds the creates on a file turn the words did not ask; the second guard.
@@ -601,6 +619,9 @@ export function createCopilotProposeTools(
       if (!checked.ok) return checked;
       cardBody = checked.cardBody;
     }
+    // `F4.359` PR 6 (Amendment 19 decision 8): the window routes' own refusals, with their sentences.
+    const windowCheck = checkMaintenanceWindow(entry.id, body, target, ctx.now);
+    if (!windowCheck.ok) return windowCheck;
     if (LAYOUT_ENTRY_IDS.has(entry.id)) {
       const checked = await checkLayout(entry, params, body, ctx);
       if (!checked.ok) return checked;
@@ -652,6 +673,7 @@ export function createCopilotProposeTools(
         ...(target.payloadFormat !== undefined ? { payloadFormat: target.payloadFormat } : {}),
         ...(target.lifecycle !== undefined ? { lifecycle: target.lifecycle } : {}),
         ...operationsSummaryInput(target),
+        ...maintenanceWindowSummaryInput(target),
       }) +
       ruleNote +
       (fromFile ? COPILOT_READ_FROM_FILE_NOTE : "");
@@ -694,6 +716,9 @@ export function createCopilotProposeTools(
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
         if (target.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
         if (OPERATIONAL_ENTRY_IDS.has(target.id) && !operationalAsked(ctx, target.id)) return { ok: false, error: PROPOSE_OPERATIONAL_NOT_ASKED_ERROR };
+        if (MAINTENANCE_WINDOW_INTENT_IDS.has(target.id) && !operationalAsked(ctx, target.id)) {
+          return { ok: false, error: PROPOSE_MAINTENANCE_WINDOW_NOT_ASKED_ERROR };
+        }
         if (!offeredToRole(target, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
         // `F3.87` PR 7, D8: a file turn cannot pre-fill an asset wizard with what it read from the file either.
         if (ASSET_CREATE_IDS.has(target.id) && ctx.assetIntent === false) return { ok: false, error: PROPOSE_ASSET_NOT_ASKED_ERROR };

@@ -120,6 +120,8 @@ const CATALOG_WRITERS = [
   // `E3.1` (ADR 0122 decision 6): `workOrder.close` is the approval and reaches this service. Its
   // excluded reject and cancel audit through the same funnel.
   "apps/api/src/work-orders/work-order-approval.service.ts",
+  // `F4.359` PR 6 (ADR 0099 Amendment 19): the four maintenance-window writes audit through the funnel.
+  "apps/api/src/maintenance-windows/maintenance-windows.service.ts",
 ] as const;
 
 /**
@@ -239,6 +241,8 @@ const CATALOG_DIRS = [
   "admin/telemetry-entry",
   "admin/telemetry-import",
   "assets",
+  // `F4.359` PR 6 (ADR 0099 Amendment 19): the maintenance windows — every write audits through the funnel.
+  "maintenance-windows",
 ] as const;
 
 /** The drizzle form and the raw-SQL form. */

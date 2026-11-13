@@ -137,6 +137,7 @@ const COPILOT_TOOL_FILES = {
   copilotListReportSchedules: `${COPILOT_TOOLS}/list-report-schedules.tool.ts`,
   // `F4.281` (Amendment 8 D7, owner ruling DC4): the maintenance-schedule read tool, one parse.
   copilotListMaintenanceSchedules: `${COPILOT_TOOLS}/list-maintenance-schedules.tool.ts`,
+  copilotListMaintenanceWindows: `${COPILOT_TOOLS}/list-maintenance-windows.tool.ts`,
   // `F4.284` (ADR 0106; owner rulings DC1, DC7): the work-order and user read tools, one parse each.
   copilotListWorkOrders: `${COPILOT_TOOLS}/list-work-orders.tool.ts`,
   copilotListUsers: `${COPILOT_TOOLS}/list-users.tool.ts`,
@@ -679,8 +680,9 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       // site point inventory read tool; `F4.296`: + the site summary and the unruled rules read;
       // `F4.303`: + the render's stored template and params; `F4.309` PR 3: + the state-label read tool;
       // `F4.315` PR A: + the asset template read tool; `F4.317` PR 4: + the organization template
-      // content the organization-layout copy reads back; `F4.334` PR 5: + the payload format read tool.
-    ).toBe(57);
+      // content the organization-layout copy reads back; `F4.334` PR 5: + the payload format read tool;
+      // `F4.359` PR 6: + the maintenance-window read tool.
+    ).toBe(58);
 
     const callSites = [
       STOCK_SERVICE,

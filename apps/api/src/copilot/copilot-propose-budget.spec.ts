@@ -66,6 +66,11 @@ import { proposeHarness } from "./copilot-propose-tools.spec";
  *   each carries the payload format definition schema — `_delete` 416, `propose_rtu_setPayloadFormat` 577;
  *   their ids in `fill_step` and `describe_change` the rest). Over 97,000, so the bound follows the
  *   release-4 rule — rounded up to the next thousand, plus 1,000 — to 103,000; the owner confirms it with the PR.
+ * - `F4.359` PR 6 (ADR 0099 Amendment 19, whose Consequences name this measure): 97,883 over 118 definitions
+ *   before (measured on this branch with the four entries left out), 101,460 over 122 after
+ *   (`propose_maintenanceWindow_create` 1,571 — 1,380 before the review's `startsAt` "omit to start
+ *   now" and the targets' "each named once" descriptions — `_extend` 647, `_end` 568, `_cancel` 577;
+ *   their ids in `fill_step` and `describe_change` the rest). Under 103,000, so the bound is unchanged.
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();

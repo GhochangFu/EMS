@@ -20,6 +20,8 @@ import { ReportsModule } from "../../reports/reports.module";
 import { MaintenanceModule } from "../../maintenance/maintenance.module";
 import { UsersService } from "../../admin/users/users.service";
 import { MaintenanceService } from "../../maintenance/maintenance.service";
+import { MaintenanceWindowsModule } from "../../maintenance-windows/maintenance-windows.module";
+import { MaintenanceWindowsService } from "../../maintenance-windows/maintenance-windows.service";
 import { WorkOrdersModule } from "../../work-orders/work-orders.module";
 import { WorkOrdersService } from "../../work-orders/work-orders.service";
 import { NotificationsCoreModule } from "../../notifications/notifications-core.module";
@@ -474,6 +476,7 @@ export async function assertAnInjectedProposeCallFindsNoTool(): Promise<void> {
  * inserts `list_point_key_states` after `list_alarm_skills` (39 tools). `F4.315` PR A inserts
  * `list_asset_templates` after `list_point_key_states` (40 tools). `F4.334` PR 5 inserts
  * `list_payload_formats` and `decode_payload_sample` after `list_asset_templates` (42 tools).
+ * `F4.359` PR 6 inserts `list_maintenance_windows` after `decode_payload_sample` (43 tools).
  */
 export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
   const { tools } = fakeServices();
@@ -536,6 +539,8 @@ export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
     // `F4.334` PR 5 (ADR 0099 Amendment 17 decision 2): the payload formats and a sample decode, for the global admin.
     "list_payload_formats",
     "decode_payload_sample",
+    // `F4.359` PR 6 (ADR 0099 Amendment 19 decision 6): the window ids an extend, end or cancel names.
+    "list_maintenance_windows",
     "open_page",
   ]);
   const extra = await runToolCall(
@@ -678,6 +683,8 @@ export function assertTheModuleWiresTheReadTools(): void {
     AssetTemplatesAdminService,
     // `F4.334` PR 5: the payload format read tools, from `AdminModule`.
     MqttPayloadFormatsAdminService,
+    // `F4.359` PR 6: the maintenance-window read tool, from `MaintenanceWindowsModule`.
+    MaintenanceWindowsService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
   for (const module of [
@@ -699,6 +706,7 @@ export function assertTheModuleWiresTheReadTools(): void {
     ReportsModule,
     MaintenanceModule,
     WorkOrdersModule,
+    MaintenanceWindowsModule,
   ]) {
     expect(imports).toContain(module);
   }
@@ -712,6 +720,7 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(ReportsModule)).toContain(ReportSchedulesService);
   expect(exportsOf(MaintenanceModule)).toContain(MaintenanceService);
   expect(exportsOf(WorkOrdersModule)).toContain(WorkOrdersService);
+  expect(exportsOf(MaintenanceWindowsModule)).toContain(MaintenanceWindowsService);
   expect(exportsOf(AssetsModule)).toEqual(expect.arrayContaining([AssetsService, AssetKpisService]));
   expect(exportsOf(DashboardBuilderModule)).toContain(DashboardsService);
   expect(exportsOf(AssetHealthModule)).toContain(AssetHealthService);
@@ -726,5 +735,5 @@ export function assertTheModuleWiresTheReadTools(): void {
     expect.arrayContaining([AuditAdminService, PointKeyStatesAdminService, AssetTemplatesAdminService, MqttPayloadFormatsAdminService]),
   );
   expect(exportsOf(SystemStatusModule)).toContain(SystemStatusService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(42); // `F4.334` PR 5: + list_payload_formats, decode_payload_sample; `F4.315` PR A: + list_asset_templates; `F4.309` PR 3: + list_point_key_states; `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills; `F4.291` PR 2: + get_alarm_stats; PR 3: + get_point_stats; `F4.288`: + get_site_point_inventory; `F4.290` PR 2: + get_location_summary.
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(43); // `F4.359` PR 6: + list_maintenance_windows; `F4.334` PR 5: + list_payload_formats, decode_payload_sample; `F4.315` PR A: + list_asset_templates; `F4.309` PR 3: + list_point_key_states; `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills; `F4.291` PR 2: + get_alarm_stats; PR 3: + get_point_stats; `F4.288`: + get_site_point_inventory; `F4.290` PR 2: + get_location_summary.
 }

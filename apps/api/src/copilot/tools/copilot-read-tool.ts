@@ -16,6 +16,7 @@ import type { LocationAssetScopeService } from "../../auth/location-asset-scope.
 import type { DashboardService } from "../../dashboard/dashboard.service";
 import type { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import type { MaintenanceService } from "../../maintenance/maintenance.service";
+import type { MaintenanceWindowsService } from "../../maintenance-windows/maintenance-windows.service";
 import type { PointKeyStatesAdminService } from "../../admin/point-key-states/point-key-states.service";
 import type { UsersService } from "../../admin/users/users.service";
 import type { WorkOrdersService } from "../../work-orders/work-orders.service";
@@ -45,8 +46,13 @@ export interface CopilotReadServices {
   /**
    * `F4.276`: `readableOrganizationIds` narrows `get_alarm_kb`'s BYPASSRLS read, as `GET /alarm-kb` does.
    * `F4.290` PR 2: `readableLocationIds`, the roots `get_location_summary` lists and the sites it may name.
+   * `F4.359` PR 6: `isGlobalAdmin` and `currentUser`, the window scope `list_maintenance_windows` reads
+   * with (`readScopeFor`, the route's own).
    */
-  readonly access: Pick<AccessControlService, "readableAssetIdsInOrganization" | "readableOrganizationIds" | "readableLocationIds">;
+  readonly access: Pick<
+    AccessControlService,
+    "readableAssetIdsInOrganization" | "readableOrganizationIds" | "readableLocationIds" | "isGlobalAdmin" | "currentUser"
+  >;
   /**
    * `F4.291` (owner ruling P5): a `locationId` to the caller's readable asset ids of its
    * subtree, through the one shared helper in `auth/`; `readPerOrganization` calls it.
@@ -159,6 +165,11 @@ export interface CopilotReadServices {
    * decode (writes nothing, no audit row). No write is reachable.
    */
   readonly mqttPayloadFormats: Pick<MqttPayloadFormatsAdminService, "list" | "rtuCountsInOrganizations" | "test">;
+  /**
+   * `F4.359` PR 6 (ADR 0099 Amendment 19 decision 6): the maintenance windows' list (`GET
+   * /maintenance-windows`); `list` only, so none of the four writes is reachable.
+   */
+  readonly maintenanceWindows: Pick<MaintenanceWindowsService, "list">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */

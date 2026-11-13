@@ -196,6 +196,15 @@ export type CatalogTarget =
   | { readonly kind: "maintenanceSchedule"; readonly param: "id" }
   | { readonly kind: "maintenanceSchedule"; readonly field: "assetId" }
   /**
+   * `F4.359` PR 6 (ADR 0099 Amendment 19 decision 2): a maintenance window. With `param`, the window
+   * row the path parameter `id` names, with every one of its targets; with `field`, a create, whose
+   * organization is its body's targets' (one organization). Both call the window routes' own gate:
+   * the `configuration` role class, then `maintenance-window-scope.ts` (`targetInScope`,
+   * `everyTargetInScope`) on the caller's read scope — one authority.
+   */
+  | { readonly kind: "maintenanceWindow"; readonly param: "id" }
+  | { readonly kind: "maintenanceWindow"; readonly field: "targets" }
+  /**
    * `F4.283` (ADR 0099 Amendment 8 D2, Q21): the two telemetry writes (the import commit, the manual
    * readings). Like `fleet`, the change lives in the conversation's bound organization (a conversation
    * bound to none is refused), gated by `requireMasterDataUser` alone — the routes' own gate. Each
@@ -305,6 +314,20 @@ export type CatalogSummaryInput = {
     readonly host: string | null;
     readonly port: number | null;
     readonly tls: boolean;
+  };
+  /**
+   * `F4.359` PR 6 (ADR 0099 Amendment 19 decisions 1, 3): a `maintenanceWindow` target. A row
+   * entry's window — its reason, period and target labels; a create's target labels (its reason
+   * and period are the body's). `locationLabels` are the location targets and
+   * `coveredAssetCount` the assets they cover at proposal time (Q5).
+   */
+  readonly maintenanceWindow?: {
+    readonly reason: string;
+    readonly startsAt: string | null;
+    readonly endsAt: string | null;
+    readonly targetLabels: readonly string[];
+    readonly locationLabels: readonly string[];
+    readonly coveredAssetCount: number;
   };
 };
 
