@@ -1239,6 +1239,26 @@
 > Review step warns, and the users list carries `hasEffectiveGrant` and shows
 > **No access**. No migration — runbook §7 lists older organization admins
 > with no grant for the owner to fix per host.
+> And **an RTU's stored credentials can be replaced** (**ADR 0129**, row
+> `F4.333`; PR 1 #1277 `e59a6198`, PR 2 #1284 `7fc0b964`, PR 3 #1286
+> `cd360796`, PR 4 #1289 `3b0e5066`; this sweep merges last). Two new write
+> paths, both write-only, never echoed, encrypted at the current key version
+> (ADR 0012) and audited without the values (§9.6): the onboarding draft
+> drawer's **Replace** beside the "Set" pill (the same
+> `POST /admin/onboarding/sessions/:id/credentials`, now with an optional
+> `rtuCode` that answers 409 if the RTU moved, audited
+> `master.onboarding.credentials.set`), and `PUT /admin/rtus/:id/credentials`
+> behind the "Replace credentials" dialog on `/admin/rtus` — MQTT only, a full
+> replacement of the credential columns and nothing else (host, port and TLS
+> stay frozen, ADR 0093), the same-broker siblings in one transaction
+> (`GET …/credentials/siblings` lists ids and names only), an edge-served RTU
+> 409, one `master.rtu.credentials.replace` row per RTU. **Who:** `admin`, or
+> an `organization_admin` in scope — refused, fail-closed, on a broker another
+> organization may use (owner "keep"; today that is every TLS broker while the
+> PHE pilot RTUs exist). Ingest compares a non-secret `credentialFingerprint`
+> (RTU id, key version, IV, ciphertext present) at the reload and replaces the
+> endpoint with `reason: credentials-changed`, no restart. One endpoint per
+> broker address across organizations is `F4.358`.
 > And **a persistent alarm bar on every page** (**ADR 0130**, row `F4.357`;
 > plan #1288, PRs #1290–#1293, closed #1294 `51af6a49`). `AppShell` and the
 > control room wall mount `AlarmBar` (`components/alarm-bar/`), fixed to the
@@ -5277,7 +5297,10 @@ new scope-sensitive features.
    `manage-users` can set any realm user's password, the `admin`'s included;
    `KeycloakIdentityAdminClient` logs no request body and no Keycloak response body and
    maps an error to a fixed reason; a password is never logged, stored,
-   audited or echoed.
+   audited or echoed. **Nor a replaced RTU credential** (ADR 0129): both
+   replace paths are write-only, the response and the audit row carry ids and
+   the fact of the change, never a value, and ingest detects the change by a
+   fingerprint of non-secret fields, never by reading the plaintext twice.
 7. Do not introduce EMQX or any item from §6 without a Promotion PR (see
    §10). MinIO / object storage is promoted (ADR 0066): reach it only through
    `apps/api/src/storage/` — one S3 client, one `buildObjectKey`, keys never
