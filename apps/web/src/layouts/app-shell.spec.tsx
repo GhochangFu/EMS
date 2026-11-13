@@ -417,7 +417,7 @@ export function showsTheHubAndSixAreasToAnOrganizationAdmin(): void {
  * `serviceAccountsAdmin`). `F4.359` (ADR 0131 decision 13): its Notifications entry is back,
  * opening at Maintenance Windows, the one tab of that area it sees.
  */
-export function hidesTheNotificationsEntryFromALocationAdmin(): void {
+export function showsALocationAdminItsMaintenanceWindowsEntry(): void {
   renderShell(LOCATION, "/", "location_admin");
   expect(adminEntries()).toEqual([
     "Master Data Hub /admin",

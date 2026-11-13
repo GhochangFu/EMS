@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, it, vi } from "vitest";
 import {
   aCoveredAssetsHeaderShowsTheMaintenanceBadge,
   anUncoveredAssetsHeaderShowsNoMaintenanceBadge,
+  aNonUuidAssetIdMakesNoMaintenanceRead,
   aCustomRangeInTheUrlIsSentAsThePair,
   aFailedReadIsNotAnEmptySelection,
   aFilledPreviousPeriodDoesNotSaySo,
@@ -158,5 +159,9 @@ describe("F4.297 asset history page", () => {
 
   it("F4.359 U16 shows no maintenance badge for an uncovered asset", async () => {
     await anUncoveredAssetsHeaderShowsNoMaintenanceBadge();
+  });
+
+  it("F4.359 U16 makes no maintenance read for an assetId that is not a uuid", async () => {
+    await aNonUuidAssetIdMakesNoMaintenanceRead();
   });
 });

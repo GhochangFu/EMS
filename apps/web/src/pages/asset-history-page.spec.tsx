@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi, type MockInstance } from "vitest";
@@ -132,11 +132,11 @@ export function stubApis(
   return { aggregateSpy, rawSpy };
 }
 
-export function renderHistoryPage(search = "", role: UserRole = "admin"): void {
+export function renderHistoryPage(search = "", role: UserRole = "admin", assetId = ASSET_ID): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/asset-history/${ASSET_ID}${search}`]}>
+      <MemoryRouter initialEntries={[`/asset-history/${assetId}${search}`]}>
         <Routes>
           <Route path="/asset-history/:assetId" element={<AssetHistoryPage user={asUser(role)} />} />
         </Routes>
@@ -503,11 +503,28 @@ export async function aCoveredAssetsHeaderShowsTheMaintenanceBadge(): Promise<vo
   expect(maintenanceApi.fetchMaintenanceWindows).toHaveBeenCalledWith({ state: "active", assetId: ASSET_ID });
 }
 
+/** `F4.359` U16 — an `:assetId` that is not a uuid names no asset, so the page makes no maintenance read. */
+export async function aNonUuidAssetIdMakesNoMaintenanceRead(): Promise<void> {
+  stubApis({ coveredAssetIds: [ASSET_ID] });
+  renderHistoryPage("", "admin", "not-a-uuid");
+  await waitFor(() => expect(assetsApi.fetchAssets).toHaveBeenCalled());
+  await act(async () => {
+    await vi.mocked(assetsApi.fetchAssets).mock.results[0]?.value;
+  });
+  expect(maintenanceApi.fetchMaintenanceWindows).not.toHaveBeenCalled();
+  expect(screen.queryByTestId("asset-maintenance-badge")).toBeNull();
+}
+
 /** `F4.359` U16 — an uncovered asset's header shows no badge. */
 export async function anUncoveredAssetsHeaderShowsNoMaintenanceBadge(): Promise<void> {
   stubApis();
+  // A rule-only window is active in scope but covers no asset: "any window" as the badge rule reddens this.
+  const read = vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({ items: [{ id: "w-rule", assetIds: [] }] } as never);
   renderHistoryPage();
   await screen.findByRole("heading", { name: "CHL-01 · Chiller 1" });
-  await waitFor(() => expect(maintenanceApi.fetchMaintenanceWindows).toHaveBeenCalled());
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  await act(async () => {
+    await read.mock.results[0]?.value;
+  });
   expect(screen.queryByTestId("asset-maintenance-badge")).toBeNull();
 }

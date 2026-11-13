@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -443,9 +443,14 @@ export async function aCoveredAssetsPanelShowsTheMaintenanceBadge(): Promise<voi
 /** `F4.359` U16 — an asset no window covers shows no badge. */
 export async function anUncoveredAssetsPanelShowsNoMaintenanceBadge(): Promise<void> {
   stubApi();
+  // A rule-only window is active in scope but covers no asset: "any window" as the badge rule reddens this.
+  const read = vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({ items: [{ id: "w-rule", assetIds: [] }] } as never);
   renderPage();
   await clickRow("FEED-PUMP-2");
   const panel = (await screen.findByRole("heading", { name: "Asset · FEED-PUMP-2" })).closest("aside") as HTMLElement;
-  await waitFor(() => expect(maintenanceApi.fetchMaintenanceWindows).toHaveBeenCalled());
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  await act(async () => {
+    await read.mock.results[0]?.value;
+  });
   expect(within(panel).queryByText("Maintenance")).toBeNull();
 }

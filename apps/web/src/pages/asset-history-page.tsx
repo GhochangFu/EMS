@@ -26,6 +26,8 @@ import { historySchedulePrefill } from "../lib/schedule-from-view";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 type AssetHistoryPageProps = {
   user: AuthUser;
 };
@@ -57,8 +59,8 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
   });
 
   const asset = assetsQ.data?.find((row) => row.id === assetId);
-  // `F4.359` U16 (plan Q7): one asset-scoped read; "" (a missing param) covers nothing.
-  const inMaintenance = useActiveMaintenance({ assetId }).coveredAssetIds.has(assetId);
+  // `F4.359` U16 (plan Q7): one asset-scoped read; an `:assetId` that is not a uuid names no asset, so no read.
+  const inMaintenance = useActiveMaintenance({ assetId }, { enabled: UUID.test(assetId) }).coveredAssetIds.has(assetId);
   const points = useMemo(() => pointsQ.data?.items ?? [], [pointsQ.data]);
   const selected = useMemo(() => {
     // The two-axis rule holds for a URL list too: a third distinct unit is not charted.

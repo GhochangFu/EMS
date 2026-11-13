@@ -24,6 +24,7 @@ import { fetchRules } from "../../api/rules";
 import { fetchWorkOrders } from "../../api/work-orders";
 import { alarmBarFeed } from "../../lib/alarm-bar-feed";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { isoOfLocalInput, localInputOf, localMinuteOf, localZoneLabel } from "../../lib/maintenance-window-time";
 import { wizardBody, type WizardStep } from "../../lib/wizard-steps";
 import { AdminWizardFrame, fieldClass, labelClass } from "../admin/admin-wizard-frame";
 import { WizardShell } from "../wizard/wizard-shell";
@@ -40,6 +41,9 @@ import { WizardShell } from "../wizard/wizard-shell";
  * bar's feed for a fresh read, since a window changes which alarms it counts. A refusal (a 409
  * for a window that changed state meanwhile) stays in the wizard with the route's sentence, and
  * the lists are refetched so the page shows the window's state now.
+ *
+ * Every time is read and shown in the browser's own zone, labelled with it
+ * (`lib/maintenance-window-time.ts`); the Review keeps the ISO rows beside a local-time line.
  */
 
 /** The catalog entry, or a build defect (the `rtu-wizards.tsx` rule). */
@@ -71,19 +75,17 @@ const START_GRACE_MS = 60_000;
 const MATCHES_SHOWN = 50;
 const WINDOWS_KEY = ["maintenance-windows"] as const;
 
-const pad = (n: number): string => String(n).padStart(2, "0");
+/** Said of an id a Copilot fill set that the caller's list does not hold (the read is the caller's scope). */
+export const NOT_IN_YOUR_LIST = "(not in your list)";
+/** The route's refusal of targets in two organizations (`TARGETS_SPAN_ORGANIZATIONS`), said before submit. */
+export const TARGETS_SPAN_ORGANIZATIONS = "Every target of a maintenance window must belong to one organization";
 
-/** A `datetime-local` input's value for `date`, in the browser's zone. */
-export function localInputOf(date: Date): string {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
+/** A fill's instant (an ISO string with its zone): the wizard's input shows it in the browser's zone. */
+const instantOf = (value: unknown): string | undefined =>
+  typeof value === "string" && !Number.isNaN(Date.parse(value)) ? localInputOf(new Date(value)) : undefined;
 
-/** The ISO instant of a `datetime-local` value; `undefined` when empty or not a time. */
-export function isoOfLocalInput(text: string): string | undefined {
-  if (text.trim() === "") return undefined;
-  const at = new Date(text);
-  return Number.isNaN(at.getTime()) ? undefined : at.toISOString();
-}
+/** "2026-11-13 15:00 (UTC+05:30)": an instant in the browser's zone, labelled. */
+const localTime = (iso: string): string => `${localMinuteOf(iso)} (${localZoneLabel(new Date(iso))})`;
 
 /** An optional text: `undefined` (not sent) when blank. */
 const optional = (text: string): string | undefined => (text.trim() === "" ? undefined : text);
@@ -162,13 +164,13 @@ function createValues(form: CreateForm): Record<string, unknown> {
 function createFormWithValues(form: CreateForm, values: Readonly<Record<string, unknown>>): CreateForm {
   const next = { ...form };
   if (typeof values.reason === "string") next.reason = values.reason;
-  if (typeof values.startsAt === "string" && isoOfLocalInput(values.startsAt) !== undefined) {
+  const start = instantOf(values.startsAt);
+  if (start !== undefined) {
     next.startNow = false;
-    next.start = localInputOf(new Date(values.startsAt));
+    next.start = start;
   }
-  if (typeof values.endsAt === "string" && isoOfLocalInput(values.endsAt) !== undefined) {
-    next.end = localInputOf(new Date(values.endsAt));
-  }
+  const end = instantOf(values.endsAt);
+  if (end !== undefined) next.end = end;
   const targets = maintenanceWindowTargetSchema.array().safeParse(values.targets);
   if (targets.success) next.targets = targets.data;
   if (typeof values.workOrderId === "string") next.workOrderId = values.workOrderId;
@@ -227,14 +229,31 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
 
   const assetLabel = (asset: (typeof assets)[number]) => `${asset.name} (${asset.code})`;
   const locationById = new Map(locations.map((location) => [location.id, location]));
+  // Two organizations can each have a "Lakwa plant": a caller reading more than one sees whose it is.
+  const manyOrganizations = new Set(locations.map((location) => location.organizationId)).size > 1;
+  const locationLabel = (location: (typeof locations)[number]): string =>
+    manyOrganizations ? `${location.name} (${location.organizationName})` : location.name;
+  // An id a Copilot fill set that the loaded list does not hold is said to be so, never shown bare.
+  const unlisted = (id: string, loaded: boolean): string => (loaded ? `${id} ${NOT_IN_YOUR_LIST}` : id);
   const labelOf = (target: MaintenanceWindowTarget): string => {
     if (target.kind === "asset") {
       const asset = assets.find((candidate) => candidate.id === target.assetId);
-      return asset ? assetLabel(asset) : target.assetId;
+      return asset ? assetLabel(asset) : unlisted(target.assetId, assetsQ.isSuccess);
     }
-    if (target.kind === "location") return locationById.get(target.locationId)?.name ?? target.locationId;
-    return rules.find((rule) => rule.id === target.ruleId)?.name ?? target.ruleId;
+    if (target.kind === "location") {
+      const location = locationById.get(target.locationId);
+      return location ? locationLabel(location) : unlisted(target.locationId, locationsQ.isSuccess);
+    }
+    return rules.find((rule) => rule.id === target.ruleId)?.name ?? unlisted(target.ruleId, rulesQ.isSuccess);
   };
+  const workOrders = workOrdersQ.data?.items ?? [];
+  const schedules = schedulesQ.data?.items ?? [];
+  const workOrder = workOrders.find((order) => order.id === form.workOrderId);
+  const schedule = schedules.find((candidate) => candidate.id === form.maintenanceScheduleId);
+  const workOrderLabel = workOrder ? `${workOrder.reference} — ${workOrder.title}` : unlisted(form.workOrderId, workOrdersQ.isSuccess);
+  const scheduleLabel = schedule
+    ? `${schedule.title} — ${schedule.assetName}`
+    : unlisted(form.maintenanceScheduleId, schedulesQ.isSuccess);
   // Decision 3: a location target covers its subtree; the card counts the assets it covers now.
   const chosenLocations = form.targets.flatMap((target) => (target.kind === "location" ? [target.locationId] : []));
   const covered = new Set(chosenLocations);
@@ -247,16 +266,22 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
       }
     }
   }
-  const organizationName =
-    form.targets
-      .map((target) =>
-        target.kind === "location"
-          ? locationById.get(target.locationId)?.organizationName
-          : target.kind === "asset"
-            ? locationById.get(assets.find((asset) => asset.id === target.assetId)?.locationId ?? "")?.organizationName
-            : undefined,
-      )
-      .find((name) => name !== undefined) ?? "its organization";
+  // Each target's organization, where the caller's reads say it: a location's own, an asset's through its
+  // location, a rule's through its asset. A target the reads do not place is left to the route.
+  const assetOrganization = (assetId: string | null) =>
+    locationById.get(assets.find((asset) => asset.id === assetId)?.locationId ?? "");
+  const targetOrganizations = new Map<string, string>();
+  for (const target of form.targets) {
+    const location =
+      target.kind === "location"
+        ? locationById.get(target.locationId)
+        : target.kind === "asset"
+          ? assetOrganization(target.assetId)
+          : assetOrganization(rules.find((rule) => rule.id === target.ruleId)?.assetId ?? null);
+    if (location) targetOrganizations.set(location.organizationId, location.organizationName);
+  }
+  const organizationNames = [...targetOrganizations.values()];
+  const organizationName = organizationNames[0] ?? "its organization";
 
   const checkbox = (target: MaintenanceWindowTarget, label: string) => (
     <label key={`${target.kind}:${targetId(target)}`} className="flex items-center gap-2 text-xs">
@@ -284,7 +309,7 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
         </label>
         {form.startNow ? null : (
           <label className={labelClass}>
-            Start time
+            {`Start time (${localZoneLabel()})`}
             <input
               type="datetime-local"
               className={fieldClass}
@@ -295,7 +320,7 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
         )}
       </fieldset>
       <label className={labelClass}>
-        End
+        {`End (${localZoneLabel()})`}
         <input
           type="datetime-local"
           className={fieldClass}
@@ -323,8 +348,8 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
       </fieldset>
       <fieldset className="space-y-1">
         <legend className={labelClass}>Locations</legend>
-        {matches(locations, (location) => location.name).map((location) =>
-          checkbox({ kind: "location", locationId: location.id }, location.name),
+        {matches(locations, locationLabel).map((location) =>
+          checkbox({ kind: "location", locationId: location.id }, locationLabel(location)),
         )}
       </fieldset>
       <fieldset className="space-y-1">
@@ -340,7 +365,12 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
         Work order
         <select className={fieldClass} value={form.workOrderId} onChange={(event) => setForm({ ...form, workOrderId: event.target.value })}>
           <option value="">None</option>
-          {(workOrdersQ.data?.items ?? []).map((order) => (
+          {form.workOrderId !== "" && workOrder === undefined ? (
+            <option value={form.workOrderId} disabled>
+              {workOrderLabel}
+            </option>
+          ) : null}
+          {workOrders.map((order) => (
             <option key={order.id} value={order.id}>{`${order.reference} — ${order.title}`}</option>
           ))}
         </select>
@@ -353,8 +383,13 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
           onChange={(event) => setForm({ ...form, maintenanceScheduleId: event.target.value })}
         >
           <option value="">None</option>
-          {(schedulesQ.data?.items ?? []).map((schedule) => (
-            <option key={schedule.id} value={schedule.id}>{`${schedule.title} — ${schedule.assetName}`}</option>
+          {form.maintenanceScheduleId !== "" && schedule === undefined ? (
+            <option value={form.maintenanceScheduleId} disabled>
+              {scheduleLabel}
+            </option>
+          ) : null}
+          {schedules.map((candidate) => (
+            <option key={candidate.id} value={candidate.id}>{`${candidate.title} — ${candidate.assetName}`}</option>
           ))}
         </select>
       </label>
@@ -370,8 +405,23 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
     if (step.id === "window") return windowBlocker(form, now);
     if (step.id !== "targets") return null;
     if (form.targets.length === 0) return "Choose at least one asset, location or rule.";
-    return form.targets.length > MAX_TARGETS ? `A window may name at most ${MAX_TARGETS} targets.` : null;
+    if (form.targets.length > MAX_TARGETS) return `A window may name at most ${MAX_TARGETS} targets.`;
+    return organizationNames.length > 1
+      ? `${TARGETS_SPAN_ORGANIZATIONS}: ${organizationNames.join(" and ")} are both chosen.`
+      : null;
   }
+
+  // The Review keeps the body's ISO rows; this line says the same times in the browser's zone, and
+  // names each link (an id outside the caller's lists is said to be so).
+  const startsAt = typeof values.startsAt === "string" ? values.startsAt : null;
+  const endsAt = typeof values.endsAt === "string" ? values.endsAt : null;
+  const reviewDetail = (
+    <div className="space-y-1 text-xs">
+      <p>{`Starts ${startsAt === null ? "now" : localTime(startsAt)}; ends ${endsAt === null ? "—" : localTime(endsAt)}.`}</p>
+      {form.workOrderId !== "" ? <p>{`Work order: ${workOrderLabel}.`}</p> : null}
+      {form.maintenanceScheduleId !== "" ? <p>{`Maintenance schedule: ${scheduleLabel}.`}</p> : null}
+    </div>
+  );
 
   return (
     <AdminWizardFrame title="Create maintenance window">
@@ -387,6 +437,7 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
         onCancel={onClose}
         submitting={write.pending}
         submitError={write.error}
+        review={{ omit: [], detail: reviewDetail }}
         summary={maintenanceWindowWizardEntry("maintenanceWindow.create").summary({
           body: wizardBody(values),
           params: {},
@@ -394,10 +445,13 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
           organizationName,
           maintenanceWindow: {
             reason: form.reason,
-            startsAt: typeof values.startsAt === "string" ? values.startsAt : null,
-            endsAt: typeof values.endsAt === "string" ? values.endsAt : null,
+            startsAt,
+            endsAt,
             targetLabels: form.targets.map(labelOf),
-            locationLabels: chosenLocations.map((id) => locationById.get(id)?.name ?? id),
+            locationLabels: chosenLocations.map((id) => {
+              const location = locationById.get(id);
+              return location ? locationLabel(location) : unlisted(id, locationsQ.isSuccess);
+            }),
             coveredAssetCount: assets.filter((asset) => covered.has(asset.locationId)).length,
           },
         })}
@@ -415,9 +469,9 @@ function ExtendWindowWizard({ item, onClose }: { item: MaintenanceWindowItem; on
 
   const newEnd = (
     <>
-      <p className="text-xs text-ink-muted">{`Now ends ${item.endsAt.slice(0, 16).replace("T", " ")} UTC.`}</p>
+      <p className="text-xs text-ink-muted">{`Now ends ${localTime(item.endsAt)}.`}</p>
       <label className={labelClass}>
-        New end
+        {`New end (${localZoneLabel()})`}
         <input
           type="datetime-local"
           className={fieldClass}
@@ -451,7 +505,7 @@ function ExtendWindowWizard({ item, onClose }: { item: MaintenanceWindowItem; on
         values={values}
         onChange={(next) =>
           setForm({
-            end: typeof next.endsAt === "string" && isoOfLocalInput(next.endsAt) ? localInputOf(new Date(next.endsAt)) : form.end,
+            end: instantOf(next.endsAt) ?? form.end,
             reason: typeof next.reason === "string" ? next.reason : form.reason,
           })
         }
@@ -462,6 +516,12 @@ function ExtendWindowWizard({ item, onClose }: { item: MaintenanceWindowItem; on
         submitting={write.pending}
         submitError={write.error}
         current={{ endsAt: item.endsAt }}
+        review={{
+          omit: [],
+          detail: (
+            <p className="text-xs">{`Ends ${values.endsAt === undefined ? "—" : localTime(values.endsAt)}; now ends ${localTime(item.endsAt)}.`}</p>
+          ),
+        }}
         summary={maintenanceWindowWizardEntry("maintenanceWindow.extend").summary({
           body: wizardBody(values),
           params: { id: item.id },

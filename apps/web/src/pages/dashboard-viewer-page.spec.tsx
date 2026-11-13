@@ -463,8 +463,13 @@ export async function aCoveredAssetDashboardShowsOneHeaderBadge(): Promise<void>
 export async function anUncoveredAssetDashboardShowsNoBadge(): Promise<void> {
   vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(ASSET_DTO);
   renderPage(asUser("viewer"));
+  // A rule-only window is active in scope but covers no asset: "any window" as the badge rule reddens this.
+  const read = vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({ items: [{ id: "w-rule", assetIds: [] }] } as never);
   await screen.findByRole("heading", { name: "Site A Overview" });
-  await waitFor(() => expect(maintenanceApi.fetchMaintenanceWindows).toHaveBeenCalled());
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  await act(async () => {
+    await read.mock.results[0]?.value;
+  });
   expect(screen.queryByTestId("asset-maintenance-badge")).toBeNull();
 }
 
@@ -475,4 +480,7 @@ export async function aNonAssetDashboardMakesNoMaintenanceRead(): Promise<void> 
   await screen.findByRole("heading", { name: "Site A Overview" });
   expect(maintenanceApi.fetchMaintenanceWindows).not.toHaveBeenCalled();
   expect(screen.queryByTestId("asset-maintenance-badge")).toBeNull();
+  // Neither a badge nor the Edit link (a viewer): the header has no empty actions slot.
+  const header = screen.getByRole("heading", { level: 1, name: "Site A Overview" }).closest("header") as HTMLElement;
+  expect(header.children).toHaveLength(1);
 }

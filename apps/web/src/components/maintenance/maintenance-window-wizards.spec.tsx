@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 
@@ -12,9 +12,9 @@ import * as windowsApi from "../../api/maintenance-windows";
 import * as rulesApi from "../../api/rules";
 import * as workOrdersApi from "../../api/work-orders";
 import * as feedModule from "../../lib/alarm-bar-feed";
+import { isoOfLocalInput, localInputOf, localMinuteOf, localZoneLabel } from "../../lib/maintenance-window-time";
+import { useWizardStore } from "../../stores/wizard-store";
 import {
-  isoOfLocalInput,
-  localInputOf,
   MaintenanceWindowWizard,
   maintenanceWindowWizardEntry,
   type MaintenanceWindowDialog,
@@ -25,7 +25,8 @@ import {
 /**
  * `F4.359` U15 (ADR 0131 decisions 2 and 16; plan ruling Q6; ADR 0099 Amendment 19) — the four
  * maintenance-window wizards on `WizardShell`. Each claim is one exported function;
- * `maintenance-window-wizards.test.tsx` is the Vitest entry point. The reads are spied.
+ * `maintenance-window-wizards.test.tsx` is the Vitest entry point and pins `TZ=Asia/Kolkata`, so a
+ * time read or shown in UTC instead of the browser's zone fails. The reads are spied.
  */
 
 const HOUR = 60 * 60 * 1000;
@@ -35,6 +36,10 @@ const SITE = "00000000-0000-4000-8000-0000000000b1";
 const ASSET = "00000000-0000-4000-8000-0000000000c1";
 const RULE = "00000000-0000-4000-8000-0000000000d1";
 const WINDOW_ID = "00000000-0000-4000-8000-0000000000e1";
+const ORG_B = "00000000-0000-4000-8000-0000000000a2";
+const SITE_B = "00000000-0000-4000-8000-0000000000b2";
+const ASSET_B = "00000000-0000-4000-8000-0000000000c2";
+const FOREIGN = "00000000-0000-4000-8000-0000000000ff";
 
 export function windowItem(overrides: Partial<MaintenanceWindowItem> = {}): MaintenanceWindowItem {
   const now = Date.now();
@@ -71,8 +76,9 @@ export function spyReads(): void {
   vi.spyOn(maintenanceApi, "fetchMaintenanceSchedules").mockResolvedValue({ items: [] } as never);
 }
 
-function renderWizard(dialog: MaintenanceWindowDialog): Spies {
+function renderWizard(dialog: MaintenanceWindowDialog, reads: () => void = () => undefined): Spies {
   spyReads();
+  reads();
   // The wizard alone: no `AlarmBar` reads the feed, so a stub with the one method it calls is whole.
   const refreshNow = vi.fn();
   vi.spyOn(feedModule, "alarmBarFeed").mockReturnValue({ refreshNow } as never);
@@ -86,6 +92,13 @@ function renderWizard(dialog: MaintenanceWindowDialog): Spies {
   return { refreshNow, client, onClose };
 }
 
+/** The browser zone's label, as the wizards print it (Asia/Kolkata under the test wrapper). */
+const zone = (): string => localZoneLabel();
+const endField = (dialog: HTMLElement): HTMLElement => within(dialog).getByLabelText(`End (${zone()})`);
+const next = async (dialog: HTMLElement): Promise<void> => userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+/** A whole minute `ms` from now, as a `datetime-local` value. */
+const inputIn = (ms: number): string => localInputOf(new Date(Date.now() + ms));
+
 const currentStep = (): string => screen.getByRole("list", { name: "Steps" }).querySelector('[aria-current="step"]')?.textContent ?? "";
 
 /** W1 — an end 8 days out cannot leave the Window step, and the alert names the 7-day rule. */
@@ -93,7 +106,7 @@ export async function anEightDayWindowCannotLeaveTheWindowStep(): Promise<void> 
   renderWizard({ kind: "create" });
   const dialog = screen.getByRole("dialog", { name: "Create maintenance window" });
   await userEvent.type(within(dialog).getByLabelText("Reason"), "Pump overhaul");
-  fireEvent.change(within(dialog).getByLabelText("End"), { target: { value: localInputOf(new Date(Date.now() + 8 * DAY)) } });
+  fireEvent.change(endField(dialog), { target: { value: localInputOf(new Date(Date.now() + 8 * DAY)) } });
   // The rule is shown beside the field before Next is pressed.
   expect(within(dialog).getByText(/At most 7 days after the start/)).toBeInTheDocument();
   await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
@@ -111,7 +124,7 @@ export async function aValidCreatePostsTheExactBody(): Promise<void> {
   const end = localInputOf(new Date(Date.now() + 2 * DAY));
   await userEvent.type(within(dialog).getByLabelText("Reason"), "Pump overhaul");
   expect(within(dialog).getByLabelText("Now")).toBeChecked();
-  fireEvent.change(within(dialog).getByLabelText("End"), { target: { value: end } });
+  fireEvent.change(endField(dialog), { target: { value: end } });
   await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
   expect(currentStep()).toBe("2. Targets");
   await userEvent.click(await within(dialog).findByLabelText("Pump 1 (P-001)"));
@@ -158,7 +171,7 @@ export async function extendKeepsTheSevenDayRuleFromNow(): Promise<void> {
   const window = windowItem();
   const { onClose } = renderWizard({ kind: "extend", window });
   const dialog = screen.getByRole("dialog", { name: "Extend maintenance window" });
-  const field = within(dialog).getByLabelText("New end", { selector: "input" });
+  const field = within(dialog).getByLabelText(`New end (${zone()})`, { selector: "input" });
   fireEvent.change(field, { target: { value: localInputOf(new Date(Date.now() + 8 * DAY)) } });
   await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
   expect(currentStep()).toBe("1. New end");
@@ -184,4 +197,202 @@ export async function cancelPostsToTheCancelRoute(): Promise<void> {
   await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
   await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   expect(cancelled).toHaveBeenCalledWith(window.id, {});
+}
+
+/** W6 — "At a time" posts its `startsAt`, read in the browser's zone; the inputs and the Review name the zone. */
+export async function aTimedCreatePostsItsStart(): Promise<void> {
+  expect(zone()).toBe("UTC+05:30");
+  const created = vi.spyOn(windowsApi, "createMaintenanceWindow").mockResolvedValue(windowItem());
+  const { onClose } = renderWizard({ kind: "create" });
+  const dialog = screen.getByRole("dialog", { name: "Create maintenance window" });
+  const start = inputIn(2 * HOUR);
+  const end = inputIn(5 * HOUR);
+  await userEvent.type(within(dialog).getByLabelText("Reason"), "Pump overhaul");
+  await userEvent.click(within(dialog).getByLabelText("At a time"));
+  fireEvent.change(within(dialog).getByLabelText(`Start time (${zone()})`), { target: { value: start } });
+  fireEvent.change(endField(dialog), { target: { value: end } });
+  await next(dialog);
+  await userEvent.click(await within(dialog).findByLabelText("Pump 1 (P-001)"));
+  await next(dialog);
+  await next(dialog);
+  expect(currentStep()).toBe("4. Review");
+  const startsAt = isoOfLocalInput(start) as string;
+  expect(within(dialog).getByText(`Starts ${localMinuteOf(startsAt)} (${zone()}); ends ${localMinuteOf(isoOfLocalInput(end) as string)} (${zone()}).`)).toBeInTheDocument();
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  // The start typed in IST is that wall-clock minute's instant, not the same digits in UTC.
+  const [date, time] = start.split("T") as [string, string];
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  const [h, mi] = time.split(":").map(Number) as [number, number];
+  expect(startsAt).toBe(new Date(y, m - 1, d, h, mi).toISOString());
+  expect(created.mock.calls[0]?.[0]).toStrictEqual({
+    reason: "Pump overhaul",
+    startsAt,
+    endsAt: isoOfLocalInput(end),
+    targets: [{ kind: "asset", assetId: ASSET }],
+  });
+}
+
+/** W7 — an end at or before the start keeps the Window step, with its sentence. */
+export async function anEndBeforeTheStartStaysOnTheWindowStep(): Promise<void> {
+  renderWizard({ kind: "create" });
+  const dialog = screen.getByRole("dialog", { name: "Create maintenance window" });
+  await userEvent.type(within(dialog).getByLabelText("Reason"), "Pump overhaul");
+  await userEvent.click(within(dialog).getByLabelText("At a time"));
+  fireEvent.change(within(dialog).getByLabelText(`Start time (${zone()})`), { target: { value: inputIn(3 * HOUR) } });
+  fireEvent.change(endField(dialog), { target: { value: inputIn(2 * HOUR) } });
+  await next(dialog);
+  expect(currentStep()).toBe("1. Window");
+  expect(within(dialog).getByRole("alert")).toHaveTextContent("A maintenance window must end after its start.");
+}
+
+/** W8 — a start in the past keeps the Window step, with its sentence. */
+export async function aStartInThePastIsRefused(): Promise<void> {
+  renderWizard({ kind: "create" });
+  const dialog = screen.getByRole("dialog", { name: "Create maintenance window" });
+  await userEvent.type(within(dialog).getByLabelText("Reason"), "Pump overhaul");
+  await userEvent.click(within(dialog).getByLabelText("At a time"));
+  fireEvent.change(within(dialog).getByLabelText(`Start time (${zone()})`), { target: { value: inputIn(-2 * HOUR) } });
+  fireEvent.change(endField(dialog), { target: { value: inputIn(2 * HOUR) } });
+  await next(dialog);
+  expect(currentStep()).toBe("1. Window");
+  expect(within(dialog).getByRole("alert")).toHaveTextContent("A maintenance window cannot start in the past.");
+}
+
+/** W9 — Extend shows the current end in the browser's zone, labelled, not in UTC. */
+export async function extendShowsTheCurrentEndInLocalTime(): Promise<void> {
+  const window = windowItem({ endsAt: "2026-11-13T08:00:00.000Z" });
+  renderWizard({ kind: "extend", window });
+  const dialog = screen.getByRole("dialog", { name: "Extend maintenance window" });
+  expect(within(dialog).getByText("Now ends 2026-11-13 13:30 (UTC+05:30).")).toBeInTheDocument();
+}
+
+/**
+ * W10 — a Copilot fill naming a target, a work order and a schedule the caller's lists do not hold
+ * shows each as "(not in your list)" — in the Chosen line, the selects and the Review — never as
+ * "None" or a bare id the user cannot read.
+ */
+export async function aFilledIdOutsideTheListsIsNamedAsSuch(): Promise<void> {
+  renderWizard({ kind: "create" });
+  const dialog = screen.getByRole("dialog", { name: "Create maintenance window" });
+  const fill = (stepId: string, values: Record<string, unknown>) =>
+    act(() => {
+      useWizardStore.getState().receiveFill({ catalogId: "maintenanceWindow.create", params: {}, stepId, values }, null);
+    });
+  await fill("window", { reason: "Pump overhaul", endsAt: new Date(Date.now() + DAY).toISOString() });
+  await fill("targets", { targets: [{ kind: "asset", assetId: FOREIGN }] });
+  await fill("link", { workOrderId: FOREIGN, maintenanceScheduleId: FOREIGN });
+  await next(dialog);
+  expect(currentStep()).toBe("2. Targets");
+  await waitFor(() => expect(within(dialog).getByText(`Chosen: ${FOREIGN} (not in your list)`)).toBeInTheDocument());
+  await next(dialog);
+  expect(currentStep()).toBe("3. Link");
+  const workOrder = within(dialog).getByLabelText("Work order") as HTMLSelectElement;
+  const schedule = within(dialog).getByLabelText("Maintenance schedule") as HTMLSelectElement;
+  expect(workOrder.selectedOptions[0]?.textContent).toBe(`${FOREIGN} (not in your list)`);
+  expect(workOrder.selectedOptions[0]?.disabled).toBe(true);
+  expect(schedule.selectedOptions[0]?.textContent).toBe(`${FOREIGN} (not in your list)`);
+  await next(dialog);
+  expect(currentStep()).toBe("4. Review");
+  expect(within(dialog).getByText(`Work order: ${FOREIGN} (not in your list).`)).toBeInTheDocument();
+  expect(within(dialog).getByText(`Maintenance schedule: ${FOREIGN} (not in your list).`)).toBeInTheDocument();
+  expect(within(dialog).getByText(new RegExp(`on 1 target: ${FOREIGN} \\(not in your list\\)`))).toBeInTheDocument();
+}
+
+/** The reads of a caller who reads two organizations, each with a site named "Lakwa plant". */
+function twoOrganizations(): void {
+  vi.spyOn(assetsApi, "fetchAdminAssets").mockResolvedValue({
+    items: [
+      { id: ASSET, code: "P-001", name: "Pump 1", locationId: SITE, organizationCode: "PHE" },
+      { id: ASSET_B, code: "P-002", name: "Pump 2", locationId: SITE_B, organizationCode: "PHA" },
+    ],
+  } as never);
+  vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({
+    items: [
+      { id: SITE, name: "Lakwa plant", organizationId: ORG, organizationName: "PHE West Bengal", parentId: null },
+      { id: SITE_B, name: "Lakwa plant", organizationId: ORG_B, organizationName: "PHE Assam", parentId: null },
+    ],
+  } as never);
+}
+
+/** W11 — targets of two organizations cannot leave the Targets step; same-named sites carry their organization. */
+export async function targetsOfTwoOrganizationsAreRefused(): Promise<void> {
+  renderWizard({ kind: "create" }, twoOrganizations);
+  const dialog = screen.getByRole("dialog", { name: "Create maintenance window" });
+  await userEvent.type(within(dialog).getByLabelText("Reason"), "Pump overhaul");
+  fireEvent.change(endField(dialog), { target: { value: inputIn(DAY) } });
+  await next(dialog);
+  await userEvent.click(await within(dialog).findByLabelText("Lakwa plant (PHE West Bengal)"));
+  await userEvent.click(within(dialog).getByLabelText("Pump 2 (P-002)"));
+  await next(dialog);
+  expect(currentStep()).toBe("2. Targets");
+  expect(within(dialog).getByRole("alert")).toHaveTextContent(
+    "Every target of a maintenance window must belong to one organization: PHE West Bengal and PHE Assam are both chosen.",
+  );
+  // One organization's targets pass.
+  await userEvent.click(within(dialog).getByLabelText("Pump 2 (P-002)"));
+  await userEvent.click(within(dialog).getByLabelText("Pump 1 (P-001)"));
+  await next(dialog);
+  expect(currentStep()).toBe("3. Link");
+}
+
+/** The headers of one request, whatever shape `init.headers` took. */
+const headersOf = (init: RequestInit | undefined): Headers => new Headers(init?.headers);
+
+/**
+ * W12 — each of the four wizards sends the plain request: no `X-Copilot-Change` header (a copilot
+ * write goes through the dock's card only). The global `fetch` is stubbed, not the API wrapper,
+ * because the header is only observable on the request; the positive is that each write fired.
+ */
+export async function theFourWritesSendNoCopilotHeader(): Promise<void> {
+  const seen: { url: string; init: RequestInit | undefined }[] = [];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    seen.push({ url, init });
+    return new Response(JSON.stringify(windowItem()), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  const submitted = async (title: string): Promise<void> => {
+    const dialog = screen.getByRole("dialog", { name: title });
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Submit" })).toBeInTheDocument());
+    await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+  };
+
+  let spies = renderWizard({ kind: "create" });
+  let dialog = screen.getByRole("dialog", { name: "Create maintenance window" });
+  await userEvent.type(within(dialog).getByLabelText("Reason"), "Pump overhaul");
+  fireEvent.change(endField(dialog), { target: { value: inputIn(DAY) } });
+  await next(dialog);
+  await userEvent.click(await within(dialog).findByLabelText("Pump 1 (P-001)"));
+  await next(dialog);
+  await next(dialog);
+  await submitted("Create maintenance window");
+  await waitFor(() => expect(spies.onClose).toHaveBeenCalledTimes(1));
+  cleanup();
+
+  spies = renderWizard({ kind: "extend", window: windowItem() });
+  dialog = screen.getByRole("dialog", { name: "Extend maintenance window" });
+  fireEvent.change(within(dialog).getByLabelText(`New end (${zone()})`, { selector: "input" }), { target: { value: inputIn(2 * DAY) } });
+  await next(dialog);
+  await submitted("Extend maintenance window");
+  await waitFor(() => expect(spies.onClose).toHaveBeenCalledTimes(1));
+  cleanup();
+
+  for (const [kind, title] of [
+    ["end", "End maintenance window"],
+    ["cancel", "Cancel maintenance window"],
+  ] as const) {
+    spies = renderWizard({ kind, window: windowItem() });
+    await next(screen.getByRole("dialog", { name: title }));
+    await submitted(title);
+    await waitFor(() => expect(spies.onClose).toHaveBeenCalledTimes(1));
+    cleanup();
+  }
+
+  const writes = seen.filter(({ init }) => init?.method === "POST");
+  expect(writes.map(({ url }) => url.replace(/^.*\/api\/v1/, ""))).toEqual([
+    "/maintenance-windows",
+    `/maintenance-windows/${WINDOW_ID}/extend`,
+    `/maintenance-windows/${WINDOW_ID}/end`,
+    `/maintenance-windows/${WINDOW_ID}/cancel`,
+  ]);
+  for (const { init } of writes) expect(headersOf(init).has("X-Copilot-Change")).toBe(false);
 }

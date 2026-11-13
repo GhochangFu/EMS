@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -13,13 +13,14 @@ import * as systemStatusApi from "../../api/system-status";
 import { spyReads, windowItem } from "../../components/maintenance/maintenance-window-wizards.spec";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { visibleMasterDataTabs } from "../../lib/admin-access";
+import { localMinuteOf, localZoneLabel } from "../../lib/maintenance-window-time";
 import { type AuthUser, useAuthStore } from "../../stores/auth-store";
 import { MaintenanceWindowsRoute } from "./maintenance-windows-page";
 
 /**
  * `F4.359` U15 (ADR 0131 decision 16; plan ruling Q6) — the Maintenance windows page: three
  * sections, the row actions each state allows, a 409 that refetches, and the route's guard.
- * `maintenance-windows-page.test.tsx` is the Vitest entry point.
+ * `maintenance-windows-page.test.tsx` is the Vitest entry point and pins `TZ=Asia/Kolkata`.
  */
 
 const GLOBAL: AccessibleScope = { kind: "global", locations: [], assetGroups: [], assetIds: [] };
@@ -45,11 +46,14 @@ function asUser(role: UserRole): AuthUser {
   return { id: "u1", email: `${role}@bms.local`, displayName: role, role } as unknown as AuthUser;
 }
 
-function renderRoute(role: UserRole): ReturnType<typeof vi.spyOn> {
+function renderRoute(
+  role: UserRole,
+  lists: Partial<Record<"active" | "future" | "past", MaintenanceWindowItem[]>> = {},
+): ReturnType<typeof vi.spyOn> {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   spyReads();
-  const byState: Record<string, MaintenanceWindowItem[]> = { active: [ACTIVE], future: [FUTURE], past: [PAST] };
+  const byState: Record<string, MaintenanceWindowItem[]> = { active: [ACTIVE], future: [FUTURE], past: [PAST], ...lists };
   const list = vi
     .spyOn(windowsApi, "fetchMaintenanceWindows")
     .mockImplementation(async (query = {}) => ({ items: byState[query.state ?? ""] ?? [] }));
@@ -123,4 +127,49 @@ export async function anOperatorIsRedirected(): Promise<void> {
   renderRoute("operator");
   expect(await screen.findByText("HOME")).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Maintenance Windows" })).toBeNull();
+}
+
+/** P6 — every time is in the browser's zone, and the Start and End columns name it. */
+export async function theTimesAreInTheBrowsersZone(): Promise<void> {
+  expect(localZoneLabel()).toBe("UTC+05:30");
+  const at = windowItem({ id: "00000000-0000-4000-8000-0000000000f4", reason: "Meter swap", startsAt: "2026-11-13T08:00:00.000Z", endsAt: "2026-11-13T10:15:00.000Z" });
+  renderRoute("organization_admin", { active: [at] });
+  const row = await rowOf("Active maintenance windows", "Meter swap");
+  const headers = within(table("Active maintenance windows")).getAllByRole("columnheader").map((cell) => cell.textContent);
+  expect(headers.slice(1, 3)).toEqual(["Start (UTC+05:30)", "End (UTC+05:30)"]);
+  const cells = within(row).getAllByRole("cell").map((cell) => cell.textContent);
+  expect(cells.slice(1, 3)).toEqual(["2026-11-13 13:30", "2026-11-13 15:45"]);
+  expect(localMinuteOf(at.startsAt)).toBe("2026-11-13 13:30");
+}
+
+/** P7 — Future lists the soonest start first, whatever order the API answers in. */
+export async function futureListsTheSoonestFirst(): Promise<void> {
+  const later = windowItem({ ...FUTURE, id: "00000000-0000-4000-8000-0000000000f5", reason: "Later swap", startsAt: new Date(Date.now() + 3 * DAY).toISOString(), endsAt: new Date(Date.now() + 4 * DAY).toISOString() });
+  // The API orders by start, newest first.
+  renderRoute("organization_admin", { future: [later, FUTURE] });
+  await rowOf("Future maintenance windows", "Later swap");
+  const reasons = within(table("Future maintenance windows"))
+    .getAllByRole("row")
+    .slice(1)
+    .map((row) => within(row).getAllByRole("cell")[0]?.textContent);
+  expect(reasons).toEqual(["Valve swap", "Later swap"]);
+}
+
+/** P8 — the sections re-read every minute, so a window that starts or ends by the clock moves section. */
+export async function theSectionsRereadEveryMinute(): Promise<void> {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const list = renderRoute("organization_admin");
+    await rowOf("Future maintenance windows", "Valve swap");
+    const reads = (state: string): number => list.mock.calls.filter((call: unknown[]) => (call[0] as { state?: string } | undefined)?.state === state).length;
+    const before = { active: reads("active"), future: reads("future"), past: reads("past") };
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(reads("active")).toBeGreaterThan(before.active);
+    expect(reads("future")).toBeGreaterThan(before.future);
+    expect(reads("past")).toBeGreaterThan(before.past);
+  } finally {
+    vi.useRealTimers();
+  }
 }

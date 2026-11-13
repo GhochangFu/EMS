@@ -15,6 +15,7 @@ import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { canManageMaintenanceWindows } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { localMinuteOf, localZoneLabel } from "../../lib/maintenance-window-time";
 import { type AuthUser, useAuthStore } from "../../stores/auth-store";
 
 /**
@@ -26,6 +27,10 @@ import { type AuthUser, useAuthStore } from "../../stores/auth-store";
  * The route element is this file's export: signed out goes to login, signed in goes through
  * `AdminRoute` (so an `operator` is sent home), and `extra-admin-routes.tsx` mounts it — `app.tsx`
  * sits at the AGENTS.md section 4.5 cap. The reads are the caller's own scope (decision 13).
+ *
+ * Every time is in the browser's own zone, and the Start and End columns name it — the same
+ * convention as the wizards' inputs (`lib/maintenance-window-time.ts`). A window's state moves with
+ * the clock, so each section re-reads once a minute.
  */
 
 /** Each section's read: past is the newest 100 (the list's ceiling; the API orders by start, newest first). */
@@ -35,12 +40,15 @@ const SECTIONS: readonly { state: MaintenanceWindowState; title: string; empty: 
   { state: "past", title: "Past", empty: "No maintenance window has ended yet." },
 ];
 const LIMIT = 100;
+/** A window starts and ends by the clock, not an event: the sections re-read once a minute. */
+const REFETCH_MS = 60_000;
 
 const actionClass = "text-xs font-semibold text-accent-strong";
 const primaryClass = "surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent";
 
-/** "2026-11-13 08:12 UTC" — the ISO minute, the same on every machine. */
-const minuteUtc = (iso: string): string => `${iso.slice(0, 16).replace("T", " ")} UTC`;
+/** Future is read soonest first; the API orders every state by start, newest first. */
+const ordered = (state: MaintenanceWindowState, items: readonly MaintenanceWindowItem[]): readonly MaintenanceWindowItem[] =>
+  state === "future" ? [...items].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt)) : items;
 
 function WindowRows({
   state,
@@ -53,13 +61,14 @@ function WindowRows({
   canManage: boolean;
   open: (dialog: MaintenanceWindowDialog) => void;
 }) {
+  const zone = localZoneLabel();
   return (
     <table aria-label={`${state[0]?.toUpperCase()}${state.slice(1)} maintenance windows`} className="min-w-full text-sm">
       <thead>
         <tr className="border-b text-left text-xs uppercase text-ink-muted">
           <th className="px-2 py-2">Reason</th>
-          <th className="px-2 py-2">Start</th>
-          <th className="px-2 py-2">End</th>
+          <th className="px-2 py-2">{`Start (${zone})`}</th>
+          <th className="px-2 py-2">{`End (${zone})`}</th>
           <th className="px-2 py-2">Targets</th>
           <th className="px-2 py-2">Link</th>
           <th className="px-2 py-2">Created by</th>
@@ -70,9 +79,9 @@ function WindowRows({
         {items.map((item) => (
           <tr key={item.id} className="border-b border-well-deep">
             <td className="px-2 py-2 font-semibold text-ink">{item.reason}</td>
-            <td className="px-2 py-2">{minuteUtc(item.startsAt)}</td>
+            <td className="px-2 py-2">{localMinuteOf(item.startsAt)}</td>
             <td className="px-2 py-2">
-              {minuteUtc(item.endedAt ?? item.endsAt)}
+              {localMinuteOf(item.endedAt ?? item.endsAt)}
               {item.endedAt !== null && item.endedByName !== null ? (
                 <span className="block text-2xs text-ink-muted">{`Ended by ${item.endedByName}`}</span>
               ) : null}
@@ -118,8 +127,9 @@ function WindowSection({
   const listQ = useQuery({
     queryKey: ["maintenance-windows", "admin", state],
     queryFn: () => fetchMaintenanceWindows({ state, limit: LIMIT }),
+    refetchInterval: REFETCH_MS,
   });
-  const items = listQ.data?.items ?? [];
+  const items = ordered(state, listQ.data?.items ?? []);
   return (
     <SectionCard title={title} bodyClassName="p-3 space-y-2 overflow-x-auto">
       {listQ.isError ? (

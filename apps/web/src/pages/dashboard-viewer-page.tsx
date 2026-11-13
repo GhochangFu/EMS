@@ -48,6 +48,9 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
     queryFn: () => fetchDashboard(slug, organizationId),
     enabled: slug !== "",
   });
+  // `F4.359` U16: with neither a badge nor the Edit link, the header gets no actions slot at all.
+  const assetId = dashboardQ.data?.assetId || undefined;
+  const canEdit = dashboardQ.data !== undefined && canAuthorDashboards(user.role);
 
   return (
     <AppShell user={user} kpiRibbon={<span className="text-ink">{dashboardQ.data?.name ?? "Dashboard"}</span>}>
@@ -57,17 +60,19 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
           title={dashboardQ.data?.name ?? slug}
           subtitle={dashboardQ.data?.description ?? undefined}
           actions={
-            <>
-              {dashboardQ.data?.assetId ? <DashboardMaintenanceBadge assetId={dashboardQ.data.assetId} /> : null}
-              {dashboardQ.data && canAuthorDashboards(user.role) ? (
-              <Link
-                to={`/admin/dashboards/${slug}${organizationId ? `?organizationId=${organizationId}` : ""}`}
-                className="surface-button px-3 py-1.5"
-              >
-                Edit dashboard
-              </Link>
-              ) : null}
-            </>
+            assetId !== undefined || canEdit ? (
+              <>
+                {assetId !== undefined ? <DashboardMaintenanceBadge assetId={assetId} /> : null}
+                {canEdit ? (
+                  <Link
+                    to={`/admin/dashboards/${slug}${organizationId ? `?organizationId=${organizationId}` : ""}`}
+                    className="surface-button px-3 py-1.5"
+                  >
+                    Edit dashboard
+                  </Link>
+                ) : null}
+              </>
+            ) : undefined
           }
         />
 

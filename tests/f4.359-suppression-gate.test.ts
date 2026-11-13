@@ -100,8 +100,12 @@ const WEB_SRC = join(repoRoot, "apps/web/src");
 const WINDOWS_ROUTE = `<Route path="/admin/maintenance-windows" element={<MaintenanceWindowsRoute />} />`;
 const WINDOWS_TAB = `{ label: "Maintenance Windows", path: "/admin/maintenance-windows", area: "notifications" }`;
 
-/** `withoutComments`, and every block comment too: a JSX comment in braces opens mid-line. */
-const codeOf = (source: string): string => withoutComments(source.replace(/\/\*[\s\S]*?\*\//g, ""));
+/**
+ * `withoutComments` (the line-keyed stripper G1-G3 use), and a JSX comment in braces too, since that
+ * one opens mid-line. Only the braced form is removed: a bare `/*` inside a string literal (a path
+ * such as "/admin/work-order-settings/*") must not swallow the code up to the next `*\/`.
+ */
+const codeOf = (source: string): string => withoutComments(source).replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "");
 
 /** G4's route rule: the extra admin routes mount the page's route element on a code line. */
 function mountsTheWindowsRoute(extraRoutes: string): boolean {
@@ -207,5 +211,8 @@ describe("F4.359 suppression gate", () => {
     const moved = access.replace(WINDOWS_TAB, "").replace("export type MasterDataTab =", `const stray = [${WINDOWS_TAB}];\nexport type MasterDataTab =`);
     expect(moved).not.toBe(access);
     expect(listsTheWindowsTab(moved)).toBe(false);
+    // A string holding `/*` is code, not a comment: the route after it is still seen.
+    const glob = `const legacy = "/admin/work-order-settings/*";\n${WINDOWS_ROUTE}\nconst tail = "*/";`;
+    expect(mountsTheWindowsRoute(glob)).toBe(true);
   });
 });
