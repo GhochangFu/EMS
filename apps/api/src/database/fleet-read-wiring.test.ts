@@ -8,6 +8,8 @@ import {
   assertAssetImagesWriteServiceFleetSlot,
   assertAssetImagesWriteServiceTenantSlot,
   assertConformedServiceSlots,
+  assertMaintenanceWindowsServiceFleetSlot,
+  assertMaintenanceWindowsServiceTenantSlot,
   assertCopilotPurgeServiceFleetSlot,
   assertCopilotPurgeServiceTenantSlot,
   assertReportDispatchServiceInjectsTheQueueClient,
@@ -116,5 +118,13 @@ describe("E7.1b — services inject the right pool token in the right constructo
 
   it("F4.297 TelemetryService injects the fleet pool in slot 2", () => {
     assertTelemetryServiceFleetPoolSlot();
+  });
+
+  it("F4.359 MaintenanceWindowsService injects the tenant pool in slot 0", () => {
+    assertMaintenanceWindowsServiceTenantSlot();
+  });
+
+  it("F4.359 MaintenanceWindowsService injects the fleet pool in slot 1", () => {
+    assertMaintenanceWindowsServiceFleetSlot();
   });
 });

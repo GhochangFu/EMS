@@ -25,7 +25,9 @@ const reasonSchema = z
   .string()
   .trim()
   .refine((s) => [...s].length >= 3, { message: "reason must be at least 3 characters" })
-  .refine((s) => [...s].length <= 2000, { message: "reason must be at most 2000 characters" });
+  .describe("At least 3 characters after trimming, counted in code points.")
+  .refine((s) => [...s].length <= 2000, { message: "reason must be at most 2000 characters" })
+  .describe("3 to 2000 characters after trimming, counted in code points (the database CHECK's char_length).");
 
 export const maintenanceWindowTargetSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("asset"), assetId: z.string().uuid() }).strict(),
