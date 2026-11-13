@@ -139,3 +139,5 @@ export * from "./template-adoption";
 export * from "./user-grants";
 export * from "./users";
 export type { Assignable, Measured, Strict } from "./equality";
+// `F4.359` (ADR 0131): the maintenance-window bodies and responses.
+export * from "./maintenance-windows";
