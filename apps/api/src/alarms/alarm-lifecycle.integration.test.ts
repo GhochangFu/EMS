@@ -9,6 +9,7 @@ import {
   assertClearsAfterTheHoldAndReopens,
   assertEscalatesOnceAndTellsSentChannelsOnly,
   assertTheSweepHandsItsCeilingMemoToTheService,
+  assertTheSweepStampsAndLiftsAnActiveAlarm,
   assertTwoBandsClearOnOneSample,
 } from "./alarm-lifecycle.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
@@ -64,5 +65,10 @@ describe.skipIf(!connectionString)("F3.10 — alarm lifecycle sweep against a re
   // replaced by every fake-deps sweep spec, so this is its only gate.
   it("forwards the sweep's ClosedCeilings through the adapter to NotificationsService", async () => {
     await assertTheSweepHandsItsCeilingMemoToTheService(db);
+  }, 60_000);
+
+  // `F4.359` U8 — the reconciler on real tables: a window that starts stamps, its end lifts.
+  it("stamps an already-active alarm when a window starts, and lifts it once the window ends", async () => {
+    await assertTheSweepStampsAndLiftsAnActiveAlarm(db);
   }, 60_000);
 });

@@ -282,18 +282,27 @@ export function unconfiguredWatermark(
  * whose only row is `skipped_rate_limited` would come back with zero rows, read
  * as "no evidence", and never be retried — which is the third of this row's
  * three cases.
+ *
+ * **`withheld` (`F4.359`, plan D10, owner ruling Q3) — REQUIRED, not defaulted.**
+ * `true` for an alarm a maintenance window suppressed and the sweep has since
+ * lifted: its raise was withheld, never offered, so an empty row group is not an
+ * offer still in flight but a message nobody has had, and stage 1 reads it as
+ * OWED. Stages 2 and 3 are unchanged, so a channel holding a `sent` row from
+ * before the window still gets nothing more. Required so that the one production
+ * caller cannot forget the question and still compile.
  */
 export function channelsOwedTheRaise(a: {
   channels: readonly NotificationChannelRow[];
   rows: readonly RaiseAttemptRow[];
   maxAttempts: number;
   processStartedAt: Date;
+  withheld: boolean;
 }): NotificationChannelRow[] {
   return a.channels.filter((channel) => {
-    // 1. Evidence — over every row for this channel.
+    // 1. Evidence — over every row for this channel. A withheld raise needs none.
     const rowsForChannel = a.rows.filter((row) => row.channelId === channel.id);
     if (rowsForChannel.length === 0) {
-      return false;
+      return a.withheld;
     }
 
     // 2. The exclusions, mirroring `eventDeliveryBlocked`'s

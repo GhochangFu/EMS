@@ -23,6 +23,7 @@ import {
   dueSteps,
   escalationDispatchInput,
   escalationKey,
+  escalationStart,
   stepIsTooLate,
 } from "./alarm-lifecycle";
 import { dispatchRememberingLostRows, reasonOf } from "./alarm-lifecycle-phases";
@@ -168,7 +169,8 @@ async function runDeviceClearPhase(
       clearedIds.add(item.id);
       deps.broadcastCleared(item);
       const alarm = alarmsById.get(item.id);
-      if (alarm) await notifyDeviceCleared(deps, alarm);
+      // `F4.359` (plan D12): a suppressed alarm clears silently.
+      if (alarm && alarm.suppressedAt === null) await notifyDeviceCleared(deps, alarm);
     }
   }
   return clearedIds;
@@ -216,14 +218,15 @@ async function runDeviceEscalationPhase(
   };
 
   for (const alarm of input.alarms) {
-    if (alarm.acknowledgedAt !== null || input.clearedIds.has(alarm.id)) continue;
+    // `F4.359`: never while suppressed; the clock from the lift (D11).
+    if (alarm.acknowledgedAt !== null || input.clearedIds.has(alarm.id) || alarm.suppressedAt !== null) continue;
     const steps = input.catalog.defaults.get(escalationKey(alarm.organizationId, alarm.severity));
     if (!steps || steps.length === 0) continue;
-    for (const stepNo of dueSteps(steps, alarm.raisedAt, input.now)) {
+    for (const stepNo of dueSteps(steps, escalationStart(alarm), input.now)) {
       const step = steps.find((candidate) => candidate.stepNo === stepNo);
       if (!step) continue;
       const stale = stepIsTooLate({
-        raisedAt: alarm.raisedAt,
+        raisedAt: escalationStart(alarm),
         afterMinutes: step.afterMinutes,
         now: input.now,
         maxLatenessMs: STEP_MAX_LATENESS_MS,

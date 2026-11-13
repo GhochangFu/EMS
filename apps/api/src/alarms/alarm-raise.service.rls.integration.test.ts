@@ -3,19 +3,24 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { assets, automationRules, createDb } from "@bms/db";
 
-import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { openIntegrationPool, requireIntegrationDb, resolveIntegrationRoleUrl } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import { AlarmRaiser } from "./alarm-raise.service";
 import type { AlarmRaiseRule } from "./alarm-raise.service";
 import {
+  assertDeviceRaiseStampsRtuCommsAndNeverIngestHost,
   assertRaiseDeviceHostAlarmOncePerOrganization,
   assertRaiseDeviceRaisesOnceAndNotifies,
   assertRaiseDeviceRefusesForeignRtu,
   assertRaiseRefusesCrossOrgUnderRealRls,
+  assertRaiseInsideAWindowIsStamped,
+  assertRaiseOutsideAnActiveWindowIsNotStamped,
   assertRaiseStampsBothOrgsUnderRealRls,
   type AlarmRaiseRlsFixtures,
   type DeviceRaiseRlsFixtures,
+  type SuppressionRlsFixtures,
 } from "./alarm-raise.service.rls.integration.spec";
+import { dropCoverOrganization, insertCoverOrganization } from "./maintenance-cover.reads.integration.spec";
 
 /**
  * `E7.1b` — Vitest entry point. Assertions live in the sibling `.spec`
@@ -47,6 +52,8 @@ describe.skipIf(!connectionString)("E7.1b — AlarmRaiser stamps org under real 
   let tenantPool: pg.Pool;
   let ctx: AlarmRaiseRlsFixtures;
   let device: DeviceRaiseRlsFixtures;
+  let admin: pg.Pool | undefined;
+  let suppression: SuppressionRlsFixtures | undefined;
   const startedAt = new Date(Date.now() - 60_000);
   const ruleIds: string[] = [];
   const assetIds: string[] = [];
@@ -189,6 +196,15 @@ describe.skipIf(!connectionString)("E7.1b — AlarmRaiser stamps org under real 
       rtuId: rtu.rows[0].id,
       foreignRtuId: foreignRtu.rows[0].id,
     };
+
+    // F4.359 U7: two organizations of their own, on the superuser, for the suppression claims.
+    admin = await openIntegrationPool(resolveIntegrationRoleUrl(url, "superuser", process.env), "F4.359");
+    suppression = {
+      raiser: ctx.raiser,
+      admin,
+      org: await insertCoverOrganization(admin, "RLS"),
+      foreign: await insertCoverOrganization(admin, "RLSX"),
+    };
   });
 
   afterAll(async () => {
@@ -202,7 +218,11 @@ describe.skipIf(!connectionString)("E7.1b — AlarmRaiser stamps org under real 
       await ownerPool.query(`DELETE FROM bms.automation_rules WHERE id = ANY($1)`, [ruleIds]);
       await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1)`, [assetIds]);
     }
-    await Promise.all([ownerPool, tenantPool].filter(Boolean).map((p) => p.end()));
+    if (admin && suppression) {
+      await dropCoverOrganization(admin, suppression.org.organizationId);
+      await dropCoverOrganization(admin, suppression.foreign.organizationId);
+    }
+    await Promise.all([ownerPool, tenantPool, admin].filter(Boolean).map((p) => (p as pg.Pool).end()));
   });
 
   it("stamps alarms.org from the asset and rule_executions.org from the rule", async () => {
@@ -223,5 +243,22 @@ describe.skipIf(!connectionString)("E7.1b — AlarmRaiser stamps org under real 
 
   it("F3.16: raiseDevice refuses an RTU of another organization, writing and announcing nothing", async () => {
     await assertRaiseDeviceRefusesForeignRtu(device);
+  });
+
+  const suppressionFixture = (): SuppressionRlsFixtures => {
+    if (!suppression) throw new Error("F4.359: the suppression fixture was not built");
+    return suppression;
+  };
+
+  it("F4.359: a raise on a target asset inside a window stamps both columns, and the created item reads suppressed", async () => {
+    await assertRaiseInsideAWindowIsStamped(suppressionFixture());
+  });
+
+  it("F4.359: after ended_at, after ends_at, before starts_at and under another organization's window, nothing is stamped", async () => {
+    await assertRaiseOutsideAnActiveWindowIsNotStamped(suppressionFixture());
+  });
+
+  it("F4.359: an rtu_comms raise under a target location is stamped; an ingest_host raise never is", async () => {
+    await assertDeviceRaiseStampsRtuCommsAndNeverIngestHost(suppressionFixture());
   });
 });

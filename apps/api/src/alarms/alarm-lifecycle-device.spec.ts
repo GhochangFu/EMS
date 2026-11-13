@@ -74,6 +74,8 @@ function commsAlarm(overrides: Partial<DeviceLifecycleAlarm> = {}): DeviceLifecy
     raisedAt: secondsBefore(600),
     acknowledgedAt: null,
     normalSince: null,
+    suppressedAt: null,
+    unsuppressedAt: null,
     ...overrides,
   };
 }

@@ -93,6 +93,7 @@ const RAISED: AlarmRaiseResult = {
   alarmId: "alarm-1",
   severity: "warning",
   message: "Feeder overload matched at 150",
+  suppressed: false,
 };
 
 /** A sample that matches `ruleRow()`'s `kw > 100`, timestamped at the sweep's clock. */
