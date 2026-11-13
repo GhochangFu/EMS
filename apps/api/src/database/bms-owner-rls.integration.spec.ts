@@ -95,6 +95,13 @@ export const FORCED_TABLES = [
   // half (organization B reads none of A's rows, the tenant pool cannot write).
   "rtu_health",
   "rtu_drop_hours",
+  // `F4.359` (ADR 0131 decision 17, migration `0152`). Strict tenant tables. The
+  // count-0 check below is VACUOUS for them (the seed writes no window);
+  // `tests/f4.359-maintenance-windows-schema.integration.test.ts` holds the
+  // non-vacuous half (A reads none of B's windows or targets, as bms_tenant and
+  // as bms_owner under FORCE, and an insert for B fails WITH CHECK).
+  "maintenance_windows",
+  "maintenance_window_targets",
 ] as const;
 
 function assert(condition: boolean, message: string): void {

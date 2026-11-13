@@ -89,6 +89,10 @@ export async function insertAlarm(db: Pg, organizationId: string, input: AlarmIn
 /** Every row the fixture inserted, by its organization id, children first. */
 export async function dropOrganization(db: Pg, organizationId: string): Promise<void> {
   await db.query("DELETE FROM bms.alarms WHERE organization_id = $1", [organizationId]);
+  // F4.359: a window (its targets cascade) keys to the assets, locations and rules
+  // below, and an alarm keys to its window, so windows go after alarms and before
+  // the rest.
+  await db.query("DELETE FROM bms.maintenance_windows WHERE organization_id = $1", [organizationId]);
   await db.query("DELETE FROM bms.assets WHERE organization_id = $1", [organizationId]);
   // The fixtures are two levels deep (a site and its children): children first.
   await db.query("DELETE FROM bms.locations WHERE organization_id = $1 AND parent_id IS NOT NULL", [organizationId]);

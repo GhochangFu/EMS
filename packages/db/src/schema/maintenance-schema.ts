@@ -18,9 +18,10 @@ import { alarmSkills, alarms } from "./alarms-schema";
  * and the schedule that raises work before one is raised.
  *
  * References point at `bms-schema.ts` and at `alarms-schema.ts`
- * (`work_orders.alarm_id`), never back into this module from either. Nothing
- * in the platform references a work order or a maintenance row, which is what
- * makes this the clean half of the split.
+ * (`work_orders.alarm_id`), never back into this module from either. No
+ * Drizzle table references a work order or a maintenance row, which is what
+ * makes this the clean half of the split; `bms.maintenance_windows` (0152)
+ * links both, but by SQL-only keys, so the import direction holds.
  *
  * Split out of `bms-schema.ts`, which stood at 999 of AGENTS.md §4.5's
  * 1000-line cap. No table, column, constraint or comment changed in the move.

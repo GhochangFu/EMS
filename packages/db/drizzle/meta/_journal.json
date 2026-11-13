@@ -1058,6 +1058,13 @@
       "when": 1794425973983,
       "tag": "0151_device_alarms",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1794574540687,
+      "tag": "0152_maintenance_windows",
+      "breakpoints": true
     }
   ]
 }

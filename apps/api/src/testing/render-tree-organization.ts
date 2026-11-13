@@ -96,6 +96,9 @@ export function sameSet(actual: readonly string[], expected: readonly string[], 
 /** Deletes every tree organization's rows; a count that does not match goes into `failures`. */
 export async function sweepTreeOrganizations(fleet: BmsDb, trees: readonly TreeOrganization[], failures: string[]): Promise<void> {
   for (const tree of trees) {
+    // F4.359: a maintenance window (its targets cascade) keys to the assets and
+    // locations below, so it goes first.
+    await fleet.execute(sql`delete from bms.maintenance_windows where organization_id = ${tree.organizationId}::uuid`);
     if (tree.assetIds.length > 0) {
       const removedAssets = await fleet.delete(assets).where(inArray(assets.id, tree.assetIds));
       if (removedAssets.rowCount !== tree.assetIds.length) {
