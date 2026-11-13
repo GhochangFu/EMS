@@ -171,6 +171,28 @@ export async function acknowledgeAllAsksOneReasonAndCallsInOrder(): Promise<void
   });
 }
 
+/**
+ * The reason label names what Confirm does: "Acknowledge all" says so and counts the rows, even
+ * for one row; a row's own Acknowledge reads "this alarm". (Owner, 2026-11-13: one row under
+ * "Acknowledge all" read "Reason for this alarm" on the AWS demo.)
+ */
+export async function theReasonLabelNamesTheAction(): Promise<void> {
+  await withPopup({ list: [alarmItem({ id: "a", message: "A" })] }, async () => {
+    const user = userEvent.setup();
+    await user.click(within(popup()!).getByRole("button", { name: "Acknowledge all" }));
+    expect(within(popup()!).getByText("Reason to acknowledge all 1 listed alarm")).toBeTruthy();
+    await user.click(within(popup()!).getByRole("button", { name: "Cancel" }));
+    await user.click(within(popup()!).getByRole("button", { name: "Acknowledge" }));
+    expect(within(popup()!).getByText("Reason for this alarm")).toBeTruthy();
+  });
+  const list = [alarmItem({ id: "a", message: "A" }), alarmItem({ id: "b", message: "B" })];
+  await withPopup({ list }, async () => {
+    const user = userEvent.setup();
+    await user.click(within(popup()!).getByRole("button", { name: "Acknowledge all" }));
+    expect(within(popup()!).getByText("Reason to acknowledge all 2 listed alarms")).toBeTruthy();
+  });
+}
+
 /** Decisions 8, 18 — a failed call keeps its row with its error, and the line reads "2 of 3 acknowledged". */
 export async function aFailedRowStaysWithItsError(): Promise<void> {
   const list = [alarmItem({ id: "a", message: "A" }), alarmItem({ id: "b", message: "B" }), alarmItem({ id: "c", message: "C" })];
@@ -274,12 +296,12 @@ export async function anUnseenCriticalBlinksUntilClosedOrAcknowledged(): Promise
   const critical = alarmItem({ id: "c", message: "Critical one" });
   const warn = warning({ id: "w", message: "Warning one" });
   await withPopup({ list: [critical, warn], summary: SUMMARY_CW }, async () => {
-    expect(blinking()).toEqual(["Critical1", "2 new alarms"]);
+    expect(blinking()).toEqual(["Critical1 · 1 unacked", "2 new alarms"]);
     await userEvent.setup().click(within(popup()!).getByRole("button", { name: "Close" }));
     expect(blinking(), "Close: seen").toEqual([]);
   });
   await withPopup({ list: [critical], summary: SUMMARY_CW }, async (f) => {
-    expect(blinking()).toEqual(["Critical1", "1 new alarm"]);
+    expect(blinking()).toEqual(["Critical1 · 1 unacked", "1 new alarm"]);
     await serverHolds(f, [{ ...critical, acknowledgedAt: "2026-11-12T12:00:00.000Z" }]);
     expect(blinking(), "acknowledged").toEqual([]);
   });

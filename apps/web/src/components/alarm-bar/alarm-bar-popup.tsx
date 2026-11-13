@@ -55,6 +55,8 @@ function PopupBody({
   more,
 }: AlarmBarPopupProps & { rows: readonly AlarmListItem[]; more: number }) {
   const [asking, setAsking] = useState<readonly string[] | null>(null);
+  // Which button opened the reason form, so its label names the action (2026-11-13).
+  const [askingAll, setAskingAll] = useState(false);
   const [reason, setReason] = useState("");
   const [running, setRunning] = useState(false);
   const [run, setRun] = useState<Run | null>(null);
@@ -97,7 +99,10 @@ function PopupBody({
             <button
               type="button"
               disabled={running}
-              onClick={() => setAsking(rows.map((row) => row.id))}
+              onClick={() => {
+                setAskingAll(true);
+                setAsking(rows.map((row) => row.id));
+              }}
               className="surface-button rounded px-2 py-1 font-semibold"
             >
               Acknowledge all
@@ -127,7 +132,9 @@ function PopupBody({
           }}
         >
           <label htmlFor="alarm-bar-reason" className="block font-semibold">
-            Reason for {askingShown.length === 1 ? "this alarm" : `${askingShown.length} alarms`}
+            {askingAll
+              ? `Reason to acknowledge all ${askingShown.length} listed ${askingShown.length === 1 ? "alarm" : "alarms"}`
+              : "Reason for this alarm"}
           </label>
           <textarea
             id="alarm-bar-reason"
@@ -156,7 +163,10 @@ function PopupBody({
             error={run?.errors.get(alarm.id) ?? null}
             readOnly={readOnly || running}
             onOpen={() => setDetailsId(alarm.id)}
-            onAcknowledge={() => setAsking([alarm.id])}
+            onAcknowledge={() => {
+              setAskingAll(false);
+              setAsking([alarm.id]);
+            }}
           />
         ))}
       </ul>

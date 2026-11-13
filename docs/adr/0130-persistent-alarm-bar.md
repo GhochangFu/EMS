@@ -13,6 +13,10 @@ build waits for the owner's "yes" to it.
 The owner's mockup choice was layout **B, the bottom alarm bar**, over a right
 side dock and a floating button.
 
+**Amendment 1 — accepted 2026-11-13** (owner, in chat, choosing "Show both
+numbers" after asking whether Acknowledge all lowers the bar's counts).
+Amends decision 2; see *Amendment 1* at the end.
+
 Clarifies [ADR 0118](./0118-selectable-design-systems.md) decision 7 (no
 animation on an alarm state) for one uniform blink (decision 7 here), and
 answers decision 6's "the alarm bell appears in every shell" (decision 12).
@@ -246,3 +250,26 @@ None. The four the draft flagged were accepted as recommended on
 (the 30-second repeat), decision 12 (the bar is ADR 0118 decision 6's bell)
 and decision 15 (an `rtu_comms` alarm belongs to its RTU's location; an
 `ingest_host` alarm to its organization only).
+
+## Amendment 1 — the bar shows active and unacknowledged counts (2026-11-13)
+
+**Status: Accepted — 2026-11-13** (owner, in chat: "Show both numbers").
+
+**Context.** After the AWS check of `F4.357`, the owner asked whether
+**Acknowledge all** lowers the bar's counts. It does not: decision 2 counts
+active (uncleared) alarms, and acknowledgement never closes an alarm
+(ADR 0057). An operator who has acknowledged everything still sees, for
+example, "Critical 20", with no sign that nothing waits for them. The summary
+already carries a per-severity `unacknowledged` count (`F4.357` plan Q1, PR 1).
+
+**Decision.** Decision 2's "one count per severity" becomes **two numbers per
+severity**: the active count, as before, then the unacknowledged count, shown
+as `Critical 20 · 0 unacked`. The pill's accessible name reads
+"Critical: 20 active, 0 unacknowledged". Both numbers come from the same scoped
+summary read (decision 16), so they agree with each other and with the page
+scope. Acknowledging lowers only the second number; clearing lowers both. The
+blink (decision 9) and the colours (ADR 0110) do not change.
+
+**Not changed.** What the popup, the tone and the "and N more" line count; the
+API and the contract (no new field); "No active alarms" still means a zero
+active total.
