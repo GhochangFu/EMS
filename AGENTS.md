@@ -1239,6 +1239,25 @@
 > Review step warns, and the users list carries `hasEffectiveGrant` and shows
 > **No access**. No migration — runbook §7 lists older organization admins
 > with no grant for the owner to fix per host.
+> And **a persistent alarm bar on every page** (**ADR 0130**, row `F4.357`;
+> plan #1288, PRs #1290–#1293, closed #1294 `51af6a49`). `AppShell` and the
+> control room wall mount `AlarmBar` (`components/alarm-bar/`), fixed to the
+> bottom of the window: per-severity counts, the newest unacknowledged alarm,
+> Acknowledge, Mute and an upward "All alarms" list. Its scope follows the
+> route: Estate (`/control-room`) and every non-control-room page → every alarm
+> the user can read; `/control-room/org/:organizationId` → that organization;
+> `/control-room/site/:locationId` (and its wall) → the location and its
+> sub-locations. A new unacknowledged alarm of rank ≥ 20 opens **one** popup
+> (Acknowledge per row or all with one reason, Close); rank ≥ 30 blinks at
+> 1 s and plays a Web Audio tone every 30 s until acknowledged or muted (a mute
+> covers the current alarms only); a sign-in or reload treats every existing
+> unacknowledged alarm as unseen. The API gains `locationId` on
+> `GET /api/v1/alarms` and `/alarms/summary` (a subtree through
+> `expandLocationSubtrees`), `state=unacknowledged` (rank, then newest; no
+> cursor) and `minSeverityRank` on the list, and `unacknowledged` per summary
+> row; `alarmListItemSchema` gains `severityRank` and `locationName`. No
+> migration, no dependency, no new location type ("Estate" is the existing
+> `/control-room` page). Verified on AWS 2026-11-13, the tone by the owner.
 > And **state labels for switching points, managed in the portal** (**ADR 0088
 > Amendment 3**, #1026, and **ADR 0099 Amendment 13**, #1027; row `F4.309`;
 > PR 1 #1034, PR 2 #1036, PR 3 #1038; this sweep merges last).
@@ -2773,6 +2792,17 @@ Do not add top-level folders without updating this section.
   that renders it, which is why `asset-points-page.tsx` holds `CalcRuntimePill`
   (`F2.9`).
 - Data fetching via TanStack Query hooks in `apps/web/src/api/`.
+  **One exception: the alarm bar's feed** (ADR 0130 decision 16, `F4.357` plan
+  Q3). `installAlarmBarFeed` (`lib/alarm-bar-feed.ts`, installed once in
+  `main.tsx`) holds the scoped unacknowledged list and summary in
+  `stores/alarm-bar-store.ts` and calls the `api/alarms.ts` functions directly
+  (they keep `checkResponse`), because the list, "seen", the mute and the
+  tone's cadence must outlive `AppShell`, which every page remounts. Its
+  browser effects (socket, timers, audio) go through `lib/alarm-bar-ports.ts`;
+  without an installed feed `AlarmBar` renders nothing and starts nothing, so
+  the specs that render the shell stay inert. Do not copy this pattern for a
+  page's own data — a page still reads through a TanStack Query hook (the bar's
+  "All alarms" panel does).
 - UI state via Zustand stores. No Redux.
 - Styling via Tailwind utilities. Inline `style` only for dynamic values.
 - **A password input is uncontrolled** (`F3.78`, `users-page.tsx`): no `value`
@@ -4143,6 +4173,16 @@ is a set of types that has left the package — and fails when
 `template-migration.ts` is missing from the walk or a file declares no
 `export type X = …`, so a broken walk cannot pass as a clean one.
 
+**A required field on an embedded schema is a fixture sweep.** `checkResponse`
+(`apps/web/src/api/validate.ts`) throws in dev and test, so every web fixture
+of the schema must carry a new required field or its specs fail; production
+logs and passes, so a web bundle newer than its API reads the field as
+`undefined`. `alarmListItemSchema` gained `severityRank` and `locationName`
+(**ADR 0130**, `F4.357` PR 1) and is embedded by reference in the socket event,
+`envelopes.ts` and `site-widgets.ts`; the five API producers share one
+projection (`alarm-list-item.ts`, `alarmListItemColumns`), so a new column
+goes there, never into one producer. Ship the API before (or with) the web.
+
 **Three encodings preserve type identity and their obvious siblings do not.**
 Measured on **9** conversions in the ADR's spike, each asserted against *two*
 bars — strict conditional-type identity and mutual assignability — for **14
@@ -4444,7 +4484,10 @@ affordances `F3.28` delivered against the client's reference dashboards
 yesterday" deltas, the state legend, the Diagram/List toggle, the per-class
 health strip, the Key Parameters gauges and the footer ribbon) — read it
 before building a further reference-parity screen. The domain-first
-navigation IA gap that same document names (§3.3, `F3.29`) is still open.
+navigation IA gap that same document names (§3.3, `F3.29`) is still open;
+since **ADR 0130** (`F4.357`) the alarm bar is the "alarm bell in every shell"
+of ADR 0118 decision 6 and delivers `F3.29`'s alarm-count badge, so `F3.29`
+keeps only the site selector and the role subtitle.
 
 **Colours are role tokens** (**ADR 0078**, `F3.65a`–`F3.65c`, 2026-09-28/29).
 The vocabulary is the 52 roles in `apps/web/src/index.css` — RGB-channel CSS
@@ -4623,6 +4666,20 @@ and `data-design` on `<html>` carries it (`nexus-soft` removes it), cached in
   Data, `/admin/organizations`, the header's Appearance): a choice previews the
   whole page, the shell included (`previewDesign`), Cancel restores, Save writes
   and re-reads `/auth/me`; "Inherit" writes NULL except at the portal level.
+- **The one alarm animation** (**ADR 0130** decision 9, clarifying decision 7):
+  the alarm bar's critical count and the new-alarm popup's header blink
+  (`alarm-bar-blink`, a 1 s step in `index.css`, a static double outline under
+  `prefers-reduced-motion`) while an unacknowledged critical alarm is unseen.
+  It is part of the bar, identical in every design system; no design system may
+  change, remove or add to it, and decision 7 (no design system adds a glow,
+  blur or animation to an alarm state) still holds for every other alarm
+  surface. It is plain CSS, not a Tailwind animation
+  (`theme.extend.animation` stays the four `mimic-*` utilities).
+- **Every page clears the alarm bar** (ADR 0130 decisions 1, 14, 19): its
+  height is `--alarm-bar-h` (3rem); the shell roots and the wall root carry
+  `alarm-bar-clearance`, and the Copilot launcher and window sit above it. A
+  new full-screen surface uses the same class, never a `pb-[…]` utility;
+  `tests/f4.357-alarm-bar-gate.test.ts` holds the mounts.
 - **A new design system** is a contract change, an ADR 0118 amendment, a
   migration (the `design_system` CHECKs), a `SHELL_OF_DESIGN` entry and a full
   token block in both variants; the gates above cover it once it is in the
