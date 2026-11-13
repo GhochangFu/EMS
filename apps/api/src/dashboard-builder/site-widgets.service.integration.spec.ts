@@ -301,7 +301,7 @@ export async function assertTheRailCarriesTheSeverityRank(db: BmsDb): Promise<vo
 /** S6d — `F4.359` U4: a stamped alarm reads `suppressed` and its window id in the rail. */
 export async function assertTheRailCarriesSuppression(db: BmsDb): Promise<void> {
   await inSite(async (site) => {
-    const user = await site.txDb.execute<{ id: string }>(sql`SELECT id FROM bms.users LIMIT 1`);
+    const user = await site.txDb.execute<{ id: string }>(sql`SELECT id FROM bms.users ORDER BY created_at, id LIMIT 1`);
     const win = await site.txDb.execute<{ id: string }>(sql`
       INSERT INTO bms.maintenance_windows (organization_id, reason, starts_at, ends_at, created_by)
       VALUES (${site.organizationId}, 'F4.359 rail', now() - interval '1 minute', now() + interval '1 hour', ${user.rows[0]!.id})

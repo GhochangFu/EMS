@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { expect } from "vitest";
 
 import { alarms, alarmSeverities, locations, maintenanceWindows, pointValues, rtus, users } from "@bms/db";
@@ -164,7 +164,7 @@ export const assertEachSourceNamesItsOwnLocation: Claim = async (tx, fx) => {
  * and its window id from each producer; an unstamped neighbour reads false/null.
  */
 async function insertWindow(tx: BmsDb, fx: LabelFixture): Promise<string> {
-  const [user] = await tx.select({ id: users.id }).from(users).limit(1);
+  const [user] = await tx.select({ id: users.id }).from(users).orderBy(asc(users.createdAt), asc(users.id)).limit(1);
   if (!user) throw new Error("need a users row — run pnpm db:seed");
   const [row] = await tx
     .insert(maintenanceWindows)

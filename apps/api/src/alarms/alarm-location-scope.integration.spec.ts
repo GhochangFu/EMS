@@ -130,7 +130,7 @@ export async function buildLocationScopeFixture(
     suppressedS: await insertAlarm(db, orgA, { assetId: asset.S, severity: high, raisedAt: minutesAgo(1) }),
     clearedSuppressedS: await insertAlarm(db, orgA, { assetId: asset.S, severity: high, raisedAt: minutesAgo(40), clearedAt: minutesAgo(35) }),
   };
-  const { rows: userRows } = await db.query<{ id: string }>("SELECT id FROM bms.users LIMIT 1");
+  const { rows: userRows } = await db.query<{ id: string }>("SELECT id FROM bms.users ORDER BY created_at, id LIMIT 1");
   const userId = userRows[0]?.id ?? fail("need a users row — run pnpm db:seed");
   const { rows: windowRows } = await db.query<{ id: string }>(
     `INSERT INTO bms.maintenance_windows (organization_id, reason, starts_at, ends_at, created_by)
