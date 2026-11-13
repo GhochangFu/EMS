@@ -47,14 +47,20 @@ export const listMaintenanceWindowsTool = defineReadTool({
     const target = targetOrganizations(args.organizationId, ctx.allowedOrganizationIds);
     if (!target.ok) return target;
     const scope = await readScopeFor(services.access, ctx.user);
+    // F4.108: the route's own query schema, safely parsed once (the tool's input
+    // schema already validated the args, so a refusal here is unexpected).
+    const filters = maintenanceWindowListQuerySchema.safeParse({
+      ...(args.state ? { state: args.state } : {}),
+      ...(args.assetId ? { assetId: args.assetId } : {}),
+      ...(args.locationId ? { locationId: args.locationId } : {}),
+    });
+    if (!filters.success) return { ok: false, error: "The maintenance-window filters are not valid." };
     return pageOrganizations(target.ids, undefined, async (organizationId, room) => {
-      const query = maintenanceWindowListQuerySchema.parse({
+      const query = {
+        ...filters.data,
         organizationId,
-        ...(args.state ? { state: args.state } : {}),
-        ...(args.assetId ? { assetId: args.assetId } : {}),
-        ...(args.locationId ? { locationId: args.locationId } : {}),
         limit: Math.min(room + 1, MAINTENANCE_WINDOWS_SERVICE_CAP),
-      });
+      };
       const page = parseStoredContract(
         maintenanceWindowsResponseSchema,
         await services.maintenanceWindows.list(query, scope),
