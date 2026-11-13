@@ -839,6 +839,19 @@ export async function assertTheSweepStampsAndLiftsAnActiveAlarm(db: BmsDb): Prom
     assert(sameInstant(lifted.unsuppressedAt, t2), "unsuppressed_at is the lifting tick's now");
     assert(lifted.window === windowId, "the window id is kept after the lift (D12)");
     assert(ours().length === 2 && ours()[1]?.suppressed === false && ours()[1]?.unsuppressedAt === t2.toISOString(), "one lift broadcast");
+
+    // Defence in depth (plan risk 6): the lift's own `cleared_at IS NULL` guard. A row cleared while
+    // suppressed keeps its `suppressed_at` (D12); a lift reaching it from another process is a no-op.
+    await pgq.query("UPDATE bms.alarms SET suppressed_at = $2, cleared_at = $2 WHERE id = $1", [alarmId, t2]);
+    const writeSuppression = (
+      harness.lifecycle as unknown as {
+        writeAlarmSuppression(organizationId: string, updates: unknown[]): Promise<AlarmListItem[]>;
+      }
+    ).writeAlarmSuppression.bind(harness.lifecycle);
+    const readBack = await writeSuppression(org.organizationId, [{ kind: "lift", alarmId, at: secondsAfter(90, t1) }]);
+    const kept = await stamps();
+    assert(readBack.length === 0, "a lift on a cleared, stamped row changes nothing and reads nothing back");
+    assert(sameInstant(kept.suppressedAt, t2) && sameInstant(kept.unsuppressedAt, t2), `the cleared row keeps its stamps, got ${JSON.stringify(kept)}`);
     tx.rollback();
   });
 }

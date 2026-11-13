@@ -620,8 +620,14 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
    * `F4.359` — one tenant transaction per organization, like
    * {@link writeAlarmState}. Each guard makes the write a no-op on a row that
    * moved since the read: a stamp never lands on a cleared or already-stamped
-   * row (the raiser may have stamped it), a lift only on a stamped one. The
-   * changed rows are read back for the broadcast after commit.
+   * row (the raiser may have stamped it), a lift only on a stamped, uncleared
+   * one (D12 keeps a cleared-while-suppressed alarm's `suppressed_at` as
+   * history). The changed rows are read back for the broadcast after commit.
+   *
+   * Under the one-loop sweep-then-sleep invariant neither guard can fire today:
+   * the raiser stamps only its own just-inserted row and the clear phase runs
+   * later in the tick. They are defence in depth for a second API process
+   * (plan risk 6).
    */
   private async writeAlarmSuppression(
     organizationId: string,
@@ -640,7 +646,7 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
             : await tx
                 .update(alarms)
                 .set({ suppressedAt: null, unsuppressedAt: update.at })
-                .where(and(eq(alarms.id, update.alarmId), isNotNull(alarms.suppressedAt)))
+                .where(and(eq(alarms.id, update.alarmId), isNotNull(alarms.suppressedAt), isNull(alarms.clearedAt)))
                 .returning({ id: alarms.id });
         if (written.length > 0) {
           changedIds.push(update.alarmId);

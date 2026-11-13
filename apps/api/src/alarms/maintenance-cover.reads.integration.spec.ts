@@ -287,6 +287,33 @@ export async function assertCoverForAlarmsBatchesAcrossOrganizations(fx: CoverRe
   expect(await coverForAlarms(fx.fleetDb, [])).toEqual(new Map());
 }
 
+/**
+ * The batch's "every bound asset" arm for `rtu_comms`, which the shared windows
+ * hide (the earlier location window covers `b` first). In a rolled-back
+ * transaction the location window ends: a window over every bound asset covers
+ * the RTU's alarm; one naming only A1 does not.
+ */
+export async function assertCoverForAlarmsEveryBoundAssetArm(fx: CoverReadsFixture): Promise<void> {
+  const { org } = fx;
+  const batch = [{ id: "b", source: "rtu_comms" as const, organizationId: org.organizationId, rtuId: org.rtuId }];
+  const result = await rollback(fx.adminDb, async (tx) => {
+    await tx.execute(sql`UPDATE bms.maintenance_windows SET ended_at = now(), ended_by = ${org.userId}
+                          WHERE id = ${fx.windows.building}`);
+    const covered = await coverForAlarms(tx, batch);
+    await tx.execute(sqlEndAll(org));
+    await tx.execute(sql`WITH w AS (
+        INSERT INTO bms.maintenance_windows (organization_id, reason, starts_at, ends_at, created_by)
+        VALUES (${org.organizationId}, 'F4.359 one asset', now() - interval '1 minute', now() + interval '1 hour', ${org.userId})
+        RETURNING id, organization_id)
+      INSERT INTO bms.maintenance_window_targets (window_id, organization_id, asset_id)
+      SELECT w.id, w.organization_id, ${org.assetIds[0]}::uuid FROM w`);
+    const partial = await coverForAlarms(tx, batch);
+    return { covered: Object.fromEntries(covered), partial: Object.fromEntries(partial) };
+  });
+  expect(result.covered, "the location window ended: the window naming every bound asset covers b").toEqual({ b: fx.windows.assets });
+  expect(result.partial, "a window naming only A1 is not every bound asset").toEqual({});
+}
+
 // ---------------------------------------------------------------------------
 
 function sqlEndAll(org: CoverOrganization): SQL {

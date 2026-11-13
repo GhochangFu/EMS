@@ -7,6 +7,7 @@ import { openIntegrationPool, requireIntegrationDb, resolveIntegrationRoleUrl } 
 import { asRole } from "../testing/role-urls";
 import {
   assertCoverForAlarmsBatchesAcrossOrganizations,
+  assertCoverForAlarmsEveryBoundAssetArm,
   assertCoverForAlarmUnderTheTenant,
   assertCoverReadsOnlyWhatTheWindowsNeed,
   assertReadActiveWindowsIsTheD2Predicate,
@@ -54,5 +55,6 @@ describe.skipIf(!connectionString)("F4.359 U6 — the maintenance-window cover r
   it("coverForAlarm, as bms_tenant: the earliest covering window through the tree and the bound assets", () =>
     assertCoverForAlarmUnderTheTenant(fixture()));
   it("the walks run only when an active window needs them", () => assertCoverReadsOnlyWhatTheWindowsNeed(fixture()));
+  it("coverForAlarms covers an rtu_comms alarm only through every bound asset", () => assertCoverForAlarmsEveryBoundAssetArm(fixture()));
   it("coverForAlarms batches every organization on the fleet handle", () => assertCoverForAlarmsBatchesAcrossOrganizations(fixture()));
 });

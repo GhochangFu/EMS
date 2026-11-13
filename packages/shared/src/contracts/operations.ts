@@ -145,6 +145,7 @@ export const alarmListItemSchema = z.object({
   // stamped it (kept after a lift) and when the sweep lifted it (plan Q2).
   suppressed: z.boolean(),
   maintenanceWindowId: z.string().nullable(),
+  // The last lift; a row can carry it while suppressed again after a later window, so read `suppressed` first.
   unsuppressedAt: z.string().nullable(),
 });
 

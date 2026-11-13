@@ -322,7 +322,10 @@ export async function assertRaiseInsideAWindowIsStamped(ctx: SuppressionRlsFixtu
 
 /**
  * Not stamped: after `ended_at`, after `ends_at`, before `starts_at`, and under
- * another organization's window that covers its whole tree. The positive
+ * another organization's window (defence in depth only: that window's target
+ * holds no asset of `org`, so this cannot catch a missing organization filter —
+ * `maintenance-cover.spec.ts` `anotherOrganizationsWindowNeverCovers` and RLS
+ * are the real gates). The positive
  * neighbour — an active window over another asset, raised in the same
  * assertion — is stamped, so the negatives cannot pass by stamping nothing.
  */
