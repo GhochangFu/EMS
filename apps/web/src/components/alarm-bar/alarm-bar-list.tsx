@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { fetchActiveAlarms } from "../../api/alarms";
 import { ALARM_BAR_LIST_LIMIT, type AlarmBarScope, alarmBarScopeKey, alarmLocationLabel, alarmReadScopeOf } from "../../lib/alarm-bar";
 import { alarmSubjectName } from "../../lib/alarm-source";
+import { useAlarmBarStore } from "../../stores/alarm-bar-store";
 import { AlarmDetailsPanel } from "../alarm-details-panel";
 
 type AlarmBarListProps = {
@@ -31,9 +32,10 @@ export function AlarmBarList({ scope, scopeLabel, readOnly, onClose }: AlarmBarL
     queryFn: () => fetchActiveAlarms(alarmReadScopeOf(scope), ALARM_BAR_LIST_LIMIT),
   });
   const read = query.data?.items ?? [];
-  // F4.359 U13 (plan Q4): `state=active` keeps suppressed alarms; the bar's list drops them and says how many.
+  // F4.359 U13 (plan Q4): `state=active` keeps suppressed alarms; the bar's list drops them. How many it
+  // says were dropped is the scope's summary count (the pill's), not what this 50-row read happened to hold.
   const items = read.filter((alarm) => !alarm.suppressed);
-  const suppressedCount = read.length - items.length;
+  const suppressedCount = useAlarmBarStore((state) => state.summary?.suppressed ?? 0);
   return (
     <section
       id="alarm-bar-list"
@@ -53,8 +55,10 @@ export function AlarmBarList({ scope, scopeLabel, readOnly, onClose }: AlarmBarL
           <p className="px-3 py-2 text-ink-muted">Loading…</p>
         ) : query.isError ? (
           <p className="px-3 py-2 text-critical-ink">Could not load the alarms.</p>
-        ) : items.length === 0 ? (
+        ) : read.length === 0 ? (
           <p className="px-3 py-2 text-ink-muted">No active alarms</p>
+        ) : items.length === 0 ? (
+          <p className="px-3 py-2 text-ink-muted">The newest active alarms are all suppressed by maintenance — open the Alarm Centre</p>
         ) : (
           <ul>
             {items.map((alarm) => (

@@ -5,6 +5,7 @@ import { useContext, useEffect } from "react";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi } from "vitest";
 
+import * as maintenanceApi from "../../api/maintenance-windows";
 import { alarmItem } from "../../lib/alarm-bar.spec";
 import { flush, installOnFakes } from "../../lib/alarm-bar-feed.spec";
 import { FRESH_MS } from "../../lib/schematic-telemetry";
@@ -318,6 +319,8 @@ export async function theWallShowsTheAlarmBarForItsLocation(): Promise<void> {
     accessToken: "token-1",
     user: { id: "user-1", email: "op@bms.local", displayName: "op", role: "operator" } as unknown as AuthUser,
   });
+  // F4.359 U13: with a feed the Maintenance pill reads the windows; no request leaves the test.
+  const windows = vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({ items: [] });
   const feed = installOnFakes({ list: [alarmItem({ id: "c", message: "Critical one" })] }, useAuthStore);
   try {
     // `F4.359` U13: the bar's Maintenance pill reads through TanStack Query; `main.tsx` provides the client.
@@ -351,6 +354,7 @@ export async function theWallShowsTheAlarmBarForItsLocation(): Promise<void> {
   } finally {
     cleanup();
     feed.uninstall();
+    windows.mockRestore();
     useAuthStore.setState({ accessToken: null, user: null });
   }
 }

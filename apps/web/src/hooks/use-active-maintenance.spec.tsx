@@ -19,7 +19,7 @@ const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const C = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
-function window(id: string, assetIds: string[]): MaintenanceWindowItem {
+function activeWindow(id: string, assetIds: string[]): MaintenanceWindowItem {
   return {
     id,
     organizationId: ORG,
@@ -48,8 +48,8 @@ function wrapper(): (props: { children: ReactNode }) => JSX.Element {
 export async function twoWindowsUnionIntoTheSet(): Promise<void> {
   const spy = vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({
     items: [
-      window("11111111-1111-4111-8111-111111111111", [A, B]),
-      window("22222222-2222-4222-8222-222222222222", [B, C]),
+      activeWindow("11111111-1111-4111-8111-111111111111", [A, B]),
+      activeWindow("22222222-2222-4222-8222-222222222222", [B, C]),
     ],
   });
   const { result } = renderHook(() => useActiveMaintenance({ organizationId: ORG }), { wrapper: wrapper() });

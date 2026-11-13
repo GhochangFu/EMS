@@ -247,6 +247,16 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           </p>
         ) : null}
 
+        {/*
+          F4.359: "Suppressed only" reads the suppressed rows alone, and the cards count what the page read.
+          They then say nothing about the plant, so they say what they are of and Critical drops "all clear".
+        */}
+        {suppressedOnly ? (
+          <p className="rounded border border-info-line bg-info-wash px-3 py-2 text-xs font-semibold text-info-ink">
+            Suppressed only: the counts below are of suppressed alarms only, not a reading of the plant.
+          </p>
+        ) : null}
+
         <div
           className={`grid gap-3 sm:grid-cols-2 ${
             showUnrecognised ? "lg:grid-cols-6" : "lg:grid-cols-5"
@@ -256,7 +266,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
             label="Critical"
             value={summary.critical}
             tone="critical"
-            emptyLabel={severityReady ? "all clear" : undefined}
+            emptyLabel={severityReady && !suppressedOnly ? "all clear" : undefined}
           />
           <AlarmSummaryCard label="Major" value={summary.major} tone="warning" />
           <AlarmSummaryCard label="Minor" value={summary.minor} tone="info" />
@@ -306,16 +316,12 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           </div>
         </SectionCard>
 
-        {listQ.isLoading ? (
-          <p className="text-sm text-ink-muted">Loading alarms…</p>
-        ) : listQ.isError ? (
-          <p className="text-sm text-critical-ink">Could not load alarms (auth?).</p>
-        ) : (
-          <SectionCard
-            title="Alarm Grid"
-            subtitle={`${filteredRows.length} of ${rows.length} loaded alarms shown`}
-            actions={
-              <div className="flex flex-wrap items-center gap-4">
+        {/* F4.359: the card stays mounted through a load or an error, so "Suppressed only" can always be unticked. */}
+        <SectionCard
+          title="Alarm Grid"
+          subtitle={`${filteredRows.length} of ${rows.length} loaded alarms shown`}
+          actions={
+            <div className="flex flex-wrap items-center gap-4">
               <label className="flex items-center gap-2 text-xs text-ink-muted">
                 <input
                   type="checkbox"
@@ -333,10 +339,15 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </label>
-              </div>
-            }
-            bodyClassName="surface-table overflow-x-auto p-0"
-          >
+            </div>
+          }
+          bodyClassName="surface-table overflow-x-auto p-0"
+        >
+          {listQ.isLoading ? (
+            <p className="px-3 py-2 text-sm text-ink-muted">Loading alarms…</p>
+          ) : listQ.isError ? (
+            <p className="px-3 py-2 text-sm text-critical-ink">Could not load alarms (auth?).</p>
+          ) : (
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b border-well-deep bg-well text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                 <tr>
@@ -466,8 +477,8 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                 )}
               </tbody>
             </table>
-          </SectionCard>
-        )}
+          )}
+        </SectionCard>
 
         {listQ.hasNextPage ? (
           <button

@@ -2,12 +2,12 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { type MaintenanceScope, useActiveMaintenance } from "../../hooks/use-active-maintenance";
-import { canManageMaintenanceWindows } from "../../lib/admin-access";
+import { canManageMaintenanceWindows, isMasterDataAdmin } from "../../lib/admin-access";
 import type { AlarmBarScope } from "../../lib/alarm-bar";
 import { useAuthStore } from "../../stores/auth-store";
 
 /** The bar's page scope as the windows read takes it; the all scope sends no filter. */
-export function maintenanceScopeOf(scope: AlarmBarScope): MaintenanceScope {
+function maintenanceScopeOf(scope: AlarmBarScope): MaintenanceScope {
   if (scope.kind === "organization") return { organizationId: scope.organizationId };
   if (scope.kind === "location") return { locationId: scope.locationId };
   return {};
@@ -34,11 +34,13 @@ export function AlarmBarMaintenance({ scope, suppressed }: AlarmBarMaintenancePr
   const role = useAuthStore((state) => state.user?.role);
   const [open, setOpen] = useState(false);
   if (windows.length === 0) return null;
-  const mayManage = role !== undefined && canManageMaintenanceWindows(role);
+  // `AdminRoute` admits only `isMasterDataAdmin`: an asset-group admin may manage windows but would bounce off the page.
+  const mayManage = role !== undefined && canManageMaintenanceWindows(role) && isMasterDataAdmin(role);
   return (
     <>
       <button
         type="button"
+        aria-label={suppressed === null ? "Maintenance" : `Maintenance: ${suppressed} suppressed alarms`}
         aria-expanded={open}
         aria-controls="alarm-bar-maintenance"
         onClick={() => setOpen((was) => !was)}
@@ -62,12 +64,12 @@ export function AlarmBarMaintenance({ scope, suppressed }: AlarmBarMaintenancePr
             </button>
           </div>
           <ul className="min-h-0 flex-1 overflow-y-auto">
-            {windows.map((window) => (
-              <li key={window.id} className="flex flex-col gap-0.5 border-b border-line px-3 py-2 last:border-b-0">
-                <span className="font-semibold">{window.reason}</span>
-                <span className="text-ink-muted">{`Ends ${new Date(window.endsAt).toLocaleString()}`}</span>
-                {window.targets.length > 0 ? (
-                  <span className="text-ink-muted">{window.targets.map((target) => target.label).join(", ")}</span>
+            {windows.map((active) => (
+              <li key={active.id} className="flex flex-col gap-0.5 border-b border-line px-3 py-2 last:border-b-0">
+                <span className="font-semibold">{active.reason}</span>
+                <span className="text-ink-muted">{`Ends ${new Date(active.endsAt).toLocaleString()}`}</span>
+                {active.targets.length > 0 ? (
+                  <span className="text-ink-muted">{active.targets.map((target) => target.label).join(", ")}</span>
                 ) : null}
               </li>
             ))}

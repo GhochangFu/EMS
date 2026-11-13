@@ -473,3 +473,50 @@ export async function searchingMaintenanceFindsTheSuppressedRow(): Promise<void>
   expect(within(screen.getByRole("table")).queryByText("Plain row")).toBeNull();
   expect(within(screen.getByRole("table")).getByText("Suppressed row")).toBeInTheDocument();
 }
+
+const CHECKBOX = { name: "Suppressed only" } as const;
+
+/** Toggling the control keeps it on screen while the suppressed read is in flight. */
+export async function theSuppressedControlStaysWhileTheReadIsPending(): Promise<void> {
+  await renderPage([SUPPRESSED, PLAIN]);
+  vi.spyOn(alarmsApi, "fetchAlarmsPage").mockImplementation((_cursor, _limit, state) =>
+    state === "suppressed" ? new Promise(() => undefined) : Promise.resolve({ items: [SUPPRESSED, PLAIN], nextCursor: null }),
+  );
+  await userEvent.click(screen.getByRole("checkbox", CHECKBOX));
+  expect(screen.getByText("Loading alarms…")).toBeInTheDocument();
+  const box = screen.getByRole("checkbox", CHECKBOX) as HTMLInputElement;
+  expect(box.checked).toBe(true);
+}
+
+/** A failed suppressed read leaves the control reachable, and unticking it reads every alarm again. */
+export async function aFailedSuppressedReadCanBeUnticked(): Promise<void> {
+  await renderPage([SUPPRESSED, PLAIN]);
+  vi.spyOn(alarmsApi, "fetchAlarmsPage").mockImplementation((_cursor, _limit, state) =>
+    state === "suppressed" ? Promise.reject(new Error("boom")) : Promise.resolve({ items: [SUPPRESSED, PLAIN], nextCursor: null }),
+  );
+  await userEvent.click(screen.getByRole("checkbox", CHECKBOX));
+  await screen.findByText("Could not load alarms (auth?).");
+  await userEvent.click(screen.getByRole("checkbox", CHECKBOX));
+  expect((screen.getByRole("checkbox", CHECKBOX) as HTMLInputElement).checked).toBe(false);
+  await screen.findByRole("table");
+  expect(within(screen.getByRole("table")).getByText("Plain row")).toBeInTheDocument();
+}
+
+/**
+ * With "Suppressed only" on, the cards count suppressed rows only: Critical must not read "all clear"
+ * while unsuppressed criticals are active, and the page says what the counts are of.
+ */
+export async function theCardsDoNotClaimThePlantWhileSuppressedOnly(): Promise<void> {
+  const suppressedInfo = alarm({ id: "s9", message: "Suppressed info", severity: "info", severityRank: 10, suppressed: true });
+  await renderPage([PLAIN]);
+  expect(summaryCard("Critical").textContent).toContain("1");
+  expect(screen.queryByText(/counts below are of suppressed alarms only/)).toBeNull();
+  vi.spyOn(alarmsApi, "fetchAlarmsPage").mockImplementation((_cursor, _limit, state) =>
+    Promise.resolve({ items: state === "suppressed" ? [suppressedInfo] : [PLAIN], nextCursor: null }),
+  );
+  await userEvent.click(screen.getByRole("checkbox", CHECKBOX));
+  await vi.waitFor(() => expect(within(screen.getByRole("table")).getByText("Suppressed info")).toBeInTheDocument());
+  expect(summaryCard("Critical").textContent).not.toContain("all clear");
+  expect(summaryCard("Critical").textContent).toContain("0");
+  expect(screen.getByText(/counts below are of suppressed alarms only/)).toBeInTheDocument();
+}
