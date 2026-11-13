@@ -298,6 +298,23 @@ export async function assertTheRailCarriesTheSeverityRank(db: BmsDb): Promise<vo
   }, db);
 }
 
+/** S6d — `F4.359` U4: a stamped alarm reads `suppressed` and its window id in the rail. */
+export async function assertTheRailCarriesSuppression(db: BmsDb): Promise<void> {
+  await inSite(async (site) => {
+    const user = await site.txDb.execute<{ id: string }>(sql`SELECT id FROM bms.users LIMIT 1`);
+    const win = await site.txDb.execute<{ id: string }>(sql`
+      INSERT INTO bms.maintenance_windows (organization_id, reason, starts_at, ends_at, created_by)
+      VALUES (${site.organizationId}, 'F4.359 rail', now() - interval '1 minute', now() + interval '1 hour', ${user.rows[0]!.id})
+      RETURNING id`);
+    const windowId = win.rows[0]!.id;
+    await site.txDb.execute(sql`UPDATE bms.alarms SET suppressed_at = now(), suppressed_by_window_id = ${windowId} WHERE asset_id = ${site.b1} AND cleared_at IS NULL`);
+    const rail = (await readAs(site, "b")).alarms.active;
+    const b1 = rail.find((alarm) => alarm.assetId === site.b1);
+    expect({ suppressed: b1?.suppressed, window: b1?.maintenanceWindowId }).toEqual({ suppressed: true, window: windowId });
+    expect(rail.filter((alarm) => alarm.assetId !== site.b1).every((alarm) => !alarm.suppressed), "the neighbour is not suppressed").toBe(true);
+  }, db);
+}
+
 /**
  * S6c — `F4.357` U2b: the summary's `unacknowledged` leaves out an acknowledged
  * alarm, while `count` keeps it.

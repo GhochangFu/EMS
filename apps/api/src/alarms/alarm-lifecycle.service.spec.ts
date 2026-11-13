@@ -273,6 +273,9 @@ export function fakeDeps(opts: {
                 rtuId: "source" in alarm ? alarm.rtuId : null,
                 rtuCode: null,
                 severityRank: 30,
+                suppressed: false,
+                maintenanceWindowId: null,
+                unsuppressedAt: null,
                 locationName: null,
               };
             }),

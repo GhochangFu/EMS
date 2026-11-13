@@ -64,6 +64,11 @@ describe("alarm list items carry device alarms (F3.16, ADR 0127 decision 12)", (
     spec.assertAlarmDetailsAcceptsDeviceAlarms());
 });
 
+describe("alarm list items carry maintenance-window suppression (F4.359, ADR 0131 decision 19)", () => {
+  it("requires suppressed, maintenanceWindowId and unsuppressedAt; the suppression event parses", () =>
+    spec.assertAlarmListItemCarriesSuppression());
+});
+
 describe("alarm list items carry the severity rank and the location (F4.357, ADR 0130 decision 17)", () => {
   it("alarmListItemSchema requires an integer severityRank and a nullable locationName", () =>
     spec.assertAlarmListItemRequiresSeverityRankAndLocationName());

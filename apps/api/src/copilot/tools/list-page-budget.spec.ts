@@ -28,7 +28,7 @@ import { alarmKeyset } from "./list-alarms.tool";
  * rows in each tool's own fields, `json_build_object` less ~3 characters a
  * field for its spacing). Every list whose page can pass the budget has a
  * claim here:
- * - `list_alarms` ~11,800 (probe: 11,880 and 11,722; ~470 a row)
+ * - `list_alarms` ~13,500 (F4.359 re-measure: ~540 a row with suppressed, maintenanceWindowId, unsuppressedAt; was ~470)
  * - `list_assets` ~9,750 (~390 a row) · `list_rules` ~11,200 (~450, the
  *   `condition` JSON) · `list_locations` ~14,000 (~560, the `meta` JSON)
  * - `list_work_orders` ~10,000 and `list_maintenance_schedules` ~10,500
@@ -91,6 +91,9 @@ function alarm(i: number) {
     rtuId: null,
     rtuCode: null,
     severityRank: 30,
+    suppressed: false,
+    maintenanceWindowId: null,
+    unsuppressedAt: null,
     locationName: null,
   };
 }

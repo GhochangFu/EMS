@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { desc, eq } from "drizzle-orm";
 import { expect } from "vitest";
 
-import { alarms, alarmSeverities, locations, pointValues, rtus } from "@bms/db";
+import { alarms, alarmSeverities, locations, maintenanceWindows, pointValues, rtus, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AlarmListItem } from "@bms/shared";
 
@@ -157,4 +157,89 @@ export const assertEachSourceNamesItsOwnLocation: Claim = async (tx, fx) => {
     comms: (await readAlarmListItem(tx, comms!.id))?.locationName,
     host: (await readAlarmListItem(tx, host!.id))?.locationName,
   }).toEqual({ rule: fx.locationName, ruleMatchesAsset: true, comms: rtuLocation!.name, host: null });
+};
+
+/**
+ * `F4.359` U4 (ADR 0131 decision 19) — a stamped alarm reads `suppressed: true`
+ * and its window id from each producer; an unstamped neighbour reads false/null.
+ */
+async function insertWindow(tx: BmsDb, fx: LabelFixture): Promise<string> {
+  const [user] = await tx.select({ id: users.id }).from(users).limit(1);
+  if (!user) throw new Error("need a users row — run pnpm db:seed");
+  const [row] = await tx
+    .insert(maintenanceWindows)
+    .values({
+      organizationId: fx.organizationId,
+      reason: "F4.359 suppression read",
+      startsAt: new Date(Date.now() - 60_000),
+      endsAt: new Date(Date.now() + 3_600_000),
+      createdBy: user.id,
+    })
+    .returning({ id: maintenanceWindows.id });
+  return row!.id;
+}
+
+async function stamp(tx: BmsDb, alarmId: string, windowId: string): Promise<void> {
+  await tx.update(alarms).set({ suppressedAt: new Date(), suppressedByWindowId: windowId }).where(eq(alarms.id, alarmId));
+}
+
+function suppressionOf(item: AlarmListItem | null | undefined) {
+  return { suppressed: item?.suppressed, maintenanceWindowId: item?.maintenanceWindowId, unsuppressedAt: item?.unsuppressedAt };
+}
+
+export const assertTheListCarriesSuppression: Claim = async (tx, fx) => {
+  const [severity] = await twoRanks(tx);
+  const windowId = await insertWindow(tx, fx);
+  const stamped = await insertRuleAlarm(tx, fx, severity);
+  const plain = await insertRuleAlarm(tx, fx, severity);
+  await stamp(tx, stamped, windowId);
+  const page = await buildHarness(tx).alarmsService.list({ limit: 10, assetIds: [fx.withRtu], state: "all" });
+  expect(suppressionOf(page.items.find((item) => item.id === stamped))).toEqual({ suppressed: true, maintenanceWindowId: windowId, unsuppressedAt: null });
+  expect(suppressionOf(page.items.find((item) => item.id === plain))).toEqual({ suppressed: false, maintenanceWindowId: null, unsuppressedAt: null });
+};
+
+export const assertTheAcknowledgeCarriesSuppression: Claim = async (tx, fx) => {
+  const [severity] = await twoRanks(tx);
+  const windowId = await insertWindow(tx, fx);
+  const id = await insertRuleAlarm(tx, fx, severity);
+  await stamp(tx, id, windowId);
+  const broadcast: AlarmListItem[] = [];
+  const gateway = { broadcastAcknowledged: (item: AlarmListItem) => broadcast.push(item) } as unknown as AlarmsGateway;
+  const svc = new AlarmsService(tx, tx, gateway, new MasterDataAuditService(tx, tx));
+  const returned = await svc.acknowledge(id, ACTOR, "F4.359 suppression", [fx.withRtu]);
+  const expected = { suppressed: true, maintenanceWindowId: windowId, unsuppressedAt: null };
+  expect(suppressionOf(returned)).toEqual(expected);
+  expect(suppressionOf(broadcast[0])).toEqual(expected);
+};
+
+export const assertTheCreatedEventReadCarriesSuppression: Claim = async (tx, fx) => {
+  const [severity] = await twoRanks(tx);
+  const windowId = await insertWindow(tx, fx);
+  const id = await insertRuleAlarm(tx, fx, severity);
+  await stamp(tx, id, windowId);
+  const lifted = new Date("2026-11-13T01:00:00.000Z");
+  await tx.update(alarms).set({ unsuppressedAt: lifted }).where(eq(alarms.id, id));
+  expect(suppressionOf(await readAlarmListItem(tx, id))).toEqual({
+    suppressed: true,
+    maintenanceWindowId: windowId,
+    unsuppressedAt: lifted.toISOString(),
+  });
+};
+
+export const assertTheClearedBroadcastCarriesSuppression: Claim = async (tx, fx) => {
+  await insertFixtureSeverity(tx);
+  const pointKey = `f4359_supp_${randomUUID().slice(0, 8)}`;
+  const rule = await insertFixtureRule(tx, { assetId: fx.withRtu, organizationId: fx.organizationId, pointKey, thresholdValue: 100, clearHoldSeconds: 30 });
+  const harness = buildHarness(tx);
+  const raised = await harness.raiser.raise(fx.withRtu, fx.organizationId, rule, 150);
+  const windowId = await insertWindow(tx, fx);
+  await stamp(tx, raised.alarmId as string, windowId);
+  const [state] = await stateOf(tx, raised.alarmId as string);
+  const t1 = secondsAfter(10, state!.raisedAt);
+  await tx.insert(pointValues).values({ time: t1, assetId: fx.withRtu, pointKey, value: 50, unit: "kW" });
+  await harness.lifecycle.sweep(t1);
+  await harness.lifecycle.sweep(secondsAfter(30, t1));
+  const cleared = harness.clearedAlarms.find((alarm) => alarm.id === raised.alarmId);
+  expect(cleared, "the sweep broadcast the cleared alarm").toBeDefined();
+  expect(suppressionOf(cleared)).toEqual({ suppressed: true, maintenanceWindowId: windowId, unsuppressedAt: null });
 };

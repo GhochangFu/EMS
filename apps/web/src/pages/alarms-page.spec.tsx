@@ -89,6 +89,9 @@ function alarm(overrides: Partial<AlarmListItem>): AlarmListItem {
     rtuId: null,
     rtuCode: null,
     severityRank: 30,
+    suppressed: false,
+    maintenanceWindowId: null,
+    unsuppressedAt: null,
     locationName: null,
     ...overrides,
   };

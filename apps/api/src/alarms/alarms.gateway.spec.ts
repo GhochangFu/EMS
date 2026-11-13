@@ -91,6 +91,9 @@ function alarm(over: Partial<AlarmListItem>): AlarmListItem {
     rtuId: RTU_1,
     rtuCode: "R1",
     severityRank: 30,
+    suppressed: false,
+    maintenanceWindowId: null,
+    unsuppressedAt: null,
     locationName: null,
     ...over,
   };
@@ -175,4 +178,18 @@ export async function assertTheHandshakeCachesTheDeviceScope(): Promise<void> {
   const adminGateway = gatewayWith(db, [admin], { resolveUserId: () => null, readableAssetIds: async () => null });
   await adminGateway.handleConnection(admin as unknown as Socket);
   expect(admin.data.deviceScope, "the global admin needs no device scope").toBeNull();
+}
+
+/** `F4.359` plan D13: a suppression event is scoped exactly as the other three. */
+export async function assertASuppressionEventIsEmittedUnderTheSameScoping(): Promise<void> {
+  const rule = alarm({ source: "rule", assetId: ASSET, rtuId: null, rtuCode: null, assetCode: "A-1", suppressed: true });
+  const holds = client([ASSET], { rtuIds: [], hostOrganizationIds: [] });
+  const lacks = client(["00000000-0000-4000-8000-0000000000a2"], { rtuIds: [], hostOrganizationIds: [] });
+  const admin = client(null);
+  const gateway = gatewayWith(fakeDb(ORG_A), [holds, lacks, admin]);
+  gateway.broadcastSuppression(rule);
+  await flush();
+  expect(holds.got).toEqual([{ type: "suppression", alarm: rule }]);
+  expect(lacks.got, "a socket without the asset does not receive it").toEqual([]);
+  expect(admin.got).toEqual([{ type: "suppression", alarm: rule }]);
 }

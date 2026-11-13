@@ -163,6 +163,9 @@ const ALARM_LIST_ITEM = {
   rtuCode: null,
   // F4.357 / ADR 0130 decision 17: the severity's rank and the alarm's own location.
   severityRank: 30,
+  suppressed: false,
+  maintenanceWindowId: null,
+  unsuppressedAt: null,
   locationName: "Plant A",
 };
 
@@ -282,6 +285,28 @@ export function assertAlarmListItemRequiresSeverityRankAndLocationName(): void {
   assert(
     alarmSocketEventSchema.safeParse({ type: "created", alarm: without }).success === false,
     "the created event accepted an alarm with no severityRank",
+  );
+}
+
+/**
+ * `F4.359` / ADR 0131 decision 19 — `suppressed` (a boolean, not `"true"`),
+ * `maintenanceWindowId` and `unsuppressedAt` (required-nullable) and the
+ * fourth socket event.
+ */
+export function assertAlarmListItemCarriesSuppression(): void {
+  for (const key of ["suppressed", "maintenanceWindowId", "unsuppressedAt"]) {
+    assertRefusesWithout(alarmListItemSchema, ALARM_LIST_ITEM, key, "alarmListItemSchema");
+  }
+  assert(
+    alarmListItemSchema.safeParse({ ...ALARM_LIST_ITEM, suppressed: "true" }).success === false,
+    'alarmListItemSchema accepted suppressed "true"',
+  );
+  const stamped = { ...ALARM_LIST_ITEM, suppressed: true, maintenanceWindowId: "w1", unsuppressedAt: "2026-11-13T00:00:00.000Z" };
+  assert(alarmListItemSchema.safeParse(stamped).success, "alarmListItemSchema refused a stamped alarm");
+  assert(alarmSocketEventSchema.safeParse({ type: "suppression", alarm: stamped }).success, "the suppression event must parse");
+  assert(
+    alarmSocketEventSchema.safeParse({ type: "suppression", alarm: { ...ALARM_LIST_ITEM, suppressed: "true" } }).success === false,
+    "the suppression event accepted a string suppressed",
   );
 }
 

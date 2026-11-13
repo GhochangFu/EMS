@@ -26,6 +26,8 @@ import {
   type DeviceAlarmScope,
 } from "./alarm-scope";
 
+type AlarmEventType = "created" | "acknowledged" | "cleared" | "suppression";
+
 @WebSocketGateway({
   namespace: "/ws/alarms",
   cors: {
@@ -150,6 +152,15 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
   }
 
   /**
+   * `F4.359` plan D13: a maintenance-window stamp or lift. Nothing calls it
+   * yet; the sweep does in a later unit. Same scoping as the others.
+   */
+  broadcastSuppression(alarm: AlarmListItem): void {
+    this.emitScoped(alarm, "suppression");
+    this.metrics.countWebsocketEvent("/ws/alarms", "alarm");
+  }
+
+  /**
    * `F3.16` / ADR 0127 decision 14 through `alarmVisibleInMemory`, the
    * in-memory form of the list's scope rule. The list item does not carry its
    * organization, so an `ingest_host` alarm's is read first (one row by key);
@@ -157,7 +168,7 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
    */
   private emitScoped(
     alarm: AlarmListItem,
-    type: "created" | "acknowledged" | "cleared",
+    type: AlarmEventType,
   ): void {
     if (alarm.source !== "ingest_host") {
       this.deliver(alarm, type, null);
@@ -174,7 +185,7 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
 
   private deliver(
     alarm: AlarmListItem,
-    type: "created" | "acknowledged" | "cleared",
+    type: AlarmEventType,
     organizationId: string | null,
   ): void {
     for (const client of this.server.sockets.values()) {
