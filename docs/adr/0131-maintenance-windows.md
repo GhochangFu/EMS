@@ -2,12 +2,13 @@
 
 ## Status
 
-**Proposed — 2026-11-13.** Drafted by an agent for backlog row `F4.359` from a
-design conversation with the owner on 2026-11-13. The owner ruled six
-behaviours in chat, one question at a time; those rulings are marked
-*(owner, 2026-11-13)* below. Lines marked *(recommended)* are the agent's
-calls and stand unless the owner changes them at acceptance. The step-3 plan
-comes after acceptance, and the build waits for the owner's "yes" to it.
+**Accepted — 2026-11-13** (owner, in chat: "Accepted"; proposed the same
+day). Drafted by an agent for backlog row `F4.359` from a design conversation
+with the owner on 2026-11-13. The owner ruled six behaviours in chat, one
+question at a time; those rulings are marked *(owner, 2026-11-13)* below.
+Lines marked *(recommended)* were the agent's calls; the owner accepted the
+ADR with them as written, so **every *(recommended)* line is now a ruling**.
+The step-3 plan comes next, and the build waits for the owner's "yes" to it.
 
 Answers the "shelve action" that [ADR 0057](./0057-alarm-lifecycle-auto-clear-and-escalation.md)
 left open (*Consequences*), in the form of a scheduled window rather than a
@@ -208,4 +209,4 @@ None for the owner's six rulings (decisions 4, 6, 7, 8's return, 13, 14
 and 15). Every other decision is the agent's: 1–3, 5's `rtu_comms` and
 `ingest_host` lines, 8's notification at the end, 9–12, 13's exact role
 check (the plan confirms it), and 16–19. They stand unless the owner changes
-them at acceptance.
+them at acceptance. The owner accepted them as written (2026-11-13).
