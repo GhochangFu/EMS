@@ -3,6 +3,8 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aCoveredAssetsPanelShowsTheMaintenanceBadge,
+  anUncoveredAssetsPanelShowsNoMaintenanceBadge,
   adminSeesTheOperatorAssetsLinkAndTheSitesArea,
   clickingARowOpensThePanelForThatRow,
   anEmptyFilterResultSaysSo,
@@ -79,5 +81,13 @@ describe("F3.31 assets browser page", () => {
 
   it("F4.316 — the Code cell names the RTU, else the location", async () => {
     await theCodeCellNamesWhereTheAssetIs();
+  });
+
+  it("F4.359 U16 — a covered asset's panel shows the maintenance badge", async () => {
+    await aCoveredAssetsPanelShowsTheMaintenanceBadge();
+  });
+
+  it("F4.359 U16 — an uncovered asset's panel shows no maintenance badge", async () => {
+    await anUncoveredAssetsPanelShowsNoMaintenanceBadge();
   });
 });

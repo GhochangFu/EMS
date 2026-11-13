@@ -4,10 +4,12 @@ import { Link } from "react-router-dom";
 import type { AssetRow } from "../../api/assets";
 import { fetchDashboards } from "../../api/dashboards";
 import { useAssetHealth } from "../../hooks/use-asset-health";
+import { useActiveMaintenance } from "../../hooks/use-active-maintenance";
 import { useAssetKpis } from "../../hooks/use-asset-kpis";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { activeLabel, NONE, noDashboardsSentence } from "../../lib/asset-browser";
 import { AssetHealthCard } from "../asset-health/asset-health-card";
+import { MaintenanceBadge } from "../maintenance/maintenance-badge";
 import { StatusPill } from "../status-pill";
 import { AssetHistoryLink } from "./asset-history-link";
 import { AssetKpisCard } from "./asset-kpis-card";
@@ -44,6 +46,8 @@ export type AssetDetailPanelProps = {
 export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPanelProps): JSX.Element {
   const healthQ = useAssetHealth(asset.id);
   const kpisQ = useAssetKpis(asset.id);
+  // `F4.359` U16 (plan Q7): the badge while a maintenance window covers this asset.
+  const inMaintenance = useActiveMaintenance({ assetId: asset.id }).coveredAssetIds.has(asset.id);
   const dashboardsQ = useQuery({
     queryKey: ["dashboards", "list", { assetId: asset.id }],
     queryFn: () => fetchDashboards(undefined, asset.id),
@@ -68,6 +72,11 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
           <p className="text-xs text-ink-muted">{asset.name}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {inMaintenance ? (
+            <span data-testid="asset-maintenance-badge">
+              <MaintenanceBadge />
+            </span>
+          ) : null}
           <StatusPill label={activeLabel(asset.active)} tone={asset.active ? "ok" : "offline"} />
           <button type="button" className="text-xs text-ink-muted" onClick={onClose}>
             Close

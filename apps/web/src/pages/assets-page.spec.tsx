@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -11,6 +11,7 @@ import * as assetHealthApi from "../api/asset-health";
 import * as assetKpisApi from "../api/asset-kpis";
 import * as assetsApi from "../api/assets";
 import * as dashboardsApi from "../api/dashboards";
+import * as maintenanceApi from "../api/maintenance-windows";
 import * as vocabApi from "../api/vocabularies";
 import type { AuthUser } from "../stores/auth-store";
 import { AssetsPage } from "./assets-page";
@@ -157,7 +158,11 @@ const KPIS: AssetKpisResponse = {
   ],
 };
 
-function stubApi(dashboards: DashboardsListResponse = DASHBOARDS) {
+function stubApi(dashboards: DashboardsListResponse = DASHBOARDS, coveredAssetIds: string[] = []) {
+  // `F4.359` U16: the panel reads its asset's active maintenance; no spec makes the real request.
+  vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({
+    items: coveredAssetIds.length === 0 ? [] : [{ id: "w1", assetIds: coveredAssetIds }],
+  } as never);
   vi.spyOn(assetKpisApi, "fetchAssetKpis").mockResolvedValue(KPIS);
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([WIRED, UNWIRED]);
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES as never);
@@ -423,4 +428,29 @@ export async function theCodeCellNamesWhereTheAssetIs(): Promise<void> {
   expect(within(wired).getByText("· RTU WC-1")).toBeInTheDocument();
   expect(within(unwired).getByText("· Gauteng control room")).toBeInTheDocument();
   expect(wired.closest("tr")?.querySelectorAll("td")[4]?.textContent).toBe("RTU WC-1");
+}
+
+/** `F4.359` U16 (plan Q7) — the panel of a covered asset shows the maintenance badge, scoped to that asset. */
+export async function aCoveredAssetsPanelShowsTheMaintenanceBadge(): Promise<void> {
+  stubApi(DASHBOARDS, [UNWIRED.id]);
+  renderPage();
+  await clickRow("FEED-PUMP-2");
+  const panel = (await screen.findByRole("heading", { name: "Asset · FEED-PUMP-2" })).closest("aside") as HTMLElement;
+  expect(await within(panel).findByText("Maintenance")).toBeInTheDocument();
+  expect(maintenanceApi.fetchMaintenanceWindows).toHaveBeenCalledWith({ state: "active", assetId: UNWIRED.id });
+}
+
+/** `F4.359` U16 — an asset no window covers shows no badge. */
+export async function anUncoveredAssetsPanelShowsNoMaintenanceBadge(): Promise<void> {
+  stubApi();
+  // A rule-only window is active in scope but covers no asset: "any window" as the badge rule reddens this.
+  const read = vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({ items: [{ id: "w-rule", assetIds: [] }] } as never);
+  renderPage();
+  await clickRow("FEED-PUMP-2");
+  const panel = (await screen.findByRole("heading", { name: "Asset · FEED-PUMP-2" })).closest("aside") as HTMLElement;
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  await act(async () => {
+    await read.mock.results[0]?.value;
+  });
+  expect(within(panel).queryByText("Maintenance")).toBeNull();
 }

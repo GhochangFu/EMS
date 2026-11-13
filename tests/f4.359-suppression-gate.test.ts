@@ -21,6 +21,10 @@ import { repoRoot, walk, withoutComments } from "./support/source-scan";
  *    `DISPATCH_SITES`, each row saying how that site treats a suppressed alarm. A new dispatch site
  *    fails here until its row is written.
  *  - **G3** `rule-actions.ts`'s `notifyOnRaise` reads `raise.suppressed` before `shouldNotify(`.
+ *  - **G4** (plan U15) the Maintenance windows page is reachable: `/admin/maintenance-windows` is a
+ *    route of `extra-admin-routes.tsx` (not `app.tsx`, at the AGENTS.md section 4.5 cap) whose element
+ *    renders the page inside `AdminRoute`, and its tab is a row of `masterDataTabs` in the
+ *    Notifications area.
  *
  * Every scan strips comments first, so a docblock that spells the construct cannot pass or fail
  * the gate, and each rule is also run on a mutated source to prove it can fail.
@@ -92,6 +96,36 @@ function checksSuppressedFirst(source: string): boolean {
   return suppressed >= 0 && notify >= 0 && suppressed < notify;
 }
 
+const WEB_SRC = join(repoRoot, "apps/web/src");
+const WINDOWS_ROUTE = `<Route path="/admin/maintenance-windows" element={<MaintenanceWindowsRoute />} />`;
+const WINDOWS_TAB = `{ label: "Maintenance Windows", path: "/admin/maintenance-windows", area: "notifications" }`;
+
+/**
+ * `withoutComments` (the line-keyed stripper G1-G3 use), and a JSX comment in braces too, since that
+ * one opens mid-line. Only the braced form is removed: a bare `/*` inside a string literal (a path
+ * such as "/admin/work-order-settings/*") must not swallow the code up to the next `*\/`.
+ */
+const codeOf = (source: string): string => withoutComments(source).replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "");
+
+/** G4's route rule: the extra admin routes mount the page's route element on a code line. */
+function mountsTheWindowsRoute(extraRoutes: string): boolean {
+  return codeOf(extraRoutes).includes(WINDOWS_ROUTE);
+}
+
+/** G4's guard rule: the route element renders the page inside `AdminRoute`. */
+function guardsTheWindowsPage(page: string): boolean {
+  return /<AdminRoute user=\{user\}>\s*<MaintenanceWindowsAdminPage user=\{user\} \/>\s*<\/AdminRoute>/.test(codeOf(page));
+}
+
+/** G4's tab rule: the tab is a row inside the `masterDataTabs` array literal. */
+function listsTheWindowsTab(access: string): boolean {
+  const text = codeOf(access);
+  const start = text.indexOf("export const masterDataTabs = [");
+  if (start < 0) return false;
+  const end = text.indexOf("] as const", start);
+  return text.slice(start, end < 0 ? undefined : end).includes(WINDOWS_TAB);
+}
+
 describe("F4.359 suppression gate", () => {
   it("G1: only the raiser and the lifecycle sweep write suppressed_at / unsuppressed_at", () => {
     // The rule bites on every write shape, and ignores reads and comments.
@@ -156,5 +190,29 @@ describe("F4.359 suppression gate", () => {
     // Removed, or left only in a comment: the gate must fail.
     expect(checksSuppressedFirst(source.replace(check, ""))).toBe(false);
     expect(checksSuppressedFirst(source.replace(check, "\n  // if (raise.suppressed) return false;"))).toBe(false);
+  });
+
+  it("G4: the Maintenance windows route is in extra-admin-routes.tsx behind AdminRoute, and its tab is in masterDataTabs", () => {
+    const extra = readFileSync(join(WEB_SRC, "pages/admin/extra-admin-routes.tsx"), "utf8");
+    const page = readFileSync(join(WEB_SRC, "pages/admin/maintenance-windows-page.tsx"), "utf8");
+    const access = readFileSync(join(WEB_SRC, "lib/admin-access.ts"), "utf8");
+    const app = readFileSync(join(WEB_SRC, "app.tsx"), "utf8");
+    expect(mountsTheWindowsRoute(extra)).toBe(true);
+    expect(guardsTheWindowsPage(page)).toBe(true);
+    expect(listsTheWindowsTab(access)).toBe(true);
+    expect(app.includes("/admin/maintenance-windows"), "app.tsx sits at the cap: the route lives in extra-admin-routes.tsx").toBe(false);
+
+    // Mutated: each rule must be able to fail.
+    expect(mountsTheWindowsRoute(extra.replace(WINDOWS_ROUTE, ""))).toBe(false);
+    expect(mountsTheWindowsRoute(extra.replace(WINDOWS_ROUTE, `{/* ${WINDOWS_ROUTE} */}`))).toBe(false);
+    expect(guardsTheWindowsPage(page.replace(/<AdminRoute user=\{user\}>/, "<>").replace("</AdminRoute>", "</>"))).toBe(false);
+    expect(listsTheWindowsTab(access.replace(WINDOWS_TAB, ""))).toBe(false);
+    // The tab outside the array (after `] as const`) is not a tab.
+    const moved = access.replace(WINDOWS_TAB, "").replace("export type MasterDataTab =", `const stray = [${WINDOWS_TAB}];\nexport type MasterDataTab =`);
+    expect(moved).not.toBe(access);
+    expect(listsTheWindowsTab(moved)).toBe(false);
+    // A string holding `/*` is code, not a comment: the route after it is still seen.
+    const glob = `const legacy = "/admin/work-order-settings/*";\n${WINDOWS_ROUTE}\nconst tail = "*/";`;
+    expect(mountsTheWindowsRoute(glob)).toBe(true);
   });
 });

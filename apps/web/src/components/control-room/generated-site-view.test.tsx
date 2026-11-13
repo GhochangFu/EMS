@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, it, vi } from "vitest";
 
 import {
+  aCoveredAssetCardShowsTheMaintenanceBadge,
+  theSiteViewIssuesOneMaintenanceRead,
   allPointsExpandsTheCard,
   cardAriaLabelKeepsCodeAndName,
   cardLinksToTheAssetHistory,
@@ -202,5 +204,13 @@ describe("F3.68 GeneratedSiteView", () => {
 
   it("F4.316 keeps the card's aria-label as code and name", async () => {
     await cardAriaLabelKeepsCodeAndName();
+  });
+
+  it("F4.359 U16 a covered asset's card shows the maintenance badge and an uncovered one does not", async () => {
+    await aCoveredAssetCardShowsTheMaintenanceBadge();
+  });
+
+  it("F4.359 U16 the site view issues one maintenance read for all its cards", async () => {
+    await theSiteViewIssuesOneMaintenanceRead();
   });
 });

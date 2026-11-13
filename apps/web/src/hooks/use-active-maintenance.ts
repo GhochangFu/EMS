@@ -23,8 +23,12 @@ export const ACTIVE_MAINTENANCE_REFETCH_MS = 60_000;
 /**
  * `F4.359` U11 (plan D16/D17) — the active maintenance windows in `scope`, and the union of the asset ids
  * they cover. The API narrows to the caller's readable assets, so `assetIds` is already caller-readable.
+ * `enabled: false` makes no read and reads as no window (a page whose param names no asset).
  */
-export function useActiveMaintenance(scope: MaintenanceScope): {
+export function useActiveMaintenance(
+  scope: MaintenanceScope,
+  options: { readonly enabled?: boolean } = {},
+): {
   readonly windows: readonly MaintenanceWindowItem[];
   readonly coveredAssetIds: ReadonlySet<string>;
 } {
@@ -32,6 +36,7 @@ export function useActiveMaintenance(scope: MaintenanceScope): {
     queryKey: ["maintenance-windows", "active", scope],
     queryFn: () => fetchMaintenanceWindows({ state: "active", ...scope }),
     refetchInterval: ACTIVE_MAINTENANCE_REFETCH_MS,
+    enabled: options.enabled ?? true,
   });
   const windows = q.data?.items ?? EMPTY_WINDOWS;
   const coveredAssetIds = useMemo(() => new Set(windows.flatMap((w) => w.assetIds)), [windows]);

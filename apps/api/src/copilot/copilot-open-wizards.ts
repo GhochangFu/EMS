@@ -174,6 +174,8 @@ const PAGE_WIZARDS: readonly PageWizards[] = [
   { template: "/admin/users", wizards: [{ catalogId: "user.create" }] },
   { template: "/admin/calc-parameters", wizards: [{ catalogId: "calcParameter.create" }] },
   { template: "/admin/mimic-symbol-libraries", wizards: [{ catalogId: "mimicLibrary.create" }] },
+  // `F4.359` U15 (ADR 0099 Amendment 19): the Maintenance windows page mounts the create; its row wizards name a window by an id no route parameter carries.
+  { template: "/admin/maintenance-windows", wizards: [{ catalogId: "maintenanceWindow.create" }] },
 ];
 
 /** The route's parameters under `template`, or `null` when the route is not one of its paths. */

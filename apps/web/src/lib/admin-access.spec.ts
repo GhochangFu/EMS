@@ -147,6 +147,10 @@ export function runAssetTemplateTabTests(): void {
         // decision 11). This list is asserted whole on purpose, so adding a tab
         // fails here until the expectation is updated deliberately — which is
         // what happened.
+        // `F4.359` U15 (ADR 0131 decisions 13 and 16) — Maintenance Windows, ungated (every role
+        // `AdminRoute` admits manages windows in its own scope), first of the area so the
+        // sidebar's area link opens at a tab every master-data role sees.
+        "/admin/maintenance-windows",
         "/admin/notification-channels",
         "/admin/escalation-profiles",
         "/admin/notification-deliveries",
@@ -195,7 +199,8 @@ export function runAssetTemplateTabTests(): void {
     // `E3.1` added Asset Domains as `globalAdminOnly` and Work Order SLA and Checklist Templates as
     // `workOrderSettingsAdmin` (admin and organization_admin only): 26 -> 29 and 20 -> 22;
     // `location_admin` stays at 11.
-    const expected = role === "location_admin" ? 11 : role === "admin" ? 29 : 22;
+    // `F4.359` added Maintenance Windows ungated: 29 -> 30, 22 -> 23 and 11 -> 12.
+    const expected = role === "location_admin" ? 12 : role === "admin" ? 30 : 23;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,

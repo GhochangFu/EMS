@@ -406,16 +406,18 @@ export function showsTheHubAndSixAreasToAnOrganizationAdmin(): void {
     "Reference Data /admin/asset-groups",
     "Templates & Visuals /admin/asset-templates",
     "Data Input /admin/manual-readings",
-    "Notifications /admin/notification-channels",
+    // `F4.359`: the area opens at its first tab, Maintenance Windows.
+    "Notifications /admin/maintenance-windows",
     "Users & Access /admin/users",
   ]);
 }
 
 /**
- * S10 — a `location_admin` has no Notifications entry (it sees no tab of that area) and no
- * Users & Access entry (its one tab is `usersAdmin`).
+ * S10 — a `location_admin` has no Users & Access entry (its tabs are `usersAdmin` and
+ * `serviceAccountsAdmin`). `F4.359` (ADR 0131 decision 13): its Notifications entry is back,
+ * opening at Maintenance Windows, the one tab of that area it sees.
  */
-export function hidesTheNotificationsEntryFromALocationAdmin(): void {
+export function showsALocationAdminItsMaintenanceWindowsEntry(): void {
   renderShell(LOCATION, "/", "location_admin");
   expect(adminEntries()).toEqual([
     "Master Data Hub /admin",
@@ -423,6 +425,7 @@ export function hidesTheNotificationsEntryFromALocationAdmin(): void {
     "Reference Data /admin/asset-groups",
     "Templates & Visuals /admin/asset-templates",
     "Data Input /admin/manual-readings",
+    "Notifications /admin/maintenance-windows",
   ]);
 }
 

@@ -13,6 +13,7 @@ import {
 import { freshWindowMs, isStale } from "../../lib/schematic-telemetry";
 import { AssetHistoryLink } from "../assets/asset-history-link";
 import { AssetWhere } from "../assets/asset-where";
+import { MaintenanceBadge } from "../maintenance/maintenance-badge";
 import { StatusPill } from "../status-pill";
 
 const STATUS_LABEL: Record<AssetStatus, string> = { live: "Live", stale: "Stale", none: "None" };
@@ -38,9 +39,12 @@ const STATUS_TONE: Record<AssetStatus, "ok" | "warning" | "offline"> = {
 export function GeneratedSiteAssetCard({
   asset,
   readings,
+  inMaintenance = false,
 }: {
   asset: GeneratedSiteAssetDto;
   readings: SiteLiveReadings;
+  /** `F4.359` U16 (plan Q7): from the site view's one read — a card never reads maintenance itself. */
+  inMaintenance?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   // `F4.350`: the asset is judged on its own RTU's window, the same one the API judged `freshness` on.
@@ -60,8 +64,15 @@ export function GeneratedSiteAssetCard({
           <p className="truncate text-2xs text-ink-muted">{asset.name}</p>
           <AssetHistoryLink assetId={asset.id} code={asset.code} />
         </div>
-        <span data-testid="asset-status">
-          <StatusPill label={STATUS_LABEL[status]} tone={STATUS_TONE[status]} />
+        <span className="flex shrink-0 items-center gap-1">
+          {inMaintenance ? (
+            <span data-testid="asset-maintenance-badge">
+              <MaintenanceBadge />
+            </span>
+          ) : null}
+          <span data-testid="asset-status">
+            <StatusPill label={STATUS_LABEL[status]} tone={STATUS_TONE[status]} />
+          </span>
         </span>
       </div>
 

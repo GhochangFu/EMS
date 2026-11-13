@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -7,6 +7,7 @@ import { expect, vi } from "vitest";
 import type { DashboardDto, SiteWidgetsResponse, UserRole } from "@bms/shared";
 
 import * as dashboardsApi from "../api/dashboards";
+import * as maintenanceApi from "../api/maintenance-windows";
 import * as siteWidgetsApi from "../api/dashboard-site-widgets";
 import * as vocabulariesApi from "../api/vocabularies";
 import * as systemStatusApi from "../api/system-status";
@@ -125,7 +126,11 @@ function LocationProbe() {
   );
 }
 
-function renderPage(user: AuthUser, entry = "/dashboards/site-a-overview"): void {
+function renderPage(user: AuthUser, entry = "/dashboards/site-a-overview", coveredAssetIds: string[] = []): void {
+  // `F4.359` U16: an asset-scoped dashboard reads its asset's active maintenance; no spec makes the real request.
+  vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({
+    items: coveredAssetIds.length === 0 ? [] : [{ id: "w1", assetIds: coveredAssetIds }],
+  } as never);
   // `AppShell` mounts `SystemStatusIndicator`; unstubbed, its `GET /system/status` reaches a local
   // API on :4000, answers 401 and clears the session (`dashboard-builder-page.spec.tsx`'s precedent).
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
@@ -439,4 +444,43 @@ export async function aWidgetRendersViaTheLiveCanvas(): Promise<void> {
 
   await screen.findByRole("heading", { name: "Site A Overview" });
   expect(await screen.findByText("Energy today")).toBeInTheDocument();
+}
+
+const ASSET_DTO: DashboardDto = { ...DTO, locationId: null, assetId: ASSET_ID };
+
+/** `F4.359` U16 (plan Q7) — ONE badge in the header of a covered asset's dashboard, even with a widget on it. */
+export async function aCoveredAssetDashboardShowsOneHeaderBadge(): Promise<void> {
+  stubLiveCanvas();
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue({ ...DTO_WITH_WIDGET, locationId: null, assetId: ASSET_ID });
+  renderPage(asUser("viewer"), "/dashboards/site-a-overview", [ASSET_ID]);
+  const badge = await screen.findByTestId("asset-maintenance-badge");
+  expect(badge.closest("header")).not.toBeNull();
+  expect(screen.getAllByTestId("asset-maintenance-badge")).toHaveLength(1);
+  expect(maintenanceApi.fetchMaintenanceWindows).toHaveBeenCalledWith({ state: "active", assetId: ASSET_ID });
+}
+
+/** `F4.359` U16 — an uncovered asset's dashboard shows no badge. */
+export async function anUncoveredAssetDashboardShowsNoBadge(): Promise<void> {
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(ASSET_DTO);
+  renderPage(asUser("viewer"));
+  // A rule-only window is active in scope but covers no asset: "any window" as the badge rule reddens this.
+  const read = vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({ items: [{ id: "w-rule", assetIds: [] }] } as never);
+  await screen.findByRole("heading", { name: "Site A Overview" });
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  await act(async () => {
+    await read.mock.results[0]?.value;
+  });
+  expect(screen.queryByTestId("asset-maintenance-badge")).toBeNull();
+}
+
+/** `F4.359` U16 — a dashboard with no asset makes no maintenance read at all. */
+export async function aNonAssetDashboardMakesNoMaintenanceRead(): Promise<void> {
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO);
+  renderPage(asUser("viewer"), "/dashboards/site-a-overview", [ASSET_ID]);
+  await screen.findByRole("heading", { name: "Site A Overview" });
+  expect(maintenanceApi.fetchMaintenanceWindows).not.toHaveBeenCalled();
+  expect(screen.queryByTestId("asset-maintenance-badge")).toBeNull();
+  // Neither a badge nor the Edit link (a viewer): the header has no empty actions slot.
+  const header = screen.getByRole("heading", { level: 1, name: "Site A Overview" }).closest("header") as HTMLElement;
+  expect(header.children).toHaveLength(1);
 }

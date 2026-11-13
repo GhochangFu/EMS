@@ -16,7 +16,7 @@ import {
   givesAnOrganizationAdminTheSettingsLink,
   givesEveryRailItemAUniqueCode,
   hidesTheEntryFromANoneScope,
-  hidesTheNotificationsEntryFromALocationAdmin,
+  showsALocationAdminItsMaintenanceWindowsEntry,
   hidesTheEntryWhileTheScopeIsNull,
   doesNotHighlightTheEntryElsewhere,
   hasNoDashboardEntry,
@@ -105,8 +105,8 @@ describe("F3.66 Control Room sidebar entry", () => {
     showsTheHubAndSixAreasToAnOrganizationAdmin();
   });
 
-  it("S10 hides the Notifications area entry from a location_admin (F3.76)", () => {
-    hidesTheNotificationsEntryFromALocationAdmin();
+  it("S10 shows a location_admin its admin entries, Notifications at Maintenance Windows and no Users & Access (F3.76, F4.359)", () => {
+    showsALocationAdminItsMaintenanceWindowsEntry();
   });
 
   it("M1 selects the Sites & Equipment entry on a drill-down (F3.76)", () => {
