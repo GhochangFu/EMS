@@ -71,3 +71,24 @@ export async function theSummaryReadSendsTheScope(): Promise<void> {
   const url = new URL(seen);
   expect([url.pathname, url.searchParams.get("organizationId")]).toEqual(["/api/v1/alarms/summary", "11111111-1111-4111-8111-111111111111"]);
 }
+
+/** U6 — acknowledge is the existing route, once per id, with the reason in the body. */
+export async function acknowledgeIsTheExistingRoute(): Promise<void> {
+  const seen: { url: string; init: RequestInit | undefined }[] = [];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    seen.push({ url, init });
+    return new Response(
+      JSON.stringify({
+        id: "a1", assetId: null, ruleKey: null, ruleId: null, severity: "critical", message: "m", raisedAt: "2026-11-12T10:00:00.000Z",
+        acknowledgedAt: "2026-11-12T10:01:00.000Z", acknowledgedBy: "u", clearedAt: null, assetCode: null, assetRtuName: null,
+        assetLocationName: null, assetName: null, siteName: null, source: "ingest_host", rtuId: null, rtuCode: null,
+        severityRank: 30, locationName: null,
+      }),
+      { status: 200 },
+    );
+  });
+  await browserAlarmBarPorts().acknowledge("a1", "Checked on site");
+  expect(seen).toHaveLength(1);
+  expect(new URL(seen[0]!.url).pathname).toBe("/api/v1/alarms/a1/ack");
+  expect([seen[0]!.init?.method, JSON.parse(String(seen[0]!.init?.body))]).toEqual(["POST", { reason: "Checked on site" }]);
+}

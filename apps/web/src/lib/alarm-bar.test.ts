@@ -10,4 +10,7 @@ describe("alarm bar rules (F4.357, ADR 0130)", () => {
   it("the newest unacknowledged alarm prefers rank, then time (decision 2)", () => spec.newestUnacknowledgedPrefersRankThenTime());
   it("the counts sort by rank descending, an unseeded rank included", () => spec.countsSortByRankDescending());
   it("the location label is the alarm's own location (decision 17)", () => spec.locationLabelPrefersTheAlarmsOwnLocation());
+  it("the popup rows: unacknowledged, rank >= 20, unseen, rank then newest, at most 50 (U6)", () =>
+    spec.popupRowsFollowRankThenTimeAndSkipSeen());
+  it("'and N more' is exact and never negative (U6, Q1)", () => spec.moreActiveCountIsExactAndNeverNegative());
 });

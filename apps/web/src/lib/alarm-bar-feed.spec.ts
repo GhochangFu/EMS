@@ -4,6 +4,7 @@ import { create } from "zustand";
 
 import type { AlarmReadScope } from "../api/alarms";
 import { useAlarmBarStore } from "../stores/alarm-bar-store";
+import { popupRows } from "./alarm-bar";
 import { alarmItem } from "./alarm-bar.spec";
 import {
   ALARM_BAR_READ_TIMEOUT_MS,
@@ -49,6 +50,11 @@ export function fakeAlarmBarPorts(answer: { list?: readonly AlarmListItem[]; sum
   const sockets: { token: string; on: AlarmBarSocketHandlers; closed: boolean }[] = [];
   const listCalls: AlarmReadScope[] = [];
   const summaryCalls: AlarmReadScope[] = [];
+  const ackCalls: { id: string; reason: string }[] = [];
+  const refuse = new Map<string, string>();
+  let ackInFlight = 0;
+  let afterAck: ((id: string) => void) | null = null;
+  let ackOverlap = false;
   const current = { list: answer.list ?? [], summary: answer.summary ?? EMPTY_SUMMARY };
   let hold: Deferred<AlarmsListResponse> | null = null;
   let failNext = 0;
@@ -75,12 +81,34 @@ export function fakeAlarmBarPorts(answer: { list?: readonly AlarmListItem[]; sum
       summaryCalls.push(scope);
       return Promise.resolve(current.summary);
     },
+    async acknowledge(id, reason) {
+      ackCalls.push({ id, reason });
+      ackInFlight += 1;
+      if (ackInFlight > 1) ackOverlap = true;
+      await Promise.resolve();
+      ackInFlight -= 1;
+      afterAck?.(id);
+      const refusal = refuse.get(id);
+      if (refusal !== undefined) throw new Error(refusal);
+      return alarmItem({ id, acknowledgedAt: "2026-11-12T12:00:00.000Z" });
+    },
   };
   return {
     ports,
     sockets,
     listCalls,
     summaryCalls,
+    ackCalls,
+    /** True when two acknowledge calls ever ran at once. */
+    ackOverlapped: () => ackOverlap,
+    /** Runs `run` after each acknowledge call answers. */
+    afterAcknowledge(run: (id: string) => void) {
+      afterAck = run;
+    },
+    /** The acknowledge of `id` fails with `message`. */
+    refuseAcknowledge(id: string, message: string) {
+      refuse.set(id, message);
+    },
     /** The next list answers: what the server holds now. */
     answer(next: { list?: readonly AlarmListItem[]; summary?: AlarmSummaryResponse }) {
       if (next.list) current.list = next.list;
@@ -363,5 +391,88 @@ export async function aHungReadFailsAndTheFeedRecovers(): Promise<void> {
     await vi.advanceTimersByTimeAsync(ALARM_BAR_REFETCH_MS);
     expect(f.listCalls.length, "an event reads again once the hung read has failed").toBe(before + 1);
     expect(useAlarmBarStore.getState().feed).toBe("live");
+  });
+}
+
+const popupIds = (): string[] => {
+  const state = useAlarmBarStore.getState();
+  return state.list === null ? [] : popupRows(state.list, state.seenIds).map((alarm) => alarm.id);
+};
+
+/** U6 — Close marks the shown rows seen; a later list's new id is the only popup row. */
+export async function closeMarksTheShownRowsSeen(): Promise<void> {
+  await withFeed(
+    async (f) => {
+      await flush();
+      expect(popupIds()).toEqual(["a1"]);
+      alarmBarFeed()?.closePopup();
+      expect(popupIds()).toEqual([]);
+      expect(useAlarmBarStore.getState().list?.map((a) => a.id), "the alarm stays on the bar").toEqual(["a1"]);
+      f.answer({ list: [alarmItem({ id: "a1" }), alarmItem({ id: "a2" })] });
+      alarmBarFeed()?.refreshNow();
+      await flush();
+      expect(popupIds()).toEqual(["a2"]);
+    },
+    { list: [alarmItem({ id: "a1" })] },
+  );
+}
+
+/** U6 (decision 21) — "seen" survives a scope change and a token renewal; a session end clears it. */
+export async function seenLastsForTheTabsSession(): Promise<void> {
+  await withFeed(
+    async (f) => {
+      await flush();
+      alarmBarFeed()?.closePopup();
+      alarmBarFeed()?.setScope({ kind: "organization", organizationId: ORG });
+      await flush();
+      f.session.setState({ accessToken: "token-2", user: { id: "user-1" } });
+      await flush();
+      expect(popupIds(), "a navigation and a renewal keep it").toEqual([]);
+      f.session.setState({ accessToken: null, user: null });
+      f.session.setState({ accessToken: "token-3", user: { id: "user-1" } });
+      await flush();
+      expect(popupIds(), "a sign-in after a session end treats it as unseen").toEqual(["a1"]);
+    },
+    { list: [alarmItem({ id: "a1" })] },
+  );
+}
+
+/** U6 (decisions 8, 18) — one call per id, in order, one at a time, the same reason; failures kept; then a read. */
+export async function acknowledgeCallsOncePerAlarmInOrder(): Promise<void> {
+  await withFeed(async (f) => {
+    await flush();
+    f.refuseAcknowledge("b", '{"statusCode":409,"message":"Alarm already acknowledged"}');
+    const reads = f.listCalls.length;
+    const result = await alarmBarFeed()!.acknowledge(["a", "b", "c"], "Checked on site");
+    expect(f.ackCalls).toEqual([
+      { id: "a", reason: "Checked on site" },
+      { id: "b", reason: "Checked on site" },
+      { id: "c", reason: "Checked on site" },
+    ]);
+    expect(f.ackOverlapped(), "one at a time").toBe(false);
+    expect(result).toEqual({ done: 2, failed: [{ id: "b", message: "Alarm already acknowledged" }] });
+    expect(f.listCalls.length, "a read follows").toBe(reads + 1);
+  });
+}
+
+/**
+ * Security review (PR 3, Low) — an Acknowledge all stops when its session ends: the rest are not
+ * sent under the next user's token, and each is reported as not sent.
+ */
+export async function acknowledgeStopsWhenTheSessionEnds(): Promise<void> {
+  await withFeed(async (f) => {
+    await flush();
+    f.afterAcknowledge((id) => {
+      if (id === "a") f.session.setState({ accessToken: null, user: null });
+    });
+    const result = await alarmBarFeed()!.acknowledge(["a", "b", "c"], "Checked on site");
+    expect(f.ackCalls.map((call) => call.id)).toEqual(["a"]);
+    expect(result).toEqual({
+      done: 1,
+      failed: [
+        { id: "b", message: "Not sent: the session ended." },
+        { id: "c", message: "Not sent: the session ended." },
+      ],
+    });
   });
 }

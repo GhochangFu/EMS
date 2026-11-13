@@ -103,3 +103,25 @@ export function countsByRankDescending(summary: AlarmSummaryResponse): AlarmSeve
 export function alarmLocationLabel(alarm: Pick<AlarmListItem, "locationName" | "siteName">): string | null {
   return alarm.locationName ?? alarm.siteName;
 }
+
+/**
+ * `F4.357` U6 (decisions 6, 7; plan D5) — the popup's rows: unacknowledged, of popup rank, and not
+ * yet seen in this tab; highest rank first, then the newest; at most {@link ALARM_BAR_LIST_LIMIT}.
+ */
+export function popupRows(list: readonly AlarmListItem[], seenIds: ReadonlySet<string>): AlarmListItem[] {
+  return list
+    .filter((alarm) => alarm.acknowledgedAt === null && alarm.severityRank >= ALARM_POPUP_MIN_RANK && !seenIds.has(alarm.id))
+    .sort((a, b) => b.severityRank - a.severityRank || Date.parse(b.raisedAt) - Date.parse(a.raisedAt))
+    .slice(0, ALARM_BAR_LIST_LIMIT);
+}
+
+/**
+ * Plan Q1 — "and N more active alarms": the scope's unacknowledged alarms of popup rank that the
+ * list (at most 50) does not hold. Never negative: the summary and the list are two reads.
+ */
+export function moreActiveCount(summary: AlarmSummaryResponse, list: readonly AlarmListItem[]): number {
+  const unacknowledged = summary.items
+    .filter((row) => row.rank >= ALARM_POPUP_MIN_RANK)
+    .reduce((sum, row) => sum + row.unacknowledged, 0);
+  return Math.max(0, unacknowledged - list.length);
+}

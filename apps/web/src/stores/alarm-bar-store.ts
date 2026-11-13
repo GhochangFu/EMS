@@ -14,12 +14,16 @@ import type { AlarmBarScope } from "../lib/alarm-bar";
  *   first (plan Q1); `null` until the first answer for this scope.
  * - `summary` — the scope's active counts per severity; `null` likewise.
  * - `feed` — `"stale"` after a failed read or a lost socket (plan D15).
+ * - `seenIds` — the alarms this tab's popup has shown and the operator closed
+ *   (U6, plan D5). Kept across pages and token renewals; a session end, a
+ *   login or a reload starts it empty (decision 21).
  */
 export type AlarmBarState = {
   readonly scope: AlarmBarScope;
   readonly list: readonly AlarmListItem[] | null;
   readonly summary: AlarmSummaryResponse | null;
   readonly feed: "live" | "stale";
+  readonly seenIds: ReadonlySet<string>;
 };
 
 /** The state of a tab with no session, or a fresh one. */
@@ -28,6 +32,7 @@ export const INITIAL_ALARM_BAR_STATE: AlarmBarState = {
   list: null,
   summary: null,
   feed: "live",
+  seenIds: new Set<string>(),
 };
 
 export const useAlarmBarStore = create<AlarmBarState>()(() => INITIAL_ALARM_BAR_STATE);

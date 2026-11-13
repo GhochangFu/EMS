@@ -13,4 +13,5 @@ describe("alarm bar browser ports (F4.357)", () => {
   it("the socket goes to /ws/alarms with the token and reaches the feed", () => spec.theSocketReachesTheFeed());
   it("the list read is the unacknowledged read of popup rank", () => spec.theListReadIsTheUnacknowledgedRead());
   it("the summary read sends the scope", () => spec.theSummaryReadSendsTheScope());
+  it("acknowledge is the existing route with the reason (U6)", () => spec.acknowledgeIsTheExistingRoute());
 });

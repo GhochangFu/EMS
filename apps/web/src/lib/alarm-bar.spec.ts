@@ -8,7 +8,9 @@ import {
   alarmLocationLabel,
   alarmReadScopeOf,
   countsByRankDescending,
+  moreActiveCount,
   newestUnacknowledged,
+  popupRows,
 } from "./alarm-bar";
 
 /**
@@ -118,4 +120,41 @@ export function locationLabelPrefersTheAlarmsOwnLocation(): void {
   expect(alarmLocationLabel({ locationName: "Pump room", siteName: "Site A" })).toBe("Pump room");
   expect(alarmLocationLabel({ locationName: null, siteName: "Site A" })).toBe("Site A");
   expect(alarmLocationLabel({ locationName: null, siteName: null })).toBeNull();
+}
+
+/**
+ * `F4.357` U6 (decisions 6, 7) — the popup's rows: unacknowledged, rank >= 20, not seen; rank
+ * descending, then newest; at most 50.
+ */
+export function popupRowsFollowRankThenTimeAndSkipSeen(): void {
+  const rows = [
+    alarmItem({ id: "w-old", severity: "warning", severityRank: 20, raisedAt: "2026-11-12T08:00:00.000Z" }),
+    alarmItem({ id: "c-old", raisedAt: "2026-11-12T09:00:00.000Z" }),
+    alarmItem({ id: "w-new", severity: "warning", severityRank: 20, raisedAt: "2026-11-12T12:00:00.000Z" }),
+    alarmItem({ id: "c-new", raisedAt: "2026-11-12T10:00:00.000Z" }),
+    alarmItem({ id: "u", severity: "urgent", severityRank: 25, raisedAt: "2026-11-12T07:00:00.000Z" }),
+    alarmItem({ id: "info", severity: "info", severityRank: 10 }),
+    alarmItem({ id: "acked", acknowledgedAt: "2026-11-12T10:30:00.000Z" }),
+    alarmItem({ id: "seen" }),
+  ];
+  expect(popupRows(rows, new Set(["seen"])).map((row) => row.id)).toEqual(["c-new", "c-old", "u", "w-new", "w-old"]);
+  const many = Array.from({ length: 60 }, (_, i) => alarmItem({ id: `a${i}` }));
+  expect(popupRows(many, new Set())).toHaveLength(50);
+  expect(popupRows([], new Set())).toEqual([]);
+}
+
+/** Q1 — "and N more": the unacknowledged alarms of rank >= 20 beyond the list; never negative. */
+export function moreActiveCountIsExactAndNeverNegative(): void {
+  const summary = (warning: number, critical: number, info = 4): AlarmSummaryResponse => ({
+    total: 0,
+    items: [
+      { code: "info", label: "Info", tone: "info", rank: 10, count: info, unacknowledged: info },
+      { code: "warning", label: "Warning", tone: "warning", rank: 20, count: warning + 1, unacknowledged: warning },
+      { code: "critical", label: "Critical", tone: "critical", rank: 30, count: critical, unacknowledged: critical },
+    ],
+  });
+  const fifty = Array.from({ length: 50 }, (_, i) => alarmItem({ id: `a${i}` }));
+  expect(moreActiveCount(summary(10, 50), fifty)).toBe(10);
+  expect(moreActiveCount(summary(0, 2), fifty.slice(0, 2))).toBe(0);
+  expect(moreActiveCount(summary(0, 1), fifty.slice(0, 3)), "a stale summary never goes negative").toBe(0);
 }

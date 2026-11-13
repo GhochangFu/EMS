@@ -18,6 +18,7 @@ import { useAlarmBarStore } from "../../stores/alarm-bar-store";
 import { useAuthStore } from "../../stores/auth-store";
 import { AlarmAckWizard } from "../alarm-ack-wizard";
 import { AlarmBarList } from "./alarm-bar-list";
+import { AlarmBarPopup } from "./alarm-bar-popup";
 
 /** The colour of one count, from the summary row's own `tone` (ADR 0110 roles; no vocabulary read). */
 const COUNT_TONE: Record<AlarmSeverityCount["tone"], string> = {
@@ -126,6 +127,11 @@ export function AlarmBar() {
           onClose={() => setListOpen(false)}
         />
       ) : null}
+      {/*
+        U6 (decisions 6-8): renders nothing while no unseen alarm of popup rank is unacknowledged.
+        After the list, so it paints above an open All alarms list and Close stays reachable.
+      */}
+      <AlarmBarPopup feed={feed} readOnly={!mayAcknowledge} />
       {acknowledging !== null
         ? createPortal(
             <AlarmAckWizard
