@@ -11,6 +11,7 @@ import { FILE_DATA_ENTRIES, FILE_DATA_PENDING } from "./file-data";
 import { KPI_ENTRIES } from "./kpis";
 import { LOCATION_TYPE_ENTRIES, LOCATION_TYPE_PENDING } from "./location-types";
 import { MQTT_PAYLOAD_FORMAT_ENTRIES, MQTT_PAYLOAD_FORMAT_PENDING } from "./mqtt-payload-formats";
+import { MAINTENANCE_WINDOW_PENDING } from "./maintenance-windows";
 import { LOCATION_ENTRIES, LOCATION_PENDING } from "./locations";
 import { MAINTENANCE_ENTRIES } from "./maintenance";
 import { NOTIFICATION_ENTRIES, NOTIFICATION_PENDING } from "./notifications";
@@ -322,6 +323,8 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...FILE_DATA_PENDING,
   // `F4.334` (ADR 0099 Amendment 17): only the test route stays out; the writes are entries.
   ...MQTT_PAYLOAD_FORMAT_PENDING,
+  // `F4.359` (ADR 0099 Amendment 19): the four window writes, until that amendment's build (plan PR 6).
+  ...MAINTENANCE_WINDOW_PENDING,
   // `E3.1` (ADR 0122): the work-order depth routes join the named exclusion list in that row.
   {
     method: "PUT",

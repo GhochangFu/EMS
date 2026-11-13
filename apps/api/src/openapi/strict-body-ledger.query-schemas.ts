@@ -35,6 +35,7 @@ import {
 import {
   listMaintenanceQuerySchema,
 } from "../maintenance/maintenance.schema";
+import { maintenanceWindowListQuerySchema } from "../maintenance-windows/maintenance-windows.schema";
 import {
   escalationDefaultsQuerySchema,
 } from "../notifications/escalation-profiles.schema";
@@ -177,4 +178,7 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // 33 -> 34: `F4.350` registered `assetWindowsQuerySchema` (`GET /telemetry/asset-windows?assetIds=`,
   // ADR 0075 Amendment 3 decision 7) — `.strict()`, no body, no ledger entry, the same precedent.
   assetWindowsQuerySchema,
+  // 34 -> 35: `F4.359` registered `maintenanceWindowListQuerySchema` (`GET /maintenance-windows`, ADR 0131)
+  // — `.strict()`, no body, no ledger entry, the same precedent.
+  maintenanceWindowListQuerySchema,
 };

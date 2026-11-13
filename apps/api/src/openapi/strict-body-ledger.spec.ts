@@ -138,6 +138,9 @@ import {
   createReportScheduleBodySchema,
   saveEnergyReportFileBodySchema,
   updateReportScheduleBodySchema,
+  closeMaintenanceWindowBodySchema,
+  createMaintenanceWindowBodySchema,
+  extendMaintenanceWindowBodySchema,
 } from "@bms/shared";
 import { rulePreviewBodySchema } from "../rules/rules.schema";
 
@@ -395,6 +398,11 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   updatePointKeyStateBodySchema,
   updateRtuBodySchema,
   updateWorkOrderStatusBodySchema,
+  // `F4.359` (ADR 0131). All `.strict()`, the target union's three arms too: the organization is the
+  // targets' (D1), so an `organizationId` or a `createdBy` sent must be a 400, never dropped at 201.
+  closeMaintenanceWindowBodySchema,
+  createMaintenanceWindowBodySchema,
+  extendMaintenanceWindowBodySchema,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -911,6 +919,9 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // (`GET /telemetry/asset-windows?assetIds=`, ADR 0075 Amendment 3 decision 7): one bounded
   // `assetIds` array, `.strict()`, no body — the same precedent.
   //
+  // 34 -> 35: `F4.359` registered `maintenanceWindowListQuerySchema` (`GET /maintenance-windows`, ADR
+  // 0131): four narrowing filters and a bounded `limit`, `.strict()`, no body — the same precedent.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -920,7 +931,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(34);
+  ).toBe(35);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

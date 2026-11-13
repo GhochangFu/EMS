@@ -150,6 +150,7 @@ import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard
 import { siteWidgetsQuerySchema } from "../dashboard-builder/site-widgets.schema";
 import { mimicLayoutPreviewQuerySchema } from "../mimic-layouts/mimic-layouts.schema";
 import { listMaintenanceQuerySchema } from "../maintenance/maintenance.schema";
+import { maintenanceWindowListQuerySchema } from "../maintenance-windows/maintenance-windows.schema";
 import { listReportFilesQuerySchema } from "../reports/report-files.schema";
 // `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`;
 // `F4.284`: the alarm, work-order and convert bodies too.
@@ -174,6 +175,10 @@ import {
   energyViewQuerySchema,
   saveEnergyReportFileBodySchema,
   updateReportScheduleBodySchema,
+  // `F4.359` (ADR 0131): the maintenance-window write bodies.
+  closeMaintenanceWindowBodySchema,
+  createMaintenanceWindowBodySchema,
+  extendMaintenanceWindowBodySchema,
 } from "@bms/shared";
 import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "../rules/rules.schema";
 
@@ -365,6 +370,12 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   MaintenanceController_createSchedule: createMaintenanceScheduleBodySchema,
   MaintenanceController_listSchedules: listMaintenanceQuerySchema,
   MaintenanceController_updateSchedule: updateMaintenanceScheduleBodySchema,
+  // `F4.359` (ADR 0131) — the window list query and the four write bodies (end and cancel share one).
+  MaintenanceWindowsController_cancel: closeMaintenanceWindowBodySchema,
+  MaintenanceWindowsController_create: createMaintenanceWindowBodySchema,
+  MaintenanceWindowsController_end: closeMaintenanceWindowBodySchema,
+  MaintenanceWindowsController_extend: extendMaintenanceWindowBodySchema,
+  MaintenanceWindowsController_list: maintenanceWindowListQuerySchema,
   // `F3.32c` (ADR 0081 decision 3) — the mimic layout library's two write bodies.
   MimicLayoutsController_create: createMimicLayoutBodySchema,
   MimicLayoutsController_replace: putMimicLayoutBodySchema,

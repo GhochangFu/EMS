@@ -18,6 +18,7 @@ import { AssetHealthModule } from "./asset-health/asset-health.module";
 import { HealthModule } from "./health/health.module";
 import { pinoHttpOptions } from "./logger.options";
 import { MaintenanceModule } from "./maintenance/maintenance.module";
+import { MaintenanceWindowsModule } from "./maintenance-windows/maintenance-windows.module";
 import { MapModule } from "./map/map.module";
 import { MimicLayoutsModule } from "./mimic-layouts/mimic-layouts.module";
 import { MimicSymbolLibrariesModule } from "./mimic-symbol-libraries/mimic-symbol-libraries.module";
@@ -69,6 +70,8 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     AssetHealthModule,
     WorkOrdersModule,
     MaintenanceModule,
+    // `F4.359` / ADR 0131 — the maintenance-window routes.
+    MaintenanceWindowsModule,
     RulesModule,
     ReportsModule,
     MapModule,

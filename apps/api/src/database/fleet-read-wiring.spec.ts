@@ -12,6 +12,7 @@ import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { CopilotPurgeService } from "../copilot/copilot-purge.service";
 import { DashboardService } from "../dashboard/dashboard.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
+import { MaintenanceWindowsService } from "../maintenance-windows/maintenance-windows.service";
 import { QUEUE_CLIENT } from "../queue/queue.tokens";
 import { WorkerHostService } from "../queue/worker-host.service";
 import { ReportDispatchService } from "../reports/report-dispatch.service";
@@ -278,4 +279,20 @@ export function assertTelemetryServiceTenantPoolSlot(): void {
 
 export function assertTelemetryServiceFleetPoolSlot(): void {
   expect(injectedToken(TelemetryService, 2)).toBe(FLEET_POOL);
+}
+
+/**
+ * `F4.359` — `MaintenanceWindowsService(tenantDb, fleetDb, audit)` (ADR 0131): every
+ * write runs under `withTenant` on slot 0; the pre-tenant target and window reads,
+ * the actor lookup and the list's fleet branch on slot 1. A swap would write on the
+ * BYPASSRLS pool, which `0152`'s `WITH CHECK` could never refuse, and the
+ * `.rls.integration` pair constructs the service with explicit pools. Two claims,
+ * one function each.
+ */
+export function assertMaintenanceWindowsServiceTenantSlot(): void {
+  expect(injectedToken(MaintenanceWindowsService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertMaintenanceWindowsServiceFleetSlot(): void {
+  expect(injectedToken(MaintenanceWindowsService, 1)).toBe(FLEET_DRIZZLE);
 }

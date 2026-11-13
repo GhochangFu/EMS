@@ -504,6 +504,14 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   createEdgeGatewayBodySchema: STRICT(CALLER_ERROR),
   updateEdgeGatewayBodySchema: STRICT(CALLER_ERROR),
   putEdgeGatewayRtusBodySchema: STRICT(CALLER_ERROR),
+  // `F4.359` (ADR 0131, plan D1): the window's organization is its targets'; an `organizationId`, a
+  // `createdBy` or a second id on a target arm has nowhere to land and must be a 400, never dropped.
+  createMaintenanceWindowBodySchema: STRICT(CALLER_ERROR),
+  "createMaintenanceWindowBodySchema/targets[]|0": STRICT(CALLER_ERROR),
+  "createMaintenanceWindowBodySchema/targets[]|1": STRICT(CALLER_ERROR),
+  "createMaintenanceWindowBodySchema/targets[]|2": STRICT(CALLER_ERROR),
+  extendMaintenanceWindowBodySchema: STRICT(CALLER_ERROR),
+  closeMaintenanceWindowBodySchema: STRICT(CALLER_ERROR),
   // `F3.73` plan D6 — the "Make site layout" body. Both keys are optional, so an unknown key
   // dropped silently (a misspelt `tabGroup`) would run the copy with no choice at all. The
   // `tabGroups` record is the one open map, and its keys and values are each bounded.
