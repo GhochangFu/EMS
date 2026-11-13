@@ -7,6 +7,7 @@ import { expect, vi } from "vitest";
 import type { AlarmListItem, AlarmSummaryResponse, UserRole } from "@bms/shared";
 
 import * as alarmsApi from "../../api/alarms";
+import * as maintenanceApi from "../../api/maintenance-windows";
 import { alarmItem } from "../../lib/alarm-bar.spec";
 import { EMPTY_SUMMARY, flush, installOnFakes } from "../../lib/alarm-bar-feed.spec";
 import { alarmBarFeed } from "../../lib/alarm-bar-feed";
@@ -42,6 +43,8 @@ type Fake = ReturnType<typeof installOnFakes>;
 
 async function withPopup(answer: Answer, check: (fake: Fake) => Promise<void>, role: UserRole = "operator"): Promise<void> {
   signIn(role);
+  // F4.359 U13: with a feed the Maintenance pill reads the windows; no request leaves the test.
+  vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({ items: [] });
   const fake = installOnFakes({ summary: EMPTY_SUMMARY, ...answer }, useAuthStore);
   try {
     mount();

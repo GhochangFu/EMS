@@ -7,6 +7,7 @@ import { expect, vi } from "vitest";
 import type { AlarmListItem, AlarmSummaryResponse, UserRole } from "@bms/shared";
 
 import * as alarmsApi from "../../api/alarms";
+import * as maintenanceApi from "../../api/maintenance-windows";
 import * as vocabApi from "../../api/vocabularies";
 import { alarmItem } from "../../lib/alarm-bar.spec";
 import { alarmBarFeed } from "../../lib/alarm-bar-feed";
@@ -58,6 +59,8 @@ async function withBar(
   role: UserRole = "operator",
 ): Promise<void> {
   signIn(role);
+  // F4.359 U13: with a feed the Maintenance pill reads the windows; no request leaves the test.
+  vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({ items: [] });
   const fake = installOnFakes(answer, useAuthStore);
   try {
     renderBar(path);
@@ -234,6 +237,7 @@ export async function mutesAndOffersToEnableBlockedSound(): Promise<void> {
     expect(f.tone.plays, "muted after the first tone").toBe(1);
   });
   signIn("operator");
+  vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({ items: [] });
   const fake = installOnFakes({ summary: SUMMARY, list: [alarmItem({ id: "c" })] }, useAuthStore);
   fake.tone.answer = "blocked";
   try {

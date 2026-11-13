@@ -684,3 +684,49 @@ export async function anUnlockRestartsTheCadence(): Promise<void> {
     vi.useRealTimers();
   }
 }
+
+const RETURNED_AT = "2026-11-12T11:00:00.000Z";
+
+/**
+ * `F4.359` U13 (ADR 0131 decisions 7, 8) — an alarm seen and closed, then suppressed (it leaves the
+ * unacknowledged read) and returned (`unsuppressedAt` set), pops up again. Closed after its return,
+ * an in-app navigation does not bring it back.
+ */
+export async function aReturnedAlarmPopsUpAgain(): Promise<void> {
+  await withFeed(
+    async (f) => {
+      await flush();
+      alarmBarFeed()?.closePopup();
+      expect(popupIds()).toEqual([]);
+      await serverHoldsIn(f, []);
+      await serverHoldsIn(f, [alarmItem({ id: "a1", unsuppressedAt: RETURNED_AT })]);
+      expect(popupIds(), "returned: new to the bar").toEqual(["a1"]);
+      alarmBarFeed()?.closePopup();
+      expect(popupIds()).toEqual([]);
+      alarmBarFeed()?.setScope({ kind: "organization", organizationId: ORG });
+      await flush();
+      expect(popupIds(), "a navigation keeps it seen").toEqual([]);
+    },
+    { list: [alarmItem({ id: "a1" })] },
+  );
+}
+
+/** U13 (decision 8) — a muted critical alarm that is suppressed stops the tone; on its return the tone plays again. */
+export async function aMutedCriticalThatReturnsSoundsAgain(): Promise<void> {
+  await withFeed(
+    async (f) => {
+      await flush();
+      expect(f.tone.plays).toBe(1);
+      alarmBarFeed()?.mute();
+      await serverHoldsIn(f, []);
+      await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS);
+      expect(f.tone.plays, "suppressed: silent").toBe(1);
+      await serverHoldsIn(f, [alarmItem({ id: "c1", unsuppressedAt: RETURNED_AT })]);
+      expect(f.tone.plays, "returned: it plays again").toBe(2);
+      alarmBarFeed()?.mute();
+      await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS);
+      expect(f.tone.plays, "and Mute covers it again").toBe(2);
+    },
+    { list: [critical("c1")] },
+  );
+}

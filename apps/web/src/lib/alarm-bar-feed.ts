@@ -6,6 +6,7 @@ import {
   type AlarmBarScope,
   alarmBarScopeKey,
   alarmReadScopeOf,
+  alarmSeenKey,
   criticalUnacknowledgedIds,
   popupRows,
   toneWanted,
@@ -318,7 +319,8 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
     closePopup() {
       const state = store.getState();
       if (state.list === null) return;
-      const shown = popupRows(state.list, state.seenIds).map((alarm) => alarm.id);
+      // `F4.359` U13: seen keys, so an alarm that returns from a maintenance window pops up again.
+      const shown = popupRows(state.list, state.seenIds).map(alarmSeenKey);
       store.setState({ seenIds: new Set([...state.seenIds, ...shown]) });
     },
     // Mutes the critical alarms in the list — at most 50 (Q1). In a storm of more than 50
@@ -327,6 +329,7 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
     mute() {
       const { list, mutedIds } = store.getState();
       if (list === null) return;
+      // `F4.359` U13: the keys (`alarmSeenKey`), so an alarm that returns from maintenance sounds again.
       store.setState({ mutedIds: new Set([...mutedIds, ...criticalUnacknowledgedIds(list)]) });
       evaluateTone();
     },

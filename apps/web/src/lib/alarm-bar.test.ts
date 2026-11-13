@@ -14,4 +14,7 @@ describe("alarm bar rules (F4.357, ADR 0130)", () => {
     spec.popupRowsFollowRankThenTimeAndSkipSeen());
   it("'and N more' is exact and never negative (U6, Q1)", () => spec.moreActiveCountIsExactAndNeverNegative());
   it("only unseen, unacknowledged alarms of rank >= 30 blink (U7)", () => spec.blinkingSeverityCodesAreUnseenCriticalOnly());
+  it("the seen key is the id, or id@unsuppressedAt once returned (F4.359 U13)", () => spec.theSeenKeyChangesWhenAnAlarmReturns());
+  it("a returned alarm pops up, blinks and sounds again (F4.359 U13)", () => spec.aReturnedAlarmIsNewToTheBar());
+  it("a suppressed alarm never pops up, blinks or sounds (F4.359 U13)", () => spec.aSuppressedAlarmIsIgnoredByTheBar());
 });

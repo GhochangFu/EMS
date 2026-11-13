@@ -82,7 +82,7 @@ export function alarmBarScopeLabel(scope: AlarmBarScope, pathname: string): stri
 export function newestUnacknowledged(list: readonly AlarmListItem[]): AlarmListItem | null {
   let best: AlarmListItem | null = null;
   for (const alarm of list) {
-    if (alarm.acknowledgedAt !== null) continue;
+    if (alarm.acknowledgedAt !== null || alarm.suppressed) continue;
     if (
       best === null ||
       alarm.severityRank > best.severityRank ||
@@ -105,12 +105,29 @@ export function alarmLocationLabel(alarm: Pick<AlarmListItem, "locationName" | "
 }
 
 /**
- * `F4.357` U6 (decisions 6, 7; plan D5) — the popup's rows: unacknowledged, of popup rank, and not
- * yet seen in this tab; highest rank first, then the newest; at most {@link ALARM_BAR_LIST_LIMIT}.
+ * `F4.359` U13 (ADR 0131 decisions 8, 19) — what "seen" and "muted" remember of an alarm: its id, or
+ * `id@unsuppressedAt` once it has returned from a maintenance window, so the bar treats the return as
+ * a new alarm (it pops up, blinks and sounds again). `suppressed` is read first: a row suppressed
+ * again keeps its earlier `unsuppressedAt`. Within one return the key is stable, so a refresh or an
+ * in-app navigation does not bring a closed alarm back.
  */
-export function popupRows(list: readonly AlarmListItem[], seenIds: ReadonlySet<string>): AlarmListItem[] {
+export function alarmSeenKey(alarm: Pick<AlarmListItem, "id" | "suppressed" | "unsuppressedAt">): string {
+  return !alarm.suppressed && alarm.unsuppressedAt !== null ? `${alarm.id}@${alarm.unsuppressedAt}` : alarm.id;
+}
+
+/** U13 (decision 6): an alarm the bar acts on — unacknowledged and not suppressed by a maintenance window. */
+function waitsForTheOperator(alarm: AlarmListItem): boolean {
+  return alarm.acknowledgedAt === null && !alarm.suppressed;
+}
+
+/**
+ * `F4.357` U6 (decisions 6, 7; plan D5) — the popup's rows: unacknowledged, not suppressed, of popup
+ * rank, and not yet seen in this tab ({@link alarmSeenKey}); highest rank first, then the newest; at
+ * most {@link ALARM_BAR_LIST_LIMIT}.
+ */
+export function popupRows(list: readonly AlarmListItem[], seenKeys: ReadonlySet<string>): AlarmListItem[] {
   return list
-    .filter((alarm) => alarm.acknowledgedAt === null && alarm.severityRank >= ALARM_POPUP_MIN_RANK && !seenIds.has(alarm.id))
+    .filter((alarm) => waitsForTheOperator(alarm) && alarm.severityRank >= ALARM_POPUP_MIN_RANK && !seenKeys.has(alarmSeenKey(alarm)))
     .sort((a, b) => b.severityRank - a.severityRank || Date.parse(b.raisedAt) - Date.parse(a.raisedAt))
     .slice(0, ALARM_BAR_LIST_LIMIT);
 }
@@ -127,24 +144,28 @@ export function moreActiveCount(summary: AlarmSummaryResponse, list: readonly Al
 }
 
 /**
- * `F4.357` U7 (decision 9) — the severity codes whose count blinks: those of an unacknowledged
- * alarm of rank >= {@link ALARM_CRITICAL_MIN_RANK} that this tab has not seen. Close (seen) or an
- * acknowledge stops it; a warning never blinks.
+ * `F4.357` U7 (decision 9) — the severity codes whose count blinks: those of an unacknowledged, not
+ * suppressed alarm of rank >= {@link ALARM_CRITICAL_MIN_RANK} that this tab has not seen (by
+ * {@link alarmSeenKey}). Close (seen) or an acknowledge stops it; a warning never blinks.
  */
-export function blinkingSeverityCodes(list: readonly AlarmListItem[], seenIds: ReadonlySet<string>): ReadonlySet<string> {
+export function blinkingSeverityCodes(list: readonly AlarmListItem[], seenKeys: ReadonlySet<string>): ReadonlySet<string> {
   return new Set(
     list
-      .filter((alarm) => alarm.acknowledgedAt === null && alarm.severityRank >= ALARM_CRITICAL_MIN_RANK && !seenIds.has(alarm.id))
+      .filter((alarm) => waitsForTheOperator(alarm) && alarm.severityRank >= ALARM_CRITICAL_MIN_RANK && !seenKeys.has(alarmSeenKey(alarm)))
       .map((alarm) => alarm.severity),
   );
 }
 
-/** `F4.357` U8 (decisions 10, 11) — the unacknowledged alarms of rank >= 30: what the tone is about. */
+/**
+ * `F4.357` U8 (decisions 10, 11) — the unacknowledged, not suppressed alarms of rank >= 30: what the
+ * tone is about, as {@link alarmSeenKey} keys (`F4.359` U13), so a muted alarm that returns from a
+ * maintenance window sounds again.
+ */
 export function criticalUnacknowledgedIds(list: readonly AlarmListItem[]): string[] {
-  return list.filter((alarm) => alarm.acknowledgedAt === null && alarm.severityRank >= ALARM_CRITICAL_MIN_RANK).map((alarm) => alarm.id);
+  return list.filter((alarm) => waitsForTheOperator(alarm) && alarm.severityRank >= ALARM_CRITICAL_MIN_RANK).map(alarmSeenKey);
 }
 
-/** U8 (plan D8) — the tone is wanted while one of them is not muted. */
-export function toneWanted(list: readonly AlarmListItem[], mutedIds: ReadonlySet<string>): boolean {
-  return criticalUnacknowledgedIds(list).some((id) => !mutedIds.has(id));
+/** U8 (plan D8) — the tone is wanted while one of them is not muted (`mutedKeys` holds seen keys). */
+export function toneWanted(list: readonly AlarmListItem[], mutedKeys: ReadonlySet<string>): boolean {
+  return criticalUnacknowledgedIds(list).some((key) => !mutedKeys.has(key));
 }

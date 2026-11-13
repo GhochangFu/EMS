@@ -21,6 +21,7 @@ import { useAlarmBarStore } from "../../stores/alarm-bar-store";
 import { useAuthStore } from "../../stores/auth-store";
 import { AlarmAckWizard } from "../alarm-ack-wizard";
 import { AlarmBarList } from "./alarm-bar-list";
+import { AlarmBarMaintenance } from "./alarm-bar-maintenance";
 import { AlarmBarPopup } from "./alarm-bar-popup";
 
 /** The colour of one count, from the summary row's own `tone` (ADR 0110 roles; no vocabulary read). */
@@ -102,6 +103,11 @@ export function AlarmBar() {
             </li>
           ))}
         </ul>
+        {/*
+          F4.359 U13 (ADR 0131 decision 15): "Maintenance N" beside the counts, while a window touches
+          the scope. Below the early return, so its windows read runs only with a feed installed.
+        */}
+        <AlarmBarMaintenance scope={scope} suppressed={summary === null ? null : summary.suppressed} />
         <span className="min-w-0 flex-1 truncate" aria-live="polite">
           {status === "stale" ? (
             <span className="font-semibold text-warning-ink">Alarms not updating</span>

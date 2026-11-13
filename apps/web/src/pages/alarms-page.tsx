@@ -19,6 +19,7 @@ import { AlarmSummaryCard } from "../components/alarm-summary-card";
 import { AppShell } from "../layouts/app-shell";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
+import { MaintenanceBadge } from "../components/maintenance/maintenance-badge";
 import { StatusPill } from "../components/status-pill";
 import { useAlarmsSocket } from "../hooks/use-alarms-socket";
 import type { AuthUser } from "../stores/auth-store";
@@ -123,10 +124,13 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   const [ackTarget, setAckTarget] = useState<AlarmListItem | null>(null);
   const [search, setSearch] = useState("");
   const [detailsTargetId, setDetailsTargetId] = useState<string | null>(null);
+  // `F4.359`: "Suppressed only" reads `state=suppressed`; off, the page sends no state (the API's `all`).
+  const [suppressedOnly, setSuppressedOnly] = useState(false);
+  const state = suppressedOnly ? ("suppressed" as const) : undefined;
 
   const listQ = useInfiniteQuery({
-    queryKey: ["alarms", "list"],
-    queryFn: ({ pageParam }) => fetchAlarmsPage(pageParam as string | undefined),
+    queryKey: ["alarms", "list", { state }],
+    queryFn: ({ pageParam }) => fetchAlarmsPage(pageParam as string | undefined, 25, state),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
@@ -243,6 +247,16 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           </p>
         ) : null}
 
+        {/*
+          F4.359: "Suppressed only" reads the suppressed rows alone, and the cards count what the page read.
+          They then say nothing about the plant, so they say what they are of and Critical drops "all clear".
+        */}
+        {suppressedOnly ? (
+          <p className="rounded border border-info-line bg-info-wash px-3 py-2 text-xs font-semibold text-info-ink">
+            Suppressed only: the counts below are of suppressed alarms only, not a reading of the plant.
+          </p>
+        ) : null}
+
         <div
           className={`grid gap-3 sm:grid-cols-2 ${
             showUnrecognised ? "lg:grid-cols-6" : "lg:grid-cols-5"
@@ -252,7 +266,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
             label="Critical"
             value={summary.critical}
             tone="critical"
-            emptyLabel={severityReady ? "all clear" : undefined}
+            emptyLabel={severityReady && !suppressedOnly ? "all clear" : undefined}
           />
           <AlarmSummaryCard label="Major" value={summary.major} tone="warning" />
           <AlarmSummaryCard label="Minor" value={summary.minor} tone="info" />
@@ -302,15 +316,20 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           </div>
         </SectionCard>
 
-        {listQ.isLoading ? (
-          <p className="text-sm text-ink-muted">Loading alarms…</p>
-        ) : listQ.isError ? (
-          <p className="text-sm text-critical-ink">Could not load alarms (auth?).</p>
-        ) : (
-          <SectionCard
-            title="Alarm Grid"
-            subtitle={`${filteredRows.length} of ${rows.length} loaded alarms shown`}
-            actions={
+        {/* F4.359: the card stays mounted through a load or an error, so "Suppressed only" can always be unticked. */}
+        <SectionCard
+          title="Alarm Grid"
+          subtitle={`${filteredRows.length} of ${rows.length} loaded alarms shown`}
+          actions={
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 text-xs text-ink-muted">
+                <input
+                  type="checkbox"
+                  checked={suppressedOnly}
+                  onChange={(event) => setSuppressedOnly(event.target.checked)}
+                />
+                Suppressed only
+              </label>
               <label className="flex min-w-[260px] items-center gap-2 text-xs text-ink-muted">
                 Search
                 <input
@@ -320,9 +339,15 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </label>
-            }
-            bodyClassName="surface-table overflow-x-auto p-0"
-          >
+            </div>
+          }
+          bodyClassName="surface-table overflow-x-auto p-0"
+        >
+          {listQ.isLoading ? (
+            <p className="px-3 py-2 text-sm text-ink-muted">Loading alarms…</p>
+          ) : listQ.isError ? (
+            <p className="px-3 py-2 text-sm text-critical-ink">Could not load alarms (auth?).</p>
+          ) : (
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b border-well-deep bg-well text-2xs font-semibold uppercase tracking-wide text-ink-muted">
                 <tr>
@@ -402,6 +427,12 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                         <span className={alarmStateToneClass(alarmLifecycleState(a))}>
                           {alarmStateLabel(alarmLifecycleState(a))}
                         </span>
+                        {/* F4.359: keyed on `suppressed`, never `maintenanceWindowId` — a returned alarm keeps its window id. */}
+                        {a.suppressed ? (
+                          <span className="ml-2 inline-block align-middle">
+                            <MaintenanceBadge />
+                          </span>
+                        ) : null}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <div className="flex justify-end gap-2">
@@ -446,8 +477,8 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                 )}
               </tbody>
             </table>
-          </SectionCard>
-        )}
+          )}
+        </SectionCard>
 
         {listQ.hasNextPage ? (
           <button

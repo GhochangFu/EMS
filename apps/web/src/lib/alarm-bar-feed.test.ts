@@ -32,4 +32,7 @@ describe("alarm bar feed (F4.357, ADR 0130 decisions 13, 16)", () => {
   it("a played tone clears Sound blocked (review C1)", () => spec.aPlayedToneClearsSoundBlocked());
   it("a throwing tone is blocked, never a failed read (review C2)", () => spec.aThrowingToneIsBlockedNotStale());
   it("an unlock restarts the cadence (review C3)", () => spec.anUnlockRestartsTheCadence());
+  it("a seen alarm that returns from maintenance pops up again; a navigation does not (F4.359 U13)", () =>
+    spec.aReturnedAlarmPopsUpAgain());
+  it("a muted critical alarm that returns from maintenance sounds again (F4.359 U13)", () => spec.aMutedCriticalThatReturnsSoundsAgain());
 });

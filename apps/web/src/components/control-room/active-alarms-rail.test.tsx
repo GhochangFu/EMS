@@ -29,6 +29,7 @@ import {
   theAssetCellsWherePartWraps,
   theRowHasTwoColumns,
   theAlarmCellHoldsLabelMessageAndPill,
+  theBadgeIsOnTheSuppressedRowOnly,
   theCodeStaysOnOneLine,
   viewAllLinksToTheAlarmsPage,
 } from "./active-alarms-rail.spec";
@@ -156,5 +157,9 @@ describe("F3.28 active alarms rail", () => {
 
   it("F3.16 names a device alarm's RTU or the ingest host; a rule alarm renders as before", async () => {
     await aDeviceAlarmNamesItsRtuOrTheIngestHost();
+  });
+
+  it("F4.359 draws the Maintenance badge on the suppressed row only", async () => {
+    await theBadgeIsOnTheSuppressedRowOnly();
   });
 });

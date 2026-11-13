@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { fetchActiveAlarms } from "../../api/alarms";
 import { ALARM_BAR_LIST_LIMIT, type AlarmBarScope, alarmBarScopeKey, alarmLocationLabel, alarmReadScopeOf } from "../../lib/alarm-bar";
 import { alarmSubjectName } from "../../lib/alarm-source";
+import { useAlarmBarStore } from "../../stores/alarm-bar-store";
 import { AlarmDetailsPanel } from "../alarm-details-panel";
 
 type AlarmBarListProps = {
@@ -19,7 +20,8 @@ type AlarmBarListProps = {
 
 /**
  * `F4.357` U5 (ADR 0130 decisions 2 and 4) — "All alarms": the scope's active
- * alarms (info included, at most 50, newest first), opened upward over the
+ * alarms (info included, at most 50, newest first; `F4.359` U13: suppressed
+ * ones dropped and counted, ADR 0131 decision 6), opened upward over the
  * page from the bar. Read through TanStack Query only while it is open (plan
  * Q1 ruling). A row opens `AlarmDetailsPanel`; the page does not change.
  */
@@ -29,7 +31,11 @@ export function AlarmBarList({ scope, scopeLabel, readOnly, onClose }: AlarmBarL
     queryKey: ["alarms", "alarm-bar", "active", alarmBarScopeKey(scope)],
     queryFn: () => fetchActiveAlarms(alarmReadScopeOf(scope), ALARM_BAR_LIST_LIMIT),
   });
-  const items = query.data?.items ?? [];
+  const read = query.data?.items ?? [];
+  // F4.359 U13 (plan Q4): `state=active` keeps suppressed alarms; the bar's list drops them. How many it
+  // says were dropped is the scope's summary count (the pill's), not what this 50-row read happened to hold.
+  const items = read.filter((alarm) => !alarm.suppressed);
+  const suppressedCount = useAlarmBarStore((state) => state.summary?.suppressed ?? 0);
   return (
     <section
       id="alarm-bar-list"
@@ -49,8 +55,10 @@ export function AlarmBarList({ scope, scopeLabel, readOnly, onClose }: AlarmBarL
           <p className="px-3 py-2 text-ink-muted">Loading…</p>
         ) : query.isError ? (
           <p className="px-3 py-2 text-critical-ink">Could not load the alarms.</p>
-        ) : items.length === 0 ? (
+        ) : read.length === 0 ? (
           <p className="px-3 py-2 text-ink-muted">No active alarms</p>
+        ) : items.length === 0 ? (
+          <p className="px-3 py-2 text-ink-muted">The newest active alarms are all suppressed by maintenance — open the Alarm Centre</p>
         ) : (
           <ul>
             {items.map((alarm) => (
@@ -72,10 +80,15 @@ export function AlarmBarList({ scope, scopeLabel, readOnly, onClose }: AlarmBarL
           </ul>
         )}
       </div>
-      <div className="border-t border-line px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-3 py-2">
         <Link to="/alarms" className="font-semibold text-accent hover:underline">
           Open the Alarm Centre
         </Link>
+        {suppressedCount > 0 ? (
+          <Link to="/alarms" className="text-ink-muted hover:underline">
+            {`${suppressedCount} suppressed by maintenance`}
+          </Link>
+        ) : null}
       </div>
       {detailsId !== null
         ? createPortal(<AlarmDetailsPanel alarmId={detailsId} readOnly={readOnly} onClose={() => setDetailsId(null)} />, document.body)

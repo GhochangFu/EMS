@@ -6,6 +6,7 @@ import { expect, vi } from "vitest";
 import type { AccessibleScope, UserRole } from "@bms/shared";
 
 import * as assetsApi from "../api/assets";
+import * as maintenanceApi from "../api/maintenance-windows";
 import * as systemStatusApi from "../api/system-status";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
@@ -601,6 +602,8 @@ export function keepsTheStoredChoiceOnADesktopWidth(): void {
 export async function rendersTheAlarmBarInBothShells(): Promise<void> {
   const previous = useThemeStore.getState().design;
   useAuthStore.setState({ accessToken: "token-1", user: asUser("operator") });
+  // F4.359 U13: with a feed the Maintenance pill reads the windows; no request leaves the test.
+  const windows = vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({ items: [] });
   const feed = installOnFakes({}, useAuthStore);
   try {
     for (const design of ["nexus-soft", "control-room-dark"] as const) {
@@ -611,6 +614,7 @@ export async function rendersTheAlarmBarInBothShells(): Promise<void> {
     }
   } finally {
     feed.uninstall();
+    windows.mockRestore();
     useThemeStore.getState().setDesign(previous);
     useAuthStore.setState({ accessToken: null, user: null });
   }

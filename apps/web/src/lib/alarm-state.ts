@@ -89,7 +89,7 @@ export function canAcknowledge(alarm: Pick<AlarmLifecycleStamps, "acknowledgedAt
  *   and uncleared. Under decision 1 a cleared alarm has left that rail, so it
  *   loses the term it used to carry.
  */
-export function alarmStateSearchText(alarm: AlarmLifecycleStamps): string {
+export function alarmStateSearchText(alarm: AlarmLifecycleStamps & { suppressed?: boolean }): string {
   const label = alarmStateLabel(alarmLifecycleState(alarm));
   const terms: string[] = [label];
   if (alarm.clearedAt === null) {
@@ -100,5 +100,9 @@ export function alarmStateSearchText(alarm: AlarmLifecycleStamps): string {
     terms.push("cleared");
   }
   terms.push(alarm.acknowledgedAt === null ? "unack" : "ack");
+  // `F4.359`: the badge's word, so the grid's search finds the rows the badge marks.
+  if (alarm.suppressed === true) {
+    terms.push("suppressed maintenance");
+  }
   return terms.join(" ");
 }

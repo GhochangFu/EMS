@@ -1,6 +1,6 @@
 import { expect, vi } from "vitest";
 
-import { fetchActiveAlarms, fetchAlarmSummary, fetchUnacknowledgedAlarms } from "./alarms";
+import { fetchActiveAlarms, fetchAlarmsPage, fetchAlarmSummary, fetchUnacknowledgedAlarms } from "./alarms";
 
 /**
  * `F3.28` (ADR 0074 decision 4) — what the `/cr-overview` alarms rail's two
@@ -174,4 +174,13 @@ export async function aLocationScopeSendsItsIdOnly(): Promise<void> {
       assetIds: url.searchParams.getAll("assetIds"),
     }).toEqual({ locationId: LOCATION, organizationId: null, assetIds: [] });
   }
+}
+
+/** `F4.359` U12 — the page read sends `state` when given, and none otherwise. */
+export async function alarmsPageSendsTheStateOnlyWhenGiven(): Promise<void> {
+  const seen = captureUrl(EMPTY_LIST);
+  await fetchAlarmsPage(undefined, 25, "suppressed");
+  expect(seen().searchParams.get("state")).toBe("suppressed");
+  await fetchAlarmsPage();
+  expect(seen().searchParams.has("state")).toBe(false);
 }

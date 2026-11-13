@@ -147,6 +147,10 @@ describe("admin-access", () => {
     runWorkOrderSettingsAccessTests();
   });
 
+  it("canManageMaintenanceWindows admits the four admin roles and refuses operator and viewer (F4.359)", () => {
+    spec.runCanManageMaintenanceWindowsTruthTableTest();
+  });
+
   it("canApproveWorkOrders admits the four admin roles and refuses operator and viewer (E3.1)", () => {
     runCanApproveWorkOrdersTruthTableTest();
   });

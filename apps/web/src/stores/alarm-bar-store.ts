@@ -15,7 +15,8 @@ import type { AlarmBarScope } from "../lib/alarm-bar";
  * - `summary` — the scope's active counts per severity; `null` likewise.
  * - `feed` — `"stale"` after a failed read or a lost socket (plan D15).
  * - `seenIds` — the alarms this tab's popup has shown and the operator closed
- *   (U6, plan D5). Kept across pages and token renewals; a session end, a
+ *   (U6, plan D5), held as `alarmSeenKey` keys rather than bare ids (`F4.359`:
+ *   a returned alarm gets a new key, so it is new to the bar again). Kept across pages and token renewals; a session end, a
  *   login or a reload starts it empty (decision 21).
  */
 export type AlarmBarState = {
@@ -24,7 +25,7 @@ export type AlarmBarState = {
   readonly summary: AlarmSummaryResponse | null;
   readonly feed: "live" | "stale";
   readonly seenIds: ReadonlySet<string>;
-  /** U8 (decision 11, plan D9): the alarms the operator muted — a set of ids, never a flag, so the next one sounds. */
+  /** U8 (decision 11, plan D9): the alarms the operator muted — a set of `alarmSeenKey` keys, never a flag, so the next one sounds. */
   readonly mutedIds: ReadonlySet<string>;
   /** U8 (decision 11): the browser refused to play; the bar offers "Sound blocked — click to enable". */
   readonly soundBlocked: boolean;
