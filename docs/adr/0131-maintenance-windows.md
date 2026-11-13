@@ -210,3 +210,42 @@ and 15). Every other decision is the agent's: 1–3, 5's `rtu_comms` and
 `ingest_host` lines, 8's notification at the end, 9–12, 13's exact role
 check (the plan confirms it), and 16–19. They stand unless the owner changes
 them at acceptance. The owner accepted them as written (2026-11-13).
+
+## Build notes (2026-11-13, `F4.359`)
+
+Built in seven PRs (plan `docs/plans/f4.359-maintenance-windows.md` §11 has
+the record): #1300 migration `0152`, #1301 the routes, #1302 the contract and
+the reads, #1303 the raise path and the sweep, #1304 the badge and the bar
+pill, #1305 the Copilot entries (ADR 0099 Amendment 19), #1306 the admin page
+and the asset badges.
+
+- **The plan's rulings Q1–Q7** (owner, 2026-11-13) refine this ADR's
+  mechanism without changing its promises: the raise path decides
+  suppression inside the raise transaction, not through a rule-engine cache
+  (decision 10's two promises kept: no 60 s lag, decided before any
+  notification); `state=active` keeps suppressed alarms and
+  `state=unacknowledged` excludes them; the notification ledger decides what
+  is owed at the return; `asset_group_admin` passes the route's role check.
+- **A third alarm column**, `unsuppressed_at` (Q2): the moment an alarm
+  returns. The escalation clock counts from it, and the alarm list item
+  carries it as `unsuppressedAt`, so the bar treats a returned alarm as new
+  (its "seen" key is `id@unsuppressedAt`).
+- **A fourth socket event**, `{ type: "suppression", alarm }`, for a stamp or
+  a lift by the lifecycle sweep.
+- **Location targets** (decision 4, "inside the creator's read scope"): only a
+  caller whose location- or organization-sourced grant holds the node may name
+  it, so the whole subtree is readable. An asset-group admin names member
+  assets and their rules only. A location target also reaches an inactive
+  leaf subtree under the granted node (accepted).
+- **Decision 14's "dashboard tiles"** are one badge in the header of an
+  asset-scoped dashboard (Q7), not one per tile.
+- **Decision 6's "Suppressed" badge** reads "Maintenance" (decision 14's word)
+  on the alarm rows; the list filter is "Suppressed only".
+- **Accepted behaviours recorded at review:** after a lift, a rule channel
+  with no ledger row under the raise key is owed the raise for the rest of the
+  alarm's life (Q3 as written), so a channel joined later receives it; a
+  failing window read in the raise path rolls the raise back (one
+  transaction), while the sweep leaves stamps unchanged for that tick;
+  `rtu_comms` "every bound asset" counts inactive assets that still carry the
+  RTU id; the KPI ribbons, map, mimic colours, site-widget summary and health
+  scores still count a suppressed alarm (non-goal).
