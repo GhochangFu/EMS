@@ -1,9 +1,17 @@
 import { Logger } from "@nestjs/common";
-import { is, sql, type SQL, TransactionRollbackError } from "drizzle-orm";
+import { and, eq, is, sql, type SQL, TransactionRollbackError } from "drizzle-orm";
 import type pg from "pg";
 import { expect } from "vitest";
 
-import type { BmsDb } from "@bms/db";
+import {
+  alarmEscalationDefaults,
+  alarmEscalationProfiles,
+  alarmEscalationStepChannels,
+  alarmEscalationSteps,
+  alarms,
+  type BmsDb,
+  notificationDeliveries,
+} from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
@@ -22,7 +30,9 @@ import { until } from "../testing/until";
 import type { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { ALARM_NOTIFY_CHANNEL } from "./alarm-notify-channel";
 import { AlarmEngineService } from "./alarm-engine.service";
-import { AlarmRaiser } from "./alarm-raise.service";
+import { AlarmLifecycleService } from "./alarm-lifecycle.service";
+import type { AlarmsGateway } from "./alarms.gateway";
+import { type AlarmRaiseRule, AlarmRaiser } from "./alarm-raise.service";
 import type { Pg } from "./alarm-list-filters.integration.spec";
 import { type CoverOrganization, insertCoverOrganization, insertWindow } from "./maintenance-cover.reads.integration.spec";
 
@@ -61,7 +71,7 @@ function fail(message: string): never {
 }
 
 /** A `Pg` over a drizzle handle, so the committed-fixture helpers run inside a rolled-back transaction too. */
-function pgOn(db: BmsTx): Pg {
+export function pgOn(db: BmsTx): Pg {
   return {
     query: async <R extends pg.QueryResultRow>(text: string, values: unknown[] = []) => {
       const parts = text.split(/\$(\d+)/);
@@ -71,10 +81,29 @@ function pgOn(db: BmsTx): Pg {
   };
 }
 
+/** `F4.359` U8/U9: one of the fixture's rules, as `AlarmRaiser.raise` takes it. */
+export async function fixtureRaiseRule(pgq: Pg, org: CoverOrganization, ruleId: string): Promise<AlarmRaiseRule> {
+  const { rows } = await pgq.query<{ code: string; point_key: string }>(
+    "SELECT code, point_key FROM bms.automation_rules WHERE id = $1",
+    [ruleId],
+  );
+  const row = rows[0] ?? fail(`no fixture rule ${ruleId}`);
+  return {
+    id: ruleId,
+    code: row.code,
+    name: row.code,
+    severity: "warning",
+    organizationId: org.organizationId,
+    pointKey: row.point_key,
+    alarmMessage: null,
+    unit: null,
+  };
+}
+
 type NotificationsDeps = ConstructorParameters<typeof NotificationsService>;
 
 /** The real `NotificationsService` on the transaction, with a recording `webhook` transport — the model suites' `realNotificationsOn`. */
-function realNotificationsOn(db: BmsDb): { notifications: NotificationsService; sent: NotificationMessage[] } {
+function realNotificationsOn(db: BmsDb): { notifications: NotificationsService; channels: ChannelsService; sent: NotificationMessage[] } {
   const sent: NotificationMessage[] = [];
   const transport: NotificationTransport = {
     kind: "webhook",
@@ -97,7 +126,7 @@ function realNotificationsOn(db: BmsDb): { notifications: NotificationsService; 
     transport as unknown as NotificationsDeps[4],
     buildConfig({ NOTIFY_RATE_LIMIT_PER_HOUR: "1000" }),
   );
-  return { notifications, sent };
+  return { notifications, channels, sent };
 }
 
 export type Engine = "streaming" | "evaluate-now" | "rule-sweep";
@@ -345,4 +374,149 @@ export async function assertCoverFailureRollsTheRaiseBack(fx: OneTransactionFixt
     expect(result).toMatchObject({ raised: true, suppressed: true });
   });
   expect(control.map((n) => n.type), "the same raise, with a working cover read, is heard once").toEqual(["created"]);
+}
+
+// ---------------------------------------------------------------------------
+// U9 — the phases obey the stamps, on real tables (cases 11 and 14)
+// ---------------------------------------------------------------------------
+
+/** Rolls `body` back whatever it does; an assertion failure inside still propagates. */
+async function inRollback(db: BmsDb, body: (tx: BmsTx) => Promise<void>): Promise<void> {
+  await db
+    .transaction(async (tx) => {
+      await body(tx);
+      tx.rollback();
+    })
+    .catch((err: unknown) => {
+      if (!is(err, TransactionRollbackError)) throw err;
+    });
+}
+
+/** The real sweep and notification path on the transaction, with a recording `webhook` transport. */
+function liveSweep(tx: BmsTx): { lifecycle: AlarmLifecycleService; sent: NotificationMessage[] } {
+  const { notifications, channels, sent } = realNotificationsOn(tx);
+  const gateway = { broadcastCleared: () => undefined, broadcastSuppression: () => undefined } as unknown as AlarmsGateway;
+  return { lifecycle: new AlarmLifecycleService(tx, tx, notifications, channels, gateway), sent };
+}
+
+async function webhookChannel(pgq: Pg, org: CoverOrganization, tag: string): Promise<string> {
+  const { rows } = await pgq.query<{ id: string }>(
+    `INSERT INTO bms.notification_channels (organization_id, code, name, kind, config, enabled)
+     VALUES ($1, $2, 'F4.359 sweep fixture', 'webhook', '{"url":"https://hooks.example.com/x"}'::jsonb, true) RETURNING id`,
+    [org.organizationId, `f4359-${tag}-${org.organizationId.slice(0, 8)}`],
+  );
+  return rows[0]?.id ?? fail("no channel");
+}
+
+/** Every ledger row of one alarm under one key, by status. */
+async function rowsUnder(tx: BmsTx, alarmId: string, dedupeKey: string): Promise<string[]> {
+  const rows = await tx
+    .select({ status: notificationDeliveries.status })
+    .from(notificationDeliveries)
+    .where(and(eq(notificationDeliveries.alarmId, alarmId), eq(notificationDeliveries.dedupeKey, dedupeKey)));
+  return rows.map((row) => row.status);
+}
+
+const secondsAfter = (seconds: number, from: Date): Date => new Date(from.getTime() + seconds * 1000);
+
+/**
+ * Case 11 (plan D10, owner ruling Q3). A `notify` rule joined to one channel
+ * raises inside a window: stamped, and no ledger row. The window ends; the next
+ * sweep lifts the alarm and, in the same tick, sends the withheld raise under
+ * the raise key — one `sent` row. The tick after sends nothing more.
+ */
+export async function assertALiftedAlarmIsSentItsWithheldRaise(db: BmsDb): Promise<void> {
+  await inRollback(db, async (tx) => {
+    const pgq = pgOn(tx);
+    const org = await insertCoverOrganization(pgq, "LIFT");
+    await pgq.query(`UPDATE bms.automation_rules SET action = '{"type":"notify","target":"t"}'::jsonb WHERE id = $1`, [org.ruleId]);
+    const channelId = await webhookChannel(pgq, org, "lift");
+    await pgq.query("INSERT INTO bms.rule_notifications (rule_id, channel_id) VALUES ($1, $2)", [org.ruleId, channelId]);
+    const windowId = await insertWindow(pgq, org, { startsInSeconds: -60, endsInSeconds: 3600, ruleIds: [org.ruleId] });
+
+    const raised = await new AlarmRaiser(tx).raise(org.assetIds[0], org.organizationId, await fixtureRaiseRule(pgq, org, org.ruleId), 1_000_000);
+    expect(raised.suppressed, "raised inside the window: stamped").toBe(true);
+    const alarmId = raised.alarmId ?? fail("no alarm");
+    const raiseKey = `${org.ruleId}:${alarmId}:warning`;
+    expect(await rowsUnder(tx, alarmId, raiseKey), "the withheld raise left no row").toEqual([]);
+
+    const { lifecycle, sent } = liveSweep(tx);
+    const ours = (): NotificationMessage[] => sent.filter((message) => message.alarmId === alarmId);
+    const t = new Date();
+    await lifecycle.sweep(t);
+    expect(ours(), "still covered: nothing is sent").toEqual([]);
+
+    await pgq.query("UPDATE bms.maintenance_windows SET ended_at = now(), ended_by = $2 WHERE id = $1", [windowId, org.userId]);
+    await lifecycle.sweep(secondsAfter(30, t));
+    const [row] = await tx.select({ suppressedAt: alarms.suppressedAt, unsuppressedAt: alarms.unsuppressedAt }).from(alarms).where(eq(alarms.id, alarmId));
+    expect(row?.suppressedAt ?? null, "lifted").toBeNull();
+    expect(row?.unsuppressedAt?.getTime()).toBe(secondsAfter(30, t).getTime());
+    expect(await rowsUnder(tx, alarmId, raiseKey), "the lift tick sends the withheld raise under the raise key").toEqual(["sent"]);
+    expect(ours().map((message) => message.channel.id), "to the rule's one channel").toEqual([channelId]);
+
+    await lifecycle.sweep(secondsAfter(60, t));
+    expect(await rowsUnder(tx, alarmId, raiseKey), "the next tick: the sent row answers, nothing more").toEqual(["sent"]);
+    expect(ours()).toHaveLength(1);
+  });
+}
+
+/**
+ * Case 14, with 15 (plan D11, owner ruling Q3). An alarm raised three days ago
+ * and notified (its raise and step 1 at 1 min were sent before the window) is
+ * suppressed by a window and then lifted at `T`. Step 2 at 15 min is not due at
+ * `T + 14 min` and step 1 — due again on the new clock — is refused by its own
+ * `sent` row; at `T + 15 min` step 2 is sent, not stale, counting its minutes
+ * from the lift.
+ */
+export async function assertTheEscalationClockRestartsAtTheLift(db: BmsDb): Promise<void> {
+  await inRollback(db, async (tx) => {
+    const pgq = pgOn(tx);
+    const org = await insertCoverOrganization(pgq, "CLOCK");
+    const channelId = await webhookChannel(pgq, org, "clock");
+    const [profile] = await tx
+      .insert(alarmEscalationProfiles)
+      .values({ organizationId: org.organizationId, code: `f4359-clock-${org.organizationId.slice(0, 8)}`, name: "F4.359 clock profile" })
+      .returning({ id: alarmEscalationProfiles.id });
+    const profileId = profile?.id ?? fail("no profile");
+    const steps = await tx
+      .insert(alarmEscalationSteps)
+      .values([
+        { profileId, stepNo: 1, afterMinutes: 1 },
+        { profileId, stepNo: 2, afterMinutes: 15 },
+      ])
+      .returning({ id: alarmEscalationSteps.id });
+    await tx.insert(alarmEscalationStepChannels).values(steps.map((step) => ({ stepId: step.id, channelId })));
+    await tx.insert(alarmEscalationDefaults).values({ organizationId: org.organizationId, severity: "warning", profileId });
+
+    const raised = await new AlarmRaiser(tx).raise(org.assetIds[0], org.organizationId, await fixtureRaiseRule(pgq, org, org.ruleId), 1_000_000);
+    const alarmId = raised.alarmId ?? fail("no alarm");
+    expect(raised.suppressed, "raised before any window").toBe(false);
+    await pgq.query("UPDATE bms.alarms SET raised_at = now() - interval '3 days' WHERE id = $1", [alarmId]);
+    const raiseKey = `${org.ruleId}:${alarmId}:warning`;
+    for (const dedupeKey of [raiseKey, `${raiseKey}:escalation:1`]) {
+      await tx.insert(notificationDeliveries).values({ organizationId: org.organizationId, ruleId: org.ruleId, alarmId, channelId, status: "sent", dedupeKey });
+    }
+
+    const { lifecycle, sent } = liveSweep(tx);
+    const ours = (): NotificationMessage[] => sent.filter((message) => message.alarmId === alarmId);
+    const windowId = await insertWindow(pgq, org, { startsInSeconds: -60, endsInSeconds: 3600, assetIds: [org.assetIds[0]] });
+    const t0 = new Date();
+    await lifecycle.sweep(t0);
+    expect(ours(), "stamped this tick: step 2, three days overdue on the old clock, is not sent").toEqual([]);
+
+    await pgq.query("UPDATE bms.maintenance_windows SET ended_at = now(), ended_by = $2 WHERE id = $1", [windowId, org.userId]);
+    const lift = secondsAfter(30, t0);
+    await lifecycle.sweep(lift);
+    expect(ours(), "the lift tick: nothing is due on the new clock").toEqual([]);
+
+    await lifecycle.sweep(secondsAfter(14 * 60, lift));
+    expect(ours(), "14 min after the lift: step 2 is not due, and step 1 is refused by its own sent row").toEqual([]);
+    expect(await rowsUnder(tx, alarmId, `${raiseKey}:escalation:1`), "step 1 holds its one sent row").not.toContain("failed");
+    expect((await rowsUnder(tx, alarmId, `${raiseKey}:escalation:1`)).filter((status) => status === "sent")).toHaveLength(1);
+    expect(await rowsUnder(tx, alarmId, `${raiseKey}:escalation:2`)).toEqual([]);
+
+    await lifecycle.sweep(secondsAfter(15 * 60, lift));
+    expect(await rowsUnder(tx, alarmId, `${raiseKey}:escalation:2`), "15 min after the lift: step 2 is sent, not stale").toEqual(["sent"]);
+    expect(ours().map((message) => message.body.endsWith("unacknowledged for 15 min (escalation step 2)"))).toEqual([true]);
+  });
 }

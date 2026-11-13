@@ -33,6 +33,8 @@ import { AlarmLifecycleService } from "./alarm-lifecycle.service";
 import { type AlarmRaiseRule, AlarmRaiser } from "./alarm-raise.service";
 import type { AlarmsGateway } from "./alarms.gateway";
 import { AlarmsService } from "./alarms.service";
+import { fixtureRaiseRule, pgOn } from "./alarm-suppression.integration.spec";
+import { insertCoverOrganization, insertWindow } from "./maintenance-cover.reads.integration.spec";
 
 /**
  * `F3.10` U7 — the lifecycle sweep against a real database (ADR 0057
@@ -115,6 +117,8 @@ export type Harness = {
   clearedBroadcasts: string[];
   /** `F4.316`: the same broadcasts' whole payloads — the socket's `cleared` event body. */
   clearedAlarms: AlarmListItem[];
+  /** `F4.359`: every `suppression` broadcast's payload, in order. */
+  suppressionBroadcasts: AlarmListItem[];
 };
 
 /**
@@ -176,7 +180,11 @@ export function buildHarness(db: BmsDb, options: HarnessOptions = {}): Harness {
   );
   const clearedBroadcasts: string[] = [];
   const clearedAlarms: AlarmListItem[] = [];
+  const suppressionBroadcasts: AlarmListItem[] = [];
   const gateway = {
+    broadcastSuppression: (alarm: AlarmListItem) => {
+      suppressionBroadcasts.push(alarm);
+    },
     broadcastAcknowledged: () => undefined,
     broadcastCleared: (alarm: AlarmListItem) => {
       clearedBroadcasts.push(alarm.id);
@@ -192,6 +200,7 @@ export function buildHarness(db: BmsDb, options: HarnessOptions = {}): Harness {
     sent,
     clearedBroadcasts,
     clearedAlarms,
+    suppressionBroadcasts,
   };
 }
 
@@ -780,6 +789,56 @@ export async function assertTwoBandsClearOnOneSample(db: BmsDb): Promise<void> {
       `both alarms broadcast once each, got [${harness.clearedBroadcasts.join(",")}]`,
     );
 
+    tx.rollback();
+  });
+}
+
+/**
+ * `F4.359` U8 (ADR 0131 decisions 7, 8; plan D5) — the sweep is the reconciler
+ * on real tables. An alarm raised before any window is unstamped; a window that
+ * starts by time is applied by the next sweep (both stamps, one `suppression`
+ * broadcast); once the window's `ended_at` is written the next sweep lifts it:
+ * `suppressed_at` NULL, `unsuppressed_at` the tick's `now`, the window id kept.
+ * Its own organization, inside the rolled-back transaction.
+ */
+export async function assertTheSweepStampsAndLiftsAnActiveAlarm(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const pgq = pgOn(tx);
+    const org = await insertCoverOrganization(pgq, "SWEEP");
+    const harness = buildHarness(tx);
+    const rule = await fixtureRaiseRule(pgq, org, org.ruleId);
+    const raised = await harness.raiser.raise(org.assetIds[0], org.organizationId, rule, 1_000_000);
+    assert(raised.raised && raised.alarmId !== null && !raised.suppressed, "raised before any window: unstamped");
+    const alarmId = raised.alarmId as string;
+    // Drizzle, not the raw `Pg`: `db.execute` hands timestamps back as strings.
+    const stamps = async (): Promise<{ suppressedAt: Date | null; window: string | null; unsuppressedAt: Date | null }> => {
+      const [row] = await tx
+        .select({ suppressedAt: alarms.suppressedAt, window: alarms.suppressedByWindowId, unsuppressedAt: alarms.unsuppressedAt })
+        .from(alarms)
+        .where(eq(alarms.id, alarmId));
+      return row ?? { suppressedAt: null, window: null, unsuppressedAt: null };
+    };
+    const ours = (): AlarmListItem[] => harness.suppressionBroadcasts.filter((item) => item.id === alarmId);
+
+    const windowId = await insertWindow(pgq, org, { startsInSeconds: -60, endsInSeconds: 3600, assetIds: [org.assetIds[0]] });
+    const t1 = new Date();
+    await harness.lifecycle.sweep(t1);
+    const stamped = await stamps();
+    assert(sameInstant(stamped.suppressedAt, t1) && stamped.window === windowId, `stamped at t1 by the window, got ${JSON.stringify(stamped)}`);
+    assert(stamped.unsuppressedAt === null, "not yet lifted");
+    assert(ours().length === 1 && ours()[0]?.suppressed === true && ours()[0]?.maintenanceWindowId === windowId, "one suppression broadcast");
+
+    await harness.lifecycle.sweep(secondsAfter(30, t1));
+    assert(ours().length === 1, "a second tick inside the window writes and broadcasts nothing");
+
+    await pgq.query("UPDATE bms.maintenance_windows SET ended_at = now(), ended_by = $2 WHERE id = $1", [windowId, org.userId]);
+    const t2 = secondsAfter(60, t1);
+    await harness.lifecycle.sweep(t2);
+    const lifted = await stamps();
+    assert(lifted.suppressedAt === null, `lifted, got ${JSON.stringify(lifted)}`);
+    assert(sameInstant(lifted.unsuppressedAt, t2), "unsuppressed_at is the lifting tick's now");
+    assert(lifted.window === windowId, "the window id is kept after the lift (D12)");
+    assert(ours().length === 2 && ours()[1]?.suppressed === false && ours()[1]?.unsuppressedAt === t2.toISOString(), "one lift broadcast");
     tx.rollback();
   });
 }

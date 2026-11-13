@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { asc, desc, eq } from "drizzle-orm";
 import { expect } from "vitest";
 
-import { alarms, alarmSeverities, locations, maintenanceWindows, pointValues, rtus, users } from "@bms/db";
+import { alarms, alarmSeverities, locations, maintenanceWindows, maintenanceWindowTargets, pointValues, rtus, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AlarmListItem } from "@bms/shared";
 
@@ -237,6 +237,9 @@ export const assertTheClearedBroadcastCarriesSuppression: Claim = async (tx, fx)
   const harness = buildHarness(tx);
   const raised = await harness.raiser.raise(fx.withRtu, fx.organizationId, rule, 150);
   const windowId = await insertWindow(tx, fx);
+  // `F4.359` U8: the sweep reconciles the stamp against the cover, so the window
+  // must really cover the alarm or the first tick lifts it.
+  await tx.insert(maintenanceWindowTargets).values({ windowId, organizationId: fx.organizationId, assetId: fx.withRtu });
   await stamp(tx, raised.alarmId as string, windowId);
   const [state] = await stateOf(tx, raised.alarmId as string);
   const t1 = secondsAfter(10, state!.raisedAt);

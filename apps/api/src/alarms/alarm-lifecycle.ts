@@ -46,6 +46,18 @@ export type LifecycleAlarm = {
   raisedAt: Date;
   acknowledgedAt: Date | null;
   normalSince: Date | null;
+  /**
+   * `F4.359` (ADR 0131 decisions 6–9): `suppressed_at`, set while a maintenance
+   * window covers the alarm. A suppressed alarm still clears, but no phase
+   * notifies anyone about it.
+   */
+  suppressedAt: Date | null;
+  /**
+   * `F4.359` (plan Q2): the moment the sweep lifted the suppression. The
+   * escalation clock restarts there ({@link escalationStart}), and a rule
+   * channel with no ledger row is owed the withheld raise (plan D10).
+   */
+  unsuppressedAt: Date | null;
 };
 
 /**
@@ -53,7 +65,18 @@ export type LifecycleAlarm = {
  * {@link LifecycleAlarm} or a device alarm's row (`F3.16`), which has no asset
  * and no rule.
  */
-export type DispatchableAlarm = Pick<LifecycleAlarm, "id" | "severity" | "message" | "raisedAt">;
+export type DispatchableAlarm = Pick<LifecycleAlarm, "id" | "severity" | "message" | "raisedAt" | "unsuppressedAt">;
+
+/**
+ * `F4.359` (plan D11, ADR 0131 decision 8) — the instant the escalation clock
+ * counts from: the lift, when a maintenance window suppressed the alarm, else the
+ * raise. `dueSteps`, `stepIsTooLate` and the step message's minutes all read it,
+ * so a returned alarm's steps follow the new clock instead of all landing at once
+ * as stale.
+ */
+export function escalationStart(alarm: Pick<LifecycleAlarm, "raisedAt" | "unsuppressedAt">): Date {
+  return alarm.unsuppressedAt ?? alarm.raisedAt;
+}
 
 /** What the two input builders need from the alarm's rule. */
 export type LifecycleRule = {
@@ -223,7 +246,8 @@ export function escalationDispatchInput(
   if (rule.organizationId === null) {
     return null;
   }
-  const minutes = Math.floor((now.getTime() - alarm.raisedAt.getTime()) / 60_000);
+  // `F4.359` (D11): from the lift for an alarm a window suppressed, else the raise.
+  const minutes = Math.floor((now.getTime() - escalationStart(alarm).getTime()) / 60_000);
   return {
     ruleId: rule.id,
     ruleCode: rule.code,

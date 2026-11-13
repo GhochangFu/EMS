@@ -30,6 +30,7 @@ import {
   dueSteps,
   escalationDispatchInput,
   escalationKey,
+  escalationStart,
   raiseRetryDispatchInput,
   stepIsTooLate,
 } from "./alarm-lifecycle";
@@ -73,7 +74,7 @@ import { isSampleFreshEnoughToRaise } from "./alarm-raise.service";
  * TYPES only, so the emitted JavaScript holds no edge back to the service and
  * there is no runtime cycle.
  *
- * **No suite imports this module, and EIGHT UNIT suites gate it** — plus
+ * **No suite imports this module, and TEN UNIT suites gate it** — plus
  * `alarm-lifecycle.integration.spec.ts`, which drives the same phases through
  * `AlarmLifecycleService.sweep` against a real database and holds the one claim
  * no fake can: that the service's `dispatchToChannels` adapter forwards the
@@ -82,13 +83,15 @@ import { isSampleFreshEnoughToRaise } from "./alarm-raise.service";
  * change to a spec — but the gate is spread across
  * `alarm-lifecycle-raise-retry.spec.ts` (23 sweeps),
  * `alarm-lifecycle.service.spec.ts` (21),
+ * `alarm-lifecycle-suppression.spec.ts` (20),
+ * `alarm-lifecycle-device.spec.ts` (15),
  * `alarm-lifecycle-cleared-no-recipients.spec.ts` (9),
  * `alarm-lifecycle-raise-retry-channel-batch.spec.ts` (8),
  * `alarm-lifecycle-escalation-lost-rows.spec.ts` (6),
  * `alarm-lifecycle-closed-ceilings.spec.ts` (5),
  * `alarm-lifecycle-raise-retry-evidence-guard.spec.ts` (3) and
  * `alarm-lifecycle-escalation-staleness.spec.ts` (2). **Run the directory, not
- * a file.** 56 of the 77 sweeps are outside `alarm-lifecycle.service.spec.ts`,
+ * a file.** 91 of the 112 sweeps are outside `alarm-lifecycle.service.spec.ts`,
  * and `runRaiseRetryPhase`'s invariants are almost entirely in the first — so
  * `vitest run alarm-lifecycle.service` is green on a change it never exercised.
  *
@@ -97,7 +100,9 @@ import { isSampleFreshEnoughToRaise } from "./alarm-raise.service";
  * `F3.52` added `alarm-lifecycle-escalation-staleness.spec.ts` and left the
  * sentence, `F3.53` added `alarm-lifecycle-closed-ceilings.spec.ts`, and
  * `F3.59` adds `alarm-lifecycle-raise-retry-evidence-guard.spec.ts` — whose own
- * docblock says why its three cases are not in the raise-retry file. Do not
+ * docblock says why its three cases are not in the raise-retry file. `F4.359`
+ * re-counted again: `F3.16`'s device spec (15) was missing from the list, and
+ * `F4.359` adds `alarm-lifecycle-suppression.spec.ts`. Do not
  * hand-edit the numbers — paste them from
  * `git grep -c "await runLifecycleSweep(" -- "*.spec.ts"`. **The pathspec is
  * not decoration: without it the command matches this docblock's own quoted
@@ -172,7 +177,9 @@ export async function runClearPhase(deps: AlarmLifecycleDeps, input: ClearPhaseI
       // over; a rolled-back clear must never be announced.
       deps.broadcastCleared(item);
       const alarm = alarmsById.get(item.id);
-      if (alarm) {
+      // `F4.359` (plan D12): a suppressed alarm clears and is broadcast, but
+      // nobody is told — it keeps `suppressed_at` as the record.
+      if (alarm && alarm.suppressedAt === null) {
         await notifyCleared(deps, alarm, input.rulesById.get(alarm.ruleId));
       }
     }
@@ -379,7 +386,8 @@ export async function runRaiseRetryPhase(
     // Cleared this tick — see the header; and owner ruling 4 (ADR 0057
     // Amendment 5's numbering, which this code follows), an acknowledged
     // alarm is skipped: somebody is already on it.
-    if (input.clearedIds.has(alarm.id) || alarm.acknowledgedAt !== null) {
+    // `F4.359`: nor while a maintenance window suppresses it.
+    if (input.clearedIds.has(alarm.id) || alarm.acknowledgedAt !== null || alarm.suppressedAt !== null) {
       continue;
     }
     const rule = input.rulesById.get(alarm.ruleId);
@@ -543,7 +551,10 @@ export async function runRaiseRetryPhase(
     const evidence = (rowsByAlarm.get(candidate.alarm.id) ?? []).filter(
       (row) => row.organizationId === candidate.ref.organizationId,
     );
-    if (evidence.length === 0) {
+    // `F4.359` (plan D10): an alarm a window suppressed and the sweep lifted had
+    // its raise WITHHELD, so an empty group is a message owed, not an offer in
+    // flight — it is kept, and `channelsOwedTheRaise` is told so below.
+    if (evidence.length === 0 && candidate.alarm.unsuppressedAt === null) {
       continue;
     }
     evidenced.push({ ...candidate, evidence });
@@ -630,6 +641,7 @@ export async function runRaiseRetryPhase(
         rows: candidate.evidence,
         maxAttempts: MAX_EVENT_ATTEMPTS,
         processStartedAt: PROCESS_STARTED_AT,
+        withheld: candidate.alarm.unsuppressedAt !== null,
       });
       if (owed.length === 0) {
         continue;
@@ -802,7 +814,8 @@ export async function runEscalationPhase(
   let refusedByTheCap = 0;
 
   for (const alarm of input.activeAlarms) {
-    if (alarm.acknowledgedAt !== null || input.clearedIds.has(alarm.id)) {
+    // `F4.359`: a suppressed alarm escalates to nobody; a lifted one counts from the lift (D11).
+    if (alarm.acknowledgedAt !== null || input.clearedIds.has(alarm.id) || alarm.suppressedAt !== null) {
       continue;
     }
     const rule = input.rulesById.get(alarm.ruleId);
@@ -813,7 +826,7 @@ export async function runEscalationPhase(
     if (!steps || steps.length === 0) {
       continue;
     }
-    for (const stepNo of dueSteps(steps, alarm.raisedAt, input.now)) {
+    for (const stepNo of dueSteps(steps, escalationStart(alarm), input.now)) {
       const step = steps.find((candidate) => candidate.stepNo === stepNo);
       if (!step) {
         continue;
@@ -824,7 +837,7 @@ export async function runEscalationPhase(
       // stale step leaves the same evidence every other refusal does. A
       // `continue` here would leave none.
       const stale = stepIsTooLate({
-        raisedAt: alarm.raisedAt,
+        raisedAt: escalationStart(alarm),
         afterMinutes: step.afterMinutes,
         now: input.now,
         maxLatenessMs: STEP_MAX_LATENESS_MS,

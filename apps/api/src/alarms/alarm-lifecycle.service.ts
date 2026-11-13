@@ -21,7 +21,7 @@ import type { AlarmListItem } from "@bms/shared";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { readIngestHosts, readRtuHealthRows } from "../device-health/device-health.reads";
-import { withTenant } from "../database/tenant-context";
+import { type BmsTx, withTenant } from "../database/tenant-context";
 import { loadEnabledChannelsByIds, loadEnabledChannelsForRules } from "../notifications/channel-reads";
 import type { RuleChannelsRead } from "../notifications/channel-reads";
 import { ChannelsService } from "../notifications/channels.service";
@@ -53,8 +53,10 @@ import {
   runEscalationPhase,
   runRaiseRetryPhase,
 } from "./alarm-lifecycle-phases";
+import { runSuppressionPhase } from "./alarm-lifecycle-suppression";
 import { alarmListItemColumns, alarmRtus, toAlarmListItem } from "./alarm-list-item";
 import { AlarmsGateway } from "./alarms.gateway";
+import { type CoverAlarm, coverForAlarms } from "./maintenance-cover.reads";
 
 /**
  * `F3.10` — the alarm lifecycle sweep (ADR 0057 decisions 4, 5, 6).
@@ -66,7 +68,16 @@ import { AlarmsGateway } from "./alarms.gateway";
  * writer of `cleared_at` and `normal_since` — `AlarmRaiser` stays the one
  * raiser (ADR 0033), and nothing else touches either stamp.
  *
- * **Three phases since `F3.51`, one tick.** The clear phase compares every
+ * **`F4.359` makes it the second writer of two more stamps** (ADR 0131
+ * decisions 7–9). `suppressed_at`/`suppressed_by_window_id` are written by
+ * `AlarmRaiser` at the raise and by this sweep, and `unsuppressed_at` by this
+ * sweep alone (`writeAlarmSuppression`). The suppression phase
+ * (`alarm-lifecycle-suppression.ts`) runs FIRST and hands every later phase the
+ * tick's state: a suppressed alarm still clears, but no phase notifies about it,
+ * and a lifted one re-offers its withheld raise and escalates from the lift.
+ *
+ * **Four phases since `F4.359`, one tick** (three since `F3.51`). Suppression
+ * first, as above. The clear phase compares every
  * active alarm's rule against the latest fresh sample and stamps the hold or
  * the clear (`decideClear`). The raise-retry phase (`runRaiseRetryPhase`, ADR
  * 0041 Amendment 5, ADR 0057 Amendment 5) re-offers the ORIGINAL raise of a
@@ -150,6 +161,16 @@ import { AlarmsGateway } from "./alarms.gateway";
 /** The `bms.alarms` row the sweep works on — see `LifecycleAlarm` for the columns. */
 export type ActiveAlarm = LifecycleAlarm;
 
+/**
+ * `F4.359` — one alarm's suppression write. A stamp sets `suppressed_at` and the
+ * window `WHERE cleared_at IS NULL AND suppressed_at IS NULL`; a lift sets
+ * `unsuppressed_at` and nulls `suppressed_at` `WHERE suppressed_at IS NOT NULL`,
+ * keeping the window id as history (plan D12). `at` is the tick's `now`.
+ */
+export type AlarmSuppressionUpdate =
+  | { readonly kind: "stamp"; readonly alarmId: string; readonly windowId: string; readonly at: Date }
+  | { readonly kind: "lift"; readonly alarmId: string; readonly at: Date };
+
 /** One alarm's state write: both stamps, applied `WHERE id = $1 AND cleared_at IS NULL`. */
 export type AlarmStateUpdate = {
   alarmId: string;
@@ -227,6 +248,18 @@ export interface AlarmLifecycleDeps {
   dispatchToChannels: NotificationsService["dispatchToChannels"];
   /** After the clear has committed — never from inside the transaction. */
   broadcastCleared(alarm: AlarmListItem): void;
+  /**
+   * `F4.359`: `coverForAlarms` — alarm id → the first active window covering it.
+   * One fleet read per tick, and none past the window read when no window is active.
+   */
+  resolveMaintenanceCover(alarms: ReadonlyArray<CoverAlarm & { readonly id: string }>): Promise<ReadonlyMap<string, string>>;
+  /**
+   * `F4.359`: applies the updates under `withTenant(organizationId)` and returns
+   * the rows that CHANGED, read back in the same transaction as `AlarmListItem`s.
+   */
+  writeAlarmSuppression(organizationId: string, updates: AlarmSuppressionUpdate[]): Promise<AlarmListItem[]>;
+  /** `F4.359` (plan D13): a stamp or a lift by the sweep, after its write committed. */
+  broadcastSuppression(alarm: AlarmListItem): void;
   logger: Pick<Logger, "warn">;
 }
 
@@ -245,7 +278,14 @@ export interface AlarmLifecycleDeps {
  * hour that has already moved.
  */
 export async function runLifecycleSweep(deps: AlarmLifecycleDeps, now: Date): Promise<void> {
-  const [activeAlarms, deviceAlarms] = await Promise.all([deps.loadActiveAlarms(), deps.loadActiveDeviceAlarms()]);
+  const [loadedAlarms, loadedDeviceAlarms] = await Promise.all([deps.loadActiveAlarms(), deps.loadActiveDeviceAlarms()]);
+  // `F4.359`: first, and every later phase reads what it hands on (the stamps
+  // as this tick decided them), never the loaded rows.
+  const { ruleAlarms: activeAlarms, deviceAlarms } = await runSuppressionPhase(deps, {
+    ruleAlarms: loadedAlarms,
+    deviceAlarms: loadedDeviceAlarms,
+    now,
+  });
   // The tick's memory of which ceilings have already refused. The clear phase
   // deliberately does not get it: a cleared message has no next tick to be
   // postponed to — see `dispatchRememberingLostRows`.
@@ -433,6 +473,10 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
       dispatchToChannels: (channels, input, closedCeilings) =>
         this.notifications.dispatchToChannels(channels, input, closedCeilings),
       broadcastCleared: (alarm) => this.gateway.broadcastCleared(alarm),
+      // fleetDb: every organization's windows and plant, for a system sweep with no JWT (class header).
+      resolveMaintenanceCover: (alarms) => coverForAlarms(this.fleetDb, alarms),
+      writeAlarmSuppression: (organizationId, updates) => this.writeAlarmSuppression(organizationId, updates),
+      broadcastSuppression: (alarm) => this.gateway.broadcastSuppression(alarm),
       logger: this.logger,
     };
   }
@@ -450,6 +494,8 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
         raisedAt: alarms.raisedAt,
         acknowledgedAt: alarms.acknowledgedAt,
         normalSince: alarms.normalSince,
+        suppressedAt: alarms.suppressedAt,
+        unsuppressedAt: alarms.unsuppressedAt,
       })
       .from(alarms)
       .where(and(isNull(alarms.clearedAt), isNotNull(alarms.ruleId)));
@@ -480,6 +526,8 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
         raisedAt: alarms.raisedAt,
         acknowledgedAt: alarms.acknowledgedAt,
         normalSince: alarms.normalSince,
+        suppressedAt: alarms.suppressedAt,
+        unsuppressedAt: alarms.unsuppressedAt,
       })
       .from(alarms)
       .where(and(isNull(alarms.clearedAt), ne(alarms.source, "rule")));
@@ -564,20 +612,59 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
           clearedIds.push(update.alarmId);
         }
       }
-      if (clearedIds.length === 0) {
-        return [];
-      }
-      const rows = await tx
-        .select(alarmListItemColumns)
-        .from(alarms)
-        // `F3.16`: a LEFT join, so a cleared device alarm (no asset) is read
-        // back and broadcast too; a rule alarm always has its asset.
-        .leftJoin(assets, eq(alarms.assetId, assets.id))
-        .leftJoin(rtus, eq(assets.rtuId, rtus.id))
-        .leftJoin(locations, eq(assets.locationId, locations.id))
-        .leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id))
-        .where(inArray(alarms.id, clearedIds));
-      return rows.map((row) => toAlarmListItem(row));
+      return readListItems(tx, clearedIds);
     });
   }
+
+  /**
+   * `F4.359` — one tenant transaction per organization, like
+   * {@link writeAlarmState}. Each guard makes the write a no-op on a row that
+   * moved since the read: a stamp never lands on a cleared or already-stamped
+   * row (the raiser may have stamped it), a lift only on a stamped one. The
+   * changed rows are read back for the broadcast after commit.
+   */
+  private async writeAlarmSuppression(
+    organizationId: string,
+    updates: AlarmSuppressionUpdate[],
+  ): Promise<AlarmListItem[]> {
+    return withTenant(this.tenantDb, organizationId, async (tx) => {
+      const changedIds: string[] = [];
+      for (const update of updates) {
+        const written =
+          update.kind === "stamp"
+            ? await tx
+                .update(alarms)
+                .set({ suppressedAt: update.at, suppressedByWindowId: update.windowId })
+                .where(and(eq(alarms.id, update.alarmId), isNull(alarms.clearedAt), isNull(alarms.suppressedAt)))
+                .returning({ id: alarms.id })
+            : await tx
+                .update(alarms)
+                .set({ suppressedAt: null, unsuppressedAt: update.at })
+                .where(and(eq(alarms.id, update.alarmId), isNotNull(alarms.suppressedAt)))
+                .returning({ id: alarms.id });
+        if (written.length > 0) {
+          changedIds.push(update.alarmId);
+        }
+      }
+      return readListItems(tx, changedIds);
+    });
+  }
+}
+
+/** The given alarms as `AlarmListItem`s (plan D9), inside the writer's transaction. */
+async function readListItems(tx: BmsTx, ids: string[]): Promise<AlarmListItem[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+  const rows = await tx
+    .select(alarmListItemColumns)
+    .from(alarms)
+    // `F3.16`: a LEFT join, so a device alarm (no asset) is read back and
+    // broadcast too; a rule alarm always has its asset.
+    .leftJoin(assets, eq(alarms.assetId, assets.id))
+    .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+    .leftJoin(locations, eq(assets.locationId, locations.id))
+    .leftJoin(alarmRtus, eq(alarms.rtuId, alarmRtus.id))
+    .where(inArray(alarms.id, ids));
+  return rows.map((row) => toAlarmListItem(row));
 }

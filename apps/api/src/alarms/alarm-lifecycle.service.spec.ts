@@ -16,6 +16,7 @@ import {
   type AlarmLifecycleDeps,
   type AlarmLifecycleLoopDeps,
   type AlarmStateUpdate,
+  type AlarmSuppressionUpdate,
   runLifecycleLoop,
   runLifecycleSweep,
 } from "./alarm-lifecycle.service";
@@ -79,6 +80,8 @@ export function alarmRow(overrides: Partial<LifecycleAlarm> = {}): LifecycleAlar
     raisedAt: secondsBefore(61),
     acknowledgedAt: null,
     normalSince: null,
+    suppressedAt: null,
+    unsuppressedAt: null,
     ...overrides,
   };
 }
@@ -157,6 +160,10 @@ export type Recorded = {
   /** `F3.60`: one entry per `loadRuleChannels` CALL — the batching gate (R23). */
   ruleChannelReads: string[][];
   warnings: string[];
+  /** `F4.359`: the alarm ids of every `resolveMaintenanceCover` call, one entry per call. */
+  coverReads: string[][];
+  suppressionWrites: { organizationId: string; updates: AlarmSuppressionUpdate[] }[];
+  suppressionBroadcasts: AlarmListItem[];
 };
 
 /** The catalogue with one profile mapped for `(ORG_A, warning)`: step 1 at 1 min → c1, step 2 at 5 min → c2. */
@@ -171,6 +178,39 @@ export function twoStepCatalog(organizationId = ORG_A, severity = "warning"): Es
         ],
       ],
     ]),
+  };
+}
+
+/**
+ * The `AlarmListItem` a fake write reads back for one alarm — the cleared rows of
+ * `writeAlarmState` and (`F4.359`) the changed rows of `writeAlarmSuppression`.
+ */
+export function listItemOf(alarm: LifecycleAlarm | DeviceLifecycleAlarm, patch: Partial<AlarmListItem> = {}): AlarmListItem {
+  return {
+    id: alarm.id,
+    assetId: alarm.assetId,
+    ruleKey: "RULE-1",
+    ruleId: alarm.ruleId,
+    severity: alarm.severity,
+    message: alarm.message,
+    raisedAt: alarm.raisedAt.toISOString(),
+    acknowledgedAt: alarm.acknowledgedAt?.toISOString() ?? null,
+    acknowledgedBy: null,
+    clearedAt: null,
+    assetCode: "ASSET-1",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Site A",
+    assetName: "Feeder 1",
+    siteName: "Site A",
+    source: "source" in alarm ? alarm.source : ("rule" as const),
+    rtuId: "source" in alarm ? alarm.rtuId : null,
+    rtuCode: null,
+    severityRank: 30,
+    suppressed: alarm.suppressedAt !== null,
+    maintenanceWindowId: null,
+    unsuppressedAt: alarm.unsuppressedAt?.toISOString() ?? null,
+    locationName: null,
+    ...patch,
   };
 }
 
@@ -212,6 +252,12 @@ export function fakeDeps(opts: {
   deviceAlarms?: DeviceLifecycleAlarm[];
   /** `F3.16`: the monitored RTUs and hosts the device clear judges against. */
   deviceHealth?: DeviceHealthSnapshot;
+  /** `F4.359`: alarm id → covering window id. None by default, so every earlier case is unchanged. */
+  cover?: ReadonlyMap<string, string>;
+  /** `F4.359`: replaces the recording `resolveMaintenanceCover` (a read that rejects). */
+  resolveMaintenanceCover?: AlarmLifecycleDeps["resolveMaintenanceCover"];
+  /** `F4.359`: replaces the recording `writeAlarmSuppression` (a write that rejects). */
+  writeAlarmSuppression?: AlarmLifecycleDeps["writeAlarmSuppression"];
 }): { deps: AlarmLifecycleDeps; recorded: Recorded } {
   const recorded: Recorded = {
     writes: [],
@@ -223,6 +269,9 @@ export function fakeDeps(opts: {
     ruleChannelLoads: [],
     ruleChannelReads: [],
     warnings: [],
+    coverReads: [],
+    suppressionWrites: [],
+    suppressionBroadcasts: [],
   };
   const byId = new Map<string, LifecycleAlarm | DeviceLifecycleAlarm>(
     [...opts.alarms, ...(opts.deviceAlarms ?? [])].map((alarm) => [alarm.id, alarm]),
@@ -253,31 +302,7 @@ export function fakeDeps(opts: {
             .map((update) => {
               const alarm = byId.get(update.alarmId);
               if (!alarm) throw new Error(`fake: unknown alarm ${update.alarmId}`);
-              return {
-                id: alarm.id,
-                assetId: alarm.assetId,
-                ruleKey: "RULE-1",
-                ruleId: alarm.ruleId,
-                severity: alarm.severity,
-                message: alarm.message,
-                raisedAt: alarm.raisedAt.toISOString(),
-                acknowledgedAt: alarm.acknowledgedAt?.toISOString() ?? null,
-                acknowledgedBy: null,
-                clearedAt: update.clearedAt?.toISOString() ?? null,
-                assetCode: "ASSET-1",
-                assetRtuName: "RTU 1",
-                assetLocationName: "Site A",
-                assetName: "Feeder 1",
-                siteName: "Site A",
-                source: "source" in alarm ? alarm.source : ("rule" as const),
-                rtuId: "source" in alarm ? alarm.rtuId : null,
-                rtuCode: null,
-                severityRank: 30,
-                suppressed: false,
-                maintenanceWindowId: null,
-                unsuppressedAt: null,
-                locationName: null,
-              };
+              return listItemOf(alarm, { clearedAt: update.clearedAt?.toISOString() ?? null });
             }),
         );
       }),
@@ -339,6 +364,28 @@ export function fakeDeps(opts: {
     },
     broadcastCleared: (alarm) => {
       recorded.broadcasts.push(alarm);
+    },
+    resolveMaintenanceCover: (alarms) => {
+      recorded.coverReads.push(alarms.map((alarm) => alarm.id));
+      if (opts.resolveMaintenanceCover) return opts.resolveMaintenanceCover(alarms);
+      return Promise.resolve(new Map(opts.cover ?? []));
+    },
+    writeAlarmSuppression: (organizationId, updates) => {
+      recorded.suppressionWrites.push({ organizationId, updates: [...updates] });
+      if (opts.writeAlarmSuppression) return opts.writeAlarmSuppression(organizationId, updates);
+      // Every update lands; the row read back carries the stamp the update wrote.
+      return Promise.resolve(
+        updates.map((update) => {
+          const alarm = byId.get(update.alarmId);
+          if (!alarm) throw new Error(`fake: unknown alarm ${update.alarmId}`);
+          return update.kind === "stamp"
+            ? listItemOf(alarm, { suppressed: true, maintenanceWindowId: update.windowId })
+            : listItemOf(alarm, { suppressed: false, unsuppressedAt: update.at.toISOString() });
+        }),
+      );
+    },
+    broadcastSuppression: (alarm) => {
+      recorded.suppressionBroadcasts.push(alarm);
     },
     logger: { warn: (message: string) => recorded.warnings.push(message) } as never,
   };

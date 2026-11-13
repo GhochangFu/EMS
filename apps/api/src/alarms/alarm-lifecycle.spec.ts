@@ -51,6 +51,8 @@ const alarm: LifecycleAlarm = {
   raisedAt: secondsBefore(125),
   acknowledgedAt: null,
   normalSince: null,
+  suppressedAt: null,
+  unsuppressedAt: null,
 };
 
 const rule: LifecycleRule = {

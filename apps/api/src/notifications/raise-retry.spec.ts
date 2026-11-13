@@ -184,6 +184,7 @@ export function runRaiseRetryTests(): void {
       rows: c.rows,
       maxAttempts: c.maxAttempts ?? MAX_ATTEMPTS,
       processStartedAt: PROCESS_STARTED_AT,
+      withheld: false,
     });
     assert(
       owed.length === (c.owed ? 1 : 0),
@@ -208,6 +209,7 @@ export function runRaiseRetryTests(): void {
       rows: [row({ channelId: C1 })],
       maxAttempts: MAX_ATTEMPTS,
       processStartedAt: PROCESS_STARTED_AT,
+      withheld: false,
     });
     assert(
       owed.length === 1 && owed[0] === c1,
@@ -228,6 +230,7 @@ export function runRaiseRetryTests(): void {
       rows: [row({ channelId: C1 }), row({ channelId: C2 })],
       maxAttempts: MAX_ATTEMPTS,
       processStartedAt: PROCESS_STARTED_AT,
+      withheld: false,
     });
     assert(
       owed.length === 2 && owed[0] === c2 && owed[1] === c1,
@@ -314,5 +317,26 @@ export function runRaiseRetryTests(): void {
     lost.retainAlarms(new Set(["still-open"]));
     assert(lost.size === 1, `P17: the cleared alarm's entry is evicted, got ${lost.size}`);
     assert(lost.has("still-open", C1, "k"), "P17: the still-active alarm keeps its entry");
+  }
+
+  // --- P18: a WITHHELD raise owes a channel with no row (`F4.359`, plan D10) --
+  //
+  // A maintenance window withheld the raise, so the ledger holds nothing under
+  // the raise key because nothing was offered — not because the offer is still
+  // in flight. With `withheld: true`, stage 1 reads an empty group as owed; the
+  // two blocking arms are unchanged (plan Q3: a channel with a `sent` row from
+  // before the window gets nothing more). `withheld: false` keeps ruling 3.
+  //
+  // **Mutation:** `withheld` ignored → the first assertion reddens; hard-coded
+  // `true` → the second.
+  {
+    const owedWithheld = (rows: RaiseAttemptRow[], withheld: boolean): number =>
+      channelsOwedTheRaise({ channels: [channel()], rows, maxAttempts: MAX_ATTEMPTS, processStartedAt: PROCESS_STARTED_AT, withheld })
+        .length;
+    assert(owedWithheld([], true) === 1, "P18: withheld, a channel with no row under the key is owed");
+    assert(owedWithheld([], false) === 0, "P18: not withheld, an empty row group is still not owed (ruling 3)");
+    assert(owedWithheld([row({ status: "sent" })], true) === 0, "P18: withheld, a channel holding a sent row gets nothing more");
+    assert(owedWithheld(times(MAX_ATTEMPTS), true) === 0, "P18: withheld, a channel at MAX_EVENT_ATTEMPTS is still refused");
+    assert(owedWithheld([row()], true) === 1, "P18: withheld, a channel with one failed row is still owed");
   }
 }

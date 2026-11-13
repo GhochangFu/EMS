@@ -9,6 +9,8 @@ import {
   assertCoveredRaiseIsStampedAndSilent,
   assertCoverFailureRollsTheRaiseBack,
   assertTwinRaiseNotifiesOnce,
+  assertALiftedAlarmIsSentItsWithheldRaise,
+  assertTheEscalationClockRestartsAtTheLift,
   type Engine,
   type GapOutcome,
   type OneTransactionFixture,
@@ -75,4 +77,13 @@ describe.skipIf(!connectionString)("F4.359 U7 — suppression on the raise path"
     if (!oneTx) throw new Error("F4.359: the one-transaction fixture was not built");
     await assertCoverFailureRollsTheRaiseBack(oneTx);
   });
+
+  // `F4.359` U9 — the sweep's phases on real tables (plan cases 11 and 14).
+  it("11. a lifted alarm is sent its withheld raise in the lift tick, under the raise key, once", async () => {
+    await assertALiftedAlarmIsSentItsWithheldRaise(createDb(admin));
+  }, SCENARIO_TIMEOUT_MS);
+
+  it("14. the escalation clock restarts at the lift: a step sent before is not resent, the next is due from the lift", async () => {
+    await assertTheEscalationClockRestartsAtTheLift(createDb(admin));
+  }, SCENARIO_TIMEOUT_MS);
 });
