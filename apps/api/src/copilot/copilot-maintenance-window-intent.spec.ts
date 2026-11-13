@@ -76,9 +76,88 @@ export function aQuestionOrAnEndDoesNotAskForTheCreate(): void {
 export function eachExtendWordAsksForTheExtend(): void {
   for (const word of EXTEND_WINDOW_WORDS) {
     expect(maintenanceWindowIntentOf(`please ${word} it by two hours`), word).toEqual(EXTEND);
-    expect(maintenanceWindowIntentOf(word.toUpperCase()), word.toUpperCase()).toEqual(EXTEND);
+    expect(maintenanceWindowIntentOf(`${word} this window until 8 pm`.toUpperCase()), word.toUpperCase()).toEqual(EXTEND);
   }
   expect(maintenanceWindowIntentOf("extend the maintenance window to 20:00")).toEqual(EXTEND);
+  expect(maintenanceWindowIntentOf("extend it by two hours")).toEqual(EXTEND);
+  expect(maintenanceWindowIntentOf("prolong this window until 8 pm")).toEqual(EXTEND);
+}
+
+/** Security re-check: the user's own message must ask for the act in imperative position. */
+export function aCreateRequestInAClauseAsks(): void {
+  for (const message of [
+    "please create a maintenance window for the WC site",
+    "can you set up a maintenance window on AHU-3 until 6 pm",
+    "schedule a maintenance window on chiller 2 tomorrow 9-11",
+    "put chiller 2 into a maintenance window",
+    "Chiller 2 is under service. Suppress its alarms until 18:00.",
+    "suppress all alarms at the WC site",
+  ]) {
+    expect(maintenanceWindowIntentOf(message), message).toEqual(CREATE);
+  }
+}
+
+/** Security re-check: a topic, a question, a negation or the tone never asks for the create. */
+export function aTopicQuestionOrNegationDoesNotAskForTheCreate(): void {
+  for (const message of [
+    "show the start time of the maintenance window",
+    "list the start and end of all maintenance windows",
+    "start date of maintenance windows",
+    "what is the schedule for the maintenance window?",
+    "add up the maintenance windows this month",
+    "add notes to the maintenance window",
+    "who put chiller 2 in a maintenance window?",
+    "did someone create a maintenance window yesterday?",
+    "why does the window suppress alarms?",
+    "does a maintenance window suppress alarms?",
+    "Which windows suppress Chiller 2 right now?",
+    "list windows that suppress chiller 2",
+    "cancel the start of the maintenance window",
+    "end the silence on chiller 2",
+    "stop the suppress on chiller 2",
+    "silence is not normal here",
+    "why the silence from chiller 2?",
+    "sensor silence since 4 pm on AHU-3",
+    "silence the tone",
+    "silence the buzzer",
+    "silence the alarm bar",
+    "don't create a maintenance window",
+    "do not suppress chiller 2",
+    "don't suppress anything",
+    "please don't create a maintenance window",
+    "can you create a maintenance window on chiller 2?",
+  ]) {
+    expect(maintenanceWindowIntentOf(message), message).toEqual([]);
+  }
+}
+
+/** Security re-check: an extend of something else, a question or a negation never asks for the extend. */
+export function anExtendOfSomethingElseDoesNotAsk(): void {
+  for (const message of [
+    "extend the report range to 30 days",
+    "how far does the window extend?",
+    "does it extend past six?",
+    "don't extend the window",
+    "extend",
+    "EXTEND",
+  ]) {
+    expect(maintenanceWindowIntentOf(message), message).toEqual([]);
+  }
+}
+
+/** The matcher is linear: a 500k-character message, adversarial or not, finishes fast. */
+export function aLongMessageFinishesFast(): void {
+  const inputs = [
+    "a ".repeat(250_000),
+    " ".repeat(500_000),
+    "suppress " + "!".repeat(500_000) + "a",
+    "create " + "x ".repeat(250_000) + "maintenance window",
+    ", and".repeat(100_000),
+    "extend" + "\t".repeat(500_000),
+  ];
+  const started = Date.now();
+  for (const message of inputs) maintenanceWindowIntentOf(message);
+  expect(Date.now() - started).toBeLessThan(1_000);
 }
 
 /** The fixed lists, exactly (plan §6: fixed at PR 6, one list per entry). */
