@@ -358,4 +358,13 @@ export const FIXTURES: Readonly<
   },
   "mqttPayloadFormat.update": { body: { description: "Edited" }, params: { code: "thinkiot-register-array" }, names: TARGET_NAME },
   "mqttPayloadFormat.delete": { body: {}, params: { code: "thinkiot-register-array" }, names: TARGET_NAME },
+  // `F4.359` PR 6 (ADR 0099 Amendment 19 decision 1): the maintenance windows. A create names its organization.
+  "maintenanceWindow.create": {
+    body: { reason: "Chiller overhaul", endsAt: "2026-11-13T18:00:00.000Z", targets: [{ kind: "asset", assetId: ROW }] },
+    params: {},
+    names: ORG_NAME,
+  },
+  "maintenanceWindow.extend": { body: { endsAt: "2026-11-13T22:00:00.000Z", reason: "Parts late" }, params: { id: ROW }, names: TARGET_NAME },
+  "maintenanceWindow.end": { body: { reason: "Work finished early" }, params: { id: ROW }, names: TARGET_NAME },
+  "maintenanceWindow.cancel": { body: {}, params: { id: ROW }, names: TARGET_NAME },
 };

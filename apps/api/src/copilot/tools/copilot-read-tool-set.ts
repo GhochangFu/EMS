@@ -18,6 +18,7 @@ import { LocationAssetScopeService } from "../../auth/location-asset-scope.servi
 import { DashboardService } from "../../dashboard/dashboard.service";
 import { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import { MaintenanceService } from "../../maintenance/maintenance.service";
+import { MaintenanceWindowsService } from "../../maintenance-windows/maintenance-windows.service";
 import { UsersService } from "../../admin/users/users.service";
 import { WorkOrdersService } from "../../work-orders/work-orders.service";
 import { defineToolRegistry, type ToolRegistry } from "../../llm/tool-registry";
@@ -71,6 +72,7 @@ import { listRulesTool } from "./list-rules.tool";
 import { listNotificationChannelsTool } from "./list-notification-channels.tool";
 import { listEscalationProfilesTool } from "./list-escalation-profiles.tool";
 import { listMaintenanceSchedulesTool } from "./list-maintenance-schedules.tool";
+import { listMaintenanceWindowsTool } from "./list-maintenance-windows.tool";
 import { listPayloadFormatsTool } from "./list-payload-formats.tool";
 import { listPointKeyStatesTool } from "./list-point-key-states.tool";
 import { listUsersTool } from "./list-users.tool";
@@ -147,6 +149,8 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   // `F4.334` PR 5 (ADR 0099 Amendment 17 decision 2): the payload formats, and a decode of a pasted sample.
   listPayloadFormatsTool,
   decodePayloadSampleTool,
+  // `F4.359` PR 6 (ADR 0099 Amendment 19 decision 6): the window ids an extend, end or cancel names.
+  listMaintenanceWindowsTool,
   openPageTool,
 ];
 
@@ -235,6 +239,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
     @Inject(AssetTemplatesAdminService) assetTemplates: AssetTemplatesAdminService,
     // `F4.334` PR 5: appended last (slot 30), the same reason. `AdminModule` exports it.
     @Inject(MqttPayloadFormatsAdminService) mqttPayloadFormats: MqttPayloadFormatsAdminService,
+    // `F4.359` PR 6: appended last (slot 31), the same reason. `MaintenanceWindowsModule` exports it.
+    @Inject(MaintenanceWindowsService) maintenanceWindows: MaintenanceWindowsService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -268,6 +274,7 @@ export class CopilotReadToolSet implements CopilotReadTools {
       pointKeyStates,
       assetTemplates,
       mqttPayloadFormats,
+      maintenanceWindows,
     });
   }
 

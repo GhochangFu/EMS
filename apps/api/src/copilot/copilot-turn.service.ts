@@ -55,7 +55,7 @@ import { onboardingSkillCards } from "./copilot-onboarding-discovery";
 import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pending-changes.service";
 import { accessIntentOf } from "./copilot-access-intent";
 import { assetIntentOf } from "./copilot-asset-intent";
-import { operationalIntentOf } from "./copilot-operations-intent";
+import { ownMessageIntentOf } from "./copilot-maintenance-window-intent";
 import { outwardIntentOf, reportEmailIntentOf } from "./copilot-outward-intent";
 import {
   hasImageAttachment,
@@ -698,9 +698,9 @@ export class CopilotTurnService {
       outwardIntent: input.kind === "user" && attachments.length === 0 && outwardIntentOf(input.message),
       // `F4.280` (D4, Q3): report email, its own words and switch; a file turn never allows it (A7).
       reportEmailIntent: input.kind === "user" && attachments.length === 0 && reportEmailIntentOf(input.message),
-      // `F4.284` (ADR 0106 decision 3, DC3): an acknowledge or a close, from the user's own words alone (A7).
-      // Each entry by its own words (an ack word never allows a close).
-      operationalIntent: input.kind === "user" && attachments.length === 0 ? operationalIntentOf(input.message) : [],
+      // `F4.284` (ADR 0106 decision 3, DC3), `F4.359` (ADR 0099 Amendment 19 Q2): an acknowledge, a close, a window's
+      // create or extend, from the user's own words alone (A7). Each entry by its own words (an ack word never allows a close).
+      operationalIntent: input.kind === "user" && attachments.length === 0 ? ownMessageIntentOf(input.message) : [],
       ...(attachments.length > 0 ? { attachments } : {}),
       historyHasAttachmentSinceLastLayout: historyHasAttachmentSinceLastLayout(recent),
       now: this.clock(),

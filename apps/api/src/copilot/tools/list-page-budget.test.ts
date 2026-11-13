@@ -15,6 +15,7 @@ import {
   listEscalationProfilesPageIsWhole,
   listLocationsPagesAreWhole,
   listMaintenancePagesAreWhole,
+  listMaintenanceWindowsPageIsWhole,
   listReportSchedulesPageIsWhole,
   listRulesPagesAreWhole,
   listWorkOrdersPagesAreWhole,
@@ -38,6 +39,7 @@ describe("F4.291 — a capped copilot list reaches the model whole", () => {
   it("a 25-row list_dashboards page is whole", listDashboardsPageIsWhole);
   it("a 25-row list_report_schedules page is whole", listReportSchedulesPageIsWhole);
   it("a 25-row list_escalation_profiles page is whole", listEscalationProfilesPageIsWhole);
+  it("F4.359: a 25-row list_maintenance_windows page is whole", listMaintenanceWindowsPageIsWhole);
   it("a list_locations page whose meta the scrub grows is whole and complete", aScrubbedLocationPageIsWholeAndComplete);
   it("a walk across two organizations skips and repeats nothing", twoOrganizationWalkSkipsAndRepeatsNothing);
   it("an organization dropped by the fit is not in organizationIds", aDroppedOrganizationIsNotProvenance);

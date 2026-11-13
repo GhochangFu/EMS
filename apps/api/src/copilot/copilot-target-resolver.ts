@@ -44,6 +44,7 @@ import { APPEND_CHART_ENTRY_ID, appendChartTabRefusal } from "./copilot-append-c
 import { findConfigurationAsset, readAssetGroupMemberTarget, readAssetTarget } from "./copilot-asset-targets";
 import { assetKindAdmits, findCalcPointBatch, mayWriteCalcPointBatch } from "./copilot-calc-point-targets";
 import { findRuleBatch } from "./copilot-rule-targets";
+import { type MaintenanceWindowCard, resolveMaintenanceWindowTarget, tenantWindowReads } from "./copilot-maintenance-window-targets";
 import { readPayloadFormatTarget, readRtuPayloadFormat } from "./copilot-payload-format-targets";
 import { pointKeyStateName, readPointKeyState, seededAtPropose, seededPointKeyStateRefusal } from "./copilot-point-key-state-targets";
 import { lifecycleStatusOf, refKindOf } from "./copilot-target-kinds";
@@ -87,6 +88,8 @@ export type ResolvedTarget = {
   readonly workOrder?: OperationsWorkOrder;
   readonly batch?: readonly OperationsBatchRow[];
   readonly convertible?: { readonly active: boolean; readonly hasActiveWorkOrder: boolean };
+  /** `F4.359` PR 6 (ADR 0099 Amendment 19 decision 2): a `maintenanceWindow` target's card data and state. */
+  readonly maintenanceWindow?: MaintenanceWindowCard;
 };
 
 /** What the user targets need from the users services: their own checks, called, never copied (plan §6.3). */
@@ -164,12 +167,13 @@ type Found = {
   workOrder?: OperationsWorkOrder;
   batch?: readonly OperationsBatchRow[];
   convertible?: { active: boolean; hasActiveWorkOrder: boolean };
+  maintenanceWindow?: MaintenanceWindowCard;
 };
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
 type RowKind = Exclude<
   CatalogEntry["target"]["kind"],
   "organization" | "parent" | "fleet" | "vocabulary" | "telemetry" | "onboardingSession" | "workOrderBatch" | "ruleBatch" | "calcPointBatch"
-  | "assetTemplateAdopt" | "pointKeyState" | UserKind
+  | "assetTemplateAdopt" | "pointKeyState" | "maintenanceWindow" | UserKind
 >;
 type UserKind = "user" | "userGrantAdd" | "userGrant";
 type UserTarget = Extract<CatalogEntry["target"], { kind: UserKind }>;
@@ -303,6 +307,9 @@ export class CopilotTargetResolver implements CopilotTargets {
       const name = batch === null ? null : await this.organizationName(batch.organizationId);
       found = batch === null || name === null ? null : { organizationId: batch.organizationId, name, pointKeys: batch.pointKeys };
       if (batch !== null && !(await this.safely(() => mayWriteCalcPointBatch(this.access, user, batch.assetIds)))) found = null;
+    } else if (target.kind === "maintenanceWindow") {
+      // `F4.359` PR 6 (Amendment 19 decision 2): the window routes' own gate and scope check, one authority.
+      found = await resolveMaintenanceWindowTarget(tenantWindowReads(this.tenantDb), this.access, user, target, params, body, allowedOrganizationIds);
     } else if (target.kind === "assetTemplateAdopt") {
       // `F4.312` PR 2 (Amendment 12): a published version and its template-less assets, the adopt route's gate.
       const id = params[target.param];
@@ -359,6 +366,7 @@ export class CopilotTargetResolver implements CopilotTargets {
       ...(found.workOrder ? { workOrder: found.workOrder } : {}),
       ...(found.batch ? { batch: found.batch } : {}),
       ...(found.convertible ? { convertible: found.convertible } : {}),
+      ...(found.maintenanceWindow ? { maintenanceWindow: found.maintenanceWindow } : {}),
     };
   }
 

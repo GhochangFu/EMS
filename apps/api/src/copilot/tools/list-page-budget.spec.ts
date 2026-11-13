@@ -1,6 +1,13 @@
 import { expect } from "vitest";
 
-import type { EscalationProfileDto, JwtPayload, MaintenanceScheduleItem, ReportScheduleDto, WorkOrderListItem } from "@bms/shared";
+import type {
+  EscalationProfileDto,
+  JwtPayload,
+  MaintenanceScheduleItem,
+  MaintenanceWindowItem,
+  ReportScheduleDto,
+  WorkOrderListItem,
+} from "@bms/shared";
 
 import type { ResolvedIdentity } from "../../auth/identity-resolver";
 import { succeed, TOOL_RESULT_CUT_TAIL, TOOL_RESULT_MAX_CHARS } from "../../llm/tool-result";
@@ -35,6 +42,8 @@ import { alarmKeyset } from "./list-alarms.tool";
  *   `condition` JSON) · `list_locations` ~14,000 (~560, the `meta` JSON)
  * - `list_work_orders` ~10,000 and `list_maintenance_schedules` ~10,500
  *   (two and three seeded rows; sized from realistic titles and names)
+ * - `list_maintenance_windows` (`F4.359` PR 6; no seeded rows, sized from the item: a window with three
+ *   labelled targets and both links) ~14,000 (~560 a row)
  * - `list_dashboards` ~11,000 (a seeded row is up to 550 as stored) ·
  *   `list_report_schedules` ~8,250 · `list_escalation_profiles` over 8,000
  *   with three steps of two channels (no seeded rows; sized from the DTO)
@@ -293,13 +302,37 @@ function profile(i: number): EscalationProfileDto {
   };
 }
 
+/** `F4.359` PR 6: a window with three labelled targets (an asset, a site, a rule) and both links. */
+function maintenanceWindow(i: number): MaintenanceWindowItem {
+  return {
+    id: uuid("61000000", i),
+    organizationId: ORG,
+    reason: `Compressor overhaul and oil change on the KZN control room chiller ${i}`,
+    startsAt: "2026-10-28T05:00:00.000Z",
+    endsAt: "2026-10-28T17:00:00.000Z",
+    endedAt: null,
+    state: "active",
+    createdByName: "KwaZulu-Natal Control Room Administrator",
+    endedByName: null,
+    workOrder: { id: uuid("60000000", i), reference: "GEN-000001" },
+    maintenanceSchedule: { id: uuid("40000000", i), title: `Quarterly thermographic scan of the utility incomer switchgear ${i}` },
+    targets: [
+      { kind: "asset", id: ASSETS[i % ASSETS.length]!, label: "KwaZulu-Natal Control Room Utility Incomer" },
+      { kind: "location", id: uuid("e0bb42bb", 1), label: "RSMOC KwaZulu-Natal Control Room" },
+      { kind: "rule", id: uuid("c72de634", i), label: `KwaZulu-Natal Control Room Battery String ${i} L1 voltage critical` },
+    ],
+    assetIds: ASSETS,
+  };
+}
+
 const range = <T>(count: number, row: (i: number) => T): T[] => Array.from({ length: count }, (_, i) => row(i));
 
 /** One service set for every list here: `count` live-length rows each; `overrides` replaces whole services. */
 function fake(count: number, overrides: Record<string, unknown> = {}) {
   const alarms = range(count, alarm);
   const services = {
-    access: { readableAssetIdsInOrganization: async () => ASSETS },
+    // `F4.359` PR 6: `isGlobalAdmin` answers the window scope (`readScopeFor`) for `list_maintenance_windows`.
+    access: { readableAssetIdsInOrganization: async () => ASSETS, isGlobalAdmin: async () => true },
     locationScope: { readableAssetIdsInLocations: async () => ({ ok: true, organizationId: ORG, assetIds: ASSETS }) },
     alarms: { list: async (opts: { limit: number; cursor?: string }) => keysetPage(alarms, opts.limit, opts.cursor) },
     assets: { listAll: async () => range(count, asset) },
@@ -307,6 +340,7 @@ function fake(count: number, overrides: Record<string, unknown> = {}) {
     rules: { listRules: async () => ({ items: range(count, rule) }) },
     workOrders: { list: async () => ({ items: range(count, workOrder) }) },
     maintenance: { list: async () => ({ items: range(count, schedule) }) },
+    maintenanceWindows: { list: async () => ({ items: range(count, maintenanceWindow) }) },
     dashboards: { list: async () => ({ items: range(count, dashboard) }) },
     schedules: { list: async () => range(count, reportSchedule) },
     escalationProfiles: {
@@ -442,6 +476,8 @@ export const listDashboardsPageIsWhole = () => unpagedPageIsWhole("list_dashboar
 export const listReportSchedulesPageIsWhole = () => unpagedPageIsWhole("list_report_schedules");
 /** (c8) `list_escalation_profiles`. */
 export const listEscalationProfilesPageIsWhole = () => unpagedPageIsWhole("list_escalation_profiles");
+/** (c9) `F4.359` PR 6: `list_maintenance_windows`. */
+export const listMaintenanceWindowsPageIsWhole = () => unpagedPageIsWhole("list_maintenance_windows");
 
 // --- (d) the scrub's growth is measured --------------------------------------------------------------
 

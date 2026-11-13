@@ -20,6 +20,7 @@ import { DatabaseModule } from "../database/database.module";
 import { IdentityAdminModule } from "../identity/identity-admin.module";
 import { LlmModule } from "../llm/llm.module";
 import { MaintenanceModule } from "../maintenance/maintenance.module";
+import { MaintenanceWindowsModule } from "../maintenance-windows/maintenance-windows.module";
 import { WorkOrdersModule } from "../work-orders/work-orders.module";
 import { MimicLayoutsModule } from "../mimic-layouts/mimic-layouts.module";
 import { MimicSymbolLibrariesModule } from "../mimic-symbol-libraries/mimic-symbol-libraries.module";
@@ -172,6 +173,11 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * `WorkOrdersService` for `list_work_orders`. It imports nothing of this module,
  * so the graph stays acyclic. `list_users` reads through the `UsersService` this
  * module already provides.
+ *
+ * `F4.359` PR 6 (ADR 0099 Amendment 19 decision 6): `MaintenanceWindowsModule`
+ * exports `MaintenanceWindowsService` for `list_maintenance_windows`. It imports
+ * nothing of this module (its providers take `DatabaseModule`'s tokens and the
+ * audit funnel), so the graph stays acyclic; the worker never reaches this module.
  */
 @Module({
   imports: [
@@ -197,6 +203,7 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     NotificationsModule,
     MaintenanceModule,
     WorkOrdersModule,
+    MaintenanceWindowsModule,
   ],
   controllers: [CopilotAccessController, CopilotChangesController, CopilotConversationsController, CopilotStatusController],
   providers: [

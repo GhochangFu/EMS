@@ -165,6 +165,8 @@ export type StoredContractContext =
   | "copilot_tools.list_asset_templates.page"
   // `F4.334` PR 5 (ADR 0099 Amendment 17 decision 2): the payload format read tool.
   | "copilot_tools.list_payload_formats.page"
+  // `F4.359` PR 6 (ADR 0099 Amendment 19 decision 6): the maintenance-window read tool.
+  | "copilot_tools.list_maintenance_windows.page"
   // `F4.288` (ADR 0099 Amendment 9 E2): the rules watching the site inventory's points.
   | "copilot_tools.get_site_point_inventory.rules"
   // `F4.296`: the rules its `unruled` read takes for the whole subtree.

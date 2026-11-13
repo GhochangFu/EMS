@@ -11,7 +11,7 @@ import { FILE_DATA_ENTRIES, FILE_DATA_PENDING } from "./file-data";
 import { KPI_ENTRIES } from "./kpis";
 import { LOCATION_TYPE_ENTRIES, LOCATION_TYPE_PENDING } from "./location-types";
 import { MQTT_PAYLOAD_FORMAT_ENTRIES, MQTT_PAYLOAD_FORMAT_PENDING } from "./mqtt-payload-formats";
-import { MAINTENANCE_WINDOW_PENDING } from "./maintenance-windows";
+import { MAINTENANCE_WINDOW_ENTRIES, MAINTENANCE_WINDOW_PENDING } from "./maintenance-windows";
 import { LOCATION_ENTRIES, LOCATION_PENDING } from "./locations";
 import { MAINTENANCE_ENTRIES } from "./maintenance";
 import { NOTIFICATION_ENTRIES, NOTIFICATION_PENDING } from "./notifications";
@@ -69,6 +69,8 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...OPERATIONS_ENTRIES,
   // `F4.334` (ADR 0099 Amendment 17): the MQTT payload format catalog.
   ...MQTT_PAYLOAD_FORMAT_ENTRIES,
+  // `F4.359` PR 6 (ADR 0099 Amendment 19): the maintenance-window writes.
+  ...MAINTENANCE_WINDOW_ENTRIES,
 ];
 
 /**
@@ -323,7 +325,7 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...FILE_DATA_PENDING,
   // `F4.334` (ADR 0099 Amendment 17): only the test route stays out; the writes are entries.
   ...MQTT_PAYLOAD_FORMAT_PENDING,
-  // `F4.359` (ADR 0099 Amendment 19): the four window writes, until that amendment's build (plan PR 6).
+  // `F4.359` (ADR 0099 Amendment 19): the four window writes are entries since plan PR 6; the list is empty.
   ...MAINTENANCE_WINDOW_PENDING,
   // `E3.1` (ADR 0122): the work-order depth routes join the named exclusion list in that row.
   {

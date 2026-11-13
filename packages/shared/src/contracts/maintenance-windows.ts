@@ -51,6 +51,25 @@ export const createMaintenanceWindowBodySchema = z
   })
   .strict();
 
+/** ADR 0099 Amendment 19 Q4: a Copilot proposal names at most 25 targets; the route and the page's wizard keep 200. */
+export const COPILOT_MAINTENANCE_WINDOW_MAX_TARGETS = 25;
+
+/**
+ * `F4.359` PR 6 (ADR 0099 Amendment 19 decision 1, Q4): the body the Copilot proposes a window
+ * with — the route's fields, strict, with at most 25 targets. It binds the model only; the
+ * Confirm sends it to the route, which parses `createMaintenanceWindowBodySchema`.
+ */
+export const copilotCreateMaintenanceWindowModelBodySchema = z
+  .object({
+    reason: reasonSchema,
+    startsAt: isoDateTime.optional(),
+    endsAt: isoDateTime,
+    targets: z.array(maintenanceWindowTargetSchema).min(1).max(COPILOT_MAINTENANCE_WINDOW_MAX_TARGETS),
+    workOrderId: z.string().uuid().optional(),
+    maintenanceScheduleId: z.string().uuid().optional(),
+  })
+  .strict();
+
 export const extendMaintenanceWindowBodySchema = z
   .object({ endsAt: isoDateTime, reason: reasonSchema.optional() })
   .strict();

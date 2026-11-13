@@ -37,6 +37,7 @@ import {
   assertTheLocationSummaryInjectsTheFleetHandles,
   assertTheAdminModuleExportsThePointKeyStates,
   assertTheReadToolsInjectThePointKeyStates,
+  assertTheReadToolsInjectTheMaintenanceWindowsService,
   assertTheProposeToolsInjectTheLayoutsService,
   assertTheResolverInjectsTheUsersServices,
 } from "./copilot-module-wiring.spec";
@@ -87,4 +88,6 @@ describe("F3.86 PR 4 — CopilotModule wiring for the user targets", () => {
   it("F4.290: LocationSummaryService injects the fleet handles", () => assertTheLocationSummaryInjectsTheFleetHandles());
   it("F4.309: AdminModule exports PointKeyStatesAdminService", () => assertTheAdminModuleExportsThePointKeyStates());
   it("F4.309: the read tools inject PointKeyStatesAdminService in slot 28", () => assertTheReadToolsInjectThePointKeyStates());
+  it("F4.359: MaintenanceWindowsModule is imported, exports its service, and fills read-tool slot 31", () =>
+    assertTheReadToolsInjectTheMaintenanceWindowsService());
 });
