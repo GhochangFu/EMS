@@ -11,6 +11,10 @@ import {
   assertTheAcknowledgeCarriesTheRank,
   assertTheClearedBroadcastCarriesTheRank,
   assertTheCreatedEventReadCarriesTheRank,
+  assertTheAcknowledgeCarriesSuppression,
+  assertTheClearedBroadcastCarriesSuppression,
+  assertTheCreatedEventReadCarriesSuppression,
+  assertTheListCarriesSuppression,
   assertTheListCarriesTheRank,
 } from "./alarm-severity-rank.integration.spec";
 
@@ -45,4 +49,8 @@ describe.skipIf(!connectionString)("F4.357 — alarm producers carry severityRan
   it("the created-event read carries the rank", () => inRollback(db, assertTheCreatedEventReadCarriesTheRank));
   it("the sweep's cleared broadcast carries the rank and the location", () => inRollback(db, assertTheClearedBroadcastCarriesTheRank), 30_000);
   it("each source names its own location: the asset's, the RTU's, none", () => inRollback(db, assertEachSourceNamesItsOwnLocation));
+  it("F4.359: the list carries suppressed and the window id", () => inRollback(db, assertTheListCarriesSuppression));
+  it("F4.359: the acknowledge return and its broadcast carry them", () => inRollback(db, assertTheAcknowledgeCarriesSuppression));
+  it("F4.359: the created-event read carries them", () => inRollback(db, assertTheCreatedEventReadCarriesSuppression));
+  it("F4.359: the sweep's cleared broadcast carries them", () => inRollback(db, assertTheClearedBroadcastCarriesSuppression), 30_000);
 });

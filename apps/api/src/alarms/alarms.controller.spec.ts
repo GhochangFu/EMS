@@ -58,7 +58,7 @@ function harness(readable: string[] | null) {
       summaryCalls.push(assetIds);
       summaryOrgs.push(organizationId);
       summaryLocations.push(location);
-      return { items: [], total: 0 };
+      return { items: [], total: 0, suppressed: 0 };
     },
   } as unknown as AlarmsService;
   const accessControl = {

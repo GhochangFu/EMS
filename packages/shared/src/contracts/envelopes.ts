@@ -271,6 +271,9 @@ export const alarmsListResponseSchema = z.object({
 export const alarmSummaryResponseSchema = z.object({
   items: z.array(alarmSeverityCountSchema),
   total: z.number().int().nonnegative(),
+  // F4.359 U5 (ADR 0131 decision 19): the active alarms a maintenance window
+  // suppresses. `total` and every per-severity number leave them out.
+  suppressed: z.number().int().nonnegative(),
 });
 
 export const workOrdersListResponseSchema = itemsOf(workOrderListItemSchema);

@@ -44,6 +44,10 @@ import { alias } from "drizzle-orm/pg-core";
  * `locationName` is the asset's location or, for an `rtu_comms` alarm, its
  * RTU's (`null` for an `ingest_host` alarm). The four joins are unchanged.
  *
+ * **`F4.359` (ADR 0131 decision 19) adds three more columns**, no join:
+ * `suppressed` is `suppressed_at IS NOT NULL`, `maintenanceWindowId` the stamping
+ * window (kept after a lift) and `unsuppressedAt` when the sweep lifted it.
+ *
  * `normal_since` is deliberately absent: it is the sweep's own bookkeeping
  * (ADR 0057 decision 5), not a fact the alarm centre shows.
  */
@@ -70,6 +74,9 @@ export const alarmListItemColumns = {
   rtuCode: alarmRtus.code,
   severityRank: sql<number>`(SELECT sev.rank FROM bms.alarm_severities sev WHERE sev.code = ${alarms.severity})`.mapWith(Number),
   locationName: sql<string | null>`COALESCE(${locations.name}, (SELECT rl.name FROM bms.locations rl WHERE rl.id = ${alarmRtus.locationId}))`,
+  suppressed: sql<boolean>`(${alarms.suppressedAt} IS NOT NULL)`.mapWith(Boolean),
+  maintenanceWindowId: alarms.suppressedByWindowId,
+  unsuppressedAt: alarms.unsuppressedAt,
 };
 
 /**
@@ -100,6 +107,9 @@ export type AlarmListItemRow = {
   rtuCode: string | null;
   severityRank: number;
   locationName: string | null;
+  suppressed: boolean;
+  maintenanceWindowId: string | null;
+  unsuppressedAt: Date | null;
 };
 
 /**
@@ -137,6 +147,9 @@ export function toAlarmListItem(r: AlarmListItemRow): AlarmListItem {
     rtuCode: r.rtuCode,
     severityRank: r.severityRank,
     locationName: r.locationName,
+    suppressed: r.suppressed,
+    maintenanceWindowId: r.maintenanceWindowId,
+    unsuppressedAt: r.unsuppressedAt?.toISOString() ?? null,
   };
 }
 

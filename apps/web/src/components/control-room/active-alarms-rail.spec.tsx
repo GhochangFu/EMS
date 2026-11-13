@@ -91,6 +91,9 @@ function alarm(index: number, overrides: Partial<AlarmListItem> = {}): AlarmList
     rtuId: null,
     rtuCode: null,
     severityRank: 30,
+    suppressed: false,
+    maintenanceWindowId: null,
+    unsuppressedAt: null,
     locationName: null,
     ...overrides,
   };
@@ -117,7 +120,7 @@ function renderRail({
     (): Promise<AlarmsListResponse> => Promise.resolve({ items, nextCursor: null }),
   );
   mocks.fetchAlarmSummary.mockImplementation(
-    (): Promise<AlarmSummaryResponse> => Promise.resolve({ items: SUMMARY_ITEMS, total: 10 }),
+    (): Promise<AlarmSummaryResponse> => Promise.resolve({ items: SUMMARY_ITEMS, total: 10, suppressed: 0 }),
   );
   mocks.fetchVocabularies.mockImplementation(
     (): Promise<VocabulariesResponse> =>

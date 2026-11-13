@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   alarmSummaryResponseAcceptsAZeroCountRow,
+  alarmSummaryResponseRequiresSuppressed,
   alarmSummaryResponseRequiresTotal,
   assetListResponseSchemaAndNoOldNameSurvives,
   assetListRowAcceptsAFullyWiredRow,
@@ -84,6 +85,10 @@ describe("F3.28 — alarmSummaryResponseSchema (ADR 0074 decision 3)", () => {
 
   it("requires total", () => {
     alarmSummaryResponseRequiresTotal();
+  });
+
+  it("requires a non-negative integer suppressed (F4.359 U5)", () => {
+    alarmSummaryResponseRequiresSuppressed();
   });
 });
 

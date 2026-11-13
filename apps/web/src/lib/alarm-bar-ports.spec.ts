@@ -65,7 +65,7 @@ export async function theSummaryReadSendsTheScope(): Promise<void> {
   let seen = "";
   vi.stubGlobal("fetch", async (url: string) => {
     seen = url;
-    return new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 });
+    return new Response(JSON.stringify({ items: [], total: 0, suppressed: 0 }), { status: 200 });
   });
   await browserAlarmBarPorts().fetchSummary({ organizationId: "11111111-1111-4111-8111-111111111111" });
   const url = new URL(seen);
@@ -82,7 +82,7 @@ export async function acknowledgeIsTheExistingRoute(): Promise<void> {
         id: "a1", assetId: null, ruleKey: null, ruleId: null, severity: "critical", message: "m", raisedAt: "2026-11-12T10:00:00.000Z",
         acknowledgedAt: "2026-11-12T10:01:00.000Z", acknowledgedBy: "u", clearedAt: null, assetCode: null, assetRtuName: null,
         assetLocationName: null, assetName: null, siteName: null, source: "ingest_host", rtuId: null, rtuCode: null,
-        severityRank: 30, locationName: null,
+        severityRank: 30, locationName: null, suppressed: false, maintenanceWindowId: null, unsuppressedAt: null,
       }),
       { status: 200 },
     );

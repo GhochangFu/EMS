@@ -39,6 +39,7 @@ function deferred<T>(): Deferred<T> {
 
 export const EMPTY_SUMMARY: AlarmSummaryResponse = {
   total: 0,
+  suppressed: 0,
   items: [
     { code: "info", label: "Info", tone: "info", rank: 10, count: 0, unacknowledged: 0 },
     { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 0, unacknowledged: 0 },

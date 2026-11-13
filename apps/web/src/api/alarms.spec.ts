@@ -40,7 +40,7 @@ function captureUrl(body: unknown): () => URL {
 }
 
 const EMPTY_LIST = { items: [], nextCursor: null };
-const EMPTY_SUMMARY = { items: [], total: 0 };
+const EMPTY_SUMMARY = { items: [], total: 0, suppressed: 0 };
 
 /** The active read asks for `state=active` — raised and not yet cleared. */
 export async function activeAlarmsSendsStateActive(): Promise<void> {

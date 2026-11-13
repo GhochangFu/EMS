@@ -80,6 +80,9 @@ function alarmRow(i: number, asset: string) {
     rtuId: null,
     rtuCode: null,
     severityRank: 30,
+    suppressed: false,
+    maintenanceWindowId: null,
+    unsuppressedAt: null,
     locationName: null,
   };
 }
@@ -404,7 +407,9 @@ export async function listAlarmsWithALocationReadsTheSubtree(): Promise<void> {
  * to the result budget, `F4.291` live check, so its last alarm may be before the 25th.)
  */
 export async function listAlarmsPassesTheServiceCursorThrough(): Promise<void> {
-  const { tools, log } = fake({ alarmCount: 30, readable: { [ORG_X]: [ASSET_X] } });
+  // 24, not 30: F4.359 added three fields (+68 characters) to each row, so the
+  // budget now fits 13 of these rows a page and 30 would need three pages.
+  const { tools, log } = fake({ alarmCount: 24, readable: { [ORG_X]: [ASSET_X] } });
   const one = listed(await tools.dispatch("list_alarms", { state: "all" }, ctx([ORG_X])));
   const first = one.organizations[0]?.items.length ?? 0;
   const serviceCursor = alarmKeyset(alarmRow(first - 1, ASSET_X));

@@ -257,3 +257,21 @@ export function assertAnEmptyRankIsAbsentAndALocationIdIsLowerCased(): void {
     assert(result.success && result.data.locationId === id, `the ${name} must lower-case locationId`);
   }
 }
+
+/**
+ * `F4.359` U5 (owner ruling Q4, ADR 0131 decision 19) — `state=suppressed`
+ * (active and stamped by a maintenance window) parses, and it pages like
+ * `active`, so a `cursor` beside it is allowed.
+ */
+export function assertSuppressedStateParsesWithAndWithoutACursor(): void {
+  const alone = alarmListQuerySchema.safeParse({ state: "suppressed" });
+  assert(
+    alone.success && alone.data.state === "suppressed",
+    `state=suppressed must parse: ${JSON.stringify(alone.success ? alone.data : alone.error.issues)}`,
+  );
+  const paged = alarmListQuerySchema.safeParse({ state: "suppressed", cursor: "abc" });
+  assert(
+    paged.success && paged.data.state === "suppressed" && paged.data.cursor === "abc",
+    `cursor beside state=suppressed must parse: ${JSON.stringify(paged.success ? paged.data : paged.error.issues)}`,
+  );
+}

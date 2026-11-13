@@ -44,6 +44,9 @@ export function alarmItem(over: Partial<AlarmListItem> = {}): AlarmListItem {
     rtuId: null,
     rtuCode: null,
     severityRank: 30,
+    suppressed: false,
+    maintenanceWindowId: null,
+    unsuppressedAt: null,
     locationName: "Plant A",
     ...over,
   };
@@ -105,6 +108,7 @@ export function newestUnacknowledgedPrefersRankThenTime(): void {
 export function countsSortByRankDescending(): void {
   const summary: AlarmSummaryResponse = {
     total: 6,
+    suppressed: 0,
     items: [
       { code: "info", label: "Info", tone: "info", rank: 10, count: 1, unacknowledged: 1 },
       { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 2, unacknowledged: 2 },
@@ -148,6 +152,7 @@ export function popupRowsFollowRankThenTimeAndSkipSeen(): void {
 export function moreActiveCountIsExactAndNeverNegative(): void {
   const summary = (warning: number, critical: number, info = 4): AlarmSummaryResponse => ({
     total: 0,
+    suppressed: 0,
     items: [
       { code: "info", label: "Info", tone: "info", rank: 10, count: info, unacknowledged: info },
       { code: "warning", label: "Warning", tone: "warning", rank: 20, count: warning + 1, unacknowledged: warning },

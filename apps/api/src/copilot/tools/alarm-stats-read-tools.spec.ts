@@ -294,6 +294,9 @@ const ALARM_ITEM = {
   rtuId: null,
   rtuCode: null,
   severityRank: 30,
+  suppressed: false,
+  maintenanceWindowId: null,
+  unsuppressedAt: null,
   locationName: null,
 };
 

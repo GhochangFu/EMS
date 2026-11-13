@@ -141,6 +141,11 @@ export const alarmListItemSchema = z.object({
   // F4.357 (plan Q2): the alarm's own location — the asset's for a rule alarm,
   // the RTU's for `rtu_comms`, null for `ingest_host` (it has none).
   locationName: z.string().nullable(),
+  // F4.359 / ADR 0131 decision 19: `suppressed_at IS NOT NULL`, the window that
+  // stamped it (kept after a lift) and when the sweep lifted it (plan Q2).
+  suppressed: z.boolean(),
+  maintenanceWindowId: z.string().nullable(),
+  unsuppressedAt: z.string().nullable(),
 });
 
 /** Socket.IO `/ws/alarms` event payload. */
@@ -148,6 +153,8 @@ export const alarmSocketEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("created"), alarm: alarmListItemSchema }),
   z.object({ type: z.literal("acknowledged"), alarm: alarmListItemSchema }),
   z.object({ type: z.literal("cleared"), alarm: alarmListItemSchema }),
+  // F4.359 plan D13: a stamp or a lift by the sweep, not a second raise.
+  z.object({ type: z.literal("suppression"), alarm: alarmListItemSchema }),
 ]);
 
 // ---------------------------------------------------------------------------

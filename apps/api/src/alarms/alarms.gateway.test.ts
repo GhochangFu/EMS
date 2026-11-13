@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertASuppressionEventIsEmittedUnderTheSameScoping,
   assertAnRtuAlarmReachesTheSocketsServedByThatRtu,
   assertAnUnknownHostAlarmOrganizationReachesOnlyUnscopedSockets,
   assertARuleAlarmIsScopedByItsAssetAsBefore,
@@ -28,5 +29,8 @@ describe("F3.16 — AlarmsGateway.emitScoped and device alarms (ADR 0127 decisio
   });
   it("the handshake caches the socket's device scope; the global admin's is null", async () => {
     await assertTheHandshakeCachesTheDeviceScope();
+  });
+  it("a suppression event is emitted under the same scoping", async () => {
+    await assertASuppressionEventIsEmittedUnderTheSameScoping();
   });
 });

@@ -130,3 +130,7 @@ describe("alarm list query — state=unacknowledged and minSeverityRank (F4.357 
   it("reads an empty minSeverityRank as absent and lower-cases locationId", () =>
     spec.assertAnEmptyRankIsAbsentAndALocationIdIsLowerCased());
 });
+
+describe("alarm list query — state=suppressed (F4.359 U5, plan Q4)", () => {
+  it("parses state=suppressed, alone and beside a cursor", () => spec.assertSuppressedStateParsesWithAndWithoutACursor());
+});
