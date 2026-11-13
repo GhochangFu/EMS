@@ -6,7 +6,7 @@ import {
   gatesTheUsersTab,
   givesEveryAdminRouteAnArea,
   groupsEveryTabIntoItsArea,
-  hidesTheNotificationsAreaFromALocationAdmin,
+  hidesTheChannelTabsAndUsersAreaFromALocationAdmin,
   keepsOnlyTheVisibleTabsInAnArea,
   linksEachAreaToItsFirstVisibleTab,
   listsTheTabsAreaByArea,
@@ -33,8 +33,8 @@ describe("F3.76 master data areas", () => {
     showsFiveAreasToAnOrganizationAdmin();
   });
 
-  it("A3c hides the Notifications area from a location_admin", () => {
-    hidesTheNotificationsAreaFromALocationAdmin();
+  it("A3c hides Users & Access and the channel tabs from a location_admin (F4.359: Maintenance Windows shows)", () => {
+    hidesTheChannelTabsAndUsersAreaFromALocationAdmin();
   });
 
   it("A4 keeps only the visible tabs in an area", () => {

@@ -27,7 +27,8 @@ export function groupsEveryTabIntoItsArea(): void {
     "Reference Data": ["Asset Groups", "Point Keys", "State Labels", "Trend Points", "Location Types", "Unit Roles", "Asset Domains", "Work Order SLA", "Checklist Templates", "Payload Formats", "Calc Parameters", "Portal Appearance"],
     "Templates & Visuals": ["Asset Templates", "Dashboard Templates", "Mimic Layouts", "Symbol Libraries"],
     "Data Input": ["Manual Entry", "Import Telemetry"],
-    Notifications: ["Channels", "Escalation", "Deliveries"],
+    // `F4.359`: Maintenance Windows first (A5b — the area opens at a tab every role sees).
+    Notifications: ["Maintenance Windows", "Channels", "Escalation", "Deliveries"],
     "Users & Access": ["Users", "Service Accounts"],
   });
 }
@@ -63,14 +64,16 @@ export function showsFiveAreasToAnOrganizationAdmin(): void {
 }
 
 /**
- * A3c — a `location_admin` sees no Notifications area (every tab of it is
- * `notificationAdmin`) and no Users & Access area (its one tab is `usersAdmin`).
- * The four others are the positive control.
+ * A3c — a `location_admin` sees no Users & Access area (its tabs are `usersAdmin` and
+ * `serviceAccountsAdmin`), and no channel tab of Notifications (each is `notificationAdmin`).
+ * `F4.359` (ADR 0131 decision 13): the ungated Maintenance Windows tab is that area's one tab
+ * for it, so the area shows with it alone. The four others are the positive control.
  */
-export function hidesTheNotificationsAreaFromALocationAdmin(): void {
-  expect(areaLabels("location_admin")).toEqual(
-    ALL_AREAS.filter((label) => label !== "Notifications" && label !== "Users & Access"),
-  );
+export function hidesTheChannelTabsAndUsersAreaFromALocationAdmin(): void {
+  expect(areaLabels("location_admin")).toEqual(ALL_AREAS.filter((label) => label !== "Users & Access"));
+  const notifications = visibleMasterDataAreas("location_admin").find((area) => area.id === "notifications");
+  expect(notifications?.tabs.map((tab) => tab.label)).toEqual(["Maintenance Windows"]);
+  expect(notifications?.path).toBe("/admin/maintenance-windows");
 }
 
 /** A4 — an area carries only the tabs the role sees (Reference Data for an `organization_admin`). */
@@ -95,7 +98,7 @@ export function linksEachAreaToItsFirstVisibleTab(): void {
     reference: "/admin/asset-groups",
     templates: "/admin/asset-templates",
     "data-input": "/admin/manual-readings",
-    notifications: "/admin/notification-channels",
+    notifications: "/admin/maintenance-windows",
     access: "/admin/users",
   });
 }

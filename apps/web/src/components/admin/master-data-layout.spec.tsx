@@ -66,7 +66,8 @@ export function marksTheAreaOfADrillDown(): void {
     "Reference Data /admin/asset-groups",
     "Templates & Visuals /admin/asset-templates",
     "Data Input /admin/manual-readings",
-    "Notifications /admin/notification-channels",
+    // `F4.359`: Maintenance Windows is the Notifications area's first tab.
+    "Notifications /admin/maintenance-windows",
     "Users & Access /admin/users",
   ]);
 }
@@ -92,7 +93,8 @@ export function showsALocationAdminItsOwnTabs(): void {
     areas: links(screen.getByRole("navigation", { name: "Master data areas" })).length,
     reference: links(screen.getByRole("navigation", { name: "Reference Data" })),
   }).toEqual({
-    areas: 4,
+    // `F4.359`: Maintenance Windows gives a `location_admin` a Notifications area: 4 -> 5.
+    areas: 5,
     reference: ["Asset Groups /admin/asset-groups", "Calc Parameters /admin/calc-parameters *"],
   });
 }
@@ -122,13 +124,17 @@ export function rendersOneCardPerArea(): void {
 export function linksEveryScreenOfAnArea(): void {
   renderAt("/admin", "admin", "hub");
   expect(links(screen.getByRole("list", { name: "Notifications" }))).toEqual([
+    "Maintenance Windows /admin/maintenance-windows",
     "Channels /admin/notification-channels",
     "Escalation /admin/escalation-profiles",
     "Deliveries /admin/notification-deliveries",
   ]);
 }
 
-/** H3 — a `location_admin` gets no Notifications or Users & Access card; its other four cards stay. */
+/**
+ * H3 — a `location_admin` gets no Users & Access card. `F4.359`: its Notifications card holds
+ * Maintenance Windows alone (no channel tab), so that card now shows.
+ */
 export function leavesOutAnAreaTheRoleCannotSee(): void {
   renderAt("/admin", "location_admin", "hub");
   expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual([
@@ -136,5 +142,7 @@ export function leavesOutAnAreaTheRoleCannotSee(): void {
     "Reference Data",
     "Templates & Visuals",
     "Data Input",
+    "Notifications",
   ]);
+  expect(links(screen.getByRole("list", { name: "Notifications" }))).toEqual(["Maintenance Windows /admin/maintenance-windows"]);
 }

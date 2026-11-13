@@ -500,6 +500,12 @@ export const masterDataTabs = [
   { label: "Symbol Libraries", path: "/admin/mimic-symbol-libraries", symbolLibraryAdmin: true, area: "templates" },
   { label: "Manual Entry", path: "/admin/manual-readings", area: "data-input" },
   { label: "Import Telemetry", path: "/admin/telemetry/import", area: "data-input" },
+  // `F4.359` U15 (ADR 0131 decisions 13 and 16): no flag — every role `AdminRoute` admits may
+  // manage a window in its own scope (`canManageMaintenanceWindows`), so a `location_admin` now
+  // has a Notifications area holding this one tab. First of the area: the sidebar links an area
+  // to its first tab for every role (`master-data-areas.spec.ts` A5b), and Channels would send a
+  // `location_admin` to a refusal.
+  { label: "Maintenance Windows", path: "/admin/maintenance-windows", area: "notifications" },
   // `F3.8` (ADR 0041 decision 10), re-gated by `E7.1d` (ADR 0043
   // Consequences). These were `globalAdminOnly` while every channel route ran
   // through `assertAdminRole` and a tab shown to an `organization_admin` would
@@ -592,7 +598,7 @@ export type VisibleMasterDataArea = {
 
 /**
  * `F3.76` — the areas a role sees, each with its visible tabs. An area with no
- * visible tab is left out, so a `location_admin` sees no Notifications area.
+ * visible tab is left out, so a `location_admin` sees no Users & Access area.
  */
 export function visibleMasterDataAreas(role: UserRole): VisibleMasterDataArea[] {
   const tabs = visibleMasterDataTabs(role);

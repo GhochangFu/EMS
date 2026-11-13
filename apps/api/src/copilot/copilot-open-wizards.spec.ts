@@ -241,6 +241,11 @@ export function theScheduleCentreMountsItsCreateWizard(): void {
   expect(pageWizardCandidates("/maintenance-schedules")).toStrictEqual([{ catalogId: "maintenanceSchedule.create", params: {} }]);
 }
 
+/** `F4.359` U15 (ADR 0099 Amendment 19): the Maintenance windows page mounts its create; the row wizards name a window by an id no route parameter carries. */
+export function theMaintenanceWindowsPageMountsItsCreateWizard(): void {
+  expect(pageWizardCandidates("/admin/maintenance-windows")).toStrictEqual([{ catalogId: "maintenanceWindow.create", params: {} }]);
+}
+
 /** `F4.279`: the Escalation page mounts the profile create and the two severity-map wizards. */
 export function theEscalationPageMountsItsWizards(): void {
   expect(pageWizardCandidates("/admin/escalation-profiles")).toStrictEqual([

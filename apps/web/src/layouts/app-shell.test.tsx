@@ -105,7 +105,7 @@ describe("F3.66 Control Room sidebar entry", () => {
     showsTheHubAndSixAreasToAnOrganizationAdmin();
   });
 
-  it("S10 hides the Notifications area entry from a location_admin (F3.76)", () => {
+  it("S10 hides Users & Access from a location_admin; F4.359 shows its Notifications entry at Maintenance Windows (F3.76)", () => {
     hidesTheNotificationsEntryFromALocationAdmin();
   });
 

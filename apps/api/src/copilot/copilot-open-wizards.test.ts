@@ -19,6 +19,7 @@ import {
   theEscalationPageMountsItsWizards,
   theReportsPageMountsItsTwoCreates,
   theScheduleCentreMountsItsCreateWizard,
+  theMaintenanceWindowsPageMountsItsCreateWizard,
   theVocabularyPagesMountTheirCreateWizards,
   aLongNameIsCut,
   aMalformedMultipartFieldIsA400,
@@ -58,6 +59,7 @@ describe("F4.245 — the open-wizard context of a turn (ADR 0099 Amendment 4)", 
   it("maps the Escalation page to its three wizards (F4.279)", () => theEscalationPageMountsItsWizards());
   it("maps the Reports page to its two creates (F4.280)", () => theReportsPageMountsItsTwoCreates());
   it("maps the Schedule Centre to its create (F4.281)", () => theScheduleCentreMountsItsCreateWizard());
+  it("maps the Maintenance windows page to its create (F4.359)", () => theMaintenanceWindowsPageMountsItsCreateWizard());
   it("maps a page without a wizard to none", () => aPageWithoutAWizardMountsNone());
   it("sends no message when no wizard is open", () => noOpenWizardSendsNoMessage());
   it("names each open record by its params in the system line", () => theSystemLineNamesEachRecordByItsParams());
