@@ -16,6 +16,7 @@ import {
   assertAWindowWithNoTargetIsNotFound,
   assertLinksMustBeInTheCallersScope,
   assertTheExtendAuditReadsTheLockedEnd,
+  assertTheListHidesAnAncestorAndUnreadableLinks,
   assertTheListHidesTargetsTheCallerCannotRead,
   assertALocationAboveTheGrantIsRefused,
   assertAssetIdFindsAWindowThroughItsLocation,
@@ -94,6 +95,8 @@ describe.skipIf(!connectionString)("F4.359 — MaintenanceWindowsService on the 
   it("(13) an asset-group admin's real scope names a member asset, not its group's location (D15 too)", () =>
     assertAnAssetGroupAdminCannotNameItsGroupsLocation(fixture()));
   it("(14) the list hides a target the caller cannot read, and its label", () => assertTheListHidesTargetsTheCallerCannotRead(fixture()));
+  it("(14b) the list hides an ancestor location target and a link the caller cannot read", () =>
+    assertTheListHidesAnAncestorAndUnreadableLinks(fixture()));
   it("(15) an organization-less user's created-by and ended-by names come back", () =>
     assertAnOrganizationLessUsersNamesComeBack(fixture()));
   it("(16) a work order or schedule link must be inside the caller's scope", () => assertLinksMustBeInTheCallersScope(fixture()));

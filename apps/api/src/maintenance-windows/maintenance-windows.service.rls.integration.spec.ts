@@ -539,6 +539,35 @@ export async function assertTheListHidesTargetsTheCallerCannotRead(fx: WindowsFi
   expect(all?.targets.map((t) => t.id).sort()).toEqual([fx.asset.C, fx.site.T].sort());
 }
 
+/**
+ * (14b) Security re-review: a reader of C lists a window on its parent site S
+ * (visible, claim 5) but the item names neither S nor S's label; a link whose
+ * asset it cannot read comes back null.
+ */
+export async function assertTheListHidesAnAncestorAndUnreadableLinks(fx: WindowsFixture): Promise<void> {
+  const created = await fx.svc.create(
+    fx.actor,
+    {
+      reason: `F4.359 ancestor ${fx.run}`,
+      endsAt: fromNow(HOUR),
+      targets: [{ kind: "location", locationId: fx.site.S }],
+      maintenanceScheduleId: fx.scheduleS,
+    },
+    ADMIN,
+  );
+  const item =
+    (await fx.svc.list({ limit: 100, organizationId: fx.a }, readerOfC(fx))).items.find((i) => i.id === created.id) ??
+    fail(`window ${created.id} not listed to a reader of C`);
+  expect(item.targets).toEqual([]);
+  expect(item.maintenanceSchedule).toBeNull();
+  expect(JSON.stringify(item)).not.toContain(fx.site.S);
+  expect(JSON.stringify(item)).not.toContain("F4.359 schedule S");
+  // Positive neighbour: the site admin of S sees the target and the link.
+  const own = (await fx.svc.list({ limit: 100, organizationId: fx.a }, siteAdminOfS(fx))).items.find((i) => i.id === created.id);
+  expect(own?.targets.map((t) => t.id)).toEqual([fx.site.S]);
+  expect(own?.maintenanceSchedule).toEqual({ id: fx.scheduleS, title: "F4.359 schedule S" });
+}
+
 /** (15) Review finding 3: an organization-less user creates and ends a window; both names come back. */
 export async function assertAnOrganizationLessUsersNamesComeBack(fx: WindowsFixture): Promise<void> {
   const created = await fx.svc.create(

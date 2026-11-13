@@ -83,8 +83,10 @@ type WindowRow = {
   endedBy: string | null;
   workOrderId: string | null;
   workOrderReference: string | null;
+  workOrderAssetId: string | null;
   maintenanceScheduleId: string | null;
   maintenanceScheduleTitle: string | null;
+  maintenanceScheduleAssetId: string | null;
 };
 
 /** The request's filters, as `assetIds` (D16) narrows by them too. */
@@ -441,6 +443,9 @@ export class MaintenanceWindowsService {
         maintenanceScheduleId: maintenanceWindows.maintenanceScheduleId,
         maintenanceScheduleTitle: sql<string | null>`(SELECT t.title FROM bms.maintenance_schedules s
             JOIN bms.maintenance_task_templates t ON t.id = s.template_id WHERE s.id = ${maintenanceWindows.maintenanceScheduleId})`,
+        workOrderAssetId: sql<string | null>`(SELECT w.asset_id FROM bms.work_orders w WHERE w.id = ${maintenanceWindows.workOrderId})`,
+        maintenanceScheduleAssetId: sql<string | null>`(SELECT t.asset_id FROM bms.maintenance_schedules s
+            JOIN bms.maintenance_task_templates t ON t.id = s.template_id WHERE s.id = ${maintenanceWindows.maintenanceScheduleId})`,
       })
       .from(maintenanceWindows)
       .where(where)
@@ -487,6 +492,8 @@ export class MaintenanceWindowsService {
       .where(inArray(maintenanceWindowTargets.windowId, rows.map((row) => row.id)));
     const covered = await this.coveredAssets(tx, rows, targetRows, scope, filters);
     const names = await this.userNames(rows.flatMap((row) => (row.endedBy === null ? [row.createdBy] : [row.createdBy, row.endedBy])));
+    const linkReadable = (assetId: string | null): boolean =>
+      isUnrestricted(scope) || (assetId !== null && (scope.assetIds ?? []).includes(assetId));
     return rows.map((row) => ({
       id: row.id,
       organizationId: row.organizationId,
@@ -497,9 +504,15 @@ export class MaintenanceWindowsService {
       state: row.state,
       createdByName: names.get(row.createdBy) ?? "",
       endedByName: row.endedBy === null ? null : (names.get(row.endedBy) ?? null),
-      workOrder: row.workOrderId !== null ? { id: row.workOrderId, reference: row.workOrderReference ?? "" } : null,
+      // Security re-review L-a: a link is shown only to a caller who reads its asset.
+      workOrder:
+        row.workOrderId !== null && linkReadable(row.workOrderAssetId)
+          ? { id: row.workOrderId, reference: row.workOrderReference ?? "" }
+          : null,
       maintenanceSchedule:
-        row.maintenanceScheduleId !== null ? { id: row.maintenanceScheduleId, title: row.maintenanceScheduleTitle ?? "" } : null,
+        row.maintenanceScheduleId !== null && linkReadable(row.maintenanceScheduleAssetId)
+          ? { id: row.maintenanceScheduleId, title: row.maintenanceScheduleTitle ?? "" }
+          : null,
       targets: targetRows
         .filter((target) => target.windowId === row.id)
         .filter((target) =>

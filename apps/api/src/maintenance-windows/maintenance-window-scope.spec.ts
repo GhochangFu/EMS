@@ -105,6 +105,10 @@ export function aTargetIsShownOnlyWhenReadable(): void {
   expect(targetVisibleTo({ kind: "location", id: SITE }, siteAdmin, visible)).toBe(true);
   expect(targetVisibleTo({ kind: "location", id: OTHER_SITE }, siteAdmin, visible)).toBe(false);
   expect(targetVisibleTo({ kind: "location", id: OTHER_SITE }, UNRESTRICTED_SCOPE, null)).toBe(true);
+  // An ancestor that only makes the window visible is not disclosed, and an
+  // asset-group admin is shown no location (its subtree grant is empty).
+  expect(targetVisibleTo({ kind: "location", id: OTHER_SITE }, siteAdmin, [...visible, OTHER_SITE])).toBe(false);
+  expect(targetVisibleTo({ kind: "location", id: SITE }, groupAdmin, visible)).toBe(false);
 }
 
 /** `readScopeFor`: the admin walks no scope; anyone else maps its `AccessibleScope` and organizations. */

@@ -32,6 +32,12 @@ import type { BmsTx } from "../database/tenant-context";
  * **asset-group-sourced** scope names its groups' locations in `locationIds`
  * while it reads only the member assets there, so it may name no location
  * target at all: `subtreeLocationIds` is `[]` for it.
+ *
+ * Accepted edge (security re-review L-b): the scope sources list active nodes
+ * only, while the cover walks the whole subtree, so a location target also
+ * reaches an inactive descendant (ADR 0098: only a leaf subtree can be
+ * inactive under an active node). Accepted: a grant over a node owns its
+ * inactive descendants.
  */
 export type MaintenanceWindowReadScope = {
   readonly assetIds: readonly string[] | null;
@@ -129,8 +135,8 @@ export type StoredTarget =
 /**
  * Review finding 2: which of a visible window's targets the caller may see
  * (id and label). An asset it reads, a rule on such an asset, a location in
- * `visibleLocations` — the set the visibility predicate uses
- * (`visibleLocationIds`). `visibleLocations === null` is the admin: all.
+ * its subtree grant (`subtreeLocationIds`) — never an ancestor that only
+ * makes the window visible. `visibleLocations === null` is the admin: all.
  */
 export function targetVisibleTo(target: StoredTarget, scope: MaintenanceWindowReadScope, visibleLocations: readonly string[] | null): boolean {
   if (isUnrestricted(scope) || visibleLocations === null) return true;
@@ -141,7 +147,10 @@ export function targetVisibleTo(target: StoredTarget, scope: MaintenanceWindowRe
     case "rule":
       return target.assetId !== null && assetIds.includes(target.assetId);
     case "location":
-      return visibleLocations.includes(target.id);
+      // Security re-review M1: only a location the caller reads whole (its
+      // subtree grant). An ancestor that merely makes the window visible
+      // (`visibleLocations`) is not disclosed: /auth/me hides it too (ADR 0098).
+      return (scope.subtreeLocationIds ?? []).includes(target.id);
   }
 }
 
