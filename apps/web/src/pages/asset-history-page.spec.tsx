@@ -19,6 +19,7 @@ import type {
 import * as assetsApi from "../api/assets";
 import * as copilotApi from "../api/copilot";
 import * as dashboardsApi from "../api/dashboards";
+import * as maintenanceApi from "../api/maintenance-windows";
 import { APPEND_ANSWER } from "../api/dashboards.spec";
 import * as systemStatusApi from "../api/system-status";
 import * as telemetryApi from "../api/telemetry";
@@ -104,8 +105,14 @@ export function stubApis(
     points?: AssetPointPickerRow[];
     served?: PointAggregateResponse;
     pointsError?: Error;
+    coveredAssetIds?: string[];
   } = {},
 ): Stubs {
+  // `F4.359` U16: the header reads the asset's active maintenance; no spec makes the real request.
+  const covered = options.coveredAssetIds ?? [];
+  vi.spyOn(maintenanceApi, "fetchMaintenanceWindows").mockResolvedValue({
+    items: covered.length === 0 ? [] : [{ id: "w1", assetIds: covered }],
+  } as never);
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([ASSET]);
@@ -484,4 +491,23 @@ export async function noPointsMeansNoExport(): Promise<void> {
   renderHistoryPage();
   await screen.findByRole("button", { name: "Copy link" });
   expect(screen.queryByRole("group", { name: "Export" })).toBeNull();
+}
+
+/** `F4.359` U16 (plan Q7) — a covered asset's header shows the maintenance badge, read for that asset. */
+export async function aCoveredAssetsHeaderShowsTheMaintenanceBadge(): Promise<void> {
+  stubApis({ coveredAssetIds: [ASSET_ID] });
+  renderHistoryPage();
+  const badge = await screen.findByTestId("asset-maintenance-badge");
+  expect(badge.textContent).toBe("Maintenance");
+  expect(badge.closest("header")).not.toBeNull();
+  expect(maintenanceApi.fetchMaintenanceWindows).toHaveBeenCalledWith({ state: "active", assetId: ASSET_ID });
+}
+
+/** `F4.359` U16 — an uncovered asset's header shows no badge. */
+export async function anUncoveredAssetsHeaderShowsNoMaintenanceBadge(): Promise<void> {
+  stubApis();
+  renderHistoryPage();
+  await screen.findByRole("heading", { name: "CHL-01 · Chiller 1" });
+  await waitFor(() => expect(maintenanceApi.fetchMaintenanceWindows).toHaveBeenCalled());
+  expect(screen.queryByTestId("asset-maintenance-badge")).toBeNull();
 }

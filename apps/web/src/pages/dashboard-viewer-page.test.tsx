@@ -3,6 +3,9 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aCoveredAssetDashboardShowsOneHeaderBadge,
+  anUncoveredAssetDashboardShowsNoBadge,
+  aNonAssetDashboardMakesNoMaintenanceRead,
   aFirstLoadWritesNoTabParam,
   aTabInTheUrlIsSelectedOnLoad,
   aTabbedViewerHasAnH2ForTheSelectedTab,
@@ -99,5 +102,17 @@ describe("F3.1d dashboard viewer page", () => {
 
   it("F3.77 the viewer's strip carries the tab markers", async () => {
     await theViewerStripCarriesTheTabMarkers();
+  });
+
+  it("F4.359 U16 shows one maintenance badge in a covered asset dashboard's header", async () => {
+    await aCoveredAssetDashboardShowsOneHeaderBadge();
+  });
+
+  it("F4.359 U16 shows no badge on an uncovered asset dashboard", async () => {
+    await anUncoveredAssetDashboardShowsNoBadge();
+  });
+
+  it("F4.359 U16 reads no maintenance for a dashboard with no asset", async () => {
+    await aNonAssetDashboardMakesNoMaintenanceRead();
   });
 });

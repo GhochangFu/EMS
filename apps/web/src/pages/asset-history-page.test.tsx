@@ -3,6 +3,8 @@ import { cleanup } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, describe, it, vi } from "vitest";
 
 import {
+  aCoveredAssetsHeaderShowsTheMaintenanceBadge,
+  anUncoveredAssetsHeaderShowsNoMaintenanceBadge,
   aCustomRangeInTheUrlIsSentAsThePair,
   aFailedReadIsNotAnEmptySelection,
   aFilledPreviousPeriodDoesNotSaySo,
@@ -148,5 +150,13 @@ describe("F4.297 asset history page", () => {
 
   it("F4.303 U15: Pin sends the charted points with the page's function and preset", async () => {
     await pinSendsTheChartedPoints();
+  });
+
+  it("F4.359 U16 shows the maintenance badge in a covered asset's header", async () => {
+    await aCoveredAssetsHeaderShowsTheMaintenanceBadge();
+  });
+
+  it("F4.359 U16 shows no maintenance badge for an uncovered asset", async () => {
+    await anUncoveredAssetsHeaderShowsNoMaintenanceBadge();
   });
 });

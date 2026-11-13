@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { fetchGeneratedSiteView } from "../../api/generated-site-view";
 import { fetchLocationDashboard } from "../../api/locations";
+import { useActiveMaintenance } from "../../hooks/use-active-maintenance";
 import { useSiteLiveReadings } from "../../hooks/use-site-live-readings";
 import { KpiTile, type KpiTileStatus } from "../kpi-tile";
 import { SectionCard } from "../section-card";
@@ -41,6 +42,8 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
     enabled: !!locationId,
     refetchInterval: 30000,
   });
+  // `F4.359` U16 (plan Q7): ONE read for every card on the site, never one per card.
+  const { coveredAssetIds } = useActiveMaintenance({ locationId });
   const readings = useSiteLiveReadings(locationId, viewQuery.data, viewQuery.dataUpdatedAt);
 
   const location = kpiQuery.data;
@@ -136,7 +139,12 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
           >
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {domain.assets.map((asset) => (
-                <GeneratedSiteAssetCard key={asset.id} asset={asset} readings={readings} />
+                <GeneratedSiteAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  readings={readings}
+                  inMaintenance={coveredAssetIds.has(asset.id)}
+                />
               ))}
             </div>
           </SectionCard>

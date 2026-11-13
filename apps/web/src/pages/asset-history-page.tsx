@@ -12,11 +12,13 @@ import { PointList } from "../components/asset-history/point-list";
 import { RangePicker } from "../components/asset-history/range-picker";
 import { RawRecordsTable } from "../components/asset-history/raw-records-table";
 import { TrendChart, type TrendSeries } from "../components/asset-history/trend-chart";
+import { MaintenanceBadge } from "../components/maintenance/maintenance-badge";
 import { PageHeader } from "../components/page-header";
 import { CopyLinkButton } from "../components/view-actions/copy-link-button";
 import { ExportMenu } from "../components/view-actions/export-menu";
 import { historyPinSource, PinButton } from "../components/view-actions/pin-dialog";
 import { ScheduleButton } from "../components/view-actions/schedule-button";
+import { useActiveMaintenance } from "../hooks/use-active-maintenance";
 import { useAssetHistory } from "../hooks/use-asset-history";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { chartablePoints, rangeFromSearch, rangeToSearch, type HistoryRange } from "../lib/asset-history-range";
@@ -55,6 +57,8 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
   });
 
   const asset = assetsQ.data?.find((row) => row.id === assetId);
+  // `F4.359` U16 (plan Q7): one asset-scoped read; "" (a missing param) covers nothing.
+  const inMaintenance = useActiveMaintenance({ assetId }).coveredAssetIds.has(assetId);
   const points = useMemo(() => pointsQ.data?.items ?? [], [pointsQ.data]);
   const selected = useMemo(() => {
     // The two-axis rule holds for a URL list too: a third distinct unit is not charted.
@@ -92,6 +96,13 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
           eyebrow="Operations · Asset history"
           title={asset ? `${asset.code} · ${asset.name}` : "Asset history"}
           subtitle={asset ? asset.siteName : undefined}
+          actions={
+            inMaintenance ? (
+              <span data-testid="asset-maintenance-badge">
+                <MaintenanceBadge />
+              </span>
+            ) : undefined
+          }
         />
 
         {forbidden || missing ? (

@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   fetchGeneratedSiteView: vi.fn(),
   fetchLocationDashboard: vi.fn(),
   fetchSiteTrendStrip: vi.fn(),
+  fetchMaintenanceWindows: vi.fn(),
   io: vi.fn(),
   disconnect: vi.fn(),
   handlers: new Map<string, (payload: unknown) => void>(),
@@ -49,6 +50,11 @@ vi.mock("../../api/locations", () => ({
 /** `F4.301` U5 — the trend strip's read; it hangs, so the strip stays on its loading line. */
 vi.mock("../../api/trend-strip", () => ({
   fetchSiteTrendStrip: mocks.fetchSiteTrendStrip,
+}));
+
+/** `F4.359` U16 — the site view's one maintenance read; every spec answers it, none reaches the network. */
+vi.mock("../../api/maintenance-windows", () => ({
+  fetchMaintenanceWindows: mocks.fetchMaintenanceWindows,
 }));
 
 const LOCATION_ID = "22222222-2222-4222-8222-222222222222";
@@ -162,9 +168,11 @@ let fetchSpy: Mock | null = null;
 function renderView({
   view = siteView(),
   dashboard = kpis(),
+  coveredAssetIds = [],
 }: {
   view?: Answer<GeneratedSiteViewDto>;
   dashboard?: Answer<LocationDashboardDto>;
+  coveredAssetIds?: string[];
 } = {}): { unmount: () => void } {
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
   vi.stubGlobal("fetch", fetchSpy);
@@ -177,6 +185,10 @@ function renderView({
   }));
   mocks.fetchGeneratedSiteView.mockImplementation(answer(view, "generated site view"));
   mocks.fetchLocationDashboard.mockImplementation(answer(dashboard, "location dashboard"));
+  mocks.fetchMaintenanceWindows.mockReset();
+  mocks.fetchMaintenanceWindows.mockResolvedValue({
+    items: coveredAssetIds.length === 0 ? [] : [{ id: "w1", assetIds: coveredAssetIds }],
+  });
   mocks.fetchSiteTrendStrip.mockReset();
   mocks.fetchSiteTrendStrip.mockImplementation(() => new Promise(() => undefined));
   useAuthStore.setState({ accessToken: TOKEN });
@@ -711,4 +723,23 @@ export async function generatedReadRefetchesEvery30s(): Promise<void> {
   expect(mocks.fetchGeneratedSiteView, "control: fetched once on mount").toHaveBeenCalledTimes(1);
   await advance(30_000);
   expect(mocks.fetchGeneratedSiteView).toHaveBeenCalledTimes(2);
+}
+
+/** `F4.359` U16 (plan Q7) — a covered asset's card shows the badge, an uncovered one does not, from ONE read. */
+export async function aCoveredAssetCardShowsTheMaintenanceBadge(): Promise<void> {
+  renderView({ coveredAssetIds: [AHU_ID] });
+  await screen.findByText("AHU-01");
+  await screen.findByTestId("asset-maintenance-badge");
+  expect(within(card("AHU-01")).getByText("Maintenance")).toBeInTheDocument();
+  expect(within(card("PCC-01")).queryByText("Maintenance")).toBeNull();
+  expect(screen.getAllByTestId("asset-maintenance-badge")).toHaveLength(1);
+}
+
+/** `F4.359` U16 — several cards, exactly one maintenance read, scoped to the site. */
+export async function theSiteViewIssuesOneMaintenanceRead(): Promise<void> {
+  renderView({ coveredAssetIds: [AHU_ID, PCC_ID] });
+  await screen.findByText("AHU-01");
+  await screen.findAllByTestId("asset-maintenance-badge");
+  expect(screen.getAllByTestId("asset-maintenance-badge")).toHaveLength(2);
+  expect(mocks.fetchMaintenanceWindows.mock.calls).toEqual([[{ state: "active", locationId: LOCATION_ID }]]);
 }
