@@ -15,6 +15,8 @@ import {
   maintenanceSchedules,
   maintenanceWindows,
   maintenanceWindowTargets,
+  maintenanceTaskTemplates,
+  users,
   workOrders,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -42,6 +44,7 @@ import {
   resolveAssetFilter,
   resolveLocationFilter,
   targetInScope,
+  targetVisibleTo,
   visibleLocationIds,
   windowClockIs,
   windowCoversAsset,
@@ -59,8 +62,8 @@ import type { MaintenanceWindowListQuery } from "./maintenance-windows.schema";
 /** One text for a target that does not exist and one outside the scope: no existence leak (plan U3). */
 export const TARGET_REFUSED = "A target does not exist or is outside your access scope";
 export const TARGETS_SPAN_ORGANIZATIONS = "Every target of a maintenance window must belong to one organization";
-export const WORK_ORDER_REFUSED = "The work order does not exist in the window's organization";
-export const SCHEDULE_REFUSED = "The maintenance schedule does not exist in the window's organization";
+export const WORK_ORDER_REFUSED = "The work order does not exist in the window's organization or is outside your access scope";
+export const SCHEDULE_REFUSED = "The maintenance schedule does not exist in the window's organization or is outside your access scope";
 export const WINDOW_NOT_FOUND = "Maintenance window not found or outside your access scope";
 export const NOT_PROVISIONED = "This account is not provisioned, so it cannot change maintenance windows";
 
@@ -76,8 +79,8 @@ type WindowRow = {
   endsAt: Date;
   endedAt: Date | null;
   state: MaintenanceWindowState;
-  createdByName: string | null;
-  endedByName: string | null;
+  createdBy: string;
+  endedBy: string | null;
   workOrderId: string | null;
   workOrderReference: string | null;
   maintenanceScheduleId: string | null;
@@ -137,18 +140,12 @@ export class MaintenanceWindowsService {
         where.push(windowTouchesLocation(location));
       }
       const rows = await this.selectRows(tx, and(...where), query.limit);
-      return { items: await this.toItems(tx, rows, scope, filters) };
+      return { items: await this.toItems(tx, rows, scope, visible, filters) };
     });
   }
 
   /** `POST /maintenance-windows` — the organization is the targets' (D1); the period is checked here (D3). */
   async create(actor: Actor, body: CreateMaintenanceWindowBody, scope: MaintenanceWindowReadScope): Promise<MaintenanceWindowItem> {
-    const now = new Date();
-    const startsAt = body.startsAt === undefined ? now : new Date(body.startsAt);
-    const endsAt = new Date(body.endsAt);
-    const periodError = validateWindowPeriod({ now, startsAt, endsAt });
-    if (periodError !== null) throw new BadRequestException(periodError);
-
     const targets = await this.resolveTargets(body.targets);
     if (targets === null || !targets.every((target) => targetInScope(target, scope))) {
       throw new BadRequestException(TARGET_REFUSED);
@@ -161,7 +158,13 @@ export class MaintenanceWindowsService {
     const createdBy = await this.requireActorId(actor);
 
     return withTenant(this.db, organizationId, async (tx) => {
-      await this.assertLinksInOrganization(tx, organizationId, body);
+      // D2: the period is read against the database clock, once, and an absent start is that `now()`.
+      const now = await databaseNow(tx);
+      const startsAt = body.startsAt === undefined ? now : new Date(body.startsAt);
+      const endsAt = new Date(body.endsAt);
+      const periodError = validateWindowPeriod({ now, startsAt, endsAt });
+      if (periodError !== null) throw new BadRequestException(periodError);
+      await this.assertLinksInScope(tx, organizationId, body, scope);
       const [window] = await tx
         .insert(maintenanceWindows)
         .values({
@@ -211,11 +214,19 @@ export class MaintenanceWindowsService {
   async extend(actor: Actor, id: string, body: ExtendMaintenanceWindowBody, scope: MaintenanceWindowReadScope): Promise<MaintenanceWindowItem> {
     const window = await this.loadForWrite(id, scope);
     const endsAt = new Date(body.endsAt);
-    const periodError = validateExtension({ now: new Date(), endsAt, currentEndsAt: window.endsAt });
-    if (periodError !== null) throw new BadRequestException(periodError);
     await this.requireActorId(actor);
 
     return withTenant(this.db, window.organizationId, async (tx) => {
+      // The current end is read under the row lock the `UPDATE` keeps, so the audit's
+      // `previousEndsAt` is the end this extension replaced, not one a concurrent write moved.
+      const [locked] = await tx
+        .select({ endsAt: maintenanceWindows.endsAt })
+        .from(maintenanceWindows)
+        .where(eq(maintenanceWindows.id, id))
+        .for("update");
+      if (!locked) throw new NotFoundException(WINDOW_NOT_FOUND);
+      const periodError = validateExtension({ now: await databaseNow(tx), endsAt, currentEndsAt: locked.endsAt });
+      if (periodError !== null) throw new BadRequestException(periodError);
       const updated = await tx
         .update(maintenanceWindows)
         .set({ endsAt, updatedAt: sql`now()` })
@@ -230,7 +241,7 @@ export class MaintenanceWindowsService {
           entityType: ENTITY_TYPE,
           entityId: id,
           reason: body.reason,
-          payload: { windowId: id, previousEndsAt: window.endsAt.toISOString(), endsAt: endsAt.toISOString() },
+          payload: { windowId: id, previousEndsAt: locked.endsAt.toISOString(), endsAt: endsAt.toISOString() },
         },
         tx,
       );
@@ -343,39 +354,51 @@ export class MaintenanceWindowsService {
 
   /**
    * A link outside the window's organization is a 400, not the composite FK's
-   * 500. Read inside the window's own tenant transaction, and keyed on the
-   * organization as well, so another organization's row answers nothing.
+   * 500, and so is one outside the caller's scope: a work order whose asset it
+   * does not read, a schedule whose template's asset it does not read. One text
+   * per link for both, so a refusal does not tell an existing row from a
+   * missing one. Read inside the window's own tenant transaction, and keyed on
+   * the organization as well, so another organization's row answers nothing.
    */
-  private async assertLinksInOrganization(tx: BmsTx, organizationId: string, body: CreateMaintenanceWindowBody): Promise<void> {
+  private async assertLinksInScope(
+    tx: BmsTx,
+    organizationId: string,
+    body: CreateMaintenanceWindowBody,
+    scope: MaintenanceWindowReadScope,
+  ): Promise<void> {
+    const readable = (assetId: string | undefined): boolean =>
+      assetId !== undefined && targetInScope({ kind: "asset", id: assetId, organizationId }, scope);
     if (body.workOrderId !== undefined) {
       const [row] = await tx
-        .select({ id: workOrders.id })
+        .select({ assetId: workOrders.assetId })
         .from(workOrders)
         .where(and(eq(workOrders.id, body.workOrderId), eq(workOrders.organizationId, organizationId)))
         .limit(1);
-      if (!row) throw new BadRequestException(WORK_ORDER_REFUSED);
+      if (!readable(row?.assetId)) throw new BadRequestException(WORK_ORDER_REFUSED);
     }
     if (body.maintenanceScheduleId !== undefined) {
       const [row] = await tx
-        .select({ id: maintenanceSchedules.id })
+        .select({ assetId: maintenanceTaskTemplates.assetId })
         .from(maintenanceSchedules)
+        .innerJoin(maintenanceTaskTemplates, eq(maintenanceTaskTemplates.id, maintenanceSchedules.templateId))
         .where(and(eq(maintenanceSchedules.id, body.maintenanceScheduleId), eq(maintenanceSchedules.organizationId, organizationId)))
         .limit(1);
-      if (!row) throw new BadRequestException(SCHEDULE_REFUSED);
+      if (!readable(row?.assetId)) throw new BadRequestException(SCHEDULE_REFUSED);
     }
   }
 
   /**
    * The window and its targets for a write, or 404 — for a window that does not
-   * exist and for one with any target outside the caller's scope alike (D15).
+   * exist, for one with no target row, and for one with any target outside the
+   * caller's scope alike (D15).
    *
    * §4.3 fleet read, by name: **pre-tenant resolution**. The route names a
    * window id only, so its organization is unknown until this keyed read; the
    * guarded `UPDATE` then runs under `withTenant` on the organization read here.
    */
-  private async loadForWrite(id: string, scope: MaintenanceWindowReadScope): Promise<{ organizationId: string; endsAt: Date }> {
+  private async loadForWrite(id: string, scope: MaintenanceWindowReadScope): Promise<{ organizationId: string }> {
     const [window] = await this.fleetDb
-      .select({ organizationId: maintenanceWindows.organizationId, endsAt: maintenanceWindows.endsAt })
+      .select({ organizationId: maintenanceWindows.organizationId })
       .from(maintenanceWindows)
       .where(eq(maintenanceWindows.id, id))
       .limit(1);
@@ -397,7 +420,7 @@ export class MaintenanceWindowsService {
           ? { kind: "location", id: row.locationId, organizationId: window.organizationId }
           : { kind: "rule", id: row.ruleId as string, organizationId: window.organizationId, assetId: row.ruleAssetId },
     );
-    if (!everyTargetInScope(targets, scope)) throw new NotFoundException(WINDOW_NOT_FOUND);
+    if (targets.length === 0 || !everyTargetInScope(targets, scope)) throw new NotFoundException(WINDOW_NOT_FOUND);
     return window;
   }
 
@@ -411,8 +434,8 @@ export class MaintenanceWindowsService {
         endsAt: maintenanceWindows.endsAt,
         endedAt: maintenanceWindows.endedAt,
         state: windowStateSql,
-        createdByName: sql<string | null>`(SELECT u.display_name FROM bms.users u WHERE u.id = ${maintenanceWindows.createdBy})`,
-        endedByName: sql<string | null>`(SELECT u.display_name FROM bms.users u WHERE u.id = ${maintenanceWindows.endedBy})`,
+        createdBy: maintenanceWindows.createdBy,
+        endedBy: maintenanceWindows.endedBy,
         workOrderId: maintenanceWindows.workOrderId,
         workOrderReference: sql<string | null>`(SELECT w.reference FROM bms.work_orders w WHERE w.id = ${maintenanceWindows.workOrderId})`,
         maintenanceScheduleId: maintenanceWindows.maintenanceScheduleId,
@@ -427,13 +450,23 @@ export class MaintenanceWindowsService {
 
   private async itemById(tx: BmsTx, id: string, scope: MaintenanceWindowReadScope): Promise<MaintenanceWindowItem> {
     const rows = await this.selectRows(tx, eq(maintenanceWindows.id, id), 1);
-    const [item] = await this.toItems(tx, rows, scope, {});
+    const [item] = await this.toItems(tx, rows, scope, await visibleLocationIds(tx, scope), {});
     if (!item) throw new Error("F4.359: the window vanished inside its own transaction");
     return item;
   }
 
-  /** The rows with their labelled targets and, for an active window, the assets it covers (D16). */
-  private async toItems(tx: BmsTx, rows: readonly WindowRow[], scope: MaintenanceWindowReadScope, filters: ItemFilters): Promise<MaintenanceWindowItem[]> {
+  /**
+   * The rows with the targets this caller reads, labelled (`targetVisibleTo`
+   * over `visible`, the set the visibility predicate used), and, for an active
+   * window, the assets it covers (D16).
+   */
+  private async toItems(
+    tx: BmsTx,
+    rows: readonly WindowRow[],
+    scope: MaintenanceWindowReadScope,
+    visible: readonly string[] | null,
+    filters: ItemFilters,
+  ): Promise<MaintenanceWindowItem[]> {
     if (rows.length === 0) return [];
     const targetRows = await tx
       .select({
@@ -445,6 +478,7 @@ export class MaintenanceWindowsService {
         assetLocationId: assets.locationId,
         locationLabel: locations.name,
         ruleLabel: automationRules.name,
+        ruleAssetId: automationRules.assetId,
       })
       .from(maintenanceWindowTargets)
       .leftJoin(assets, eq(assets.id, maintenanceWindowTargets.assetId))
@@ -452,6 +486,7 @@ export class MaintenanceWindowsService {
       .leftJoin(automationRules, eq(automationRules.id, maintenanceWindowTargets.ruleId))
       .where(inArray(maintenanceWindowTargets.windowId, rows.map((row) => row.id)));
     const covered = await this.coveredAssets(tx, rows, targetRows, scope, filters);
+    const names = await this.userNames(rows.flatMap((row) => (row.endedBy === null ? [row.createdBy] : [row.createdBy, row.endedBy])));
     return rows.map((row) => ({
       id: row.id,
       organizationId: row.organizationId,
@@ -460,13 +495,24 @@ export class MaintenanceWindowsService {
       endsAt: row.endsAt.toISOString(),
       endedAt: row.endedAt === null ? null : row.endedAt.toISOString(),
       state: row.state,
-      createdByName: row.createdByName ?? "",
-      endedByName: row.endedByName,
+      createdByName: names.get(row.createdBy) ?? "",
+      endedByName: row.endedBy === null ? null : (names.get(row.endedBy) ?? null),
       workOrder: row.workOrderId !== null ? { id: row.workOrderId, reference: row.workOrderReference ?? "" } : null,
       maintenanceSchedule:
         row.maintenanceScheduleId !== null ? { id: row.maintenanceScheduleId, title: row.maintenanceScheduleTitle ?? "" } : null,
       targets: targetRows
         .filter((target) => target.windowId === row.id)
+        .filter((target) =>
+          targetVisibleTo(
+            target.assetId !== null
+              ? { kind: "asset", id: target.assetId }
+              : target.locationId !== null
+                ? { kind: "location", id: target.locationId }
+                : { kind: "rule", id: target.ruleId as string, assetId: target.ruleAssetId },
+            scope,
+            visible,
+          ),
+        )
         .map((target) =>
           target.assetId !== null
             ? { kind: "asset" as const, id: target.assetId, label: target.assetLabel ?? "" }
@@ -477,6 +523,22 @@ export class MaintenanceWindowsService {
         .sort((a, b) => a.kind.localeCompare(b.kind) || a.label.localeCompare(b.label) || a.id.localeCompare(b.id)),
       assetIds: covered.get(row.id) ?? [],
     }));
+  }
+
+  /**
+   * The display names of the page's `created_by`/`ended_by` users.
+   *
+   * §4.3 fleet read, by name: **an organization-less user**. The global admin
+   * (`admin@bms.local`) has `organization_id` NULL, so its `bms.users` row is
+   * invisible under every tenant GUC and a tenant read names it "" / null. The
+   * read is keyed by the ids on rows this caller already reads (the page), and
+   * answers display names only (the `lockedByNameOf` precedent).
+   */
+  private async userNames(ids: readonly string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Map();
+    const rows = await this.fleetDb.select({ id: users.id, name: users.displayName }).from(users).where(inArray(users.id, unique));
+    return new Map(rows.map((row) => [row.id, row.name]));
   }
 
   /**
@@ -544,6 +606,14 @@ export class MaintenanceWindowsService {
     }
     return out;
   }
+}
+
+/** The database's `now()` (D2): the one clock the route, the raiser and the list share. */
+async function databaseNow(tx: BmsTx): Promise<Date> {
+  const result = await tx.execute<{ now: Date | string }>(sql`SELECT now() AS now`);
+  const value = result.rows[0]?.now;
+  if (value === undefined) throw new Error("F4.359: SELECT now() returned no row");
+  return new Date(value);
 }
 
 /** `withOrganizationReadScope` takes a mutable array; the scope's is read-only. */

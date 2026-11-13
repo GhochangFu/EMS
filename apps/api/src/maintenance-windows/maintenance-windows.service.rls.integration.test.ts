@@ -4,11 +4,19 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { createDb } from "@bms/db";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { AccessControlService } from "../auth/access-control.service";
 import { openIntegrationPool, requireIntegrationDb, resolveIntegrationRoleUrl } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import { MaintenanceWindowsService } from "./maintenance-windows.service";
 import {
   assertALinkOutsideTheOrganizationIsRefused,
+  assertAnAbsentStartIsTheDatabaseClock,
+  assertAnAssetGroupAdminCannotNameItsGroupsLocation,
+  assertAnOrganizationLessUsersNamesComeBack,
+  assertAWindowWithNoTargetIsNotFound,
+  assertLinksMustBeInTheCallersScope,
+  assertTheExtendAuditReadsTheLockedEnd,
+  assertTheListHidesTargetsTheCallerCannotRead,
   assertALocationAboveTheGrantIsRefused,
   assertAssetIdFindsAWindowThroughItsLocation,
   assertAssetIdsFollowTheReader,
@@ -21,6 +29,7 @@ import {
   assertTargetsOfTwoOrganizationsAreRefused,
   assertTheListShowsWindowsAboveAReadableAsset,
   buildWindowsFixture,
+  dropWindowsGlobalActor,
   dropWindowsOrganization,
   type WindowsFixture,
 } from "./maintenance-windows.service.rls.integration.spec";
@@ -50,16 +59,19 @@ describe.skipIf(!connectionString)("F4.359 — MaintenanceWindowsService on the 
     const url = connectionString as string;
     const fleetPool = await openIntegrationPool(url, "F4.359");
     const tenantPool = await openIntegrationPool(process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"), "F4.359");
+    const authPool = await openIntegrationPool(process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"), "F4.359");
     admin = await openIntegrationPool(resolveIntegrationRoleUrl(url, "superuser", process.env), "F4.359");
-    pools = [fleetPool, tenantPool, admin];
+    pools = [fleetPool, tenantPool, authPool, admin];
     const tenantDb = createDb(tenantPool);
     const fleetDb = createDb(fleetPool);
     const svc = new MaintenanceWindowsService(tenantDb, fleetDb, new MasterDataAuditService(tenantDb, fleetDb));
-    fx = await buildWindowsFixture(admin, svc, (id) => organizations.push(id));
+    const access = new AccessControlService(createDb(authPool), fleetDb);
+    fx = await buildWindowsFixture(admin, svc, access, (id) => organizations.push(id));
   });
 
   afterAll(async () => {
     if (admin) for (const id of organizations) await dropWindowsOrganization(admin, id);
+    if (admin && fx) await dropWindowsGlobalActor(admin, fx);
     await Promise.all(pools.map((pool) => pool.end()));
   });
 
@@ -79,4 +91,13 @@ describe.skipIf(!connectionString)("F4.359 — MaintenanceWindowsService on the 
   it("(11) a site admin cannot change a window that also targets another site (D15)", () =>
     assertEveryTargetMustBeInScopeToChange(fixture()));
   it("(12) a work order of another organization is a 400", () => assertALinkOutsideTheOrganizationIsRefused(fixture()));
+  it("(13) an asset-group admin's real scope names a member asset, not its group's location (D15 too)", () =>
+    assertAnAssetGroupAdminCannotNameItsGroupsLocation(fixture()));
+  it("(14) the list hides a target the caller cannot read, and its label", () => assertTheListHidesTargetsTheCallerCannotRead(fixture()));
+  it("(15) an organization-less user's created-by and ended-by names come back", () =>
+    assertAnOrganizationLessUsersNamesComeBack(fixture()));
+  it("(16) a work order or schedule link must be inside the caller's scope", () => assertLinksMustBeInTheCallersScope(fixture()));
+  it("(17) a window with no target is not found", () => assertAWindowWithNoTargetIsNotFound(fixture()));
+  it("(18) the extend audit's previous end is the locked row's", () => assertTheExtendAuditReadsTheLockedEnd(fixture()));
+  it("(19) an absent start is the database clock", () => assertAnAbsentStartIsTheDatabaseClock(fixture()));
 });

@@ -13,7 +13,7 @@ import type { MaintenanceWindowsService } from "./maintenance-windows.service";
 /**
  * `F4.359` U3 (ADR 0131 decision 13, plan Q5) — the maintenance-window
  * controller against a stubbed gate and a stubbed service: who may write, the
- * gate order, a bad body, and the three readable sets the list passes on.
+ * gate order, a bad body, and the readable sets the list passes on.
  * Assertions live here; the sibling `.test.ts` runs them (ADR 0014). The real
  * scope rules are `maintenance-windows.service.rls.integration.spec.ts`'s.
  */
@@ -42,13 +42,20 @@ function harness(): Harness {
         throw new ForbiddenException(operationsWriteDenialReason(writeClass));
       }
     },
-    async readableAssetIds(): Promise<string[] | null> {
-      calls.push("scope:assets");
-      return [ASSET_ID];
+    async isGlobalAdmin(): Promise<boolean> {
+      calls.push("scope:role");
+      return false;
     },
-    async readableLocationIds(): Promise<string[] | null> {
-      calls.push("scope:locations");
-      return [LOCATION_ID];
+    async currentUser() {
+      calls.push("scope:access");
+      return {
+        scope: {
+          kind: "location",
+          locations: [{ id: LOCATION_ID, code: "S", slug: "s", name: "S", type: "site", province: null, parentId: null }],
+          assetGroups: [],
+          assetIds: [ASSET_ID],
+        },
+      };
     },
     async readableOrganizationIds(): Promise<string[] | null> {
       calls.push("scope:organizations");
@@ -105,8 +112,8 @@ export async function theFourAdminRolesWriteWithTheGateFirst(): Promise<void> {
       await write.run(h, user(role), write.good);
       expect(h.calls, `${role} ${write.name}`).toEqual([
         "role:configuration",
-        "scope:assets",
-        "scope:locations",
+        "scope:role",
+        "scope:access",
         "scope:organizations",
         `service:${write.name}`,
       ]);
@@ -132,12 +139,14 @@ export async function aBadBodyIs400(): Promise<void> {
   expect(h.calls).toEqual(["role:configuration"]);
 }
 
-/** The list passes the caller's three readable sets through, and a bad query is a 400. */
+/** The list passes the caller's readable sets through, and a bad query is a 400. */
 export async function theListPassesTheThreeReadableSets(): Promise<void> {
   const h = harness();
   await h.controller.list(user("viewer"), { state: "active" });
-  expect(h.calls).toEqual(["scope:assets", "scope:locations", "scope:organizations", "service:list"]);
-  expect(h.lastScope).toEqual([{ assetIds: [ASSET_ID], locationIds: [LOCATION_ID], organizationIds: [ORGANIZATION_ID] }]);
+  expect(h.calls).toEqual(["scope:role", "scope:access", "scope:organizations", "service:list"]);
+  expect(h.lastScope).toEqual([
+    { assetIds: [ASSET_ID], locationIds: [LOCATION_ID], organizationIds: [ORGANIZATION_ID], subtreeLocationIds: [LOCATION_ID] },
+  ]);
   const bad = harness();
   await expect(bad.controller.list(user("viewer"), { state: "soon" })).rejects.toBeInstanceOf(BadRequestException);
   await expect(bad.controller.list(user("viewer"), { cursor: "x" })).rejects.toBeInstanceOf(BadRequestException);

@@ -1,13 +1,21 @@
 import { randomUUID } from "node:crypto";
 
 import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
-import { expect } from "vitest";
+import type pg from "pg";
+import { expect, vi } from "vitest";
 
 import type { JwtPayload } from "@bms/shared";
 
 import { insertAsset, insertLocationRow, insertOrganization, type Pg } from "../alarms/alarm-list-filters.integration.spec";
-import type { MaintenanceWindowReadScope } from "./maintenance-window-scope";
-import { TARGET_REFUSED, WINDOW_NOT_FOUND, WORK_ORDER_REFUSED, type MaintenanceWindowsService } from "./maintenance-windows.service";
+import type { AccessControlService } from "../auth/access-control.service";
+import { readScopeFor, UNRESTRICTED_SCOPE, type MaintenanceWindowReadScope } from "./maintenance-window-scope";
+import {
+  SCHEDULE_REFUSED,
+  TARGET_REFUSED,
+  WINDOW_NOT_FOUND,
+  WORK_ORDER_REFUSED,
+  type MaintenanceWindowsService,
+} from "./maintenance-windows.service";
 
 /**
  * `F4.359` U3 (ADR 0131 decisions 1, 2, 13, 14; plan D1, D2, D15, D16) — the
@@ -18,6 +26,15 @@ import { TARGET_REFUSED, WINDOW_NOT_FOUND, WORK_ORDER_REFUSED, type MaintenanceW
  * B with site U, an asset and a work order. No claim counts a whole table:
  * every read is keyed on a window id, an organization id or a unique reason.
  *
+ * Claims (13)-(19) answer the plan PR 2 review: an asset-group admin's real
+ * scope (from `AccessControlService`, not hand-built), the per-caller target
+ * filter, the names of an organization-less user, the links' scope, a window
+ * with no target, the extend audit's locked previous end and the database
+ * clock for an absent start. For them A also carries an asset group at S
+ * holding S's asset alone (and its admin), a work order on T's asset and a
+ * maintenance schedule at S; B a schedule at U; and one user has no
+ * organization at all, as `admin@bms.local` has none.
+ *
  * Vitest entry point: the sibling `.test.ts` (ADR 0014).
  */
 
@@ -27,7 +44,8 @@ function fail(message: string): never {
 
 export type WindowsFixture = {
   readonly svc: MaintenanceWindowsService;
-  readonly db: Pg;
+  readonly access: AccessControlService;
+  readonly db: pg.Pool;
   readonly run: string;
   readonly a: string;
   readonly b: string;
@@ -35,16 +53,26 @@ export type WindowsFixture = {
   readonly asset: { readonly S: string; readonly C: string; readonly T: string; readonly U: string };
   readonly ruleC: string;
   readonly workOrderB: string;
+  /** A work order of A on T's asset. */
+  readonly workOrderT: string;
+  /** A schedule of A on S's asset, titled `F4.359 schedule S`, and one of B on U's. */
+  readonly scheduleS: string;
+  readonly scheduleB: string;
   readonly actor: JwtPayload;
+  /** `asset_group_admin` of a group at S that holds S's asset and not C's. */
+  readonly groupAdmin: JwtPayload;
+  /** An `admin` with `organization_id` NULL, invisible to every tenant GUC. */
+  readonly globalActor: JwtPayload;
 };
 
-export const ADMIN: MaintenanceWindowReadScope = { assetIds: null, locationIds: null, organizationIds: null };
+export const ADMIN: MaintenanceWindowReadScope = UNRESTRICTED_SCOPE;
 
 /** A location admin of S: S and its subtree, and their assets. */
 export const siteAdminOfS = (fx: WindowsFixture): MaintenanceWindowReadScope => ({
   assetIds: [fx.asset.S, fx.asset.C],
   locationIds: [fx.site.S, fx.site.C],
   organizationIds: [fx.a],
+  subtreeLocationIds: [fx.site.S, fx.site.C],
 });
 
 /** A location admin of C alone. */
@@ -52,6 +80,7 @@ const readerOfC = (fx: WindowsFixture): MaintenanceWindowReadScope => ({
   assetIds: [fx.asset.C],
   locationIds: [fx.site.C],
   organizationIds: [fx.a],
+  subtreeLocationIds: [fx.site.C],
 });
 
 /** A caller who reads the asset at C and no location (an asset-group grant). */
@@ -59,12 +88,14 @@ const assetReaderOfC = (fx: WindowsFixture): MaintenanceWindowReadScope => ({
   assetIds: [fx.asset.C],
   locationIds: [],
   organizationIds: [fx.a],
+  subtreeLocationIds: [],
 });
 
 const assetReaderOfT = (fx: WindowsFixture): MaintenanceWindowReadScope => ({
   assetIds: [fx.asset.T],
   locationIds: [],
   organizationIds: [fx.a],
+  subtreeLocationIds: [],
 });
 
 const HOUR = 60 * 60 * 1000;
@@ -72,7 +103,12 @@ const DAY = 24 * HOUR;
 const fromNow = (ms: number): string => new Date(Date.now() + ms).toISOString();
 
 /** Builds the fixture; `created` receives each organization id as soon as it exists. */
-export async function buildWindowsFixture(db: Pg, svc: MaintenanceWindowsService, created: (organizationId: string) => void): Promise<WindowsFixture> {
+export async function buildWindowsFixture(
+  db: pg.Pool,
+  svc: MaintenanceWindowsService,
+  access: AccessControlService,
+  created: (organizationId: string) => void,
+): Promise<WindowsFixture> {
   const run = randomUUID().replace(/-/g, "").slice(0, 10);
   const a = await insertOrganization(db, `F4359-A-${run}`);
   created(a);
@@ -113,8 +149,23 @@ export async function buildWindowsFixture(db: Pg, svc: MaintenanceWindowsService
         [a, email],
       )
     ).rows[0]?.id ?? fail("user was not inserted");
+  const workOrderT = await insertWorkOrder(db, a, 990002, `F4359-${run}-T`, asset.T);
+  const scheduleS = await insertSchedule(db, a, asset.S, "F4.359 schedule S");
+  const scheduleB = await insertSchedule(db, b, asset.U, "F4.359 schedule B");
+  const groupAdmin = await insertUser(db, a, `f4359-${run}-group@bms.local`, "F4.359 group admin", "asset_group_admin");
+  const group =
+    (
+      await db.query<{ id: string }>(
+        "INSERT INTO bms.asset_groups (organization_id, location_id, code, name) VALUES ($1, $2, $3, 'F4.359 group at S') RETURNING id",
+        [a, S, `F4359-${run}-G`],
+      )
+    ).rows[0]?.id ?? fail("asset group was not inserted");
+  await db.query("INSERT INTO bms.asset_group_members (asset_group_id, asset_id) VALUES ($1, $2)", [group, asset.S]);
+  await db.query("INSERT INTO bms.user_asset_group_access (user_id, asset_group_id) VALUES ($1, $2)", [groupAdmin.sub, group]);
+  const globalActor = await insertUser(db, null, `f4359-${run}-global@bms.local`, "F4.359 global admin", "admin");
   return {
     svc,
+    access,
     db,
     run,
     a,
@@ -123,8 +174,60 @@ export async function buildWindowsFixture(db: Pg, svc: MaintenanceWindowsService
     asset,
     ruleC,
     workOrderB,
+    workOrderT,
+    scheduleS,
+    scheduleB,
     actor: { sub: userId, email, name: "F4.359 admin", role: "organization_admin" },
+    groupAdmin,
+    globalActor,
   };
+}
+
+async function insertWorkOrder(db: Pg, organizationId: string, seq: number, reference: string, assetId: string): Promise<string> {
+  return (
+    (
+      await db.query<{ id: string }>(
+        "INSERT INTO bms.work_orders (organization_id, seq, reference, asset_id, title) VALUES ($1, $2, $3, $4, 'F4.359 work order') RETURNING id",
+        [organizationId, seq, reference, assetId],
+      )
+    ).rows[0]?.id ?? fail("work order was not inserted")
+  );
+}
+
+async function insertSchedule(db: Pg, organizationId: string, assetId: string, title: string): Promise<string> {
+  const template =
+    (
+      await db.query<{ id: string }>(
+        "INSERT INTO bms.maintenance_task_templates (organization_id, asset_id, title) VALUES ($1, $2, $3) RETURNING id",
+        [organizationId, assetId, title],
+      )
+    ).rows[0]?.id ?? fail("template was not inserted");
+  return (
+    (
+      await db.query<{ id: string }>(
+        "INSERT INTO bms.maintenance_schedules (organization_id, template_id, interval_days, next_due_at) VALUES ($1, $2, 30, now()) RETURNING id",
+        [organizationId, template],
+      )
+    ).rows[0]?.id ?? fail("schedule was not inserted")
+  );
+}
+
+async function insertUser(db: Pg, organizationId: string | null, email: string, name: string, role: JwtPayload["role"]): Promise<JwtPayload> {
+  const id =
+    (
+      await db.query<{ id: string }>(
+        "INSERT INTO bms.users (organization_id, email, password_hash, display_name, role) VALUES ($1, $2, 'not-a-usable-hash', $3, $4) RETURNING id",
+        [organizationId, email, name, role],
+      )
+    ).rows[0]?.id ?? fail(`user ${email} was not inserted`);
+  return { sub: id, email, name, role };
+}
+
+/** The organization-less user, after `dropWindowsOrganization` has removed every window and audit row it wrote. */
+export async function dropWindowsGlobalActor(db: Pg, fx: WindowsFixture): Promise<void> {
+  await db.query("DELETE FROM bms.audit_log WHERE actor_id = $1", [fx.globalActor.sub]);
+  await db.query("DELETE FROM bms.maintenance_windows WHERE created_by = $1 OR ended_by = $1", [fx.globalActor.sub]);
+  await db.query("DELETE FROM bms.users WHERE id = $1", [fx.globalActor.sub]);
 }
 
 /** Every row the fixture or the service wrote, by organization, children first. */
@@ -139,7 +242,18 @@ export async function dropWindowsOrganization(db: Pg, organizationId: string): P
     [organizationId],
   );
   await db.query("DELETE FROM bms.maintenance_windows WHERE organization_id = $1", [organizationId]);
+  await db.query("DELETE FROM bms.maintenance_schedules WHERE organization_id = $1", [organizationId]);
+  await db.query("DELETE FROM bms.maintenance_task_templates WHERE organization_id = $1", [organizationId]);
   await db.query("DELETE FROM bms.work_orders WHERE organization_id = $1", [organizationId]);
+  await db.query(
+    "DELETE FROM bms.user_asset_group_access WHERE asset_group_id IN (SELECT id FROM bms.asset_groups WHERE organization_id = $1)",
+    [organizationId],
+  );
+  await db.query(
+    "DELETE FROM bms.asset_group_members WHERE asset_group_id IN (SELECT id FROM bms.asset_groups WHERE organization_id = $1)",
+    [organizationId],
+  );
+  await db.query("DELETE FROM bms.asset_groups WHERE organization_id = $1", [organizationId]);
   await db.query("DELETE FROM bms.automation_rules WHERE organization_id = $1", [organizationId]);
   await db.query("DELETE FROM bms.assets WHERE organization_id = $1", [organizationId]);
   await db.query("DELETE FROM bms.users WHERE organization_id = $1", [organizationId]);
@@ -385,4 +499,154 @@ export async function assertALinkOutsideTheOrganizationIsRefused(fx: WindowsFixt
   // Positive neighbour: the same work order on a window in B links.
   const item = await fx.svc.create(fx.actor, { reason, endsAt: fromNow(HOUR), targets: [{ kind: "asset", assetId: fx.asset.U }], workOrderId: fx.workOrderB }, ADMIN);
   expect(item.workOrder).toEqual({ id: fx.workOrderB, reference: `F4359-${fx.run}` });
+}
+
+/**
+ * (13) Review finding 1, on the REAL scope `AccessControlService` answers an
+ * asset-group admin: its group's location S is in `readableLocationIds`, yet it
+ * reads S's asset only (C's is under S too), so a location target on S is the
+ * same 400 as a missing one; a member asset is a 201; and it cannot end a
+ * window on S (D15).
+ */
+export async function assertAnAssetGroupAdminCannotNameItsGroupsLocation(fx: WindowsFixture): Promise<void> {
+  const scope = await readScopeFor(fx.access, fx.groupAdmin);
+  // The shape the bug rode on: the group's location is readable, C's asset is not.
+  expect(scope.locationIds).toContain(fx.site.S);
+  expect(scope.assetIds).toEqual([fx.asset.S]);
+  const body = (targets: Parameters<MaintenanceWindowsService["create"]>[1]["targets"]) => ({
+    reason: `F4.359 group ${fx.run}`,
+    endsAt: fromNow(HOUR),
+    targets,
+  });
+  await expectRefused(fx.svc.create(fx.groupAdmin, body([{ kind: "location", locationId: fx.site.S }]), scope), BadRequestException, TARGET_REFUSED);
+  const onAsset = await fx.svc.create(fx.groupAdmin, body([{ kind: "asset", assetId: fx.asset.S }]), scope);
+  expect(onAsset.targets.map((t) => `${t.kind}:${t.id}`)).toEqual([`asset:${fx.asset.S}`]);
+  const onS = await createWindow(fx, [{ kind: "location", locationId: fx.site.S }]);
+  await expectRefused(fx.svc.end(fx.groupAdmin, onS, {}, scope), NotFoundException, WINDOW_NOT_FOUND);
+  // Positive neighbour: it ends its own window on the member asset.
+  expect((await fx.svc.end(fx.groupAdmin, onAsset.id, {}, scope)).state).toBe("past");
+}
+
+/** (14) Review finding 2: a reader of C sees a window via C's asset, but not its location-T target nor T's label. */
+export async function assertTheListHidesTargetsTheCallerCannotRead(fx: WindowsFixture): Promise<void> {
+  const id = await createWindow(fx, [{ kind: "asset", assetId: fx.asset.C }, { kind: "location", locationId: fx.site.T }]);
+  const item = (await fx.svc.list({ limit: 100, organizationId: fx.a }, readerOfC(fx))).items.find((i) => i.id === id) ?? fail(`window ${id} not listed`);
+  expect(item.targets.map((t) => `${t.kind}:${t.id}`)).toEqual([`asset:${fx.asset.C}`]);
+  expect(JSON.stringify(item)).not.toContain(fx.site.T);
+  expect(JSON.stringify(item)).not.toContain("F4.359 site T");
+  // Positive neighbour: the admin sees both targets.
+  const all = (await fx.svc.list({ limit: 100, organizationId: fx.a }, ADMIN)).items.find((i) => i.id === id);
+  expect(all?.targets.map((t) => t.id).sort()).toEqual([fx.asset.C, fx.site.T].sort());
+}
+
+/** (15) Review finding 3: an organization-less user creates and ends a window; both names come back. */
+export async function assertAnOrganizationLessUsersNamesComeBack(fx: WindowsFixture): Promise<void> {
+  const created = await fx.svc.create(
+    fx.globalActor,
+    { reason: `F4.359 global ${fx.run}`, endsAt: fromNow(HOUR), targets: [{ kind: "asset", assetId: fx.asset.T }] },
+    ADMIN,
+  );
+  expect(created.createdByName).toBe("F4.359 global admin");
+  const ended = await fx.svc.end(fx.globalActor, created.id, {}, ADMIN);
+  expect(ended.createdByName).toBe("F4.359 global admin");
+  expect(ended.endedByName).toBe("F4.359 global admin");
+  const listed = (await fx.svc.list({ limit: 100, organizationId: fx.a }, siteAdminOfS(fx))).items.find((i) => i.id === created.id);
+  // A site admin of S does not read T: the window is not in its list at all.
+  expect(listed).toBeUndefined();
+  const asAdmin = (await fx.svc.list({ limit: 100, organizationId: fx.a }, ADMIN)).items.find((i) => i.id === created.id);
+  expect([asAdmin?.createdByName, asAdmin?.endedByName]).toEqual(["F4.359 global admin", "F4.359 global admin"]);
+}
+
+/**
+ * (16) Review finding 4: a link must be inside the caller's scope, with the
+ * missing link's text. A schedule of B is a 400; an in-scope schedule links
+ * with its title; a work order on T's asset is a 400 for a site admin of S.
+ */
+export async function assertLinksMustBeInTheCallersScope(fx: WindowsFixture): Promise<void> {
+  const body = (extra: { workOrderId?: string; maintenanceScheduleId?: string }) => ({
+    reason: `F4.359 links ${fx.run}`,
+    endsAt: fromNow(HOUR),
+    targets: [{ kind: "asset" as const, assetId: fx.asset.S }],
+    ...extra,
+  });
+  await expectRefused(fx.svc.create(fx.actor, body({ maintenanceScheduleId: fx.scheduleB }), ADMIN), BadRequestException, SCHEDULE_REFUSED);
+  await expectRefused(fx.svc.create(fx.actor, body({ maintenanceScheduleId: randomUUID() }), ADMIN), BadRequestException, SCHEDULE_REFUSED);
+  const linked = await fx.svc.create(fx.actor, body({ maintenanceScheduleId: fx.scheduleS }), siteAdminOfS(fx));
+  expect(linked.maintenanceSchedule).toEqual({ id: fx.scheduleS, title: "F4.359 schedule S" });
+  await expectRefused(fx.svc.create(fx.actor, body({ workOrderId: fx.workOrderT }), siteAdminOfS(fx)), BadRequestException, WORK_ORDER_REFUSED);
+  // Positive neighbour: the admin reads T's asset, so the same work order links.
+  const admin = await fx.svc.create(fx.actor, body({ workOrderId: fx.workOrderT }), ADMIN);
+  expect(admin.workOrder).toEqual({ id: fx.workOrderT, reference: `F4359-${fx.run}-T` });
+  // And a schedule on S's asset is refused to a reader of C alone.
+  await expectRefused(
+    fx.svc.create(fx.actor, { ...body({ maintenanceScheduleId: fx.scheduleS }), targets: [{ kind: "asset", assetId: fx.asset.C }] }, readerOfC(fx)),
+    BadRequestException,
+    SCHEDULE_REFUSED,
+  );
+}
+
+/** (17) Review finding 5: a window with no target row is the same 404, even to the admin. */
+export async function assertAWindowWithNoTargetIsNotFound(fx: WindowsFixture): Promise<void> {
+  const id =
+    (
+      await fx.db.query<{ id: string }>(
+        `INSERT INTO bms.maintenance_windows (organization_id, reason, starts_at, ends_at, created_by)
+         VALUES ($1, 'F4.359 no target', now(), now() + interval '1 hour', $2) RETURNING id`,
+        [fx.a, fx.actor.sub],
+      )
+    ).rows[0]?.id ?? fail("window was not inserted");
+  await expectRefused(fx.svc.end(fx.actor, id, {}, ADMIN), NotFoundException, WINDOW_NOT_FOUND);
+  await expectRefused(fx.svc.extend(fx.actor, id, { endsAt: fromNow(2 * HOUR) }, ADMIN), NotFoundException, WINDOW_NOT_FOUND);
+}
+
+/**
+ * (18) Review finding 6: the extend audit's `previousEndsAt` is the end the
+ * row held when the `UPDATE` took it. A superuser transaction holds the row,
+ * moves the end and commits while the extend waits; the audit row names the
+ * moved end, not the one a read before the transaction saw.
+ */
+export async function assertTheExtendAuditReadsTheLockedEnd(fx: WindowsFixture): Promise<void> {
+  const id = await createWindow(fx, [{ kind: "asset", assetId: fx.asset.T }]);
+  const moved = new Date(Date.now() + 3 * HOUR);
+  moved.setMilliseconds(0);
+  const client = await fx.db.connect();
+  let extend: Promise<unknown> | undefined;
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT 1 FROM bms.maintenance_windows WHERE id = $1 FOR UPDATE", [id]);
+    extend = fx.svc.extend(fx.actor, id, { endsAt: fromNow(5 * HOUR) }, ADMIN);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await client.query("UPDATE bms.maintenance_windows SET ends_at = $2 WHERE id = $1", [id, moved]);
+    await client.query("COMMIT");
+  } finally {
+    client.release();
+  }
+  await extend;
+  const audit = await fx.db.query<{ previous: string }>(
+    "SELECT payload->>'previousEndsAt' AS previous FROM bms.audit_log WHERE entity_id = $1 AND action = 'maintenance_window_extend'",
+    [id],
+  );
+  expect(audit.rows).toEqual([{ previous: moved.toISOString() }]);
+}
+
+/**
+ * (19) Review finding 7 (D2): an absent `startsAt` is the database's `now()`.
+ * The API's clock is a day ahead here; an end an hour after the database's now
+ * is still a valid window, and its start is the database's now.
+ */
+export async function assertAnAbsentStartIsTheDatabaseClock(fx: WindowsFixture): Promise<void> {
+  const dbNow = async (): Promise<number> => new Date((await fx.db.query<{ now: Date }>("SELECT now() AS now")).rows[0]?.now ?? fail("no now")).getTime();
+  const before = await dbNow();
+  const endsAt = new Date(before + HOUR).toISOString();
+  vi.useFakeTimers({ toFake: ["Date"], now: before + DAY });
+  let item;
+  try {
+    item = await fx.svc.create(fx.actor, { reason: `F4.359 clock ${fx.run}`, endsAt, targets: [{ kind: "asset", assetId: fx.asset.T }] }, ADMIN);
+  } finally {
+    vi.useRealTimers();
+  }
+  const after = await dbNow();
+  const startsAt = new Date(item.startsAt).getTime();
+  expect(startsAt).toBeGreaterThanOrEqual(before);
+  expect(startsAt).toBeLessThanOrEqual(after);
 }

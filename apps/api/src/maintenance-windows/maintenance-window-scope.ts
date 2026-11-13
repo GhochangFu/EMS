@@ -1,6 +1,9 @@
 import { eq, inArray, sql, type SQL } from "drizzle-orm";
 
 import { assets, locations, maintenanceWindows } from "@bms/db";
+import type { AccessibleScope, JwtPayload } from "@bms/shared";
+
+import type { AccessControlService } from "../auth/access-control.service";
 
 import { expandLocationSubtrees, locationAncestorChains, locationAncestors } from "../auth/location-tree";
 import type { BmsTx } from "../database/tenant-context";
@@ -14,18 +17,72 @@ import type { BmsTx } from "../database/tenant-context";
  */
 
 /**
- * The caller's three readable sets, as `AccessControlService` answers them. All
- * three are `null` for the unrestricted admin and never `null` for anyone else.
+ * The caller's readable sets, as `AccessControlService` answers them. Every
+ * set is `null` for the unrestricted admin and never `null` for anyone else.
+ *
+ * `subtreeLocationIds` is the set a **location target** is checked against
+ * (ADR 0131 decision 4, review finding 1). A location target silences every
+ * asset at or under the node, so naming it needs the whole subtree, not one
+ * readable node. The rule: a location may be named when the caller is
+ * unrestricted, or when its read scope is **location- or
+ * organization-sourced** (`AccessibleScope.kind === "location"`) and the node
+ * is in that scope's locations. Both sources resolve the subtree closure of
+ * their grant (an organization grant is every node of the organization), so a
+ * node in the set is a node whose subtree the caller reads. An
+ * **asset-group-sourced** scope names its groups' locations in `locationIds`
+ * while it reads only the member assets there, so it may name no location
+ * target at all: `subtreeLocationIds` is `[]` for it.
  */
 export type MaintenanceWindowReadScope = {
   readonly assetIds: readonly string[] | null;
   readonly locationIds: readonly string[] | null;
   readonly organizationIds: readonly string[] | null;
+  readonly subtreeLocationIds: readonly string[] | null;
+};
+
+/** The admin's scope: every set unrestricted. */
+export const UNRESTRICTED_SCOPE: MaintenanceWindowReadScope = {
+  assetIds: null,
+  locationIds: null,
+  organizationIds: null,
+  subtreeLocationIds: null,
 };
 
 /** The admin's scope is unrestricted; `readableAssetIds` is `null` for that role alone. */
 export function isUnrestricted(scope: MaintenanceWindowReadScope): boolean {
   return scope.assetIds === null;
+}
+
+/**
+ * A scoped caller's `AccessibleScope` (the one `/auth/me` answers) as the
+ * window scope. Only a `location`-kind scope — organization- or
+ * location-sourced — names locations whose whole subtree it reads (see
+ * `MaintenanceWindowReadScope`).
+ */
+export function scopedReadScope(scope: AccessibleScope, organizationIds: readonly string[]): MaintenanceWindowReadScope {
+  const locationIds = scope.locations.map((location) => location.id);
+  return {
+    assetIds: scope.assetIds,
+    locationIds,
+    organizationIds,
+    subtreeLocationIds: scope.kind === "location" ? locationIds : [],
+  };
+}
+
+/**
+ * The caller's window scope, read from `AccessControlService` (the controller's
+ * and the integration claims' one path). The admin is decided on the role, as
+ * `readableAssetIds` decides it, before any scope walk. Everyone else is one
+ * `currentUser` (its `AccessibleScope` carries the grant source's `kind`, which
+ * `readableLocationIds` drops) and one `readableOrganizationIds`.
+ */
+export async function readScopeFor(
+  access: Pick<AccessControlService, "isGlobalAdmin" | "currentUser" | "readableOrganizationIds">,
+  jwt: JwtPayload,
+): Promise<MaintenanceWindowReadScope> {
+  if (await access.isGlobalAdmin(jwt)) return UNRESTRICTED_SCOPE;
+  const { scope } = await access.currentUser(jwt);
+  return scopedReadScope(scope, (await access.readableOrganizationIds(jwt)) ?? []);
 }
 
 /** A target as the write path resolved it from the database (the rule's asset is the rule row's). */
@@ -36,9 +93,10 @@ export type ResolvedTarget =
 
 /**
  * Whether the caller may name this target on a write: an asset it reads; a
- * rule whose asset it reads; a location it reads (owner ruling P2 — a location
- * outside `readableLocationIds` is refused even when the caller reads an asset
- * under it, plan claim 4). The admin may name any.
+ * rule whose asset it reads; a location whose whole subtree it reads
+ * (`subtreeLocationIds`, see `MaintenanceWindowReadScope`). Owner ruling P2
+ * still holds — a location above the grant is refused even when the caller
+ * reads an asset under it (plan claim 4). The admin may name any.
  */
 export function targetInScope(target: ResolvedTarget, scope: MaintenanceWindowReadScope): boolean {
   if (isUnrestricted(scope)) return true;
@@ -49,17 +107,42 @@ export function targetInScope(target: ResolvedTarget, scope: MaintenanceWindowRe
     case "rule":
       return target.assetId !== null && assetIds.includes(target.assetId);
     case "location":
-      return (scope.locationIds ?? []).includes(target.id);
+      return (scope.subtreeLocationIds ?? []).includes(target.id);
   }
 }
 
 /**
  * D15: extend, end and cancel need **every** target of the window inside the
  * caller's scope — a site admin must not end a window that also covers another
- * site.
+ * site. A window with no target is refused: `every` of nothing would pass.
  */
 export function everyTargetInScope(targets: readonly ResolvedTarget[], scope: MaintenanceWindowReadScope): boolean {
-  return targets.every((target) => targetInScope(target, scope));
+  return targets.length > 0 && targets.every((target) => targetInScope(target, scope));
+}
+
+/** A stored target as the list reads it: a rule carries its asset. */
+export type StoredTarget =
+  | { readonly kind: "asset"; readonly id: string }
+  | { readonly kind: "location"; readonly id: string }
+  | { readonly kind: "rule"; readonly id: string; readonly assetId: string | null };
+
+/**
+ * Review finding 2: which of a visible window's targets the caller may see
+ * (id and label). An asset it reads, a rule on such an asset, a location in
+ * `visibleLocations` — the set the visibility predicate uses
+ * (`visibleLocationIds`). `visibleLocations === null` is the admin: all.
+ */
+export function targetVisibleTo(target: StoredTarget, scope: MaintenanceWindowReadScope, visibleLocations: readonly string[] | null): boolean {
+  if (isUnrestricted(scope) || visibleLocations === null) return true;
+  const assetIds = scope.assetIds ?? [];
+  switch (target.kind) {
+    case "asset":
+      return assetIds.includes(target.id);
+    case "rule":
+      return target.assetId !== null && assetIds.includes(target.assetId);
+    case "location":
+      return visibleLocations.includes(target.id);
+  }
 }
 
 /**

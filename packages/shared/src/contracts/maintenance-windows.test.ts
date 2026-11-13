@@ -6,6 +6,7 @@ import {
   runExtendCloseTest,
   runItemTest,
   runMaxMsTest,
+  runTargetKindTest,
   runTargetUnionTest,
 } from "./maintenance-windows.spec";
 
@@ -33,5 +34,9 @@ describe("F4.359 — the maintenance-window contracts (ADR 0131)", () => {
 
   it("the item and list response", () => {
     runItemTest();
+  });
+
+  it("the item's target kind is the union's discriminator", () => {
+    runTargetKindTest();
   });
 });

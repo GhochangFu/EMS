@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { maintenanceWindowStateSchema } from "@bms/shared";
+
 import { locationIdQueryField, organizationIdQueryField } from "../alarms/alarm-list.schema";
 
 /**
@@ -16,7 +18,7 @@ import { locationIdQueryField, organizationIdQueryField } from "../alarms/alarm-
  */
 export const maintenanceWindowListQuerySchema = z
   .object({
-    state: z.enum(["active", "future", "past"]).optional(),
+    state: maintenanceWindowStateSchema.optional(),
     assetId: z
       .string()
       .uuid()

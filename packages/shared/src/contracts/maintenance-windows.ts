@@ -29,10 +29,14 @@ const reasonSchema = z
   .refine((s) => [...s].length <= 2000, { message: "reason must be at most 2000 characters" })
   .describe("3 to 2000 characters after trimming, counted in code points (the database CHECK's char_length).");
 
+/** The three target kinds: the union's discriminator and the list item's `kind`, from this one list. */
+export const maintenanceWindowTargetKindSchema = z.enum(["asset", "location", "rule"]);
+const TARGET_KIND = maintenanceWindowTargetKindSchema.enum;
+
 export const maintenanceWindowTargetSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("asset"), assetId: z.string().uuid() }).strict(),
-  z.object({ kind: z.literal("location"), locationId: z.string().uuid() }).strict(),
-  z.object({ kind: z.literal("rule"), ruleId: z.string().uuid() }).strict(),
+  z.object({ kind: z.literal(TARGET_KIND.asset), assetId: z.string().uuid() }).strict(),
+  z.object({ kind: z.literal(TARGET_KIND.location), locationId: z.string().uuid() }).strict(),
+  z.object({ kind: z.literal(TARGET_KIND.rule), ruleId: z.string().uuid() }).strict(),
 ]);
 
 export const createMaintenanceWindowBodySchema = z
@@ -70,7 +74,7 @@ export const maintenanceWindowItemSchema = z.object({
   maintenanceSchedule: z.object({ id: z.string().uuid(), title: z.string() }).nullable(),
   targets: z.array(
     z.object({
-      kind: z.enum(["asset", "location", "rule"]),
+      kind: maintenanceWindowTargetKindSchema,
       id: z.string().uuid(),
       label: z.string(),
     }),

@@ -23,7 +23,7 @@ import {
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import type { MaintenanceWindowReadScope } from "./maintenance-window-scope";
+import { readScopeFor, type MaintenanceWindowReadScope } from "./maintenance-window-scope";
 import { maintenanceWindowListQuerySchema } from "./maintenance-windows.schema";
 import { MaintenanceWindowsService } from "./maintenance-windows.service";
 
@@ -96,12 +96,8 @@ export class MaintenanceWindowsController {
     return this.windows.cancel(user, windowId, dto, await this.scope(user));
   }
 
-  /** The caller's three readable sets (all `null` for the admin). */
-  private async scope(user: JwtPayload): Promise<MaintenanceWindowReadScope> {
-    return {
-      assetIds: await this.accessControl.readableAssetIds(user),
-      locationIds: await this.accessControl.readableLocationIds(user),
-      organizationIds: await this.accessControl.readableOrganizationIds(user),
-    };
+  /** The caller's readable sets (all `null` for the admin), through `readScopeFor`. */
+  private scope(user: JwtPayload): Promise<MaintenanceWindowReadScope> {
+    return readScopeFor(this.accessControl, user);
   }
 }

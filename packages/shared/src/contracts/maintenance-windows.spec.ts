@@ -4,6 +4,7 @@ import {
   createMaintenanceWindowBodySchema,
   extendMaintenanceWindowBodySchema,
   maintenanceWindowItemSchema,
+  maintenanceWindowTargetKindSchema,
   maintenanceWindowTargetSchema,
   maintenanceWindowsResponseSchema,
 } from "./maintenance-windows";
@@ -45,10 +46,12 @@ const item = {
   assetIds: [U1],
 };
 
+/** A window runs at most 7 days. */
 export function runMaxMsTest(): void {
   assert(MAINTENANCE_WINDOW_MAX_MS === 7 * 24 * 60 * 60 * 1000, "max is 7 days");
 }
 
+/** The target is a discriminated union of strict single-id objects. */
 export function runTargetUnionTest(): void {
   assert(maintenanceWindowTargetSchema.safeParse({ kind: "location", locationId: U1 }).success, "location");
   assert(maintenanceWindowTargetSchema.safeParse({ kind: "rule", ruleId: U1 }).success, "rule");
@@ -60,6 +63,7 @@ export function runTargetUnionTest(): void {
   assert(!maintenanceWindowTargetSchema.safeParse({ kind: "zone", assetId: U1 }).success, "unknown kind refused");
 }
 
+/** The create body: reason length, 1-200 targets, strictness, an optional start. */
 export function runBodyTest(): void {
   assert(createMaintenanceWindowBodySchema.safeParse(body).success, "absent startsAt accepted");
   assert(
@@ -87,6 +91,7 @@ export function runBodyTest(): void {
   assert(createMaintenanceWindowBodySchema.safeParse({ ...body, reason: "a".repeat(2000) }).success, "2000 accepted");
 }
 
+/** The reason is counted in code points, as the database `char_length` CHECK counts it. */
 export function runCodePointTest(): void {
   // "\u{1F600}a" is 3 UTF-16 units but 2 code points: the DB char_length CHECK refuses it.
   assert(!createMaintenanceWindowBodySchema.safeParse({ ...body, reason: "\u{1F600}a" }).success, "2 code points refused");
@@ -103,6 +108,7 @@ export function runCodePointTest(): void {
   assert(!closeMaintenanceWindowBodySchema.safeParse({ reason: "\u{1F600}a" }).success, "close code points");
 }
 
+/** The extend body needs `endsAt`; the close body takes an optional reason; both are strict. */
 export function runExtendCloseTest(): void {
   assert(extendMaintenanceWindowBodySchema.safeParse({ endsAt: ends }).success, "extend without reason");
   assert(extendMaintenanceWindowBodySchema.safeParse({ endsAt: ends, reason: "more time" }).success, "extend reason");
@@ -113,9 +119,19 @@ export function runExtendCloseTest(): void {
   assert(!closeMaintenanceWindowBodySchema.safeParse({ x: 1 }).success, "close strict");
 }
 
+/** The item and list response parse, and refuse a missing `assetIds` or an unknown state. */
 export function runItemTest(): void {
   assert(maintenanceWindowsResponseSchema.safeParse({ items: [item] }).success, "item parses");
   const { assetIds: _omit, ...noAssets } = item;
   assert(!maintenanceWindowItemSchema.safeParse(noAssets).success, "missing assetIds refused");
   assert(!maintenanceWindowItemSchema.safeParse({ ...item, state: "paused" }).success, "unknown state refused");
+}
+
+/** The item's target `kind` is the union's discriminator, from one list: no kind in one and not the other. */
+export function runTargetKindTest(): void {
+  const unionKinds = maintenanceWindowTargetSchema.options.map((option) => option.shape.kind.value).sort();
+  assert(JSON.stringify(unionKinds) === JSON.stringify([...maintenanceWindowTargetKindSchema.options].sort()), "one list of kinds");
+  const target = item.targets[0];
+  assert(!maintenanceWindowItemSchema.safeParse({ ...item, targets: [{ ...target, kind: "zone" }] }).success, "unknown item kind refused");
+  assert(maintenanceWindowItemSchema.safeParse({ ...item, targets: [{ ...target, kind: "rule" }] }).success, "rule item kind accepted");
 }
