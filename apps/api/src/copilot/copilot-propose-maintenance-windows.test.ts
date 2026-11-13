@@ -14,6 +14,7 @@ import {
   anOperatorAndAViewerAreRefusedBeforeTheScope,
   aPeriodTheRouteRefusesIsRefused,
   aRowTargetWithoutAWindowFailsClosed,
+  aScopeReadFailureIsThrownNotRefused,
   aWindowWithATargetOutsideTheScopeIsRefused,
   everyCopilotRoleInScopeResolvesACreate,
   fillStepRefusesAnUnaskedCreate,
@@ -30,6 +31,7 @@ describe("F4.359 — the Copilot proposes maintenance windows (ADR 0099 Amendmen
   it("an operator and a viewer are refused before the scope", () => anOperatorAndAViewerAreRefusedBeforeTheScope());
   it("a location outside the grant is refused", () => aLocationOutsideTheGrantIsRefused());
   it("an asset-group admin cannot name a location", () => anAssetGroupAdminCannotNameALocation());
+  it("a scope read failure is thrown, not turned into a refusal", () => aScopeReadFailureIsThrownNotRefused());
   it("targets of two organizations, or a missing one, are refused", () => targetsOfTwoOrganizationsAreRefused());
   it("a create carries the target labels and the covered-asset count (Q5)", () => aCreateCarriesTheLabelsAndTheCoveredCount());
   it("a window with a target outside the scope is refused (D15)", () => aWindowWithATargetOutsideTheScopeIsRefused());

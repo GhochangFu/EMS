@@ -1,3 +1,4 @@
+import { ForbiddenException } from "@nestjs/common";
 import { and, count, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
@@ -89,13 +90,18 @@ const idOf = (target: MaintenanceWindowTarget): string =>
 const keyOf = (kind: string, id: string): string => `${kind}:${id}`;
 const stringOrNull = (value: unknown): string | null => (typeof value === "string" ? value : null);
 
-/** The routes' gate, in their order: the role class first (ADR 0017), then the scope. A throw is a refusal. */
+/**
+ * The routes' gate, in their order: the role class first (ADR 0017), then the scope. The routes'
+ * refusal (a `ForbiddenException`) is a refusal; anything else, a database failure in the scope
+ * read, is thrown, never a silent "target refused" (review of PR 6).
+ */
 async function windowScope(access: WindowAccess, user: JwtPayload): Promise<MaintenanceWindowReadScope | null> {
   try {
     await access.assertOperationsWriteRole(user, "configuration");
     return await readScopeFor(access, user);
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof ForbiddenException) return null;
+    throw error;
   }
 }
 

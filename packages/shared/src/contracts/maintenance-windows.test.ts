@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runBodyTest,
   runCodePointTest,
+  runCopilotModelBodyTest,
   runExtendCloseTest,
   runItemTest,
   runMaxMsTest,
@@ -34,6 +35,10 @@ describe("F4.359 — the maintenance-window contracts (ADR 0131)", () => {
 
   it("the item and list response", () => {
     runItemTest();
+  });
+
+  it("the Copilot model body refuses a target named twice and says to omit startsAt for now", () => {
+    runCopilotModelBodyTest();
   });
 
   it("the item's target kind is the union's discriminator", () => {

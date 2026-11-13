@@ -1,3 +1,4 @@
+import { ForbiddenException } from "@nestjs/common";
 import { expect } from "vitest";
 
 import type { JwtPayload, UserRole } from "@bms/shared";
@@ -102,7 +103,7 @@ function windowAccess(grant: Grant, asked: string[] = []): never {
   return {
     assertOperationsWriteRole: async (user: JwtPayload, writeClass: OperationsWriteClass) => {
       asked.push(`role:${writeClass}`);
-      if (!canPerformOperationsWrite(user.role as UserRole, writeClass)) throw new Error("403");
+      if (!canPerformOperationsWrite(user.role as UserRole, writeClass)) throw new ForbiddenException("403");
     },
     isGlobalAdmin: async (user: JwtPayload) => {
       asked.push("scope");
@@ -172,6 +173,20 @@ export async function aLocationOutsideTheGrantIsRefused(): Promise<void> {
 export async function anAssetGroupAdminCannotNameALocation(): Promise<void> {
   expect(await create("asset_group_admin", GROUP_ADMIN_AT_S, createBody({ kind: "location", locationId: SITE_S }))).toBeNull();
   expect((await create("asset_group_admin", GROUP_ADMIN_AT_S, createBody({ kind: "asset", assetId: ASSET_S })))?.organizationId).toBe(ORG_A);
+}
+
+/** Review of PR 6: only the route's refusal (403) is a refusal; a database failure in the scope read is thrown, not a silent null. */
+export async function aScopeReadFailureIsThrownNotRefused(): Promise<void> {
+  const failing = {
+    ...(windowAccess(SITE_ADMIN_OF_S) as object),
+    currentUser: async () => {
+      throw new Error("connection terminated");
+    },
+  } as never;
+  const body = createBody({ kind: "asset", assetId: ASSET_S });
+  await expect(resolveMaintenanceWindowTarget(fakeReads(null), failing, user("location_admin"), CREATE_TARGET, {}, body, [ORG_A])).rejects.toThrow(
+    "connection terminated",
+  );
 }
 
 /** Targets of two organizations are refused, as the route refuses them, and so is a target that exists nowhere. */

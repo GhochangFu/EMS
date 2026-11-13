@@ -15,9 +15,12 @@ import { copilotContext } from "./copilot-request-context";
  * service's own fixture (`buildWindowsFixture`: organization A with site S,
  * its child C, site T and an asset at each; B with site U and its asset).
  *
- * (1) The plan's one integration claim: a create confirmed through a Copilot
- * change (the interceptor runs the handler inside `copilotContext`) writes the
- * window and an audit row marked `via: "copilot"` with the change id.
+ * (1) The plan's one integration claim, at the service: the create runs inside
+ * `copilotContext` directly, a stand-in for the Confirm (whose interceptor runs
+ * the route's handler inside it), and writes the window and an audit row marked
+ * `via: "copilot"` with the change id. The HTTP Confirm path itself is covered
+ * by the interceptor's own suites and by the static
+ * `tests/f3.85-audit-via-mark.test.ts` row for the window service, not here.
  * (2) The target's reads under `withTenant`: a create's rows with their labels
  * in their own organization only, the assets a location covers, and a stored
  * window with its state and every target.

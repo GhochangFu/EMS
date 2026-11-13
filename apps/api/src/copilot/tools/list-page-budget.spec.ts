@@ -478,6 +478,23 @@ export const listReportSchedulesPageIsWhole = () => unpagedPageIsWhole("list_rep
 export const listEscalationProfilesPageIsWhole = () => unpagedPageIsWhole("list_escalation_profiles");
 /** (c9) `F4.359` PR 6: `list_maintenance_windows`. */
 export const listMaintenanceWindowsPageIsWhole = () => unpagedPageIsWhole("list_maintenance_windows");
+/**
+ * (c10) Review of PR 6: one window with 200 location targets (the route's bound) and a small
+ * one. Each item names at most 10 targets, so the large window no longer fills the budget
+ * alone and is not dropped: both are listed, whole JSON.
+ */
+export async function aWindowWithManyTargetsIsStillListed(): Promise<void> {
+  const big: MaintenanceWindowItem = {
+    ...maintenanceWindow(0),
+    targets: range(200, (i) => ({ kind: "location" as const, id: uuid("e0bb42bb", i), label: `RSMOC KwaZulu-Natal Control Room substation bay ${i}` })),
+  };
+  const small = maintenanceWindow(1);
+  const { tools } = fake(0, { maintenanceWindows: { list: async () => ({ items: [big, small] }) } });
+  const content = await contentOf(tools, "list_maintenance_windows", {});
+  expect(content.length).toBeLessThanOrEqual(COPILOT_TOOL_RESULT_BUDGET_CHARS + `{"ok":true,`.length);
+  const page = parsed(content);
+  expect([idsOf(page), page.truncated]).toEqual([[big.id, small.id], false]);
+}
 
 // --- (d) the scrub's growth is measured --------------------------------------------------------------
 

@@ -13,30 +13,40 @@ import { operationalIntentOf } from "./copilot-operations-intent";
  * The words are whole words, case-insensitive; a hyphen joins a token. The turn
  * service decides this once, before any tool runs, from the user's own message
  * (`ownMessageIntentOf`); nothing the model or a tool returns can turn it on.
+ *
+ * Review of PR 6: a word alone is too broad ("which maintenance windows are
+ * active?", "is the alarm suppressed?", "how do I mute the tone?" asked for no
+ * create). A create needs a create verb before the window noun, at most four
+ * words apart ("create a maintenance window", "put chiller 2 into a maintenance
+ * window"), or an imperative "suppress" / "silence" aimed at something
+ * ("suppress chiller 2 alarms"). No past participle and no "mute": the bar's
+ * Mute button silences the tone, not an alarm. "open" is left out: "the open
+ * maintenance windows" is a list. An extend needs "extend" or "prolong".
  */
-export const CREATE_WINDOW_WORDS = [
-  "maintenance window",
-  "maintenance windows",
-  "suppress",
-  "suppressed",
-  "suppressing",
-  "suppression",
-  "silence",
-  "silenced",
-  "silencing",
-  "mute",
-  "muted",
-  "muting",
-] as const;
-export const EXTEND_WINDOW_WORDS = ["extend", "extended", "extending", "extension", "prolong", "prolonged", "prolonging"] as const;
+export const CREATE_WINDOW_VERBS = ["create", "add", "schedule", "start", "set up", "put"] as const;
+export const WINDOW_NOUNS = ["maintenance window", "maintenance windows"] as const;
+export const SUPPRESS_WORDS = ["suppress", "silence"] as const;
+export const EXTEND_WINDOW_WORDS = ["extend", "prolong"] as const;
 
 /** A two-word phrase matches across any run of whitespace. */
-const wholeWord = (words: readonly string[]): RegExp =>
-  new RegExp(`(?:^|[^a-z0-9-])(?:${words.map((word) => word.replace(/ /g, "\\s+")).join("|")})(?![a-z0-9-])`, "i");
+const alternation = (words: readonly string[]): string => words.map((word) => word.replace(/ /g, "\\s+")).join("|");
+const BEFORE = "(?:^|[^a-z0-9-])";
+const AFTER = "(?![a-z0-9-])";
+const TOKEN = "[a-z0-9'\u2019-]+";
+
+const wholeWord = (words: readonly string[]): RegExp => new RegExp(`${BEFORE}(?:${alternation(words)})${AFTER}`, "i");
+/** A create verb, then at most four words, then the window noun. */
+const createVerbBeforeNoun = new RegExp(
+  `${BEFORE}(?:${alternation(CREATE_WINDOW_VERBS)})(?:\\s+${TOKEN}){0,4}?\\s+(?:${alternation(WINDOW_NOUNS)})${AFTER}`,
+  "i",
+);
+/** "suppress" or "silence", followed by what it is aimed at (not the noun's "silence of"). */
+const suppressAimed = new RegExp(`${BEFORE}(?:${alternation(SUPPRESS_WORDS)})\\s+(?!of${AFTER})[a-z0-9]`, "i");
+const asksForCreate = { test: (message: string): boolean => createVerbBeforeNoun.test(message) || suppressAimed.test(message) };
 
 /** Each gated entry has its own words: an extend word never allows a create, nor the other way round. */
-const ENTRY_WORDS: readonly (readonly [string, RegExp])[] = [
-  ["maintenanceWindow.create", wholeWord(CREATE_WINDOW_WORDS)],
+const ENTRY_WORDS: readonly (readonly [string, { test(message: string): boolean }])[] = [
+  ["maintenanceWindow.create", asksForCreate],
   ["maintenanceWindow.extend", wholeWord(EXTEND_WINDOW_WORDS)],
 ];
 

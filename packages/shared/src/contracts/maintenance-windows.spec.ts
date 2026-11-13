@@ -1,6 +1,7 @@
 import {
   MAINTENANCE_WINDOW_MAX_MS,
   closeMaintenanceWindowBodySchema,
+  copilotCreateMaintenanceWindowModelBodySchema,
   createMaintenanceWindowBodySchema,
   extendMaintenanceWindowBodySchema,
   maintenanceWindowItemSchema,
@@ -134,4 +135,25 @@ export function runTargetKindTest(): void {
   const target = item.targets[0];
   assert(!maintenanceWindowItemSchema.safeParse({ ...item, targets: [{ ...target, kind: "zone" }] }).success, "unknown item kind refused");
   assert(maintenanceWindowItemSchema.safeParse({ ...item, targets: [{ ...target, kind: "rule" }] }).success, "rule item kind accepted");
+}
+
+/**
+ * `F4.359` PR 6 review: the Copilot's model body refuses a target named twice (the card counts
+ * the targets it lists), case-insensitively, and tells the model to omit `startsAt` for "now";
+ * the route body keeps neither rule nor that description.
+ */
+export function runCopilotModelBodyTest(): void {
+  const twice = { ...body, targets: [{ kind: "asset", assetId: U1 }, { kind: "asset", assetId: U1.toUpperCase() }] };
+  const parsed = copilotCreateMaintenanceWindowModelBodySchema.safeParse(twice);
+  assert(!parsed.success, "a target named twice refused");
+  assert(
+    !parsed.success && parsed.error.issues.some((issue) => issue.message === "each target may be named once"),
+    "the duplicate refusal has its sentence",
+  );
+  const distinct = { ...body, targets: [{ kind: "asset", assetId: U1 }, { kind: "location", locationId: U1 }, { kind: "asset", assetId: U2 }] };
+  assert(copilotCreateMaintenanceWindowModelBodySchema.safeParse(distinct).success, "distinct targets accepted");
+  assert(createMaintenanceWindowBodySchema.safeParse(twice).success, "the route body is unchanged");
+  const modelStart = copilotCreateMaintenanceWindowModelBodySchema.shape.startsAt.description ?? "";
+  assert(modelStart.startsWith("Omit to start now."), `model startsAt describes omit-for-now: ${modelStart}`);
+  assert(createMaintenanceWindowBodySchema.shape.startsAt.description === undefined, "the route startsAt has no description");
 }

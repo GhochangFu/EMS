@@ -4,6 +4,7 @@ import { describe, it } from "vitest";
 
 import {
   aFullOrganizationIsTruncated,
+  anItemCapsItsTargetsAndCountsOnlyAnActiveWindow,
   anItemCarriesWhatAWriteNames,
   anOrganizationOutsideTheTurnIsRefused,
   oneCallPerAllowedOrganizationWithTheFilters,
@@ -19,4 +20,6 @@ describe("F4.359 — list_maintenance_windows (ADR 0099 Amendment 19 decision 6,
   it("refuses an organization outside the turn before any read", () => anOrganizationOutsideTheTurnIsRefused());
   it("an item carries what a write names", () => anItemCarriesWhatAWriteNames());
   it("a full organization is truncated", () => aFullOrganizationIsTruncated());
+  it("an item caps its targets at 10 and counts covered assets for an active window only", () =>
+    anItemCapsItsTargetsAndCountsOnlyAnActiveWindow());
 });

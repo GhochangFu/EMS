@@ -51,20 +51,33 @@ export const createMaintenanceWindowBodySchema = z
   })
   .strict();
 
+/** A target's kind and id, the id lower-cased: two that match name the same target. */
+const targetKey = (target: z.infer<typeof maintenanceWindowTargetSchema>): string =>
+  `${target.kind}:${(target.kind === "asset" ? target.assetId : target.kind === "location" ? target.locationId : target.ruleId).toLowerCase()}`;
+
 /** ADR 0099 Amendment 19 Q4: a Copilot proposal names at most 25 targets; the route and the page's wizard keep 200. */
 export const COPILOT_MAINTENANCE_WINDOW_MAX_TARGETS = 25;
 
 /**
  * `F4.359` PR 6 (ADR 0099 Amendment 19 decision 1, Q4): the body the Copilot proposes a window
- * with — the route's fields, strict, with at most 25 targets. It binds the model only; the
+ * with — the route's fields, strict, with at most 25 targets, each named once (review of PR 6: the
+ * card counts the targets it lists), and `startsAt` described as "omit for now" so a card confirmed
+ * after the route's one-minute start grace is not stale. It binds the model only; the
  * Confirm sends it to the route, which parses `createMaintenanceWindowBodySchema`.
  */
 export const copilotCreateMaintenanceWindowModelBodySchema = z
   .object({
     reason: reasonSchema,
-    startsAt: isoDateTime.optional(),
+    startsAt: isoDateTime
+      .optional()
+      .describe("Omit to start now. Give it only for a later start; one over a minute in the past is refused."),
     endsAt: isoDateTime,
-    targets: z.array(maintenanceWindowTargetSchema).min(1).max(COPILOT_MAINTENANCE_WINDOW_MAX_TARGETS),
+    targets: z
+      .array(maintenanceWindowTargetSchema)
+      .min(1)
+      .max(COPILOT_MAINTENANCE_WINDOW_MAX_TARGETS)
+      .refine((targets) => new Set(targets.map(targetKey)).size === targets.length, { message: "each target may be named once" })
+      .describe("1 to 25 targets, each named once (kind and id, case-insensitive)."),
     workOrderId: z.string().uuid().optional(),
     maintenanceScheduleId: z.string().uuid().optional(),
   })

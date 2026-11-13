@@ -50,7 +50,9 @@ function summary(id: string, input: Partial<CatalogSummaryInput> = {}): string {
   });
 }
 
-const targets = (count: number) => Array.from({ length: count }, () => ({ kind: "asset", assetId: ASSET }));
+/** `count` distinct asset targets, the first `ASSET` (the model body refuses a target named twice). */
+const targets = (count: number) =>
+  Array.from({ length: count }, (_, i) => ({ kind: "asset", assetId: i === 0 ? ASSET : `30000000-0000-4000-8000-${String(i).padStart(12, "0")}` }));
 const CREATE = { reason: "Chiller 2 compressor overhaul", endsAt: "2026-11-13T18:00:00.000Z" };
 
 /** Decision 1: the four ids, routes and risks; Q1: create and extend are red, end and cancel are not. */

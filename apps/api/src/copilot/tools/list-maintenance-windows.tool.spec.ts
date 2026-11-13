@@ -117,7 +117,7 @@ export async function anOrganizationOutsideTheTurnIsRefused(): Promise<void> {
   expect(calls).toEqual([]);
 }
 
-/** An item carries the ids a write names, its state, period and labelled targets; the covered assets as a count. */
+/** An item carries the ids a write names, its state, period and labelled targets; an active one's readable covered assets as a count. */
 export async function anItemCarriesWhatAWriteNames(): Promise<void> {
   const { tools } = fake(false);
   const out = await run(tools, {}, [ORG_X]);
@@ -135,7 +135,8 @@ export async function anItemCarriesWhatAWriteNames(): Promise<void> {
           endsAt: "2026-11-13T18:00:00.000Z",
           endedAt: null,
           targets: [{ kind: "asset", id: ASSET, label: "Chiller 2" }],
-          coveredAssetCount: 2,
+          targetCount: 1,
+          readableCoveredAssetCount: 2,
           workOrder: null,
           maintenanceSchedule: null,
         },
@@ -151,4 +152,22 @@ export async function aFullOrganizationIsTruncated(): Promise<void> {
   const out = await run(tools, {}, [ORG_X]);
   if (!out.ok) throw new Error(out.error);
   expect((out.result as { truncated: boolean }).truncated).toBe(true);
+}
+
+/**
+ * Review of PR 6: an item names at most its first 10 targets, with the full `targetCount`; the
+ * readable covered-asset count is given for an active window only (the service fills it for no other).
+ */
+export async function anItemCapsItsTargetsAndCountsOnlyAnActiveWindow(): Promise<void> {
+  const many = Array.from({ length: 30 }, (_, i) => ({ kind: "asset" as const, id: `30000000-0000-4000-8000-0000000001${String(i).padStart(2, "0")}`, label: `Pump ${i}` }));
+  const { tools } = fake(false, { [ORG_X]: [windowItem(1, ORG_X, { targets: many }), windowItem(2, ORG_X, { state: "future", assetIds: [] })] });
+  const out = await run(tools, {}, [ORG_X]);
+  if (!out.ok) throw new Error(out.error);
+  const items = (out.result as { organizations: Array<{ items: Array<Record<string, unknown>> }> }).organizations[0]?.items ?? [];
+  expect(items.map((item) => [(item.targets as unknown[]).length, item.targetCount, item.readableCoveredAssetCount])).toEqual([
+    [10, 30, 2],
+    [1, 1, undefined],
+  ]);
+  expect(items[0]?.targets).toEqual(many.slice(0, 10));
+  expect("readableCoveredAssetCount" in (items[1] ?? {})).toBe(false);
 }
