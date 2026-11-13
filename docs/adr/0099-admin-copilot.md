@@ -2547,3 +2547,122 @@ amendment is accepted. The merge of this amendment approves it. A line marked
   build; over its bound, the bound rises by release 4's rule and the owner is
   asked, as in Amendment 13.
 - No migration and no new route.
+
+## Amendment 19 — the copilot proposes maintenance windows (ADR 0131, `F4.359`)
+
+**Status: accepted — 2026-11-13** (owner, in chat: "Accept both"; proposed the
+same day). The owner ruled the seven gate questions in chat on 2026-11-13,
+each as the drafter recommended, and accepted the amendment with every
+*(drafter)* line as written. Drafted against `main` at `615c1d8c`. The
+`F4.359` plan's owner ruling Q6 (2026-11-13) puts the four maintenance-window
+writes (ADR 0131 decisions 2 and 16) on `WizardShell`, so each is a catalog
+entry and needs this amendment. Plan PR 6 (the entries) and PR 7 (the page's
+wizards) build it. A line marked
+*(drafter)* is a choice the owner may change at review.
+
+### Facts the amendment rests on
+
+- `CatalogRisk` is `create | edit | deactivate | access | operational`
+  (`packages/shared/src/copilot/catalog/types.ts:22`); an entry may carry
+  `red: true`, a red card on a non-red risk (the `F4.289` precedent, `:416`).
+- The nearest target precedent is `{ kind: "maintenanceSchedule", … }`
+  (`types.ts:189-197`): the `configuration` write class, then the asset in the
+  caller's read scope. No `maintenanceWindow` kind exists.
+- `tests/f3.85-stepper-coverage.test.ts`: every catalog id is the literal entry
+  of a `<WizardShell`, a canvas row, or a `NOT_YET` row. `NOT_YET` is the place
+  for an entry that lands before its wizard (`F4.311`, `F4.312`, `F4.320`).
+- `tests/f3.85-catalog-coverage.test.ts`: every write route of a walked
+  controller is an entry or an `EXCLUDED_ROUTES` row. Amendment 17 decision 5
+  is the precedent for a route that lands before its entry (reason "copilot
+  entry in ADR 0099 Amendment N").
+- `tests/f3.85-audit-via-mark.test.ts`: a service a catalog handler reaches
+  audits through `MasterDataAuditService`, which adds `via: "copilot"`.
+- ADR 0106 decision 3 (`copilot-operations-intent.ts`): an operations write is
+  offered only when the user's own message asks for it.
+- The propose budget (`copilot-propose-budget.spec.ts`) is 103,000 characters;
+  the last measure is 101,140. Four more propose tools pass it.
+- There is no copilot read tool for maintenance windows.
+- ADR 0106 decisions 1 and 4: the four copilot roles are the four admin roles,
+  the same set the window routes admit (`configuration` class; plan ruling Q5).
+
+### Decisions
+
+1. **Four catalog entries** in a new
+   `packages/shared/src/copilot/catalog/maintenance-windows.ts`
+   (`MAINTENANCE_WINDOW_ENTRIES`), all `proposer: "model"`, `clientOnly: []`,
+   `refs: []` *(drafter: the route refuses a link outside the organization at
+   Confirm)*:
+
+   | id | Route | Body | Risk | Target | Steps |
+   |---|---|---|---|---|---|
+   | `maintenanceWindow.create` | `POST /maintenance-windows` | `createMaintenanceWindowBodySchema`; model body `copilotCreateMaintenanceWindowModelBodySchema` (at most 25 targets, Am. 19 Q4) | `create`, `red: true` (Am. 19 Q1) | `{ kind: "maintenanceWindow", field: "targets" }` | Window (`reason`, `startsAt`, `endsAt`); Targets; Link (`workOrderId`, `maintenanceScheduleId`) |
+   | `maintenanceWindow.extend` | `POST /maintenance-windows/:id/extend` | `extendMaintenanceWindowBodySchema` | `edit`, `red: true` (Am. 19 Q1) | `{ kind: "maintenanceWindow", param: "id" }` | New end (`endsAt`, `reason`) |
+   | `maintenanceWindow.end` | `POST /maintenance-windows/:id/end` | `closeMaintenanceWindowBodySchema` | `edit` | as extend | Reason |
+   | `maintenanceWindow.cancel` | `POST /maintenance-windows/:id/cancel` | `closeMaintenanceWindowBodySchema` | `edit` | as extend | Reason |
+
+   Summaries *(drafter)*; a window is named by its reason, cut at 80
+   characters:
+   - create: `Create a maintenance window in <organization> from <start, or "now">
+     to <end> on <n> target(s): <names>[; "<location>" covers <k> assets].
+     Alarms on these targets are suppressed for that time: no alarm-bar count,
+     popup, tone, notification or escalation. Reason: "<reason>".`
+   - extend: `Extend the maintenance window "<reason>" (<targets>) from <old end>
+     to <new end>: alarms on its targets stay suppressed until then.`
+   - end: `End the maintenance window "<reason>" now: every alarm it suppresses
+     that is still active returns as a normal alarm, with its popup, tone and
+     notification.`
+   - cancel: `Cancel the maintenance window "<reason>" that starts at <start>:
+     it suppresses nothing.`
+2. **The target kind** `maintenanceWindow` in `types.ts`, with
+   `CatalogSummaryInput.maintenanceWindow` (`reason`, `startsAt`, `endsAt`,
+   `targetLabels`, `coveredAssetCount`). The resolver (its own file,
+   `copilot-maintenance-window-targets.ts`, the `copilot-rule-targets.ts`
+   precedent) calls the **route's own scope check**, so one authority decides:
+   a create's targets resolve to one organization inside the caller's read
+   scope; a row entry reads the window and every one of its targets.
+3. **Location targets are allowed** (Am. 19 Q5): the card states how many assets the
+   location covers at proposal time.
+4. **The own-message rule** (Am. 19 Q2): `create` and `extend` are offered only when
+   the user's own message asks for them — never in a follow-up turn and never
+   from a tool result, since alarm text is plant data. `end` and `cancel` have
+   no such limit. The intent words, one list per entry in the
+   `copilot-operations-intent.ts` shape, are fixed at the build (plan PR 6).
+5. **The reason** (Am. 19 Q7): the model proposes it, the card shows it in full, and
+   the change hash binds it (ADR 0106 decision 3's acknowledge reason).
+6. **One read tool** `list_maintenance_windows` (Am. 19 Q3): filters `state`
+   (`active | future | past`), `assetId`, `locationId`; the caller's scope only;
+   inside the list-page row budget.
+7. **Who** (Am. 19 Q6): every copilot role — the four admin roles, the route's own
+   gate (Amendment 8 D2).
+8. **The route stays the guard at Confirm**: the write class, the scope, the
+   7-day rule and the 409 for a window in the wrong state run again. A propose
+   check refuses, with the route's own sentence, an extend of a window that is
+   not active and a cancel of one that is not future (the `F4.284` DC6
+   precedent, `copilot-operations-targets.ts`).
+
+### Gate questions
+
+| # | Question | Options | Ruling (owner, 2026-11-13) |
+| - | -------- | ------- | -------------------------- |
+| Q1 | Card colour | create and extend red; none red; all four red | **Create and extend red** — they silence alarms; end restores them; cancel of a future window changes nothing yet |
+| Q2 | Own-message rule | create and extend only on the user's own ask; all four; none | **Create and extend only on the user's own ask** |
+| Q3 | A read tool `list_maintenance_windows` | add it; no tool | **Add it** |
+| Q4 | Targets per proposed window | 25; the route's 200 | **25** — the page's wizard keeps 200 |
+| Q5 | Location targets | yes, with the covered-asset count; assets and rules only | **Yes, with the count** |
+| Q6 | Who gets the tools | every copilot role; not `asset_group_admin` | **Every copilot role** |
+| Q7 | The reason on the card | the model proposes it, the hash binds it; the user types it | **The model proposes it** |
+
+### Consequences
+
+- Plan PR 2 lists the four routes in `MAINTENANCE_WINDOW_PENDING` (spread into
+  `EXCLUDED_ROUTES`, reason "copilot entry in ADR 0099 Amendment 19"); plan PR
+  6 moves them into entries with fixtures, specs, the resolver, the intent
+  rule, the read tool and four `NOT_YET` rows; plan PR 7 adds the wizards and
+  empties those rows.
+- The propose budget passes 103,000 with four more tools; the bound rises by
+  release 4's rule and the owner confirms it with PR 6, as in Amendment 13.
+- `copilot-target-resolver.ts` is at 989 lines; the entry adds at most ten
+  lines there (open PR #1039 moves its fleet branch out).
+- The copilot can now silence alarms. The red card, the own-message rule, the
+  one Confirm and the route's checks at Confirm are the controls.
+- No migration and no route beyond ADR 0131's.
