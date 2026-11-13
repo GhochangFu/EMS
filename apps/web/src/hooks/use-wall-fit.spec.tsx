@@ -79,8 +79,8 @@ export function tearDownFit(): void {
 
 const BAR_PX = 48;
 
-function Probe({ contentPx, tabKey }: { contentPx: number; tabKey?: string }) {
-  const { zoom, barRef, contentRef } = useWallFit(tabKey);
+function Probe({ contentPx, tabKey, extraPx }: { contentPx: number; tabKey?: string; extraPx?: number }) {
+  const { zoom, barRef, contentRef } = useWallFit(tabKey, extraPx);
   return (
     <>
       <div ref={barRef} data-h={BAR_PX} />
@@ -236,4 +236,16 @@ export function unmountRemovesTheResizeListener(): void {
   unmount();
   const removed = remove.mock.calls.filter(([type]) => type === "resize").map(([, listener]) => listener);
   expect(removed).toEqual(added);
+}
+
+/**
+ * H10 — `F4.357` U9 (ADR 0130 decision 12): the alarm bar's clearance (48 px) joins the natural
+ * height, so 48 + 1000 + 48 = 1096 px fits at 1080 / 1096 = 0.985 → 0.98; with no extra, today's 1.03.
+ */
+export function theAlarmBarClearanceJoinsTheFit(): void {
+  render(<Probe contentPx={1000} extraPx={48} />);
+  expect(zoom()).toBe("0.98");
+  cleanup();
+  render(<Probe contentPx={1000} />);
+  expect(zoom()).toBe("1.03");
 }

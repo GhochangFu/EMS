@@ -16,4 +16,6 @@ describe("alarm bar popup (F4.357, ADR 0130 decisions 6–8, 18, 21)", () => {
   it("names the alarms beyond the list", () => spec.namesTheAlarmsBeyondTheList());
   it("the form and the run line die with their rows", () => spec.theFormAndTheRunLineDieWithTheirRows());
   it("the popup paints after the All alarms list", () => spec.thePopupComesAfterTheList());
+  it("an unseen critical alarm blinks until closed or acknowledged; a warning never (U7)", () =>
+    spec.anUnseenCriticalBlinksUntilClosedOrAcknowledged());
 });

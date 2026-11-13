@@ -13,4 +13,5 @@ describe("alarm bar rules (F4.357, ADR 0130)", () => {
   it("the popup rows: unacknowledged, rank >= 20, unseen, rank then newest, at most 50 (U6)", () =>
     spec.popupRowsFollowRankThenTimeAndSkipSeen());
   it("'and N more' is exact and never negative (U6, Q1)", () => spec.moreActiveCountIsExactAndNeverNegative());
+  it("only unseen, unacknowledged alarms of rank >= 30 blink (U7)", () => spec.blinkingSeverityCodesAreUnseenCriticalOnly());
 });

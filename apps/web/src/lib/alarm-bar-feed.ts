@@ -2,7 +2,15 @@ import type { AlarmListItem, AlarmsListResponse, AlarmSummaryResponse } from "@b
 
 import type { AlarmReadScope } from "../api/alarms";
 import { INITIAL_ALARM_BAR_STATE, useAlarmBarStore } from "../stores/alarm-bar-store";
-import { type AlarmBarScope, alarmBarScopeKey, alarmReadScopeOf, popupRows } from "./alarm-bar";
+import {
+  type AlarmBarScope,
+  alarmBarScopeKey,
+  alarmReadScopeOf,
+  criticalUnacknowledgedIds,
+  popupRows,
+  toneWanted,
+} from "./alarm-bar";
+import type { AlarmTonePort } from "./alarm-tone";
 import { apiErrorMessage } from "./api-error-message";
 import { sessionChanged } from "./query-cache-session";
 
@@ -41,6 +49,8 @@ import { sessionChanged } from "./query-cache-session";
 export const ALARM_BAR_REFETCH_MS = 1_000;
 /** Plan D15: the wait before a failed read is retried. */
 export const ALARM_BAR_RETRY_MS = 30_000;
+/** Plan D8 (decision 10): the tone repeats this often while a critical alarm is unacknowledged and unmuted. */
+export const ALARM_TONE_REPEAT_MS = 30_000;
 /** A read that has not answered by now counts as failed (D15), so one hung request cannot stop the feed. */
 export const ALARM_BAR_READ_TIMEOUT_MS = 15_000;
 
@@ -58,6 +68,8 @@ export type AlarmBarPorts = {
   readonly fetchSummary: (scope: AlarmReadScope) => Promise<AlarmSummaryResponse>;
   /** The existing `POST /api/v1/alarms/:id/ack` (U6; no bulk endpoint, decision 8). */
   readonly acknowledge: (id: string, reason: string) => Promise<AlarmListItem>;
+  /** U8: the Web Audio tone (`alarm-tone.ts`). */
+  readonly tone: AlarmTonePort;
 };
 
 /** What one Acknowledge or Acknowledge all did: how many succeeded, and each failure's message. */
@@ -88,6 +100,10 @@ export type AlarmBarFeed = {
    * its session ends, and reports the rest as not sent.
    */
   acknowledge(ids: readonly string[], reason: string): Promise<AlarmBarAcknowledgeResult>;
+  /** U8 (decision 11): silences the critical alarms that exist now — never the next one. */
+  mute(): void;
+  /** U8 (decision 11): "Sound blocked — click to enable": resumes audio inside the click, then plays if still wanted. */
+  unlockSound(): Promise<void>;
 };
 
 let installed: AlarmBarFeed | null = null;
@@ -116,6 +132,8 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
   let retryTimer: Timer | null = null;
   // Set by a disconnect or a refused connect, cleared by a connect: the bar is "live" only with a socket.
   let socketDown = false;
+  // U8 (plan D8): the 30 s repeat, or null while no cycle runs.
+  let toneTimer: ReturnType<typeof setInterval> | null = null;
   // Bumped by every session end: a run started in one session never sends in the next.
   let generation = 0;
 
@@ -145,6 +163,7 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
         if (retryTimer !== null) clearTimeout(retryTimer);
         retryTimer = null;
         store.setState({ list: list.items, summary, feed: socketDown ? "stale" : "live" });
+        evaluateTone();
       })
       .catch(() => {
         if (number !== request) return;
@@ -164,6 +183,49 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
           read();
         }
       });
+  }
+
+  /**
+   * U8: plays once. "Sound blocked — click to enable" follows the latest answer, so a tone that
+   * plays (a click elsewhere unlocked audio) clears it. A tone that throws (no audio device, a
+   * restricted browser) counts as blocked; it must never reach the read's failure path.
+   */
+  function playTone(): void {
+    let answer: "played" | "blocked";
+    try {
+      answer = ports.tone.play();
+    } catch {
+      answer = "blocked";
+    }
+    if (store.getState().soundBlocked !== (answer === "blocked")) store.setState({ soundBlocked: answer === "blocked" });
+  }
+
+  function stopTone(): void {
+    if (toneTimer !== null) clearInterval(toneTimer);
+    toneTimer = null;
+  }
+
+  /**
+   * Plan D8, after every list update and on every tick: wanted and no cycle — play now and repeat
+   * every 30 s; a cycle already running — nothing extra (more critical alarms add no tones); not
+   * wanted — stop. A tick with no list yet (a scope change in flight) plays nothing and keeps the
+   * cycle, so a scope change keeps the cadence.
+   */
+  function evaluateTone(): void {
+    const { list, mutedIds } = store.getState();
+    if (list === null) return;
+    if (!toneWanted(list, mutedIds)) {
+      stopTone();
+      return;
+    }
+    if (toneTimer !== null) return;
+    playTone();
+    toneTimer = setInterval(() => {
+      const now = store.getState();
+      if (now.list === null) return;
+      if (toneWanted(now.list, now.mutedIds)) playTone();
+      else stopTone();
+    }, ALARM_TONE_REPEAT_MS);
   }
 
   /** D6: arm once; a later event inside the window does not re-arm. */
@@ -207,13 +269,23 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
   function endSession(): void {
     close();
     clearTimers();
+    stopTone();
     token = null;
     generation += 1;
     socketDown = false;
     request += 1;
     pendingAfterFlight = false;
     // `seenIds` goes with the session: a login treats every unacknowledged alarm as unseen (decision 21).
-    store.setState({ ...INITIAL_ALARM_BAR_STATE, seenIds: new Set<string>(), scope: store.getState().scope }, true);
+    store.setState(
+      {
+        ...INITIAL_ALARM_BAR_STATE,
+        seenIds: new Set<string>(),
+        mutedIds: new Set<string>(),
+        soundBlocked: false,
+        scope: store.getState().scope,
+      },
+      true,
+    );
   }
 
   function follow(state: AlarmBarSession, prev: AlarmBarSession): void {
@@ -248,6 +320,22 @@ export function installAlarmBarFeed(session: AlarmBarSessionStore, ports: AlarmB
       if (state.list === null) return;
       const shown = popupRows(state.list, state.seenIds).map((alarm) => alarm.id);
       store.setState({ seenIds: new Set([...state.seenIds, ...shown]) });
+    },
+    // Mutes the critical alarms in the list — at most 50 (Q1). In a storm of more than 50
+    // unacknowledged critical alarms at once, one beyond the list is not muted and sounds when it
+    // enters the list (a consequence of D9 and the 50-row read, recorded in the build record).
+    mute() {
+      const { list, mutedIds } = store.getState();
+      if (list === null) return;
+      store.setState({ mutedIds: new Set([...mutedIds, ...criticalUnacknowledgedIds(list)]) });
+      evaluateTone();
+    },
+    async unlockSound() {
+      await ports.tone.unlock();
+      store.setState({ soundBlocked: false });
+      // Play now and restart the 30 s cadence from this tone, so no second tone follows at once.
+      stopTone();
+      evaluateTone();
     },
     async acknowledge(ids, reason) {
       let done = 0;

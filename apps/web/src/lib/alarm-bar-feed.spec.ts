@@ -10,6 +10,7 @@ import {
   ALARM_BAR_READ_TIMEOUT_MS,
   ALARM_BAR_REFETCH_MS,
   ALARM_BAR_RETRY_MS,
+  ALARM_TONE_REPEAT_MS,
   alarmBarFeed,
   type AlarmBarPorts,
   type AlarmBarSocketHandlers,
@@ -54,6 +55,7 @@ export function fakeAlarmBarPorts(answer: { list?: readonly AlarmListItem[]; sum
   const refuse = new Map<string, string>();
   let ackInFlight = 0;
   let afterAck: ((id: string) => void) | null = null;
+  const tone = { plays: 0, unlocks: 0, answer: "played" as "played" | "blocked" };
   let ackOverlap = false;
   const current = { list: answer.list ?? [], summary: answer.summary ?? EMPTY_SUMMARY };
   let hold: Deferred<AlarmsListResponse> | null = null;
@@ -92,6 +94,16 @@ export function fakeAlarmBarPorts(answer: { list?: readonly AlarmListItem[]; sum
       if (refusal !== undefined) throw new Error(refusal);
       return alarmItem({ id, acknowledgedAt: "2026-11-12T12:00:00.000Z" });
     },
+    tone: {
+      play() {
+        tone.plays += 1;
+        return tone.answer;
+      },
+      async unlock() {
+        tone.unlocks += 1;
+        tone.answer = "played";
+      },
+    },
   };
   return {
     ports,
@@ -99,6 +111,8 @@ export function fakeAlarmBarPorts(answer: { list?: readonly AlarmListItem[]; sum
     listCalls,
     summaryCalls,
     ackCalls,
+    /** The fake tone: `plays`, `unlocks`, and what `play` answers (`"blocked"` until an unlock). */
+    tone,
     /** True when two acknowledge calls ever ran at once. */
     ackOverlapped: () => ackOverlap,
     /** Runs `run` after each acknowledge call answers. */
@@ -475,4 +489,197 @@ export async function acknowledgeStopsWhenTheSessionEnds(): Promise<void> {
       ],
     });
   });
+}
+
+/*
+ * `F4.357` U8 (decisions 10, 11; plan D8, D9) — the tone cycle. Wanted: an unacknowledged alarm of
+ * rank >= 30 that is not muted. Wanted and no cycle: play now and every 30 s. A cycle already
+ * running: nothing extra. Not wanted: stop.
+ */
+
+const critical = (id: string) => alarmItem({ id });
+
+/** 1, 2 — once at once, again at 30 s and 60 s; a second critical alarm adds no tone. */
+export async function theToneRepeatsEveryThirtySeconds(): Promise<void> {
+  await withFeed(
+    async (f) => {
+      await flush();
+      expect(f.tone.plays).toBe(1);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await serverHoldsIn(f, [critical("c1"), critical("c2")]);
+      await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS - 10_000 - 1 - ALARM_BAR_REFETCH_MS);
+      expect(f.tone.plays, "a second critical alarm adds no tone").toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(f.tone.plays).toBe(2);
+      await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS);
+      expect(f.tone.plays).toBe(3);
+    },
+    { list: [critical("c1")] },
+  );
+}
+
+/** The next list as an event's refetch would read it (1 s window). */
+async function serverHoldsIn(f: ReturnType<typeof installOnFakes>, list: readonly AlarmListItem[]): Promise<void> {
+  f.answer({ list });
+  f.socket().event();
+  await vi.advanceTimersByTimeAsync(ALARM_BAR_REFETCH_MS);
+}
+
+/** 3 — a warning (rank 20) alone never sounds. */
+export async function aWarningNeverSounds(): Promise<void> {
+  await withFeed(
+    async (f) => {
+      await flush();
+      await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS * 2);
+      expect(f.tone.plays).toBe(0);
+    },
+    { list: [alarmItem({ id: "w", severity: "warning", severityRank: 20 })] },
+  );
+}
+
+/** 4, 5 — Close does not stop it; an acknowledge does, and leaves no timer. */
+export async function closeKeepsTheToneAcknowledgeStopsIt(): Promise<void> {
+  await withFeed(
+    async (f) => {
+      await flush();
+      alarmBarFeed()?.closePopup();
+      await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS);
+      expect(f.tone.plays, "Close: the tone goes on").toBe(2);
+      await serverHoldsIn(f, [{ ...critical("c1"), acknowledgedAt: "2026-11-12T12:00:00.000Z" }]);
+      await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS * 2);
+      expect(f.tone.plays, "acknowledged: no more").toBe(2);
+      expect(vi.getTimerCount(), "and no timer left").toBe(0);
+    },
+    { list: [critical("c1")] },
+  );
+}
+
+/** 6 — Mute silences the current alarms, also after a refresh; a new critical alarm plays at once and repeats. */
+export async function muteCoversTheCurrentAlarmsOnly(): Promise<void> {
+  await withFeed(
+    async (f) => {
+      await flush();
+      alarmBarFeed()?.mute();
+      await serverHoldsIn(f, [critical("c1")]);
+      await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS * 2);
+      expect(f.tone.plays, "muted").toBe(1);
+      await serverHoldsIn(f, [critical("c1"), critical("c2")]);
+      expect(f.tone.plays, "a new critical alarm plays at once").toBe(2);
+      await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS);
+      expect(f.tone.plays, "and repeats").toBe(3);
+    },
+    { list: [critical("c1")] },
+  );
+}
+
+/** 7 — a blocked tone sets soundBlocked; the unlock plays once and clears it. */
+export async function aBlockedToneWaitsForAClick(): Promise<void> {
+  vi.useFakeTimers();
+  const fake = fakeAlarmBarPorts({ list: [critical("c1")] });
+  fake.tone.answer = "blocked";
+  const uninstall = installAlarmBarFeed(fakeSession(), fake.ports);
+  try {
+    await flush();
+    expect(useAlarmBarStore.getState().soundBlocked).toBe(true);
+    await alarmBarFeed()!.unlockSound();
+    expect({ unlocks: fake.tone.unlocks, plays: fake.tone.plays, blocked: useAlarmBarStore.getState().soundBlocked }).toEqual({
+      unlocks: 1,
+      plays: 2,
+      blocked: false,
+    });
+  } finally {
+    uninstall();
+    vi.useRealTimers();
+  }
+}
+
+/** 8 — a scope change during a cycle, the new scope also critical: no extra tone, the old cadence. */
+export async function aScopeChangeKeepsTheCadence(): Promise<void> {
+  await withFeed(
+    async (f) => {
+      await flush();
+      await vi.advanceTimersByTimeAsync(10_000);
+      f.answer({ list: [critical("o1")] });
+      alarmBarFeed()?.setScope({ kind: "organization", organizationId: ORG });
+      await flush();
+      expect(f.tone.plays, "no extra tone").toBe(1);
+      await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS - 10_000);
+      expect(f.tone.plays, "the next one at the old cadence").toBe(2);
+    },
+    { list: [critical("c1")] },
+  );
+}
+
+/** 9 — a session end: no tone after it, mute and blocked cleared. */
+export async function aSessionEndStopsTheTone(): Promise<void> {
+  await withFeed(
+    async (f) => {
+      await flush();
+      alarmBarFeed()?.mute();
+      f.session.setState({ accessToken: null, user: null });
+      await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS * 2);
+      expect(f.tone.plays).toBe(1);
+      expect(vi.getTimerCount(), "the cycle is gone").toBe(0);
+      expect(useAlarmBarStore.getState()).toMatchObject({ soundBlocked: false });
+      expect(useAlarmBarStore.getState().mutedIds.size).toBe(0);
+    },
+    { list: [critical("c1")] },
+  );
+}
+
+/** Review C1 — a later tone that plays clears "Sound blocked" (a click elsewhere unlocked audio). */
+export async function aPlayedToneClearsSoundBlocked(): Promise<void> {
+  vi.useFakeTimers();
+  const fake = fakeAlarmBarPorts({ list: [critical("c1")] });
+  fake.tone.answer = "blocked";
+  const uninstall = installAlarmBarFeed(fakeSession(), fake.ports);
+  try {
+    await flush();
+    expect(useAlarmBarStore.getState().soundBlocked).toBe(true);
+    fake.tone.answer = "played";
+    await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS);
+    expect(useAlarmBarStore.getState().soundBlocked).toBe(false);
+  } finally {
+    uninstall();
+    vi.useRealTimers();
+  }
+}
+
+/** Review C2 — a tone that throws is "blocked", never a failed read: the feed stays live. */
+export async function aThrowingToneIsBlockedNotStale(): Promise<void> {
+  vi.useFakeTimers();
+  const fake = fakeAlarmBarPorts({ list: [critical("c1")] });
+  const ports = { ...fake.ports, tone: { play: (): "played" => { throw new Error("no audio device"); }, unlock: async () => undefined } };
+  const uninstall = installAlarmBarFeed(fakeSession(), ports);
+  try {
+    await flush();
+    expect(useAlarmBarStore.getState()).toMatchObject({ feed: "live", soundBlocked: true });
+    await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS);
+    expect(useAlarmBarStore.getState().feed).toBe("live");
+  } finally {
+    uninstall();
+    vi.useRealTimers();
+  }
+}
+
+/** Review C3 — the unlock plays now and restarts the 30 s cadence from that tone. */
+export async function anUnlockRestartsTheCadence(): Promise<void> {
+  vi.useFakeTimers();
+  const fake = fakeAlarmBarPorts({ list: [critical("c1")] });
+  fake.tone.answer = "blocked";
+  const uninstall = installAlarmBarFeed(fakeSession(), fake.ports);
+  try {
+    await flush();
+    await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS - 1_000);
+    const before = fake.tone.plays;
+    await alarmBarFeed()!.unlockSound();
+    expect(fake.tone.plays, "plays at once").toBe(before + 1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fake.tone.plays, "no second tone a second later").toBe(before + 1);
+    await vi.advanceTimersByTimeAsync(ALARM_TONE_REPEAT_MS - 1_000);
+    expect(fake.tone.plays, "the next one 30 s after the unlock").toBe(before + 2);
+  } finally {
+    uninstall();
+    vi.useRealTimers();
+  }
 }

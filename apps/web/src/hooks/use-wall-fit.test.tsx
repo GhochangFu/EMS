@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, it } from "vitest";
 
+import * as spec from "./use-wall-fit.spec";
 import {
   aNewTabClearsTheCeiling,
   aRewrapJumpSettlesBelowTheCeiling,
@@ -68,6 +69,10 @@ describe("F3.77 follow-up useWallFit (plan D5)", () => {
 
   it("H6a disconnects the observer on unmount", () => {
     unmountDisconnectsTheObserver();
+  });
+
+  it("H10 adds the alarm bar's clearance to the natural height (F4.357)", () => {
+    spec.theAlarmBarClearanceJoinsTheFit();
   });
 
   it("H6b removes the resize listener on unmount", () => {

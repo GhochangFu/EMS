@@ -4,7 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 
-import { alarmLocationLabel, moreActiveCount, popupRows } from "../../lib/alarm-bar";
+import { ALARM_CRITICAL_MIN_RANK, alarmLocationLabel, moreActiveCount, popupRows } from "../../lib/alarm-bar";
 import type { AlarmBarFeed } from "../../lib/alarm-bar-feed";
 import { alarmSubjectName } from "../../lib/alarm-source";
 import { useAlarmBarStore } from "../../stores/alarm-bar-store";
@@ -64,6 +64,8 @@ function PopupBody({
   const shown = new Set(rows.map((row) => row.id));
   const askingShown = asking === null ? null : asking.filter((id) => shown.has(id));
   const formOpen = askingShown !== null && askingShown.length > 0;
+  // U7 (decision 9): the header blinks while a row is critical (every row is unseen by definition).
+  const blink = rows.some((row) => row.severityRank >= ALARM_CRITICAL_MIN_RANK);
   const trimmed = reason.trim();
   const valid = alarmAckBodySchema.safeParse({ reason: trimmed }).success;
 
@@ -82,10 +84,12 @@ function PopupBody({
     <section
       role="region"
       aria-label="New alarms"
+      data-wall-bar
       className="surface-raised fixed bottom-[calc(var(--alarm-bar-h)+0.5rem)] left-1/2 z-40 flex max-h-[28rem] w-[min(40rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-lg text-xs text-ink"
     >
-      <header className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
-        <h2 className="font-semibold">
+      {/* A div, not <header>: inside the shell or the wall a <header> is a banner landmark (U9). */}
+      <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
+        <h2 data-blink={blink ? "true" : undefined} className={`font-semibold${blink ? " alarm-bar-blink" : ""}`}>
           {rows.length} new {rows.length === 1 ? "alarm" : "alarms"}
         </h2>
         <div className="flex items-center gap-2">
@@ -108,7 +112,7 @@ function PopupBody({
             Close
           </button>
         </div>
-      </header>
+      </div>
       {run === null ? null : (
         <p role="status" className="border-b border-line px-3 py-1">
           {run.done} of {run.total} acknowledged
@@ -157,11 +161,11 @@ function PopupBody({
         ))}
       </ul>
       {more > 0 ? (
-        <footer className="border-t border-line px-3 py-2">
+        <div className="border-t border-line px-3 py-2">
           <Link to="/alarms" className="font-semibold text-accent hover:underline">
             and {more} more active alarms
           </Link>
-        </footer>
+        </div>
       ) : null}
       {detailsId !== null
         ? createPortal(<AlarmDetailsPanel alarmId={detailsId} readOnly={readOnly} onClose={() => setDetailsId(null)} />, document.body)

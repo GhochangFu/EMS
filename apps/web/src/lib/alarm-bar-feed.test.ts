@@ -22,4 +22,14 @@ describe("alarm bar feed (F4.357, ADR 0130 decisions 13, 16)", () => {
   it("seen lasts for the tab's session, not past it (U6, decision 21)", () => spec.seenLastsForTheTabsSession());
   it("acknowledge calls once per alarm in order, keeps failures, then reads (U6)", () => spec.acknowledgeCallsOncePerAlarmInOrder());
   it("acknowledge stops when its session ends (security review)", () => spec.acknowledgeStopsWhenTheSessionEnds());
+  it("U8 1-2: the tone repeats every 30 s, a second critical adds none", () => spec.theToneRepeatsEveryThirtySeconds());
+  it("U8 3: a warning never sounds", () => spec.aWarningNeverSounds());
+  it("U8 4-5: Close keeps the tone, an acknowledge stops it", () => spec.closeKeepsTheToneAcknowledgeStopsIt());
+  it("U8 6: mute covers the current alarms only", () => spec.muteCoversTheCurrentAlarmsOnly());
+  it("U8 7: a blocked tone waits for a click", () => spec.aBlockedToneWaitsForAClick());
+  it("U8 8: a scope change keeps the cadence", () => spec.aScopeChangeKeepsTheCadence());
+  it("U8 9: a session end stops the tone", () => spec.aSessionEndStopsTheTone());
+  it("a played tone clears Sound blocked (review C1)", () => spec.aPlayedToneClearsSoundBlocked());
+  it("a throwing tone is blocked, never a failed read (review C2)", () => spec.aThrowingToneIsBlockedNotStale());
+  it("an unlock restarts the cadence (review C3)", () => spec.anUnlockRestartsTheCadence());
 });

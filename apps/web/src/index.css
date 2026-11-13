@@ -2077,3 +2077,30 @@ body {
 .alarm-bar-clearance {
   padding-bottom: var(--alarm-bar-h);
 }
+
+/*
+ * F4.357 U7 (ADR 0130 decision 9, plan D11) — the alarm bar's one blink: the critical count and the
+ * popup's header while an unacknowledged critical alarm is unseen. A 1 Hz opacity step (under the
+ * WCAG 2.3.1 limit of three flashes a second); with reduced motion, a static double outline in the
+ * critical role instead. Plain CSS, not a Tailwind animation (MG1 pins those to the mimic four),
+ * and identical in every design system: no `data-design` selector may name it
+ * (`tests/f4.357-alarm-bar-gate.test.ts` G2, G3).
+ */
+@keyframes alarm-bar-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .alarm-bar-blink {
+    animation: alarm-bar-blink 1s step-end infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alarm-bar-blink {
+    outline: 3px double rgb(var(--critical));
+    outline-offset: 2px;
+  }
+}

@@ -9,8 +9,11 @@ import {
   alarmBarScopeLabel,
   alarmBarScopeOf,
   alarmLocationLabel,
+  blinkingSeverityCodes,
   countsByRankDescending,
+  criticalUnacknowledgedIds,
   newestUnacknowledged,
+  toneWanted,
 } from "../../lib/alarm-bar";
 import { alarmBarFeed } from "../../lib/alarm-bar-feed";
 import { alarmSubjectName } from "../../lib/alarm-source";
@@ -51,6 +54,9 @@ export function AlarmBar() {
   const list = useAlarmBarStore((state) => state.list);
   const summary = useAlarmBarStore((state) => state.summary);
   const status = useAlarmBarStore((state) => state.feed);
+  const seenIds = useAlarmBarStore((state) => state.seenIds);
+  const mutedIds = useAlarmBarStore((state) => state.mutedIds);
+  const soundBlocked = useAlarmBarStore((state) => state.soundBlocked);
   const role = useAuthStore((state) => state.user?.role);
   const [listOpen, setListOpen] = useState(false);
   const [acknowledging, setAcknowledging] = useState<AlarmListItem | null>(null);
@@ -65,6 +71,10 @@ export function AlarmBar() {
 
   const newest = list === null ? null : newestUnacknowledged(list);
   const counts = summary === null ? [] : countsByRankDescending(summary);
+  const blinking = list === null ? new Set<string>() : blinkingSeverityCodes(list, seenIds);
+  // U8 (decisions 10, 11): the tone sounds while a critical alarm is unacknowledged and not muted.
+  const sounding = list !== null && toneWanted(list, mutedIds);
+  const muted = list !== null && !sounding && criticalUnacknowledgedIds(list).length > 0;
   const mayAcknowledge = role !== undefined && canAcknowledgeAlarms(role);
 
   return (
@@ -72,13 +82,17 @@ export function AlarmBar() {
       <div
         role="region"
         aria-label="Alarms"
+        // Plan Q6: on the wall, a pointer on the bar's controls does not pause the rotation.
+        data-wall-bar
         className="surface-raised fixed inset-x-0 bottom-0 z-40 flex h-[var(--alarm-bar-h)] items-center gap-3 overflow-hidden px-4 text-xs text-ink"
       >
         <ul className="flex shrink-0 items-center gap-1.5" aria-label="Active alarms by severity">
           {counts.map((row) => (
             <li
               key={row.code}
-              className={`surface-pill inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-2xs font-semibold ${COUNT_TONE[row.tone]}`}
+              // U7 (decision 9): the one uniform blink, identical in every design system (index.css).
+              data-blink={blinking.has(row.code) ? "true" : undefined}
+              className={`surface-pill inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-2xs font-semibold ${COUNT_TONE[row.tone]}${blinking.has(row.code) ? " alarm-bar-blink" : ""}`}
             >
               <span>{row.label}</span>
               <span className="tabular-nums">{row.count}</span>
@@ -109,6 +123,25 @@ export function AlarmBar() {
             Acknowledge
           </button>
         ) : null}
+        {soundBlocked && sounding ? (
+          <button
+            type="button"
+            // A refused resume leaves the button up; nothing else to do with it.
+            onClick={() => void feed.unlockSound().catch(() => undefined)}
+            className="surface-button shrink-0 rounded px-2 py-1 font-semibold text-critical-ink"
+          >
+            Sound blocked — click to enable
+          </button>
+        ) : null}
+        <button
+          type="button"
+          aria-pressed={muted}
+          disabled={!sounding}
+          onClick={() => feed.mute()}
+          className="surface-button shrink-0 rounded px-2 py-1 font-semibold"
+        >
+          {muted ? "Muted" : "Mute"}
+        </button>
         <button
           type="button"
           aria-expanded={listOpen}

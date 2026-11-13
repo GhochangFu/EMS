@@ -39,7 +39,7 @@ export type WallFit = {
  * content or bar resize, on a window `resize` and on a new `resetKey`. Without `ResizeObserver`
  * (jsdom) only the measures on mount, on a key and on the window listener run.
  */
-export function useWallFit(resetKey: string | undefined): WallFit {
+export function useWallFit(resetKey: string | undefined, extraNaturalPx = 0): WallFit {
   const barRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(() => wallBaseZoom(window.innerWidth));
@@ -55,7 +55,9 @@ export function useWallFit(resetKey: string | undefined): WallFit {
       setViewportHeight(window.innerHeight);
       const bar = barRef.current;
       const content = contentRef.current;
-      const naturalPx = bar === null || content === null ? Number.NaN : bar.offsetHeight + content.offsetHeight;
+      // F4.357 U9: `extraNaturalPx` is height in the flow that neither ref measures — the alarm
+      // bar's clearance at the foot of the zoomed root (ADR 0130 decision 12).
+      const naturalPx = bar === null || content === null ? Number.NaN : bar.offsetHeight + content.offsetHeight + extraNaturalPx;
       const target = wallFitZoom({
         base: wallBaseZoom(window.innerWidth),
         viewportHeight: window.innerHeight,
@@ -88,7 +90,7 @@ export function useWallFit(resetKey: string | undefined): WallFit {
       observer?.disconnect();
       window.removeEventListener("resize", onWindowResize);
     };
-  }, [resetKey]);
+  }, [resetKey, extraNaturalPx]);
 
   return { zoom, viewportHeight, barRef, contentRef };
 }

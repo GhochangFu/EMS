@@ -12,4 +12,5 @@ describe("alarm bar (F4.357, ADR 0130 decisions 1–5)", () => {
   it("says no active alarms, and that a stale feed is not updating", () => spec.saysNoAlarmsAndNotUpdating());
   it("opens the scoped list upward and a row's details without navigating", () => spec.opensTheListAndTheDetails());
   it("offers Acknowledge to an operator and not to a viewer", () => spec.offersAcknowledgeToAnOperatorOnly());
+  it("mutes, and offers to enable a blocked sound (U8)", () => spec.mutesAndOffersToEnableBlockedSound());
 });

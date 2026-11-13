@@ -254,3 +254,36 @@ export async function thePopupComesAfterTheList(): Promise<void> {
     expect(list!.compareDocumentPosition(popup()!) & Node.DOCUMENT_POSITION_FOLLOWING, "the popup follows the list").toBeTruthy();
   });
 }
+
+const SUMMARY_CW: AlarmSummaryResponse = {
+  total: 2,
+  items: [
+    { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 1, unacknowledged: 1 },
+    { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 1, unacknowledged: 1 },
+  ],
+};
+
+const blinking = (): string[] =>
+  [...document.querySelectorAll('[data-blink="true"]')].map((el) => `${el.className.includes("alarm-bar-blink") ? "" : "NO-CLASS:"}${el.textContent}`);
+
+/**
+ * `F4.357` U7 (decision 9) — an unseen unacknowledged critical alarm blinks its count and the
+ * popup's header; Close stops it, and so does an acknowledge; a warning alone never blinks.
+ */
+export async function anUnseenCriticalBlinksUntilClosedOrAcknowledged(): Promise<void> {
+  const critical = alarmItem({ id: "c", message: "Critical one" });
+  const warn = warning({ id: "w", message: "Warning one" });
+  await withPopup({ list: [critical, warn], summary: SUMMARY_CW }, async () => {
+    expect(blinking()).toEqual(["Critical1", "2 new alarms"]);
+    await userEvent.setup().click(within(popup()!).getByRole("button", { name: "Close" }));
+    expect(blinking(), "Close: seen").toEqual([]);
+  });
+  await withPopup({ list: [critical], summary: SUMMARY_CW }, async (f) => {
+    expect(blinking()).toEqual(["Critical1", "1 new alarm"]);
+    await serverHolds(f, [{ ...critical, acknowledgedAt: "2026-11-12T12:00:00.000Z" }]);
+    expect(blinking(), "acknowledged").toEqual([]);
+  });
+  await withPopup({ list: [warn], summary: SUMMARY_CW }, async () => {
+    expect(blinking(), "a warning alone").toEqual([]);
+  });
+}

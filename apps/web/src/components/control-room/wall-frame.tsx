@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { useWallFit } from "../../hooks/use-wall-fit";
 import { useWallRotation } from "../../hooks/use-wall-rotation";
+import { ALARM_BAR_HEIGHT_PX } from "../../lib/alarm-bar";
 import { FOCUS_OUTLINE_CLASS } from "../../lib/focus-classes";
 import {
   formatWallTime,
@@ -14,6 +15,7 @@ import {
   type WallIntervalS,
 } from "../../lib/wall-mode";
 import { FRESH_MS } from "../../lib/schematic-telemetry";
+import { AlarmBar } from "../alarm-bar/alarm-bar";
 import { CanvasFitContext } from "../dashboards/dashboard-canvas";
 import { NewestReadContext } from "../dashboards/newest-read-context";
 import { StatusBarClock } from "../status-bar-clock";
@@ -72,7 +74,8 @@ export function WallFrame({ siteName, sitePath, tabKeys, currentKey, everyS, chi
   );
   const [nowMs, setNowMs] = useState(() => Date.now());
   // Keyed on the tab: a rotation does not remount the frame, so the fit's overflow ceiling resets here.
-  const { zoom, viewportHeight, barRef, contentRef } = useWallFit(currentKey);
+  // F4.357 U9: the alarm bar's clearance is part of the zoomed root's height (ADR 0130 decision 12).
+  const { zoom, viewportHeight, barRef, contentRef } = useWallFit(currentKey, ALARM_BAR_HEIGHT_PX);
   const maxAspectHeightPx = wallAspectCapPx(viewportHeight, zoom);
   // One value per cap, so the bar's one-second clock does not re-render every canvas tile.
   const canvasFit = useMemo(() => ({ maxAspectHeightPx }), [maxAspectHeightPx]);
@@ -92,7 +95,7 @@ export function WallFrame({ siteName, sitePath, tabKeys, currentKey, everyS, chi
 
   return (
     <div className="min-h-screen bg-canvas text-ink">
-      <div data-wall-root className="flex flex-col" style={{ zoom }}>
+      <div data-wall-root className="alarm-bar-clearance flex flex-col" style={{ zoom }}>
         <div ref={barRef} data-wall-bar className="surface-raised flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-2">
           <h1 className="font-condensed text-xl font-bold text-ink">{siteName}</h1>
           <span data-testid="wall-clock" className="text-sm text-ink-muted">
@@ -141,6 +144,11 @@ export function WallFrame({ siteName, sitePath, tabKeys, currentKey, everyS, chi
             </CanvasFitContext.Provider>
           </div>
         </main>
+        {/*
+          F4.357 U9 (ADR 0130 decisions 12, 20; plan Q6): the alarm bar, popup and tone, inside the
+          zoomed root so they scale with the wall; scoped by the route, the location of this site.
+        */}
+        <AlarmBar />
       </div>
     </div>
   );

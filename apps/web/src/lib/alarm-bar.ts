@@ -125,3 +125,26 @@ export function moreActiveCount(summary: AlarmSummaryResponse, list: readonly Al
     .reduce((sum, row) => sum + row.unacknowledged, 0);
   return Math.max(0, unacknowledged - list.length);
 }
+
+/**
+ * `F4.357` U7 (decision 9) — the severity codes whose count blinks: those of an unacknowledged
+ * alarm of rank >= {@link ALARM_CRITICAL_MIN_RANK} that this tab has not seen. Close (seen) or an
+ * acknowledge stops it; a warning never blinks.
+ */
+export function blinkingSeverityCodes(list: readonly AlarmListItem[], seenIds: ReadonlySet<string>): ReadonlySet<string> {
+  return new Set(
+    list
+      .filter((alarm) => alarm.acknowledgedAt === null && alarm.severityRank >= ALARM_CRITICAL_MIN_RANK && !seenIds.has(alarm.id))
+      .map((alarm) => alarm.severity),
+  );
+}
+
+/** `F4.357` U8 (decisions 10, 11) — the unacknowledged alarms of rank >= 30: what the tone is about. */
+export function criticalUnacknowledgedIds(list: readonly AlarmListItem[]): string[] {
+  return list.filter((alarm) => alarm.acknowledgedAt === null && alarm.severityRank >= ALARM_CRITICAL_MIN_RANK).map((alarm) => alarm.id);
+}
+
+/** U8 (plan D8) — the tone is wanted while one of them is not muted. */
+export function toneWanted(list: readonly AlarmListItem[], mutedIds: ReadonlySet<string>): boolean {
+  return criticalUnacknowledgedIds(list).some((id) => !mutedIds.has(id));
+}
