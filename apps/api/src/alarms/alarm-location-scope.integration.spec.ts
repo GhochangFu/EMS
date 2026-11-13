@@ -142,6 +142,14 @@ export async function buildLocationScopeFixture(
     "UPDATE bms.alarms SET suppressed_at = now(), suppressed_by_window_id = $1 WHERE id = ANY($2::uuid[])",
     [windowId, [alarm.suppressedS, alarm.clearedSuppressedS]],
   );
+  // Organization B's own window stamps alarm.U, so the unfiltered fleet read of `suppressed` holds two fixture alarms (claim 20).
+  const { rows: windowBRows } = await db.query<{ id: string }>(
+    `INSERT INTO bms.maintenance_windows (organization_id, reason, starts_at, ends_at, created_by)
+     VALUES ($1, 'F4.359 U5 B', now() - interval '1 hour', now() + interval '1 hour', $2) RETURNING id`,
+    [orgB, userId],
+  );
+  const windowBId = windowBRows[0]?.id ?? fail("the organization B maintenance window was not inserted");
+  await db.query("UPDATE bms.alarms SET suppressed_at = now(), suppressed_by_window_id = $1 WHERE id = $2", [windowBId, alarm.U]);
   return { svc, orgA, orgB, site: { S, C, T, U }, asset, alarm, high, low, lowest };
 }
 
@@ -364,4 +372,27 @@ export async function assertTheTenantAndFleetPathsAgreeOnSuppression(fx: Locatio
   const tenant = await fx.svc.activeCountsBySeverity(assetsOfA(fx), undefined, adminAt(fx.site.S));
   expect(tenant).toEqual(fleet);
   expect(tenant.suppressed).toBe(1);
+}
+
+/**
+ * 20 — `suppressed` pages by keyset on the fleet path (no organization filter):
+ * page 1 of one row carries a cursor, page 2 returns the other stamped fixture
+ * alarm, newest raised first (S's, 1 minute ago, then B's U, 7 minutes ago).
+ * Other data may share the table, so only the fixture's ids are compared.
+ */
+export async function assertTheSuppressedStatePagesByKeyset(fx: LocationScopeFixture): Promise<void> {
+  const mine = [fx.alarm.suppressedS, fx.alarm.U];
+  const seen: string[] = [];
+  let cursor: string | undefined;
+  let firstCursor: string | null | undefined;
+  for (let page = 0; page < 500 && mine.some((id) => !seen.includes(id)); page += 1) {
+    const result = await fx.svc.list({ state: "suppressed", limit: 1, assetIds: null, ...(cursor ? { cursor } : {}) });
+    expect(result.items.length, "a page holds at most the limit").toBeLessThanOrEqual(1);
+    if (page === 0) firstCursor = result.nextCursor;
+    seen.push(...result.items.map((item) => item.id));
+    if (!result.nextCursor) break;
+    cursor = result.nextCursor;
+  }
+  expect(firstCursor, "a full page of a suppressed read carries a cursor").not.toBeNull();
+  expect(seen.filter((id) => mine.includes(id))).toEqual(mine);
 }

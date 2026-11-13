@@ -187,6 +187,7 @@ function suppressionOf(item: AlarmListItem | null | undefined) {
   return { suppressed: item?.suppressed, maintenanceWindowId: item?.maintenanceWindowId, unsuppressedAt: item?.unsuppressedAt };
 }
 
+/** `GET /alarms` carries `suppressed`, `maintenanceWindowId` and `unsuppressedAt` for a stamped and an unstamped alarm. */
 export const assertTheListCarriesSuppression: Claim = async (tx, fx) => {
   const [severity] = await twoRanks(tx);
   const windowId = await insertWindow(tx, fx);
@@ -198,6 +199,7 @@ export const assertTheListCarriesSuppression: Claim = async (tx, fx) => {
   expect(suppressionOf(page.items.find((item) => item.id === plain))).toEqual({ suppressed: false, maintenanceWindowId: null, unsuppressedAt: null });
 };
 
+/** `POST /alarms/:id/ack`: the returned item and the `acknowledged` broadcast carry the suppression fields. */
 export const assertTheAcknowledgeCarriesSuppression: Claim = async (tx, fx) => {
   const [severity] = await twoRanks(tx);
   const windowId = await insertWindow(tx, fx);
@@ -212,6 +214,7 @@ export const assertTheAcknowledgeCarriesSuppression: Claim = async (tx, fx) => {
   expect(suppressionOf(broadcast[0])).toEqual(expected);
 };
 
+/** `readAlarmListItem` (the `created` socket event's read) carries a lifted stamp's suppression fields. */
 export const assertTheCreatedEventReadCarriesSuppression: Claim = async (tx, fx) => {
   const [severity] = await twoRanks(tx);
   const windowId = await insertWindow(tx, fx);
@@ -226,6 +229,7 @@ export const assertTheCreatedEventReadCarriesSuppression: Claim = async (tx, fx)
   });
 };
 
+/** The lifecycle sweep's `cleared` broadcast payload carries the suppression fields. */
 export const assertTheClearedBroadcastCarriesSuppression: Claim = async (tx, fx) => {
   await insertFixtureSeverity(tx);
   const pointKey = `f4359_supp_${randomUUID().slice(0, 8)}`;

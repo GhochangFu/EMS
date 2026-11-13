@@ -81,4 +81,5 @@ describe.skipIf(!connectionString)("F4.357 — the alarm list and summary filter
     spec.assertTheSummaryLeavesTheSuppressedAlarmOut(fixture()));
   it("18 a cleared suppressed alarm is in all only", () => spec.assertAClearedSuppressedAlarmIsInAllOnly(fixture()));
   it("19 the tenant and fleet paths agree on suppression", () => spec.assertTheTenantAndFleetPathsAgreeOnSuppression(fixture()));
+  it("20 state=suppressed pages by keyset, newest raised first", () => spec.assertTheSuppressedStatePagesByKeyset(fixture()));
 });

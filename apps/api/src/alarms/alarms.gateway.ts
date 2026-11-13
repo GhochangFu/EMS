@@ -158,6 +158,7 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
   broadcastSuppression(alarm: AlarmListItem): void {
     this.emitScoped(alarm, "suppression");
     this.metrics.countWebsocketEvent("/ws/alarms", "alarm");
+    this.metrics.countAlarmEvent("suppression");
   }
 
   /**
