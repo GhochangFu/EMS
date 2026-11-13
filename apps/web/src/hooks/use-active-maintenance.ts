@@ -5,11 +5,15 @@ import type { MaintenanceWindowItem } from "@bms/shared/contracts";
 
 import { fetchMaintenanceWindows } from "../api/maintenance-windows";
 
-/** What a page reads about: one asset, one location (and its subtree), or one organization. */
+/**
+ * What a page reads about: one asset, one location (and its subtree), one organization, or — `{}`, the
+ * alarm bar off a scoped page (`F4.359` U13) — every window the caller can read.
+ */
 export type MaintenanceScope =
   | { readonly assetId: string }
   | { readonly locationId: string }
-  | { readonly organizationId: string };
+  | { readonly organizationId: string }
+  | Readonly<Record<string, never>>;
 
 const EMPTY_WINDOWS: readonly MaintenanceWindowItem[] = [];
 

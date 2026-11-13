@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useContext, useEffect } from "react";
@@ -319,19 +320,22 @@ export async function theWallShowsTheAlarmBarForItsLocation(): Promise<void> {
   });
   const feed = installOnFakes({ list: [alarmItem({ id: "c", message: "Critical one" })] }, useAuthStore);
   try {
+    // `F4.359` U13: the bar's Maintenance pill reads through TanStack Query; `main.tsx` provides the client.
     render(
-      <MemoryRouter initialEntries={[`/control-room/site/${LOCATION}/main?wall=1&every=30`]}>
-        <Routes>
-          <Route
-            path="/control-room/site/:locationId/:tab?"
-            element={
-              <WallFrame siteName="Lotapata" sitePath={`/control-room/site/${LOCATION}`} tabKeys={["main", "sld"]} currentKey="main" everyS={30}>
-                <p data-testid="wall-content-body">content</p>
-              </WallFrame>
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={[`/control-room/site/${LOCATION}/main?wall=1&every=30`]}>
+          <Routes>
+            <Route
+              path="/control-room/site/:locationId/:tab?"
+              element={
+                <WallFrame siteName="Lotapata" sitePath={`/control-room/site/${LOCATION}`} tabKeys={["main", "sld"]} currentKey="main" everyS={30}>
+                  <p data-testid="wall-content-body">content</p>
+                </WallFrame>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
     await act(flush);
     const region = screen.getByRole("region", { name: "Alarms" });

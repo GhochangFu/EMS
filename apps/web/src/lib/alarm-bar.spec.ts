@@ -7,11 +7,14 @@ import {
   alarmBarScopeOf,
   alarmLocationLabel,
   alarmReadScopeOf,
+  alarmSeenKey,
   blinkingSeverityCodes,
   countsByRankDescending,
+  criticalUnacknowledgedIds,
   moreActiveCount,
   newestUnacknowledged,
   popupRows,
+  toneWanted,
 } from "./alarm-bar";
 
 /**
@@ -176,4 +179,42 @@ export function blinkingSeverityCodesAreUnseenCriticalOnly(): void {
   ];
   expect([...blinkingSeverityCodes(list, new Set(["seen"]))].sort()).toEqual(["critical", "severe"]);
   expect(blinkingSeverityCodes([alarmItem({ id: "c" })], new Set(["c"])).size, "a seen alarm stops it").toBe(0);
+}
+
+const RETURNED_AT = "2026-11-12T11:00:00.000Z";
+
+/**
+ * `F4.359` U13 (ADR 0131 decisions 8, 19) — the seen key: the id, or `id@unsuppressedAt` once the
+ * alarm has returned. `suppressed` is read first: a row suppressed again keeps its old `unsuppressedAt`.
+ */
+export function theSeenKeyChangesWhenAnAlarmReturns(): void {
+  expect(alarmSeenKey(alarmItem({ id: "a1" }))).toBe("a1");
+  expect(alarmSeenKey(alarmItem({ id: "a1", unsuppressedAt: RETURNED_AT }))).toBe(`a1@${RETURNED_AT}`);
+  expect(
+    alarmSeenKey(alarmItem({ id: "a1", suppressed: true, maintenanceWindowId: "w1", unsuppressedAt: RETURNED_AT })),
+    "suppressed again: the plain id",
+  ).toBe("a1");
+}
+
+/** U13 — a closed (seen) alarm that returns is unseen again: it pops up, blinks; and a muted one sounds again. */
+export function aReturnedAlarmIsNewToTheBar(): void {
+  const seen = new Set(["a1"]);
+  const returned = alarmItem({ id: "a1", unsuppressedAt: RETURNED_AT });
+  expect(popupRows([alarmItem({ id: "a1" })], seen), "seen before it was suppressed").toEqual([]);
+  expect(popupRows([returned], seen).map((a) => a.id), "back in the popup").toEqual(["a1"]);
+  expect([...blinkingSeverityCodes([returned], seen)], "and it blinks").toEqual(["critical"]);
+  expect(popupRows([returned], new Set([alarmSeenKey(returned)])), "closed again after its return").toEqual([]);
+  expect(toneWanted([alarmItem({ id: "a1" })], seen), "muted").toBe(false);
+  expect(toneWanted([returned], seen), "returned: sounds again").toBe(true);
+  expect(criticalUnacknowledgedIds([returned])).toEqual([`a1@${RETURNED_AT}`]);
+}
+
+/** U13 (decision 6) — a suppressed alarm, should one reach the bar's rules, does not pop up, blink or sound. */
+export function aSuppressedAlarmIsIgnoredByTheBar(): void {
+  const suppressed = alarmItem({ id: "s1", suppressed: true, maintenanceWindowId: "w1" });
+  expect(popupRows([suppressed], new Set())).toEqual([]);
+  expect(blinkingSeverityCodes([suppressed], new Set()).size).toBe(0);
+  expect(criticalUnacknowledgedIds([suppressed])).toEqual([]);
+  expect(toneWanted([suppressed], new Set())).toBe(false);
+  expect(newestUnacknowledged([suppressed])).toBeNull();
 }
