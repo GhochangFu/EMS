@@ -443,6 +443,7 @@ export const assets = bmsSchema.table("assets", {
   // (MATCH SIMPLE: a NULL rtu_id skips it). The single-column FKs stay. Block body
   // so the text slices still end at the first `});`.
   return {
+    idOrganizationKey: unique("assets_id_organization_id_key").on(t.id, t.organizationId),
     locationOrganizationFk: foreignKey({
       name: "assets_location_id_organization_id_fkey",
       columns: [t.locationId, t.organizationId],

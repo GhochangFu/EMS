@@ -28,6 +28,8 @@
     "tests/f3.16-device-health-schema.integration.test.ts",
     "tests/f3.16-device-alarms-schema.test.ts",
     "tests/f3.16-device-alarms-schema.integration.test.ts",
+    "tests/f4.359-maintenance-windows-schema.test.ts",
+    "tests/f4.359-maintenance-windows-schema.integration.test.ts",
     "tests/e7.2-uplink-auth-static.test.ts",
     "tests/e7.2-uplink-dirty-window-static.test.ts",
     "tests/e7.2-edge-gateways-backfill-seq.test.ts",

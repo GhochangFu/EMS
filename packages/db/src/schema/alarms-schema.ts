@@ -17,6 +17,7 @@ import {
   assetTemplates,
   assets,
   bmsSchema,
+  locations,
   organizations,
   ruleCategories,
   rtus,
@@ -28,7 +29,7 @@ import { bytea } from "./column-types";
  * Detection and response: automation rules, the alarms they raise, and the
  * notifications those alarms send.
  *
- * **Why these fourteen tables are one module and not three.** They form a cycle
+ * **Why these sixteen tables are one module and not three.** They form a cycle
  * that cannot be cut by domain. `alarms.rule_id` references
  * `automation_rules.id` (ADR 0032), and `notification_deliveries.alarm_id`
  * references `alarms.id` — so rules depend on alarms and alarms depend on
@@ -37,7 +38,10 @@ import { bytea } from "./column-types";
  * a hazard the next person has to re-derive. One module states the cycle once.
  * The four `alarm_escalation_*` tables (ADR 0057 decision 7, migration `0066`)
  * sit at the end of the file: they reference `notification_channels` and
- * `alarm_severities`, and nothing references them back.
+ * `alarm_severities`, and nothing references them back. The two
+ * `maintenance_window*` tables (ADR 0131, migration `0152`) close the file:
+ * `alarms.suppressed_by_window_id` references a window, and a window's targets
+ * reference assets, locations and rules.
  *
  * Every reference OUT of this module points at `bms-schema.ts`, never back.
  * That is what keeps the split acyclic at module level.
@@ -104,12 +108,27 @@ export const alarms = bmsSchema.table("alarms", {
   // organization_id)` below, so an alarm can only name an RTU of its own
   // organization.
   rtuId: uuid("rtu_id"),
+  // F4.359 / ADR 0131 (migration 0152). When a maintenance window began to
+  // suppress the alarm, and which window; `suppressedByWindowId` is kept after
+  // the lift (history) and replaced by a later window's id. `unsuppressedAt`
+  // (plan ruling Q2) is the lift: the alarm returns as new and its escalation
+  // clock starts there. `alarms_suppressed_shape_check` (SQL-only) requires the
+  // window id with `suppressed_at` and refuses it on an 'ingest_host' alarm.
+  suppressedAt: timestamp("suppressed_at", { withTimezone: true }),
+  suppressedByWindowId: uuid("suppressed_by_window_id"),
+  unsuppressedAt: timestamp("unsuppressed_at", { withTimezone: true }),
 }, (t) => {
   return {
     rtuOrganizationFk: foreignKey({
       name: "alarms_rtu_id_organization_id_fkey",
       columns: [t.rtuId, t.organizationId],
       foreignColumns: [rtus.id, rtus.organizationId],
+    }),
+    // Composite, so an alarm can only name a window of its own organization.
+    suppressedByWindowOrganizationFk: foreignKey({
+      name: "alarms_suppressed_by_window_id_organization_id_fkey",
+      columns: [t.suppressedByWindowId, t.organizationId],
+      foreignColumns: [maintenanceWindows.id, maintenanceWindows.organizationId],
     }),
   };
 });
@@ -260,6 +279,13 @@ export const automationRules = bmsSchema.table("automation_rules", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+}, (t) => {
+  // F4.359 (migration 0152). Only the target of `maintenance_window_targets_rule_fkey`;
+  // never refuses a row (`id` is the PK). Block body so the text slices still end at
+  // the first `});`.
+  return {
+    idOrganizationKey: unique("automation_rules_id_organization_id_key").on(t.id, t.organizationId),
+  };
 });
 
 export const ruleExecutions = bmsSchema.table("rule_executions", {
@@ -478,3 +504,89 @@ export const alarmEscalationDefaults = bmsSchema.table(
   (table) => [primaryKey({ columns: [table.organizationId, table.severity] })],
 );
 
+/**
+ * F4.359 / ADR 0131 decision 17 (migration `0152`) — a maintenance window: while
+ * one covers an alarm, the alarm is written and listed but suppressed (no bar
+ * count, popup, tone, notification or escalation). State is derived on the
+ * database clock (plan D2): future, active (`starts_at <= now() < ends_at` and
+ * `ended_at IS NULL`), past. `endedAt`/`endedBy` record an early end or a cancel.
+ *
+ * Tenant-scoped, strict `tenant_isolation` under FORCE. SQL-only, like this
+ * file's other CHECKs and partial indexes: `maintenance_windows_reason_check`
+ * (3..2000 characters after trim), `maintenance_windows_period_check` (`ends_at >
+ * starts_at`; the 7-day bound is the service's), `maintenance_windows_ended_shape_check`
+ * (`ended_at` and `ended_by` together) and `maintenance_windows_open_ends_at_idx`.
+ *
+ * **The two link keys are SQL-only on purpose.** `maintenance_windows_work_order_fkey`
+ * and `maintenance_windows_maintenance_schedule_fkey` are composite on
+ * `(organization_id, work_order_id)` / `(organization_id, maintenance_schedule_id)`
+ * and point into `maintenance-schema.ts`, which imports this file. Mirroring them
+ * would make the two modules import each other — the cycle this file's header
+ * rules out.
+ */
+export const maintenanceWindows = bmsSchema.table("maintenance_windows", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  reason: text("reason").notNull(),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
+  endedBy: uuid("ended_by").references(() => users.id),
+  workOrderId: uuid("work_order_id"),
+  maintenanceScheduleId: uuid("maintenance_schedule_id"),
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => {
+  return {
+    // The target of the targets' and the alarms' composite window keys.
+    idOrganizationKey: unique("maintenance_windows_id_organization_id_key").on(t.id, t.organizationId),
+  };
+});
+
+/**
+ * What a window covers: exactly one of an asset, a location (with its subtree) or
+ * a rule per row (`maintenance_window_targets_one_target_check`, SQL-only, as are
+ * the three partial unique indexes `maintenance_window_targets_{asset,location,rule}_uidx`).
+ * Every key is composite on `organization_id` — the referential check runs with
+ * row security off, so a single-column key would let a target name another
+ * organization's row. The window key cascades (a target is part of its window);
+ * the others are NO ACTION.
+ */
+export const maintenanceWindowTargets = bmsSchema.table("maintenance_window_targets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  windowId: uuid("window_id").notNull(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  assetId: uuid("asset_id"),
+  locationId: uuid("location_id"),
+  ruleId: uuid("rule_id"),
+}, (t) => {
+  return {
+    windowFk: foreignKey({
+      name: "maintenance_window_targets_window_fkey",
+      columns: [t.windowId, t.organizationId],
+      foreignColumns: [maintenanceWindows.id, maintenanceWindows.organizationId],
+    }).onDelete("cascade"),
+    assetFk: foreignKey({
+      name: "maintenance_window_targets_asset_fkey",
+      columns: [t.assetId, t.organizationId],
+      foreignColumns: [assets.id, assets.organizationId],
+    }),
+    locationFk: foreignKey({
+      name: "maintenance_window_targets_location_fkey",
+      columns: [t.locationId, t.organizationId],
+      foreignColumns: [locations.id, locations.organizationId],
+    }),
+    ruleFk: foreignKey({
+      name: "maintenance_window_targets_rule_fkey",
+      columns: [t.ruleId, t.organizationId],
+      foreignColumns: [automationRules.id, automationRules.organizationId],
+    }),
+  };
+});
