@@ -2550,13 +2550,14 @@ amendment is accepted. The merge of this amendment approves it. A line marked
 
 ## Amendment 19 — the copilot proposes maintenance windows (ADR 0131, `F4.359`)
 
-**Status: proposed — 2026-11-13.** The owner ruled the seven gate questions in
-chat on 2026-11-13, each as the drafter recommended; acceptance of the
-amendment is still the owner's. Drafted against `main` at `615c1d8c`. The
+**Status: accepted — 2026-11-13** (owner, in chat: "Accept both"; proposed the
+same day). The owner ruled the seven gate questions in chat on 2026-11-13,
+each as the drafter recommended, and accepted the amendment with every
+*(drafter)* line as written. Drafted against `main` at `615c1d8c`. The
 `F4.359` plan's owner ruling Q6 (2026-11-13) puts the four maintenance-window
 writes (ADR 0131 decisions 2 and 16) on `WizardShell`, so each is a catalog
 entry and needs this amendment. Plan PR 6 (the entries) and PR 7 (the page's
-wizards) wait for its acceptance; PR 1 to PR 5 do not. A line marked
+wizards) build it. A line marked
 *(drafter)* is a choice the owner may change at review.
 
 ### Facts the amendment rests on
