@@ -24,6 +24,7 @@ import { ReportsService } from "../reports/reports.service";
 import { RuleSweepService } from "../rules/rule-sweep.service";
 import { RulesService } from "../rules/rules.service";
 import { AssetFilterScopeService } from "../filter-options/asset-filter-scope.service";
+import { FilterOptionsService } from "../filter-options/filter-options.service";
 import { CredentialRotationService } from "../security/credential-rotation.service";
 import { TelemetryService } from "../telemetry/telemetry.service";
 import { WorkOrdersService } from "../work-orders/work-orders.service";
@@ -119,6 +120,11 @@ export function assertReportScopeServiceFleetSlot(): void {
  */
 export function assertAssetFilterScopeServiceFleetSlot(): void {
   expect(injectedToken(AssetFilterScopeService, 0)).toBe(FLEET_DRIZZLE);
+}
+
+/** `F4.361` U3 — `FilterOptionsService(fleetDb, accessControl)`: the options span every organization the caller reads. */
+export function assertFilterOptionsServiceFleetSlot(): void {
+  expect(injectedToken(FilterOptionsService, 0)).toBe(FLEET_DRIZZLE);
 }
 
 /**
