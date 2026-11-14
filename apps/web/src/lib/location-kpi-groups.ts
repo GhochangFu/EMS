@@ -82,17 +82,27 @@ export function livePercent(live: number, notLive: number): number {
   return total > 0 ? Math.round((live / total) * 100) : 0;
 }
 
-/** Aggregates section-level KPIs for an accordion header. */
+/**
+ * Aggregates section-level KPIs for an accordion header. `F4.364` (plan ruling Q4): `totalKw` sums
+ * the numbers over the locations that show energy, and is `null` when none of them has one.
+ */
 export function orgSectionSummary(locations: LocationKpiSummary[]): {
   locationCount: number;
-  totalKw: number;
+  totalKw: number | null;
   openAlarms: number;
   freshLocationCount: number;
 } {
   return {
     locationCount: locations.length,
-    totalKw: locations.reduce((sum, location) => sum + location.totalKw, 0),
+    totalKw: sectionKw(locations),
     openAlarms: locations.reduce((sum, location) => sum + location.openAlarms, 0),
     freshLocationCount: locations.filter(hasLiveTelemetry).length,
   };
+}
+
+function sectionKw(locations: readonly LocationKpiSummary[]): number | null {
+  const values = locations.flatMap((location) =>
+    location.energyShown && location.totalKw !== null ? [location.totalKw] : [],
+  );
+  return values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0);
 }

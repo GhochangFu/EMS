@@ -44,6 +44,28 @@ export function eachHeaderShowsItsLiveAndNotLiveChips(): void {
   expect(within(b).getByTestId("not-live-chip").textContent).toBe("1 not live");
 }
 
+/**
+ * A2 — `F4.364` (plan ruling Q4): the header sums kW over the locations that show energy, and
+ * omits the kW part when none does. Org A shows energy (12.5 + 2.5); Org B shows none.
+ */
+export function theHeaderOmitsKwWhenNoLocationShowsEnergy(): void {
+  const groups = groupByOrganization([
+    site({ id: "a1", name: "Alpha One", organization: ORG_A, totalKw: 12.5 }),
+    site({ id: "a2", name: "Alpha Two", organization: ORG_A, totalKw: 2.5 }),
+    site({ id: "a3", name: "Alpha Three", organization: ORG_A, totalKw: null, energyShown: false }),
+    site({ id: "b1", name: "Beta One", organization: ORG_B, totalKw: null, energyShown: false }),
+  ]);
+  render(
+    <MemoryRouter>
+      <OrgLocationAccordion groups={groups} />
+    </MemoryRouter>,
+  );
+  expect(header("Alpha Utilities").textContent).toContain("3 locations · 15.0 kW · 0 alarms");
+  const b = header("Beta Works").textContent ?? "";
+  expect(b).toContain("1 locations · 0 alarms");
+  expect(b).not.toContain("kW");
+}
+
 export function cleanupAccordion(): void {
   cleanup();
 }

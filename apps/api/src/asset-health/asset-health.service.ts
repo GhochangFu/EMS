@@ -184,22 +184,81 @@ export class AssetHealthService {
       };
     }
 
-    const { rows, coveredBuckets } = await this.readCounters(level, inScope, from, to);
-    const health = await this.healthForAssets(inScope);
-    const catalog = await this.catalogPoints(inScope);
-
-    // **Every asset in scope is scored, including those with no counter rows at
-    // all.** Iterating the rows instead would silently drop an asset that has no
-    // telemetry or no rules from the denominator, which is the inflation ADR
-    // 0050 decision 3 exists to prevent, one level up.
-    const scores: AssetScore[] = inScope.map((assetId) =>
-      scoreAsset(this.tagsFor(rows, catalog.get(assetId) ?? [], assetId), health.get(assetId)),
-    );
+    const { scores, rows, coveredBuckets } = await this.scoreAssets(level, inScope, from, to);
 
     return {
       ...summariseAssets(scores),
       ...this.windowFields({ level, from, to, windowMinutes, rows, coveredBuckets }),
     };
+  }
+
+  /**
+   * `F4.364` (ADR 0133 decision 4, plan D4) — the location cards' health figure, one score per
+   * requested location in one batch: each location's **own** active assets (plan ruling Q3 — not
+   * its subtree, unlike `summary`'s `locationId`), intersected with `assetIds`, scored by the same
+   * `scoreAssets` step `summary` uses and rolled up by `summariseAssets` per location. Four
+   * statements whatever the number of locations (the assets read, then `scoreAssets`' three).
+   *
+   * `assetIds` is the caller's already-authorized readable set, `null` only for an unrestricted
+   * admin (the class docblock). `locationIds` can only narrow it. Every requested location is a key
+   * of the answer — `null` when none of its assets is scored — except on an empty input, which
+   * answers an empty map without touching any relation.
+   */
+  async scoresByLocation(
+    assetIds: readonly string[] | null,
+    locationIds: readonly string[],
+    windowMinutes: number,
+    now: Date,
+  ): Promise<Map<string, number | null>> {
+    const byLocation = new Map<string, number | null>();
+    if (locationIds.length === 0 || (assetIds !== null && assetIds.length === 0)) {
+      return byLocation;
+    }
+    const owned = await this.ownAssetsOf(assetIds, locationIds);
+    for (const locationId of locationIds) {
+      byLocation.set(locationId, null);
+    }
+    if (owned.length === 0) {
+      return byLocation;
+    }
+
+    const { level, from, to } = this.resolveWindow(windowMinutes, now);
+    const { scores } = await this.scoreAssets(level, owned.map((row) => row.id), from, to);
+    const grouped = new Map<string, AssetScore[]>();
+    owned.forEach((row, i) => {
+      const list = grouped.get(row.locationId) ?? [];
+      list.push(scores[i] as AssetScore);
+      grouped.set(row.locationId, list);
+    });
+    for (const [locationId, list] of grouped) {
+      byLocation.set(locationId, summariseAssets(list).score);
+    }
+    return byLocation;
+  }
+
+  /**
+   * The scoring step `summary` and `scoresByLocation` share (`F4.364` D4): the counters, the
+   * templates' health blocks and the catalog points, each read once for the whole set, then one
+   * `scoreAsset` per asset — `scores[i]` is `assetIds[i]`'s.
+   *
+   * **Every asset in scope is scored, including those with no counter rows at
+   * all.** Iterating the rows instead would silently drop an asset that has no
+   * telemetry or no rules from the denominator, which is the inflation ADR
+   * 0050 decision 3 exists to prevent, one level up.
+   */
+  private async scoreAssets(
+    level: AggregateLevel,
+    assetIds: readonly string[],
+    from: Date,
+    to: Date,
+  ): Promise<{ scores: AssetScore[]; rows: CounterRow[]; coveredBuckets: number }> {
+    const { rows, coveredBuckets } = await this.readCounters(level, assetIds, from, to);
+    const health = await this.healthForAssets(assetIds);
+    const catalog = await this.catalogPoints(assetIds);
+    const scores = assetIds.map((assetId) =>
+      scoreAsset(this.tagsFor(rows, catalog.get(assetId) ?? [], assetId), health.get(assetId)),
+    );
+    return { scores, rows, coveredBuckets };
   }
 
   /**
@@ -511,6 +570,31 @@ export class AssetHealthService {
       .where(and(...filters))
       .orderBy(assets.id);
     return rows.map((row) => row.id);
+  }
+
+  /**
+   * `F4.364` (plan ruling Q3) — the active assets located directly at one of `locationIds`, with
+   * their location, ordered by id (the `assetsInScope` rule: `summariseAssets` takes a band's label
+   * from its first occurrence, so the order must be deterministic).
+   *
+   * §4.3 fleet-read reason: `bms.assets` is RLS-bearing and this runs on the BYPASSRLS pool,
+   * because one card read spans every organization the caller reads (no single tenant GUC covers
+   * it). The containment is `assetIds`, the set `AccessControlService.readableAssetIds` already
+   * computed for this caller; `locationIds` can only intersect it, never widen it.
+   */
+  private async ownAssetsOf(
+    assetIds: readonly string[] | null,
+    locationIds: readonly string[],
+  ): Promise<{ id: string; locationId: string }[]> {
+    const filters = [eq(assets.active, true), inArray(assets.locationId, [...locationIds])];
+    if (assetIds !== null) {
+      filters.push(inArray(assets.id, [...assetIds]));
+    }
+    return this.db
+      .select({ id: assets.id, locationId: assets.locationId })
+      .from(assets)
+      .where(and(...filters))
+      .orderBy(assets.id);
   }
 
   /**

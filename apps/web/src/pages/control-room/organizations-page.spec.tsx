@@ -47,6 +47,8 @@ export function site(opts: {
   assetCount?: number;
   freshAssetCount?: number;
   openAlarms?: number;
+  totalKw?: number | null;
+  energyShown?: boolean;
 }): LocationKpiSummary {
   return locationKpiSummarySchema.parse({
     id: opts.id,
@@ -59,7 +61,10 @@ export function site(opts: {
     rtuCount: 0,
     assetCount: opts.assetCount ?? 3,
     freshAssetCount: opts.freshAssetCount ?? 0,
-    totalKw: 0,
+    totalKw: opts.totalKw === undefined ? 0 : opts.totalKw,
+    energyShown: opts.energyShown ?? true,
+    primaryMetric: opts.energyShown === false ? "health" : "kw",
+    healthScore: null,
     openAlarms: opts.openAlarms ?? 0,
     criticalAlarms: 0,
     scopeLabel: "full",

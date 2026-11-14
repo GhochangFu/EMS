@@ -35,6 +35,8 @@ import {
  * `telemetry/energy-cost.integration.spec.ts`.
  */
 const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
+// F4.364 (plan D5): this suite reads no location card's health figure.
+const NO_HEALTH = { scoresByLocation: async () => new Map<string, number | null>() };
 
 
 /**
@@ -174,7 +176,7 @@ describe.skipIf(!connectionString)("F4.1 — telemetry continuous aggregates", (
       "F4.1",
     );
     try {
-      const svc = new DashboardService(fleet, NO_TARIFFS);
+      const svc = new DashboardService(fleet, NO_TARIFFS, NO_HEALTH);
       await assertEnergySummaryMatchesRaw(pool as pg.Pool, (window, assetIds) =>
         svc.energySummary(window, assetIds),
       );

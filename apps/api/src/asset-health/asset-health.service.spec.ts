@@ -491,3 +491,17 @@ export async function assertEmptyScopeReportsZeroCoverageAndNoInstant(): Promise
     `coveredBuckets: 0 and computedAt: null must arrive together, got ${String(result.computedAt)}`,
   );
 }
+
+/**
+ * `F4.364` (plan U4) — `scoresByLocation` answers an empty map for no locations or an empty asset
+ * scope, and touches no relation: no `select()` is scripted, so any call throws.
+ */
+export async function assertScoresByLocationOnAnEmptyInputTouchesNothing(): Promise<void> {
+  const { db, calls } = scriptedDb([]);
+  const service = new AssetHealthService(db);
+  const none = await service.scoresByLocation(null, [], 1_440, NOW);
+  assert(none.size === 0, `no locations must answer an empty map, got ${none.size} key(s)`);
+  const empty = await service.scoresByLocation([], [ASSET_A], 1_440, NOW);
+  assert(empty.size === 0, `assetIds: [] must answer an empty map, got ${empty.size} key(s)`);
+  assert(calls.length === 0, `an empty input must not touch the database, got ${calls.length} call(s)`);
+}

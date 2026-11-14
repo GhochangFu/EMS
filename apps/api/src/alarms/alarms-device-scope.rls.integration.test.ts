@@ -174,7 +174,9 @@ describe.skipIf(!connectionString)("F3.16 — device alarm visibility follows th
       warning,
       prefix: PREFIX,
       details: new AlarmDetailsService(fleetDb),
-      dashboard: new DashboardService(fleetPool, {} as Pick<CalcParametersService, "resolveForAssets">),
+      dashboard: new DashboardService(fleetPool, {} as Pick<CalcParametersService, "resolveForAssets">, {
+        scoresByLocation: async () => new Map<string, number | null>(),
+      }),
       ownerPool: fleetPool,
       fleetDb,
       aOn1: await asset(orgAId, locA, `${PREFIX}aOn1`, a1),

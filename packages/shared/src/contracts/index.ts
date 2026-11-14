@@ -23,6 +23,8 @@
 export * from "./admin";
 export * from "./colour-profile";
 export * from "./design-system";
+// F4.364 (ADR 0133): the organization energy-features and card-figure vocabularies.
+export * from "./energy-features";
 export * from "./appearance";
 export * from "./appearance-writes";
 export * from "./organization-ingest";

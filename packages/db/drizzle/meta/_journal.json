@@ -1065,6 +1065,13 @@
       "when": 1794574540687,
       "tag": "0152_maintenance_windows",
       "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1794657493883,
+      "tag": "0153_organization_energy_features",
+      "breakpoints": true
     }
   ]
 }

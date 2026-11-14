@@ -9,6 +9,7 @@ import { SectionCard } from "../section-card";
 import { GeneratedSiteAssetCard } from "./generated-site-asset-card";
 import { TrendStrip } from "./trend-strip";
 import { useBoard } from "../../lib/board-spans";
+import { kwText } from "../../lib/location-card-figure";
 
 /**
  * `F3.68` U6 — the generated site view (ADR 0076 decision 7).
@@ -64,7 +65,7 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
           <KpiTile
             label="Total load"
             status={kpiStatus}
-            value={location ? location.totalKw.toFixed(1) : null}
+            value={location ? kwText(location.totalKw) : null}
             unit="kW"
             hint={location?.scopeLabel === "partial" ? "Limited asset group" : "All assets"}
           />

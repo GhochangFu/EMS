@@ -210,7 +210,9 @@ describe.skipIf(!connectionString)("E3.1 — work-order approval, reject and can
       taskAdd: new WorkOrderTaskAddService(fleetDb, tenantDb, audit),
       maintenance: new MaintenanceService(fleetDb, tenantDb, audit),
       // No tariff is read by the counts under test.
-      dashboard: new DashboardService(fleetPool, { resolveForAssets: async () => new Map<string, number>() }),
+      dashboard: new DashboardService(fleetPool, { resolveForAssets: async () => new Map<string, number>() }, {
+        scoresByLocation: async () => new Map<string, number | null>(),
+      }),
       tenantPool,
       fleetPool,
       actor,

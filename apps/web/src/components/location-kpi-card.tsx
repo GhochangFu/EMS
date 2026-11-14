@@ -1,6 +1,7 @@
 import type { LocationKpiSummary } from "@bms/shared";
 import { Link } from "react-router-dom";
 
+import { kwText } from "../lib/location-card-figure";
 import { hasLiveTelemetry } from "../lib/location-kpi-groups";
 
 type LocationKpiCardProps = {
@@ -56,7 +57,7 @@ export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
           <div
             className={`font-mono text-sm font-semibold ${live ? "text-ink" : "text-ink-muted"}`}
           >
-            {location.totalKw.toFixed(1)}
+            {kwText(location.totalKw)}
           </div>
           <div className="text-ink-muted">kW</div>
         </div>
