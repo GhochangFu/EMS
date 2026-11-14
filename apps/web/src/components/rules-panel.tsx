@@ -10,8 +10,9 @@ import {
   type RuleListItem,
 } from "@bms/shared";
 
-import { evaluateRules, fetchRuleExecutions, fetchRules } from "../api/rules";
+import { evaluateRules, fetchRuleExecutions, fetchRuleList } from "../api/rules";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
+import { useScopeFilter } from "../hooks/use-scope-filter";
 import { labelFor, toneClass, toneFor } from "../lib/vocabulary";
 import { EvaluateRefusalNotice } from "./evaluate-refusal-notice";
 import { RuleChannelsEditor } from "./rule-channels-editor";
@@ -19,6 +20,7 @@ import { type RuleLifecycleAction, RuleLifecycleWizard } from "./rules/rule-life
 import { RuleToggleWizard } from "./rules/rule-toggle-wizard";
 import { RuleBatchWizard } from "./rules/rule-batch-wizard";
 import { RuleWizard } from "./rules/rule-wizard";
+import { ScopeFilterBar } from "./scope-filter-bar";
 
 type RuleFilter = AutomationRuleCategory | "all";
 type StatusFilter = "all" | "enabled" | "disabled";
@@ -122,9 +124,12 @@ export function RulesPanel() {
   const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleFilter>("all");
   const [open, setOpen] = useState<OpenWizard>(null);
 
+  // `F4.361`: the scope filter is in the URL; the list waits for the options when one is set (D13).
+  const scope = useScopeFilter();
   const rulesQ = useQuery({
-    queryKey: ["rules", "list"],
-    queryFn: fetchRules,
+    queryKey: ["rules", "list", scope.filter],
+    queryFn: () => fetchRuleList(scope.filter),
+    enabled: scope.ready,
   });
   const executionsQ = useQuery({
     queryKey: ["rules", "executions"],
@@ -182,6 +187,12 @@ export function RulesPanel() {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
       <section className="space-y-4">
+        <ScopeFilterBar
+          filter={scope.filter}
+          options={scope.options}
+          unavailable={scope.unavailable}
+          onChange={scope.setScope}
+        />
         <div className="grid gap-3 sm:grid-cols-4">
           <Kpi label="Active Rules" value={`${activeCount}/${rules.length}`} />
           <Kpi label="Drafts" value={String(draftCount)} />
@@ -262,7 +273,8 @@ export function RulesPanel() {
               sentence does not reflow the filters. */}
           <EvaluateRefusalNotice error={evaluateM.error} />
 
-          {rulesQ.isLoading ? (
+          {/* `isPending`, not `isLoading`: a list waiting on the options (D13) is loading, not empty. */}
+          {rulesQ.isPending ? (
             <p className="p-4 text-sm text-ink-muted">Loading rules...</p>
           ) : rulesQ.isError ? (
             <p className="p-4 text-sm text-critical-ink">Could not load rules.</p>
