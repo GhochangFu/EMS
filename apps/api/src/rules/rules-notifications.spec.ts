@@ -86,7 +86,16 @@ function controllerWith(options: { writeAllowed?: boolean } = {}): {
   // way if one ever does.
   return {
     // `F4.289`: the sixth slot, `RulesBatchService`, serves only `POST /rules/batch`; no route here reaches it.
-    controller: new RulesController(rules, accessControl, channels, new EvaluateThrottle(), channelWrites, {} as unknown as Ctor[5]),
+    // `F4.361` U5: slot 6 is `GET /rules`' narrowing, which this spec never calls.
+    controller: new RulesController(
+      rules,
+      accessControl,
+      channels,
+      new EvaluateThrottle(),
+      channelWrites,
+      {} as unknown as Ctor[5],
+      {} as unknown as Ctor[6],
+    ),
     writes,
     reads,
   };

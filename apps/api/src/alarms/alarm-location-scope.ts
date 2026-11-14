@@ -2,6 +2,9 @@ import { eq, sql, type SQL } from "drizzle-orm";
 
 import { alarms, locations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import type { JwtPayload } from "@bms/shared";
+
+import type { AccessControlService } from "../auth/access-control.service";
 
 import { expandLocationSubtrees } from "../auth/location-tree";
 
@@ -19,6 +22,27 @@ export type AlarmLocationFilter = {
   readonly readableLocationIds: readonly string[] | null;
   readonly readableOrganizationIds: readonly string[] | null;
 };
+
+/**
+ * `F4.357` U2: the `locationId` filter with the caller's two readable sets
+ * (owner rulings P2 and P3), or `undefined` — and then no location read runs.
+ *
+ * `F4.361` (plan D5): moved here from `alarms.controller.ts` so `/rules`'
+ * `locationId` (through `AssetFilterScopeService.narrow`) takes the same walk
+ * as the alarm list — no third copy of P2.
+ */
+export async function locationFilter(
+  accessControl: Pick<AccessControlService, "readableLocationIds" | "readableOrganizationIds">,
+  user: JwtPayload,
+  locationId: string | undefined,
+): Promise<AlarmLocationFilter | undefined> {
+  if (locationId === undefined) return undefined;
+  return {
+    id: locationId,
+    readableLocationIds: await accessControl.readableLocationIds(user),
+    readableOrganizationIds: await accessControl.readableOrganizationIds(user),
+  };
+}
 
 /**
  * The node and every location under it that the filter allows — `[]` when a

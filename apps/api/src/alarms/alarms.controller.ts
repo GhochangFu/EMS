@@ -20,8 +20,9 @@ import { alarmAckBodySchema, alarmEnrichmentUpsertBodySchema, type JwtPayload } 
 
 import { AccessControlService } from "../auth/access-control.service";
 import { intersectReadable } from "../auth/asset-scope";
+import { AssetFilterScopeService } from "../filter-options/asset-filter-scope.service";
 import { alarmListQuerySchema, alarmSummaryQuerySchema } from "./alarm-list.schema";
-import type { AlarmLocationFilter } from "./alarm-location-scope";
+import { locationFilter } from "./alarm-location-scope";
 import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmsService } from "./alarms.service";
@@ -48,23 +49,6 @@ function parseQuery<S extends z.ZodTypeAny>(schema: S, query: unknown): z.output
   }
 }
 
-/**
- * `F4.357` U2: the `locationId` filter with the caller's two readable sets
- * (owner rulings P2 and P3), or `undefined` — and then no location read runs.
- */
-async function locationFilter(
-  accessControl: AccessControlService,
-  user: JwtPayload,
-  locationId: string | undefined,
-): Promise<AlarmLocationFilter | undefined> {
-  if (locationId === undefined) return undefined;
-  return {
-    id: locationId,
-    readableLocationIds: await accessControl.readableLocationIds(user),
-    readableOrganizationIds: await accessControl.readableOrganizationIds(user),
-  };
-}
-
 @Controller("alarms")
 @UseGuards(JwtAuthGuard)
 export class AlarmsController {
@@ -73,7 +57,30 @@ export class AlarmsController {
     private readonly accessControl: AccessControlService,
     private readonly details: AlarmDetailsService,
     private readonly enrichment: AlarmEnrichmentService,
+    // `F4.361` U4: appended last — three specs construct this controller by
+    // hand, positionally. `assetGroupId`'s narrowing (ADR 0132 build note 3).
+    private readonly assetFilterScope: AssetFilterScopeService,
   ) {}
+
+  /**
+   * `F4.361` U4 (ADR 0132 decision 3, build note 3): the caller's asset scope
+   * for a list or summary read. With `assetGroupId` it is the group's members
+   * inside the caller's readable set (`narrow` — an unreadable group is `[]`),
+   * so device alarms follow as they do for `assetIds`; without one it is
+   * `readableAssetIds`, untouched, and `narrow` never runs. A requested
+   * `assetIds` is then intersected with that scope — it only narrows.
+   */
+  private async assetScope(
+    user: JwtPayload,
+    assetGroupId: string | undefined,
+    assetIds: string[] | undefined,
+  ): Promise<string[] | null> {
+    const scope =
+      assetGroupId === undefined
+        ? await this.accessControl.readableAssetIds(user)
+        : await this.assetFilterScope.narrow(user, { assetGroupId });
+    return intersectReadable(scope, assetIds);
+  }
 
   /**
    * `F3.28` (ADR 0074 decision 4). The query is parsed before access control
@@ -90,7 +97,8 @@ export class AlarmsController {
    * and not that organization's alarms. **This widens nothing only if the
    * intersection holds**: `assetIds` below must stay
    * `intersectReadable(readableAssetIds(user), …)` whether or not
-   * `organizationId` is present.
+   * `organizationId` is present — or, with `assetGroupId` (`F4.361`), the
+   * intersection with `narrow`'s subset of that same readable set.
    *
    * `F4.357` U2 (ADR 0130 decision 15): an optional `locationId` narrows the
    * read to the alarms of that location and its sub-locations, the same way —
@@ -105,8 +113,9 @@ export class AlarmsController {
       limit: dto.limit ?? 20,
       state: dto.state,
       minSeverityRank: dto.minSeverityRank,
-      assetIds: intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
+      assetIds: await this.assetScope(user, dto.assetGroupId, dto.assetIds),
       organizationId: dto.organizationId,
+      severity: dto.severity,
       location: await locationFilter(this.accessControl, user, dto.locationId),
     });
   }
@@ -124,7 +133,8 @@ export class AlarmsController {
    * and not that organization's alarms. **This widens nothing only if the
    * intersection holds**: `assetIds` below must stay
    * `intersectReadable(readableAssetIds(user), …)` whether or not
-   * `organizationId` is present.
+   * `organizationId` is present — or, with `assetGroupId` (`F4.361`), the
+   * intersection with `narrow`'s subset of that same readable set.
    *
    * `F4.357` U2 (ADR 0130 decision 15): an optional `locationId` narrows the
    * read to the alarms of that location and its sub-locations, the same way —
@@ -135,7 +145,7 @@ export class AlarmsController {
   async summary(@CurrentUser() user: JwtPayload, @Query() query: Record<string, unknown>) {
     const dto = parseQuery(alarmSummaryQuerySchema, query);
     return this.alarms.activeCountsBySeverity(
-      intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
+      await this.assetScope(user, dto.assetGroupId, dto.assetIds),
       dto.organizationId,
       await locationFilter(this.accessControl, user, dto.locationId),
     );

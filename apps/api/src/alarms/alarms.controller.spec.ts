@@ -5,6 +5,7 @@ import type { JwtPayload } from "@bms/shared";
 import type { AccessControlService } from "../auth/access-control.service";
 import type { AlarmDetailsService } from "./alarm-details.service";
 import type { AlarmEnrichmentService } from "./alarm-enrichment.service";
+import type { AssetFilterScopeService, AssetScopeFilter } from "../filter-options/asset-filter-scope.service";
 import { AlarmsController } from "./alarms.controller";
 import type { AlarmsService } from "./alarms.service";
 
@@ -38,8 +39,16 @@ const SITE = "55555555-5555-4555-8555-555555555555";
 const READABLE_LOCATIONS = [SITE, "66666666-6666-4666-8666-666666666666"];
 const READABLE_ORGANIZATIONS = ["77777777-7777-4777-8777-777777777777"];
 
-function harness(readable: string[] | null) {
+function harness(readable: string[] | null, narrowed: string[] = []) {
   const listCalls: ListCall[] = [];
+  // F4.361 U4: the group filter's narrowing (ADR 0132 build note 3), recorded.
+  const narrowCalls: AssetScopeFilter[] = [];
+  const assetFilterScope = {
+    narrow: async (_user: JwtPayload, filter: AssetScopeFilter) => {
+      narrowCalls.push(filter);
+      return narrowed;
+    },
+  } as unknown as AssetFilterScopeService;
   const summaryCalls: (string[] | null | undefined)[] = [];
   const summaryOrgs: (string | undefined)[] = [];
   const summaryLocations: unknown[] = [];
@@ -78,10 +87,12 @@ function harness(readable: string[] | null) {
     accessControl,
     {} as unknown as AlarmDetailsService,
     {} as unknown as AlarmEnrichmentService,
+    assetFilterScope,
   );
   return {
     controller,
     listCalls,
+    narrowCalls,
     summaryCalls,
     summaryOrgs,
     summaryLocations,
@@ -341,4 +352,66 @@ export async function assertTheUnacknowledgedReadPassesThrough(): Promise<void> 
     call?.state === "unacknowledged" && call.minSeverityRank === 20 && call.limit === 50,
     `the list got ${JSON.stringify({ state: call?.state, minSeverityRank: call?.minSeverityRank, limit: call?.limit })}`,
   );
+}
+
+/*
+ * `F4.361` U4 (ADR 0132 decision 3, build note 3) — `severity` reaches the
+ * list as is; `assetGroupId` narrows the caller's asset scope through
+ * `AssetFilterScopeService.narrow`, and a requested `assetIds` is intersected
+ * with that, never with the wider readable set.
+ */
+
+const GROUP = "88888888-8888-4888-8888-888888888888";
+
+/** `severity` passes through to the list, trimmed. */
+export async function assertSeverityPassesThroughToTheList(): Promise<void> {
+  const h = harness([READABLE_A]);
+  await h.controller.list(USER, { severity: " critical " });
+  assert(h.listCalls[0]?.severity === "critical", `severity reached the list as ${String(h.listCalls[0]?.severity)}`);
+}
+
+/** A group: the list's scope is `narrow(user, { assetGroupId })`, intersected with a requested `assetIds`. */
+export async function assertAGroupNarrowsTheListThenIntersectsAssetIds(): Promise<void> {
+  const h = harness([READABLE_A, READABLE_B], [READABLE_A]);
+  await h.controller.list(USER, { assetGroupId: GROUP.toUpperCase() });
+  assert(same(h.narrowCalls, [{ assetGroupId: GROUP }]), `narrow got ${JSON.stringify(h.narrowCalls)}`);
+  assert(same(h.listCalls[0]?.assetIds, [READABLE_A]), `the list got ${JSON.stringify(h.listCalls[0]?.assetIds)}, not the group's members`);
+  const both = harness([READABLE_A, READABLE_B], [READABLE_A]);
+  await both.controller.list(USER, { assetGroupId: GROUP, assetIds: [READABLE_A, READABLE_B] });
+  assert(same(both.listCalls[0]?.assetIds, [READABLE_A]), `group + assetIds reached the list as ${JSON.stringify(both.listCalls[0]?.assetIds)}`);
+}
+
+/** A group the narrowing answers `[]` for stays `[]` on both reads — never `null`, never the readable set. */
+export async function assertAnEmptyGroupScopeStaysEmpty(): Promise<void> {
+  const h = harness([READABLE_A], []);
+  await h.controller.list(USER, { assetGroupId: GROUP });
+  await h.controller.summary(USER, { assetGroupId: GROUP });
+  assert(same(h.listCalls[0]?.assetIds, []), `the list got ${JSON.stringify(h.listCalls[0]?.assetIds)}, not []`);
+  assert(same(h.summaryCalls[0], []), `the summary got ${JSON.stringify(h.summaryCalls[0])}, not []`);
+}
+
+/** The summary takes the group the same way. */
+export async function assertAGroupNarrowsTheSummary(): Promise<void> {
+  const h = harness([READABLE_A, READABLE_B], [READABLE_B]);
+  await h.controller.summary(USER, { assetGroupId: GROUP, assetIds: [READABLE_A, READABLE_B] });
+  assert(same(h.narrowCalls, [{ assetGroupId: GROUP }]), `narrow got ${JSON.stringify(h.narrowCalls)}`);
+  assert(same(h.summaryCalls[0], [READABLE_B]), `the summary got ${JSON.stringify(h.summaryCalls[0])}`);
+}
+
+/** No group: `narrow` is never called, and the admin's `null` stays `null` on both reads. */
+export async function assertNoGroupLeavesTheScopeAsToday(): Promise<void> {
+  const h = harness(null, [READABLE_A]);
+  await h.controller.list(USER, { severity: "critical" });
+  await h.controller.summary(USER, {});
+  assert(h.narrowCalls.length === 0, `narrow ran ${h.narrowCalls.length} times without a group`);
+  assert(h.listCalls[0]?.assetIds === null, `the admin's list scope became ${JSON.stringify(h.listCalls[0]?.assetIds)}`);
+  assert(h.summaryCalls[0] === null, `the admin's summary scope became ${JSON.stringify(h.summaryCalls[0])}`);
+}
+
+/** A malformed group is a 400 that narrows nothing and lists nothing. */
+export async function assertANonUuidGroupRunsNothing(): Promise<void> {
+  const h = harness([READABLE_A]);
+  const thrown = await listRejection(h, { assetGroupId: "not-a-uuid" });
+  assert(thrown instanceof BadRequestException, `assetGroupId=not-a-uuid threw ${String(thrown)}, not a 400`);
+  assert(h.narrowCalls.length === 0 && h.listCalls.length === 0, "a malformed group reached narrow or the list");
 }

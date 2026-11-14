@@ -68,6 +68,7 @@ import {
 } from "../dashboard/dashboard.schema";
 import {
   listRuleExecutionsQuerySchema,
+  ruleListQuerySchema,
 } from "../rules/rules.schema";
 
 /**
@@ -181,4 +182,7 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // 34 -> 35: `F4.359` registered `maintenanceWindowListQuerySchema` (`GET /maintenance-windows`, ADR 0131)
   // — `.strict()`, no body, no ledger entry, the same precedent.
   maintenanceWindowListQuerySchema,
+  // 35 -> 36: `F4.361` registered `ruleListQuerySchema` (`GET /rules?organizationId=&locationId=&assetGroupId=&assetId=`,
+  // ADR 0132 decision 4) — `.strict()`, no body, no ledger entry, the same precedent.
+  ruleListQuerySchema,
 };

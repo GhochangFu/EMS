@@ -5,6 +5,7 @@ import type { BmsDb } from "@bms/db";
 import type { AlarmSummaryResponse, JwtPayload } from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
+import type { AssetFilterScopeService } from "../filter-options/asset-filter-scope.service";
 import { countingDb } from "../testing/counting-db";
 import type { AlarmDetailsService } from "./alarm-details.service";
 import type { AlarmEnrichmentService } from "./alarm-enrichment.service";
@@ -103,6 +104,8 @@ function controllerFor(ctx: AlarmsRlsFixtures, readable: string[] | null): Alarm
     { readableAssetIds: async () => readable } as unknown as AccessControlService,
     {} as unknown as AlarmDetailsService,
     {} as unknown as AlarmEnrichmentService,
+    // F4.361 U4: no read here sends `assetGroupId`, so the narrowing is never reached.
+    {} as unknown as AssetFilterScopeService,
   );
 }
 
@@ -280,6 +283,19 @@ export async function assertActiveStateExcludesClearedUnacknowledged(
   expect(ids, "positive control: the same read returns the active row").toContain(
     ctx.ackedUnclearedAlarmId,
   );
+}
+
+/**
+ * `F4.361` U4 (ADR 0132 decision 3): through the real controller, a known
+ * `severity` keeps that code's alarm and an unknown code lists nothing — an
+ * empty page, not a 400 (the vocabulary is data).
+ */
+export async function assertAnUnknownSeverityListsNothing(ctx: AlarmsRlsFixtures): Promise<void> {
+  const known = await listIds(ctx, [ctx.pairAssetId], { severity: ctx.ackedUnclearedSeverity });
+  expect(known, "positive control: the known severity lists its alarm").toContain(ctx.ackedUnclearedAlarmId);
+  expect(known, "the known severity drops the other severity's alarm").not.toContain(ctx.clearedUnackedAlarmId);
+  const unknown = await listIds(ctx, [ctx.pairAssetId], { severity: "f4361-no-such-severity" });
+  expect(unknown, "an unknown severity lists nothing").toEqual([]);
 }
 
 /** No `state` is `all`: today's read, both rows of the pair. */

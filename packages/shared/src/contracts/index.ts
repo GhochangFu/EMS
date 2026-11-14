@@ -141,3 +141,5 @@ export * from "./users";
 export type { Assignable, Measured, Strict } from "./equality";
 // `F4.359` (ADR 0131): the maintenance-window bodies and responses.
 export * from "./maintenance-windows";
+// `F4.361` (ADR 0132): the filter-options response.
+export * from "./filter-options";

@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   assertAlarmNotifyServiceFleetSlot,
+  assertAssetFilterScopeServiceFleetSlot,
+  assertFilterOptionsServiceFleetSlot,
   assertAlarmRaiserTenantSlot,
   assertAssetImagesServiceFleetSlot,
   assertAssetImagesServiceTenantSlot,
@@ -42,6 +44,14 @@ describe("E7.1b — services inject the right pool token in the right constructo
 
   it("F4.290 ReportScopeService injects the fleet pool in slot 0", () => {
     assertReportScopeServiceFleetSlot();
+  });
+
+  it("F4.361 AssetFilterScopeService injects the fleet pool in slot 0", () => {
+    assertAssetFilterScopeServiceFleetSlot();
+  });
+
+  it("F4.361 FilterOptionsService injects the fleet pool in slot 0", () => {
+    assertFilterOptionsServiceFleetSlot();
   });
 
   it("F4.24 WorkerHostService injects the tenant pool in slot 1", () => {

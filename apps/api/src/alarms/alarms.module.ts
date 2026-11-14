@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { FilterOptionsModule } from "../filter-options/filter-options.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { TelemetryModule } from "../telemetry/telemetry.module";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
@@ -25,7 +26,10 @@ import { AlarmsService } from "./alarms.service";
   // `F3.11` (ADR 0064 decision 3): `AlarmRaiser` moved out to the loop-free
   // `AlarmRaiseModule` so the worker can import it without this module —
   // and with it the controller, the gateway and the JWT guard.
-  imports: [TelemetryModule, VocabulariesModule, NotificationsModule, AlarmRaiseModule],
+  //
+  // `F4.361` U4 (ADR 0132): `FilterOptionsModule` exports `AssetFilterScopeService`
+  // (the list's `assetGroupId`). It imports nothing, so this edge is acyclic.
+  imports: [TelemetryModule, VocabulariesModule, NotificationsModule, AlarmRaiseModule, FilterOptionsModule],
   controllers: [AlarmsController],
   providers: [
     AlarmsService,

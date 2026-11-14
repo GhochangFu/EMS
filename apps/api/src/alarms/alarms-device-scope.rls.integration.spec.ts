@@ -6,6 +6,7 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
+import type { AssetFilterScopeService } from "../filter-options/asset-filter-scope.service";
 import { priorOpenAlarmsInScope } from "../dashboard-builder/metric-catalog-prior";
 import type { MetricCatalogService } from "../dashboard-builder/metric-catalog.service";
 import type { DashboardService } from "../dashboard/dashboard.service";
@@ -181,6 +182,8 @@ function controllerFor(
     } as unknown as AccessControlService,
     {} as unknown as AlarmDetailsService,
     {} as unknown as AlarmEnrichmentService,
+    // F4.361 U4: no read here sends `assetGroupId`, so the narrowing is never reached.
+    {} as unknown as AssetFilterScopeService,
   );
 }
 
