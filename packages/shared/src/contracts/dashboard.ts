@@ -9,6 +9,7 @@
  */
 import { z } from "zod";
 
+import { resolvedCardPrimaryMetricSchema } from "./energy-features";
 import { locationTypeCodeSchema } from "./location-types";
 import {
   CONTROL_ROOM_ELECTRICAL_POINT_KEYS,
@@ -47,7 +48,17 @@ export const locationKpiSummarySchema = z.object({
   rtuCount: z.number(),
   assetCount: z.number(),
   freshAssetCount: z.number(),
-  totalKw: z.number(),
+  /**
+   * `F4.364` (ADR 0133 decision 4): the summed latest `kw` — `null` when energy is not shown, and
+   * `null` (not `0`) when it is shown but no asset has a `kw` value.
+   */
+  totalKw: z.number().nullable(),
+  /** `F4.364` (ADR 0133 decision 2): the organization setting resolved for this location. */
+  energyShown: z.boolean(),
+  /** `F4.364` (ADR 0133 decision 3): the card's first figure, resolved — never `auto`. */
+  primaryMetric: resolvedCardPrimaryMetricSchema,
+  /** `F4.364` (ADR 0050 score, `0..1`): set only when `primaryMetric` is `health`; `null` otherwise or when nothing is scored. */
+  healthScore: z.number().nullable(),
   openAlarms: z.number(),
   criticalAlarms: z.number(),
   scopeLabel: z.enum(["full", "partial"]),
