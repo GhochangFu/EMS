@@ -16,11 +16,17 @@ export type AlarmPageFilter = {
   readonly severity?: string;
 };
 
+/** A URL or picker value as a State choice: `active` or `suppressed`, anything else All (`undefined`). */
+export function toAlarmStateChoice(value: string | null): AlarmStateChoice | undefined {
+  return value === "active" || value === "suppressed" ? value : undefined;
+}
+
+/** The page's Severity and State from the URL; an empty severity or an unknown state reads as All. */
 export function readAlarmPageFilter(params: URLSearchParams): AlarmPageFilter {
-  const state = params.get("state");
+  const state = toAlarmStateChoice(params.get("state"));
   const severity = params.get("severity")?.trim();
   return {
-    ...(state === "active" || state === "suppressed" ? { state } : {}),
+    ...(state ? { state } : {}),
     ...(severity ? { severity } : {}),
   };
 }

@@ -21,7 +21,7 @@ export type ScopeFilterState = {
   readonly options: FilterOptionsResponse | undefined;
   /** Whether the list may run (D13): always without a scope in the URL, otherwise once the options settle. */
   readonly ready: boolean;
-  /** The options read failed: the pickers are disabled and the list runs on the URL as it stands. */
+  /** The options read failed with no options held: the pickers are disabled and the list runs on the URL as it stands. */
   readonly unavailable: boolean;
   /** A user's choice on one picker; `""` is "All". Pushes a history entry (D12). */
   readonly setScope: (key: ScopeFilterKey, value: string) => void;
@@ -68,7 +68,8 @@ export function useScopeFilter(): ScopeFilterState {
     filter,
     options,
     ready: !hasScope(raw) || optionsQ.isSuccess || optionsQ.isError,
-    unavailable: optionsQ.isError,
+    // Only a read with no data: after a failed background refetch the old options still drive the pickers.
+    unavailable: optionsQ.isError && options === undefined,
     setScope,
   };
 }

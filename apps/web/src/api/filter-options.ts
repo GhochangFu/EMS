@@ -1,5 +1,6 @@
 import { filterOptionsResponseSchema, type FilterOptionsResponse } from "@bms/shared/contracts";
 
+import { ApiError } from "../lib/api-error";
 import { clearSessionOnAuthFailure, withAuth } from "./http";
 import { checkResponse } from "./validate";
 
@@ -17,7 +18,8 @@ export async function fetchFilterOptions(): Promise<FilterOptionsResponse> {
   const res = await fetch(`${base}/api/v1/filter-options`, sent);
   if (!res.ok) {
     clearSessionOnAuthFailure(res, sent);
-    throw new Error(`filter-options ${res.status}`);
+    // An `ApiError`, so `shouldRetryQuery` does not retry a 403/404 while a scoped list waits (D13).
+    throw new ApiError(`filter-options ${res.status}`, res.status);
   }
   return checkResponse(filterOptionsResponseSchema, await res.json(), "filter-options");
 }

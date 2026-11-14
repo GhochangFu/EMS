@@ -5,6 +5,7 @@ import {
   criticalMayReadAllClear,
   isAlarmListFiltered,
   readAlarmPageFilter,
+  toAlarmStateChoice,
   writeAlarmPageFilter,
 } from "./alarm-page-filter";
 
@@ -26,6 +27,9 @@ export function readsStateAndSeverity(): void {
   expect(readAlarmPageFilter(new URLSearchParams("state=active"))).toEqual({ state: "active" });
   expect(readAlarmPageFilter(new URLSearchParams("state=unacknowledged&severity="))).toEqual({});
   expect(readAlarmPageFilter(new URLSearchParams("state=all"))).toEqual({});
+  expect([toAlarmStateChoice("active"), toAlarmStateChoice("suppressed"), toAlarmStateChoice(""), toAlarmStateChoice(null)]).toEqual(
+    ["active", "suppressed", undefined, undefined],
+  );
 }
 
 /** Writing replaces the two keys and keeps the scope keys. */

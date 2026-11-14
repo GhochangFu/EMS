@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { expect, vi, type MockInstance } from "vitest";
 
 import type { AlarmListItem, AlarmSeverityDto, VocabulariesResponse } from "@bms/shared";
@@ -65,8 +65,17 @@ function alarm(id: string, severity: string, message: string): AlarmListItem {
 const CRITICAL = alarm("c1", "critical", "Voltage above limit");
 const INFO = alarm("i1", "info", "Humidity above limit");
 
+/** The URL as text, and a Back button that is the browser's (`navigate(-1)`). */
 function UrlProbe() {
-  return <output data-testid="url">{useLocation().search}</output>;
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="url">{useLocation().search}</output>
+      <button type="button" onClick={() => navigate(-1)}>
+        probe back
+      </button>
+    </>
+  );
 }
 
 function url(): URLSearchParams {
@@ -189,6 +198,18 @@ export async function theListWaitsForTheOptions(): Promise<void> {
   await screen.findByRole("table");
   expect(list.mock.calls.map((call) => call[2])).toEqual([{ organizationId: IDS.ORG_A }]);
   await vi.waitFor(() => expect(url().has("locationId")).toBe(false));
+}
+
+/** A State choice pushes a history entry, so Back takes `state` off the URL again (decision 8). */
+export async function backUndoesAStateChoice(): Promise<void> {
+  const list = renderAt("/alarms");
+  await screen.findByRole("table");
+  await userEvent.selectOptions(picker("State"), "suppressed");
+  await vi.waitFor(() => expect(url().get("state")).toBe("suppressed"));
+  await userEvent.click(screen.getByRole("button", { name: "probe back" }));
+  await vi.waitFor(() => expect(url().has("state")).toBe(false));
+  expect(picker("State").value).toBe("");
+  await vi.waitFor(() => expect(lastQuery(list)).toEqual({}));
 }
 
 /** A filtered empty list says so, rather than telling the operator to start the simulator. */

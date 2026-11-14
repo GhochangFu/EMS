@@ -4,6 +4,7 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aChangeIsUndoneByBack,
+  aFailedRefetchKeepsThePickersAvailable,
   anOptionsErrorLeavesTheUrl,
   anUnknownIdIsRemovedFromTheUrl,
   theListWaitsOnlyForAScopedUrl,
@@ -20,5 +21,6 @@ describe("F4.361 useScopeFilter", () => {
   it("removes an unknown id from the URL by a replace", () => anUnknownIdIsRemovedFromTheUrl());
   it("pushes a change, and Back undoes it", () => aChangeIsUndoneByBack());
   it("leaves the URL and reports unavailable when the options fail", () => anOptionsErrorLeavesTheUrl());
+  it("keeps the pickers available after a failed background refetch", () => aFailedRefetchKeepsThePickersAvailable());
   it("waits for the options only when the URL names a scope", () => theListWaitsOnlyForAScopedUrl());
 });

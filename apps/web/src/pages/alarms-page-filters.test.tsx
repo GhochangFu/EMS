@@ -7,6 +7,7 @@ import {
   anOrganizationRefetchesAndIsInTheUrl,
   aSeverityFiltersTheListAndTheCards,
   aSixKeyUrlIsTheFirstRead,
+  backUndoesAStateChoice,
   theListWaitsForTheOptions,
   theStateDropdownSendsTheState,
 } from "./alarms-page-filters.spec";
@@ -23,4 +24,5 @@ describe("F4.361 alarm centre filters", () => {
   it("sends a six-key URL unchanged on the first read", () => aSixKeyUrlIsTheFirstRead());
   it("waits for the options before a scoped first read", () => theListWaitsForTheOptions());
   it("says a filtered empty list matches nothing", () => aFilteredEmptyListSaysSo());
+  it("undoes a State choice with Back", () => backUndoesAStateChoice());
 });

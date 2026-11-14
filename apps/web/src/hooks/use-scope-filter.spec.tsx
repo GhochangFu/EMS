@@ -22,10 +22,11 @@ function mount(url: string) {
       <MemoryRouter initialEntries={[url]}>{children}</MemoryRouter>
     </QueryClientProvider>
   );
-  return renderHook(
+  const hook = renderHook(
     () => ({ scope: useScopeFilter(), location: useLocation(), navigate: useNavigate(), type: useNavigationType() }),
     { wrapper },
   );
+  return Object.assign(hook, { qc });
 }
 
 /** The URL's ids are the filter once the options confirm them, and the list may run. */
@@ -80,4 +81,21 @@ export async function theListWaitsOnlyForAScopedUrl(): Promise<void> {
   const plain = mount("/alarms?severity=critical");
   expect(plain.result.current.scope.ready).toBe(true);
   expect(plain.result.current.scope.filter).toEqual({});
+}
+
+/**
+ * A failed background refetch keeps the options already read, so the pickers keep working and the
+ * "unavailable" line stays away; only a read with no data at all is unavailable.
+ */
+export async function aFailedRefetchKeepsThePickersAvailable(): Promise<void> {
+  vi.spyOn(filterOptionsApi, "fetchFilterOptions")
+    .mockResolvedValueOnce(OPTIONS)
+    .mockRejectedValue(new Error("filter-options 500"));
+  const { result, qc } = mount(`/alarms?organizationId=${IDS.ORG_A}`);
+  await waitFor(() => expect(result.current.scope.options).toBe(OPTIONS));
+  await act(() => qc.refetchQueries({ queryKey: filterOptionsApi.filterOptionsQueryKey }));
+  await waitFor(() => expect(qc.getQueryState(filterOptionsApi.filterOptionsQueryKey)?.status).toBe("error"));
+  expect(result.current.scope.options).toBe(OPTIONS);
+  expect(result.current.scope.unavailable).toBe(false);
+  expect(result.current.scope.filter).toEqual({ organizationId: IDS.ORG_A });
 }

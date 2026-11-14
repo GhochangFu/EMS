@@ -1,5 +1,6 @@
 import { expect, vi } from "vitest";
 
+import { ApiError } from "../lib/api-error";
 import { fetchFilterOptions, filterOptionsQueryKey } from "./filter-options";
 
 /**
@@ -34,6 +35,20 @@ export async function readsTheOptionsPath(): Promise<void> {
 export async function aRefusedReadThrows(): Promise<void> {
   capture({ message: "nope" }, 500);
   await expect(fetchFilterOptions()).rejects.toThrow("filter-options 500");
+}
+
+/**
+ * A 404 (a web bundle newer than its API, plan risk 6) is an `ApiError` carrying the status, so
+ * `shouldRetryQuery` does not retry it and a scoped URL is not held ~7 s behind D13's wait.
+ */
+export async function aNotFoundIsAnApiErrorWithItsStatus(): Promise<void> {
+  capture({ message: "Not Found" }, 404);
+  const error = await fetchFilterOptions().then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expect(error).toBeInstanceOf(ApiError);
+  expect((error as ApiError).status).toBe(404);
 }
 
 /** A payload that breaks the contract (a group without `assetIds`) throws outside production (ADR 0030). */

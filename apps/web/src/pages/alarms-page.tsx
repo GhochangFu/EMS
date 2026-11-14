@@ -19,6 +19,7 @@ import {
   criticalMayReadAllClear,
   isAlarmListFiltered,
   readAlarmPageFilter,
+  toAlarmStateChoice,
   writeAlarmPageFilter,
   type AlarmPageFilter,
 } from "../lib/alarm-page-filter";
@@ -382,9 +383,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                   id={stateId}
                   className="surface-field px-3 py-1.5 text-xs text-ink"
                   value={pageFilter.state ?? ""}
-                  onChange={(event) =>
-                    setPageFilter({ state: (event.target.value || undefined) as AlarmPageFilter["state"] })
-                  }
+                  onChange={(event) => setPageFilter({ state: toAlarmStateChoice(event.target.value) })}
                 >
                   <option value="">All</option>
                   <option value="active">Active</option>
