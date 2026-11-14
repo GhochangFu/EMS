@@ -105,3 +105,25 @@ None.
   enabled threshold rules gives `—`.
 - `AGENTS.md` gains a line for the setting in a separate `chore(agents):` PR
   after the build.
+
+## Amendment 1 — Trends stay when energy is hidden (2026-11-14)
+
+**Accepted — 2026-11-14** (owner, in chat, plan-gate question Q1: "Keep it as
+'Trends'").
+
+The step-3 plan ([`docs/plans/f4.364-energy-features.md`](../plans/f4.364-energy-features.md))
+found that the site page's **Trends & Energy** section is not energy-only: its
+nav is an **Energy** sub-tab plus one sub-tab per asset domain present at the
+site (ADR 0108 Amendment 4). Removing the section, as decision 5 says, would
+also hide WBLDC's temperature trends.
+
+Decision 5 is replaced by:
+
+5. **The site page.** When energy is not shown for the location, the third
+   section entry is labelled **Trends** (same `/trends` path), its **Energy**
+   sub-tab is omitted, and it opens on the first present segment. An explicit
+   `?view=energy`, or a site with no segment, shows one line saying energy is
+   off for this organization and how to turn it on. No redirect.
+
+The other plan-gate rulings (Q2–Q6, owner 2026-11-14) need no amendment; they
+are recorded in the plan's §2 and become build notes when the row closes.
