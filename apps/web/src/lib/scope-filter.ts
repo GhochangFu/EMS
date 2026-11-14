@@ -1,6 +1,7 @@
 import type {
   FilterOptionAsset,
   FilterOptionAssetGroup,
+  FilterOptionLocation,
   FilterOptionOrganization,
   FilterOptionsResponse,
 } from "@bms/shared/contracts";
@@ -162,4 +163,21 @@ export function scopeFilterChoices(filter: ScopeFilter, options: FilterOptionsRe
     assetGroups,
     assets,
   };
+}
+
+/**
+ * `F4.363` defect 1 — the text of each Asset group option. A group's name repeats once per
+ * location (WBLDC's "Chillers" at two plants), so when `groups` span more than one location each
+ * option reads `name · location name`; inside one location the bare name is enough. A location
+ * the options do not list falls back to the group's code.
+ */
+export function assetGroupOptionLabels(
+  groups: readonly FilterOptionAssetGroup[],
+  locations: readonly FilterOptionLocation[],
+): ReadonlyMap<string, string> {
+  const spansLocations = new Set(groups.map((g) => g.locationId)).size > 1;
+  const locationNames = new Map(locations.map((l) => [l.id, l.name]));
+  return new Map(
+    groups.map((g) => [g.id, spansLocations ? `${g.name} · ${locationNames.get(g.locationId) ?? g.code}` : g.name]),
+  );
 }

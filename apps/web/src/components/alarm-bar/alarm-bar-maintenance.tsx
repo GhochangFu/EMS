@@ -54,7 +54,7 @@ export function AlarmBarMaintenance({ scope, suppressed }: AlarmBarMaintenancePr
           // Plan Q6: on the wall, a pointer on the bar's panels does not pause the rotation.
           data-wall-bar
           aria-label="Active maintenance windows"
-          className="surface-raised fixed bottom-[var(--alarm-bar-h)] left-4 z-40 flex max-h-[24rem] w-[min(28rem,calc(100%-2rem))] flex-col rounded-t-lg text-xs text-ink"
+          className="surface-overlay fixed bottom-[var(--alarm-bar-h)] left-4 z-40 flex max-h-[24rem] w-[min(28rem,calc(100%-2rem))] flex-col rounded-t-lg rounded-b-none border-b-0 text-xs text-ink"
         >
           {/* A div, not <header>: inside the shell or the wall a <header> is a banner landmark. */}
           <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">

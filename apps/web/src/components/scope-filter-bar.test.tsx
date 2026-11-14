@@ -5,6 +5,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import {
   aChoiceReportsItsKey,
   aLockedOrganizationIsPreselectedAndDisabled,
+  assetGroupsAcrossLocationsNameTheirLocation,
   locationWaitsForAnOrganization,
   theLocationsReadAsATree,
   unavailableDisablesEveryPicker,
@@ -21,4 +22,6 @@ describe("F4.361 ScopeFilterBar", () => {
   it("lists the locations as a tree and narrows the rest", () => theLocationsReadAsATree());
   it("reports the key and value of a choice", () => aChoiceReportsItsKey());
   it("disables every picker when the options are unavailable", () => unavailableDisablesEveryPicker());
+  it("F4.363: names the location of each asset group when they span locations", () =>
+    assetGroupsAcrossLocationsNameTheirLocation());
 });

@@ -11,6 +11,7 @@ import {
   anAssetOutsideTheSubtreeIsDropped,
   anOrganizationChangeClearsTheChildren,
   anUnknownIdIsDropped,
+  assetGroupLabelsNameTheirLocation,
   readsTheFourKeysOnly,
   theChoicesCascade,
   writeKeepsOtherParameters,
@@ -31,4 +32,6 @@ describe("F4.361 scope filter cascade", () => {
   it("clears what a new location no longer contains", () => aLocationChangeClearsWhatItNoLongerContains());
   it("narrows the asset to the chosen group", () => aGroupChangeNarrowsTheAsset());
   it("cascades the choices", () => theChoicesCascade());
+  it("F4.363: labels asset groups with their location when they span locations", () =>
+    assetGroupLabelsNameTheirLocation());
 });

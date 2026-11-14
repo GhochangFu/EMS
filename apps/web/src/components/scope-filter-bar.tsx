@@ -2,7 +2,7 @@ import { useId, type ReactNode } from "react";
 
 import type { FilterOptionsResponse } from "@bms/shared/contracts";
 
-import { scopeFilterChoices, type ScopeFilter, type ScopeFilterKey } from "../lib/scope-filter";
+import { assetGroupOptionLabels, scopeFilterChoices, type ScopeFilter, type ScopeFilterKey } from "../lib/scope-filter";
 
 type ScopeFilterBarProps = {
   filter: ScopeFilter;
@@ -54,6 +54,7 @@ export function ScopeFilterBar({ filter, options, unavailable, onChange }: Scope
   const choices = scopeFilterChoices(filter, options ?? NO_OPTIONS);
   const waiting = !options;
   const noOrganization = waiting || !choices.organizationId;
+  const groupLabels = assetGroupOptionLabels(choices.assetGroups, options?.locations ?? []);
 
   return (
     <div className="space-y-1">
@@ -94,7 +95,7 @@ export function ScopeFilterBar({ filter, options, unavailable, onChange }: Scope
           <option value="">All asset groups</option>
           {choices.assetGroups.map((group) => (
             <option key={group.id} value={group.id}>
-              {group.name}
+              {groupLabels.get(group.id)}
             </option>
           ))}
         </Picker>

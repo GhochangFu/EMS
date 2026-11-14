@@ -213,6 +213,7 @@
     "tests/f4.346-colour-safe-series.test.ts",
     "tests/f4.348-nav-icon-tokens.test.ts",
     "tests/f4.349-dialog-ground.test.ts",
+    "tests/f4.363-overlay-ground.test.ts",
     "tests/f4.350-rtu-expected-interval-schema.test.ts",
     "tests/f4.341-fonts.test.ts",
     "tests/f4.341-accent-allowlist.test.ts",
