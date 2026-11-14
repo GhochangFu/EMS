@@ -132,7 +132,7 @@ export function theCreateSummaryNamesEverything(): void {
     targetName: "Pune Works",
   });
   expect(text).toBe(
-    "Create a maintenance window in Pune Works from now to 2026-11-13T18:00:00.000Z on 2 targets: Chiller 2, Plant B; " +
+    "Create a maintenance window in Pune Works from now to 2026-11-13 18:00 (UTC) on 2 targets: Chiller 2, Plant B; " +
       '"Plant B" covers 12 assets. Alarms on these targets are suppressed for that time: no alarm-bar count, popup, tone, ' +
       'notification or escalation. Reason: "Chiller 2 compressor overhaul".',
   );
@@ -145,15 +145,15 @@ export function theCreateSummaryNamesItsStartAndNoCoverWithoutALocation(): void 
     params: {},
     maintenanceWindow: { ...WINDOW, targetLabels: ["Chiller 2"], locationLabels: [], coveredAssetCount: 0 },
   });
-  expect(text).toContain("from 2026-11-14T06:00:00.000Z to 2026-11-13T18:00:00.000Z on 1 target: Chiller 2.");
+  expect(text).toContain("from 2026-11-14 06:00 (UTC) to 2026-11-13 18:00 (UTC) on 1 target: Chiller 2.");
   expect(text).not.toContain("covers");
 }
 
 /** The extend card names the window, its targets, the old and the new end, and the reason given. */
 export function theExtendSummaryNamesTheWindowAndBothEnds(): void {
   expect(summary("maintenanceWindow.extend", { body: { endsAt: "2026-11-13T22:00:00.000Z", reason: "Parts late" } })).toBe(
-    'Extend the maintenance window "Chiller 2 compressor overhaul" (Chiller 2, Plant B) from 2026-11-13T18:00:00.000Z ' +
-      'to 2026-11-13T22:00:00.000Z: alarms on its targets stay suppressed until then. Reason: "Parts late".',
+    'Extend the maintenance window "Chiller 2 compressor overhaul" (Chiller 2, Plant B) from 2026-11-13 18:00 (UTC) ' +
+      'to 2026-11-13 22:00 (UTC): alarms on its targets stay suppressed until then. Reason: "Parts late".',
   );
 }
 
@@ -164,9 +164,32 @@ export function theEndAndCancelSummariesNameTheWindow(): void {
       "returns as a normal alarm, with its popup, tone and notification.",
   );
   expect(summary("maintenanceWindow.cancel", { body: { reason: "Work postponed" } })).toBe(
-    'Cancel the maintenance window "Chiller 2 compressor overhaul" that starts at 2026-11-13T08:00:00.000Z: it suppresses nothing. ' +
+    'Cancel the maintenance window "Chiller 2 compressor overhaul" that starts at 2026-11-13 08:00 (UTC): it suppresses nothing. ' +
       'Reason: "Work postponed".',
   );
+}
+
+/**
+ * `F4.360` defect 4: the summaries say an instant as a readable time with its zone, never the raw ISO string — UTC
+ * on the card (the server passes no zone), the browser's zone on the page's Review (it passes `timeZone`).
+ * Mutation: ignore `timeZone` → red.
+ */
+export function theSummariesSayTimesInTheGivenZone(): void {
+  const timeZone = "Asia/Kolkata";
+  expect(summary("maintenanceWindow.create", { body: { ...CREATE, targets: targets(1) }, params: {}, timeZone })).toContain(
+    "from now to 2026-11-13 23:30 (UTC+05:30) on 1 target",
+  );
+  expect(summary("maintenanceWindow.extend", { body: { endsAt: "2026-11-13T22:00:00.000Z" }, timeZone })).toContain(
+    "from 2026-11-13 23:30 (UTC+05:30) to 2026-11-14 03:30 (UTC+05:30):",
+  );
+  expect(summary("maintenanceWindow.cancel", { timeZone })).toContain("that starts at 2026-11-13 13:30 (UTC+05:30):");
+  expect(summary("maintenanceWindow.cancel", { timeZone: "UTC" })).toContain("that starts at 2026-11-13 08:00 (UTC):");
+  expect(summary("maintenanceWindow.cancel", { timeZone: "Mars/Olympus_Mons" })).toContain("that starts at 2026-11-13 08:00 (UTC):");
+  // Daylight saving: New York's offset is the instant's own, on each side of the March switch.
+  const ny = (startsAt: string) =>
+    summary("maintenanceWindow.cancel", { timeZone: "America/New_York", maintenanceWindow: { ...WINDOW, startsAt } });
+  expect(ny("2027-03-14T06:59:00.000Z")).toContain("that starts at 2027-03-14 01:59 (UTC-05:00):");
+  expect(ny("2027-03-14T07:00:00.000Z")).toContain("that starts at 2027-03-14 03:00 (UTC-04:00):");
 }
 
 /** Amendment 19 Consequences: the four routes left the exclusion list; nothing under `/maintenance-windows` stays there. */

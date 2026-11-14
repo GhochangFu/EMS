@@ -4,6 +4,8 @@ import { afterAll, afterEach, beforeAll, describe, it, vi } from "vitest";
 
 import { useAuthStore } from "../../stores/auth-store";
 import {
+  aCancelledWindowSaysCancelled,
+  theRowActionsNameTheirWindow,
   aConflictShowsItsMessageAndRefetches,
   aLocationAdminSeesThePageAndItsTab,
   anOperatorIsRedirected,
@@ -39,4 +41,6 @@ describe("F4.359 U15 — the Maintenance windows page (ADR 0131 decision 16)", (
   it("P6 every time is in the browser's zone, and the columns name it", theTimesAreInTheBrowsersZone);
   it("P7 Future lists the soonest start first", futureListsTheSoonestFirst);
   it("P8 the sections re-read every minute", theSectionsRereadEveryMinute);
+  it("P9 a cancelled window says Cancelled by, with no end time (F4.360)", aCancelledWindowSaysCancelled);
+  it("P10 each row action names its window (F4.360)", theRowActionsNameTheirWindow);
 });

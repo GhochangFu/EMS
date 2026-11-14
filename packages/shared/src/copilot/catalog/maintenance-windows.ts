@@ -4,7 +4,7 @@ import {
   createMaintenanceWindowBodySchema,
   extendMaintenanceWindowBodySchema,
 } from "../../contracts/maintenance-windows";
-import { plural, quoted, text, uuidParam } from "./summary-text";
+import { instantText, plural, quoted, text, uuidParam } from "./summary-text";
 import type { CatalogEntry, CatalogSummaryInput, ExcludedRoute } from "./types";
 
 /**
@@ -39,6 +39,12 @@ function coverClause(window: Window | undefined): string {
   return `; ${names} ${window.locationLabels.length === 1 ? "covers" : "cover"} ${plural(window.coveredAssetCount, "asset")}`;
 }
 
+/** `F4.360` defect 4: a body time as the card says it, in the input's zone (UTC when none); the fallback as it is. */
+function timeIn(body: Readonly<Record<string, unknown>>, key: string, timeZone: string | undefined, fallback = ""): string {
+  const value = text(body, key);
+  return value === "" ? fallback : instantText(value, timeZone);
+}
+
 /** The fields every entry on one window row shares. */
 const ON_A_WINDOW = {
   method: "POST",
@@ -71,11 +77,11 @@ export const MAINTENANCE_WINDOW_ENTRIES: readonly CatalogEntry[] = [
       { id: "targets", title: "Targets", fields: ["targets"] },
       { id: "link", title: "Link", fields: ["workOrderId", "maintenanceScheduleId"] },
     ],
-    summary: ({ body, organizationName, maintenanceWindow }) => {
+    summary: ({ body, organizationName, maintenanceWindow, timeZone }) => {
       const labels = maintenanceWindow?.targetLabels ?? [];
       const count = Array.isArray(body.targets) ? body.targets.length : labels.length;
       return (
-        `Create a maintenance window in ${organizationName} from ${text(body, "startsAt", "now")} to ${text(body, "endsAt")} ` +
+        `Create a maintenance window in ${organizationName} from ${timeIn(body, "startsAt", timeZone, "now")} to ${timeIn(body, "endsAt", timeZone)} ` +
         `on ${plural(count, "target")}${labels.length > 0 ? `: ${labels.join(", ")}` : ""}${coverClause(maintenanceWindow)}. ` +
         "Alarms on these targets are suppressed for that time: no alarm-bar count, popup, tone, notification or escalation. " +
         `Reason: ${quoted(text(body, "reason"))}.`
@@ -92,11 +98,12 @@ export const MAINTENANCE_WINDOW_ENTRIES: readonly CatalogEntry[] = [
     risk: "edit",
     red: true,
     steps: [{ id: "newEnd", title: "New end", fields: ["endsAt", "reason"] }],
-    summary: ({ body, targetName, maintenanceWindow }) => {
+    summary: ({ body, targetName, maintenanceWindow, timeZone }) => {
       const labels = maintenanceWindow?.targetLabels ?? [];
+      const currentEnd = maintenanceWindow?.endsAt;
       return (
         `Extend the maintenance window ${quoted(targetName)}${labels.length > 0 ? ` (${labels.join(", ")})` : ""} ` +
-        `from ${maintenanceWindow?.endsAt ?? "its current end"} to ${text(body, "endsAt")}: ` +
+        `from ${currentEnd ? instantText(currentEnd, timeZone) : "its current end"} to ${timeIn(body, "endsAt", timeZone)}: ` +
         `alarms on its targets stay suppressed until then.${reasonLine(body)}`
       );
     },
@@ -123,9 +130,9 @@ export const MAINTENANCE_WINDOW_ENTRIES: readonly CatalogEntry[] = [
     bodyName: "closeMaintenanceWindowBodySchema",
     risk: "edit",
     steps: [{ id: "reason", title: "Reason", fields: ["reason"] }],
-    summary: ({ body, targetName, maintenanceWindow }) => {
+    summary: ({ body, targetName, maintenanceWindow, timeZone }) => {
       const startsAt = maintenanceWindow?.startsAt;
-      return `Cancel the maintenance window ${quoted(targetName)}${startsAt ? ` that starts at ${startsAt}` : ""}: it suppresses nothing.${reasonLine(body)}`;
+      return `Cancel the maintenance window ${quoted(targetName)}${startsAt ? ` that starts at ${instantText(startsAt, timeZone)}` : ""}: it suppresses nothing.${reasonLine(body)}`;
     },
   },
 ];
