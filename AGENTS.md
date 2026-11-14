@@ -1294,6 +1294,18 @@
 > covered assets (the asset panel, `/asset-history`, the generated site card,
 > an asset dashboard's header); the bar shows a "Maintenance N" pill. The
 > Copilot can propose the four window writes (**ADR 0099 Amendment 19**).
+> And **organization, location, asset group and asset filters on the Alarm
+> Centre and the Rule Engine** (**ADR 0132** with four build notes, row
+> `F4.361`; plan #1310, PRs #1313, #1315, #1318). `GET /api/v1/filter-options`
+> lists the organizations, locations (with `parentId` and `organizationId`),
+> asset groups (with member `assetIds`) and assets the caller can read; the
+> alarm list gains `severity` (list only) and `assetGroupId` (list and
+> summary); `GET /rules` takes `organizationId`, `locationId` (subtree),
+> `assetGroupId` and `assetId`, filtered on the server. Every parameter only
+> narrows. `/alarms` and `/rules` show the shared `ScopeFilterBar` with the
+> filter in the URL; `/alarms` also gets Severity and a State dropdown (All /
+> Active / Suppressed) in place of "Suppressed only". No migration, no
+> dependency.
 > And **state labels for switching points, managed in the portal** (**ADR 0088
 > Amendment 3**, #1026, and **ADR 0099 Amendment 13**, #1027; row `F4.309`;
 > PR 1 #1034, PR 2 #1036, PR 3 #1038; this sweep merges last).
@@ -2852,6 +2864,20 @@ Do not add top-level folders without updating this section.
   filters its own list passes `syncRoutes={false}`, as `asset-groups-page`,
   `asset-points-page`, the `asset-templates/instantiate-wizard` component and `manual-readings-page`
   do; without it a filter change navigates away from the page.
+- **Operator list pages filter with `ScopeFilterBar`, not `HierarchyFilterBar`**
+  (**ADR 0132**, `F4.361`). `HierarchyFilterBar` reads the admin organization
+  and location lists, which need a master-data user and list **writable**
+  organizations, so it is for admin pages only. `ScopeFilterBar`
+  (`components/scope-filter-bar.tsx`) is fed by `GET /filter-options` through
+  `useScopeFilter` (`hooks/use-scope-filter.ts`), which keeps the filter in the
+  URL: a user's change pushes a history entry, an id the options do not list is
+  dropped with a replace, and one organization is shown locked and never sent.
+  A list read waits for the options only when the URL names a scope; check
+  `isPending`, not `isLoading`, or a waiting list reads as empty.
+  **`fetchRules()` takes no argument** — the control-room tabs and the
+  maintenance-window wizard pass it as a bare `queryFn`, and TanStack would pass
+  its context object; a filtered read is
+  `fetchRuleList(filter)`.
 
 ### 4.3 NestJS
 - Module-per-domain: `auth`, `assets`, `alarms`, `telemetry`, `audit`.
@@ -3844,6 +3870,21 @@ list shows a window to a caller who reads one of its targets, and drops the
 targets and links it cannot read. The Copilot's window entries call this same
 check (one authority).
 
+**List filters only narrow** (**ADR 0132**, `F4.361`). The alarm list's
+`assetGroupId` and the four `GET /rules` parameters go through
+`AssetFilterScopeService.narrow` (`apps/api/src/filter-options/`), which
+returns `readableAssetIds` untouched for an empty filter and otherwise a
+subset of it — never a replacement, and never `null` once a key is set. An
+organization, location, group or asset outside the caller's scope answers an
+empty list, not 403, checked before any read (ADR 0130 P2). **An asset-group
+scope reads only its granted groups**; every other scope reads the groups at
+its readable locations (`readable-asset-groups.ts`, build notes 1 and 4), so a
+group admin never reads a sibling group at its own site. `GET /filter-options`
+is open to any signed-in user, takes no input and lists only that read scope
+(active rows; a hidden parent's id masked to `null`; a group's `assetIds`
+limited to listed assets). The picker and the lists use the same rule, so an
+option is always a filter the list accepts.
+
 **Device alarms** (**ADR 0127** decision 14, `F3.16`) keep the read-scope
 model, with one rule for who sees an alarm stated once in
 `apps/api/src/alarms/alarm-scope.ts` (SQL for the list, summary, details,
@@ -4240,7 +4281,8 @@ id, and a row can carry `unsuppressedAt` while suppressed again — read
 `alarmSocketEventSchema` a fourth member, `{ type: "suppression", alarm }`.
 The window contracts live in `contracts/maintenance-windows.ts`, which
 exports its own `z.infer` types (`src/index.ts` is at the cap). Ship the API
-before (or with) the web.
+before (or with) the web. `contracts/filter-options.ts` (**ADR 0132**,
+`F4.361`) follows the same pattern: five plain `z.object`s and its own types.
 
 **Three encodings preserve type identity and their obvious siblings do not.**
 Measured on **9** conversions in the ADR's spike, each asserted against *two*
