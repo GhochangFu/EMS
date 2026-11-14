@@ -15,8 +15,9 @@ import {
   avgExpr,
   levelForRange,
 } from "../telemetry/point-aggregates";
-import { CalcParametersService } from "../calc/calc-parameters.service";
+import type { TariffResolver } from "../telemetry/energy-cost";
 import { latestPueRatio } from "../telemetry/pue-ratio";
+import { EnergyRateResolver } from "../tariffs/energy-rate-resolver";
 import { assetWindowsCteSql, LIVE_ASSETS_CTE_SQL, FRESHNESS_FLOOR_SECONDS } from "../telemetry/telemetry-cadence";
 import { telemetryFreshnessAt } from "../telemetry/telemetry-freshness";
 import * as energyCentre from "./energy-centre";
@@ -36,12 +37,13 @@ type LocationDashboardTelemetrySample = LocationDashboardAssetRow["telemetry"][n
 export class DashboardService {
   constructor(
     @Inject(FLEET_POOL) private readonly pool: Pool,
-    // `E4.1c` — the tariff is a parameter (ADR 0070 decision 7). `Pick`-typed
-    // so the existing `new DashboardService(pool)` spec sites pass a two-line
-    // fake; the real service comes from `CalcModule`, which `DashboardModule`
-    // imports for it.
-    @Inject(CalcParametersService)
-    private readonly parameters: Pick<CalcParametersService, "resolveForAssets">,
+    // `E4.1c` — the tariff is a parameter (ADR 0070 decision 7). Interface-typed
+    // so the existing `new DashboardService(pool, …)` spec sites pass a
+    // `CalcParametersService` or a two-line fake. `F4.365` U7 — the real one is
+    // the `EnergyRateResolver` (a mapped location's slab rate, else the
+    // parameter), from `TariffRatesModule`, which `DashboardModule` imports.
+    @Inject(EnergyRateResolver)
+    private readonly parameters: TariffResolver,
     // `F4.364` (plan D5) — the location cards' health figure. Appended and
     // `Pick`-typed on the `parameters` precedent, so spec sites pass a fake.
     @Inject(AssetHealthService)

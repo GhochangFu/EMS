@@ -52,6 +52,8 @@ export const energyViewPeriodSchema = z.object({
   indicativeCost: z.number().nullable(),
   tariffPerKwh: z.number().nullable(),
   currency: z.string().nullable(),
+  /** `F4.365` (plan Q8): the cost rests on a non-`official` slab tariff — the Indicative cost tile's Verify badge. */
+  tariffVerify: z.boolean(),
   sourceTotals: energyReportSourceTotalsSchema,
   series: z.array(energySourceMixPointSchema),
   /**

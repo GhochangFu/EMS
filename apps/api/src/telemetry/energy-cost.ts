@@ -71,14 +71,20 @@ export interface PerAssetEnergy {
   readonly locationId: string;
 }
 
-/** The three contract fields, in the shape `energyCentreSummarySchema` declares them. */
+/** The four contract fields, in the shape `energyCentreSummarySchema` declares them. */
 export interface EnergyCostResult {
   readonly indicativeCost: number | null;
   readonly tariffPerKwh: number | null;
   readonly currency: string | null;
+  /**
+   * `F4.365` (ADR 0134; plan Q8) — the cost was priced, in part, at a slab
+   * tariff whose data status is not `official`: the Indicative cost tile shows
+   * its Verify badge. `false` whenever `indicativeCost` is `null`.
+   */
+  readonly tariffVerify: boolean;
 }
 
-const NOTHING: EnergyCostResult = { indicativeCost: null, tariffPerKwh: null, currency: null };
+const NOTHING: EnergyCostResult = { indicativeCost: null, tariffPerKwh: null, currency: null, tariffVerify: false };
 
 /**
  * Reduce the per-asset rows and their resolved tariffs to the contract's three
@@ -89,6 +95,7 @@ const NOTHING: EnergyCostResult = { indicativeCost: null, tariffPerKwh: null, cu
 export function energyCost(
   rows: readonly PerAssetEnergy[],
   tariffs: ReadonlyMap<string, number>,
+  verify = false,
 ): EnergyCostResult {
   if (rows.length === 0) {
     return NOTHING;
@@ -106,7 +113,7 @@ export function energyCost(
     if (tariff === undefined || !Number.isFinite(tariff) || !Number.isFinite(row.kwh)) {
       // One unresolved asset fails the whole read closed: a partial sum is
       // not "the cost of the scope", it is a smaller number with the same label.
-      return { indicativeCost: null, tariffPerKwh: null, currency };
+      return { indicativeCost: null, tariffPerKwh: null, currency, tariffVerify: false };
     }
     distinctTariffs.add(tariff);
     sum += row.kwh * tariff;
@@ -114,7 +121,12 @@ export function energyCost(
 
   const tariffPerKwh = distinctTariffs.size === 1 ? [...distinctTariffs][0]! : null;
   const indicativeCost = currency === null ? null : Math.round(sum * 100) / 100;
-  return { indicativeCost, tariffPerKwh: currency === null ? null : tariffPerKwh, currency };
+  return {
+    indicativeCost,
+    tariffPerKwh: currency === null ? null : tariffPerKwh,
+    currency,
+    tariffVerify: verify && indicativeCost !== null,
+  };
 }
 
 /**
@@ -210,25 +222,67 @@ export async function perAssetEnergy(
   }));
 }
 
-/** The one method of `CalcParametersService` the two reads need — what the services inject. */
+/**
+ * The one method of `CalcParametersService` the reads need — what the services
+ * inject — and, since `F4.365` U7, the optional per-asset method of
+ * `EnergyRateResolver` (`tariffs/energy-rate-resolver.ts`) that also says
+ * whether a slab rate needs verifying. A resolver without it (the
+ * `CalcParametersService` and fakes the specs construct) is read as before,
+ * with `verify` false.
+ */
 export interface TariffResolver {
   resolveForAssets(
     pairs: readonly { readonly assetId: string; readonly key: string }[],
     at: Date,
   ): Promise<Map<string, number>>;
+  resolveRatesForAssets?(
+    assetIds: readonly string[],
+    at: Date,
+  ): Promise<{ rates: Map<string, number>; verify: boolean }>;
+  /** `F4.365` owner ruling 2026-11-14: a mapped asset priced per local month over a range. */
+  resolveRangeRatesForAssets?(
+    assetIds: readonly string[],
+    start: Date,
+    end: Date,
+  ): Promise<{ rates: Map<string, number>; verify: boolean }>;
+}
+
+/** What {@link resolveTariffs} answers: the tariff per `assetId`, and the Verify flag. */
+export interface ResolvedTariffs {
+  readonly rates: Map<string, number>;
+  readonly verify: boolean;
 }
 
 /**
  * Resolve `energy_tariff_per_kwh` for every asset in `rows` at `at` — the
- * nearest scope per asset — and re-key the resolver's `inputKey` map by
- * `assetId` for {@link energyCost}. An asset with no row in scope is simply
- * absent from the result; `energyCost` is where absence fails closed.
+ * nearest scope per asset, or a mapped location's slab rate (`F4.365`) — keyed
+ * by `assetId` for {@link energyCost}. An asset with no rate is simply absent
+ * from the result; `energyCost` is where absence fails closed.
+ *
+ * `range` is the window the rows' kWh covers. When the resolver prices ranges
+ * (`EnergyRateResolver`), a mapped asset is priced per local month over it —
+ * the `F4.365` owner ruling of 2026-11-14 — rather than at the month `at`
+ * falls in, which for a range ending on a month's last day is the next month.
  */
 export async function resolveTariffs(
   resolver: TariffResolver,
   rows: readonly PerAssetEnergy[],
   at: Date,
-): Promise<Map<string, number>> {
+  range?: { readonly start: Date; readonly end: Date },
+): Promise<ResolvedTariffs> {
+  if (range !== undefined && resolver.resolveRangeRatesForAssets !== undefined) {
+    return resolver.resolveRangeRatesForAssets(
+      rows.map((row) => row.assetId),
+      range.start,
+      range.end,
+    );
+  }
+  if (resolver.resolveRatesForAssets !== undefined) {
+    return resolver.resolveRatesForAssets(
+      rows.map((row) => row.assetId),
+      at,
+    );
+  }
   const resolved = await resolver.resolveForAssets(
     rows.map((row) => ({ assetId: row.assetId, key: ENERGY_TARIFF_KEY })),
     at,
@@ -240,5 +294,5 @@ export async function resolveTariffs(
       byAsset.set(row.assetId, value);
     }
   }
-  return byAsset;
+  return { rates: byAsset, verify: false };
 }

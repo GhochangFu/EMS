@@ -95,7 +95,7 @@ export function showsALocationAdminItsOwnTabs(): void {
   }).toEqual({
     // `F4.359`: Maintenance Windows gives a `location_admin` a Notifications area: 4 -> 5.
     areas: 5,
-    reference: ["Asset Groups /admin/asset-groups", "Calc Parameters /admin/calc-parameters *"],
+    reference: ["Asset Groups /admin/asset-groups", "Calc Parameters /admin/calc-parameters *", "Tariffs /admin/tariffs"],
   });
 }
 

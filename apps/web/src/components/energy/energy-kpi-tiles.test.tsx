@@ -4,7 +4,10 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aFlatSiteHasNoOwnAssetsHint,
+  aLoadingTileShowsNoBadge,
   aNullCostIsADashWithTheReason,
+  aVerifyFlagBadgesTheCostTile,
+  noVerifyFlagNoBadge,
   aNullPfSaysNoPfPoint,
   aNullPueIsADashWithTheReason,
   aPeriodWithoutDataSaysSo,
@@ -109,5 +112,17 @@ describe("F4.302 — the Energy KPI tiles", () => {
 
   it("F4.304 P7: a flat site has no own-assets hint", () => {
     aFlatSiteHasNoOwnAssetsHint();
+  });
+
+  it("F4.365: tariffVerify badges the Indicative cost tile", () => {
+    aVerifyFlagBadgesTheCostTile();
+  });
+
+  it("F4.365: no flag, no badge", () => {
+    noVerifyFlagNoBadge();
+  });
+
+  it("F4.365: a loading tile shows no badge", () => {
+    aLoadingTileShowsNoBadge();
   });
 });

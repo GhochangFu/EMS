@@ -229,6 +229,25 @@ export function canWriteOrganizationScopedCalcParameter(role: UserRole): boolean
 }
 
 /**
+ * `F4.365` (ADR 0134 decision 3, plan D6) — whether the role may map a location to a tariff:
+ * the location-tariff routes run `requireMasterDataUser`, then `canManageLocation`, so a
+ * `location_admin` maps its own locations and the server refuses the rest. Its own predicate.
+ */
+export function canManageLocationTariffs(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin" || role === "location_admin";
+}
+
+/**
+ * `F4.365` (ADR 0134 decision 8, plan D6) — whether the role may write an organization's own
+ * tariff versions (a revision or a custom line). Mirrors `isOrganizationLevelAdmin`, never
+ * `canManageOrganization`, which also admits a `location_admin`. `tariffs-page.tsx` reads it:
+ * every write control is absent, not disabled, for the other roles. Its own predicate.
+ */
+export function canManageOrgTariffs(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
+/**
  * Whether the role may read and write the location-type vocabulary,
  * `bms.location_types` (`F4.162`, ADR 0077 Amendment 1, plan D7).
  *
@@ -475,6 +494,10 @@ export const masterDataTabs = [
   // server. The organization option is hidden inside the form by
   // `canWriteOrganizationScopedCalcParameter`, never by the tab.
   { label: "Calc Parameters", path: "/admin/calc-parameters", area: "reference" },
+  // `F4.365` (ADR 0134 decision 8). Ungated, like Calc Parameters: the catalog reads admit any
+  // signed-in user, so a `location_admin` browses the lines it maps its locations to; the
+  // revision and custom-line controls are absent inside the page unless `canManageOrgTariffs`.
+  { label: "Tariffs", path: "/admin/tariffs", area: "reference" },
   // `F4.341` PR 12 (ADR 0118 decision 11): the portal default design system and colour profile —
   // read and written by the global `admin` only (`PortalSettingsService`), so the tab is too.
   { label: "Portal Appearance", path: "/admin/portal-appearance", globalAdminOnly: true, area: "reference" },

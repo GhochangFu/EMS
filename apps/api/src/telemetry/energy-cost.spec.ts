@@ -1,4 +1,5 @@
-import { energyCost, type PerAssetEnergy } from "./energy-cost";
+import { inputKey } from "../calc/calc-batch";
+import { ENERGY_TARIFF_KEY, energyCost, resolveTariffs, type PerAssetEnergy, type TariffResolver } from "./energy-cost";
 
 /**
  * `E4.1c` — the pure half of the indicative-cost read (ADR 0070 decision 7).
@@ -122,4 +123,70 @@ export function assertOrphanTelemetryIsNull(): void {
   assert(present.indicativeCost === null, `expected null, got ${String(present.indicativeCost)}`);
   const alone = energyCost(rows(["orphan", 5, null]), tariffs({ orphan: 2.15 }));
   assert(alone.currency === null && alone.indicativeCost === null, "a null currency alone is not a currency");
+}
+
+/**
+ * C11 — `F4.365` U7 (plan Q8): `tariffVerify` carries the resolver's flag only
+ * with a cost. A `null` cost has nothing to verify; no flag defaults to false.
+ */
+export function assertTariffVerifyNeedsACost(): void {
+  const priced = energyCost(rows([A1, 100, "INR"]), tariffs({ [A1]: 10 }), true);
+  assert(priced.tariffVerify === true && priced.indicativeCost === 1000, `expected a verified 1000, got ${JSON.stringify(priced)}`);
+  const unpriced = energyCost(rows([A1, 100, "INR"], [A2, 5, "INR"]), tariffs({ [A1]: 10 }), true);
+  assert(unpriced.indicativeCost === null && unpriced.tariffVerify === false, `a null cost carries no flag, got ${JSON.stringify(unpriced)}`);
+  const empty = energyCost([], tariffs({}), true);
+  assert(empty.tariffVerify === false, "an empty scope carries no flag");
+  const plain = energyCost(rows([A1, 100, "INR"]), tariffs({ [A1]: 10 }));
+  assert(plain.tariffVerify === false, "no flag by default");
+}
+
+/**
+ * C12 — `resolveTariffs` reads `resolveRatesForAssets` when the resolver has it
+ * (the `EnergyRateResolver`), and keys `resolveForAssets` by asset with
+ * `verify: false` when it does not (`CalcParametersService`, every fake).
+ */
+export async function assertResolveTariffsPrefersTheRateMethod(): Promise<void> {
+  const scope = rows([A1, 100, "INR"], [A2, 5, "INR"]);
+  const flat: TariffResolver = {
+    async resolveForAssets(pairs) {
+      return new Map(pairs.filter((p) => p.assetId === A1).map((p) => [inputKey(p.assetId, ENERGY_TARIFF_KEY), 7]));
+    },
+  };
+  const a = await resolveTariffs(flat, scope, new Date());
+  assert(a.verify === false && a.rates.get(A1) === 7 && !a.rates.has(A2), JSON.stringify([...a.rates]));
+  const asked: string[][] = [];
+  const slab: TariffResolver = {
+    ...flat,
+    async resolveRatesForAssets(assetIds) {
+      asked.push([...assetIds]);
+      return { rates: new Map([[A2, 9]]), verify: true };
+    },
+  };
+  const b = await resolveTariffs(slab, scope, new Date());
+  assert(b.verify === true && b.rates.get(A2) === 9 && !b.rates.has(A1), JSON.stringify([...b.rates]));
+  assert(JSON.stringify(asked) === JSON.stringify([[A1, A2]]), `asked by asset id: ${JSON.stringify(asked)}`);
+}
+
+/** `F4.365` (owner ruling 2026-11-14): with a range, `resolveTariffs` asks the range method, with the range. */
+export async function assertResolveTariffsPricesARangeByRange(): Promise<void> {
+  const scope = rows([A1, 100, "INR"], [A2, 5, "INR"]);
+  const asked: { ids: string[]; start: Date; end: Date }[] = [];
+  const resolver: TariffResolver = {
+    async resolveForAssets() {
+      throw new Error("the point read must not be asked for a range");
+    },
+    async resolveRatesForAssets() {
+      throw new Error("the point rate must not be asked for a range");
+    },
+    async resolveRangeRatesForAssets(assetIds, start, end) {
+      asked.push({ ids: [...assetIds], start, end });
+      return { rates: new Map([[A1, 3]]), verify: true };
+    },
+  };
+  const start = new Date("2026-10-01T00:00:00.000Z");
+  const end = new Date("2026-10-31T23:59:59.999Z");
+  const r = await resolveTariffs(resolver, scope, end, { start, end });
+  assert(r.verify === true && r.rates.get(A1) === 3 && !r.rates.has(A2), JSON.stringify([...r.rates]));
+  assert(asked.length === 1 && asked[0]!.start === start && asked[0]!.end === end, "asked once, with the range");
+  assert(JSON.stringify(asked[0]!.ids) === JSON.stringify([A1, A2]), `asked by asset id: ${JSON.stringify(asked[0]!.ids)}`);
 }

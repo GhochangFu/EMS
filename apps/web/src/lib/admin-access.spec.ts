@@ -130,6 +130,9 @@ export function runAssetTemplateTabTests(): void {
         // `F4.334` (ADR 0116 decision 5) — Payload Formats, `globalAdminOnly` like Location Types.
         "/admin/payload-formats",
         "/admin/calc-parameters",
+        // `F4.365` (ADR 0134 decision 8) — Tariffs, ungated like Calc Parameters: the write
+        // controls are hidden inside the page by `canManageOrgTariffs`.
+        "/admin/tariffs",
         // `F4.341` PR 12 (ADR 0118 decision 11) — Portal Appearance, `globalAdminOnly`.
         "/admin/portal-appearance",
         // Templates & Visuals. `F3.36` Part F (ADR 0049) — ungated, like Asset
@@ -200,7 +203,8 @@ export function runAssetTemplateTabTests(): void {
     // `workOrderSettingsAdmin` (admin and organization_admin only): 26 -> 29 and 20 -> 22;
     // `location_admin` stays at 11.
     // `F4.359` added Maintenance Windows ungated: 29 -> 30, 22 -> 23 and 11 -> 12.
-    const expected = role === "location_admin" ? 12 : role === "admin" ? 30 : 23;
+    // `F4.365` added Tariffs ungated: 30 -> 31, 23 -> 24 and 12 -> 13.
+    const expected = role === "location_admin" ? 13 : role === "admin" ? 31 : 24;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,

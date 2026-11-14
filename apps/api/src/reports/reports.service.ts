@@ -11,8 +11,8 @@ import {
   bucketHours,
   levelForRange,
 } from "../telemetry/point-aggregates";
-import { CalcParametersService } from "../calc/calc-parameters.service";
-import { energyCost, perAssetEnergy, resolveTariffs } from "../telemetry/energy-cost";
+import { energyCost, perAssetEnergy, resolveTariffs, type TariffResolver } from "../telemetry/energy-cost";
+import { EnergyRateResolver } from "../tariffs/energy-rate-resolver";
 import { nominalSourceSplit } from "../telemetry/energy-sources";
 import { windowedPueRatio } from "../telemetry/pue-ratio";
 import { energyPdfDefinition, renderPdf } from "./energy-pdf";
@@ -71,10 +71,11 @@ export class ReportsService {
   // it runs on fleetDb (BYPASSRLS). Its telemetry aggregates are unpoliced.
   constructor(
     @Inject(FLEET_POOL) private readonly pool: Pool,
-    // `E4.1c` — the tariff is a parameter (ADR 0070 decision 7); see
-    // `DashboardService` for why the injection is `Pick`-typed.
-    @Inject(CalcParametersService)
-    private readonly parameters: Pick<CalcParametersService, "resolveForAssets">,
+    // `E4.1c` — the tariff is a parameter (ADR 0070 decision 7); `F4.365` U7 —
+    // through `EnergyRateResolver`. See `DashboardService` for why the
+    // injection is interface-typed.
+    @Inject(EnergyRateResolver)
+    private readonly parameters: TariffResolver,
   ) {}
 
   /** Builds the Sprint E Energy Consumption report preview. */
@@ -193,6 +194,7 @@ export class ReportsService {
         indicativeCost: null,
         tariffPerKwh: null,
         currency: null,
+        tariffVerify: false,
         asOf: new Date().toISOString(),
       };
     }
@@ -245,7 +247,9 @@ export class ReportsService {
     const peakKw = row ? Number(row.peak_kw) : 0;
     // `E4.1c` (ADR 0070 decision 7) — Σ per-asset kWh × that asset's
     // nearest-scope `energy_tariff_per_kwh`, effective at the **report's end**
-    // instant, over the same `[start, end]` bound as the total above. A missing
+    // instant, over the same `[start, end]` bound as the total above; a
+    // tariff-mapped asset at each local month's own bill rate over the range
+    // (`F4.365`, owner ruling 2026-11-14). A missing
     // tariff or a second currency in scope is `null`, not 0 (`energy-cost.ts`).
     const perAsset = await perAssetEnergy(this.pool, {
       level,
@@ -253,7 +257,8 @@ export class ReportsService {
       kwhFactor,
       assetIds: assetIds ?? null,
     });
-    const cost = energyCost(perAsset, await resolveTariffs(this.parameters, perAsset, range.end));
+    const tariffs = await resolveTariffs(this.parameters, perAsset, range.end, range);
+    const cost = energyCost(perAsset, tariffs.rates, tariffs.verify);
     return {
       window: "custom",
       totalKwh: this.round(totalKwh),

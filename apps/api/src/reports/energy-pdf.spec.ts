@@ -44,6 +44,7 @@ function preview(overrides: Partial<EnergyReportPreview> = {}): EnergyReportPrev
       indicativeCost: 5042.12,
       tariffPerKwh: 2.15,
       currency: "ZAR",
+      tariffVerify: false,
       asOf: "2026-08-10T12:00:00.000Z",
     },
     sourceTotals: { gridKwh: 2130.37, solarKwh: 126.04, dgKwh: 88.76 },

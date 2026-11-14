@@ -89,6 +89,7 @@ function period(overrides: Partial<EnergyViewPeriod> = {}): EnergyViewPeriod {
     indicativeCost: 5042.12,
     tariffPerKwh: 2.15,
     currency: "ZAR",
+    tariffVerify: false,
     sourceTotals: { gridKwh: 2000, solarKwh: 200, dgKwh: 50 },
     series: [],
     kwhPerM2: null,

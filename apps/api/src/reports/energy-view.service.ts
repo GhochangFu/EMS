@@ -18,9 +18,9 @@ import {
 
 import { AccessControlService } from "../auth/access-control.service";
 import { expandLocationSubtrees } from "../auth/location-tree";
-import { CalcParametersService } from "../calc/calc-parameters.service";
 import { FLEET_DRIZZLE, FLEET_POOL } from "../database/database.tokens";
-import { energyCost, perAssetEnergy, resolveTariffs } from "../telemetry/energy-cost";
+import { energyCost, perAssetEnergy, resolveTariffs, type EnergyCostResult, type TariffResolver } from "../telemetry/energy-cost";
+import { EnergyRateResolver } from "../tariffs/energy-rate-resolver";
 import { nominalSourceSplit } from "../telemetry/energy-sources";
 import { bucketHours } from "../telemetry/point-aggregates";
 import { windowedPueRatio } from "../telemetry/pue-ratio";
@@ -135,8 +135,9 @@ export class EnergyViewService {
   constructor(
     @Inject(FLEET_POOL) private readonly pool: Pool,
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: Pick<BmsDb, "select" | "execute">,
-    @Inject(CalcParametersService)
-    private readonly parameters: Pick<CalcParametersService, "resolveForAssets">,
+    // `F4.365` U7 — a mapped location's slab rate, else the parameter.
+    @Inject(EnergyRateResolver)
+    private readonly parameters: TariffResolver,
     @Inject(AccessControlService)
     private readonly access: Pick<
       AccessControlService,
@@ -361,10 +362,11 @@ export class EnergyViewService {
     const avgPf = await averagePf(this.pool, { level, start, end, assetIds });
     const { dg, grid } = nominalSourceSplit(read.totalKwh, read.solarKwh);
     let pueEstimate: number | null = null;
-    let cost: { indicativeCost: number | null; tariffPerKwh: number | null; currency: string | null } = {
+    let cost: EnergyCostResult = {
       indicativeCost: null,
       tariffPerKwh: null,
       currency: null,
+      tariffVerify: false,
     };
     let kwhPerM2: number | null = null;
     if (assetIds.length > 0) {
@@ -374,7 +376,8 @@ export class EnergyViewService {
         kwhFactor: bucketHours(level),
         assetIds,
       });
-      cost = energyCost(perAsset, await resolveTariffs(this.parameters, perAsset, end));
+      const tariffs = await resolveTariffs(this.parameters, perAsset, end, { start, end });
+      cost = energyCost(perAsset, tariffs.rates, tariffs.verify);
       pueEstimate = await windowedPueRatio(this.pool, { level, start, end, assetIds: [...assetIds] });
       // F4.304 (plan C1): the per-asset read already runs per period, so the
       // own-asset kWh costs no statement and sums the ranking row's terms.
