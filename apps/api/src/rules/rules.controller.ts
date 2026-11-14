@@ -36,7 +36,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { AssetFilterScopeService } from "../filter-options/asset-filter-scope.service";
 import { EvaluateThrottle, throttleKeysFor } from "./evaluate-throttle";
 import { RulesBatchService } from "./rules-batch.service";
-import { listRuleExecutionsQuerySchema, ruleListQuerySchema, rulePreviewBodySchema } from "./rules.schema";
+import { listRuleExecutionsQuerySchema, ruleListQuerySchema, rulePreviewBodySchema, type RuleListQuery } from "./rules.schema";
 import { RulesService } from "./rules.service";
 import { RateLimitClassOf } from "../rate-limit/rate-limit-class.decorator";
 
@@ -130,7 +130,7 @@ export class RulesController {
    */
   @Get()
   async listRules(@CurrentUser() user: JwtPayload, @Query() query: unknown) {
-    let dto;
+    let dto: RuleListQuery;
     try {
       dto = ruleListQuerySchema.parse(query);
     } catch (err) {

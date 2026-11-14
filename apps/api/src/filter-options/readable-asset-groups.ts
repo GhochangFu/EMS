@@ -9,8 +9,10 @@ import type { AccessibleScope } from "@bms/shared";
  * **reads**. `currentUser(jwt).scope.assetGroups` lists groups only for an
  * asset-group grant, so on its own it would leave the picker empty for every
  * organization- or location-scoped caller and for the global admin. The rule:
- * a group is readable when it is one of the caller's granted groups, **or**
- * its location is one of the caller's readable locations. This one function
+ * an asset-group-scoped caller reads only its granted groups; every other
+ * caller reads the groups whose location is one of its readable locations
+ * (so a group admin never reads a sibling group at its site — build note 4).
+ * This one function
  * decides it for the options read (`FilterOptionsService`) and for the list
  * filters (`AssetFilterScopeService.narrow`).
  */
