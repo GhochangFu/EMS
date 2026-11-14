@@ -460,7 +460,7 @@ export async function assertRetiredMemberIsNotInTheSummary(db: BmsDb): Promise<v
   }, db);
 }
 
-/** S12d — control: the tab's status agrees with its rail — warning, one alarm, one asset. */
+/** S12d — control: with no window, the tab's status agrees with its rail — warning, one alarm, one asset. */
 export async function assertRetiredMemberTabStatusAgrees(db: BmsDb): Promise<void> {
   await inSite(async (site) => {
     await retireB1(site);
@@ -490,5 +490,29 @@ export async function assertTheReadRunsOnTheTenantHandle(db: BmsDb): Promise<voi
     });
     const dto = await readAs(site, "b", null, serviceOver(site, {}, fleet));
     expect(dto.scope.assetCount).toBe(2);
+  }, db);
+}
+
+/**
+ * S14 — `F4.360` defect 7 (owner ruling, 2026-11-14): a tab's status leaves out a suppressed alarm, as the
+ * alarm bar does (ADR 0131 decision 6): `b1`'s critical alarm, stamped by an active window, leaves tab B with
+ * `b2`'s warning only. The before read is the control. Mutation: drop `suppressed_at IS NULL` → red.
+ */
+export async function assertTheTabStatusLeavesOutSuppressedAlarms(db: BmsDb): Promise<void> {
+  await inSite(async (site) => {
+    const statusOf = async () => {
+      const status = tabNamed(await readAs(site, null), "b").status;
+      return { activeAlarms: status?.activeAlarms, worstSeverity: status?.worstSeverity };
+    };
+    expect(await statusOf(), "control: both alarms count").toEqual({ activeAlarms: 2, worstSeverity: "critical" });
+    const user = await site.txDb.execute<{ id: string }>(sql`SELECT id FROM bms.users ORDER BY created_at, id LIMIT 1`);
+    const win = await site.txDb.execute<{ id: string }>(sql`
+      INSERT INTO bms.maintenance_windows (organization_id, reason, starts_at, ends_at, created_by)
+      VALUES (${site.organizationId}, 'F4.360 tab', now() - interval '1 minute', now() + interval '1 hour', ${user.rows[0]!.id})
+      RETURNING id`);
+    await site.txDb.execute(
+      sql`UPDATE bms.alarms SET suppressed_at = now(), suppressed_by_window_id = ${win.rows[0]!.id} WHERE asset_id = ${site.b1} AND cleared_at IS NULL`,
+    );
+    expect(await statusOf()).toEqual({ activeAlarms: 1, worstSeverity: "warning" });
   }, db);
 }
