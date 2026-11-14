@@ -2,11 +2,12 @@
 
 ## Status
 
-**Proposed — 2026-11-14.** Drafted by an agent for backlog row `F4.364` from an
-owner request on 2026-11-14. The owner ruled two questions in chat, one at a
-time; those rulings are marked *(owner, 2026-11-14)*. Lines marked
-*(recommended)* are the agent's calls and become rulings if the owner accepts
-the ADR as written.
+**Accepted — 2026-11-14** (owner, in chat: "Accepted"; proposed the same
+day). Drafted by an agent for backlog row `F4.364` from an owner request on
+2026-11-14. The owner ruled two questions in chat, one at a time; those
+rulings are marked *(owner, 2026-11-14)*. Lines marked *(recommended)* were
+the agent's calls; the owner accepted the ADR with them as written, so
+**every *(recommended)* line is now a ruling**.
 
 Builds on [ADR 0043](./0043-multi-tenant-architecture.md) (organizations),
 [ADR 0050](./0050-asset-health-score.md) (the asset health score),
