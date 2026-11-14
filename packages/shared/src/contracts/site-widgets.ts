@@ -85,7 +85,8 @@ export const breakerTableConfigSchema = z.object({});
 /**
  * One tab's status as the module card and the critical-systems row read it (ruling Q6a): the worst
  * active alarm severity among the tab group's members in scope, plus the offline asset count.
- * `worstSeverity` is null when none of them has an active alarm; `tone` is then `ok`.
+ * `worstSeverity` is null when none of them has an active alarm; `tone` is then `ok`. A suppressed
+ * alarm (ADR 0131) counts in neither `worstSeverity` nor `activeAlarms` (`F4.360`, owner ruling).
  */
 export const siteWidgetTabStatusSchema = z.object({
   worstSeverity: alarmSeverityCodeSchema.nullable(),

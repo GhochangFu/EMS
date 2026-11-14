@@ -248,7 +248,8 @@ and the asset badges.
   transaction), while the sweep leaves stamps unchanged for that tick;
   `rtu_comms` "every bound asset" counts inactive assets that still carry the
   RTU id; the KPI ribbons, map, mimic colours, site-widget summary and health
-  scores still count a suppressed alarm (non-goal).
+  scores still count a suppressed alarm (non-goal); the group-tab status was
+  later excluded (owner, 2026-11-14; the `F4.360` defect 7 build notes below).
 
 ## Build notes (2026-11-14, `F4.360` defects 3–6)
 
@@ -276,3 +277,20 @@ Four page defects from the owner's AWS check of 2026-11-14.
   reason given.". The omission seen on AWS did not reproduce in jsdom (the
   reason was in the summary sentence and the Field table); the line makes it
   explicit.
+
+## Build notes (2026-11-14, `F4.360` defect 7)
+
+- **The group-tab status leaves out a suppressed alarm** *(owner,
+  2026-11-14, in chat: "Exclude them")*. The AWS check of 2026-11-14 saw a
+  site dashboard tab read "Deep freezers & cold rooms, Critical, 2 alarms"
+  while both alarms were suppressed. `tabStatuses` in
+  `apps/api/src/dashboard-builder/site-widgets.service.ts` now counts, and
+  takes the worst severity from, active alarms with `suppressed_at IS NULL`,
+  as the alarm bar does (decision 6). The same `tabs[].status` feeds the tab
+  marker, the tab's accessible name, the Module summary card and the
+  Critical systems list, so all four follow. The tab's rail still
+  lists a suppressed alarm, badged "Maintenance" (decision 6: it stays in
+  the lists), so a tab's count can be lower than its rail's rows during a
+  window. The other surfaces of the 2026-11-13 accepted-behaviours note (the KPI ribbons, the
+  map, the mimic colours, the site-widget severity summary and the health
+  scores) are unchanged and remain non-goals.

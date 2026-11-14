@@ -21,6 +21,7 @@ import {
   assertRetiredMemberTabStatusAgrees,
   assertTheRailCarriesSuppression,
   assertTheRailCarriesTheSeverityRank,
+  assertTheTabStatusLeavesOutSuppressedAlarms,
   assertTheSummaryCountsTheUnacknowledged,
   assertTheReadRunsOnTheTenantHandle,
   assertUnreadableTabGroupCountsNoRole,
@@ -87,4 +88,5 @@ describe.skipIf(!connectionString)("F3.73 — SiteWidgetsService (real database)
   it("S12c a retired member's alarm is not in the summary", () => assertRetiredMemberIsNotInTheSummary(db), 60_000);
   it("S12d control: the tab's status agrees with its rail", () => assertRetiredMemberTabStatusAgrees(db), 60_000);
   it("S13 the read runs on the tenant handle, not the fleet one", () => assertTheReadRunsOnTheTenantHandle(db), 60_000);
+  it("S14 a tab's status leaves out a suppressed alarm (F4.360)", () => assertTheTabStatusLeavesOutSuppressedAlarms(db), 60_000);
 });

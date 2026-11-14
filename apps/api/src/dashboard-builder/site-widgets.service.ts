@@ -383,8 +383,9 @@ async function severityCounts(
  *
  * `members` holds each group tab's ACTIVE member assets of this organization, each flagged
  * `readable`; `per_asset` keeps only the readable ones, with the asset's worst active-alarm rank
- * and count (`cleared_at IS NULL`, ADR 0057 decision 1) and whether it is missing from the shared
- * `live` window. `member_total` counts every member so the caller can tell "none readable"
+ * and count (`cleared_at IS NULL`, ADR 0057 decision 1; `F4.360` owner ruling: never a suppressed
+ * alarm, `suppressed_at IS NULL`, as the alarm bar — ADR 0131 decision 6) and whether it is
+ * missing from the shared `live` window. `member_total` counts every member so the caller can tell "none readable"
  * (status `null`) from "no member" (a zero status). The readable array is one bound parameter,
  * never expanded into a list.
  */
@@ -424,11 +425,13 @@ async function tabStatuses(
           FROM bms.alarms al
           INNER JOIN bms.alarm_severities s ON s.code = al.severity
           WHERE al.asset_id = m.asset_id AND al.organization_id = ${organizationId} AND al.cleared_at IS NULL
+            AND al.suppressed_at IS NULL
         ) AS worst_rank,
         (
           SELECT count(*)::int
           FROM bms.alarms al
           WHERE al.asset_id = m.asset_id AND al.organization_id = ${organizationId} AND al.cleared_at IS NULL
+            AND al.suppressed_at IS NULL
         ) AS active_alarms
       FROM members m
       LEFT JOIN live l ON l.asset_id = m.asset_id
