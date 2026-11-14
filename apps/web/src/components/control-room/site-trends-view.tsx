@@ -69,8 +69,12 @@ export function SiteTrendsView({ locationId, energyShown }: Props) {
     refetchInterval: 60_000,
   });
   const data = segmentQ.data;
-  // `F4.364`: with energy hidden, the bare section is the default segment — the read already asks
-  // for it — and an explicit `?view=energy` or a segment-less site gets the note.
+  // `F4.364` (ADR 0133 Amendment 1) — what the Energy slot shows:
+  //   energy shown,  view=energy              → SiteEnergyView, energy Export and Schedule;
+  //   energy hidden, bare section             → the read's default (first present) segment,
+  //                                             marked current, with the segment's Export;
+  //   energy hidden, `?view=energy` or no segment → the note, no Export and no Schedule;
+  //   any segment view                        → unchanged.
   const energyHidden = !energyShown && view === ENERGY_VIEW;
   const explicitEnergy = searchParams.get("view") === ENERGY_VIEW;
   const showsNote =
@@ -117,7 +121,7 @@ export function SiteTrendsView({ locationId, energyShown }: Props) {
               <ExportMenu onExport={exportView} />
             </div>
           )}
-          {energyQuery !== null ? (
+          {view === ENERGY_VIEW && energyShown ? (
             <div className="pb-1">
               {/* `F4.303` U16 (Amendment 6 item 6): schedules `energy_consumption` for this site; a segment sub-tab brings its own. */}
               <ScheduleButton

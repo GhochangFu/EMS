@@ -31,6 +31,9 @@ import {
   hiddenEnergyPointPickKeepsTheSegment,
   hiddenEnergyWithNoSegmentShowsTheNote,
   shownEnergyListsEnergyFirstAndNoNote,
+  hiddenEnergyExportsAndSchedulesTheSegment,
+  hiddenEnergyNoteHasNoExportOrSchedule,
+  shownEnergyKeepsScheduleOnAHalfCustomRange,
 } from "./site-trends-view.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014, ADR 0042 decision 2). */
@@ -147,5 +150,17 @@ describe("F4.302 the Trends & Energy section", () => {
 
   it("F4.364 H5: energy not shown, a point pick keeps the opened segment", async () => {
     await hiddenEnergyPointPickKeepsTheSegment();
+  });
+
+  it("F4.364 H6: energy not shown, Export and Schedule are the opened segment's", async () => {
+    await hiddenEnergyExportsAndSchedulesTheSegment();
+  });
+
+  it("F4.364 H7: energy not shown, the note has no Export and no Schedule", async () => {
+    await hiddenEnergyNoteHasNoExportOrSchedule();
+  });
+
+  it("F4.364 H8: energy shown keeps Schedule on a half-filled custom range", async () => {
+    await shownEnergyKeepsScheduleOnAHalfCustomRange();
   });
 });

@@ -458,3 +458,44 @@ export async function hiddenEnergyPointPickKeepsTheSegment(): Promise<void> {
   fireEvent.change(picker, { target: { value: "pf" } });
   await waitFor(() => expect(screen.getByTestId("location").textContent).toBe(`${PATH}?view=chillers&point=pf`));
 }
+
+/**
+ * H6 (`F4.364`) — energy not shown, bare section: Export downloads the opened segment (the read's
+ * own query, no `segment` key), never the site energy view; one Schedule button, the segment's own.
+ */
+export async function hiddenEnergyExportsAndSchedulesTheSegment(): Promise<void> {
+  signInAs("admin");
+  const read = stubSegments(DRAWN_BODY);
+  const segment = vi.spyOn(exportsApi, "downloadSegmentViewExport").mockResolvedValue();
+  const energy = vi.spyOn(exportsApi, "downloadEnergyViewExport").mockResolvedValue();
+  renderAt("", false);
+  expect(await screen.findByRole("button", { name: "Schedule" })).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "Schedule" })).toHaveLength(1);
+  fireEvent.click(within(screen.getByRole("group", { name: "Export" })).getByRole("button", { name: "CSV" }));
+  await waitFor(() => expect(segment).toHaveBeenCalledTimes(1));
+  expect(segment).toHaveBeenCalledWith("csv", SITE, read.mock.calls[0]?.[1]);
+  expect(read.mock.calls[0]?.[1]).toEqual({ range: "24h" });
+  expect(energy).not.toHaveBeenCalled();
+}
+
+/** H7 (`F4.364`) — energy not shown, explicit `?view=energy`: the note, and no Export and no Schedule. */
+export async function hiddenEnergyNoteHasNoExportOrSchedule(): Promise<void> {
+  signInAs("admin");
+  stubSegments(DRAWN_BODY);
+  renderAt("?view=energy", false);
+  await screen.findByTestId("site-energy-off-note");
+  expect(screen.queryByRole("group", { name: "Export" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Schedule" })).toBeNull();
+}
+
+/**
+ * H8 (`F4.364`, code review) — energy shown, Energy sub-tab with a custom range missing one end:
+ * the Schedule button stays (its prefill does not read the range), as before this row.
+ */
+export async function shownEnergyKeepsScheduleOnAHalfCustomRange(): Promise<void> {
+  signInAs("admin");
+  stubSegments(BODY);
+  renderAt("?range=custom&from=2026-11-01T00:00:00.000Z", true);
+  expect(await screen.findByTestId("site-energy-view")).toHaveAttribute("data-range", "custom");
+  expect(screen.getAllByRole("button", { name: "Schedule" })).toHaveLength(1);
+}
