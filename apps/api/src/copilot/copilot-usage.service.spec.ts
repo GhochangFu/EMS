@@ -90,7 +90,7 @@ function fakeStore(): FakeStore {
 
 async function spend(store: FakeStore, identity: UsageIdentity, organizationId: string | null, now: Date, n: number) {
   for (let i = 0; i < n; i += 1) {
-    expect(await consumeTurnWith(store, LIMITS, identity, organizationId, now), `turn ${i + 1}`).toEqual({ ok: true });
+    expect(await consumeTurnWith(store, LIMITS, identity, organizationId, now), `turn ${i + 1}`).toMatchObject({ ok: true });
   }
 }
 
@@ -122,7 +122,7 @@ export async function oneUserTwoOrganizationsShareTheUserLimit(): Promise<void> 
 export async function crossOrganizationTurnTouchesTheUserCounterOnly(): Promise<void> {
   const store = fakeStore();
   const now = new Date("2030-03-10T10:00:00.000Z");
-  expect(await consumeTurnWith(store, LIMITS, globalAdmin, null, now)).toEqual({ ok: true });
+  expect(await consumeTurnWith(store, LIMITS, globalAdmin, null, now)).toMatchObject({ ok: true });
   expect(store.user.get("user-global|2030-03-10")).toBe(1);
   expect(store.org.size).toBe(0);
   expect(store.transactions).toEqual([{ userId: "user-global", organizationId: null }]);
@@ -135,7 +135,7 @@ export async function organizationRefusalRollsBackTheUserIncrement(): Promise<vo
   const now = new Date("2030-03-10T10:00:00.000Z");
   const other: UsageIdentity = { id: "user-other", organizationId: HOME_K };
   for (let i = 0; i < 3; i += 1) {
-    expect(await consumeTurnWith(store, limits, other, HOME_K, now)).toEqual({ ok: true });
+    expect(await consumeTurnWith(store, limits, other, HOME_K, now)).toMatchObject({ ok: true });
   }
   expect(await consumeTurnWith(store, limits, scopedAdmin, HOME_K, now)).toEqual({
     ok: false,
@@ -145,7 +145,7 @@ export async function organizationRefusalRollsBackTheUserIncrement(): Promise<vo
   expect(store.user.has("user-scoped|2030-03-10"), "the refused turn counts nowhere").toBe(false);
   expect(store.org.get(`${HOME_K}|2030-03-10`)).toBe(3);
   // Positive control: the same user, bound elsewhere, counts.
-  expect(await consumeTurnWith(store, limits, scopedAdmin, ORG_U, now)).toEqual({ ok: true });
+  expect(await consumeTurnWith(store, limits, scopedAdmin, ORG_U, now)).toMatchObject({ ok: true });
   expect(store.user.get("user-scoped|2030-03-10")).toBe(1);
 }
 
@@ -163,7 +163,7 @@ export async function aNonUtcMidnightSplitsTheOrganizationDay(): Promise<void> {
 export async function userDayAndOrganizationDayDifferInOneTurn(): Promise<void> {
   const store = fakeStore();
   const now = new Date("2030-03-10T20:00:00.000Z"); // 01:30 IST on 11 March
-  expect(await consumeTurnWith(store, LIMITS, scopedAdmin, ORG_U, now)).toEqual({ ok: true });
+  expect(await consumeTurnWith(store, LIMITS, scopedAdmin, ORG_U, now)).toMatchObject({ ok: true });
   expect([...store.user.keys()]).toEqual(["user-scoped|2030-03-11"]);
   expect([...store.org.keys()]).toEqual([`${ORG_U}|2030-03-10`]);
 }
@@ -172,7 +172,7 @@ export async function userDayAndOrganizationDayDifferInOneTurn(): Promise<void> 
 export async function globalAdminCountsInUtcAgainstABoundKolkataOrganization(): Promise<void> {
   const store = fakeStore();
   const now = new Date("2030-03-10T20:00:00.000Z");
-  expect(await consumeTurnWith(store, LIMITS, globalAdmin, HOME_K, now)).toEqual({ ok: true });
+  expect(await consumeTurnWith(store, LIMITS, globalAdmin, HOME_K, now)).toMatchObject({ ok: true });
   expect([...store.user.keys()]).toEqual(["user-global|2030-03-10"]);
   expect([...store.org.keys()]).toEqual([`${HOME_K}|2030-03-11`]);
 
@@ -195,7 +195,7 @@ export async function anUnknownStoredZoneCountsInUtc(): Promise<void> {
   const store = fakeStore();
   const now = new Date("2030-03-10T20:00:00.000Z");
   const stray: UsageIdentity = { id: "user-stray", organizationId: ORG_BAD };
-  expect(await consumeTurnWith(store, LIMITS, stray, ORG_BAD, now)).toEqual({ ok: true });
+  expect(await consumeTurnWith(store, LIMITS, stray, ORG_BAD, now)).toMatchObject({ ok: true });
   expect([...store.user.keys()]).toEqual(["user-stray|2030-03-10"]);
   expect([...store.org.keys()]).toEqual([`${ORG_BAD}|2030-03-10`]);
 }
@@ -262,5 +262,27 @@ export function theModuleProvidesAndExportsTheService(): void {
   expect([...params].sort((a, b) => a.index - b.index).map((p) => [p.index, p.param])).toEqual([
     [0, TENANT_DRIZZLE],
     [1, COPILOT_USAGE_LIMITS],
+  ]);
+}
+
+/**
+ * `F4.360` defect 1: an allowed turn names the zone its times are read in — the bound organization's, else the
+ * user's home organization's, else UTC; an unknown stored zone is UTC. Mutation: always return the user's zone → red.
+ */
+export async function anAllowedTurnNamesItsZone(): Promise<void> {
+  const now = new Date("2030-03-10T20:00:00.000Z");
+  const zones = await Promise.all([
+    consumeTurnWith(fakeStore(), LIMITS, scopedAdmin, ORG_U, now),
+    consumeTurnWith(fakeStore(), LIMITS, scopedAdmin, null, now),
+    consumeTurnWith(fakeStore(), LIMITS, globalAdmin, null, now),
+    consumeTurnWith(fakeStore(), LIMITS, globalAdmin, HOME_K, now),
+    consumeTurnWith(fakeStore(), LIMITS, { id: "user-stray", organizationId: ORG_BAD }, ORG_BAD, now),
+  ]);
+  expect(zones).toEqual([
+    { ok: true, timeZone: "UTC" },
+    { ok: true, timeZone: "Asia/Kolkata" },
+    { ok: true, timeZone: "UTC" },
+    { ok: true, timeZone: "Asia/Kolkata" },
+    { ok: true, timeZone: "UTC" },
   ]);
 }

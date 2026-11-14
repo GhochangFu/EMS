@@ -23,7 +23,7 @@ import type {
 import { carriesPromptMarker } from "../admin/onboarding/onboarding-prompt-budget";
 import type { ResolvedIdentity } from "../auth/identity-resolver";
 import { ACTION_RECORD_PREFIX as COPILOT_ACTION_RECORD_PREFIX } from "../llm/action-record";
-import { type AgentStopReason, MAX_TOOL_CALLS_PER_TURN, runAgentLoop, TURN_DEADLINE_MS } from "../llm/agent-loop";
+import { runAgentLoop } from "../llm/agent-loop";
 import { looksLikeCredential } from "../llm/credential-detect";
 import type { LlmContentPart, LlmMessage, LlmProvider, LlmUserContent } from "../llm/llm-port";
 import { LlmResolver } from "../llm/llm-resolver";
@@ -40,6 +40,8 @@ import {
 } from "./copilot-card-claim";
 import { notePagedRead, type PagedReads, withPartialNote } from "./copilot-partial-read";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
+import { copilotClockMessage } from "./copilot-clock-message";
+import { COPILOT_TURN_CALL_CAP_REPLY, COPILOT_TURN_DEADLINE_REPLY, COPILOT_TURN_FAILED_REPLY, copilotStopReply, keepsTheMessage } from "./copilot-stop-reply";
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import {
   COPILOT_ONBOARDING_SKILL,
@@ -110,25 +112,8 @@ export const COPILOT_CREDENTIAL_REFUSAL =
 export const COPILOT_NOT_CONFIGURED_REPLY =
   "The assistant is not configured here: no AI key is set for this scope. The pages and wizards still work.";
 
-/** The model call failed (`provider_error`), or the change's organization left the key's scope; no reply is stored (a follow-up stores its outcome line only). */
-export const COPILOT_TURN_FAILED_REPLY = "The assistant could not answer just now. Try again in a moment.";
-
-/** `F4.294`: the deadline (`cap_time`) stopped the turn; the limit in the text is the loop's own. */
-export const COPILOT_TURN_DEADLINE_REPLY =
-  `The assistant ran out of time before it could answer (the limit is ${TURN_DEADLINE_MS / 1000} seconds). ` +
-  "Ask for less at a time, for example one site or one device, and try again.";
-
-/** `F4.294`: the call cap (`cap_calls`) stopped the turn; it counts every tool call, reads and proposals alike. */
-export const COPILOT_TURN_CALL_CAP_REPLY =
-  `The assistant needed more than ${MAX_TOOL_CALLS_PER_TURN} steps (data reads or proposed changes) to answer this. ` +
-  "Ask for less at a time, for example one site, one device or a few changes.";
-
-/** `F4.294`: the reply for each stop that is not `final` — a cap names itself, a provider error keeps the plain reply. */
-export function copilotStopReply(stop: Exclude<AgentStopReason, "final">): string {
-  if (stop === "cap_time") return COPILOT_TURN_DEADLINE_REPLY;
-  if (stop === "cap_calls") return COPILOT_TURN_CALL_CAP_REPLY;
-  return COPILOT_TURN_FAILED_REPLY;
-}
+// `F4.360`: the stop replies live in `copilot-stop-reply.ts`; re-exported for the callers and specs that import them here.
+export { COPILOT_TURN_CALL_CAP_REPLY, COPILOT_TURN_DEADLINE_REPLY, COPILOT_TURN_FAILED_REPLY, copilotStopReply };
 
 /** `F3.87` PR 7 (ADR 0099 Amendment 3 A4, A5, A7, plan D1, D2): the attachment refusals, all before the turn is counted. */
 export const COPILOT_ATTACHMENTS_IN_SKILL_MESSAGE =
@@ -729,6 +714,8 @@ export class CopilotTurnService {
       messages: [
         { role: "system", content: COPILOT_SYSTEM_PROMPT },
         { role: "system", content: copilotScopeMessage(scope.allowed) },
+        // `F4.360` defect 1: the time now and the zone; a conversation with no zone of its own asks for one.
+        { role: "system", content: copilotClockMessage(ctx.now, usage.timeZone, (organizationId ?? identity.organizationId) !== null) },
         ...(wizardsLine !== null ? [{ role: "system" as const, content: wizardsLine }] : []),
         ...(pdfTextOnly ? [{ role: "system" as const, content: COPILOT_PDF_TEXT_ONLY_PROMPT }] : []),
         ...history.messages,
@@ -825,7 +812,14 @@ export class CopilotTurnService {
       const base = unreadable ? COPILOT_ATTACHMENT_UNREADABLE_REPLY : copilotStopReply(result.stopReason);
       // `F4.268`: the deadline or a provider error on a PDF-only turn names the image rule; the call cap does not.
       const pdfNote = pdfTextOnly && (result.stopReason === "cap_time" || result.stopReason === "provider_error");
-      return respond(conversationId, "failed", pdfNote ? `${base} ${COPILOT_PDF_TEXT_ONLY_REPLY_NOTE}` : base);
+      const failed = pdfNote ? `${base} ${COPILOT_PDF_TEXT_ONLY_REPLY_NOTE}` : base;
+      if (!keepsTheMessage(result.stopReason)) return respond(conversationId, "failed", failed);
+      // `F4.360` defect 2: a cap keeps the user's message in the thread, the cause after it (it reads nothing).
+      const messages = await this.conversations.appendTurn(identity.id, conversationId, [
+        { role: "user", content: storedUserRow(input.message, attachments), organizationIds: [] },
+        { role: "assistant", content: failed, organizationIds: [] },
+      ]);
+      return respond(conversationId, "failed", failed, { messages });
     }
 
     // Provenance is transitive: what the tools read, what the history it saw had read, and a follow-up's change.

@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   aNonUtcMidnightSplitsTheOrganizationDay,
+  anAllowedTurnNamesItsZone,
   anUnknownStoredZoneCountsInUtc,
   crossOrganizationTurnTouchesTheUserCounterOnly,
   dayKeysAndMidnights,
@@ -35,6 +36,9 @@ describe("F3.85 — CopilotUsageService.consumeTurn (ADR 0099 decision 11, Amend
   });
   it("globalAdminCountsInUtcAgainstABoundKolkataOrganization", async () => {
     await globalAdminCountsInUtcAgainstABoundKolkataOrganization();
+  });
+  it("anAllowedTurnNamesItsZone (F4.360 defect 1)", async () => {
+    await anAllowedTurnNamesItsZone();
   });
   it("anUnknownStoredZoneCountsInUtc", async () => {
     await anUnknownStoredZoneCountsInUtc();

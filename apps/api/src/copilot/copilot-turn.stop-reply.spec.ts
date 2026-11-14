@@ -75,6 +75,31 @@ export async function aUserTurnOverTheCapSaysSo(): Promise<void> {
   expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_TURN_CALL_CAP_REPLY });
 }
 
+/**
+ * `F4.360` defect 2: a user turn stopped by the deadline keeps the user's own message in the thread, with the
+ * cause after it, as a follow-up does (AWS, 2026-11-14: the message vanished). Mutation: store nothing → red.
+ */
+export async function aUserTurnPastTheDeadlineKeepsTheMessage(): Promise<void> {
+  const h = harness(new FakeLlmProvider(["hang"]));
+  const response = await pastTheDeadline(() => turn(h, "show every point at every site"));
+  const rows = h.history.map((m) => [m.role, m.content, m.organizationIds]);
+  expect(rows).toEqual([
+    ["user", "show every point at every site", []],
+    ["assistant", COPILOT_TURN_DEADLINE_REPLY, []],
+  ]);
+  expect(response.messages.map((m) => m.id)).toEqual(h.history.map((m) => m.id));
+}
+
+/** `F4.360` defect 2: the call cap keeps the message too. */
+export async function aUserTurnOverTheCapKeepsTheMessage(): Promise<void> {
+  const h = harness(overTheCap(), { tools: READ_TOOLS });
+  await turn(h, "list everything");
+  expect(h.history.map((m) => [m.role, m.content])).toEqual([
+    ["user", "list everything"],
+    ["assistant", COPILOT_TURN_CALL_CAP_REPLY],
+  ]);
+}
+
 /** A provider error keeps the plain reply: the cause is not the user's to fix. */
 export async function aProviderErrorKeepsThePlainReply(): Promise<void> {
   const response = await turn(harness(new FakeLlmProvider(["reject"])), "any alarms?");

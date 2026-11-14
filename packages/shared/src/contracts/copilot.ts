@@ -334,16 +334,18 @@ export const copilotFillStepDtoSchema = z
  *   0022); nothing was stored, sent or counted.
  * - `not_configured`: no key resolved for the conversation's scope (decision
  *   10); nothing was stored, sent or counted.
- * - `failed`: the model call failed or a cap stopped it; the turn was counted
- *   and nothing was stored.
+ * - `failed`: the model call failed or a cap stopped it; the turn was counted.
+ *   A provider error stored nothing; a cap (the deadline or the call cap)
+ *   stored the user's message and the cause (`F4.360`), so it is in `messages`.
  */
 export const copilotTurnOutcomeSchema = z.enum(["answered", "credential_refused", "not_configured", "failed"]);
 
 /**
  * The answer to one turn. `reply` is the text the dock shows; `messages` are
  * the rows this turn stored, oldest first — empty unless `outcome` is
- * `answered`, so "the transcript did not grow" is the refusal signal the
- * onboarding chat uses. `configured` is `false` only on `not_configured`.
+ * `answered`, or `failed` by a cap (`F4.360`: the user's message and the
+ * cause), so "the transcript did not grow" stays the refusal signal the
+ * onboarding chat uses (a skill turn never reaches the cap path). `configured` is `false` only on `not_configured`.
  * `navigateTo` is an app route an `open_page` tool returned, or `null`.
  */
 export const copilotTurnResponseDtoSchema = z

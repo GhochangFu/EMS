@@ -194,7 +194,7 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
   const usage = {
     consumeTurn: async (who: UsageIdentity, organizationId: string | null): Promise<ConsumeTurnResult> => {
       counts.consumeTurn.push({ identity: who, organizationId });
-      return options.usage ?? { ok: true };
+      return options.usage ?? { ok: true, timeZone: "UTC" };
     },
   };
   const { tools, seen } = fakeTools(options.tools ?? {});

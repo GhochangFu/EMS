@@ -206,7 +206,7 @@ function turnService(ctx: HistoryCtx, llm: FakeLlmProvider, counted: Array<strin
     {
       consumeTurn: async (_who: unknown, organizationId: string | null) => {
         counted.push(organizationId);
-        return { ok: true };
+        return { ok: true, timeZone: "UTC" };
       },
     } as never,
     EMPTY_COPILOT_READ_TOOLS,

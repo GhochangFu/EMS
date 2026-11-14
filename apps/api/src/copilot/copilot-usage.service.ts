@@ -13,8 +13,12 @@ import { COPILOT_USAGE_LIMITS, type CopilotUsageLimits } from "./copilot-config"
 /** What `consumeTurn` needs from the caller: who, and their home organization (`null` for the global admin). */
 export type UsageIdentity = Pick<ResolvedIdentity, "id" | "organizationId">;
 
+/**
+ * `timeZone` (`F4.360` defect 1): the zone the turn's times are read in — the bound organization's, else the
+ * user's home organization's, else UTC; the turn tells the model the time now in it (`copilot-clock-message.ts`).
+ */
 export type ConsumeTurnResult =
-  | { ok: true }
+  | { ok: true; timeZone: string }
   | { ok: false; scope: "user" | "organization"; resetsAt: string };
 
 /** The statements one `consumeTurn` runs, all inside one transaction. */
@@ -81,7 +85,7 @@ export async function consumeTurnWith(
   now: Date,
 ): Promise<ConsumeTurnResult> {
   try {
-    await store.transaction(identity.id, organizationId, async (tx) => {
+    const timeZone = await store.transaction(identity.id, organizationId, async (tx) => {
       const named = [identity.organizationId, organizationId].filter((id): id is string => id !== null);
       const zones = named.length > 0 ? await tx.timezonesOf([...new Set(named)]) : new Map<string, string>();
       const userZone = identity.organizationId === null ? UTC : governingZone(zones.get(identity.organizationId));
@@ -97,9 +101,11 @@ export async function consumeTurnWith(
             resetsAt: nextMidnightIn(now, orgZone).toISOString(),
           });
         }
+        return orgZone;
       }
+      return userZone;
     });
-    return { ok: true };
+    return { ok: true, timeZone };
   } catch (err) {
     if (err instanceof TurnRefused) {
       return err.result;

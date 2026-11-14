@@ -77,8 +77,8 @@ async function seedOrgTurns(ctx: UsageCtx, userId: string, organizationId: strin
 export async function turn150AllowedAnd151RefusedOnTheDatabase(ctx: UsageCtx): Promise<void> {
   const now = new Date("2030-01-01T10:00:00.000Z");
   await seedUserTurns(ctx, ctx.userA.id, "2030-01-01", 148);
-  expect(await service(ctx).consumeTurn(ctx.userA, null, now)).toEqual({ ok: true });
-  expect(await service(ctx).consumeTurn(ctx.userA, null, now)).toEqual({ ok: true });
+  expect(await service(ctx).consumeTurn(ctx.userA, null, now)).toMatchObject({ ok: true });
+  expect(await service(ctx).consumeTurn(ctx.userA, null, now)).toMatchObject({ ok: true });
   expect(await userTurns(ctx, ctx.userA.id, "2030-01-01")).toBe(150);
   expect(await service(ctx).consumeTurn(ctx.userA, null, now)).toEqual({
     ok: false,
@@ -116,7 +116,7 @@ export async function organizationRefusalLeavesTheUserCounterUnchanged(ctx: Usag
   expect(await userTurns(ctx, ctx.userA.id, "2030-01-03")).toBe(7);
   expect(await orgTurns(ctx, ctx.userA.id, ctx.orgU, "2030-01-03")).toBe(5);
   // Positive control: bound to the other organization, the same user counts.
-  expect(await service(ctx, tight).consumeTurn(ctx.userA, ctx.orgK, now)).toEqual({ ok: true });
+  expect(await service(ctx, tight).consumeTurn(ctx.userA, ctx.orgK, now)).toMatchObject({ ok: true });
   expect(await userTurns(ctx, ctx.userA.id, "2030-01-03")).toBe(8);
 }
 
@@ -124,7 +124,7 @@ export async function organizationRefusalLeavesTheUserCounterUnchanged(ctx: Usag
 export async function oneUserTwoOrganizationsShareTheUserLimitOnTheDatabase(ctx: UsageCtx): Promise<void> {
   const now = new Date("2030-01-04T10:00:00.000Z");
   await seedUserTurns(ctx, ctx.userA.id, "2030-01-04", 149);
-  expect(await service(ctx).consumeTurn(ctx.userA, ctx.orgK, now)).toEqual({ ok: true });
+  expect(await service(ctx).consumeTurn(ctx.userA, ctx.orgK, now)).toMatchObject({ ok: true });
   expect(await service(ctx).consumeTurn(ctx.userA, ctx.orgU, now)).toMatchObject({ ok: false, scope: "user" });
   expect(await orgTurns(ctx, ctx.userA.id, ctx.orgU, "2030-01-04")).toBeNull();
 }
@@ -132,7 +132,7 @@ export async function oneUserTwoOrganizationsShareTheUserLimitOnTheDatabase(ctx:
 /** A cross-organization turn writes the user counter and no organization counter. */
 export async function crossOrganizationTurnTouchesTheUserCounterOnlyOnTheDatabase(ctx: UsageCtx): Promise<void> {
   const now = new Date("2030-01-05T10:00:00.000Z");
-  expect(await service(ctx).consumeTurn(ctx.globalAdmin, null, now)).toEqual({ ok: true });
+  expect(await service(ctx).consumeTurn(ctx.globalAdmin, null, now)).toMatchObject({ ok: true });
   expect(await userTurns(ctx, ctx.globalAdmin.id, "2030-01-05")).toBe(1);
   expect(await orgTurns(ctx, ctx.globalAdmin.id, ctx.orgK, "2030-01-05")).toBeNull();
   expect(await orgTurns(ctx, ctx.globalAdmin.id, ctx.orgU, "2030-01-05")).toBeNull();
@@ -150,7 +150,7 @@ export async function aKolkataMidnightSplitsTheOrganizationDayOnTheDatabase(ctx:
 /** Home Asia/Kolkata, bound UTC, at 20:00Z: the user row is the 9th, the organization row the 8th. */
 export async function userDayAndOrganizationDayDifferOnTheDatabase(ctx: UsageCtx): Promise<void> {
   const now = new Date("2030-01-08T20:00:00.000Z");
-  expect(await service(ctx).consumeTurn(ctx.userB, ctx.orgU, now)).toEqual({ ok: true });
+  expect(await service(ctx).consumeTurn(ctx.userB, ctx.orgU, now)).toMatchObject({ ok: true });
   expect(await userTurns(ctx, ctx.userB.id, "2030-01-09")).toBe(1);
   expect(await userTurns(ctx, ctx.userB.id, "2030-01-08")).toBeNull();
   expect(await orgTurns(ctx, ctx.userB.id, ctx.orgU, "2030-01-08")).toBe(1);
@@ -160,7 +160,7 @@ export async function userDayAndOrganizationDayDifferOnTheDatabase(ctx: UsageCtx
 /** User B cannot read A's counter; A can (positive control). */
 export async function anotherUserCannotSeeTheCounter(ctx: UsageCtx): Promise<void> {
   const now = new Date("2030-01-10T10:00:00.000Z");
-  expect(await service(ctx).consumeTurn(ctx.userA, null, now)).toEqual({ ok: true });
+  expect(await service(ctx).consumeTurn(ctx.userA, null, now)).toMatchObject({ ok: true });
   const countAs = async (userId: string) => {
     const { rows } = await withUser(ctx.tenantDb, userId, (tx) =>
       tx.execute<{ n: number }>(

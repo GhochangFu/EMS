@@ -2666,3 +2666,27 @@ wizards) build it. A line marked
 - The copilot can now silence alarms. The red card, the own-message rule, the
   one Confirm and the route's checks at Confirm are the controls.
 - No migration and no route beyond ADR 0131's.
+
+### Build notes (2026-11-14, `F4.360` defects 1 and 2)
+
+Two defects from the owner's AWS check of 2026-11-14. Neither changes scope.
+
+- **The turn knows the time and the zone.** Before, no message gave the
+  model the date, so "until 08:25 IST today" at 08:11 IST was proposed on a
+  guessed date and refused as "must end in the future". Each turn now sends a
+  third system message (`copilot-clock-message.ts`), after the fixed prompt
+  and the scope line, so the cached prefix (`F4.249`) stays byte-stable. It
+  gives the time now in UTC and in the zone the usage counter already uses
+  (decision 11, Amendment 1 A2: the conversation's organization, else the
+  user's home organization, else UTC), and says to write a date-time with its
+  offset. `consumeTurn` returns that zone; it is validated before it reaches
+  the prompt (`governingZone`). A conversation with no zone of its own (the
+  global admin on every organization) keeps UTC as a fact only: the model is
+  told to ask which zone a bare time is in, never to read it as UTC.
+- **A capped turn keeps the user's message.** A user turn stopped by the
+  deadline or the call cap now stores the user's message and the cause as an
+  `assistant` row (the follow-up's `F4.294` rule), with outcome `failed`. A
+  provider error still stores nothing. The dock puts the text back into an
+  empty composer when a `failed` turn stored nothing, or when the request
+  failed with a limit, a server or a network error; never after a credential
+  refusal or another 4xx (ADR 0022).
