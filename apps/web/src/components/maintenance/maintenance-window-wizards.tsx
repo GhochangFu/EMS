@@ -43,7 +43,9 @@ import { WizardShell } from "../wizard/wizard-shell";
  * the lists are refetched so the page shows the window's state now.
  *
  * Every time is read and shown in the browser's own zone, labelled with it
- * (`lib/maintenance-window-time.ts`); the Review keeps the ISO rows beside a local-time line.
+ * (`lib/maintenance-window-time.ts`). `F4.360`: the Review's rows say the times in that zone and name
+ * the targets and links (`review.shown`; the body sent is unchanged), and each summary is the entry's
+ * own, given the browser's zone (`timeZone`), so the page and the Copilot card share one sentence rule.
  */
 
 /** The catalog entry, or a build defect (the `rtu-wizards.tsx` rule). */
@@ -86,6 +88,15 @@ const instantOf = (value: unknown): string | undefined =>
 
 /** "2026-11-13 15:00 (UTC+05:30)": an instant in the browser's zone, labelled. */
 const localTime = (iso: string): string => `${localMinuteOf(iso)} (${localZoneLabel(new Date(iso))})`;
+
+/** `F4.360` defect 4: the browser's IANA zone, which the entries' summaries say their times in. */
+const browserZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/** `F4.360` defect 6: the typed reason of an end or a cancel, said on its Review. */
+const reasonText = (reason: string | undefined): string => (reason === undefined ? "No reason given." : `Reason: "${reason}"`);
+
+/** `F4.360` defect 5: a target kind as the checkbox's name says it. */
+const KIND_WORD = { asset: "Asset", location: "Location", rule: "Rule" } as const;
 
 /** An optional text: `undefined` (not sent) when blank. */
 const optional = (text: string): string | undefined => (text.trim() === "" ? undefined : text);
@@ -285,7 +296,13 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
 
   const checkbox = (target: MaintenanceWindowTarget, label: string) => (
     <label key={`${target.kind}:${targetId(target)}`} className="flex items-center gap-2 text-xs">
-      <input type="checkbox" checked={chosen.has(`${target.kind}:${targetId(target)}`)} onChange={() => toggle(target)} />
+      <input
+        type="checkbox"
+        value={`${target.kind}:${targetId(target)}`}
+        aria-label={`${KIND_WORD[target.kind]} ${label}`}
+        checked={chosen.has(`${target.kind}:${targetId(target)}`)}
+        onChange={() => toggle(target)}
+      />
       {label}
     </label>
   );
@@ -300,11 +317,25 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
       <fieldset className="space-y-1">
         <legend className={labelClass}>Start</legend>
         <label className="flex items-center gap-2 text-xs">
-          <input type="radio" name="window-start" checked={form.startNow} onChange={() => setForm({ ...form, startNow: true })} />
+          <input
+            type="radio"
+            name="window-start"
+            value="now"
+            aria-label="Start now"
+            checked={form.startNow}
+            onChange={() => setForm({ ...form, startNow: true })}
+          />
           Now
         </label>
         <label className="flex items-center gap-2 text-xs">
-          <input type="radio" name="window-start" checked={!form.startNow} onChange={() => setForm({ ...form, startNow: false })} />
+          <input
+            type="radio"
+            name="window-start"
+            value="at-a-time"
+            aria-label="Start at a time"
+            checked={!form.startNow}
+            onChange={() => setForm({ ...form, startNow: false })}
+          />
           At a time
         </label>
         {form.startNow ? null : (
@@ -411,17 +442,17 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
       : null;
   }
 
-  // The Review keeps the body's ISO rows; this line says the same times in the browser's zone, and
-  // names each link (an id outside the caller's lists is said to be so).
+  // `F4.360` defect 4: the Review's rows say the times in the browser's zone and name each target and
+  // link (an id outside the caller's lists is said to be so); the body keeps its ISO times and ids.
   const startsAt = typeof values.startsAt === "string" ? values.startsAt : null;
   const endsAt = typeof values.endsAt === "string" ? values.endsAt : null;
-  const reviewDetail = (
-    <div className="space-y-1 text-xs">
-      <p>{`Starts ${startsAt === null ? "now" : localTime(startsAt)}; ends ${endsAt === null ? "—" : localTime(endsAt)}.`}</p>
-      {form.workOrderId !== "" ? <p>{`Work order: ${workOrderLabel}.`}</p> : null}
-      {form.maintenanceScheduleId !== "" ? <p>{`Maintenance schedule: ${scheduleLabel}.`}</p> : null}
-    </div>
-  );
+  const shown = {
+    ...(startsAt === null ? {} : { startsAt: { label: "Start", after: localTime(startsAt) } }),
+    ...(endsAt === null ? {} : { endsAt: { label: "End", after: localTime(endsAt) } }),
+    targets: { label: "Targets", after: form.targets.map(labelOf).join(", ") },
+    workOrderId: { label: "Work order", after: workOrderLabel },
+    maintenanceScheduleId: { label: "Maintenance schedule", after: scheduleLabel },
+  };
 
   return (
     <AdminWizardFrame title="Create maintenance window">
@@ -437,10 +468,11 @@ function CreateWindowWizard({ onClose }: { onClose: () => void }) {
         onCancel={onClose}
         submitting={write.pending}
         submitError={write.error}
-        review={{ omit: [], detail: reviewDetail }}
+        review={{ omit: [], detail: null, shown }}
         summary={maintenanceWindowWizardEntry("maintenanceWindow.create").summary({
           body: wizardBody(values),
           params: {},
+          timeZone: browserZone(),
           targetName: organizationName,
           organizationName,
           maintenanceWindow: {
@@ -518,13 +550,13 @@ function ExtendWindowWizard({ item, onClose }: { item: MaintenanceWindowItem; on
         current={{ endsAt: item.endsAt }}
         review={{
           omit: [],
-          detail: (
-            <p className="text-xs">{`Ends ${values.endsAt === undefined ? "—" : localTime(values.endsAt)}; now ends ${localTime(item.endsAt)}.`}</p>
-          ),
+          detail: null,
+          shown: values.endsAt === undefined ? {} : { endsAt: { label: "End", after: localTime(values.endsAt), before: localTime(item.endsAt) } },
         }}
         summary={maintenanceWindowWizardEntry("maintenanceWindow.extend").summary({
           body: wizardBody(values),
           params: { id: item.id },
+          timeZone: browserZone(),
           targetName: windowName(item.reason),
           organizationName: "",
           maintenanceWindow: summaryWindow(item),
@@ -554,6 +586,7 @@ function CloseWindowWizard({
     targetName: windowName(item.reason),
     organizationName: "",
     maintenanceWindow: summaryWindow(item),
+    timeZone: browserZone(),
   };
   const shared = {
     values,
@@ -568,7 +601,15 @@ function CloseWindowWizard({
     onCancel: onClose,
     submitting: write.pending,
     submitError: write.error,
-    review: { omit: [], detail: <p className="text-xs font-semibold text-critical-ink">{WINDOW_CANNOT_BE_UNDONE}</p> },
+    review: {
+      omit: [],
+      detail: (
+        <div className="space-y-1 text-xs">
+          <p>{reasonText(values.reason)}</p>
+          <p className="font-semibold text-critical-ink">{WINDOW_CANNOT_BE_UNDONE}</p>
+        </div>
+      ),
+    },
   };
   if (kind === "end") {
     return (

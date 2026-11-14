@@ -11,6 +11,7 @@ import {
   theFourEntriesHaveTheirRoutesRisksAndColours,
   theModelBodyRefuses26TargetsAndTheRouteTakesThem,
   theStepsAreTheAmendments,
+  theSummariesSayTimesInTheGivenZone,
   theTargetsAreTheWindowKind,
 } from "./maintenance-windows.spec";
 
@@ -27,5 +28,6 @@ describe("F4.359 — maintenance-window catalog entries (ADR 0099 Amendment 19)"
     theCreateSummaryNamesItsStartAndNoCoverWithoutALocation());
   it("the extend summary names the window and both ends", () => theExtendSummaryNamesTheWindowAndBothEnds());
   it("the end and cancel summaries name the window", () => theEndAndCancelSummariesNameTheWindow());
+  it("the summaries say times in the given zone, UTC by default (F4.360)", () => theSummariesSayTimesInTheGivenZone());
   it("no maintenance-window route is excluded now", () => noWindowRouteIsExcludedNow());
 });

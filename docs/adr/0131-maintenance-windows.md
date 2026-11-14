@@ -249,3 +249,30 @@ and the asset badges.
   `rtu_comms` "every bound asset" counts inactive assets that still carry the
   RTU id; the KPI ribbons, map, mimic colours, site-widget summary and health
   scores still count a suppressed alarm (non-goal).
+
+## Build notes (2026-11-14, `F4.360` defects 3–6)
+
+Four page defects from the owner's AWS check of 2026-11-14.
+
+- **A cancelled window reads "Cancelled".** Only a future window can be
+  cancelled, so a cancelled window's `ended_at` is before its `starts_at`;
+  the page uses that rule and shows "Cancelled" and "Cancelled by …" in the
+  End column, with no end time. A window ended early keeps its end time and
+  "Ended by …".
+- **The Review steps say local times and names.** `WizardShell` takes
+  `review.shown`, a readable heading and value for a body field's row (a time
+  in the browser's zone with its offset label, the targets' and links'
+  names); the body sent is unchanged. `CatalogSummaryInput` gains an optional
+  `timeZone`: the page passes the browser's zone, so its Review sentence says
+  "2026-11-13 13:30 (UTC+05:30)"; the server passes none, so a Copilot card
+  says "2026-11-13 08:00 (UTC)" (`instantText`; never the raw ISO string). The
+  page still calls the entry's own `summary`, so ADR 0099's rule that a
+  wizard's Review text is its entry's summary holds.
+- **Names for assistive technology.** The Start radios and the target
+  checkboxes carry their own `value` (they had the default "on") and a name
+  ("Start now", "Asset Pump 1 (P-001)"); each row action names its window
+  (`End window "<reason>"`).
+- **The End and Cancel Review say the reason** in its own line, or "No
+  reason given.". The omission seen on AWS did not reproduce in jsdom (the
+  reason was in the summary sentence and the Field table); the line makes it
+  explicit.

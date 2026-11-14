@@ -28,6 +28,9 @@ import { type AuthUser, useAuthStore } from "../../stores/auth-store";
  * `AdminRoute` (so an `operator` is sent home), and `extra-admin-routes.tsx` mounts it — `app.tsx`
  * sits at the AGENTS.md section 4.5 cap. The reads are the caller's own scope (decision 13).
  *
+ * `F4.360`: a cancelled window reads "Cancelled by …" with no end time, and each row action names its
+ * window in its accessible name.
+ *
  * Every time is in the browser's own zone, and the Start and End columns name it — the same
  * convention as the wizards' inputs (`lib/maintenance-window-time.ts`). A window's state moves with
  * the clock, so each section re-reads once a minute.
@@ -45,6 +48,33 @@ const REFETCH_MS = 60_000;
 
 const actionClass = "text-xs font-semibold text-accent-strong";
 const primaryClass = "surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent";
+
+/**
+ * `F4.360` defect 3: a window cancelled before its start — only a future window can be cancelled, so its
+ * `endedAt` is before its `startsAt`; one ended early has `endedAt` at or after its start.
+ */
+const wasCancelled = (item: MaintenanceWindowItem): boolean =>
+  item.endedAt !== null && Date.parse(item.endedAt) < Date.parse(item.startsAt);
+
+/** The End cell: a cancelled window has no end time (it never ran); an ended one names who ended it. */
+function EndCell({ item }: { item: MaintenanceWindowItem }) {
+  if (wasCancelled(item)) {
+    return (
+      <>
+        Cancelled
+        {item.endedByName !== null ? <span className="block text-2xs text-ink-muted">{`Cancelled by ${item.endedByName}`}</span> : null}
+      </>
+    );
+  }
+  return (
+    <>
+      {localMinuteOf(item.endedAt ?? item.endsAt)}
+      {item.endedAt !== null && item.endedByName !== null ? (
+        <span className="block text-2xs text-ink-muted">{`Ended by ${item.endedByName}`}</span>
+      ) : null}
+    </>
+  );
+}
 
 /** Future is read soonest first; the API orders every state by start, newest first. */
 const ordered = (state: MaintenanceWindowState, items: readonly MaintenanceWindowItem[]): readonly MaintenanceWindowItem[] =>
@@ -81,10 +111,7 @@ function WindowRows({
             <td className="px-2 py-2 font-semibold text-ink">{item.reason}</td>
             <td className="px-2 py-2">{localMinuteOf(item.startsAt)}</td>
             <td className="px-2 py-2">
-              {localMinuteOf(item.endedAt ?? item.endsAt)}
-              {item.endedAt !== null && item.endedByName !== null ? (
-                <span className="block text-2xs text-ink-muted">{`Ended by ${item.endedByName}`}</span>
-              ) : null}
+              <EndCell item={item} />
             </td>
             <td className="px-2 py-2">{item.targets.map((target) => target.label).join(", ")}</td>
             <td className="px-2 py-2">{item.workOrder?.reference ?? item.maintenanceSchedule?.title ?? "—"}</td>
@@ -94,16 +121,31 @@ function WindowRows({
                 <div className="flex gap-2">
                   {state === "active" ? (
                     <>
-                      <button type="button" className={actionClass} onClick={() => open({ kind: "extend", window: item })}>
+                      <button
+                        type="button"
+                        className={actionClass}
+                        aria-label={`Extend window "${item.reason}"`}
+                        onClick={() => open({ kind: "extend", window: item })}
+                      >
                         Extend
                       </button>
-                      <button type="button" className="text-xs font-semibold text-critical-ink" onClick={() => open({ kind: "end", window: item })}>
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-critical-ink"
+                        aria-label={`End window "${item.reason}"`}
+                        onClick={() => open({ kind: "end", window: item })}
+                      >
                         End
                       </button>
                     </>
                   ) : null}
                   {state === "future" ? (
-                    <button type="button" className="text-xs font-semibold text-critical-ink" onClick={() => open({ kind: "cancel", window: item })}>
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-critical-ink"
+                      aria-label={`Cancel window "${item.reason}"`}
+                      onClick={() => open({ kind: "cancel", window: item })}
+                    >
                       Cancel
                     </button>
                   ) : null}

@@ -287,6 +287,11 @@ export type CatalogSummaryInput = {
   /** The target row's name (a dashboard, a template, a parameter key, an asset), or the organization's name for a create. */
   readonly targetName: string;
   readonly organizationName: string;
+  /**
+   * `F4.360` defect 4: the IANA zone an instant in the summary is said in (`instantText`). The page's
+   * wizard passes the browser's zone; the server passes none, so a card says UTC.
+   */
+  readonly timeZone?: string;
   /** `dashboard.widgets.replace` only: the ids of the dashboard's widgets now (decision 4.9). */
   readonly currentWidgetIds?: readonly string[];
   /** `F3.86` PR 4: the name of the row a change names beside its target (a grant's organization, site or group). */

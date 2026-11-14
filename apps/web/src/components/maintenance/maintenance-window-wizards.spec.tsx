@@ -76,7 +76,7 @@ export function spyReads(): void {
   vi.spyOn(maintenanceApi, "fetchMaintenanceSchedules").mockResolvedValue({ items: [] } as never);
 }
 
-function renderWizard(dialog: MaintenanceWindowDialog, reads: () => void = () => undefined): Spies {
+export function renderWizard(dialog: MaintenanceWindowDialog, reads: () => void = () => undefined): Spies {
   spyReads();
   reads();
   // The wizard alone: no `AlarmBar` reads the feed, so a stub with the one method it calls is whole.
@@ -217,7 +217,10 @@ export async function aTimedCreatePostsItsStart(): Promise<void> {
   await next(dialog);
   expect(currentStep()).toBe("4. Review");
   const startsAt = isoOfLocalInput(start) as string;
-  expect(within(dialog).getByText(`Starts ${localMinuteOf(startsAt)} (${zone()}); ends ${localMinuteOf(isoOfLocalInput(end) as string)} (${zone()}).`)).toBeInTheDocument();
+  // `F4.360`: the Review's rows say both times in the browser's zone, labelled.
+  const rows = within(dialog).getByRole("table").textContent ?? "";
+  expect(rows).toContain(`Start${localMinuteOf(startsAt)} (${zone()})`);
+  expect(rows).toContain(`End${localMinuteOf(isoOfLocalInput(end) as string)} (${zone()})`);
   await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
   await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   // The start typed in IST is that wall-clock minute's instant, not the same digits in UTC.
@@ -294,8 +297,9 @@ export async function aFilledIdOutsideTheListsIsNamedAsSuch(): Promise<void> {
   expect(schedule.selectedOptions[0]?.textContent).toBe(`${FOREIGN} (not in your list)`);
   await next(dialog);
   expect(currentStep()).toBe("4. Review");
-  expect(within(dialog).getByText(`Work order: ${FOREIGN} (not in your list).`)).toBeInTheDocument();
-  expect(within(dialog).getByText(`Maintenance schedule: ${FOREIGN} (not in your list).`)).toBeInTheDocument();
+  const rows = within(dialog).getByRole("table").textContent ?? "";
+  expect(rows).toContain(`Work order${FOREIGN} (not in your list)`);
+  expect(rows).toContain(`Maintenance schedule${FOREIGN} (not in your list)`);
   expect(within(dialog).getByText(new RegExp(`on 1 target: ${FOREIGN} \\(not in your list\\)`))).toBeInTheDocument();
 }
 

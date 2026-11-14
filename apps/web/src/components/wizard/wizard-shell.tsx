@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useEffect, useId, useState } from "react";
 import type { CatalogEntry } from "@bms/shared/copilot";
 
-import { changeRows } from "../../lib/copilot-diff";
+import { type ChangeRow, changeRows } from "../../lib/copilot-diff";
 import {
   applyFill,
   appliedFillValues,
@@ -80,8 +80,24 @@ type WizardShellProps = {
    * `F4.289`: a body field the Review shows in the page's own form — for example a table of
    * rows — instead of a field row; `omit` lists the fields `detail` replaces.
    */
-  review?: { omit: readonly string[]; detail: ReactNode };
+  review?: { omit: readonly string[]; detail: ReactNode; shown?: Readonly<Record<string, ShownRow>> };
 };
+
+/**
+ * `F4.360` defect 4: a body field's row as the page says it — its heading and readable values (a local
+ * time, a target's name) in place of the raw value (an ISO string, a JSON list). The body sent is unchanged.
+ */
+export type ShownRow = { readonly label: string; readonly after: string; readonly before?: string };
+
+/** The Review's rows, each `shown` field's heading and values replaced; its full texts go with the raw value. */
+function shownRows(rows: readonly ChangeRow[], shown: Readonly<Record<string, ShownRow>> = {}): ChangeRow[] {
+  return rows.map((row) => {
+    const own = shown[row.field];
+    if (own === undefined) return row;
+    const before = row.before === undefined ? {} : { before: own.before ?? row.before };
+    return { field: row.field, label: own.label, after: own.after, changed: row.changed, ...before };
+  });
+}
 
 /**
  * `F3.85` PR 8 / ADR 0099 decision 6 (plan §10.3, ruling Q6) — the stepper
@@ -190,7 +206,7 @@ export function WizardShell(props: WizardShellProps) {
           summary={props.summary ?? entry.title}
           risk={entry.risk}
           red={entry.red === true}
-          rows={changeRows(body, props.current ?? null, props.review?.omit ?? [], entry.formulas)}
+          rows={shownRows(changeRows(body, props.current ?? null, props.review?.omit ?? [], entry.formulas), props.review?.shown)}
           error={props.submitError ?? (reviewProblems.length > 0 ? reviewProblems.join("; ") : null)}
           busy={props.submitting}
           confirmLabel="Submit"

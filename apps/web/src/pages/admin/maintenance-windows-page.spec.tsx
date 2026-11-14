@@ -105,7 +105,7 @@ export async function aConflictShowsItsMessageAndRefetches(): Promise<void> {
   vi.spyOn(windowsApi, "endMaintenanceWindow").mockRejectedValue(
     new Error(JSON.stringify({ message: "Only an active maintenance window can be ended", error: "Conflict", statusCode: 409 })),
   );
-  await userEvent.click(within(await rowOf("Active maintenance windows", "Pump overhaul")).getByRole("button", { name: "End" }));
+  await userEvent.click(within(await rowOf("Active maintenance windows", "Pump overhaul")).getByRole("button", { name: 'End window "Pump overhaul"' }));
   const dialog = screen.getByRole("dialog", { name: "End maintenance window" });
   await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
   const before = list.mock.calls.length;
@@ -172,4 +172,45 @@ export async function theSectionsRereadEveryMinute(): Promise<void> {
   } finally {
     vi.useRealTimers();
   }
+}
+
+/**
+ * P9 — `F4.360` defect 3: a future window cancelled before its start is "Cancelled by …" in Past, with no end
+ * time (its `endedAt` is before its start); a window ended early keeps its end and "Ended by". Mutation: show
+ * `endedAt` for every ended window → red.
+ */
+export async function aCancelledWindowSaysCancelled(): Promise<void> {
+  const cancelled = windowItem({
+    id: "00000000-0000-4000-8000-0000000000f6",
+    reason: "Valve swap cancelled",
+    state: "past",
+    startsAt: "2026-11-14T03:45:00.000Z",
+    endsAt: "2026-11-14T05:00:00.000Z",
+    endedAt: "2026-11-14T02:49:00.000Z",
+    endedByName: "Ops Lead",
+  });
+  const endedEarly = windowItem({
+    id: "00000000-0000-4000-8000-0000000000f7",
+    reason: "Pump ended early",
+    state: "past",
+    startsAt: "2026-11-14T02:35:00.000Z",
+    endsAt: "2026-11-14T03:35:00.000Z",
+    endedAt: "2026-11-14T02:46:00.000Z",
+    endedByName: "Ops Lead",
+  });
+  renderRoute("organization_admin", { past: [cancelled, endedEarly] });
+  const endCell = async (reason: string): Promise<string> =>
+    within(await rowOf("Past maintenance windows", reason)).getAllByRole("cell")[2]?.textContent ?? "";
+  expect(await endCell("Valve swap cancelled")).toBe("CancelledCancelled by Ops Lead");
+  expect(await endCell("Pump ended early")).toBe(`${localMinuteOf(endedEarly.endedAt as string)}Ended by Ops Lead`);
+}
+
+/** P10 — `F4.360` defect 5: each row action names its window. Mutation: drop the `aria-label` → red. */
+export async function theRowActionsNameTheirWindow(): Promise<void> {
+  renderRoute("organization_admin");
+  const active = await rowOf("Active maintenance windows", "Pump overhaul");
+  expect(within(active).getByRole("button", { name: 'Extend window "Pump overhaul"' })).toBeInTheDocument();
+  expect(within(active).getByRole("button", { name: 'End window "Pump overhaul"' })).toBeInTheDocument();
+  const future = await rowOf("Future maintenance windows", "Valve swap");
+  expect(within(future).getByRole("button", { name: 'Cancel window "Valve swap"' })).toBeInTheDocument();
 }
