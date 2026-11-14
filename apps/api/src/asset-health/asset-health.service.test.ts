@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertComputedAtIsNewestRowInstantOrNull,
+  assertScoresByLocationOnAnEmptyInputTouchesNothing,
   assertCoverageCountsDistinctBucketsOverTheSamePredicate,
   assertCoveredBucketsIsTheScopeCountNotTheRowCount,
   assertEmptyScopeNeverTouchesTheCounterRelation,
@@ -53,5 +54,9 @@ describe("asset-health.service", () => {
 
   it("reports zero coverage and no instant together on an empty scope", async () => {
     await assertEmptyScopeReportsZeroCoverageAndNoInstant();
+  });
+
+  it("F4.364 — scoresByLocation on an empty input answers an empty map and touches nothing", async () => {
+    await assertScoresByLocationOnAnEmptyInputTouchesNothing();
   });
 });
