@@ -149,9 +149,10 @@ They fill gaps between this ADR's words and the code; none reopens a decision.
 
 1. **Readable asset groups (decision 2).** `currentUser(jwt).scope.assetGroups`
    lists groups only for an asset-group grant. A group is readable when it is
-   one of the caller's granted groups, or when its location is one of the
-   caller's readable locations. One function decides this for the options read
-   and for the list filters.
+   one of the caller's granted groups (an asset-group scope), or when its
+   location is one of the caller's readable locations (every other scope). An
+   asset-group-scoped caller does not read a sibling group at its own site. One
+   function decides this for the options read and for the list filters.
 2. **Group membership in the options (decision 6).** Each asset-group option
    gains `assetIds`: its members that are in the same answer's `assets` list,
    so "Asset group narrows Asset" works in the browser.
