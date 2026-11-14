@@ -107,7 +107,7 @@ describe("F3.10 alarm lifecycle on the alarms page", () => {
     await aReturnedRowShowsNoBadge();
   });
 
-  it("F4.359 the Suppressed only control reads state=suppressed", async () => {
+  it("F4.359 State Suppressed reads state=suppressed (F4.361 dropdown)", async () => {
     await theSuppressedControlSendsStateSuppressed();
   });
 
@@ -115,15 +115,15 @@ describe("F3.10 alarm lifecycle on the alarms page", () => {
     await searchingMaintenanceFindsTheSuppressedRow();
   });
 
-  it("F4.359 the Suppressed only control stays on screen while its read is pending", async () => {
+  it("F4.359 the State control stays on screen while its suppressed read is pending", async () => {
     await theSuppressedControlStaysWhileTheReadIsPending();
   });
 
-  it("F4.359 a failed suppressed read can be unticked", async () => {
+  it("F4.359 a failed suppressed read can be set back to All", async () => {
     await aFailedSuppressedReadCanBeUnticked();
   });
 
-  it("F4.359 the cards do not claim the plant while Suppressed only is on", async () => {
+  it("F4.359 the cards do not claim the plant while State is Suppressed", async () => {
     await theCardsDoNotClaimThePlantWhileSuppressedOnly();
   });
 });

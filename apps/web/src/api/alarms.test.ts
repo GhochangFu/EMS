@@ -97,4 +97,5 @@ describe("fetchUnacknowledgedAlarms (F4.357 U2b)", () => {
 describe("fetchAlarmsPage (F4.359 U12)", () => {
   afterEach(() => vi.unstubAllGlobals());
   it("sends state only when given", () => spec.alarmsPageSendsTheStateOnlyWhenGiven());
+  it("F4.361 sends every filter key, the asset as one assetIds", () => spec.alarmsPageSendsEveryFilterKey());
 });
