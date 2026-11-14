@@ -72,7 +72,7 @@ const SHAPE: Record<CopilotWindowMode | "sheet", string> = {
  * layer (the page's overlays are `z-40` and `z-50`), so the dialog stays on top and takes the clicks. The
  * small floating window keeps its layer: a user can still talk to the copilot beside a wizard.
  */
-const YIELDED_LAYER = "z-30";
+export const YIELDED_LAYER = "z-30";
 const layered = (shape: CopilotWindowMode | "sheet", yields: boolean): string =>
   yields ? SHAPE[shape].replace(/\bz-\d+\b/, YIELDED_LAYER) : SHAPE[shape];
 

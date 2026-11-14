@@ -2694,6 +2694,10 @@ Two defects from the owner's AWS check of 2026-11-14. Neither changes scope.
 ### Build notes (2026-11-14, `F4.362` leftovers 1 and 3)
 
 Two leftovers from the owner's `F4.360` re-check on the AWS demo. Neither changes scope.
+The first supersedes decision 1's end and cancel summary lines (they were *(drafter)*
+lines; the owner may change the wording at review). The row's other two leftovers
+need no ADR text: the End and Cancel Review show a typed reason twice, not three
+times, and the dock drops under an open page dialog (except the floating window).
 
 - **The end and the cancel name their targets.** Decision 1's end and cancel
   summaries named the window by its reason only. They now name its targets after
