@@ -32,6 +32,7 @@ import {
   assertSingleOrgRuleExecutionListRunsOnTenantTransaction,
   assertSingleOrgRuleListReturnsOwnRow,
   assertRuleRowsCarryAssetLabelParts,
+  assertAnAssetlessRuleDropsOutOfANarrowedList,
   assertSingleOrgRuleListRunsOnTenantTransaction,
   assertUpdateRuleReadsBackInTenantTransaction,
   EVALUATOR_SUBJECT,
@@ -414,6 +415,10 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
 
   it("names each rule's asset RTU and location; an asset-less rule keeps all three nulls (F4.316 PR 4b)", async () => {
     await assertRuleRowsCarryAssetLabelParts(ctx);
+  });
+
+  it("F4.361: an asset-less rule lists only unfiltered, never on a narrowed asset scope", async () => {
+    await assertAnAssetlessRuleDropsOutOfANarrowedList(ctx);
   });
 
   it("runs a single-org listRules on the tenant pool (one tenant transaction, no fleet)", async () => {

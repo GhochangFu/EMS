@@ -221,6 +221,8 @@ function controllerWith(
       {} as unknown as ConstructorParameters<typeof RulesController>[4],
       // `F4.289`: `RulesBatchService` serves only `POST /rules/batch`, which this spec never calls.
       {} as unknown as ConstructorParameters<typeof RulesController>[5],
+      // `F4.361` U5: `GET /rules`' narrowing, which this spec never calls.
+      {} as unknown as ConstructorParameters<typeof RulesController>[6],
     ),
     res,
     throttle,

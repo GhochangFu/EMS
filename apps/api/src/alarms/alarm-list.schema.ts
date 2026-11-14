@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { assetIdsQueryField } from "../auth/asset-scope.schema";
+import { assetIdsQueryField, scopeIdQueryField } from "../auth/asset-scope.schema";
 
 /**
  * `F3.66` (step-5 fix) — an optional organization to narrow either read to:
@@ -18,15 +18,22 @@ export const organizationIdQueryField = z.string().uuid().optional();
  * `organizationId` it only ever **narrows**: the service ANDs it onto the
  * intersected readable scope, and a node the caller cannot read answers empty
  * (owner ruling P2), never 403.
+ *
+ * `F4.361` (plan D6): the lower-cased uuid is `scopeIdQueryField`, shared with
+ * the rule list's four filters; this name stays an alias for its importers.
  */
-export const locationIdQueryField = z
-  .string()
-  .uuid()
-  // Security review I1: the database's ids are lower case and `uuid` ignores
-  // case, so the P2 check (`readableLocationIds.includes`) must see the same
-  // spelling the walk does.
-  .transform((id) => id.toLowerCase())
-  .optional();
+export const locationIdQueryField = scopeIdQueryField;
+
+/**
+ * `F4.361` U4 (ADR 0132 decision 3, plan D8) — one severity code to keep. A
+ * trimmed string of 1–64 characters (the code column's width); an empty or
+ * blank value is absent, as `limit`'s is. An unknown code is **not** a 400:
+ * the vocabulary is data, so it answers an empty page.
+ */
+export const severityQueryField = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().trim().min(1).max(64).optional(),
+);
 
 /**
  * `GET /api/v1/alarms` (`F3.28`, ADR 0074, plan decisions 1 and 4).
@@ -43,6 +50,10 @@ export const locationIdQueryField = z
  * active and stamped by a maintenance window (`suppressed_at IS NOT NULL`). It
  * pages as `"active"` does, so a `cursor` beside it is allowed. `"active"`
  * keeps a suppressed alarm; `"unacknowledged"` leaves it out.
+ *
+ * `F4.361` U4 (ADR 0132 decision 3): `severity` keeps one code (list only);
+ * `assetGroupId` narrows the caller's asset scope to the group's members
+ * (build note 3), on the list and the summary.
  *
  * `limit` keeps today's semantics exactly (plan decision 4): the old read was
  * `limitRaw ? Number(limitRaw) : 20`, and the service owns the
@@ -66,6 +77,8 @@ export const alarmListQuerySchema = z
     assetIds: assetIdsQueryField,
     organizationId: organizationIdQueryField,
     locationId: locationIdQueryField,
+    assetGroupId: scopeIdQueryField,
+    severity: severityQueryField,
     // F4.357 U2b (plan Q1): keep alarms whose severity ranks at or above this.
     // An empty value is absent, as `limit`'s is; the bound keeps the value
     // inside the `integer` column it is compared with (a 400, never a 500).
@@ -92,12 +105,16 @@ export type AlarmListQuery = z.infer<typeof alarmListQuerySchema>;
  * active-count-by-severity read. No `state`: the summary is always over
  * active alarms, and no `cursor`/`limit`: it returns one row per severity,
  * never a page.
+ *
+ * `F4.361` U4: `assetGroupId` as on the list; no `severity` — the summary is
+ * already one row per severity.
  */
 export const alarmSummaryQuerySchema = z
   .object({
     assetIds: assetIdsQueryField,
     organizationId: organizationIdQueryField,
     locationId: locationIdQueryField,
+    assetGroupId: scopeIdQueryField,
   })
   .strict();
 

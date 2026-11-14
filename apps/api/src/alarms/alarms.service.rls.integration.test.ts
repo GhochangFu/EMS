@@ -17,6 +17,7 @@ import {
   assertAcknowledgeRefusesForeignAlarmButAllowsInScope,
   assertActiveStateExcludesClearedUnacknowledged,
   assertActiveStateKeepsAcknowledgedUncleared,
+  assertAnUnknownSeverityListsNothing,
   assertDefaultStateReturnsBothRows,
   assertRequestedAssetIdsNarrowWithinScope,
   assertRequestedForeignAssetReturnsNothing,
@@ -318,6 +319,10 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
 
   it("F3.28 state=active excludes a cleared, unacknowledged alarm", async () => {
     await assertActiveStateExcludesClearedUnacknowledged(ctx);
+  });
+
+  it("F4.361 a known severity keeps its alarm and an unknown severity lists nothing", async () => {
+    await assertAnUnknownSeverityListsNothing(ctx);
   });
 
   it("F3.28 the default state returns both the cleared and the uncleared alarm", async () => {

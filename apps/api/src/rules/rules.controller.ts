@@ -33,9 +33,10 @@ import { ChannelWritesService } from "../notifications/channel-writes.service";
 import { ChannelsService } from "../notifications/channels.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { AssetFilterScopeService } from "../filter-options/asset-filter-scope.service";
 import { EvaluateThrottle, throttleKeysFor } from "./evaluate-throttle";
 import { RulesBatchService } from "./rules-batch.service";
-import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "./rules.schema";
+import { listRuleExecutionsQuerySchema, ruleListQuerySchema, rulePreviewBodySchema, type RuleListQuery } from "./rules.schema";
 import { RulesService } from "./rules.service";
 import { RateLimitClassOf } from "../rate-limit/rate-limit-class.decorator";
 
@@ -58,6 +59,9 @@ export class RulesController {
     // `F4.289`: appended last for the same reason — `POST /rules/batch`'s write
     // (`RulesBatchService`), which audits through `MasterDataAuditService`.
     private readonly rulesBatch: RulesBatchService,
+    // `F4.361` U5: appended last for the same reason — `GET /rules`' four
+    // filters narrow the caller's asset scope (ADR 0132 decisions 4 and 5).
+    private readonly assetFilterScope: AssetFilterScopeService,
   ) {}
 
   /**
@@ -114,9 +118,28 @@ export class RulesController {
     }
   }
 
+  /**
+   * `F4.361` U5 (ADR 0132 decisions 4 and 5, plan D2 and D7): the query is
+   * parsed `.strict()` before any scope read, so a malformed one is a 400 that
+   * runs nothing. The four filters become a **narrowed asset-id array**
+   * handed to the unchanged `listRules`: with no filter `narrow` answers
+   * `readableAssetIds(user)` itself (today's read); with any, a subset of it —
+   * `[]` when the filter is outside the caller's scope, which `listRules`
+   * answers with an empty list. A rule with no asset therefore matches no
+   * filter and lists only when all four are empty.
+   */
   @Get()
-  async listRules(@CurrentUser() user: JwtPayload) {
-    return this.rules.listRules(await this.accessControl.readableAssetIds(user));
+  async listRules(@CurrentUser() user: JwtPayload, @Query() query: unknown) {
+    let dto: RuleListQuery;
+    try {
+      dto = ruleListQuerySchema.parse(query);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+    return this.rules.listRules(await this.assetFilterScope.narrow(user, dto));
   }
 
   @Get("catalog")

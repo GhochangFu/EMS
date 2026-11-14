@@ -180,7 +180,7 @@ import {
   createMaintenanceWindowBodySchema,
   extendMaintenanceWindowBodySchema,
 } from "@bms/shared";
-import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "../rules/rules.schema";
+import { listRuleExecutionsQuerySchema, ruleListQuerySchema, rulePreviewBodySchema } from "../rules/rules.schema";
 
 /**
  * `F4.20` / ADR 0029 decision 3 — the join between a route and the Zod schema
@@ -471,6 +471,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   RulesController_createRuleBatch: ruleBatchBodySchema,
   RulesController_duplicateRule: ruleLifecycleBodySchema,
   RulesController_listExecutions: listRuleExecutionsQuerySchema,
+  // `F4.361` U5 (ADR 0132 decision 4): the four `.strict()` scope filters on `GET /rules`.
+  RulesController_listRules: ruleListQuerySchema,
   RulesController_previewRule: rulePreviewBodySchema,
   RulesController_publishRule: ruleLifecycleBodySchema,
   RulesController_setEnabled: ruleToggleBodySchema,

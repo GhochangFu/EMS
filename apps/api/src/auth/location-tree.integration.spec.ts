@@ -66,6 +66,8 @@ export type TreeFixture = {
   readonly grantee2: JwtPayload;
   readonly groupAdmin: JwtPayload;
   readonly foreignOrgAdmin: JwtPayload;
+  /** `F4.361`: the asset group on A1 that `groupAdmin` holds (its one member is A1's asset). */
+  readonly groupId: string;
 };
 
 /** A raw `pg` handle — the pool, or a checked-out client — with the one method the fixture uses. */
@@ -222,7 +224,7 @@ export async function buildTreeFixture(db: Pg, run: string): Promise<TreeFixture
     orgB,
   ]);
 
-  return { orgA, orgB, nodes, assets, grantee, grantee2, groupAdmin, foreignOrgAdmin };
+  return { orgA, orgB, nodes, assets, grantee, grantee2, groupAdmin, foreignOrgAdmin, groupId };
 }
 
 // ---------------------------------------------------------------------------

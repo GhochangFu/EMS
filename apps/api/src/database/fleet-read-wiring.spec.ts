@@ -23,6 +23,8 @@ import { ReportSchedulesService } from "../reports/report-schedules.service";
 import { ReportsService } from "../reports/reports.service";
 import { RuleSweepService } from "../rules/rule-sweep.service";
 import { RulesService } from "../rules/rules.service";
+import { AssetFilterScopeService } from "../filter-options/asset-filter-scope.service";
+import { FilterOptionsService } from "../filter-options/filter-options.service";
 import { CredentialRotationService } from "../security/credential-rotation.service";
 import { TelemetryService } from "../telemetry/telemetry.service";
 import { WorkOrdersService } from "../work-orders/work-orders.service";
@@ -108,6 +110,21 @@ export function assertUnconditionalFleetReadSlots(): void {
  */
 export function assertReportScopeServiceFleetSlot(): void {
   expect(injectedToken(ReportScopeService, 0)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `F4.361` (ADR 0132) — `AssetFilterScopeService(fleetDb, accessControl)`
+ * narrows a list's asset scope before any tenant is known: slot 0 is the
+ * fleet handle, or the group check and the assets read run under no GUC on
+ * the tenant pool and every filter answers empty.
+ */
+export function assertAssetFilterScopeServiceFleetSlot(): void {
+  expect(injectedToken(AssetFilterScopeService, 0)).toBe(FLEET_DRIZZLE);
+}
+
+/** `F4.361` U3 — `FilterOptionsService(fleetDb, accessControl)`: the options span every organization the caller reads. */
+export function assertFilterOptionsServiceFleetSlot(): void {
+  expect(injectedToken(FilterOptionsService, 0)).toBe(FLEET_DRIZZLE);
 }
 
 /**

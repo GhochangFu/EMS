@@ -134,3 +134,9 @@ describe("alarm list query — state=unacknowledged and minSeverityRank (F4.357 
 describe("alarm list query — state=suppressed (F4.359 U5, plan Q4)", () => {
   it("parses state=suppressed, alone and beside a cursor", () => spec.assertSuppressedStateParsesWithAndWithoutACursor());
 });
+
+describe("alarm list/summary queries — severity and assetGroupId (F4.361 U4, ADR 0132 decision 3)", () => {
+  it("severity is trimmed, empty is absent, and it is bounded at 64 characters", () => spec.assertSeverityIsATrimmedBoundedCode());
+  it("the summary refuses severity", () => spec.assertTheSummaryRefusesSeverity());
+  it("assetGroupId is a lower-cased uuid on both reads", () => spec.assertAssetGroupIdIsALowerCasedUuidOnBothReads());
+});

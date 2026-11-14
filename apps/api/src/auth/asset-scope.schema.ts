@@ -27,3 +27,17 @@ export const assetIdsQueryField = z
   .optional();
 
 export type AssetIdsQueryField = z.infer<typeof assetIdsQueryField>;
+
+/**
+ * `F4.361` (ADR 0132 decision 5, plan D6) — one optional scope id on a list
+ * query: an organization, location, asset group or asset to narrow the read
+ * to. A uuid, **lower-cased** before any scope check: the database's ids are
+ * lower case and `uuid` ignores case, so a membership test
+ * (`readableLocationIds.includes`) must see the spelling the rows carry
+ * (security review I1 on `F4.357`'s `locationId`, which is now this field).
+ */
+export const scopeIdQueryField = z
+  .string()
+  .uuid()
+  .transform((id) => id.toLowerCase())
+  .optional();
