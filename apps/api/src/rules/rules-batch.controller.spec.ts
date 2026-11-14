@@ -54,6 +54,8 @@ function controllerWith(options: { writeAllowed?: boolean } = {}): { controller:
       new EvaluateThrottle(),
       unused as Ctor[4],
       rulesBatch,
+      // `F4.361` U5: `GET /rules`' narrowing, which this spec never calls.
+      unused as Ctor[6],
     ),
     calls,
   };

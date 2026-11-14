@@ -6,6 +6,8 @@ import {
 } from "@bms/shared";
 import { z } from "zod";
 
+import { scopeIdQueryField } from "../auth/asset-scope.schema";
+
 /**
  * The three enums below are exported because ADR 0019 §3 binds a template's
  * `content.alarms` to this vocabulary rather than restating it — a copied enum
@@ -73,3 +75,23 @@ export type RulePreviewBody = z.infer<typeof rulePreviewBodySchema>;
 export type ListRuleExecutionsQuery = z.infer<
   typeof listRuleExecutionsQuerySchema
 >;
+
+/**
+ * `F4.361` U5 (ADR 0132 decision 4, plan D7) — `GET /rules?organizationId=&locationId=&assetGroupId=&assetId=`.
+ * Four optional scope ids, each a lower-cased uuid (`scopeIdQueryField`).
+ * `locationId` covers the node's subtree, by the alarm list's walk. Each only
+ * narrows (`AssetFilterScopeService.narrow`): an id outside the caller's scope
+ * answers an empty list, not 403. `.strict()`, as the alarm list is: an
+ * unknown key is a 400 rather than an unfiltered list the caller would read
+ * as filtered (no caller sent a query here before this).
+ */
+export const ruleListQuerySchema = z
+  .object({
+    organizationId: scopeIdQueryField,
+    locationId: scopeIdQueryField,
+    assetGroupId: scopeIdQueryField,
+    assetId: scopeIdQueryField,
+  })
+  .strict();
+
+export type RuleListQuery = z.infer<typeof ruleListQuerySchema>;

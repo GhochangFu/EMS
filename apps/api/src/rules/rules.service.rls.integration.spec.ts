@@ -702,3 +702,17 @@ export async function assertRuleRowsCarryAssetLabelParts(ctx: RulesRlsFixtures):
   expect(assetless, "the asset-less rule is on the unrestricted read").toBeDefined();
   expect([assetless?.assetCode, assetless?.assetRtuName, assetless?.assetLocationName]).toEqual([null, null, null]);
 }
+
+/**
+ * `F4.361` U5 (ADR 0132 decision 5, plan D2): the rule list's filters reach
+ * `listRules` as a narrowed asset-id array, and a rule with no asset matches
+ * none — it lists only on the unfiltered admin read (`null`). The positive
+ * neighbour on the narrowed read is the asset's own rule.
+ */
+export async function assertAnAssetlessRuleDropsOutOfANarrowedList(ctx: RulesRlsFixtures): Promise<void> {
+  const unfiltered = (await ctx.service.listRules(null)).items.map((i) => i.id);
+  expect(unfiltered, "the asset-less rule is on the unfiltered admin read").toContain(ctx.assetlessRuleId);
+  const narrowed = (await ctx.service.listRules([ctx.assetId])).items.map((i) => i.id);
+  expect(narrowed, "positive control: the narrowed read lists the asset's rule").toContain(ctx.inScopeRuleId);
+  expect(narrowed, "the asset-less rule matches no asset filter").not.toContain(ctx.assetlessRuleId);
+}

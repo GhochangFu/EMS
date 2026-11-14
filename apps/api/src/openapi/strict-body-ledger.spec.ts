@@ -922,6 +922,9 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // 34 -> 35: `F4.359` registered `maintenanceWindowListQuerySchema` (`GET /maintenance-windows`, ADR
   // 0131): four narrowing filters and a bounded `limit`, `.strict()`, no body — the same precedent.
   //
+  // 35 -> 36: `F4.361` registered `ruleListQuerySchema` (`GET /rules`, ADR 0132 decision 4): four
+  // optional lower-cased scope uuids that only narrow, `.strict()`, no body — the same precedent.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -931,7 +934,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(35);
+  ).toBe(36);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))
