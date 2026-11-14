@@ -1880,6 +1880,33 @@ html[data-design="bento-ops"][data-theme="dark"]:not([data-surface="flat"]) {
     background-color: var(--card-ground);
   }
 
+  /*
+   * F4.363 — a panel that floats over the page without a scrim: the alarm bar, its "New alarms"
+   * popup, its "All alarms" and maintenance panels, the Copilot dock. It never takes the card
+   * ground (transparent in `swiss-grid`), and it is set apart from the page and the cards under it
+   * in every design system and theme (owner, 2026-11-14) by an `ink-muted` edge on every side and a
+   * drop shadow. Its ground is `surface` in light; in dark it is `well-deep`, one step lighter than
+   * the `surface` cards, as a raised layer reads in a dark theme. The same in both surface
+   * variants: the flat twin repeats the base rule because `f3.71-surface-gates` V4 wants one per
+   * class.
+   */
+  .surface-overlay {
+    border: 1px solid rgb(var(--ink-muted) / 0.45);
+    border-radius: var(--radius-card);
+    background-color: rgb(var(--surface));
+    box-shadow: 0 0 16px rgb(var(--scrim) / 0.18), 0 12px 32px -4px rgb(var(--scrim) / 0.4);
+  }
+  :where([data-surface="flat"]) .surface-overlay {
+    border: 1px solid rgb(var(--ink-muted) / 0.45);
+    border-radius: var(--radius-card);
+    background-color: rgb(var(--surface));
+    box-shadow: 0 0 16px rgb(var(--scrim) / 0.18), 0 12px 32px -4px rgb(var(--scrim) / 0.4);
+  }
+
+  :where(html[data-theme="dark"]) .surface-overlay {
+    background-color: rgb(var(--well-deep));
+  }
+
   /* A segmented filter: the pressed track, an idle item, the selected item. */
   .surface-segment {
     border-radius: var(--radius-control);
@@ -1960,6 +1987,10 @@ html[data-design="bento-ops"][data-theme="dark"]:not([data-surface="flat"]) {
    */
   :where(html[data-design="swiss-grid"]) .surface-dialog {
     background-color: rgb(var(--surface));
+  }
+  /* F4.363 — an overlay keeps its full edge and shadow and takes `swiss-grid`'s 3px ink top rule. */
+  :where(html[data-design="swiss-grid"]) .surface-overlay {
+    border-top: 3px solid rgb(var(--ink));
   }
   :where(html[data-design="swiss-grid"]) .surface-raised-sm {
     border-width: 1px 0 0 0;

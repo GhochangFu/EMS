@@ -85,7 +85,7 @@ export function AlarmBar() {
         aria-label="Alarms"
         // Plan Q6: on the wall, a pointer on the bar's controls does not pause the rotation.
         data-wall-bar
-        className="surface-raised fixed inset-x-0 bottom-0 z-40 flex h-[var(--alarm-bar-h)] items-center gap-3 overflow-hidden px-4 text-xs text-ink"
+        className="surface-overlay fixed inset-x-0 bottom-0 z-40 rounded-none border-x-0 border-b-0 flex h-[var(--alarm-bar-h)] items-center gap-3 overflow-hidden px-4 text-xs text-ink"
       >
         <ul className="flex shrink-0 items-center gap-1.5" aria-label="Active alarms by severity">
           {counts.map((row) => (

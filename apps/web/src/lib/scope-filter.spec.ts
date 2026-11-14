@@ -4,6 +4,7 @@ import type { FilterOptionsResponse } from "@bms/shared/contracts";
 
 import {
   applyScopeChange,
+  assetGroupOptionLabels,
   readScopeFilter,
   reconcileScopeFilter,
   scopeFilterChoices,
@@ -188,4 +189,17 @@ export function theChoicesCascade(): void {
 
   const group = scopeFilterChoices({ organizationId: ORG_A, assetGroupId: G_A1 }, OPTIONS);
   expect(group.assets.map((a) => a.id)).toEqual([AS_A1]);
+}
+
+/**
+ * `F4.363` defect 1 — groups across locations read `name · location`; in one location the bare
+ * name; a location the options do not list falls back to the group's code.
+ */
+export function assetGroupLabelsNameTheirLocation(): void {
+  const across = assetGroupOptionLabels(OPTIONS.assetGroups, OPTIONS.locations);
+  expect([...across.values()]).toEqual(["Group A1 · Site A1", "Group B · Site B"]);
+  const one = assetGroupOptionLabels([OPTIONS.assetGroups[1]!], OPTIONS.locations);
+  expect([...one.values()]).toEqual(["Group B"]);
+  const unlisted = assetGroupOptionLabels(OPTIONS.assetGroups, []);
+  expect([...unlisted.values()]).toEqual(["Group A1 · GA1", "Group B · GB"]);
 }

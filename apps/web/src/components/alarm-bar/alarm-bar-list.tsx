@@ -41,7 +41,7 @@ export function AlarmBarList({ scope, scopeLabel, readOnly, onClose }: AlarmBarL
       id="alarm-bar-list"
       data-wall-bar
       aria-label={`All alarms — ${scopeLabel}`}
-      className="surface-raised fixed bottom-[var(--alarm-bar-h)] right-4 z-40 flex max-h-[24rem] w-[min(32rem,calc(100%-2rem))] flex-col rounded-t-lg text-xs text-ink"
+      className="surface-overlay fixed bottom-[var(--alarm-bar-h)] right-4 z-40 flex max-h-[24rem] w-[min(32rem,calc(100%-2rem))] flex-col rounded-t-lg rounded-b-none border-b-0 text-xs text-ink"
     >
       {/* A div, not <header>: inside the shell or the wall a <header> is a banner landmark (U9). */}
       <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">

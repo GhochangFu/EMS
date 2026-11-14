@@ -87,7 +87,7 @@ function PopupBody({
       role="region"
       aria-label="New alarms"
       data-wall-bar
-      className="surface-raised fixed bottom-[calc(var(--alarm-bar-h)+0.5rem)] left-1/2 z-40 flex max-h-[28rem] w-[min(40rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-lg text-xs text-ink"
+      className="surface-overlay fixed bottom-[calc(var(--alarm-bar-h)+0.5rem)] left-1/2 z-40 flex max-h-[28rem] w-[min(40rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-lg text-xs text-ink"
     >
       {/* A div, not <header>: inside the shell or the wall a <header> is a banner landmark (U9). */}
       <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">

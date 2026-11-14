@@ -74,3 +74,24 @@ export function unavailableDisablesEveryPicker(): void {
   }
   expect(screen.getByText(/filter options could not be loaded/)).toBeInTheDocument();
 }
+
+/**
+ * `F4.363` defect 1 — a group name repeats once per location (WBLDC's "Chillers" at two plants),
+ * so when the listed groups span more than one location each option names its location. Inside
+ * one location the bare name is enough.
+ */
+export function assetGroupsAcrossLocationsNameTheirLocation(): void {
+  const { rerender } = render(
+    <ScopeFilterBar filter={{ organizationId: IDS.ORG_A }} options={OPTIONS} unavailable={false} onChange={vi.fn()} />,
+  );
+  expect(optionTexts("Asset group")).toEqual(["All asset groups", "Group A1 · Site A1", "Group B · Site B"]);
+  rerender(
+    <ScopeFilterBar
+      filter={{ organizationId: IDS.ORG_A, locationId: IDS.SITE_B }}
+      options={OPTIONS}
+      unavailable={false}
+      onChange={vi.fn()}
+    />,
+  );
+  expect(optionTexts("Asset group")).toEqual(["All asset groups", "Group B"]);
+}
