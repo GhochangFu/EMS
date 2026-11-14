@@ -7,8 +7,9 @@ day). Drafted by an agent for backlog row `F4.361` from an owner request on
 2026-11-14. The owner ruled three questions in chat, one at a time; those
 rulings are marked *(owner, 2026-11-14)*. Lines marked *(recommended)* were
 the agent's calls; the owner accepted the ADR with them as written, so
-**every *(recommended)* line is now a ruling**. The step-3 plan comes next,
-and the build waits for the owner's "yes" to it.
+**every *(recommended)* line is now a ruling**. The step-3 plan
+([`docs/plans/f4.361-alarm-rule-filters.md`](../plans/f4.361-alarm-rule-filters.md))
+followed, and the owner said "yes" to it on 2026-11-14.
 
 Builds on [ADR 0074](./0074-domain-dashboard-parity.md) (the alarm list and summary
 reads), [ADR 0130](./0130-persistent-alarm-bar.md) decision 15 (the
@@ -127,8 +128,10 @@ What already exists (read on `main` at `126399f`):
   thousands, the asset picker moves to a search-as-you-type read, which would
   be an amendment to this ADR.
 - The alarm bar, the alarms rail and the Copilot are not touched.
-- `AGENTS.md` owes a one-line `chore(agents):` catch-up (§10.1) for the new
-  read and the narrow-only rule on `/rules`.
+- `AGENTS.md` owes a `chore(agents):` catch-up (§10.1): the status line, §4.7
+  (the new read and the narrow-only rule), §4.8 (the new contract file) and
+  §4.2 (the operator filter bar). Plan §10 lists it; it is tracked in
+  `docs/BACKLOG.md` §5 until it lands.
 
 ## Non-goals
 
