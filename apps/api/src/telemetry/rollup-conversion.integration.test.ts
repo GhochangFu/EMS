@@ -28,6 +28,8 @@ import {
  * `telemetry/energy-cost.integration.spec.ts`.
  */
 const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
+// F4.364 (plan D5): this suite reads no location card's health figure.
+const NO_HEALTH = { scoresByLocation: async () => new Map<string, number | null>() };
 
 
 /**
@@ -77,7 +79,7 @@ describe.skipIf(!connectionString)("F4.28 — rollup reads on the aggregates", (
     // that depends on them: the fixture is visible only through the real-time
     // branch, and no refresh policy's window can ever reach it.
     await assertFixtureIsOnlyOnTheLiveBranch(created, probes);
-    dashboard = new DashboardService(created, NO_TARIFFS);
+    dashboard = new DashboardService(created, NO_TARIFFS, NO_HEALTH);
     reports = new ReportsService(created, NO_TARIFFS);
   }, 120_000);
 

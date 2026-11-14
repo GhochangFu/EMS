@@ -44,6 +44,8 @@ const INSIDE_SITE_WINDOW_S = FRESHNESS_FLOOR_SECONDS - 10;
 const RUN_CODE = `F330-FRESH-${randomUUID().slice(0, 8)}`;
 
 const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
+// F4.364 (plan D5): this suite reads no location card's health figure.
+const NO_HEALTH = { scoresByLocation: async () => new Map<string, number | null>() };
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -70,7 +72,7 @@ export async function inRolledBackTransaction(
   }
 }
 
-interface Site {
+export interface Site {
   readonly organizationId: string;
   readonly locationId: string;
   readonly rtuId: string;
@@ -79,7 +81,7 @@ interface Site {
 }
 
 /** A fresh organization, active location and one RTU, inside the caller's transaction. */
-async function seedSite(client: pg.PoolClient): Promise<Site> {
+export async function seedSite(client: pg.PoolClient): Promise<Site> {
   const tag = `${RUN_CODE}-${randomUUID().slice(0, 8)}`;
   const domain = await client.query<{ code: string }>(
     "SELECT code FROM bms.asset_domains ORDER BY code LIMIT 1",
@@ -158,7 +160,7 @@ async function seedAlarm(client: pg.PoolClient, site: Site, assetId: string, cle
 }
 
 /** One asset on the site's RTU (or on `rtuId`), with its own `site_name`. */
-async function seedAsset(
+export async function seedAsset(
   client: pg.PoolClient,
   site: Site,
   siteName: string,
@@ -186,7 +188,7 @@ async function seedAsset(
  * A sample `ageSeconds` before the transaction's frozen `now()` — the instant
  * the SQL freshness predicates compare against.
  */
-async function insertSampleBeforeNow(
+export async function insertSampleBeforeNow(
   client: pg.PoolClient,
   assetId: string,
   pointKey: string,
@@ -216,7 +218,7 @@ async function insertSampleAt(
 }
 
 function service(client: pg.PoolClient): DashboardService {
-  return new DashboardService(client as unknown as pg.Pool, NO_TARIFFS);
+  return new DashboardService(client as unknown as pg.Pool, NO_TARIFFS, NO_HEALTH);
 }
 
 /** Case 1 — a `temp_c` sample 5 s old and no `kw` makes the asset fresh on its location card. */

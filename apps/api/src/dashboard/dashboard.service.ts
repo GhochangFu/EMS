@@ -7,6 +7,8 @@ import type { Pool } from "pg";
 import type { EnergyCentreSummary, LocationDashboardDto, LocationKpiSummary } from "@bms/shared";
 
 import { alarmVisibleToSql } from "../alarms/alarm-scope";
+import { DEFAULT_HEALTH_WINDOW_MINUTES } from "../asset-health/asset-health.schema";
+import { AssetHealthService } from "../asset-health/asset-health.service";
 import { FLEET_POOL } from "../database/database.tokens";
 import {
   aggregateRelation,
@@ -18,6 +20,7 @@ import { latestPueRatio } from "../telemetry/pue-ratio";
 import { assetWindowsCteSql, LIVE_ASSETS_CTE_SQL, FRESHNESS_FLOOR_SECONDS } from "../telemetry/telemetry-cadence";
 import { telemetryFreshnessAt } from "../telemetry/telemetry-freshness";
 import * as energyCentre from "./energy-centre";
+import { ENERGY_DATA_WINDOW_DAYS, resolveLocationEnergy } from "./energy-features";
 import { emptyKpiPrior, priorInstant, readKpiPrior, type KpiPrior } from "./kpi-prior";
 
 type LocationDashboardAssetRow = LocationDashboardDto["assets"]["items"][number];
@@ -39,6 +42,10 @@ export class DashboardService {
     // imports for it.
     @Inject(CalcParametersService)
     private readonly parameters: Pick<CalcParametersService, "resolveForAssets">,
+    // `F4.364` (plan D5) — the location cards' health figure. Appended and
+    // `Pick`-typed on the `parameters` precedent, so spec sites pass a fake.
+    @Inject(AssetHealthService)
+    private readonly health: Pick<AssetHealthService, "scoresByLocation">,
   ) {}
 
   /** Returns location KPI cards for the current access scope. */
@@ -62,7 +69,10 @@ export class DashboardService {
       rtu_count: string;
       asset_count: string;
       fresh_asset_count: string;
-      total_kw: string;
+      total_kw: number | null;
+      has_energy_data: boolean;
+      energy_features: string;
+      card_primary_metric: string;
       open_alarms: string;
       critical_alarms: string;
     }>(
@@ -78,8 +88,15 @@ export class DashboardService {
       -- location times its alarm rows (or 1). Same asset predicate as the
       -- bms.assets join below, $2 scope included, so total_kw and asset_count
       -- describe one asset set.
+      --
+      -- F4.364 (ADR 0133 decision 2, plan D1): a location has energy data when an
+      -- active in-scope asset's newest kw is younger than $3 days. Same CTE, same
+      -- $2 scope, no new scan.
       kw_by_location AS (
-        SELECT a.location_id, SUM(latest.kw) AS total_kw
+        SELECT
+          a.location_id,
+          SUM(latest.kw) AS total_kw,
+          bool_or(a.active AND latest.kw_time >= now() - make_interval(days => $3::int)) AS has_energy_data
         FROM bms.assets a
         INNER JOIN latest ON latest.asset_id = a.id
         WHERE ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
@@ -101,7 +118,11 @@ export class DashboardService {
         COUNT(DISTINCT a.id)::int AS asset_count,
         COUNT(DISTINCT a.id) FILTER (WHERE live.asset_id IS NOT NULL)::int AS fresh_asset_count,
         -- One kw_by_location row per location, so MAX is that row's sum.
-        COALESCE(MAX(kl.total_kw), 0)::float8 AS total_kw,
+        -- F4.364: no COALESCE — "no kw value" is NULL, not 0 (ADR 0133 decision 4).
+        MAX(kl.total_kw)::float8 AS total_kw,
+        COALESCE(bool_or(kl.has_energy_data), false) AS has_energy_data,
+        o.energy_features,
+        o.card_primary_metric,
         -- ADR 0057 decision 1: open/active = cleared_at IS NULL (since migration 0066).
         -- An acknowledged alarm is still open; acknowledgement only annotates it.
         COUNT(DISTINCT al.id) FILTER (WHERE al.cleared_at IS NULL)::int AS open_alarms,
@@ -128,13 +149,37 @@ export class DashboardService {
       LEFT JOIN bms.alarms al ON al.asset_id = a.id
       WHERE l.active = true
         AND ($1::uuid[] IS NULL OR l.id = ANY($1::uuid[]))
-      GROUP BY l.id, l.name, l.code, l.type, lt.label, l.province, o.id, o.code, o.name
+      GROUP BY l.id, l.name, l.code, l.type, lt.label, l.province, o.id, o.code, o.name,
+        o.energy_features, o.card_primary_metric
       ORDER BY l.name
       `,
-      [opts?.locationIds ?? null, opts?.assetIds ?? null],
+      [opts?.locationIds ?? null, opts?.assetIds ?? null, ENERGY_DATA_WINDOW_DAYS],
     );
+    const cards = rows.rows.map((row) => ({
+      row,
+      energy: resolveLocationEnergy({
+        energyFeatures: row.energy_features,
+        cardPrimaryMetric: row.card_primary_metric,
+        hasEnergyData: row.has_energy_data,
+        totalKw: row.total_kw === null ? null : this.round(Number(row.total_kw)),
+      }),
+    }));
+    // F4.364 (plan ruling Q6): the health score is read only for the cards that
+    // show it, in one batch (plan D4) — never one read per location.
+    const healthLocationIds = cards
+      .filter(({ energy }) => energy.primaryMetric === "health")
+      .map(({ row }) => row.id);
+    const healthScores =
+      healthLocationIds.length === 0
+        ? new Map<string, number | null>()
+        : await this.health.scoresByLocation(
+            opts?.assetIds ?? null,
+            healthLocationIds,
+            DEFAULT_HEALTH_WINDOW_MINUTES,
+            new Date(),
+          );
     return {
-      items: rows.rows.map((row) => ({
+      items: cards.map(({ row, energy }) => ({
         id: row.id,
         name: row.name,
         code: row.code,
@@ -149,7 +194,8 @@ export class DashboardService {
         rtuCount: Number(row.rtu_count),
         assetCount: Number(row.asset_count),
         freshAssetCount: Number(row.fresh_asset_count),
-        totalKw: this.round(Number(row.total_kw)),
+        ...energy,
+        healthScore: healthScores.get(row.id) ?? null,
         openAlarms: Number(row.open_alarms),
         criticalAlarms: Number(row.critical_alarms),
         scopeLabel: opts?.partial ? "partial" : "full",

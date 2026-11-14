@@ -15,6 +15,8 @@ import { DashboardService } from "./dashboard.service";
  * `telemetry/energy-cost.integration.spec.ts`.
  */
 const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
+// F4.364 (plan D5): this suite reads no location card's health figure.
+const NO_HEALTH = { scoresByLocation: async () => new Map<string, number | null>() };
 
 /**
  * `F3.10` U12 — the dashboard's open-alarm counts follow `cleared_at`, not
@@ -113,7 +115,7 @@ export async function assertOpenAlarmCountsFollowClearedAt(pool: pg.Pool): Promi
   await withRolledBackClient(pool, async (client) => {
     const run = randomUUID().slice(0, 8);
     const { locationId, assetId } = await insertFixture(client, run);
-    const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS);
+    const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS, NO_HEALTH);
 
     const kpis = await service.kpis([assetId]);
     expect(
@@ -147,7 +149,7 @@ export async function assertLocationKpiTypeLabelJoinsTheLookup(pool: pg.Pool): P
   await withRolledBackClient(pool, async (client) => {
     const run = randomUUID().slice(0, 8);
     const { locationId, assetId } = await insertFixture(client, run);
-    const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS);
+    const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS, NO_HEALTH);
 
     const { items } = await service.locationKpis({ locationIds: [locationId], assetIds: [assetId] });
     expect(

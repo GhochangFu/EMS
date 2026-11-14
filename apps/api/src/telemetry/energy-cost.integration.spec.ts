@@ -267,7 +267,10 @@ async function deleteTariff(pool: pg.Pool, id: string): Promise<void> {
 }
 
 function dashboard(pool: pg.Pool): DashboardService {
-  return new DashboardService(pool, new CalcParametersService(createDb(pool)));
+  return new DashboardService(pool, new CalcParametersService(createDb(pool)), {
+    // F4.364 (plan D5): this suite reads no location card's health figure.
+    scoresByLocation: async () => new Map<string, number | null>(),
+  });
 }
 
 /** D1 — an organization-scope row: the cost is `round(totalKwh × tariff)`, the tariff and the currency are reported. */

@@ -280,6 +280,8 @@ export async function assertComposedPriorReadsEveryFieldAtAt(client: pg.PoolClie
  * every asset resolves to no tariff (as `dashboard.integration.spec.ts` does).
  */
 const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
+// F4.364 (plan D5): this suite reads no location card's health figure.
+const NO_HEALTH = { scoresByLocation: async () => new Map<string, number | null>() };
 
 interface ScopeFixture {
   /** The in-scope asset — the only id handed to `kpis` / `priorTotalKw`. */
@@ -332,7 +334,7 @@ async function seedScopeFixture(client: pg.PoolClient): Promise<ScopeFixture> {
 
 async function kpisForA(client: pg.PoolClient) {
   const f = await seedScopeFixture(client);
-  const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS);
+  const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS, NO_HEALTH);
   return { f, kpis: await service.kpis([f.a.assetId]) };
 }
 
@@ -421,7 +423,7 @@ async function seedOrphanPair(
 export async function assertKpisTotalKwIgnoresAnOrphanId(client: pg.PoolClient): Promise<void> {
   const t0 = new Date();
   const { a, orphan } = await seedOrphanPair(client, secondsFrom(t0, -5), hoursBefore(t0, 25));
-  const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS);
+  const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS, NO_HEALTH);
   const got = await service.kpis([a.assetId, orphan]);
   assert(got.totalKw === 7, `totalKw must count only the asset that exists (7), got ${got.totalKw}`);
 }
@@ -457,7 +459,7 @@ async function repeatableRead(client: pg.PoolClient): Promise<void> {
 /** Global live Total kW rises by A's 7, not by 1007. */
 export async function assertGlobalKpisTotalKwIgnoresAnOrphanId(client: pg.PoolClient): Promise<void> {
   await repeatableRead(client);
-  const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS);
+  const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS, NO_HEALTH);
   const before = await service.kpis(null);
   const t0 = new Date();
   await seedOrphanPair(client, secondsFrom(t0, -5), hoursBefore(t0, 25));
