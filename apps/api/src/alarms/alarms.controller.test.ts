@@ -117,3 +117,12 @@ describe("alarms.controller — locationId on GET /alarms and /alarms/summary (F
 describe("alarms.controller — the unacknowledged read (F4.357 U2b)", () => {
   it("passes state=unacknowledged and minSeverityRank through to the list", () => spec.assertTheUnacknowledgedReadPassesThrough());
 });
+
+describe("alarms.controller — severity and assetGroupId (F4.361 U4, ADR 0132 decision 3)", () => {
+  it("passes severity through to the list", () => spec.assertSeverityPassesThroughToTheList());
+  it("narrows the list to the group, then intersects a requested assetIds", () => spec.assertAGroupNarrowsTheListThenIntersectsAssetIds());
+  it("keeps an empty group scope [] on both reads", () => spec.assertAnEmptyGroupScopeStaysEmpty());
+  it("narrows the summary to the group the same way", () => spec.assertAGroupNarrowsTheSummary());
+  it("calls no narrow without a group, and the admin's null stays null", () => spec.assertNoGroupLeavesTheScopeAsToday());
+  it("answers a non-uuid assetGroupId with 400, running nothing", () => spec.assertANonUuidGroupRunsNothing());
+});

@@ -44,7 +44,8 @@ export function assertActiveStateParses(): void {
 
 /** An unknown query key is refused — the object is `.strict()`. */
 export function assertAnUnknownKeyIsRefused(): void {
-  const result = alarmListQuerySchema.safeParse({ severity: "critical" });
+  // `F4.361` made `severity` a real key, so the probe is a key nothing offers.
+  const result = alarmListQuerySchema.safeParse({ foo: "1" });
   assert(result.success === false, "an unknown query key must be refused on a .strict() object");
 }
 
@@ -274,4 +275,41 @@ export function assertSuppressedStateParsesWithAndWithoutACursor(): void {
     paged.success && paged.data.state === "suppressed" && paged.data.cursor === "abc",
     `cursor beside state=suppressed must parse: ${JSON.stringify(paged.success ? paged.data : paged.error.issues)}`,
   );
+}
+
+/*
+ * `F4.361` U4 (ADR 0132 decision 3, plan D8) — `severity` (list only) and
+ * `assetGroupId` (list and summary).
+ */
+
+const GROUP = "abcdef12-3456-4789-8abc-def123456789";
+
+/** `severity` is trimmed; an empty or blank one is absent; 64 characters parse; 65 are refused. */
+export function assertSeverityIsATrimmedBoundedCode(): void {
+  const trimmed = alarmListQuerySchema.safeParse({ severity: "  critical " });
+  assert(trimmed.success && trimmed.data.severity === "critical", `severity was not trimmed: ${JSON.stringify(trimmed)}`);
+  for (const blank of ["", "   "]) {
+    const absent = alarmListQuerySchema.safeParse({ severity: blank });
+    assert(absent.success && absent.data.severity === undefined, `severity=${JSON.stringify(blank)} must be absent`);
+  }
+  const atCap = alarmListQuerySchema.safeParse({ severity: "x".repeat(64) });
+  assert(atCap.success, "a 64-character severity must parse");
+  const overCap = alarmListQuerySchema.safeParse({ severity: "x".repeat(65) });
+  assert(!overCap.success, "a 65-character severity must be refused");
+  const unknown = alarmListQuerySchema.safeParse({ severity: "nope" });
+  assert(unknown.success && unknown.data.severity === "nope", "an unknown code parses: the vocabulary is data, not a 400");
+}
+
+/** The summary is already one row per severity: `severity` is an unknown key there. */
+export function assertTheSummaryRefusesSeverity(): void {
+  assert(!alarmSummaryQuerySchema.safeParse({ severity: "critical" }).success, "the summary must refuse severity");
+}
+
+/** `assetGroupId` on both reads: a uuid, lower-cased; a non-uuid is refused. */
+export function assertAssetGroupIdIsALowerCasedUuidOnBothReads(): void {
+  for (const [name, schema] of [["list", alarmListQuerySchema], ["summary", alarmSummaryQuerySchema]] as const) {
+    const parsed = schema.safeParse({ assetGroupId: GROUP.toUpperCase() });
+    assert(parsed.success && parsed.data.assetGroupId === GROUP, `${name}: assetGroupId parsed as ${JSON.stringify(parsed)}`);
+    assert(!schema.safeParse({ assetGroupId: "not-a-uuid" }).success, `${name}: a non-uuid assetGroupId must be refused`);
+  }
 }
