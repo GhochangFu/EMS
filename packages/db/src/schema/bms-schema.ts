@@ -65,6 +65,12 @@ export const organizations = bmsSchema.table("organizations", {
   // only) is the only writer, and the ingest host skips every RTU of an
   // organization that reads `false` at its next reload.
   ingestEnabled: boolean("ingest_enabled").notNull().default(true),
+  // F4.364 / ADR 0133 decision 1 (migration 0153): `auto` | `on` | `off` and
+  // `auto` | `kw` | `health` | `critical_alarms` | `none`, each held by a CHECK
+  // to `packages/shared/src/contracts/energy-features.ts`. No seed writes
+  // either; `PATCH /admin/organizations/:id` (global admin) is the writer.
+  energyFeatures: varchar("energy_features", { length: 8 }).notNull().default("auto"),
+  cardPrimaryMetric: varchar("card_primary_metric", { length: 16 }).notNull().default("auto"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

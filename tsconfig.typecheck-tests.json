@@ -329,6 +329,8 @@
     "tests/f4.344-mimic-motion-gate.test.ts",
     "tests/f4.357-alarm-bar-gate.test.ts",
     "tests/f4.359-suppression-gate.test.ts",
+    "tests/f4.364-organization-energy-features-schema.test.ts",
+    "tests/f4.364-organization-energy-features-schema.integration.test.ts",
     "tests/e3.1-work-order-reference-sla-schema.test.ts",
     "tests/e3.1-work-order-write-gates.test.ts",
     "tests/e3.1-work-order-admin-reachable.test.ts",
