@@ -7,7 +7,9 @@ import {
   aFollowUpPastTheDeadlineSaysSo,
   aFollowUpProviderErrorStoresNoCause,
   aProviderErrorKeepsThePlainReply,
+  aUserTurnOverTheCapKeepsTheMessage,
   aUserTurnOverTheCapSaysSo,
+  aUserTurnPastTheDeadlineKeepsTheMessage,
   aUserTurnPastTheDeadlineSaysSo,
   eachStopReasonHasItsOwnReply,
   theRepliesNameTheLoopLimits,
@@ -19,6 +21,8 @@ describe("F4.294 — a failed copilot turn says why", () => {
   it("gives each stop reason its own reply", () => eachStopReasonHasItsOwnReply());
   it("says a user turn ran out of time", () => aUserTurnPastTheDeadlineSaysSo());
   it("says a user turn needed too many reads", () => aUserTurnOverTheCapSaysSo());
+  it("keeps the user's message and the cause after the deadline (F4.360)", () => aUserTurnPastTheDeadlineKeepsTheMessage());
+  it("keeps the user's message and the cause over the call cap (F4.360)", () => aUserTurnOverTheCapKeepsTheMessage());
   it("keeps the plain reply for a provider error", () => aProviderErrorKeepsThePlainReply());
   it("stores that a follow-up ran out of time", () => aFollowUpPastTheDeadlineSaysSo());
   it("stores that a follow-up needed too many reads", () => aFollowUpOverTheCapSaysSo());

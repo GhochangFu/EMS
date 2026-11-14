@@ -101,8 +101,10 @@ import { useThreadWindow } from "./use-thread-window";
  * conversation row (decision 10) and a kept thread would go on to the old one.
  *
  * **A refusal stores nothing** (ADR 0022): a turn whose `messages` is empty
- * puts its `reply` in the banner. The input is not restored — for a
- * credential the whole string can be the secret (the skill panel's input does the same).
+ * puts its `reply` in the banner. A credential refusal does not restore the
+ * input — the whole string can be the secret (the skill panel's input does the
+ * same). `F4.360`: a `failed` turn that stored nothing, or a failed request,
+ * puts the text back into an empty composer; a cap stop is stored with its cause.
  *
  * **`open_page` navigates through the router only**, never `window.location`.
  *
@@ -392,6 +394,11 @@ function DockPanel({
     }
   }
 
+  /** `F4.360` defect 2: a sent text that was not stored goes back into an empty composer (never over a new draft). */
+  function restoreInput(text: string): void {
+    setInput((prev) => (prev === "" ? text : prev));
+  }
+
   const turn = useMutation({
     mutationFn: async ({ message, files }: { message: string; files: readonly File[] }): Promise<CopilotTurnResponseDto> => {
       let id = conversationId;
@@ -436,6 +443,8 @@ function DockPanel({
       // does not grow, so the reply would render nowhere without the banner.
       if (data.messages.length === 0) {
         setBanner(data.reply);
+        // `F4.360` defect 2: a failed turn that stored nothing gives the text back; a credential refusal never does.
+        if (data.outcome === "failed") restoreInput(sent.message);
         return;
       }
       setBanner(null);
@@ -461,7 +470,11 @@ function DockPanel({
     },
     // `F4.292`: a turn moves the row's title and last turn time, and may have made the conversation.
     onSettled: () => void queryClient.invalidateQueries({ queryKey: COPILOT_CONVERSATIONS }),
-    onError: (err: Error) => {
+    onError: (err: Error, sent) => {
+      // `F4.360` defect 2: nothing was stored. Only after the server's credential check (a limit, a server or network
+      // failure): an earlier 4xx can refuse a message the check never read, which must not come back (ADR 0022).
+      // A proxy 504 could in principle follow a turn the API still stored; the 45 s turn cap keeps that unlikely.
+      if (!(err instanceof ApiError) || err.status === 429 || err.status >= 500) restoreInput(sent.message);
       const limit = copilotLimitOf(err);
       setBanner(limit ? limitSentence(limit) : apiErrorMessage(err));
     },

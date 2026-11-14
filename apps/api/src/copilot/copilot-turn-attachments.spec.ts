@@ -416,14 +416,14 @@ export async function aPdfOnlyTurnCarriesThePdfTextOnlyClause(): Promise<void> {
 
 /**
  * The adjacent negative: a PDF beside an image goes to the image model, which
- * sees the drawing, so no clause. The two system messages are the positive
+ * sees the drawing, so no clause. The three system messages (prompt, scope, clock: `F4.360`) are the positive
  * control. Mutation: `pdfTextOnly = attachments.some(pdf)` → red.
  */
 export async function aPdfBesideAnImageCarriesNoPdfClause(): Promise<void> {
   const vision = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
   const h = harness(new FakeLlmProvider([]), { visionLlm: vision });
   await fileTurn(h, "read both", [PNG_FILE, PDF_FILE]);
-  expect(systemTexts(vision)).toHaveLength(2);
+  expect(systemTexts(vision)).toHaveLength(3);
   expect(systemTexts(vision)).not.toContain(COPILOT_PDF_TEXT_ONLY_PROMPT);
 }
 
@@ -432,7 +432,7 @@ export async function anImageTurnCarriesNoPdfClause(): Promise<void> {
   const main = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
   const h = harness(main);
   await fileTurn(h, "what is in this drawing?", [PNG_FILE]);
-  expect(systemTexts(main)).toHaveLength(2);
+  expect(systemTexts(main)).toHaveLength(3);
   expect(systemTexts(main)).not.toContain(COPILOT_PDF_TEXT_ONLY_PROMPT);
 }
 
@@ -441,7 +441,7 @@ export async function aTextTurnCarriesNoPdfClause(): Promise<void> {
   const main = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
   const h = harness(main);
   await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "how many alarms?", "user", [], []);
-  expect(systemTexts(main)).toHaveLength(2);
+  expect(systemTexts(main)).toHaveLength(3);
   expect(systemTexts(main)).not.toContain(COPILOT_PDF_TEXT_ONLY_PROMPT);
 }
 
