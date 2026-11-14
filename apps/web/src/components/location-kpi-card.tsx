@@ -1,7 +1,7 @@
 import type { LocationKpiSummary } from "@bms/shared";
 import { Link } from "react-router-dom";
 
-import { kwText } from "../lib/location-card-figure";
+import { primaryFigure } from "../lib/location-card-figure";
 import { hasLiveTelemetry } from "../lib/location-kpi-groups";
 
 type LocationKpiCardProps = {
@@ -19,10 +19,15 @@ type LocationKpiCardProps = {
  *
  * `F4.259` — whether the site is live is the first thing the card shows: a green left edge and
  * a Live badge with a pulsing dot, or an amber edge and a Not live badge with a hollow dot (amber,
- * not red: red stays for alarms). A card that is not live mutes its kW figure.
+ * not red: red stays for alarms). A card that is not live mutes its first figure.
+ *
+ * `F4.364` (ADR 0133 decision 3) — the first figure is the API's resolved `primaryMetric` (kW,
+ * asset health %, critical alarms, or none), named by `data-metric`; with `none` the card shows
+ * two figures.
  */
 export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
   const live = hasLiveTelemetry(location);
+  const first = primaryFigure(location);
 
   return (
     <Link
@@ -52,15 +57,17 @@ export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
           </span>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-        <div>
-          <div
-            className={`font-mono text-sm font-semibold ${live ? "text-ink" : "text-ink-muted"}`}
-          >
-            {kwText(location.totalKw)}
+      <div className={`mt-3 grid ${first === null ? "grid-cols-2" : "grid-cols-3"} gap-2 text-xs`}>
+        {first === null ? null : (
+          <div data-metric={location.primaryMetric}>
+            <div
+              className={`font-mono text-sm font-semibold ${live ? "text-ink" : "text-ink-muted"}`}
+            >
+              {first.value}
+            </div>
+            <div className="text-ink-muted">{first.label}</div>
           </div>
-          <div className="text-ink-muted">kW</div>
-        </div>
+        )}
         <div>
           <div
             className={`font-mono text-sm font-semibold ${

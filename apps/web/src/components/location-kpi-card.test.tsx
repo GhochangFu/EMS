@@ -3,8 +3,12 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aLiveCardShowsTheLiveBadgeAndTheGreenEdge,
+  aNotLiveCardMutesEveryFirstFigure,
   aNotLiveCardShowsTheNotLiveBadgeAndTheAmberEdge,
+  anUnscoredHealthCardReadsADash,
   cleanupCard,
+  noneShowsTwoFigures,
+  theFirstFigureFollowsPrimaryMetric,
   fallsBackToTheTypeLabelNotTheRawCode,
   theDefaultLinksToTheControlRoomSite,
   toReplacesTheLinkTarget,
@@ -38,5 +42,21 @@ describe("F3.66 U3 LocationKpiCard link target (D4)", () => {
 
   it("K6 a site that is not live shows the Not live badge and the amber left edge (F4.259)", () => {
     aNotLiveCardShowsTheNotLiveBadgeAndTheAmberEdge();
+  });
+
+  it("K7 the first figure follows primaryMetric and names it in data-metric (F4.364)", () => {
+    theFirstFigureFollowsPrimaryMetric();
+  });
+
+  it("K8 an unscored health card reads a dash, never 0 (F4.364)", () => {
+    anUnscoredHealthCardReadsADash();
+  });
+
+  it("K9 none shows two figures in two columns (F4.364)", () => {
+    noneShowsTwoFigures();
+  });
+
+  it("K10 a card that is not live mutes every first figure (F4.364)", () => {
+    aNotLiveCardMutesEveryFirstFigure();
   });
 });
