@@ -21,7 +21,7 @@ import { alarmAckBodySchema, alarmEnrichmentUpsertBodySchema, type JwtPayload } 
 import { AccessControlService } from "../auth/access-control.service";
 import { intersectReadable } from "../auth/asset-scope";
 import { alarmListQuerySchema, alarmSummaryQuerySchema } from "./alarm-list.schema";
-import type { AlarmLocationFilter } from "./alarm-location-scope";
+import { locationFilter } from "./alarm-location-scope";
 import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmsService } from "./alarms.service";
@@ -46,23 +46,6 @@ function parseQuery<S extends z.ZodTypeAny>(schema: S, query: unknown): z.output
     }
     throw err;
   }
-}
-
-/**
- * `F4.357` U2: the `locationId` filter with the caller's two readable sets
- * (owner rulings P2 and P3), or `undefined` — and then no location read runs.
- */
-async function locationFilter(
-  accessControl: AccessControlService,
-  user: JwtPayload,
-  locationId: string | undefined,
-): Promise<AlarmLocationFilter | undefined> {
-  if (locationId === undefined) return undefined;
-  return {
-    id: locationId,
-    readableLocationIds: await accessControl.readableLocationIds(user),
-    readableOrganizationIds: await accessControl.readableOrganizationIds(user),
-  };
 }
 
 @Controller("alarms")

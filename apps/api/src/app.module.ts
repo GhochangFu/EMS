@@ -14,6 +14,7 @@ import { DashboardModule } from "./dashboard/dashboard.module";
 import { DashboardBuilderModule } from "./dashboard-builder/dashboard-builder.module";
 import { DatabaseModule } from "./database/database.module";
 import { DeviceHealthModule } from "./device-health/device-health.module";
+import { FilterOptionsModule } from "./filter-options/filter-options.module";
 import { AssetHealthModule } from "./asset-health/asset-health.module";
 import { HealthModule } from "./health/health.module";
 import { pinoHttpOptions } from "./logger.options";
@@ -73,6 +74,8 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     // `F4.359` / ADR 0131 — the maintenance-window routes.
     MaintenanceWindowsModule,
     RulesModule,
+    // `F4.361` (ADR 0132): `GET /filter-options` and the list filters' narrowing rule.
+    FilterOptionsModule,
     ReportsModule,
     MapModule,
     VocabulariesModule,

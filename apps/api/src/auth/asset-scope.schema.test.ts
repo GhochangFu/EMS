@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertANamedKeyObjectIsRefused,
+  assertAScopeIdIsALowerCasedUuid,
   assertANonUuidIsRefused,
   assertASparseIndexObjectIsRefused,
   assertAbsentAssetIdsStaysUndefined,
@@ -48,5 +49,9 @@ describe("F3.28 — assetIdsQueryField (ADR 0074, plan decision 1)", () => {
 
   it("refuses a sparse-index object (assetIds[30]=…)", () => {
     assertASparseIndexObjectIsRefused();
+  });
+
+  it("F4.361: a scope id is a lower-cased uuid; a non-uuid is refused", () => {
+    assertAScopeIdIsALowerCasedUuid();
   });
 });

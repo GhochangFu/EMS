@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { assetIdsQueryField } from "../auth/asset-scope.schema";
+import { assetIdsQueryField, scopeIdQueryField } from "../auth/asset-scope.schema";
 
 /**
  * `F3.66` (step-5 fix) — an optional organization to narrow either read to:
@@ -18,15 +18,11 @@ export const organizationIdQueryField = z.string().uuid().optional();
  * `organizationId` it only ever **narrows**: the service ANDs it onto the
  * intersected readable scope, and a node the caller cannot read answers empty
  * (owner ruling P2), never 403.
+ *
+ * `F4.361` (plan D6): the lower-cased uuid is `scopeIdQueryField`, shared with
+ * the rule list's four filters; this name stays an alias for its importers.
  */
-export const locationIdQueryField = z
-  .string()
-  .uuid()
-  // Security review I1: the database's ids are lower case and `uuid` ignores
-  // case, so the P2 check (`readableLocationIds.includes`) must see the same
-  // spelling the walk does.
-  .transform((id) => id.toLowerCase())
-  .optional();
+export const locationIdQueryField = scopeIdQueryField;
 
 /**
  * `GET /api/v1/alarms` (`F3.28`, ADR 0074, plan decisions 1 and 4).

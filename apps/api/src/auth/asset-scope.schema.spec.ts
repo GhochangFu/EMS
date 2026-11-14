@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 
 import { z } from "zod";
 
-import { MAX_SCOPE_ASSET_IDS, assetIdsQueryField } from "./asset-scope.schema";
+import { MAX_SCOPE_ASSET_IDS, assetIdsQueryField, scopeIdQueryField } from "./asset-scope.schema";
 
 /**
  * `F3.28` (ADR 0074, plan decision 1) — `assetIdsQueryField`'s normalisation
@@ -124,4 +124,18 @@ export function assertANamedKeyObjectIsRefused(): void {
 export function assertASparseIndexObjectIsRefused(): void {
   const result = probe.safeParse(parseAsTheApiDoes(`assetIds[30]=${randomUUID()}`));
   assert(result.success === false, "assetIds[30]=… must be refused");
+}
+
+/**
+ * `F4.361` (ADR 0132 decision 5, plan D6): a scope id is a uuid, lower-cased
+ * before any scope check; absent is `undefined`; a non-uuid is refused.
+ */
+export function assertAScopeIdIsALowerCasedUuid(): void {
+  const scopeProbe = z.object({ id: scopeIdQueryField }).strict();
+  const upper = "ABCDEF12-3456-4789-8ABC-DEF123456789";
+  const parsed = scopeProbe.safeParse({ id: upper });
+  assert(parsed.success && parsed.data.id === upper.toLowerCase(), `an upper-case uuid parsed as ${JSON.stringify(parsed)}`);
+  const absent = scopeProbe.safeParse({});
+  assert(absent.success && absent.data.id === undefined, "an absent scope id must parse as undefined");
+  assert(!scopeProbe.safeParse({ id: "not-a-uuid" }).success, "a non-uuid scope id must be refused");
 }
