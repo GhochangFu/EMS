@@ -2874,8 +2874,9 @@ Do not add top-level folders without updating this section.
   dropped with a replace, and one organization is shown locked and never sent.
   A list read waits for the options only when the URL names a scope; check
   `isPending`, not `isLoading`, or a waiting list reads as empty.
-  **`fetchRules()` takes no argument** — it is a bare `queryFn` in nine places,
-  and TanStack would pass its context object; a filtered read is
+  **`fetchRules()` takes no argument** — the control-room tabs and the
+  maintenance-window wizard pass it as a bare `queryFn`, and TanStack would pass
+  its context object; a filtered read is
   `fetchRuleList(filter)`.
 
 ### 4.3 NestJS
