@@ -137,3 +137,25 @@ What already exists (read on `main` at `126399f`):
 - A severity filter on `/rules` (a rule's severity is set per rule and is
   already visible in the row).
 - Multi-select pickers.
+
+## Build notes
+
+Four plan-gate rulings (owner, in chat, 2026-11-14; plan
+[`docs/plans/f4.361-alarm-rule-filters.md`](../plans/f4.361-alarm-rule-filters.md) §2).
+They fill gaps between this ADR's words and the code; none reopens a decision.
+
+1. **Readable asset groups (decision 2).** `currentUser(jwt).scope.assetGroups`
+   lists groups only for an asset-group grant. A group is readable when it is
+   one of the caller's granted groups, or when its location is one of the
+   caller's readable locations. One function decides this for the options read
+   and for the list filters.
+2. **Group membership in the options (decision 6).** Each asset-group option
+   gains `assetIds`: its members that are in the same answer's `assets` list,
+   so "Asset group narrows Asset" works in the browser.
+3. **Device alarms under `assetGroupId` (decision 3).** It narrows the caller's
+   asset scope to the group's members, so it lists the same kinds of alarm as
+   the existing `assetIds` filter: rule alarms, the comms alarm of an RTU
+   serving a member, and the ingest-host alarm of their organization.
+4. **An unreadable group answers empty (decision 5)**, even when some of its
+   members are readable, checked before any read — the same rule as P2.
+
