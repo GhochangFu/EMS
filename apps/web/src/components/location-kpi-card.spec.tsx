@@ -127,6 +127,71 @@ export function aNotLiveCardShowsTheNotLiveBadgeAndTheAmberEdge(): void {
   expect(within(card).getByText("0/4").className).toContain("text-warning-ink");
 }
 
+function renderWith(over: Record<string, unknown>): HTMLElement {
+  render(
+    <MemoryRouter>
+      <LocationKpiCard location={locationKpiSummarySchema.parse({ ...LOCATION, ...over })} />
+    </MemoryRouter>,
+  );
+  return cardLink();
+}
+
+/** The first figure's cell: the one element carrying `data-metric`. */
+function firstFigure(card: HTMLElement): HTMLElement {
+  const cells = card.querySelectorAll("[data-metric]");
+  expect(cells.length, "exactly one first-figure cell").toBe(1);
+  return cells[0] as HTMLElement;
+}
+
+/**
+ * K7 (`F4.364` D10) — the first figure follows `primaryMetric`, and `data-metric` names it. A
+ * health card shows a percentage and the word "health", and no "kW" anywhere on the card.
+ */
+export function theFirstFigureFollowsPrimaryMetric(): void {
+  const kw = renderWith({});
+  expect(firstFigure(kw).dataset.metric).toBe("kw");
+  expect(firstFigure(kw).textContent).toBe("12.5kW");
+  cleanup();
+
+  const health = renderWith({ energyShown: false, totalKw: null, primaryMetric: "health", healthScore: 0.994 });
+  expect(firstFigure(health).dataset.metric).toBe("health");
+  expect(firstFigure(health).textContent).toBe("99%health");
+  expect(health.textContent).not.toContain("kW");
+  cleanup();
+
+  const critical = renderWith({ primaryMetric: "critical_alarms", criticalAlarms: 3 });
+  expect(firstFigure(critical).dataset.metric).toBe("critical_alarms");
+  expect(firstFigure(critical).textContent).toBe("3critical");
+}
+
+/** K8 (`F4.364`, ADR 0133 decision 3) — a health card with nothing scored reads `—`, never `0`. */
+export function anUnscoredHealthCardReadsADash(): void {
+  const card = renderWith({ energyShown: false, totalKw: null, primaryMetric: "health", healthScore: null });
+  expect(firstFigure(card).textContent).toBe("—health");
+  expect(firstFigure(card).textContent).not.toMatch(/\b0/);
+}
+
+/** K9 (`F4.364` D10) — `none` drops the first figure: two figures in a two-column grid. */
+export function noneShowsTwoFigures(): void {
+  const card = renderWith({ primaryMetric: "none" });
+  expect(card.querySelectorAll("[data-metric]").length).toBe(0);
+  const grid = within(card).getByText("fresh").closest(".grid") as HTMLElement;
+  expect(grid.className).toContain("grid-cols-2");
+  expect(grid.className).not.toContain("grid-cols-3");
+  expect(grid.children.length).toBe(2);
+}
+
+/** K10 (`F4.364`) — a card that is not live mutes its first figure whatever the metric; no accent class. */
+export function aNotLiveCardMutesEveryFirstFigure(): void {
+  for (const metric of ["kw", "health", "critical_alarms"]) {
+    const card = renderWith({ freshAssetCount: 0, primaryMetric: metric, healthScore: 0.5 });
+    const value = firstFigure(card).firstElementChild as HTMLElement;
+    expect(value.className, metric).toContain("text-ink-muted");
+    expect(value.className, metric).not.toMatch(/text-accent|bg-accent/);
+    cleanup();
+  }
+}
+
 export function cleanupCard(): void {
   cleanup();
 }

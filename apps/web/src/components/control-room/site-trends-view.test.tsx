@@ -26,6 +26,14 @@ import {
   aSegmentSubTabOffersSchedule,
   theEnergySubTabSchedulesTheSitesEnergyReport,
   theEnergySubTabHasNoPin,
+  hiddenEnergyOnAnExplicitEnergyViewShowsTheNote,
+  hiddenEnergyOpensTheFirstSegment,
+  hiddenEnergyPointPickKeepsTheSegment,
+  hiddenEnergyWithNoSegmentShowsTheNote,
+  shownEnergyListsEnergyFirstAndNoNote,
+  hiddenEnergyExportsAndSchedulesTheSegment,
+  hiddenEnergyNoteHasNoExportOrSchedule,
+  shownEnergyKeepsScheduleOnAHalfCustomRange,
 } from "./site-trends-view.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014, ADR 0042 decision 2). */
@@ -122,5 +130,37 @@ describe("F4.302 the Trends & Energy section", () => {
 
   it("F4.303 U7: a segment sub-tab exports its segment view", async () => {
     await aSegmentSubTabExportsItsSegmentView();
+  });
+
+  it("F4.364 H1: energy not shown opens the first segment, no Energy entry", async () => {
+    await hiddenEnergyOpensTheFirstSegment();
+  });
+
+  it("F4.364 H2: energy not shown with ?view=energy shows the note", async () => {
+    await hiddenEnergyOnAnExplicitEnergyViewShowsTheNote();
+  });
+
+  it("F4.364 H3: energy not shown at a site with no segment shows the note", async () => {
+    await hiddenEnergyWithNoSegmentShowsTheNote();
+  });
+
+  it("F4.364 H4: energy shown lists Energy first and shows no note", async () => {
+    await shownEnergyListsEnergyFirstAndNoNote();
+  });
+
+  it("F4.364 H5: energy not shown, a point pick keeps the opened segment", async () => {
+    await hiddenEnergyPointPickKeepsTheSegment();
+  });
+
+  it("F4.364 H6: energy not shown, Export and Schedule are the opened segment's", async () => {
+    await hiddenEnergyExportsAndSchedulesTheSegment();
+  });
+
+  it("F4.364 H7: energy not shown, the note has no Export and no Schedule", async () => {
+    await hiddenEnergyNoteHasNoExportOrSchedule();
+  });
+
+  it("F4.364 H8: energy shown keeps Schedule on a half-filled custom range", async () => {
+    await shownEnergyKeepsScheduleOnAHalfCustomRange();
   });
 });

@@ -42,6 +42,7 @@ import {
   unmountDisconnects,
   unregisteredKeyChangesNothing,
   viewReadErrorLine,
+  noEnergyDropsTheTotalLoadTile,
 } from "./generated-site-view.spec";
 
 /**
@@ -212,5 +213,9 @@ describe("F3.68 GeneratedSiteView", () => {
 
   it("F4.359 U16 the site view issues one maintenance read for all its cards", async () => {
     await theSiteViewIssuesOneMaintenanceRead();
+  });
+
+  it("W3b (F4.364) energy not shown drops the Total load tile", async () => {
+    await noEnergyDropsTheTotalLoadTile();
   });
 });

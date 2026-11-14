@@ -61,15 +61,18 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
         </p>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <div data-tile="total-load" className={board.span("total-load")}>
-          <KpiTile
-            label="Total load"
-            status={kpiStatus}
-            value={location ? kwText(location.totalKw) : null}
-            unit="kW"
-            hint={location?.scopeLabel === "partial" ? "Limited asset group" : "All assets"}
-          />
-        </div>
+        {/* `F4.364` (plan ruling Q4): no Total load tile when the site's energy is not shown. */}
+        {location?.energyShown === false ? null : (
+          <div data-tile="total-load" className={board.span("total-load")}>
+            <KpiTile
+              label="Total load"
+              status={kpiStatus}
+              value={location ? kwText(location.totalKw) : null}
+              unit="kW"
+              hint={location?.scopeLabel === "partial" ? "Limited asset group" : "All assets"}
+            />
+          </div>
+        )}
         <div data-tile="assets-fresh" className={board.span("assets-fresh")}>
           <KpiTile
             label="Assets fresh"

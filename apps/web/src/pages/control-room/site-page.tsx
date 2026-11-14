@@ -210,7 +210,12 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                   ) : undefined
                 }
               />
-              <SiteSectionStrip locationId={site.id} onAssetsTab={onAssetsTab} onTrendsTab={onTrendsTab} />
+              <SiteSectionStrip
+                locationId={site.id}
+                onAssetsTab={onAssetsTab}
+                onTrendsTab={onTrendsTab}
+                energyShown={site.energyShown}
+              />
               {siteView.data === undefined ? (
                 <p role="status" className="text-sm text-ink-muted">
                   Loading the site view…
@@ -218,7 +223,7 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
               ) : onAssetsTab ? (
                 <SiteAssetsView locationId={site.id} siteName={site.name} />
               ) : onTrendsTab ? (
-                <SiteTrendsView locationId={site.id} />
+                <SiteTrendsView locationId={site.id} energyShown={site.energyShown} />
               ) : (
                 <>
                   {/* On the SMOC view `tab` is null only for an unknown segment, which redirected above. */}
@@ -254,16 +259,19 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
 /**
  * `F3.72` (plan D4, OQ5) — the site's entries. "Site view" is current for
  * the bare path and every SMOC tab segment; "Assets & RTUs" only at `/assets`;
- * "Trends & Energy" (`F4.302`, ADR 0108 Amendment 4 item 1) only at `/trends`.
+ * "Trends & Energy" (`F4.302`, ADR 0108 Amendment 4 item 1) only at `/trends`. `F4.364` (ADR
+ * 0133 Amendment 1): when the site's energy is not shown, that entry is named "Trends" (same path).
  */
 function SiteSectionStrip({
   locationId,
   onAssetsTab,
   onTrendsTab,
+  energyShown,
 }: {
   locationId: string;
   onAssetsTab: boolean;
   onTrendsTab: boolean;
+  energyShown: boolean;
 }) {
   const entries = [
     {
@@ -272,7 +280,7 @@ function SiteSectionStrip({
       active: !onAssetsTab && !onTrendsTab,
     },
     { label: "Assets & RTUs", to: siteAssetsPath(locationId), active: onAssetsTab },
-    { label: "Trends & Energy", to: siteTrendsPath(locationId), active: onTrendsTab },
+    { label: energyShown ? "Trends & Energy" : "Trends", to: siteTrendsPath(locationId), active: onTrendsTab },
   ];
   return (
     <nav aria-label="Site sections" className="flex flex-wrap gap-1 border-b border-line pb-2">

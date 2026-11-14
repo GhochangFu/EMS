@@ -81,7 +81,7 @@ function Probe() {
   return <output data-testid="location">{`${location.pathname}${location.search}`}</output>;
 }
 
-function renderAt(search: string): void {
+function renderAt(search: string, energyShown = true): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
@@ -91,7 +91,7 @@ function renderAt(search: string): void {
             path="/control-room/site/:locationId/:tab"
             element={
               <>
-                <SiteTrendsView locationId={SITE} />
+                <SiteTrendsView locationId={SITE} energyShown={energyShown} />
                 <Probe />
               </>
             }
@@ -172,7 +172,7 @@ function ViewFromParams() {
   const navigate = useNavigate();
   return (
     <>
-      <SiteTrendsView locationId={locationId ?? ""} />
+      <SiteTrendsView locationId={locationId ?? ""} energyShown />
       <button type="button" onClick={() => navigate(`/control-room/site/${OTHER_SITE}/trends`)}>
         other site
       </button>
@@ -397,4 +397,105 @@ export async function aSegmentSubTabExportsItsSegmentView(): Promise<void> {
   expect(download).toHaveBeenCalledWith("xlsx", SITE, sent);
   expect(sent).toEqual({ range: "7d", segment: "chillers", point: "pf" });
   expect(energy).not.toHaveBeenCalled();
+}
+
+/** The D9 sentence, exactly (`F4.364`, ADR 0133 Amendment 1). */
+const ENERGY_OFF_NOTE =
+  "Energy is not shown for this site. An administrator can turn it on for the organization in Administration → Organizations.";
+
+/**
+ * H1 (`F4.364`, ADR 0133 Amendment 1) — energy not shown, bare section: no Energy entry, the first
+ * present segment (the read's default) is open and current, no energy view and no note.
+ */
+export async function hiddenEnergyOpensTheFirstSegment(): Promise<void> {
+  const spy = stubSegments(BODY);
+  renderAt("", false);
+  expect(await screen.findByRole("combobox", { name: "Trend point" })).toBeInTheDocument();
+  expect(spy).toHaveBeenCalledWith(SITE, { range: "24h" });
+  const nav = await sectionNav();
+  expect(within(nav).getAllByRole("link").map((a) => [a.textContent, a.getAttribute("aria-current")])).toEqual([
+    ["Chillers", "page"],
+    ["Pumps", null],
+  ]);
+  expect(screen.queryByTestId("site-energy-view")).toBeNull();
+  expect(screen.queryByTestId("site-energy-off-note")).toBeNull();
+}
+
+/** H2 — energy not shown, explicit `?view=energy`: the note in place of the energy content. */
+export async function hiddenEnergyOnAnExplicitEnergyViewShowsTheNote(): Promise<void> {
+  stubSegments(BODY);
+  renderAt("?view=energy", false);
+  const note = await screen.findByTestId("site-energy-off-note");
+  expect(note).toHaveAttribute("role", "status");
+  expect(note.textContent).toBe(ENERGY_OFF_NOTE);
+  expect(screen.queryByTestId("site-energy-view")).toBeNull();
+  expect(within(await sectionNav()).queryByRole("link", { name: "Energy" })).toBeNull();
+}
+
+/** H3 — energy not shown and the site has no segment: the note. */
+export async function hiddenEnergyWithNoSegmentShowsTheNote(): Promise<void> {
+  stubSegments({ ...BODY, segments: [], segment: null } as SiteSegmentViewsDto);
+  renderAt("", false);
+  expect((await screen.findByTestId("site-energy-off-note")).textContent).toBe(ENERGY_OFF_NOTE);
+  expect(screen.queryByTestId("site-energy-view")).toBeNull();
+}
+
+/** H4 — the positive twin: energy shown lists Energy first, current, and shows no note. */
+export async function shownEnergyListsEnergyFirstAndNoNote(): Promise<void> {
+  stubSegments(BODY);
+  renderAt("", true);
+  expect(await screen.findByTestId("site-energy-view")).toBeInTheDocument();
+  const links = within(await sectionNav()).getAllByRole("link");
+  expect([links[0]?.textContent, links[0]?.getAttribute("aria-current")]).toEqual(["Energy", "page"]);
+  expect(screen.queryByTestId("site-energy-off-note")).toBeNull();
+}
+
+/** H5 — energy not shown: picking a point on the opened segment keeps that segment in the URL. */
+export async function hiddenEnergyPointPickKeepsTheSegment(): Promise<void> {
+  stubSegments(BODY);
+  renderAt("", false);
+  const picker = await screen.findByRole("combobox", { name: "Trend point" });
+  fireEvent.change(picker, { target: { value: "pf" } });
+  await waitFor(() => expect(screen.getByTestId("location").textContent).toBe(`${PATH}?view=chillers&point=pf`));
+}
+
+/**
+ * H6 (`F4.364`) — energy not shown, bare section: Export downloads the opened segment (the read's
+ * own query, no `segment` key), never the site energy view; one Schedule button, the segment's own.
+ */
+export async function hiddenEnergyExportsAndSchedulesTheSegment(): Promise<void> {
+  signInAs("admin");
+  const read = stubSegments(DRAWN_BODY);
+  const segment = vi.spyOn(exportsApi, "downloadSegmentViewExport").mockResolvedValue();
+  const energy = vi.spyOn(exportsApi, "downloadEnergyViewExport").mockResolvedValue();
+  renderAt("", false);
+  expect(await screen.findByRole("button", { name: "Schedule" })).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "Schedule" })).toHaveLength(1);
+  fireEvent.click(within(screen.getByRole("group", { name: "Export" })).getByRole("button", { name: "CSV" }));
+  await waitFor(() => expect(segment).toHaveBeenCalledTimes(1));
+  expect(segment).toHaveBeenCalledWith("csv", SITE, read.mock.calls[0]?.[1]);
+  expect(read.mock.calls[0]?.[1]).toEqual({ range: "24h" });
+  expect(energy).not.toHaveBeenCalled();
+}
+
+/** H7 (`F4.364`) — energy not shown, explicit `?view=energy`: the note, and no Export and no Schedule. */
+export async function hiddenEnergyNoteHasNoExportOrSchedule(): Promise<void> {
+  signInAs("admin");
+  stubSegments(DRAWN_BODY);
+  renderAt("?view=energy", false);
+  await screen.findByTestId("site-energy-off-note");
+  expect(screen.queryByRole("group", { name: "Export" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Schedule" })).toBeNull();
+}
+
+/**
+ * H8 (`F4.364`, code review) — energy shown, Energy sub-tab with a custom range missing one end:
+ * the Schedule button stays (its prefill does not read the range), as before this row.
+ */
+export async function shownEnergyKeepsScheduleOnAHalfCustomRange(): Promise<void> {
+  signInAs("admin");
+  stubSegments(BODY);
+  renderAt("?range=custom&from=2026-11-01T00:00:00.000Z", true);
+  expect(await screen.findByTestId("site-energy-view")).toHaveAttribute("data-range", "custom");
+  expect(screen.getAllByRole("button", { name: "Schedule" })).toHaveLength(1);
 }

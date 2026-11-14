@@ -383,6 +383,18 @@ export async function kpiTilesReadTheLocationDashboard(): Promise<void> {
   expect(tileValue("RTUs")).toBe("3");
 }
 
+/**
+ * W3b (`F4.364`, plan ruling Q4) — energy not shown: no "Total load" tile; the other KPIs still
+ * render, so the absence is not a pending read. W3 above is the positive twin.
+ */
+export async function noEnergyDropsTheTotalLoadTile(): Promise<void> {
+  renderView({ dashboard: { ...kpis(), totalKw: null, energyShown: false, primaryMetric: "health" } });
+  await screen.findByText("2 / 5");
+  expect(screen.queryByText("Total load")).toBeNull();
+  expect(document.querySelector('[data-tile="total-load"]')).toBeNull();
+  expect(tileValue("Open alarms")).toBe("7");
+}
+
 /** W4a — a partial scope prints the partial-scope line. */
 export async function partialScopeShowsTheLine(): Promise<void> {
   renderView({ dashboard: kpis("partial") });

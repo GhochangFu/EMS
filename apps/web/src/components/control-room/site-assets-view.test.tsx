@@ -9,6 +9,7 @@ import {
   pressingImagesOnARowMountsThatAssetsGallery,
   theAccessDeniedCardLinksToTheControlRoom,
   theHeaderChipShowsTheTypeLabel,
+  theTotalLoadTileFollowsEnergyShown,
 } from "./site-assets-view.spec";
 
 /**
@@ -44,5 +45,9 @@ describe("F3.72 SiteAssetsView (moved from the F3.4 location dashboard)", () => 
 
   it("F4.316 prints the site name after the code of an RTU-less row", async () => {
     await anRtuLessRowNamesTheSite();
+  });
+
+  it("L7 (F4.364) the Total load tile follows energyShown", async () => {
+    await theTotalLoadTileFollowsEnergyShown();
   });
 });
