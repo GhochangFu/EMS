@@ -34,14 +34,20 @@ const FAMILY = `F4364-ORG-${Date.now()}`;
 const FAMILY_PATTERN = "F4364-ORG-%";
 
 async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
-  await pool.query(
+  try {
+    await pool.query(
     `DELETE FROM bms.audit_log WHERE entity_type = 'organization' AND entity_id IN (
        SELECT id FROM bms.organizations WHERE code LIKE $1 AND created_at < now() - interval '30 minutes')`,
     [FAMILY_PATTERN],
   );
-  await pool.query(`DELETE FROM bms.organizations WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`, [
-    FAMILY_PATTERN,
-  ]);
+    await pool.query(`DELETE FROM bms.organizations WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`, [
+      FAMILY_PATTERN,
+    ]);
+  } catch (err) {
+    process.stderr.write(
+      `[F4.364] could not sweep stale fixture rows: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+  }
 }
 
 describe.skipIf(!connectionString)("F4.364 — organization energy settings on the admin write path", () => {

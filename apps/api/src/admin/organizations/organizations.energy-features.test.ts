@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runAnOutOfListStoredValueReadsAsAuto,
   runAnUnknownValueIsRefused,
   runEveryListedValueIsAccepted,
   runTheCreateBodyRefusesBothKeys,
@@ -28,5 +29,9 @@ describe("F4.364 — organization energy settings on the read and write contract
 
   it("S5 the organization DTO requires both settings", () => {
     runTheDtoRequiresBothSettings();
+  });
+
+  it("S6 an out-of-list stored value reads as auto (D3)", async () => {
+    await runAnOutOfListStoredValueReadsAsAuto();
   });
 });

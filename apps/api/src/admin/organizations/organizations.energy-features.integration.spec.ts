@@ -29,12 +29,16 @@ export type EnergyCtx = {
 };
 
 async function create(ctx: EnergyCtx, suffix: string): Promise<string> {
+  return (await createDto(ctx, suffix)).id;
+}
+
+async function createDto(ctx: EnergyCtx, suffix: string): Promise<Awaited<ReturnType<OrganizationsAdminService["create"]>>> {
   const created = await ctx.svc.create(
     ctx.adminJwt,
     createOrganizationBodySchema.parse({ code: `${ctx.family}-${suffix}`, name: `F4.364 ${suffix}`, currency: "INR" }),
   );
   ctx.register(created.id);
-  return created.id;
+  return created;
 }
 
 async function readRow(ctx: EnergyCtx, id: string): Promise<{ energy_features: string; card_primary_metric: string }> {
@@ -49,10 +53,9 @@ async function readRow(ctx: EnergyCtx, id: string): Promise<{ energy_features: s
 
 /** I1 — a created organization reads `auto` / `auto` on the DTO and the row. */
 export async function aCreatedOrganizationReadsAuto(ctx: EnergyCtx): Promise<void> {
-  const id = await create(ctx, "I1");
-  const listed = await ctx.svc.update(ctx.adminJwt, id, updateOrganizationBodySchema.parse({}));
-  expect(adminOrganizationDtoSchema.parse(listed)).toMatchObject({ energyFeatures: "auto", cardPrimaryMetric: "auto" });
-  expect(await readRow(ctx, id)).toEqual({ energy_features: "auto", card_primary_metric: "auto" });
+  const created = await createDto(ctx, "I1");
+  expect(adminOrganizationDtoSchema.parse(created)).toMatchObject({ energyFeatures: "auto", cardPrimaryMetric: "auto" });
+  expect(await readRow(ctx, created.id)).toEqual({ energy_features: "auto", card_primary_metric: "auto" });
 }
 
 /** I2 — the admin's `PATCH` sets both; the DTO returns them; a later `PATCH` without them keeps them. */
