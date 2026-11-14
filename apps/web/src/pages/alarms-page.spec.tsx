@@ -7,6 +7,7 @@ import { expect, vi } from "vitest";
 import type { AlarmListItem, AlarmSeverityDto, VocabulariesResponse } from "@bms/shared";
 
 import * as alarmsApi from "../api/alarms";
+import * as filterOptionsApi from "../api/filter-options";
 import * as vocabApi from "../api/vocabularies";
 import type { AuthUser } from "../stores/auth-store";
 import { AlarmsPage } from "./alarms-page";
@@ -128,6 +129,13 @@ const FOUR_STATES: AlarmListItem[] = [ACTIVE, ACKNOWLEDGED, CLEARED_UNACK, CLOSE
 async function renderPage(items: AlarmListItem[] = FOUR_STATES): Promise<void> {
   vi.spyOn(alarmsApi, "fetchAlarmsPage").mockResolvedValue({ items, nextCursor: null });
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES);
+  // `F4.361`: the page reads the scope pickers' options; an unstubbed read would reach :4000.
+  vi.spyOn(filterOptionsApi, "fetchFilterOptions").mockResolvedValue({
+    organizations: [],
+    locations: [],
+    assetGroups: [],
+    assets: [],
+  });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
@@ -147,11 +155,14 @@ async function renderPage(items: AlarmListItem[] = FOUR_STATES): Promise<void> {
  * `Active` and `Acknowledged` are each on a card *and* in a row's State cell,
  * so the table is excluded rather than the query being made more specific:
  * narrowing by class or position would be the assertion-on-markup ADR 0042
- * decision 5 forbids.
+ * decision 5 forbids. `F4.361`: the Severity and State pickers' options carry
+ * the same words, so an `<option>` is excluded too.
  */
 function summaryCard(label: string): HTMLElement {
   const table = screen.getByRole("table");
-  const outside = screen.getAllByText(label).filter((node) => !table.contains(node));
+  const outside = screen
+    .getAllByText(label)
+    .filter((node) => !table.contains(node) && node.tagName !== "OPTION");
   if (outside.length !== 1) {
     throw new Error(`expected one "${label}" card outside the grid, found ${outside.length}`);
   }
@@ -457,13 +468,16 @@ export async function aReturnedRowShowsNoBadge(): Promise<void> {
   expect(within(rowFor("Returned row")).queryByText("Maintenance")).toBeNull();
 }
 
-/** The control reads `state=suppressed`; the default read sends none. */
+/**
+ * The State dropdown's Suppressed reads `state=suppressed`; the default read sends none. `F4.361`
+ * (ADR 0132 decision 7) replaced the "Suppressed only" checkbox with the dropdown.
+ */
 export async function theSuppressedControlSendsStateSuppressed(): Promise<void> {
   await renderPage([SUPPRESSED, PLAIN]);
   const spy = vi.spyOn(alarmsApi, "fetchAlarmsPage");
-  expect(spy.mock.calls.every((call) => call[2] === undefined)).toBe(true);
-  await userEvent.click(screen.getByRole("checkbox", { name: "Suppressed only" }));
-  await vi.waitFor(() => expect(spy.mock.calls.some((call) => call[2] === "suppressed")).toBe(true));
+  expect(spy.mock.calls.every((call) => call[2]?.state === undefined)).toBe(true);
+  await userEvent.selectOptions(stateControl(), "suppressed");
+  await vi.waitFor(() => expect(spy.mock.calls.some((call) => call[2]?.state === "suppressed")).toBe(true));
 }
 
 /** Searching `maintenance` finds a suppressed alarm. */
@@ -474,36 +488,42 @@ export async function searchingMaintenanceFindsTheSuppressedRow(): Promise<void>
   expect(within(screen.getByRole("table")).getByText("Suppressed row")).toBeInTheDocument();
 }
 
-const CHECKBOX = { name: "Suppressed only" } as const;
-
-/** Toggling the control keeps it on screen while the suppressed read is in flight. */
-export async function theSuppressedControlStaysWhileTheReadIsPending(): Promise<void> {
-  await renderPage([SUPPRESSED, PLAIN]);
-  vi.spyOn(alarmsApi, "fetchAlarmsPage").mockImplementation((_cursor, _limit, state) =>
-    state === "suppressed" ? new Promise(() => undefined) : Promise.resolve({ items: [SUPPRESSED, PLAIN], nextCursor: null }),
-  );
-  await userEvent.click(screen.getByRole("checkbox", CHECKBOX));
-  expect(screen.getByText("Loading alarms…")).toBeInTheDocument();
-  const box = screen.getByRole("checkbox", CHECKBOX) as HTMLInputElement;
-  expect(box.checked).toBe(true);
+/** The State dropdown (`F4.361`), found by its label. */
+function stateControl(): HTMLSelectElement {
+  return screen.getByRole("combobox", { name: "State" }) as HTMLSelectElement;
 }
 
-/** A failed suppressed read leaves the control reachable, and unticking it reads every alarm again. */
+/** Choosing Suppressed keeps the control on screen while the suppressed read is in flight. */
+export async function theSuppressedControlStaysWhileTheReadIsPending(): Promise<void> {
+  await renderPage([SUPPRESSED, PLAIN]);
+  vi.spyOn(alarmsApi, "fetchAlarmsPage").mockImplementation((_cursor, _limit, query) =>
+    query?.state === "suppressed"
+      ? new Promise(() => undefined)
+      : Promise.resolve({ items: [SUPPRESSED, PLAIN], nextCursor: null }),
+  );
+  await userEvent.selectOptions(stateControl(), "suppressed");
+  expect(screen.getByText("Loading alarms…")).toBeInTheDocument();
+  expect(stateControl().value).toBe("suppressed");
+}
+
+/** A failed suppressed read leaves the control reachable, and choosing All reads every alarm again. */
 export async function aFailedSuppressedReadCanBeUnticked(): Promise<void> {
   await renderPage([SUPPRESSED, PLAIN]);
-  vi.spyOn(alarmsApi, "fetchAlarmsPage").mockImplementation((_cursor, _limit, state) =>
-    state === "suppressed" ? Promise.reject(new Error("boom")) : Promise.resolve({ items: [SUPPRESSED, PLAIN], nextCursor: null }),
+  vi.spyOn(alarmsApi, "fetchAlarmsPage").mockImplementation((_cursor, _limit, query) =>
+    query?.state === "suppressed"
+      ? Promise.reject(new Error("boom"))
+      : Promise.resolve({ items: [SUPPRESSED, PLAIN], nextCursor: null }),
   );
-  await userEvent.click(screen.getByRole("checkbox", CHECKBOX));
+  await userEvent.selectOptions(stateControl(), "suppressed");
   await screen.findByText("Could not load alarms (auth?).");
-  await userEvent.click(screen.getByRole("checkbox", CHECKBOX));
-  expect((screen.getByRole("checkbox", CHECKBOX) as HTMLInputElement).checked).toBe(false);
+  await userEvent.selectOptions(stateControl(), "");
+  expect(stateControl().value).toBe("");
   await screen.findByRole("table");
   expect(within(screen.getByRole("table")).getByText("Plain row")).toBeInTheDocument();
 }
 
 /**
- * With "Suppressed only" on, the cards count suppressed rows only: Critical must not read "all clear"
+ * With State Suppressed, the cards count suppressed rows only: Critical must not read "all clear"
  * while unsuppressed criticals are active, and the page says what the counts are of.
  */
 export async function theCardsDoNotClaimThePlantWhileSuppressedOnly(): Promise<void> {
@@ -511,10 +531,10 @@ export async function theCardsDoNotClaimThePlantWhileSuppressedOnly(): Promise<v
   await renderPage([PLAIN]);
   expect(summaryCard("Critical").textContent).toContain("1");
   expect(screen.queryByText(/counts below are of suppressed alarms only/)).toBeNull();
-  vi.spyOn(alarmsApi, "fetchAlarmsPage").mockImplementation((_cursor, _limit, state) =>
-    Promise.resolve({ items: state === "suppressed" ? [suppressedInfo] : [PLAIN], nextCursor: null }),
+  vi.spyOn(alarmsApi, "fetchAlarmsPage").mockImplementation((_cursor, _limit, query) =>
+    Promise.resolve({ items: query?.state === "suppressed" ? [suppressedInfo] : [PLAIN], nextCursor: null }),
   );
-  await userEvent.click(screen.getByRole("checkbox", CHECKBOX));
+  await userEvent.selectOptions(stateControl(), "suppressed");
   await vi.waitFor(() => expect(within(screen.getByRole("table")).getByText("Suppressed info")).toBeInTheDocument());
   expect(summaryCard("Critical").textContent).not.toContain("all clear");
   expect(summaryCard("Critical").textContent).toContain("0");

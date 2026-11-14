@@ -179,8 +179,47 @@ export async function aLocationScopeSendsItsIdOnly(): Promise<void> {
 /** `F4.359` U12 — the page read sends `state` when given, and none otherwise. */
 export async function alarmsPageSendsTheStateOnlyWhenGiven(): Promise<void> {
   const seen = captureUrl(EMPTY_LIST);
-  await fetchAlarmsPage(undefined, 25, "suppressed");
+  await fetchAlarmsPage(undefined, 25, { state: "suppressed" });
   expect(seen().searchParams.get("state")).toBe("suppressed");
   await fetchAlarmsPage();
   expect(seen().searchParams.has("state")).toBe(false);
+}
+
+/**
+ * `F4.361` U7 (ADR 0132 decision 3) — the page read carries every filter key it is given, the asset
+ * as one `assetIds`, and nothing for a key left out.
+ */
+export async function alarmsPageSendsEveryFilterKey(): Promise<void> {
+  const ids = {
+    organizationId: "11111111-1111-4111-8111-111111111111",
+    locationId: "22222222-2222-4222-8222-222222222222",
+    assetGroupId: "33333333-3333-4333-8333-333333333333",
+    assetId: "44444444-4444-4444-8444-444444444444",
+  };
+  const seen = captureUrl(EMPTY_LIST);
+  await fetchAlarmsPage("c1", 25, { state: "active", severity: "critical", ...ids });
+  const url = seen();
+  expect({
+    state: url.searchParams.get("state"),
+    severity: url.searchParams.get("severity"),
+    organizationId: url.searchParams.get("organizationId"),
+    locationId: url.searchParams.get("locationId"),
+    assetGroupId: url.searchParams.get("assetGroupId"),
+    assetIds: url.searchParams.getAll("assetIds"),
+    assetId: url.searchParams.get("assetId"),
+    cursor: url.searchParams.get("cursor"),
+    limit: url.searchParams.get("limit"),
+  }).toEqual({
+    state: "active",
+    severity: "critical",
+    organizationId: ids.organizationId,
+    locationId: ids.locationId,
+    assetGroupId: ids.assetGroupId,
+    assetIds: [ids.assetId],
+    assetId: null,
+    cursor: "c1",
+    limit: "25",
+  });
+  await fetchAlarmsPage(undefined, 25, {});
+  expect([...seen().searchParams.keys()]).toEqual(["limit"]);
 }

@@ -17,15 +17,34 @@ import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
+/**
+ * `F4.361` (ADR 0132 decisions 3 and 5) — the Alarm Centre's list filter. Every key only narrows
+ * the caller's readable alarms; a key left out is not sent. `state` absent is the API's own `all`.
+ */
+export type AlarmPageQuery = {
+  readonly state?: "active" | "suppressed";
+  readonly severity?: string;
+  readonly organizationId?: string;
+  readonly locationId?: string;
+  readonly assetGroupId?: string;
+  /** Sent as one `assetIds`, the list's existing asset filter (decision 3). */
+  readonly assetId?: string;
+};
+
 export async function fetchAlarmsPage(
   cursor?: string,
   limit = 25,
-  state?: "suppressed",
+  query: AlarmPageQuery = {},
 ): Promise<AlarmsListResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
-  // `F4.359`: absent is the API's own default (`all`); only the suppressed read names a state.
-  if (state) {
-    params.set("state", state);
+  for (const key of ["state", "severity", "organizationId", "locationId", "assetGroupId"] as const) {
+    const value = query[key];
+    if (value) {
+      params.set(key, value);
+    }
+  }
+  if (query.assetId) {
+    params.append("assetIds", query.assetId);
   }
   if (cursor) {
     params.set("cursor", cursor);

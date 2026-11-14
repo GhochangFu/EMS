@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useId, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { fetchAlarmsPage } from "../api/alarms";
 import { AlarmAckWizard } from "../components/alarm-ack-wizard";
@@ -14,14 +14,24 @@ import {
   type AlarmLifecycleState,
 } from "../lib/alarm-state";
 import { deviceAlarmLabel } from "../lib/alarm-source";
+import {
+  alarmListQuery,
+  criticalMayReadAllClear,
+  isAlarmListFiltered,
+  readAlarmPageFilter,
+  writeAlarmPageFilter,
+  type AlarmPageFilter,
+} from "../lib/alarm-page-filter";
 import { AlarmDetailsPanel } from "../components/alarm-details-panel";
 import { AlarmSummaryCard } from "../components/alarm-summary-card";
 import { AppShell } from "../layouts/app-shell";
 import { PageHeader } from "../components/page-header";
+import { ScopeFilterBar } from "../components/scope-filter-bar";
 import { SectionCard } from "../components/section-card";
 import { MaintenanceBadge } from "../components/maintenance/maintenance-badge";
 import { StatusPill } from "../components/status-pill";
 import { useAlarmsSocket } from "../hooks/use-alarms-socket";
+import { useScopeFilter } from "../hooks/use-scope-filter";
 import type { AuthUser } from "../stores/auth-store";
 import { ASSET_LABEL_SEPARATOR, assetLabelParts, type AlarmListItem } from "@bms/shared";
 
@@ -124,15 +134,28 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   const [ackTarget, setAckTarget] = useState<AlarmListItem | null>(null);
   const [search, setSearch] = useState("");
   const [detailsTargetId, setDetailsTargetId] = useState<string | null>(null);
-  // `F4.359`: "Suppressed only" reads `state=suppressed`; off, the page sends no state (the API's `all`).
-  const [suppressedOnly, setSuppressedOnly] = useState(false);
-  const state = suppressedOnly ? ("suppressed" as const) : undefined;
+  // `F4.361` (ADR 0132 decisions 1, 7 and 8): the scope, Severity and State filters live in the URL.
+  // State replaces `F4.359`'s "Suppressed only"; All sends no state (the API's `all`).
+  const scope = useScopeFilter();
+  const [params, setParams] = useSearchParams();
+  const pageFilter = useMemo(() => readAlarmPageFilter(params), [params]);
+  const listFilter = useMemo(() => alarmListQuery(scope.filter, pageFilter), [scope.filter, pageFilter]);
+  const suppressedOnly = pageFilter.state === "suppressed";
+  const severityId = useId();
+  const stateId = useId();
+
+  /** A user's change pushes a history entry, so Back undoes it (decision 8). */
+  function setPageFilter(next: AlarmPageFilter): void {
+    setParams(writeAlarmPageFilter(params, { ...pageFilter, ...next }));
+  }
 
   const listQ = useInfiniteQuery({
-    queryKey: ["alarms", "list", { state }],
-    queryFn: ({ pageParam }) => fetchAlarmsPage(pageParam as string | undefined, 25, state),
+    queryKey: ["alarms", "list", listFilter],
+    queryFn: ({ pageParam }) => fetchAlarmsPage(pageParam as string | undefined, 25, listFilter),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    // D13: a URL naming a scope waits for the options, so no unfiltered list flashes first.
+    enabled: scope.ready,
   });
 
   useAlarmsSocket(() => {
@@ -155,6 +178,13 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
     staleTime: 5 * 60 * 1000,
   });
   const alarmSeverities = useMemo(() => vocabQ.data?.alarmSeverities ?? [], [vocabQ.data]);
+  // A code the vocabulary does not list (an old link) stays choosable, so the picker shows what is sent.
+  const severityChoices = useMemo(() => {
+    const codes = alarmSeverities.map((s) => ({ code: s.code, label: s.label }));
+    return pageFilter.severity && !codes.some((c) => c.code === pageFilter.severity)
+      ? [...codes, { code: pageFilter.severity, label: pageFilter.severity }]
+      : codes;
+  }, [alarmSeverities, pageFilter.severity]);
 
   const summary = useMemo(() => {
     const { critical, major, minor, unrecognised } = summariseAlarmSeverities(
@@ -230,6 +260,13 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           subtitle="Threshold rules run on telemetry in the API · acknowledgements are audited"
         />
 
+        <ScopeFilterBar
+          filter={scope.filter}
+          options={scope.options}
+          unavailable={scope.unavailable}
+          onChange={scope.setScope}
+        />
+
         {/*
           Critical / Major / Minor are the mockup's names for the stored
           `critical` / `warning` / `info` (AGENTS.md §5). The sixth card is not
@@ -248,12 +285,12 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
         ) : null}
 
         {/*
-          F4.359: "Suppressed only" reads the suppressed rows alone, and the cards count what the page read.
+          F4.359: State Suppressed reads the suppressed rows alone, and the cards count what the page read.
           They then say nothing about the plant, so they say what they are of and Critical drops "all clear".
         */}
         {suppressedOnly ? (
           <p className="rounded border border-info-line bg-info-wash px-3 py-2 text-xs font-semibold text-info-ink">
-            Suppressed only: the counts below are of suppressed alarms only, not a reading of the plant.
+            State Suppressed: the counts below are of suppressed alarms only, not a reading of the plant.
           </p>
         ) : null}
 
@@ -266,7 +303,8 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
             label="Critical"
             value={summary.critical}
             tone="critical"
-            emptyLabel={severityReady && !suppressedOnly ? "all clear" : undefined}
+            // D15: a zero under a chosen severity or under Suppressed is about the filter, not the plant.
+            emptyLabel={severityReady && criticalMayReadAllClear(pageFilter) ? "all clear" : undefined}
           />
           <AlarmSummaryCard label="Major" value={summary.major} tone="warning" />
           <AlarmSummaryCard label="Minor" value={summary.minor} tone="info" />
@@ -316,20 +354,43 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           </div>
         </SectionCard>
 
-        {/* F4.359: the card stays mounted through a load or an error, so "Suppressed only" can always be unticked. */}
+        {/* F4.359: the card stays mounted through a load or an error, so the State filter can always be changed. */}
         <SectionCard
           title="Alarm Grid"
           subtitle={`${filteredRows.length} of ${rows.length} loaded alarms shown`}
           actions={
             <div className="flex flex-wrap items-center gap-4">
-              <label className="flex items-center gap-2 text-xs text-ink-muted">
-                <input
-                  type="checkbox"
-                  checked={suppressedOnly}
-                  onChange={(event) => setSuppressedOnly(event.target.checked)}
-                />
-                Suppressed only
-              </label>
+              <div className="flex items-center gap-2 text-xs text-ink-muted">
+                <label htmlFor={severityId}>Severity</label>
+                <select
+                  id={severityId}
+                  className="surface-field px-3 py-1.5 text-xs text-ink"
+                  value={pageFilter.severity ?? ""}
+                  onChange={(event) => setPageFilter({ severity: event.target.value || undefined })}
+                >
+                  <option value="">All severities</option>
+                  {severityChoices.map((s) => (
+                    <option key={s.code} value={s.code}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-ink-muted">
+                <label htmlFor={stateId}>State</label>
+                <select
+                  id={stateId}
+                  className="surface-field px-3 py-1.5 text-xs text-ink"
+                  value={pageFilter.state ?? ""}
+                  onChange={(event) =>
+                    setPageFilter({ state: (event.target.value || undefined) as AlarmPageFilter["state"] })
+                  }
+                >
+                  <option value="">All</option>
+                  <option value="active">Active</option>
+                  <option value="suppressed">Suppressed</option>
+                </select>
+              </div>
               <label className="flex min-w-[260px] items-center gap-2 text-xs text-ink-muted">
                 Search
                 <input
@@ -343,7 +404,8 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           }
           bodyClassName="surface-table overflow-x-auto p-0"
         >
-          {listQ.isLoading ? (
+          {/* `isPending`, not `isLoading`: a list waiting on the options (D13) is loading, not empty. */}
+          {listQ.isPending ? (
             <p className="px-3 py-2 text-sm text-ink-muted">Loading alarms…</p>
           ) : listQ.isError ? (
             <p className="px-3 py-2 text-sm text-critical-ink">Could not load alarms (auth?).</p>
@@ -361,7 +423,13 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 ? (
+                {rows.length === 0 && isAlarmListFiltered(listFilter) ? (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-8 text-center text-ink-muted">
+                      No alarms match the current filters.
+                    </td>
+                  </tr>
+                ) : rows.length === 0 ? (
                   <tr>
                     <td
                       colSpan={7}
