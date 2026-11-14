@@ -68,7 +68,8 @@ export function OrgLocationAccordion({ groups }: OrgLocationAccordionProps) {
                   {group.organization.code} · {group.organization.name}
                 </div>
                 <div className="mt-1 text-xs text-ink-muted">
-                  {summary.locationCount} locations · {summary.totalKw.toFixed(1)} kW ·{" "}
+                  {summary.locationCount} locations ·{" "}
+                  {summary.totalKw === null ? "" : `${summary.totalKw.toFixed(1)} kW · `}
                   {summary.openAlarms} alarms
                 </div>
                 <div className="mt-2 max-w-xs">

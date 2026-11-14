@@ -13,6 +13,7 @@ import { AssetHistoryLink } from "../assets/asset-history-link";
 import { KpiTile } from "../kpi-tile";
 import { SectionCard } from "../section-card";
 import { StatusPill } from "../status-pill";
+import { kwText } from "../../lib/location-card-figure";
 
 type SiteAssetsViewProps = {
   locationId: string;
@@ -191,7 +192,7 @@ export function SiteAssetsView({ locationId, siteName }: SiteAssetsViewProps) {
             <KpiTile
               label="Total load"
               status={status}
-              value={location ? location.totalKw.toFixed(1) : null}
+              value={location ? kwText(location.totalKw) : null}
               unit="kW"
               hint={location?.scopeLabel === "partial" ? "Limited asset group" : "All assets"}
             />
