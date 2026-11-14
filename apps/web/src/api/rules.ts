@@ -77,15 +77,42 @@ export type RuleDraftPayload = {
   clearHoldSeconds?: number | null;
 };
 
-/** GET /api/v1/rules */
-export async function fetchRules(): Promise<RulesResponse> {
+/**
+ * `F4.361` (ADR 0132 decision 3) — the Rule Engine's scope filter. Every key only narrows the
+ * caller's readable rules; a key left out is not sent.
+ */
+export type RuleListQuery = {
+  readonly organizationId?: string;
+  readonly locationId?: string;
+  readonly assetGroupId?: string;
+  readonly assetId?: string;
+};
+
+/** GET /api/v1/rules, with only the keys that are set. */
+export async function fetchRuleList(filter: RuleListQuery): Promise<RulesResponse> {
+  const params = new URLSearchParams();
+  for (const key of ["organizationId", "locationId", "assetGroupId", "assetId"] as const) {
+    const value = filter[key];
+    if (value) {
+      params.set(key, value);
+    }
+  }
+  const query = params.toString();
   const sent = withAuth();
-  const res = await fetch(`${base}/api/v1/rules`, sent);
+  const res = await fetch(`${base}/api/v1/rules${query ? `?${query}` : ""}`, sent);
   if (!res.ok) {
     clearSessionOnAuthFailure(res, sent);
     throw new Error(`rules ${res.status}`);
   }
   return checkResponse(rulesResponseSchema, await res.json(), "rules");
+}
+
+/**
+ * GET /api/v1/rules, unfiltered. Takes **no parameters**: nine call sites pass it bare as
+ * `queryFn: fetchRules`, and React Query hands a `queryFn` its context object.
+ */
+export async function fetchRules(): Promise<RulesResponse> {
+  return fetchRuleList({});
 }
 
 /** GET /api/v1/rules/catalog */

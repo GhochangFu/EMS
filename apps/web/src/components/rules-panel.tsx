@@ -10,13 +10,15 @@ import {
   type RuleListItem,
 } from "@bms/shared";
 
-import { evaluateRules, fetchRuleExecutions, fetchRules } from "../api/rules";
+import { evaluateRules, fetchRuleExecutions, fetchRuleList } from "../api/rules";
+import { useScopeFilter } from "../hooks/use-scope-filter";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { labelFor, toneClass, toneFor } from "../lib/vocabulary";
 import { EvaluateRefusalNotice } from "./evaluate-refusal-notice";
 import { RuleChannelsEditor } from "./rule-channels-editor";
 import { type RuleLifecycleAction, RuleLifecycleWizard } from "./rules/rule-lifecycle-wizard";
 import { RuleToggleWizard } from "./rules/rule-toggle-wizard";
+import { ScopeFilterBar } from "./scope-filter-bar";
 import { RuleBatchWizard } from "./rules/rule-batch-wizard";
 import { RuleWizard } from "./rules/rule-wizard";
 
@@ -122,9 +124,12 @@ export function RulesPanel() {
   const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleFilter>("all");
   const [open, setOpen] = useState<OpenWizard>(null);
 
+  // `F4.361`: the scope filter is in the URL; the list waits for the options when one is set (D13).
+  const scope = useScopeFilter();
   const rulesQ = useQuery({
-    queryKey: ["rules", "list"],
-    queryFn: fetchRules,
+    queryKey: ["rules", "list", scope.filter],
+    queryFn: () => fetchRuleList(scope.filter),
+    enabled: scope.ready,
   });
   const executionsQ = useQuery({
     queryKey: ["rules", "executions"],
@@ -182,6 +187,12 @@ export function RulesPanel() {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
       <section className="space-y-4">
+        <ScopeFilterBar
+          filter={scope.filter}
+          options={scope.options}
+          unavailable={scope.unavailable}
+          onChange={scope.setScope}
+        />
         <div className="grid gap-3 sm:grid-cols-4">
           <Kpi label="Active Rules" value={`${activeCount}/${rules.length}`} />
           <Kpi label="Drafts" value={String(draftCount)} />

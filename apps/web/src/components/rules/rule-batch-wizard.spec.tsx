@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type { RuleBuilderCatalogAsset, RuleListItem, VocabulariesResponse } from "@bms/shared";
@@ -208,12 +209,14 @@ export async function theReviewShowsNoRulesJson(): Promise<void> {
 /** The Rule Engine page opens the wizard from its New batch button. */
 export async function theRulesPanelOpensTheBatchWizard(): Promise<void> {
   stubApi();
-  vi.spyOn(rulesApi, "fetchRules").mockResolvedValue({ items: [] as RuleListItem[] });
+  vi.spyOn(rulesApi, "fetchRuleList").mockResolvedValue({ items: [] as RuleListItem[] });
   vi.spyOn(rulesApi, "fetchRuleExecutions").mockResolvedValue({ items: [] });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <RulesPanel />
+      <MemoryRouter>
+        <RulesPanel />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   await userEvent.click(await screen.findByRole("button", { name: "New batch" }));

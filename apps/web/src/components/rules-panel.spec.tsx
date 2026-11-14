@@ -1,11 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
-import { expect, vi } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
+import { expect, vi, type MockInstance } from "vitest";
 
 import type { RuleListItem, VocabulariesResponse } from "@bms/shared";
 
+import * as filterOptionsApi from "../api/filter-options";
 import * as rulesApi from "../api/rules";
 import * as vocabApi from "../api/vocabularies";
+import { IDS, OPTIONS } from "../lib/scope-filter.spec";
 import { RulesPanel } from "./rules-panel";
 
 /**
@@ -57,18 +61,31 @@ const thresholdRule: RuleListItem = {
   updatedAt: new Date(0).toISOString(),
 };
 
-async function renderPanel(rules: RuleListItem[]): Promise<void> {
+type ListSpy = MockInstance<typeof rulesApi.fetchRuleList>;
+
+/** `answer` decides what the list returns for the filter it was asked with. */
+async function renderPanel(
+  rules: RuleListItem[],
+  entry = "/rules",
+  answer: (filter: rulesApi.RuleListQuery) => RuleListItem[] = () => rules,
+): Promise<ListSpy> {
   vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("no fetch expected"))));
-  vi.spyOn(rulesApi, "fetchRules").mockResolvedValue({ items: rules });
+  const list = vi
+    .spyOn(rulesApi, "fetchRuleList")
+    .mockImplementation(async (filter) => ({ items: answer(filter) }));
   vi.spyOn(rulesApi, "fetchRuleExecutions").mockResolvedValue({ items: [] });
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(vocabularies);
+  vi.spyOn(filterOptionsApi, "fetchFilterOptions").mockResolvedValue(OPTIONS);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <RulesPanel />
+      <MemoryRouter initialEntries={[entry]}>
+        <RulesPanel />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   await screen.findByText(rules[0]?.name ?? "");
+  return list;
 }
 
 /** An asset with an RTU: the summary reads `CH-01 · RTU 1 · supply_temp_c gte 12`. */
@@ -87,4 +104,46 @@ export async function theSummaryFallsBackToTheLocation(): Promise<void> {
 export async function aRuleWithNoAssetKeepsThePlaceholder(): Promise<void> {
   await renderPanel([{ ...thresholdRule, assetCode: null, assetRtuName: null, assetLocationName: null }]);
   expect(screen.getByText("Asset · supply_temp_c gte 12")).toBeTruthy();
+}
+
+const otherRule: RuleListItem = {
+  ...thresholdRule,
+  id: "66666666-6666-4666-8666-666666666666",
+  code: "AHU_LOW_FLOW",
+  name: "AHU low flow",
+  category: "electrical" as RuleListItem["category"],
+  enabled: false,
+};
+
+/** Choosing a location reads the list again with `locationId`, and the counters follow the answer. */
+export async function choosingALocationRefetchesWithIt(): Promise<void> {
+  const list = await renderPanel(
+    [thresholdRule, otherRule],
+    "/rules",
+    (filter) => (filter.locationId ? [thresholdRule] : [thresholdRule, otherRule]),
+  );
+  expect(list.mock.calls.at(-1)?.[0]).toEqual({});
+  await vi.waitFor(() => expect((screen.getByRole("combobox", { name: "Organization" }) as HTMLSelectElement).disabled).toBe(false));
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Organization" }), IDS.ORG_A);
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Location" }), IDS.SITE_A);
+  await vi.waitFor(() =>
+    expect(list.mock.calls.at(-1)?.[0]).toEqual({ organizationId: IDS.ORG_A, locationId: IDS.SITE_A }),
+  );
+  await screen.findByText("Active Rules (1/1)");
+}
+
+/** The heading's count is the filtered list's: one enabled published rule of two returned is 1/2, one of one is 1/1. */
+export async function theActiveCountIsOfTheFilteredRules(): Promise<void> {
+  await renderPanel([thresholdRule, otherRule], `/rules?organizationId=${IDS.ORG_A}`, () => [thresholdRule, otherRule]);
+  await screen.findByText("Active Rules (1/2)");
+}
+
+/** The browser-side category filter still narrows what the server returned. */
+export async function theCategoryFilterStillWorks(): Promise<void> {
+  await renderPanel([thresholdRule, otherRule]);
+  expect(screen.getByText("AHU low flow")).toBeTruthy();
+  const select = screen.getAllByRole("combobox").find((el) => within(el).queryByText("HVAC")) as HTMLSelectElement;
+  await userEvent.selectOptions(select, "hvac");
+  await vi.waitFor(() => expect(screen.queryByText("AHU low flow")).toBeNull());
+  expect(screen.getByText("Chiller high temperature")).toBeTruthy();
 }

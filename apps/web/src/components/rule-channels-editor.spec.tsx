@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type {
@@ -392,7 +393,7 @@ const EVALUATE_REFUSAL_BODY = JSON.stringify({
  */
 export async function showsTheEvaluateRefusalWhereTheOperatorPressed(): Promise<void> {
   stubApi();
-  vi.spyOn(rulesApi, "fetchRules").mockResolvedValue({ items: [notifyRule] });
+  vi.spyOn(rulesApi, "fetchRuleList").mockResolvedValue({ items: [notifyRule] });
   vi.spyOn(rulesApi, "fetchRuleExecutions").mockResolvedValue({ items: [] });
   vi.spyOn(rulesApi, "fetchRuleBuilderCatalog").mockResolvedValue({ assets: [] });
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(emptyVocabularies);
@@ -403,7 +404,9 @@ export async function showsTheEvaluateRefusalWhereTheOperatorPressed(): Promise<
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <RulesPanel />
+      <MemoryRouter>
+        <RulesPanel />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 
@@ -427,7 +430,7 @@ export async function showsTheEvaluateRefusalWhereTheOperatorPressed(): Promise<
  */
 async function renderToggleKnob(enabled: boolean): Promise<Element | null> {
   stubApi();
-  vi.spyOn(rulesApi, "fetchRules").mockResolvedValue({ items: [{ ...notifyRule, enabled }] });
+  vi.spyOn(rulesApi, "fetchRuleList").mockResolvedValue({ items: [{ ...notifyRule, enabled }] });
   vi.spyOn(rulesApi, "fetchRuleExecutions").mockResolvedValue({ items: [] });
   vi.spyOn(rulesApi, "fetchRuleBuilderCatalog").mockResolvedValue({ assets: [] });
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(emptyVocabularies);
@@ -437,7 +440,9 @@ async function renderToggleKnob(enabled: boolean): Promise<Element | null> {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <RulesPanel />
+      <MemoryRouter>
+        <RulesPanel />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 
@@ -462,7 +467,7 @@ export async function paintsTheDisabledKnobOnDark(): Promise<void> {
  */
 export async function mountsTheEditorOnlyWhenTheCardAsksForIt(): Promise<void> {
   stubApi();
-  vi.spyOn(rulesApi, "fetchRules").mockResolvedValue({ items: [notifyRule] });
+  vi.spyOn(rulesApi, "fetchRuleList").mockResolvedValue({ items: [notifyRule] });
   vi.spyOn(rulesApi, "fetchRuleExecutions").mockResolvedValue({ items: [] });
   vi.spyOn(rulesApi, "fetchRuleBuilderCatalog").mockResolvedValue({ assets: [] });
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(emptyVocabularies);
@@ -472,7 +477,9 @@ export async function mountsTheEditorOnlyWhenTheCardAsksForIt(): Promise<void> {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <RulesPanel />
+      <MemoryRouter>
+        <RulesPanel />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 
