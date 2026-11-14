@@ -1,7 +1,9 @@
 import { Route } from "react-router-dom";
 
+import { LocationTariffRoute } from "./location-tariff-route";
 import { MaintenanceWindowsRoute } from "./maintenance-windows-page";
 import { ServiceAccountsRoute } from "./service-accounts-route";
+import { TariffsRoute } from "./tariffs-route";
 import { WorkOrderSettingsRoutes } from "./work-order-settings-routes";
 
 /**
@@ -14,11 +16,16 @@ import { WorkOrderSettingsRoutes } from "./work-order-settings-routes";
  *   nested routes (`work-order-settings-routes.tsx`).
  * - `F4.359` U15 (ADR 0131 decision 16): `/admin/maintenance-windows` (`AdminRoute` in
  *   `maintenance-windows-page.tsx`).
+ * - `F4.365` U8 (ADR 0134 decision 3; plan Q10): `/admin/locations/:locationId/tariff` (`AdminRoute`
+ *   in `location-tariff-page.tsx`), opened by the Locations screen's "Tariff" row action.
+ * - `F4.365` U9 (ADR 0134 decision 8): `/admin/tariffs` (`AdminRoute` in `tariffs-page.tsx`).
  */
 export const EXTRA_ADMIN_ROUTES = (
   <>
     <Route path="/admin/service-accounts" element={<ServiceAccountsRoute />} />
     <Route path="/admin/work-order-settings/*" element={<WorkOrderSettingsRoutes />} />
     <Route path="/admin/maintenance-windows" element={<MaintenanceWindowsRoute />} />
+    <Route path="/admin/locations/:locationId/tariff" element={<LocationTariffRoute />} />
+    <Route path="/admin/tariffs" element={<TariffsRoute />} />
   </>
 );

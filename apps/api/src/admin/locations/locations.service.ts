@@ -10,7 +10,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { assets, locationTypes, locations, organizations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { floorAreaM2Of } from "@bms/shared";
+import { floorAreaM2Of, resolveSiteTimeZone } from "@bms/shared";
 import type {
   AdminLocationDto,
   AdminLocationSummaryDto,
@@ -142,6 +142,7 @@ export class LocationsAdminService {
         location: locations,
         organizationCode: organizations.code,
         organizationName: organizations.name,
+        organizationTimezone: organizations.timezone,
       })
       .from(locations)
       .innerJoin(organizations, eq(locations.organizationId, organizations.id))
@@ -157,6 +158,7 @@ export class LocationsAdminService {
       organizationId: row.location.organizationId,
       organizationCode: row.organizationCode,
       organizationName: row.organizationName,
+      timeZone: resolveSiteTimeZone(row.location.timezone, row.organizationTimezone).arithmeticZone,
     };
   }
 

@@ -31,3 +31,8 @@ export { FIXTURE_ASSET_DOMAIN_PREFIX, fixtureAssetDomainCode } from "./asset-dom
  * internal, as `HEALTH_BANDS` above.
  */
 export { POINT_KEY_STATE_SEED } from "./point-key-states-seed";
+/**
+ * `F4.365` (ADR 0134 decision 2, plan D2): one upsert, two callers — `db:seed`
+ * and `pnpm --filter api tariffs:import --apply`.
+ */
+export { loadTariffCatalog, upsertTariffCatalog, type TariffCatalogQueryable } from "./tariff-catalog-seed";

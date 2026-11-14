@@ -248,6 +248,14 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                     >
                       Control Room view
                     </button>
+                    {/* `F4.365` U8 (plan Q10) — the location's tariff mappings, a page of its own. */}
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-accent-strong"
+                      onClick={() => navigate(`/admin/locations/${item.id}/tariff`)}
+                    >
+                      Tariff
+                    </button>
                     <button
                       type="button"
                       className="text-xs font-semibold text-ink-muted"

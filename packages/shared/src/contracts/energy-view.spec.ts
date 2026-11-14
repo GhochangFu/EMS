@@ -30,6 +30,7 @@ const PERIOD = {
   indicativeCost: null,
   tariffPerKwh: null,
   currency: null,
+  tariffVerify: false,
   sourceTotals: { gridKwh: 1000, solarKwh: 234.5, dgKwh: 0 },
   series: [{ t: "2026-10-31T03:00:00.000Z", gridKw: 180, solarKw: 30, dgKw: 0 }],
   kwhPerM2: null,

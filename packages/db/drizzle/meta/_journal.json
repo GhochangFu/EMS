@@ -1072,6 +1072,20 @@
       "when": 1794657493883,
       "tag": "0153_organization_energy_features",
       "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1794661506960,
+      "tag": "0154_tariff_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1794661506961,
+      "tag": "0155_location_tariffs",
+      "breakpoints": true
     }
   ]
 }

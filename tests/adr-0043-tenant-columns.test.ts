@@ -123,6 +123,8 @@ const NO_COLUMN = [
   "ingest_hosts", // F3.16 / ADR 0127 decision 7: platform host state, no tenant data
   "ingest_endpoint_drop_hours", // F3.16 / ADR 0127 decision 17: platform, global admin only
   "map_locations",
+  "tariff_categories", // F4.365 / ADR 0134 decision 1: the global tariff catalog
+  "tariff_slabs",
   "user_location_access",
   "user_asset_group_access",
 ];

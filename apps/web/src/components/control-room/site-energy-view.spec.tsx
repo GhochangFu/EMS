@@ -5,6 +5,7 @@ import { expect, vi } from "vitest";
 
 import type { EnergyOrganizationViews, EnergyView } from "@bms/shared";
 
+import * as billApi from "../../api/energy-bill";
 import * as energyApi from "../../api/energy-view";
 import type { SiteRankingSort } from "../../lib/energy-organization-views";
 import { SiteEnergyView } from "./site-energy-view";
@@ -41,6 +42,7 @@ const VIEW: EnergyView = {
     indicativeCost: null,
     tariffPerKwh: null,
     currency: null,
+    tariffVerify: false,
     sourceTotals: { gridKwh: 100, solarKwh: 0, dgKwh: 0 },
     series: [],
     kwhPerM2: null,
@@ -95,6 +97,21 @@ function stubEnergy(orgAnswer: EnergyOrganizationViews | Error, viewAnswer: Ener
   } else {
     orgSpy.mockResolvedValue(orgAnswer);
   }
+  // `F4.365` U10: the monthly bill card's read; no mapping renders nothing, so the sections are unchanged.
+  vi.spyOn(billApi, "fetchEnergyBill").mockResolvedValue({
+    locationId: SITE,
+    month: "2026-11",
+    timeZone: "Asia/Kolkata",
+    from: "2026-10-31T18:30:00.000Z",
+    to: "2026-11-30T18:30:00.000Z",
+    complete: false,
+    currency: "INR",
+    reason: "no_mapping",
+    dataStatus: null,
+    tariff: null,
+    mapping: null,
+    bill: null,
+  });
   vi.spyOn(energyApi, "fetchEnergyFilterOptions").mockRejectedValue(new Error("not this view's read"));
   return { viewSpy, orgSpy };
 }

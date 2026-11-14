@@ -10,6 +10,7 @@ import { siteEnergyQueryOf } from "../../lib/site-trends";
 import { AbnormalList } from "../energy/abnormal-list";
 import { EnergyHeatmap } from "../energy/energy-heatmap";
 import { EnergyKpiTiles } from "../energy/energy-kpi-tiles";
+import { MonthlyBillCard } from "../energy/monthly-bill-card";
 import type { RangeCompareValue } from "../energy/range-compare-controls";
 import { SiteRankingTable } from "../energy/site-ranking-table";
 import { EnergySourceStackChart } from "../energy-source-stack-chart";
@@ -108,6 +109,9 @@ export function SiteEnergyView({ locationId, value, rankBy, onRankBy }: Props) {
         "Readable children" is the ranking's own test (`totalSites > 1`).
       */}
       <EnergyKpiTiles status={status} view={v} floorAreaTile={{ hasReadableChildren: showsSiteRanking }} />
+
+      {/* `F4.365` U10: the month's bill, self-fetching; nothing for a site with no tariff mapping. */}
+      <MonthlyBillCard locationId={locationId} />
 
       <SectionCard
         title="Source mix · grid / solar / nominal DG"

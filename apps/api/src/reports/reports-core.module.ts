@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { CalcParametersService } from "../calc/calc-parameters.service";
 import { NotificationsCoreModule } from "../notifications/notifications-core.module";
+import { TariffRatesModule } from "../tariffs/tariff-rates.module";
 import { TelemetryService } from "../telemetry/telemetry.service";
 import { LocationSummaryService } from "./location-summary.service";
 import { ReportDispatchService } from "./report-dispatch.service";
@@ -69,11 +70,18 @@ import { TrendPointsReportService } from "./trend-points-report.service";
  * process carries is stateless. `reports-core-module-wiring.spec.ts` pins the graph; the worker
  * boot on the compose stack is still the DI gate.
  *
+ * `F4.365` U7 (ADR 0134 decision 7): the energy cost reads (`ReportsService`, and
+ * `ReportsModule`'s `EnergyViewService` through the re-export) inject
+ * `EnergyRateResolver` from the provider-only, loop-free `TariffRatesModule` — its
+ * second import. It re-exports that module so `ReportsModule` resolves the token
+ * without a new import of its own. `CalcParametersService` stays provided and
+ * exported for any other reader.
+ *
  * Nest wiring, uncovered like `main.ts`. The compose worker boot (U10) is
  * the DI gate — `pnpm build` is not.
  */
 @Module({
-  imports: [NotificationsCoreModule],
+  imports: [NotificationsCoreModule, TariffRatesModule],
   providers: [
     ReportsService,
     CalcParametersService,
@@ -84,6 +92,15 @@ import { TrendPointsReportService } from "./trend-points-report.service";
     TrendPointsReportService,
     { provide: REPORT_FILES_CONFIG, useFactory: () => readReportFilesConfig(process.env) },
   ],
-  exports: [ReportsService, CalcParametersService, ReportRenderService, ReportDispatchService, LocationSummaryService, TrendPointsReportService, REPORT_FILES_CONFIG],
+  exports: [
+    ReportsService,
+    CalcParametersService,
+    ReportRenderService,
+    ReportDispatchService,
+    LocationSummaryService,
+    TrendPointsReportService,
+    REPORT_FILES_CONFIG,
+    TariffRatesModule,
+  ],
 })
 export class ReportsCoreModule {}

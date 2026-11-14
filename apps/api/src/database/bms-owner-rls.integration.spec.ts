@@ -102,6 +102,13 @@ export const FORCED_TABLES = [
   // as bms_owner under FORCE, and an insert for B fails WITH CHECK).
   "maintenance_windows",
   "maintenance_window_targets",
+  // `F4.365` (ADR 0134 decisions 3 and 8, migration `0155`). Tenant tables. The
+  // count-0 check below is VACUOUS for them (the seed writes no mapping or
+  // version); `tests/f4.365-tariff-schema.integration.test.ts` holds the
+  // non-vacuous half as bms_tenant.
+  "org_tariff_categories",
+  "org_tariff_slabs",
+  "location_tariffs",
 ] as const;
 
 function assert(condition: boolean, message: string): void {

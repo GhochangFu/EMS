@@ -188,6 +188,19 @@ const ESCALATION_PATCH =
 const STRICT = (why: string): LedgerEntry => ({ strict: true, why });
 
 /**
+ * `F4.365` U6 — the slab item (`tariffSlabSchema`) is shared with the response DTO and the committed
+ * catalog snapshot, and every one of its seven keys is required (`notes` and `toUnits` are nullable,
+ * not optional). A misspelt key therefore already fails as the missing correct one, a 400; nothing a
+ * caller means can be dropped at 200, so the shared item is left open rather than forked per use.
+ */
+const SLAB_OPEN: LedgerEntry = {
+  strict: false,
+  because:
+    "Every key of the slab item is required, so a misspelt key already 400s as the missing correct one; " +
+    "the item is shared with the response DTO and the catalog snapshot, so it is not forked to be strict.",
+};
+
+/**
  * Every object node reachable from a registered **body** schema, with the
  * decision recorded for each. Keys are `WalkedNode.label`.
  *
@@ -370,6 +383,17 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // exactly the key a client would try to send: stripped and answered 200, it
   // reads as "my numbering was accepted".
   createCalcParameterBodySchema: STRICT(CALLER_ERROR),
+  // `F4.365` U5 (ADR 0134 decision 3): the organization and the location are the path's, and the line is
+  // immutable on PATCH — an `organizationId`, `locationId` or `tariffKey` sent must be a 400, never dropped.
+  createLocationTariffBodySchema: STRICT(CALLER_ERROR),
+  updateLocationTariffBodySchema: STRICT(CALLER_ERROR),
+  // `F4.365` U6 (ADR 0134 Amendment 1): a revision's descriptive columns are copied on the server, so a
+  // `state` or `name` sent on one is a caller error; the custom arm and the PATCH are closed shapes too.
+  "createTariffVersionBodySchema|0": STRICT(CALLER_ERROR),
+  "createTariffVersionBodySchema|1": STRICT(CALLER_ERROR),
+  updateTariffVersionBodySchema: STRICT(CALLER_ERROR),
+  "createTariffVersionBodySchema|0/slabs[]": SLAB_OPEN,
+  "updateTariffVersionBodySchema/slabs[]": SLAB_OPEN,
   createEscalationProfileBodySchema: STRICT(CALLER_ERROR),
   "createEscalationProfileBodySchema/steps[]": STRICT(ESCALATION_STEP),
   createLocationBodySchema: STRICT(CALLER_ERROR),

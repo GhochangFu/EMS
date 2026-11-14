@@ -14,6 +14,7 @@ import {
 } from "./hierarchy-seed";
 import { seedAccessControlFixtures, seedDecommissionedLocation } from "./access-fixtures-seed";
 import { seedAssetDomains } from "./asset-domains-seed";
+import { loadTariffCatalog, upsertTariffCatalog } from "./tariff-catalog-seed";
 import { seedPointKeyCatalog } from "./point-keys-seed";
 import { seedPointKeyHeadlineRanks } from "./point-key-headline-ranks-seed";
 import { seedPointKeyTrendDefaults } from "./point-key-trend-defaults-seed";
@@ -160,6 +161,18 @@ async function main(): Promise<void> {
     // `ups` now, and `assets.domain` is a foreign key to `bms.asset_domains`, so
     // on a cold database the row must exist before `seedEskomAssets`.
     await seedAssetDomains(pool);
+
+    // `F4.365` (ADR 0134 decision 2, plan D2/D3): the global tariff catalog, a
+    // vocabulary with no policy, upserted from the committed snapshot in one
+    // transaction. An unchanged snapshot writes nothing.
+    await pool.query("BEGIN");
+    try {
+      await upsertTariffCatalog(pool, loadTariffCatalog());
+      await pool.query("COMMIT");
+    } catch (error) {
+      await pool.query("ROLLBACK");
+      throw error;
+    }
 
     // ── ESKOM ─────────────────────────────────────────────────────────────
     await withOrganization(pool, eskomOrgId, async () => {

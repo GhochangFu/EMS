@@ -145,3 +145,6 @@ export type { Assignable, Measured, Strict } from "./equality";
 export * from "./maintenance-windows";
 // `F4.361` (ADR 0132): the filter-options response.
 export * from "./filter-options";
+// `F4.365` (ADR 0134): slab utility tariffs — contracts and the pure bill.
+export * from "./tariffs";
+export * from "../tariffs/compute-bill";

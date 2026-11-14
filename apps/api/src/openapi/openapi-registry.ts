@@ -74,6 +74,14 @@ import {
   createEdgeGatewayBodySchema,
   putEdgeGatewayRtusBodySchema,
   updateEdgeGatewayBodySchema,
+  // `F4.365` (ADR 0134): the tariff reads and the location mapping bodies.
+  createLocationTariffBodySchema,
+  createTariffVersionBodySchema,
+  deleteTariffVersionQuerySchema,
+  updateTariffVersionBodySchema,
+  tariffCategoriesQuerySchema,
+  tariffLineVersionsQuerySchema,
+  updateLocationTariffBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -105,6 +113,7 @@ import {
   updateLocationBodySchema,
 } from "../admin/locations/locations.schema";
 import { putSiteControlRoomViewBodySchema } from "../control-room/site-control-room-view.schema";
+import { locationEnergyBillQuerySchema } from "../tariffs/tariffs.schema";
 import { siteLayoutBodySchema } from "../control-room/site-layout.schema";
 import {
   createSessionBodySchema,
@@ -478,6 +487,17 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   RulesController_setEnabled: ruleToggleBodySchema,
   RulesController_setRuleNotifications: setRuleNotificationsBodySchema,
   RulesController_updateRule: ruleUpdateBodySchema,
+  // `F4.365` (ADR 0134, plan U5). The versions read takes the line as `?key=` (Amendment 1).
+  // `LocationTariffsController_list` and `_remove` take path parameters only.
+  TariffsController_categories: tariffCategoriesQuerySchema,
+  TariffsController_versions: tariffLineVersionsQuerySchema,
+  LocationEnergyBillController_bill: locationEnergyBillQuerySchema,
+  LocationTariffsController_create: createLocationTariffBodySchema,
+  LocationTariffsController_update: updateLocationTariffBodySchema,
+  // `F4.365` U6 (ADR 0134 Amendment 1): the organization version bodies; DELETE carries `?reason=`.
+  AdminTariffVersionsController_create: createTariffVersionBodySchema,
+  AdminTariffVersionsController_update: updateTariffVersionBodySchema,
+  AdminTariffVersionsController_remove: deleteTariffVersionQuerySchema,
   TelemetryController_aggregate: pointAggregateQuerySchema,
   // `F3.28` (ADR 0074 decision 2 / plan decision 2) — the batched instant read
   // `TelemetryController_atInstant` implements in task 2.3. A GET with two

@@ -215,6 +215,51 @@ export function hourFraction(bucketMs: number, nowMs: number): number {
 const ZONE_SLACK_MS = 15 * 3_600_000;
 
 /**
+ * Mean `kw` per asset per LOCAL hour over `[from, to]` — kWh for a closed hour (`kW × 1 h`). The
+ * hourly half of {@link readEnergyCostByDay}, and since the `F4.365` owner ruling of 2026-11-14
+ * the read `EnergyRateResolver.resolveRangeRatesForAssets` splits a range's energy by local month
+ * with. `pool` is the fleet pool; `assets` is the caller's organization-bounded scope.
+ *
+ * The `_5m` aggregate folded into local hours (the wall-clock hour in the asset's zone, with its
+ * UTC offset so a repeated DST hour stays two hours), not the `_1h` aggregate: `_1h` buckets are
+ * UTC hours, and in a zone with a half-hour offset (Asia/Kolkata, +05:30) one UTC hour straddles
+ * local midnight. Five minutes divides every zone offset in use, so a local hour is exact.
+ * `avgExpr` is the sample-weighted mean, the correct form when several finer rows fold into one
+ * output bucket (`point-aggregates.ts`).
+ */
+export async function readLocalHourEnergy(
+  pool: Pick<Pool, "query">,
+  assets: readonly { readonly assetId: string; readonly zone: string }[],
+  from: Date,
+  to: Date,
+): Promise<HourlyEnergy[]> {
+  if (assets.length === 0) return [];
+  const relation = aggregateRelation("5m");
+  if (!relation) throw new Error("readLocalHourEnergy: no 5m aggregate relation");
+  const hours = await pool.query<HourRow>(
+    `
+    SELECT asset_id, ((local_hour - utc_offset) AT TIME ZONE 'UTC') AS bucket, kwh
+      FROM (
+        SELECT p.asset_id,
+               date_trunc('hour', p.bucket AT TIME ZONE z.zone) AS local_hour,
+               -- The offset is part of the hour's identity: on a DST fall-back day the local
+               -- 01:00 hour happens twice, once per offset, and each is its own hour.
+               (p.bucket AT TIME ZONE z.zone) - (p.bucket AT TIME ZONE 'UTC') AS utc_offset,
+               (${avgExpr("p")})::float8 AS kwh
+          FROM ${relation} p
+          JOIN unnest($1::uuid[], $2::text[]) AS z(asset_id, zone) ON z.asset_id = p.asset_id
+         WHERE p.point_key = 'kw'
+           AND p.bucket >= $3
+           AND p.bucket <= $4
+         GROUP BY 1, 2, 3
+      ) hours
+    `,
+    [assets.map((asset) => asset.assetId), assets.map((asset) => asset.zone), from, to],
+  );
+  return hours.rows.map((row) => ({ assetId: row.asset_id, bucketMs: new Date(row.bucket).getTime(), kwh: Number(row.kwh) }));
+}
+
+/**
  * The cost per local day for the assets in `assetIds`, for the days `daysFor(today)` names
  * counted back from today in the scope's zone. `pool` is the fleet pool; the `$1::uuid[]` scope —
  * the caller's resolved, organization-bounded readable asset ids — is the isolation control
@@ -261,39 +306,11 @@ export async function readEnergyCostByDay(
   const from = new Date(Date.parse(`${first}T00:00:00Z`) - ZONE_SLACK_MS);
   const to = now;
 
-  // The `_5m` aggregate folded into LOCAL hours (the wall-clock hour in the asset's zone, with
-  // its UTC offset so a repeated DST hour stays two hours), not the
-  // `_1h` aggregate: `_1h` buckets are UTC hours, and in a zone with a half-hour offset
-  // (Asia/Kolkata, +05:30) one UTC hour straddles local midnight. Five minutes divides every
-  // zone offset in use, so a local hour is exact. `avgExpr` is the sample-weighted mean, the
-  // correct form when several finer rows fold into one output bucket (`point-aggregates.ts`).
-  const relation = aggregateRelation("5m");
-  if (!relation) throw new Error("readEnergyCostByDay: no 5m aggregate relation");
-  const hours = await pool.query<HourRow>(
-    `
-    SELECT asset_id, ((local_hour - utc_offset) AT TIME ZONE 'UTC') AS bucket, kwh
-      FROM (
-        SELECT p.asset_id,
-               date_trunc('hour', p.bucket AT TIME ZONE z.zone) AS local_hour,
-               -- The offset is part of the hour's identity: on a DST fall-back day the local
-               -- 01:00 hour happens twice, once per offset, and each is its own hour.
-               (p.bucket AT TIME ZONE z.zone) - (p.bucket AT TIME ZONE 'UTC') AS utc_offset,
-               (${avgExpr("p")})::float8 AS kwh
-          FROM ${relation} p
-          JOIN unnest($1::uuid[], $2::text[]) AS z(asset_id, zone) ON z.asset_id = p.asset_id
-         WHERE p.point_key = 'kw'
-           AND p.bucket >= $3
-           AND p.bucket <= $4
-         GROUP BY 1, 2, 3
-      ) hours
-    `,
-    [assets.map((asset) => asset.assetId), assets.map((asset) => asset.zone), from, to],
-  );
-  const energy: HourlyEnergy[] = hours.rows.map((row) => {
-    const bucketMs = new Date(row.bucket).getTime();
+  const energy: HourlyEnergy[] = (await readLocalHourEnergy(pool, assets, from, to)).map((hour) => ({
+    ...hour,
     // `avg(kW)` over the local hour × the part of the hour that has passed = kWh.
-    return { assetId: row.asset_id, bucketMs, kwh: Number(row.kwh) * hourFraction(bucketMs, now.getTime()) };
-  });
+    kwh: hour.kwh * hourFraction(hour.bucketMs, now.getTime()),
+  }));
 
   const withEnergy = [...new Set(energy.map((hour) => hour.assetId))];
   const series = await tariffs.resolveSeriesForAssets(

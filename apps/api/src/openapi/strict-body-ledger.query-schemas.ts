@@ -12,7 +12,11 @@ import {
   siteTrendStripQuerySchema,
   siteSegmentViewsQuerySchema,
   assetHistoryExportQuerySchema,
+  tariffCategoriesQuerySchema,
+  tariffLineVersionsQuerySchema,
+  deleteTariffVersionQuerySchema,
 } from "@bms/shared";
+import { locationEnergyBillQuerySchema } from "../tariffs/tariffs.schema";
 import {
   mappingSheetQuerySchema,
 } from "../admin/asset-points/asset-points.schema";
@@ -185,4 +189,16 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // 35 -> 36: `F4.361` registered `ruleListQuerySchema` (`GET /rules?organizationId=&locationId=&assetGroupId=&assetId=`,
   // ADR 0132 decision 4) — `.strict()`, no body, no ledger entry, the same precedent.
   ruleListQuerySchema,
+  // 36 -> 39 (2026-11-14): `F4.365` U5 (ADR 0134, plan U5) registered three GET queries, each
+  // `.strict()` with no body: `tariffCategoriesQuerySchema` (`GET /tariffs/categories`, four optional
+  // narrowing filters), `tariffLineVersionsQuerySchema` (`GET /tariffs/lines/versions?key=`, Amendment 1)
+  // and `locationEnergyBillQuerySchema` (`GET /locations/:locationId/energy-bill?month=`). The two
+  // mapping bodies that row adds are in `BODY_SCHEMAS` with a decision each.
+  tariffCategoriesQuerySchema,
+  tariffLineVersionsQuerySchema,
+  locationEnergyBillQuerySchema,
+  // 39 -> 40 (2026-11-14): `F4.365` U6 registered `deleteTariffVersionQuerySchema`
+  // (`DELETE /admin/tariffs/versions/:id?reason=`): one required reason, `.strict()`, no body — a
+  // DELETE carries none, so the audit row's reason rides the query.
+  deleteTariffVersionQuerySchema,
 };

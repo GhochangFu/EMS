@@ -10,6 +10,9 @@ import {
   assertOrphanTelemetryIsNull,
   assertRoundsToTwoDecimals,
   assertStrayTariffIsIgnored,
+  assertResolveTariffsPrefersTheRateMethod,
+  assertResolveTariffsPricesARangeByRange,
+  assertTariffVerifyNeedsACost,
   assertTwoTariffsSumPerAsset,
 } from "./energy-cost.spec";
 
@@ -54,4 +57,11 @@ describe("E4.1c — energyCost, the three fail-closed rules", () => {
   it("C10 fails closed on a row with no currency", () => {
     assertOrphanTelemetryIsNull();
   });
+
+  it("C11 carries tariffVerify only with a cost (F4.365)", () => {
+    assertTariffVerifyNeedsACost();
+  });
+
+  it("C12 resolveTariffs prefers resolveRatesForAssets (F4.365)", () => assertResolveTariffsPrefersTheRateMethod());
+  it("C13 resolveTariffs prices a range by range (F4.365)", () => assertResolveTariffsPricesARangeByRange());
 });

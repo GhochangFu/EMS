@@ -2,14 +2,13 @@ import { BadRequestException } from "@nestjs/common";
 import type { Pool } from "pg";
 import type { EnergyCentreSummary } from "@bms/shared";
 
-import type { CalcParametersService } from "../calc/calc-parameters.service";
 import {
   aggregateRelation,
   avgExpr,
   bucketHours,
   levelForRange,
 } from "../telemetry/point-aggregates";
-import { energyCost, perAssetEnergy, resolveTariffs } from "../telemetry/energy-cost";
+import { energyCost, perAssetEnergy, resolveTariffs, type TariffResolver } from "../telemetry/energy-cost";
 import { nominalSourceSplit } from "../telemetry/energy-sources";
 import { windowedPueRatio } from "../telemetry/pue-ratio";
 
@@ -28,10 +27,14 @@ import { windowedPueRatio } from "../telemetry/pue-ratio";
  * fleet by leaving it out; the service delegates keep their optional one.
  */
 
-/** What `energySummary` needs from the service: its pool and its tariff resolver (`E4.1c`). */
+/**
+ * What `energySummary` needs from the service: its pool and its tariff
+ * resolver (`E4.1c`) — since `F4.365` U7 the `EnergyRateResolver`, which
+ * prices a mapped location at its bill's rate.
+ */
 export interface EnergyCentreDeps {
   readonly pool: Pool;
-  readonly parameters: Pick<CalcParametersService, "resolveForAssets">;
+  readonly parameters: TariffResolver;
 }
 
 /**
@@ -93,6 +96,7 @@ export async function energySummary(
       indicativeCost: null,
       tariffPerKwh: null,
       currency: null,
+      tariffVerify: false,
       asOf: new Date().toISOString(),
     };
   }
@@ -172,7 +176,11 @@ export async function energySummary(
     kwhFactor,
     assetIds: assetIds ?? null,
   });
-  const cost = energyCost(perAsset, await resolveTariffs(parameters, perAsset, new Date()));
+  // F4.365 (owner ruling 2026-11-14): a trailing window that crosses a local month boundary
+  // prices each month's share at its own bill rate.
+  const now = new Date();
+  const tariffs = await resolveTariffs(parameters, perAsset, now, { start, end: now });
+  const cost = energyCost(perAsset, tariffs.rates, tariffs.verify);
 
   return {
     window: windowLabel,

@@ -32,6 +32,7 @@ import { ReportsModule } from "./reports/reports.module";
 import { RulesModule } from "./rules/rules.module";
 import { StorageModule } from "./storage/storage.module";
 import { SystemStatusModule } from "./system-status/system-status.module";
+import { TariffsModule } from "./tariffs/tariffs.module";
 import { TelemetryModule } from "./telemetry/telemetry.module";
 import { TrendPointsModule } from "./trend-points/trend-points.module";
 import { VocabulariesModule } from "./vocabularies/vocabularies.module";
@@ -81,6 +82,8 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     VocabulariesModule,
     NotificationsModule,
     CopilotModule,
+    // `F4.365` / ADR 0134 — tariff lines, location mappings and the monthly bill.
+    TariffsModule,
   ],
 })
 export class AppModule {}
