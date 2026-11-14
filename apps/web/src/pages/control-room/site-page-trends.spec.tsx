@@ -25,8 +25,8 @@ import { ControlRoomSitePage } from "./site-page";
  */
 
 vi.mock("../../components/control-room/site-trends-view", () => ({
-  SiteTrendsView: ({ locationId }: { locationId: string }) => (
-    <div data-testid="site-trends-view" data-location-id={locationId} />
+  SiteTrendsView: ({ locationId, energyShown }: { locationId: string; energyShown: boolean }) => (
+    <div data-testid="site-trends-view" data-location-id={locationId} data-energy-shown={String(energyShown)} />
   ),
 }));
 vi.mock("../../components/control-room/generated-site-view", () => ({
@@ -52,6 +52,7 @@ const ORG_ESKOM = { id: "org-eskom", code: "ESKOM", name: "Eskom" };
 const SITES: LocationKpiSummary[] = [
   site({ id: "a1", name: "Alpha One", organization: ORG_A }),
   site({ id: "s1", name: "SMOC Campus", code: "RSMOC-WC", organization: ORG_ESKOM }),
+  site({ id: "h1", name: "Cold Store", organization: ORG_A, totalKw: null, energyShown: false }),
 ];
 
 function view(locationId: string, fields: Partial<ResolvedSiteControlRoomViewDto> = {}): ResolvedSiteControlRoomViewDto {
@@ -170,4 +171,35 @@ export async function aRejectedReadShowsTheCardAndNoSection(): Promise<void> {
   expect(await screen.findByText(/not available in your access scope/)).toBeInTheDocument();
   expect(pathname()).toBe("/control-room/site/a1/trends");
   expect(screen.queryByTestId("site-trends-view")).toBeNull();
+}
+
+/**
+ * T7 (`F4.364`, ADR 0133 Amendment 1) — energy not shown: still three entries, the third named
+ * **Trends** at the same path, and no "Trends & Energy" anywhere.
+ */
+export async function aNoEnergySiteNamesTheThirdEntryTrends(): Promise<void> {
+  stubReads(view("h1"));
+  renderAt("/control-room/site/h1/trends");
+  const strip = await screen.findByRole("navigation", { name: "Site sections" });
+  expect(
+    within(strip)
+      .getAllByRole("link")
+      .map((a) => [a.textContent, a.getAttribute("href"), a.getAttribute("aria-current")]),
+  ).toEqual([
+    ["Site view", "/control-room/site/h1", null],
+    ["Assets & RTUs", "/control-room/site/h1/assets", null],
+    ["Trends", "/control-room/site/h1/trends", "page"],
+  ]);
+  expect(screen.queryByText("Trends & Energy")).toBeNull();
+}
+
+/** T8 (`F4.364`) — the section gets the site's resolved `energyShown`, both ways. */
+export async function theSectionGetsTheSitesEnergyShown(): Promise<void> {
+  stubReads(view("h1"));
+  renderAt("/control-room/site/h1/trends");
+  expect(await screen.findByTestId("site-trends-view")).toHaveAttribute("data-energy-shown", "false");
+  cleanupTrends();
+  stubReads(view("a1"));
+  renderAt("/control-room/site/a1/trends");
+  expect(await screen.findByTestId("site-trends-view")).toHaveAttribute("data-energy-shown", "true");
 }

@@ -9,6 +9,8 @@ import {
   cleanupTrends,
   theSmocSiteRendersTheSection,
   theStripHasThreeEntriesWithTrendsCurrent,
+  aNoEnergySiteNamesTheThirdEntryTrends,
+  theSectionGetsTheSitesEnergyShown,
 } from "./site-page-trends.spec";
 
 /**
@@ -42,5 +44,13 @@ describe("F4.302 the site page's Trends & Energy section", () => {
 
   it("T6 shows the not-available card and no section for a rejected resolve read", async () => {
     await aRejectedReadShowsTheCardAndNoSection();
+  });
+
+  it("F4.364 T7: a no-energy site names its third entry Trends", async () => {
+    await aNoEnergySiteNamesTheThirdEntryTrends();
+  });
+
+  it("F4.364 T8: the section gets the site's energyShown", async () => {
+    await theSectionGetsTheSitesEnergyShown();
   });
 });

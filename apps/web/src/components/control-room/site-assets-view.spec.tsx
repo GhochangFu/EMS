@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -100,8 +100,8 @@ const LOCATION: LocationDashboardDto = locationDashboardDtoSchema.parse({
   workOrdersOpen: 0,
 });
 
-function stubApi(): ReturnType<typeof vi.spyOn> {
-  vi.spyOn(locationsApi, "fetchLocationDashboard").mockResolvedValue(LOCATION);
+function stubApi(location: LocationDashboardDto = LOCATION): ReturnType<typeof vi.spyOn> {
+  vi.spyOn(locationsApi, "fetchLocationDashboard").mockResolvedValue(location);
   const list = vi.spyOn(assetImagesApi, "fetchAssetImages").mockResolvedValue([]);
   vi.spyOn(assetImagesApi, "fetchAssetImageBlob").mockResolvedValue(
     new Blob(["x"], { type: "image/png" }),
@@ -203,4 +203,23 @@ export async function theAccessDeniedCardLinksToTheControlRoom(): Promise<void> 
   expect(card, "the Access denied title is not inside a SectionCard").not.toBeNull();
   const link = within(card as HTMLElement).getByRole("link");
   expect([link.textContent, link.getAttribute("href")]).toEqual(["Back to the Control Room", "/control-room"]);
+}
+
+/**
+ * L7 (`F4.364`, plan ruling Q4) — "Total load" shows with energy and is gone without it; "Assets
+ * fresh" renders in both, so the absence is not a pending read.
+ */
+export async function theTotalLoadTileFollowsEnergyShown(): Promise<void> {
+  stubApi();
+  renderView();
+  expect(await screen.findByText("Assets fresh")).toBeInTheDocument();
+  expect(screen.getByText("Total load")).toBeInTheDocument();
+  cleanup();
+  vi.restoreAllMocks();
+
+  stubApi(locationDashboardDtoSchema.parse({ ...LOCATION, totalKw: null, energyShown: false, primaryMetric: "health" }));
+  renderView();
+  expect(await screen.findByText("Assets fresh")).toBeInTheDocument();
+  // While the read is pending the tile shows as loading; once it answers it is gone.
+  await waitFor(() => expect(screen.queryByText("Total load")).toBeNull());
 }

@@ -189,13 +189,16 @@ export function SiteAssetsView({ locationId, siteName }: SiteAssetsViewProps) {
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiTile
-              label="Total load"
-              status={status}
-              value={location ? kwText(location.totalKw) : null}
-              unit="kW"
-              hint={location?.scopeLabel === "partial" ? "Limited asset group" : "All assets"}
-            />
+            {/* `F4.364` (plan ruling Q4): no Total load tile when the site's energy is not shown. */}
+            {location?.energyShown === false ? null : (
+              <KpiTile
+                label="Total load"
+                status={status}
+                value={location ? kwText(location.totalKw) : null}
+                unit="kW"
+                hint={location?.scopeLabel === "partial" ? "Limited asset group" : "All assets"}
+              />
+            )}
             <KpiTile
               label="Assets fresh"
               status={status}

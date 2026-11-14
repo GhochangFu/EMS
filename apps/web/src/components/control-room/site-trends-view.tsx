@@ -19,7 +19,13 @@ import { SiteEnergyView } from "./site-energy-view";
 
 type Props = {
   locationId: string;
+  /** `F4.364` (ADR 0133 Amendment 1) — the site summary's resolved `energyShown`. */
+  energyShown: boolean;
 };
+
+/** `F4.364` (plan D9) — shown where the Energy content would be when energy is not shown. */
+const ENERGY_OFF_NOTE =
+  "Energy is not shown for this site. An administrator can turn it on for the organization in Administration → Organizations.";
 
 function segmentViewsOf(locationId: string, query: SiteSegmentViewsQuery | null): Promise<SiteSegmentViewsDto> {
   // Unreachable: the query is disabled while `query` is null.
@@ -37,8 +43,12 @@ function segmentViewsOf(locationId: string, query: SiteSegmentViewsQuery | null)
  * `F4.303` U6 (ADR 0108 Amendment 6 item 2): the range, its custom ends, compare and the site
  * ranking's `rankBy` live in the URL too (`trendsLinkFromSearch` / `trendsLinkToSearch`, the one
  * writer of this search), so the nav keeps them across sub-tabs and "Copy link" copies the view.
+ *
+ * `F4.364` (ADR 0133 Amendment 1) — when `energyShown` is false the nav has no **Energy** entry
+ * and the bare section opens the first present segment (the segment read's default). An explicit
+ * `?view=energy`, or a site with no segment, shows one note instead; there is no redirect.
  */
-export function SiteTrendsView({ locationId }: Props) {
+export function SiteTrendsView({ locationId, energyShown }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const link = trendsLinkFromSearch(searchParams);
   const { view, point, value, rankBy } = link;
@@ -59,18 +69,25 @@ export function SiteTrendsView({ locationId }: Props) {
     refetchInterval: 60_000,
   });
   const data = segmentQ.data;
+  // `F4.364`: with energy hidden, the bare section is the default segment — the read already asks
+  // for it — and an explicit `?view=energy` or a segment-less site gets the note.
+  const energyHidden = !energyShown && view === ENERGY_VIEW;
+  const explicitEnergy = searchParams.get("view") === ENERGY_VIEW;
+  const showsNote =
+    energyHidden && (explicitEnergy || (data !== undefined && !segmentQ.isPlaceholderData && data.segment === null));
+  const shownView = energyHidden && !explicitEnergy ? (data?.segment?.domain ?? null) : view;
   // `F4.303` U7: Export sends the sub-tab's own query — the site's energy view on the Energy
   // sub-tab, the segment view on a segment one. No menu while the range is an unfinished custom pair.
-  const energyQuery = view === ENERGY_VIEW ? siteEnergyQueryOf(locationId, value) : null;
+  const energyQuery = view === ENERGY_VIEW && energyShown ? siteEnergyQueryOf(locationId, value) : null;
   const exportView: ((format: ViewExportFormat) => Promise<void>) | null =
     energyQuery !== null
       ? (format) => downloadEnergyViewExport(format, energyQuery)
-      : view !== ENERGY_VIEW && query !== null
+      : (view !== ENERGY_VIEW || (energyHidden && !showsNote)) && query !== null
         ? (format) => downloadSegmentViewExport(format, locationId, query)
         : null;
   const sectionPath = siteTrendsPath(locationId);
   const entries = [
-    { key: ENERGY_VIEW, label: "Energy" },
+    ...(energyShown ? [{ key: ENERGY_VIEW, label: "Energy" }] : []),
     ...(data?.segments ?? []).map((segment) => ({ key: segment.domain, label: segment.label })),
   ];
 
@@ -82,8 +99,8 @@ export function SiteTrendsView({ locationId }: Props) {
             <Link
               key={entry.key}
               to={`${sectionPath}${trendsLinkToSearch({ view: entry.key, value, rankBy })}`}
-              aria-current={entry.key === view ? "page" : undefined}
-              className={`surface-tab px-3 py-1.5 ${entry.key === view ? "surface-tab-selected" : ""}`}
+              aria-current={entry.key === shownView ? "page" : undefined}
+              className={`surface-tab px-3 py-1.5 ${entry.key === shownView ? "surface-tab-selected" : ""}`}
             >
               {entry.label}
             </Link>
@@ -100,7 +117,7 @@ export function SiteTrendsView({ locationId }: Props) {
               <ExportMenu onExport={exportView} />
             </div>
           )}
-          {view === ENERGY_VIEW ? (
+          {energyQuery !== null ? (
             <div className="pb-1">
               {/* `F4.303` U16 (Amendment 6 item 6): schedules `energy_consumption` for this site; a segment sub-tab brings its own. */}
               <ScheduleButton
@@ -115,7 +132,11 @@ export function SiteTrendsView({ locationId }: Props) {
         </div>
       </div>
 
-      {view === ENERGY_VIEW ? (
+      {showsNote ? (
+        <p role="status" data-testid="site-energy-off-note" className="text-sm text-ink-muted">
+          {ENERGY_OFF_NOTE}
+        </p>
+      ) : view === ENERGY_VIEW && energyShown ? (
         <SiteEnergyView
           locationId={locationId}
           value={value}
@@ -135,7 +156,7 @@ export function SiteTrendsView({ locationId }: Props) {
       ) : (
         <SegmentView
           data={data}
-          onPoint={(code) => write({ ...link, point: code })}
+          onPoint={(code) => write({ ...link, view: shownView ?? link.view, point: code })}
         />
       )}
     </div>
