@@ -224,6 +224,19 @@ export async function aWindowWithATargetOutsideTheScopeIsRefused(): Promise<void
   expect(await onRow("operator", ADMIN_GRANT, both)).toBeNull();
 }
 
+/**
+ * `F4.362` review: a window's target labels are in the page list's order (kind, then label, then id), whatever
+ * order the rows come back in, so the card's and the page Review's sentences agree. Mutation: drop the sort → red.
+ */
+export async function aWindowsLabelsAreInThePagesOrder(): Promise<void> {
+  const found = await onRow(
+    "admin",
+    ADMIN_GRANT,
+    window([asset(ASSET_S, ORG_A, "Pump 2"), location(SITE_S, ORG_A, "Site S"), asset(ASSET_C, ORG_A, "Pump 1")]),
+  );
+  expect(found?.maintenanceWindow.targetLabels).toEqual(["Pump 1", "Pump 2", "Site S"]);
+}
+
 /** Decision 1: a window is named by its reason, cut at 80 characters. */
 export async function aLongReasonIsCutAt80(): Promise<void> {
   const long = { ...window([asset(ASSET_C, ORG_A, "Chiller C")]), reason: "x".repeat(120) };

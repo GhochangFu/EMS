@@ -58,6 +58,7 @@ import {
   type ResolvedTarget,
 } from "./maintenance-window-scope";
 import type { MaintenanceWindowListQuery } from "./maintenance-windows.schema";
+import { compareWindowTargets } from "./maintenance-window-target-order";
 
 /** One text for a target that does not exist and one outside the scope: no existence leak (plan U3). */
 export const TARGET_REFUSED = "A target does not exist or is outside your access scope";
@@ -535,7 +536,7 @@ export class MaintenanceWindowsService {
               ? { kind: "location" as const, id: target.locationId, label: target.locationLabel ?? "" }
               : { kind: "rule" as const, id: target.ruleId as string, label: target.ruleLabel ?? "" },
         )
-        .sort((a, b) => a.kind.localeCompare(b.kind) || a.label.localeCompare(b.label) || a.id.localeCompare(b.id)),
+        .sort(compareWindowTargets),
       assetIds: covered.get(row.id) ?? [],
     }));
   }

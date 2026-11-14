@@ -11,6 +11,7 @@ import {
   anAssetGroupAdminIsAdmitted,
   aCreateStoresItsTargetNamesForTheCard,
   anEndAndACancelInTheWrongStateAreRefused,
+  aWindowsLabelsAreInThePagesOrder,
   theEndAndCancelResultsNameTheTargets,
   anExtendOfAPastWindowIsRefusedWithTheRoutesSentence,
   anOperatorAndAViewerAreRefusedBeforeTheScope,
@@ -46,6 +47,7 @@ describe("F4.359 — the Copilot proposes maintenance windows (ADR 0099 Amendmen
   it("the reason is in the hash (Q7)", () => theReasonIsInTheHash());
   it("an extend of a window that is not active is refused with the route's sentence", () =>
     anExtendOfAPastWindowIsRefusedWithTheRoutesSentence());
+  it("a window's labels are in the page's order (F4.362 review)", () => aWindowsLabelsAreInThePagesOrder());
   it("a create stores its target names for the card (F4.362 leftover 1)", () => aCreateStoresItsTargetNamesForTheCard());
   it("the end and cancel results name the targets (F4.362 leftover 3)", () => theEndAndCancelResultsNameTheTargets());
   it("an end and a cancel in the wrong state are refused with the routes' sentences", () => anEndAndACancelInTheWrongStateAreRefused());

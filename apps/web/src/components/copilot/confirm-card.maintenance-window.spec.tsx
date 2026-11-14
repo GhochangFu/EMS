@@ -54,9 +54,12 @@ export async function aCreateCardNamesTheTargetsAndSaysLocalTimes(): Promise<voi
   expect(within(card).getByText(/on 1 target: GOAT_Chiller_1\./)).toBeInTheDocument();
 }
 
-/** An extend card says the record's end now and the new end, both in local time. */
-export async function anExtendCardSaysBothEndsInLocalTime(): Promise<void> {
-  vi.spyOn(currentApi, "fetchCopilotCurrent").mockResolvedValue({ endsAt: END, reason: "Chiller overhaul" });
+/**
+ * An extend card says the new end in local time, no raw ISO. The card reads no current record for a window
+ * (`fetchCopilotCurrent` answers `null`), so there is no Now column; the summary names the current end.
+ */
+export async function anExtendCardSaysItsNewEndInLocalTime(): Promise<void> {
+  const current = vi.spyOn(currentApi, "fetchCopilotCurrent");
   const card = await proposed(
     change({
       catalogId: "maintenanceWindow.extend",
@@ -67,9 +70,10 @@ export async function anExtendCardSaysBothEndsInLocalTime(): Promise<void> {
     }),
     "Extend a maintenance window",
   );
-  await within(card).findByText(local(END));
+  await within(card).findByText(local(NEW_END));
   expect(table(card)).not.toMatch(RAW);
-  expect(table(card)).toContain(`End${local(END)}${local(NEW_END)}`);
+  expect(table(card)).toContain(`End${local(NEW_END)}`);
+  expect(await current.mock.results[0]?.value).toBeNull();
 }
 
 /** A create stored before `targetLabels` existed keeps the raw Targets row: nothing is invented. */

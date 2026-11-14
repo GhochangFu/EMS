@@ -10,6 +10,7 @@ import type { CatalogEntry, CatalogSummaryInput } from "@bms/shared/copilot";
 import type { AccessControlService } from "../auth/access-control.service";
 import { expandLocationSubtrees } from "../auth/location-tree";
 import { withTenant } from "../database/tenant-context";
+import { compareWindowTargets } from "../maintenance-windows/maintenance-window-target-order";
 import {
   everyTargetInScope,
   type MaintenanceWindowReadScope,
@@ -162,6 +163,8 @@ async function resolveRow(
     if (window === null) continue;
     // D15: every target in scope; a window with none is refused (`everyTargetInScope` of nothing is false).
     if (!everyTargetInScope(window.targets, scope)) return null;
+    // `F4.362` review: the page list's order, so the card and the page Review name the targets alike.
+    const targets = [...window.targets].sort(compareWindowTargets);
     return {
       organizationId,
       name: windowName(window.reason),
@@ -169,8 +172,8 @@ async function resolveRow(
         reason: window.reason,
         startsAt: window.startsAt,
         endsAt: window.endsAt,
-        targetLabels: window.targets.map((target) => target.label),
-        ...(await cover(reads, organizationId, window.targets)),
+        targetLabels: targets.map((target) => target.label),
+        ...(await cover(reads, organizationId, targets)),
         state: window.state,
       },
     };

@@ -73,8 +73,8 @@ export async function everyCoveringShapeYieldsToAnyModal(): Promise<void> {
   }
 }
 
-/** The floating window stays on top beside a wizard; with no dialog open nothing yields. */
-export async function theFloatingWindowAndAQuietPageKeepTheirLayer(): Promise<void> {
+/** The floating window stays on top beside a wizard. */
+export async function theFloatingWindowKeepsItsLayer(): Promise<void> {
   const floating = renderWith("floating", false, "role=dialog");
   await act(async () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))));
   expect(layer(floating.panel())).toBe("z-50");

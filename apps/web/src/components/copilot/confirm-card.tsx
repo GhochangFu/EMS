@@ -324,7 +324,7 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
         : // `F4.362` leftover 1: a maintenance-window card names its targets and says local times.
           shownRows(
             changeRows(change.body, isEdit ? (current.data ?? null) : null, cardOnly, entry?.formulas ?? []),
-            maintenanceWindowCardShown(change.catalogId, change.body, isEdit ? (current.data ?? null) : null),
+            maintenanceWindowCardShown(change.catalogId, change.body),
           );
   const note = isEdit
     ? `Proposed at ${timeOf(change.proposedAt)}. The record can change before you confirm; the request sends the values shown. Expires at ${timeOf(change.expiresAt)}.`

@@ -7,7 +7,7 @@ import { resetCopilotStore } from "../../stores/copilot-store";
 import {
   aDialogInsideTheDockDoesNotYield,
   everyCoveringShapeYieldsToAnyModal,
-  theFloatingWindowAndAQuietPageKeepTheirLayer,
+  theFloatingWindowKeepsItsLayer,
   theLauncherYieldsToAPageDialog,
   theSheetYieldsToAPageDialog,
 } from "./copilot-dock-yield.spec";
@@ -22,7 +22,7 @@ afterEach(() => {
 describe("F4.362 — the dock yields to an open page dialog", () => {
   it("the sheet yields to a page dialog and returns when it closes", theSheetYieldsToAPageDialog);
   it("the maximized and docked shapes yield to any modal", everyCoveringShapeYieldsToAnyModal);
-  it("the floating window keeps its layer beside a wizard", theFloatingWindowAndAQuietPageKeepTheirLayer);
+  it("the floating window keeps its layer beside a wizard", theFloatingWindowKeepsItsLayer);
   it("the closed dock's launcher yields to a page dialog", theLauncherYieldsToAPageDialog);
   it("a dialog inside the dock does not make it yield", aDialogInsideTheDockDoesNotYield);
 });

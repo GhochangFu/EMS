@@ -9,20 +9,17 @@ import { localTime } from "./maintenance-window-time";
  * Confirm sends is unchanged. Any other entry gets no rows.
  */
 
-/** The card's `shown` rows for `body`, with `current` (the record now, for an edit) giving each time's "Now". */
-export function maintenanceWindowCardShown(
-  catalogId: string,
-  body: Readonly<Record<string, unknown>>,
-  current: Readonly<Record<string, unknown>> | null,
-): Record<string, ShownRow> {
+/**
+ * The card's `shown` rows for `body`. No "Now" value: the card reads no current record for a window
+ * (`fetchCopilotCurrent` has no window case), and the summary names the extend's current end.
+ */
+export function maintenanceWindowCardShown(catalogId: string, body: Readonly<Record<string, unknown>>): Record<string, ShownRow> {
   if (!catalogId.startsWith("maintenanceWindow.")) return {};
   const shown: Record<string, ShownRow> = {};
   const time = (field: string, label: string): void => {
     const value = body[field];
     if (typeof value !== "string" || Number.isNaN(Date.parse(value))) return;
-    const now = current?.[field];
-    const before = typeof now === "string" && !Number.isNaN(Date.parse(now)) ? { before: localTime(now) } : {};
-    shown[field] = { label, after: localTime(value), ...before };
+    shown[field] = { label, after: localTime(value) };
   };
   time("startsAt", "Start");
   time("endsAt", "End");
