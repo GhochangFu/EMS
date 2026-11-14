@@ -37,6 +37,10 @@ import {
   theIngestSwitchIsAbsentForEveryoneButTheGlobalAdmin,
   aRefusedIngestSwitchShowsTheSentenceInTheDialog,
   theIngestSwitchShowsForAnInactiveOrganization,
+  addOrganizationShowsNeitherEnergySelect,
+  editShowsBothEnergySelectsWithTheStoredValues,
+  saveInvalidatesTheLocationCards,
+  saveSendsBothEnergySettings,
 } from "./organizations-page.spec";
 
 /**
@@ -179,5 +183,21 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("F4.330 the ingest switch shows for an inactive organization", async () => {
     await theIngestSwitchShowsForAnInactiveOrganization();
+  });
+
+  it("F4.364 EF1 Edit shows both energy selects with the stored values", async () => {
+    await editShowsBothEnergySelectsWithTheStoredValues();
+  });
+
+  it("F4.364 EF2 Save sends both energy settings in the PATCH body", async () => {
+    await saveSendsBothEnergySettings();
+  });
+
+  it("F4.364 EF3 Add organization shows neither energy select", async () => {
+    await addOrganizationShowsNeitherEnergySelect();
+  });
+
+  it("F4.364 EF4 a save invalidates the location cards' query", async () => {
+    await saveInvalidatesTheLocationCards();
   });
 });

@@ -5,7 +5,9 @@ import {
 } from "@bms/shared/contracts";
 import type {
   AdminOrganizationDto,
+  CardPrimaryMetric,
   ColourProfile,
+  EnergyFeatures,
   AdminOrganizationSummaryDto,
   MasterDataActiveFilter,
   OrganizationsListResponse,
@@ -47,7 +49,14 @@ export async function createAdminOrganization(input: {
 
 export async function updateAdminOrganization(
   id: string,
-  input: { name: string; currency?: string; timezone?: string },
+  input: {
+    name: string;
+    currency?: string;
+    timezone?: string;
+    /** `F4.364` (ADR 0133 decision 6): edit only, global admin only. */
+    energyFeatures?: EnergyFeatures;
+    cardPrimaryMetric?: CardPrimaryMetric;
+  },
 ): Promise<AdminOrganizationDto> {
   return adminFetch(`/admin/organizations/${id}`, adminOrganizationDtoSchema, {
     method: "PATCH",

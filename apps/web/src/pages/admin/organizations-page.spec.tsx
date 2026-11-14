@@ -63,7 +63,7 @@ const ORGANIZATIONS = {
   ],
 };
 
-function renderPage(): void {
+function renderPage(): QueryClient {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.spyOn(copilotDockApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
@@ -73,6 +73,7 @@ function renderPage(): void {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 function stubApi(): void {
@@ -175,7 +176,14 @@ export async function editPrefillsTheCurrencyAndSendsIt(): Promise<void> {
   });
   const [id, payload] = vi.mocked(api.updateAdminOrganization).mock.calls[0]!;
   expect(id).toBe("22222222-2222-2222-2222-222222222222");
-  expect(payload).toEqual({ name: "Rupee organization", currency: "USD", timezone: "Asia/Kolkata" });
+  // `F4.364` (plan U10): the Edit save also sends the two energy settings, here the stored ones.
+  expect(payload).toEqual({
+    name: "Rupee organization",
+    currency: "USD",
+    timezone: "Asia/Kolkata",
+    energyFeatures: "auto",
+    cardPrimaryMetric: "auto",
+  });
 }
 
 /** F3.85 Z1 — the Time zone input offers UTC (first) and the engine's zones; it is required. */
@@ -693,4 +701,80 @@ export async function theIngestSwitchShowsForAnInactiveOrganization(): Promise<v
   const row = (await screen.findByText("Rand organization")).closest("tr")!;
   expect(within(row).getByText("Inactive")).toBeInTheDocument();
   expect(within(row).getByRole("button", { name: "Stop ingest" })).toBeInTheDocument();
+}
+
+/** The Rupee row with stored settings that are not the defaults, so a prefill cannot pass by accident. */
+function stubWithStoredEnergySettings(): void {
+  stubApi();
+  const items = ORGANIZATIONS.items.map((item) =>
+    item.code === "E41C-INR" ? { ...item, energyFeatures: "off" as const, cardPrimaryMetric: "health" as const } : item,
+  );
+  vi.mocked(api.fetchAdminOrganizations).mockResolvedValue({ items });
+}
+
+async function openRupeeEdit(): Promise<void> {
+  const row = (await screen.findByText("Rupee organization")).closest("tr")!;
+  await userEvent.click(within(row).getByRole("button", { name: "Edit" }));
+  await screen.findByRole("heading", { name: "Edit organization" });
+}
+
+/**
+ * EF1 (`F4.364`, plan U10) — Edit shows **Energy features** and **Location card first figure**
+ * with the stored values and the option labels the plan names.
+ */
+export async function editShowsBothEnergySelectsWithTheStoredValues(): Promise<void> {
+  stubWithStoredEnergySettings();
+  renderPage();
+  await openRupeeEdit();
+  const energy = screen.getByLabelText("Energy features") as HTMLSelectElement;
+  const card = screen.getByLabelText("Location card first figure") as HTMLSelectElement;
+  expect(energy.value).toBe("off");
+  expect(card.value).toBe("health");
+  expect([...energy.options].map((o) => [o.value, o.textContent])).toEqual([
+    ["auto", "Auto — show where there is energy data"],
+    ["on", "On"],
+    ["off", "Off"],
+  ]);
+  expect([...card.options].map((o) => [o.value, o.textContent])).toEqual([
+    ["auto", "Auto — kW with energy, asset health without"],
+    ["kw", "kW"],
+    ["health", "Asset health %"],
+    ["critical_alarms", "Critical alarms"],
+    ["none", "None"],
+  ]);
+}
+
+/** EF2 (`F4.364`) — Save sends both chosen values in the `PATCH` body. */
+export async function saveSendsBothEnergySettings(): Promise<void> {
+  stubWithStoredEnergySettings();
+  renderPage();
+  await openRupeeEdit();
+  await userEvent.selectOptions(screen.getByLabelText("Energy features"), "on");
+  await userEvent.selectOptions(screen.getByLabelText("Location card first figure"), "critical_alarms");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(api.updateAdminOrganization).toHaveBeenCalledTimes(1));
+  const [id, payload] = vi.mocked(api.updateAdminOrganization).mock.calls[0]!;
+  expect(id).toBe("22222222-2222-2222-2222-222222222222");
+  expect(payload).toMatchObject({ energyFeatures: "on", cardPrimaryMetric: "critical_alarms" });
+}
+
+/** EF3 (`F4.364`, plan D8) — Add organization shows neither select, and the create sends neither key. */
+export async function addOrganizationShowsNeitherEnergySelect(): Promise<void> {
+  stubApi();
+  renderPage();
+  await openCreateForm();
+  expect(screen.queryByLabelText("Energy features")).toBeNull();
+  expect(screen.queryByLabelText("Location card first figure")).toBeNull();
+}
+
+/** EF4 (`F4.364`, plan D12) — a save also invalidates the location cards' query. */
+export async function saveInvalidatesTheLocationCards(): Promise<void> {
+  stubApi();
+  const queryClient = renderPage();
+  const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+  await openRupeeEdit();
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(api.updateAdminOrganization).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ["dashboard", "locations"] }));
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["admin", "organizations"] });
 }

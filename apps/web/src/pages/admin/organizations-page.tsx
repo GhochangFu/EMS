@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { AdminOrganizationDto, MasterDataActiveFilter } from "@bms/shared";
+import type { AdminOrganizationDto, CardPrimaryMetric, EnergyFeatures, MasterDataActiveFilter } from "@bms/shared";
+import { CARD_PRIMARY_METRICS, ENERGY_FEATURES } from "@bms/shared/contracts";
 
 import {
   createAdminOrganization,
@@ -58,6 +59,22 @@ function organizationTimezoneOptions(): string[] {
   return ["UTC", ...zones.filter((z) => z !== "UTC")];
 }
 
+/** `F4.364` (plan U10) — the Energy features choices, in the contract's order. */
+const ENERGY_FEATURE_LABELS: Record<EnergyFeatures, string> = {
+  auto: "Auto — show where there is energy data",
+  on: "On",
+  off: "Off",
+};
+
+/** `F4.364` (plan U10) — the location card's first-figure choices, in the contract's order. */
+const CARD_PRIMARY_METRIC_LABELS: Record<CardPrimaryMetric, string> = {
+  auto: "Auto — kW with energy, asset health without",
+  kw: "kW",
+  health: "Asset health %",
+  critical_alarms: "Critical alarms",
+  none: "None",
+};
+
 /** Organization master data list with drill-down to locations. */
 export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const navigate = useNavigate();
@@ -90,6 +107,9 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState("");
   const [timezone, setTimezone] = useState("UTC");
+  // `F4.364` (ADR 0133 decision 6, plan D8): edited on the Edit dialog only.
+  const [energyFeatures, setEnergyFeatures] = useState<EnergyFeatures>("auto");
+  const [cardPrimaryMetric, setCardPrimaryMetric] = useState<CardPrimaryMetric>("auto");
   const [error, setError] = useState<string | null>(null);
   const currencies = useMemo(browserCurrencies, []);
   const timezones = useMemo(organizationTimezoneOptions, []);
@@ -118,6 +138,8 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
           name,
           currency: currency.toUpperCase(),
           timezone: timezone.trim(),
+          energyFeatures,
+          cardPrimaryMetric,
         });
       }
       return createAdminOrganization({
@@ -136,6 +158,8 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
       setTimezone("UTC");
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ["admin", "organizations"] });
+      // `F4.364` (plan D12): the location cards follow the setting without waiting for their poll.
+      await queryClient.invalidateQueries({ queryKey: ["dashboard", "locations"] });
     },
     onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
@@ -186,6 +210,8 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
     setName(item.name);
     setCurrency(item.currency);
     setTimezone(item.timezone);
+    setEnergyFeatures(item.energyFeatures);
+    setCardPrimaryMetric(item.cardPrimaryMetric);
     setError(null);
     setModalOpen(true);
   }
@@ -447,6 +473,38 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                   ))}
                 </datalist>
               </label>
+              {editing ? (
+                <>
+                  <label className="block text-xs font-semibold text-ink-muted">
+                    Energy features
+                    <select
+                      className="mt-1 w-full surface-field px-3 py-2 text-sm"
+                      value={energyFeatures}
+                      onChange={(event) => setEnergyFeatures(event.target.value as EnergyFeatures)}
+                    >
+                      {ENERGY_FEATURES.map((value) => (
+                        <option key={value} value={value}>
+                          {ENERGY_FEATURE_LABELS[value]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-xs font-semibold text-ink-muted">
+                    Location card first figure
+                    <select
+                      className="mt-1 w-full surface-field px-3 py-2 text-sm"
+                      value={cardPrimaryMetric}
+                      onChange={(event) => setCardPrimaryMetric(event.target.value as CardPrimaryMetric)}
+                    >
+                      {CARD_PRIMARY_METRICS.map((value) => (
+                        <option key={value} value={value}>
+                          {CARD_PRIMARY_METRIC_LABELS[value]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              ) : null}
               {error ? <div className="text-xs text-critical-ink">{error}</div> : null}
             </div>
             <div className="mt-4 flex justify-end gap-2">
