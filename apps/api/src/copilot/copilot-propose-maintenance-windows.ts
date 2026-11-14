@@ -24,7 +24,11 @@ export const MAINTENANCE_WINDOW_ENTRY_IDS: ReadonlySet<string> = new Set([
   "maintenanceWindow.cancel",
 ]);
 
-export type MaintenanceWindowCheck = { ok: true } | { ok: false; error: string };
+/**
+ * `F4.362` leftover 1: a create's `cardBody` is its targets' names (the entry's `cardOnly` key
+ * `targetLabels`), which the card's Targets row shows in place of the raw ids.
+ */
+export type MaintenanceWindowCheck = { ok: true; cardBody?: Record<string, unknown> } | { ok: false; error: string };
 
 const refuse = (error: string | null): MaintenanceWindowCheck => (error === null ? { ok: true } : { ok: false, error });
 
@@ -41,7 +45,9 @@ export function checkMaintenanceWindow(
   if (entryId === "maintenanceWindow.create") {
     const endsAt = dateOf(body.endsAt);
     if (endsAt === null) return refuse(PROPOSE_TARGET_ERROR);
-    return refuse(validateWindowPeriod({ now, startsAt: dateOf(body.startsAt) ?? now, endsAt }));
+    const refused = refuse(validateWindowPeriod({ now, startsAt: dateOf(body.startsAt) ?? now, endsAt }));
+    if (!refused.ok) return refused;
+    return { ok: true, cardBody: { targetLabels: [...(target.maintenanceWindow?.targetLabels ?? [])] } };
   }
   const window = target.maintenanceWindow;
   if (window === undefined || window.state === null) return refuse(PROPOSE_TARGET_ERROR);

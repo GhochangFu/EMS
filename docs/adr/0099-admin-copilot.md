@@ -2690,3 +2690,29 @@ Two defects from the owner's AWS check of 2026-11-14. Neither changes scope.
   empty composer when a `failed` turn stored nothing, or when the request
   failed with a limit, a server or a network error; never after a credential
   refusal or another 4xx (ADR 0022).
+
+### Build notes (2026-11-14, `F4.362` leftovers 1 and 3)
+
+Two leftovers from the owner's `F4.360` re-check on the AWS demo. Neither changes scope.
+The first supersedes decision 1's end and cancel summary lines (they were *(drafter)*
+lines; the owner may change the wording at review). The row's other two leftovers
+need no ADR text: the End and Cancel Review show a typed reason twice, not three
+times, and the dock drops under an open page dialog (except the floating window).
+
+- **The end and the cancel name their targets.** Decision 1's end and cancel
+  summaries named the window by its reason only. They now name its targets after
+  it, as the extend does: `End the maintenance window "<reason>" (<targets>) now:
+  …` and `Cancel the maintenance window "<reason>" (<targets>) that starts at …`.
+  The summary is also the propose tool's result, so a reply that paraphrases it
+  has the asset's name. The re-check saw a reply read "end the active maintenance
+  window on  now": no server or dock code alters a reply (the stored text is the
+  model's, with only the scrub and the fixed notes), so the empty name was the
+  model's own prose, and the tool result it read named no asset. The page's
+  Review still shows the entry's own summary.
+- **The create card names its targets.** `maintenanceWindow.create` has the
+  `cardOnly` key `targetLabels`: the resolver's target names, stored beside the
+  body after the summary read it (the `F4.279` `recipients` rule). The hash
+  leaves it out and the browser strips it before the write. The card's Targets
+  row shows those names, and its Start and End rows the browser's local time, as
+  the page's Review does (`lib/maintenance-window-card.ts`); a create stored
+  before this keeps its raw Targets row.

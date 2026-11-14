@@ -119,6 +119,23 @@ export function changeRows(
   return [...fields, ...formulaRows(body, current, formulas)];
 }
 
+/**
+ * `F4.360` defect 4: a body field's row as the page says it — its heading and readable values (a local
+ * time, a target's name) in place of the raw value (an ISO string, a JSON list). The body sent is unchanged.
+ * `F4.362` leftover 1: it left `wizard-shell.tsx` when the Copilot card became its second user.
+ */
+export type ShownRow = { readonly label: string; readonly after: string; readonly before?: string };
+
+/** The rows, each `shown` field's heading and values replaced; its full texts go with the raw value. */
+export function shownRows(rows: readonly ChangeRow[], shown: Readonly<Record<string, ShownRow>> = {}): ChangeRow[] {
+  return rows.map((row) => {
+    const own = shown[row.field];
+    if (own === undefined) return row;
+    const before = row.before === undefined ? {} : { before: own.before ?? row.before };
+    return { field: row.field, label: own.label, after: own.after, changed: row.changed, ...before };
+  });
+}
+
 /** The keys that name an array item across a reorder: a template point's `pointKey`, a KPI's `code`. */
 const ITEM_IDENTITY_KEYS = ["pointKey", "code"] as const;
 

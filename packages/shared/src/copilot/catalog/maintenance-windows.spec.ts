@@ -160,11 +160,11 @@ export function theExtendSummaryNamesTheWindowAndBothEnds(): void {
 /** The end card says the suppressed alarms return; the cancel card names the start. Neither invents a reason. */
 export function theEndAndCancelSummariesNameTheWindow(): void {
   expect(summary("maintenanceWindow.end")).toBe(
-    'End the maintenance window "Chiller 2 compressor overhaul" now: every alarm it suppresses that is still active ' +
+    'End the maintenance window "Chiller 2 compressor overhaul" (Chiller 2, Plant B) now: every alarm it suppresses that is still active ' +
       "returns as a normal alarm, with its popup, tone and notification.",
   );
   expect(summary("maintenanceWindow.cancel", { body: { reason: "Work postponed" } })).toBe(
-    'Cancel the maintenance window "Chiller 2 compressor overhaul" that starts at 2026-11-13 08:00 (UTC): it suppresses nothing. ' +
+    'Cancel the maintenance window "Chiller 2 compressor overhaul" (Chiller 2, Plant B) that starts at 2026-11-13 08:00 (UTC): it suppresses nothing. ' +
       'Reason: "Work postponed".',
   );
 }
@@ -190,6 +190,32 @@ export function theSummariesSayTimesInTheGivenZone(): void {
     summary("maintenanceWindow.cancel", { timeZone: "America/New_York", maintenanceWindow: { ...WINDOW, startsAt } });
   expect(ny("2027-03-14T06:59:00.000Z")).toContain("that starts at 2027-03-14 01:59 (UTC-05:00):");
   expect(ny("2027-03-14T07:00:00.000Z")).toContain("that starts at 2027-03-14 03:00 (UTC-04:00):");
+}
+
+/**
+ * `F4.362` leftover 3: the end and the cancel name the window's targets, as the extend does. The summary is the
+ * propose tool's result, so a model that paraphrases it has the asset's name; with no labels there is no empty
+ * "()" and no doubled space. Mutation: drop the clause from either summary → red.
+ */
+export function theEndAndCancelSummariesNameTheTargets(): void {
+  const asset = { ...WINDOW, targetLabels: ["GOAT_Chiller_1"], locationLabels: [] };
+  expect(summary("maintenanceWindow.end", { maintenanceWindow: asset })).toContain('"Chiller 2 compressor overhaul" (GOAT_Chiller_1) now:');
+  expect(summary("maintenanceWindow.cancel", { maintenanceWindow: asset })).toContain('"Chiller 2 compressor overhaul" (GOAT_Chiller_1) that starts');
+  const none = { ...WINDOW, targetLabels: [], locationLabels: [] };
+  for (const id of ["maintenanceWindow.end", "maintenanceWindow.cancel"]) {
+    const text = summary(id, { maintenanceWindow: none });
+    expect(text, id).not.toContain("()");
+    expect(text, id).not.toContain("  ");
+  }
+}
+
+/**
+ * `F4.362` leftover 1: the create stores its targets' names beside the body for the card's Targets row
+ * (`targetLabels`, a `cardOnly` key: the hash leaves it out and the browser strips it before the write). The
+ * row entries carry none: their bodies name no target.
+ */
+export function theCreateKeepsItsTargetNamesForTheCard(): void {
+  expect(MAINTENANCE_WINDOW_IDS.map((id) => entry(id).cardOnly ?? [])).toEqual([["targetLabels"], [], [], []]);
 }
 
 /** Amendment 19 Consequences: the four routes left the exclusion list; nothing under `/maintenance-windows` stays there. */

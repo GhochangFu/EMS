@@ -622,6 +622,7 @@ export function createCopilotProposeTools(
     // `F4.359` PR 6 (Amendment 19 decision 8): the window routes' own refusals, with their sentences.
     const windowCheck = checkMaintenanceWindow(entry.id, body, target, ctx.now);
     if (!windowCheck.ok) return windowCheck;
+    if (windowCheck.cardBody !== undefined) cardBody = windowCheck.cardBody; // `F4.362`: a create's target names.
     if (LAYOUT_ENTRY_IDS.has(entry.id)) {
       const checked = await checkLayout(entry, params, body, ctx);
       if (!checked.ok) return checked;

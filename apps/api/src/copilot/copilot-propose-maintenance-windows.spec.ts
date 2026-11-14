@@ -224,6 +224,19 @@ export async function aWindowWithATargetOutsideTheScopeIsRefused(): Promise<void
   expect(await onRow("operator", ADMIN_GRANT, both)).toBeNull();
 }
 
+/**
+ * `F4.362` review: a window's target labels are in the page list's order (kind, then label, then id), whatever
+ * order the rows come back in, so the card's and the page Review's sentences agree. Mutation: drop the sort → red.
+ */
+export async function aWindowsLabelsAreInThePagesOrder(): Promise<void> {
+  const found = await onRow(
+    "admin",
+    ADMIN_GRANT,
+    window([asset(ASSET_S, ORG_A, "Pump 2"), location(SITE_S, ORG_A, "Site S"), asset(ASSET_C, ORG_A, "Pump 1")]),
+  );
+  expect(found?.maintenanceWindow.targetLabels).toEqual(["Pump 1", "Pump 2", "Site S"]);
+}
+
 /** Decision 1: a window is named by its reason, cut at 80 characters. */
 export async function aLongReasonIsCutAt80(): Promise<void> {
   const long = { ...window([asset(ASSET_C, ORG_A, "Chiller C")]), reason: "x".repeat(120) };
@@ -321,11 +334,40 @@ export async function theReasonIsInTheHash(): Promise<void> {
   const outcome = await h.call("propose_maintenanceWindow_create", { body: CREATE_BODY }, ASK("maintenanceWindow.create"));
   expect(outcome.ok, outcome.content).toBe(true);
   const entry = catalogEntry("maintenanceWindow.create")!;
-  expect(hashExcludedKeysOf(entry)).toEqual([]);
+  expect(hashExcludedKeysOf(entry)).toEqual(["targetLabels"]);
   expect(h.stored[0]?.bodyHash).toBe(bodyHash(CREATE_BODY, []));
   expect(h.stored[0]?.bodyHash).not.toBe(bodyHash({ ...CREATE_BODY, reason: "Something else" }, []));
   expect([h.stored[0]?.risk, h.stored[0]?.path]).toEqual(["create", "/api/v1/maintenance-windows"]);
   expect(h.stored[0]?.summary).toContain('Reason: "Chiller overhaul".');
+}
+
+// --- `F4.362`: what the card and the model's reply read --------------------------------------------------
+
+/**
+ * Leftover 1: a create stores its targets' names beside the body under the card-only `targetLabels` (the
+ * resolver's labels), after the summary read the body; the hash leaves them out, so Confirm's body (which the
+ * browser strips of them) still matches. A row entry stores none. Mutation: drop the card body → red.
+ */
+export async function aCreateStoresItsTargetNamesForTheCard(): Promise<void> {
+  const h = proposeHarness({ target: targetIn(null) });
+  const out = await h.call("propose_maintenanceWindow_create", { body: CREATE_BODY }, ASK("maintenanceWindow.create"));
+  expect(out.ok, out.content).toBe(true);
+  expect(h.stored[0]?.body).toEqual({ ...CREATE_BODY, targetLabels: ["Chiller C"] });
+  expect(h.stored[0]?.bodyHash).toBe(bodyHash({ ...CREATE_BODY, targetLabels: ["Chiller C"] }, ["targetLabels"]));
+  const end = proposeHarness({ target: targetIn("active") });
+  expect((await end.call("propose_maintenanceWindow_end", { id: WINDOW, body: {} })).ok).toBe(true);
+  expect(end.stored[0]?.body).toEqual({});
+}
+
+/**
+ * Leftover 3: the end's and the cancel's tool results name the window's targets, so a reply that paraphrases
+ * the result ("end the active maintenance window on … now") has the asset's name. Mutation: drop the clause → red.
+ */
+export async function theEndAndCancelResultsNameTheTargets(): Promise<void> {
+  const end = await proposeHarness({ target: targetIn("active") }).call("propose_maintenanceWindow_end", { id: WINDOW, body: {} });
+  expect(end.content).toContain('End the maintenance window \\"Chiller overhaul\\" (Chiller C) now');
+  const cancel = await proposeHarness({ target: targetIn("future") }).call("propose_maintenanceWindow_cancel", { id: WINDOW, body: {} });
+  expect(cancel.content).toContain('Cancel the maintenance window \\"Chiller overhaul\\" (Chiller C) that starts');
 }
 
 // --- the route's own refusals at propose (decision 8) ---------------------------------------------------

@@ -46,3 +46,8 @@ export function localZoneLabel(at: Date = new Date()): string {
   const abs = Math.abs(east);
   return `UTC${east > 0 ? "+" : "-"}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
+
+/** "2026-11-13 15:00 (UTC+05:30)": an instant in the browser's zone, labelled with that zone's offset then. */
+export function localTime(iso: string): string {
+  return `${localMinuteOf(iso)} (${localZoneLabel(new Date(iso))})`;
+}

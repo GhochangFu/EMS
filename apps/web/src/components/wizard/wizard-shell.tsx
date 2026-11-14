@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useEffect, useId, useState } from "react";
 import type { CatalogEntry } from "@bms/shared/copilot";
 
-import { type ChangeRow, changeRows } from "../../lib/copilot-diff";
+import { changeRows, type ShownRow, shownRows } from "../../lib/copilot-diff";
 import {
   applyFill,
   appliedFillValues,
@@ -82,22 +82,6 @@ type WizardShellProps = {
    */
   review?: { omit: readonly string[]; detail: ReactNode; shown?: Readonly<Record<string, ShownRow>> };
 };
-
-/**
- * `F4.360` defect 4: a body field's row as the page says it — its heading and readable values (a local
- * time, a target's name) in place of the raw value (an ISO string, a JSON list). The body sent is unchanged.
- */
-export type ShownRow = { readonly label: string; readonly after: string; readonly before?: string };
-
-/** The Review's rows, each `shown` field's heading and values replaced; its full texts go with the raw value. */
-function shownRows(rows: readonly ChangeRow[], shown: Readonly<Record<string, ShownRow>> = {}): ChangeRow[] {
-  return rows.map((row) => {
-    const own = shown[row.field];
-    if (own === undefined) return row;
-    const before = row.before === undefined ? {} : { before: own.before ?? row.before };
-    return { field: row.field, label: own.label, after: own.after, changed: row.changed, ...before };
-  });
-}
 
 /**
  * `F3.85` PR 8 / ADR 0099 decision 6 (plan §10.3, ruling Q6) — the stepper

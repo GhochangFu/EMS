@@ -24,7 +24,7 @@ import { fetchRules } from "../../api/rules";
 import { fetchWorkOrders } from "../../api/work-orders";
 import { alarmBarFeed } from "../../lib/alarm-bar-feed";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { isoOfLocalInput, localInputOf, localMinuteOf, localZoneLabel } from "../../lib/maintenance-window-time";
+import { isoOfLocalInput, localInputOf, localTime, localZoneLabel } from "../../lib/maintenance-window-time";
 import { wizardBody, type WizardStep } from "../../lib/wizard-steps";
 import { AdminWizardFrame, fieldClass, labelClass } from "../admin/admin-wizard-frame";
 import { WizardShell } from "../wizard/wizard-shell";
@@ -86,14 +86,14 @@ export const TARGETS_SPAN_ORGANIZATIONS = "Every target of a maintenance window 
 const instantOf = (value: unknown): string | undefined =>
   typeof value === "string" && !Number.isNaN(Date.parse(value)) ? localInputOf(new Date(value)) : undefined;
 
-/** "2026-11-13 15:00 (UTC+05:30)": an instant in the browser's zone, labelled. */
-const localTime = (iso: string): string => `${localMinuteOf(iso)} (${localZoneLabel(new Date(iso))})`;
-
 /** `F4.360` defect 4: the browser's IANA zone, which the entries' summaries say their times in. */
 const browserZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-/** `F4.360` defect 6: the typed reason of an end or a cancel, said on its Review. */
-const reasonText = (reason: string | undefined): string => (reason === undefined ? "No reason given." : `Reason: "${reason}"`);
+/**
+ * `F4.360` defect 6, `F4.362` leftover 2: the End and Cancel Review say when no reason was given. A typed reason
+ * is already in the summary sentence and the Field table, so it gets no third line.
+ */
+const NO_REASON = "No reason given.";
 
 /** `F4.360` defect 5: a target kind as the checkbox's name says it. */
 const KIND_WORD = { asset: "Asset", location: "Location", rule: "Rule" } as const;
@@ -605,7 +605,7 @@ function CloseWindowWizard({
       omit: [],
       detail: (
         <div className="space-y-1 text-xs">
-          <p>{reasonText(values.reason)}</p>
+          {values.reason === undefined ? <p>{NO_REASON}</p> : null}
           <p className="font-semibold text-critical-ink">{WINDOW_CANNOT_BE_UNDONE}</p>
         </div>
       ),
