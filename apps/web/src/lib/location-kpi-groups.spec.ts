@@ -115,13 +115,15 @@ export function runK5(): void {
   assert(summary.totalKw === 12.5, `totalKw must be 12.5 (10 + 2.5) — got ${summary.totalKw}`);
 }
 
-/** `K6` (`F4.364`) — no location shows energy: the section's kW is `null`, not `0`. */
+/** `K6` (`F4.364`) — no location shows energy, or none that does has a kW value: the section's kW is `null`, not `0`. */
 export function runK6(): void {
   const summary = orgSectionSummary([
     site({ id: "a1", name: "A1", organization: ORG_A, totalKw: null, energyShown: false }),
     site({ id: "a2", name: "A2", organization: ORG_A, totalKw: null, energyShown: false }),
   ]);
   assert(summary.totalKw === null, `totalKw must be null when no location shows energy — got ${summary.totalKw}`);
+  // ADR 0133 decision 4 / ruling Q4: "no meter" is null, never 0 — an `on` section whose locations
+  // have no kW value is null too, so the header shows no "0.0 kW".
   const shownNoMeter = orgSectionSummary([site({ id: "a3", name: "A3", organization: ORG_A, totalKw: null })]);
-  assert(shownNoMeter.totalKw === 0, `a shown location with no meter sums to 0 — got ${shownNoMeter.totalKw}`);
+  assert(shownNoMeter.totalKw === null, `shown locations with no kW value must give null — got ${shownNoMeter.totalKw}`);
 }

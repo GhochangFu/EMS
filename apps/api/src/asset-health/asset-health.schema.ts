@@ -2,6 +2,13 @@ import { MAX_WIDGET_WINDOW_MINUTES } from "@bms/shared";
 import { z } from "zod";
 
 /**
+ * `F4.364` (plan D6) — the health reads' default window, one day. Declared once: the endpoint's
+ * default below and the location cards' batch read (`DashboardService.locationKpis`) both use it,
+ * so a card's score and `GET /asset-health/summary?locationId=` cover the same window.
+ */
+export const DEFAULT_HEALTH_WINDOW_MINUTES = 1_440;
+
+/**
  * `E1.3` (ADR 0050 + Amendment 1) — the query contracts for the two health
  * reads.
  *
@@ -18,13 +25,6 @@ import { z } from "zod";
  * a second ladder, and the symptom would be a health figure and a trend chart
  * covering different windows while both looked right.
  */
-/**
- * `F4.364` (plan D6) — the health reads' default window, one day. Declared once: the endpoint's
- * default below and the location cards' batch read (`DashboardService.locationKpis`) both use it,
- * so a card's score and `GET /asset-health/summary?locationId=` cover the same window.
- */
-export const DEFAULT_HEALTH_WINDOW_MINUTES = 1_440;
-
 export const assetHealthQuerySchema = z.object({
   windowMinutes: z.coerce
     .number()

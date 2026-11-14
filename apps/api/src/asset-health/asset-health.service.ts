@@ -187,7 +187,7 @@ export class AssetHealthService {
     const { scores, rows, coveredBuckets } = await this.scoreAssets(level, inScope, from, to);
 
     return {
-      ...summariseAssets(inScope.map((assetId) => scores.get(assetId) as AssetScore)),
+      ...summariseAssets(scores),
       ...this.windowFields({ level, from, to, windowMinutes, rows, coveredBuckets }),
     };
   }
@@ -225,11 +225,11 @@ export class AssetHealthService {
     const { level, from, to } = this.resolveWindow(windowMinutes, now);
     const { scores } = await this.scoreAssets(level, owned.map((row) => row.id), from, to);
     const grouped = new Map<string, AssetScore[]>();
-    for (const row of owned) {
+    owned.forEach((row, i) => {
       const list = grouped.get(row.locationId) ?? [];
-      list.push(scores.get(row.id) as AssetScore);
+      list.push(scores[i] as AssetScore);
       grouped.set(row.locationId, list);
-    }
+    });
     for (const [locationId, list] of grouped) {
       byLocation.set(locationId, summariseAssets(list).score);
     }
@@ -239,7 +239,7 @@ export class AssetHealthService {
   /**
    * The scoring step `summary` and `scoresByLocation` share (`F4.364` D4): the counters, the
    * templates' health blocks and the catalog points, each read once for the whole set, then one
-   * `scoreAsset` per asset.
+   * `scoreAsset` per asset — `scores[i]` is `assetIds[i]`'s.
    *
    * **Every asset in scope is scored, including those with no counter rows at
    * all.** Iterating the rows instead would silently drop an asset that has no
@@ -251,14 +251,13 @@ export class AssetHealthService {
     assetIds: readonly string[],
     from: Date,
     to: Date,
-  ): Promise<{ scores: Map<string, AssetScore>; rows: CounterRow[]; coveredBuckets: number }> {
+  ): Promise<{ scores: AssetScore[]; rows: CounterRow[]; coveredBuckets: number }> {
     const { rows, coveredBuckets } = await this.readCounters(level, assetIds, from, to);
     const health = await this.healthForAssets(assetIds);
     const catalog = await this.catalogPoints(assetIds);
-    const scores = new Map<string, AssetScore>();
-    for (const assetId of assetIds) {
-      scores.set(assetId, scoreAsset(this.tagsFor(rows, catalog.get(assetId) ?? [], assetId), health.get(assetId)));
-    }
+    const scores = assetIds.map((assetId) =>
+      scoreAsset(this.tagsFor(rows, catalog.get(assetId) ?? [], assetId), health.get(assetId)),
+    );
     return { scores, rows, coveredBuckets };
   }
 

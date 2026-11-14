@@ -84,7 +84,7 @@ export function livePercent(live: number, notLive: number): number {
 
 /**
  * Aggregates section-level KPIs for an accordion header. `F4.364` (plan ruling Q4): `totalKw` sums
- * the numbers over the locations that show energy, and is `null` when none does.
+ * the numbers over the locations that show energy, and is `null` when none of them has one.
  */
 export function orgSectionSummary(locations: LocationKpiSummary[]): {
   locationCount: number;
@@ -101,6 +101,8 @@ export function orgSectionSummary(locations: LocationKpiSummary[]): {
 }
 
 function sectionKw(locations: readonly LocationKpiSummary[]): number | null {
-  const shown = locations.filter((location) => location.energyShown);
-  return shown.length === 0 ? null : shown.reduce((sum, location) => sum + (location.totalKw ?? 0), 0);
+  const values = locations.flatMap((location) =>
+    location.energyShown && location.totalKw !== null ? [location.totalKw] : [],
+  );
+  return values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0);
 }
