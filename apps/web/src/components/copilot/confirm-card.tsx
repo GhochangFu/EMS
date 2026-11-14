@@ -20,9 +20,10 @@ import { useMimicSymbolLibraries } from "../../hooks/use-mimic-symbol-libraries"
 import { refreshScope } from "../../api/login";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { type ChangeRow, changeRows, type LayoutBaseline, layoutGraphRows } from "../../lib/copilot-diff";
+import { type ChangeRow, changeRows, type LayoutBaseline, layoutGraphRows, shownRows } from "../../lib/copilot-diff";
 import { clientOnlyFieldsFor } from "../../lib/copilot-client-only-fields";
 import { invalidationFiltersFor } from "../../lib/copilot-invalidations";
+import { maintenanceWindowCardShown } from "../../lib/maintenance-window-card";
 import { editorLayoutFromWriteBody } from "../../lib/mimic-editor";
 import { layoutWarnings } from "../../lib/mimic-editor-warnings";
 import { catalogOrgSymbols } from "../../lib/mimic-symbols";
@@ -320,7 +321,11 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
         ]
       : isRuleBatch
         ? changeRows(change.body, null, [...cardOnly, "rules"])
-        : changeRows(change.body, isEdit ? (current.data ?? null) : null, cardOnly, entry?.formulas ?? []);
+        : // `F4.362` leftover 1: a maintenance-window card names its targets and says local times.
+          shownRows(
+            changeRows(change.body, isEdit ? (current.data ?? null) : null, cardOnly, entry?.formulas ?? []),
+            maintenanceWindowCardShown(change.catalogId, change.body, isEdit ? (current.data ?? null) : null),
+          );
   const note = isEdit
     ? `Proposed at ${timeOf(change.proposedAt)}. The record can change before you confirm; the request sends the values shown. Expires at ${timeOf(change.expiresAt)}.`
     : `Proposed at ${timeOf(change.proposedAt)}. Expires at ${timeOf(change.expiresAt)}.`;

@@ -51,20 +51,29 @@ export async function theExtendReviewSaysLocalTimes(): Promise<void> {
   expect(reviewText(dialog)).toContain(`End${local(window.endsAt)}${local(new Date(end).toISOString())}`);
 }
 
-/** R3 — the End Review shows the typed reason in its own line (defect 6), and says when none was given. */
+/** How often `text` appears in the dialog's text. */
+const timesIn = (dialog: HTMLElement, text: string): number => (dialog.textContent ?? "").split(text).length - 1;
+
+/**
+ * R3 — the End Review shows the typed reason (defect 6), and says when none was given. `F4.362` leftover 2: the
+ * reason shows twice — the summary sentence and the Field table — never a third time in a line of its own.
+ * Mutation: put the `Reason: "…"` line back → red.
+ */
 export async function theEndReviewShowsTheTypedReason(): Promise<void> {
   renderWizard({ kind: "end", window: windowItem() });
   const dialog = screen.getByRole("dialog", { name: "End maintenance window" });
   await userEvent.type(within(dialog).getByLabelText("Reason (optional)"), "Done early");
   await next(dialog);
-  expect(within(dialog).getByText('Reason: "Done early"')).toBeInTheDocument();
+  expect(timesIn(dialog, "Done early")).toBe(2);
+  expect(reviewText(dialog)).toContain("ReasonDone early");
+  expect(within(dialog).queryByText('Reason: "Done early"')).toBeNull();
   await userEvent.click(within(dialog).getByRole("button", { name: "Back" }));
   await userEvent.clear(within(dialog).getByLabelText("Reason (optional)"));
   await next(dialog);
   expect(within(dialog).getByText("No reason given.")).toBeInTheDocument();
 }
 
-/** R4 — the Cancel Review: the start in local time, no raw ISO, and the typed reason. */
+/** R4 — the Cancel Review: the start in local time, no raw ISO, and the typed reason twice, not three times (`F4.362`). */
 export async function theCancelReviewSaysLocalTimeAndTheReason(): Promise<void> {
   const window = windowItem({ state: "future", startsAt: new Date(Date.now() + DAY).toISOString(), endsAt: new Date(Date.now() + 2 * DAY).toISOString() });
   renderWizard({ kind: "cancel", window });
@@ -73,7 +82,8 @@ export async function theCancelReviewSaysLocalTimeAndTheReason(): Promise<void> 
   await next(dialog);
   expect(dialog.textContent).not.toMatch(RAW);
   expect(within(dialog).getByText(new RegExp(`that starts at ${pattern(local(window.startsAt))}`))).toBeInTheDocument();
-  expect(within(dialog).getByText('Reason: "Postponed"')).toBeInTheDocument();
+  expect(timesIn(dialog, "Postponed")).toBe(2);
+  expect(reviewText(dialog)).toContain("ReasonPostponed");
 }
 
 /** R5 — each radio and target checkbox has its own accessible name and a value of its own, never the default "on". */

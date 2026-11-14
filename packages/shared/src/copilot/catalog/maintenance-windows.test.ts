@@ -5,6 +5,8 @@ import {
   theBodiesAreTheRoutesExports,
   theCreateSummaryNamesEverything,
   theCreateSummaryNamesItsStartAndNoCoverWithoutALocation,
+  theCreateKeepsItsTargetNamesForTheCard,
+  theEndAndCancelSummariesNameTheTargets,
   theEndAndCancelSummariesNameTheWindow,
   theEntriesAreEveryCopilotRolesAndTheModels,
   theExtendSummaryNamesTheWindowAndBothEnds,
@@ -29,5 +31,7 @@ describe("F4.359 — maintenance-window catalog entries (ADR 0099 Amendment 19)"
   it("the extend summary names the window and both ends", () => theExtendSummaryNamesTheWindowAndBothEnds());
   it("the end and cancel summaries name the window", () => theEndAndCancelSummariesNameTheWindow());
   it("the summaries say times in the given zone, UTC by default (F4.360)", () => theSummariesSayTimesInTheGivenZone());
+  it("the end and cancel summaries name the targets (F4.362 leftover 3)", () => theEndAndCancelSummariesNameTheTargets());
+  it("the create keeps its target names for the card (F4.362 leftover 1)", () => theCreateKeepsItsTargetNamesForTheCard());
   it("no maintenance-window route is excluded now", () => noWindowRouteIsExcludedNow());
 });

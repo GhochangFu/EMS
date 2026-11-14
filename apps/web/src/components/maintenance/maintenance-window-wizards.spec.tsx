@@ -157,7 +157,17 @@ export async function theReviewShowsTheEntrysSummary(): Promise<void> {
     params: { id: window.id },
     targetName: window.reason,
     organizationName: "",
+    // `F4.362` leftover 3: the end names its window's targets, on the page as on the card.
+    maintenanceWindow: {
+      reason: window.reason,
+      startsAt: window.startsAt,
+      endsAt: window.endsAt,
+      targetLabels: ["Pump 1"],
+      locationLabels: [],
+      coveredAssetCount: 1,
+    },
   });
+  expect(summary).toContain('"Pump overhaul" (Pump 1) now');
   expect(within(dialog).getByText(summary)).toBeInTheDocument();
   expect(within(dialog).getByText(WINDOW_CANNOT_BE_UNDONE)).toBeInTheDocument();
   await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
@@ -192,7 +202,7 @@ export async function cancelPostsToTheCancelRoute(): Promise<void> {
   const { onClose } = renderWizard({ kind: "cancel", window });
   const dialog = screen.getByRole("dialog", { name: "Cancel maintenance window" });
   await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
-  expect(within(dialog).getByText(/Cancel the maintenance window "Pump overhaul" that starts at/)).toBeInTheDocument();
+  expect(within(dialog).getByText(/Cancel the maintenance window "Pump overhaul" \(Pump 1\) that starts at/)).toBeInTheDocument();
   expect(within(dialog).getByText(WINDOW_CANNOT_BE_UNDONE)).toBeInTheDocument();
   await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
   await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));

@@ -39,6 +39,15 @@ function coverClause(window: Window | undefined): string {
   return `; ${names} ${window.locationLabels.length === 1 ? "covers" : "cover"} ${plural(window.coveredAssetCount, "asset")}`;
 }
 
+/**
+ * `F4.362` leftover 3: a window's targets after its name, " (A, B)", or nothing without labels. The extend, the
+ * end and the cancel say it, so the propose tool's result names the assets a model's reply paraphrases.
+ */
+function targetsClause(window: Window | undefined): string {
+  const labels = window?.targetLabels ?? [];
+  return labels.length > 0 ? ` (${labels.join(", ")})` : "";
+}
+
 /** `F4.360` defect 4: a body time as the card says it, in the input's zone (UTC when none); the fallback as it is. */
 function timeIn(body: Readonly<Record<string, unknown>>, key: string, timeZone: string | undefined, fallback = ""): string {
   const value = text(body, key);
@@ -70,6 +79,8 @@ export const MAINTENANCE_WINDOW_ENTRIES: readonly CatalogEntry[] = [
     risk: "create",
     red: true,
     target: { kind: "maintenanceWindow", field: "targets" },
+    // `F4.362` leftover 1: the targets' names the resolver read, for the card's Targets row alone.
+    cardOnly: ["targetLabels"],
     refs: [],
     formulas: [],
     steps: [
@@ -99,10 +110,9 @@ export const MAINTENANCE_WINDOW_ENTRIES: readonly CatalogEntry[] = [
     red: true,
     steps: [{ id: "newEnd", title: "New end", fields: ["endsAt", "reason"] }],
     summary: ({ body, targetName, maintenanceWindow, timeZone }) => {
-      const labels = maintenanceWindow?.targetLabels ?? [];
       const currentEnd = maintenanceWindow?.endsAt;
       return (
-        `Extend the maintenance window ${quoted(targetName)}${labels.length > 0 ? ` (${labels.join(", ")})` : ""} ` +
+        `Extend the maintenance window ${quoted(targetName)}${targetsClause(maintenanceWindow)} ` +
         `from ${currentEnd ? instantText(currentEnd, timeZone) : "its current end"} to ${timeIn(body, "endsAt", timeZone)}: ` +
         `alarms on its targets stay suppressed until then.${reasonLine(body)}`
       );
@@ -117,8 +127,8 @@ export const MAINTENANCE_WINDOW_ENTRIES: readonly CatalogEntry[] = [
     bodyName: "closeMaintenanceWindowBodySchema",
     risk: "edit",
     steps: [{ id: "reason", title: "Reason", fields: ["reason"] }],
-    summary: ({ body, targetName }) =>
-      `End the maintenance window ${quoted(targetName)} now: every alarm it suppresses that is still active returns as a ` +
+    summary: ({ body, targetName, maintenanceWindow }) =>
+      `End the maintenance window ${quoted(targetName)}${targetsClause(maintenanceWindow)} now: every alarm it suppresses that is still active returns as a ` +
       `normal alarm, with its popup, tone and notification.${reasonLine(body)}`,
   },
   {
@@ -132,7 +142,7 @@ export const MAINTENANCE_WINDOW_ENTRIES: readonly CatalogEntry[] = [
     steps: [{ id: "reason", title: "Reason", fields: ["reason"] }],
     summary: ({ body, targetName, maintenanceWindow, timeZone }) => {
       const startsAt = maintenanceWindow?.startsAt;
-      return `Cancel the maintenance window ${quoted(targetName)}${startsAt ? ` that starts at ${instantText(startsAt, timeZone)}` : ""}: it suppresses nothing.${reasonLine(body)}`;
+      return `Cancel the maintenance window ${quoted(targetName)}${targetsClause(maintenanceWindow)}${startsAt ? ` that starts at ${instantText(startsAt, timeZone)}` : ""}: it suppresses nothing.${reasonLine(body)}`;
     },
   },
 ];

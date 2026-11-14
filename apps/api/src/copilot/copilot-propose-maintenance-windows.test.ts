@@ -9,7 +9,9 @@ import {
   aLongReasonIsCutAt80,
   anAssetGroupAdminCannotNameALocation,
   anAssetGroupAdminIsAdmitted,
+  aCreateStoresItsTargetNamesForTheCard,
   anEndAndACancelInTheWrongStateAreRefused,
+  theEndAndCancelResultsNameTheTargets,
   anExtendOfAPastWindowIsRefusedWithTheRoutesSentence,
   anOperatorAndAViewerAreRefusedBeforeTheScope,
   aPeriodTheRouteRefusesIsRefused,
@@ -44,6 +46,8 @@ describe("F4.359 — the Copilot proposes maintenance windows (ADR 0099 Amendmen
   it("the reason is in the hash (Q7)", () => theReasonIsInTheHash());
   it("an extend of a window that is not active is refused with the route's sentence", () =>
     anExtendOfAPastWindowIsRefusedWithTheRoutesSentence());
+  it("a create stores its target names for the card (F4.362 leftover 1)", () => aCreateStoresItsTargetNamesForTheCard());
+  it("the end and cancel results name the targets (F4.362 leftover 3)", () => theEndAndCancelResultsNameTheTargets());
   it("an end and a cancel in the wrong state are refused with the routes' sentences", () => anEndAndACancelInTheWrongStateAreRefused());
   it("a period the route refuses is refused with its sentence", () => aPeriodTheRouteRefusesIsRefused());
   it("a row target without a window fails closed", () => aRowTargetWithoutAWindowFailsClosed());

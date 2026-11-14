@@ -43,6 +43,7 @@ import { AttachPanel } from "./attach-panel";
 import { ConfirmCard } from "./confirm-card";
 import { ConversationList } from "./conversation-list";
 import { CopilotDockFrame } from "./copilot-dock-frame";
+import { usePageDialogOpen } from "./use-page-dialog-open";
 import {
   ALL_ORGANIZATIONS,
   ALL_ORGANIZATIONS_LABEL,
@@ -216,6 +217,7 @@ function DockPanel({
   const width = useCopilotWindowStore((s) => s.width);
   const height = useCopilotWindowStore((s) => s.height);
   const sheet = useCopilotSheet();
+  const pageDialogOpen = usePageDialogOpen();
   // Counted while mounted: `AppShell` pushes the page only for a dock that renders (critic: copilot off).
   useEffect(() => mountCopilotDock(), []);
   const { organizationId, conversationId } = useCopilotSession(user.id);
@@ -739,6 +741,9 @@ function DockPanel({
     </>
   );
 
+  // `F4.362` leftover 4: the closed dock's launcher drops under an open page dialog; beside the floating window it stays.
+  const launcherYields = pageDialogOpen && !(open && mode === "floating" && !sheet);
+
   return (
     <>
       {(!open || (mode === "floating" && !sheet)) && (
@@ -749,7 +754,8 @@ function DockPanel({
           aria-expanded={open}
           aria-controls="copilot-panel"
           onClick={toggle}
-          className="fixed bottom-[calc(2.5rem+var(--alarm-bar-h))] right-6 z-50 grid h-14 w-14 place-items-center rounded-full bg-accent text-sm font-bold text-on-accent shadow-lg transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          data-yields={launcherYields ? "true" : undefined}
+          className={`fixed bottom-[calc(2.5rem+var(--alarm-bar-h))] right-6 ${launcherYields ? "z-30" : "z-50"} grid h-14 w-14 place-items-center rounded-full bg-accent text-sm font-bold text-on-accent shadow-lg transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
         >
           <BotIcon size={22} />
         </button>

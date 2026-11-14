@@ -14,6 +14,7 @@ import {
   type CopilotViewport,
 } from "../../lib/copilot-window";
 import type { CopilotWindowMode } from "../../stores/copilot-window-store";
+import { usePageDialogOpen } from "./use-page-dialog-open";
 import { useViewportSize } from "./use-copilot-viewport";
 
 /**
@@ -65,6 +66,15 @@ const SHAPE: Record<CopilotWindowMode | "sheet", string> = {
   maximized: "fixed left-[5vw] top-[5vh] z-50 h-[90vh] w-[90vw] rounded-lg",
   docked: "fixed right-0 top-0 z-40 h-[calc(100vh-var(--alarm-bar-h))] border-l border-line",
 };
+
+/**
+ * `F4.362` leftover 4: while a page dialog is open, the shapes that cover the page drop under every modal
+ * layer (the page's overlays are `z-40` and `z-50`), so the dialog stays on top and takes the clicks. The
+ * small floating window keeps its layer: a user can still talk to the copilot beside a wizard.
+ */
+const YIELDED_LAYER = "z-30";
+const layered = (shape: CopilotWindowMode | "sheet", yields: boolean): string =>
+  yields ? SHAPE[shape].replace(/\bz-\d+\b/, YIELDED_LAYER) : SHAPE[shape];
 
 type ResizeStart = CopilotSize & { x: number; y: number; pointerId: number };
 
@@ -165,6 +175,7 @@ export function CopilotDockFrame({
         : undefined;
   const resize = (next: CopilotSize): void => onResize(next, bounds);
   const column = shape === "maximized";
+  const yields = usePageDialogOpen() && shape !== "floating";
 
   return (
     <aside
@@ -173,8 +184,9 @@ export function CopilotDockFrame({
       id="copilot-panel"
       aria-label="Copilot"
       data-mode={shape}
+      data-yields={yields ? "true" : undefined}
       style={style}
-      className={`surface-raised flex flex-col overflow-hidden focus:outline-none ${SHAPE[shape]}`}
+      className={`surface-raised flex flex-col overflow-hidden focus:outline-none ${layered(shape, yields)}`}
     >
       {(shape === "floating" || shape === "docked") && (
         <ResizeHandle edge="left" size={shown} bounds={bounds} onResize={resize} />
