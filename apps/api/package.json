@@ -8,6 +8,7 @@
     "start": "node dist/main.js",
     "worker": "node dist/worker.js",
     "rotate-credentials": "node dist/security/rotate-credentials.cli.js",
+    "tariffs:import": "node dist/tariffs/import-xlsx.js",
     "keycloak:provision": "node dist/identity/provision/provision-cli.js"
   },
   "dependencies": {

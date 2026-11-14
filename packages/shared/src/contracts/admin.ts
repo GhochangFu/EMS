@@ -218,6 +218,12 @@ export const adminLocationSummaryDtoSchema = z.object({
   organizationId: z.string(),
   organizationCode: z.string(),
   organizationName: z.string(),
+  /**
+   * `F4.365`: the zone the location's calendar months are counted in — its own valid zone, else
+   * its organization's, else `Etc/UTC` (`resolveSiteTimeZone(...).arithmeticZone`). The location
+   * tariff screen dates "this month" and "end after this month" in it, as the bill does.
+   */
+  timeZone: z.string(),
 });
 
 export const adminRtuSummaryDtoSchema = z.object({

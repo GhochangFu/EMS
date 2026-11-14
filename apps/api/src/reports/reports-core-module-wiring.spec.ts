@@ -9,6 +9,7 @@ import { FLEET_POOL, TENANT_DRIZZLE, TENANT_POOL } from "../database/database.to
 import { NotificationsCoreModule } from "../notifications/notifications-core.module";
 import { ObservabilityModule } from "../observability/observability.module";
 import { StorageModule } from "../storage/storage.module";
+import { TariffRatesModule } from "../tariffs/tariff-rates.module";
 import { TelemetryModule } from "../telemetry/telemetry.module";
 import { TelemetryService } from "../telemetry/telemetry.service";
 import { repoRoot } from "../testing/repo-root";
@@ -93,11 +94,16 @@ export function assertTheModuleProvidesTheTrendServiceAndTelemetry(): void {
   );
 }
 
-/** The module imports no `TelemetryModule` — its one import is still the provider-only notifications core. */
+/**
+ * The module imports no `TelemetryModule` — its imports are the provider-only
+ * notifications core and, since `F4.365` U7, the provider-only `TariffRatesModule`
+ * (`EnergyRateResolver` for the cost reads), which imports nothing.
+ */
 export function assertTheModuleImportsNoTelemetryModule(): void {
   const imports = moduleList(ReportsCoreModule, "imports");
   expect(imports).not.toContain(TelemetryModule);
-  expect(imports).toEqual([NotificationsCoreModule]);
+  expect(imports).toEqual([NotificationsCoreModule, TariffRatesModule]);
+  expect(moduleList(TariffRatesModule, "imports")).toEqual([]);
 }
 
 /** `TelemetryService`'s three `@Inject` tokens are the global pools, and each resolves inside the module. */

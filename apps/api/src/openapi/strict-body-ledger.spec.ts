@@ -17,6 +17,10 @@ import {
   copilotStartOnboardingSkillBodySchema,
   copilotTurnBodySchema,
   updateCalcParameterBodySchema,
+  createLocationTariffBodySchema,
+  updateLocationTariffBodySchema,
+  createTariffVersionBodySchema,
+  updateTariffVersionBodySchema,
   createDashboardBodySchema,
   putDashboardWidgetsBodySchema,
   appendWidgetBodySchema,
@@ -257,6 +261,15 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `key`/`organizationId`/scope — must get a 400 rather than have it dropped.
   createCalcParameterBodySchema,
   updateCalcParameterBodySchema,
+  // `F4.365` U5 (ADR 0134 decision 3). Both `.strict()`: `organizationId` and `locationId` come from the
+  // path's location and `tariffKey` is immutable on PATCH, so any of them sent must be a 400, never dropped.
+  createLocationTariffBodySchema,
+  updateLocationTariffBodySchema,
+  // `F4.365` U6 (ADR 0134 Amendment 1). Both `.strict()` at the version level, each union arm too: a
+  // revision's descriptive columns are copied on the server, so a `state` or `name` sent on one must be a
+  // 400, never dropped. The slab item stays open; its ledger entry says why.
+  createTariffVersionBodySchema,
+  updateTariffVersionBodySchema,
   createLocationBodySchema,
   // `F4.162`. Both `.strict()`: `bms.location_types` is global vocabulary, so
   // an `organizationId` must be a 400, and `code` on the PATCH is a rename of
@@ -925,6 +938,13 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // 35 -> 36: `F4.361` registered `ruleListQuerySchema` (`GET /rules`, ADR 0132 decision 4): four
   // optional lower-cased scope uuids that only narrow, `.strict()`, no body — the same precedent.
   //
+  // 36 -> 39 (2026-11-14): `F4.365` U5 (ADR 0134) registered `tariffCategoriesQuerySchema`,
+  // `tariffLineVersionsQuerySchema` and `locationEnergyBillQuerySchema` — three GET queries, each
+  // `.strict()`, no body. The two mapping bodies the row adds are in `BODY_SCHEMAS` with a decision.
+  //
+  // 39 -> 40 (2026-11-14): `F4.365` U6 registered `deleteTariffVersionQuerySchema`
+  // (`DELETE /admin/tariffs/versions/:id?reason=`): one required reason, `.strict()`, no body.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -934,7 +954,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(36);
+  ).toBe(40);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

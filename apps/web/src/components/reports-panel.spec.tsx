@@ -97,6 +97,7 @@ function preview(
       indicativeCost: 5042.12,
       tariffPerKwh: 2.15,
       currency: "ZAR",
+      tariffVerify: false,
       asOf: "2026-09-05T12:00:00.000Z",
       ...cost,
     },

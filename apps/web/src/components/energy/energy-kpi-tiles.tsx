@@ -6,6 +6,7 @@ import { costTileProps } from "../../lib/money";
 import { pueTileProps } from "../../lib/pue-tile";
 import { KpiTile, type KpiTileStatus } from "../kpi-tile";
 import { formatPeakTime } from "./site-ranking-table";
+import { TariffVerifyBadge } from "./tariff-verify-badge";
 
 /** The change hint, e.g. `+12.5 % vs previous`; `undefined` when compare is off. */
 function changeHint(change: EnergyChange): string | undefined {
@@ -150,7 +151,12 @@ export function EnergyKpiTiles({ status, view: v, floorAreaTile }: EnergyKpiTile
         has no `unit`; a `null` cost (no tariff in scope, or two currencies) is
         the dash with the reason, never a 0.
       */}
-      <KpiTile label="Indicative cost" {...costTileProps(status, current?.indicativeCost, current?.currency)} />
+      {/* `F4.365` (plan Q8) — the Verify badge when a slab tariff in the price is not `official`. */}
+      <KpiTile
+        label="Indicative cost"
+        {...costTileProps(status, current?.indicativeCost, current?.currency)}
+        icon={status === "ready" && current?.tariffVerify === true ? <TariffVerifyBadge /> : undefined}
+      />
       {floorAreaTile !== undefined ? (
         <KpiTile label="kWh per m²" {...floorAreaTileState(status, v, floorAreaTile.hasReadableChildren)} />
       ) : null}

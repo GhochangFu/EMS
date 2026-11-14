@@ -5,6 +5,8 @@ export * from "./dashboard-schema";
 export * from "./telemetry-schema";
 export * from "./asset-images-schema";
 export * from "./calc-parameters-schema";
+// `F4.365` (ADR 0134): slab utility tariffs.
+export * from "./tariffs-schema";
 export * from "./report-schedules-schema";
 export * from "./report-files-schema";
 export * from "./site-control-room-views-schema";

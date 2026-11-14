@@ -24,7 +24,7 @@ export function groupsEveryTabIntoItsArea(): void {
   );
   expect(grouped).toEqual({
     "Sites & Equipment": ["Organizations", "Locations", "RTUs", "Assets", "Asset Points", "Edge Gateways"],
-    "Reference Data": ["Asset Groups", "Point Keys", "State Labels", "Trend Points", "Location Types", "Unit Roles", "Asset Domains", "Work Order SLA", "Checklist Templates", "Payload Formats", "Calc Parameters", "Portal Appearance"],
+    "Reference Data": ["Asset Groups", "Point Keys", "State Labels", "Trend Points", "Location Types", "Unit Roles", "Asset Domains", "Work Order SLA", "Checklist Templates", "Payload Formats", "Calc Parameters", "Tariffs", "Portal Appearance"],
     "Templates & Visuals": ["Asset Templates", "Dashboard Templates", "Mimic Layouts", "Symbol Libraries"],
     "Data Input": ["Manual Entry", "Import Telemetry"],
     // `F4.359`: Maintenance Windows first (A5b — the area opens at a tab every role sees).
@@ -87,6 +87,8 @@ export function keepsOnlyTheVisibleTabsInAnArea(): void {
     "Work Order SLA",
     "Checklist Templates",
     "Calc Parameters",
+    // `F4.365`: Tariffs, ungated (write controls hidden inside by `canManageOrgTariffs`).
+    "Tariffs",
   ]);
 }
 

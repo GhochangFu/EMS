@@ -29,10 +29,10 @@ import type { JwtPayload } from "@bms/shared";
 import { alarmVisibleTo } from "../alarms/alarm-scope";
 import { AssetHealthService } from "../asset-health/asset-health.service";
 import { AccessControlService } from "../auth/access-control.service";
-import { CalcParametersService } from "../calc/calc-parameters.service";
 import { priorInstant } from "../dashboard/kpi-prior";
 import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
+import { createEnergyRateResolver, type EnergyRateResolver } from "../tariffs/energy-rate-resolver";
 import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-cadence";
 import {
   resolveAssetScope,
@@ -142,15 +142,17 @@ export class MetricCatalogService {
   ) {
     // In the constructor body, not a field initializer: a parameter property is assigned in the
     // body, after field initializers run, so `this.fleetDb` would be undefined there.
-    this.tariffs = new CalcParametersService(this.fleetDb);
+    this.tariffs = createEnergyRateResolver(this.fleetDb, this.fleetPool);
   }
 
   /**
    * `F4.332` — `ResolverDeps.tariffs`. Constructed, not injected: `CalcParametersService` is
    * stateless over the fleet Drizzle this service already holds, so no module import changes
-   * (the `TrendPointsService` precedent in `dashboard-builder.module.ts`).
+   * (the `TrendPointsService` precedent in `dashboard-builder.module.ts`). `F4.365` U7: the
+   * `EnergyRateResolver` around it, so a mapped location's months are priced at the bill's rate
+   * (no Verify badge on these widgets, plan Q8).
    */
-  private readonly tariffs: CalcParametersService;
+  private readonly tariffs: EnergyRateResolver;
 
   /**
    * The authorized entry point. `resolveForDashboard` below is the unauthorized core, which is

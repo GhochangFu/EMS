@@ -130,6 +130,7 @@ function fakeEnergyServices() {
     indicativeCost: 240,
     tariffPerKwh: 0.1,
     currency: "INR",
+    tariffVerify: false,
     asOf: NOW.toISOString(),
     internalNote: "not in the contract",
   });
@@ -591,6 +592,7 @@ export async function assertReportPreviewBoundsTheResultOverManyOrganizations():
               indicativeCost: 98765.4321,
               tariffPerKwh: 0.123456,
               currency: "INR",
+              tariffVerify: false,
               asOf: NOW.toISOString(),
             },
             sourceTotals: { gridKwh: 123456.789, solarKwh: 12345.678, dgKwh: 1234.567 },

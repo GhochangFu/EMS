@@ -256,7 +256,7 @@ export function deliverableRows(): DeliverableFixture[] {
 }
 
 const PREVIEW = {
-  summary: { window: "7d", totalKwh: 2345.17, peakKw: 414.66, pueEstimate: 1.25, indicativeCost: 5042.12, tariffPerKwh: 2.15, currency: "ZAR", asOf: "2026-09-08T00:00:00.000Z" },
+  summary: { window: "7d", totalKwh: 2345.17, peakKw: 414.66, pueEstimate: 1.25, indicativeCost: 5042.12, tariffPerKwh: 2.15, currency: "ZAR", tariffVerify: false, asOf: "2026-09-08T00:00:00.000Z" },
 } as unknown as EnergyReportPreview;
 
 /** `F4.303` — what the preview fake answers for any period but the payload's (the compare's previous period). */

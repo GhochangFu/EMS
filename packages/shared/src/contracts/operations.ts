@@ -36,6 +36,11 @@ export const energyCentreSummarySchema = z.object({
   indicativeCost: z.number().nullable(),
   tariffPerKwh: z.number().nullable(),
   currency: z.string().nullable(),
+  // `F4.365` (ADR 0134 decision 7; plan Q8) — some of the cost was priced at a
+  // mapped location's slab tariff whose data status is not `official`. Always
+  // `false` with a `null` cost. The Energy pages badge the cost tile on it; the
+  // reports carry it and show no badge.
+  tariffVerify: z.boolean(),
   asOf: z.string(),
 });
 

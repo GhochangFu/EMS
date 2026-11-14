@@ -5,6 +5,7 @@ import type { EnergyView, EnergyViewPeriod } from "@bms/shared";
 
 import type { KpiTileStatus } from "../kpi-tile";
 import { EnergyKpiTiles } from "./energy-kpi-tiles";
+import { TARIFF_VERIFY_TITLE } from "./tariff-verify-badge";
 
 /**
  * `F4.302` U3 (ADR 0108 Amendment 4 item 3) — the six Energy KPI tiles, drawn
@@ -27,6 +28,7 @@ function period(overrides: Partial<EnergyViewPeriod> = {}): EnergyViewPeriod {
     indicativeCost: 5042.12,
     tariffPerKwh: 2.15,
     currency: "ZAR",
+    tariffVerify: false,
     sourceTotals: { gridKwh: 2000, solarKwh: 200, dgKwh: 50 },
     series: [],
     kwhPerM2: null,
@@ -110,6 +112,28 @@ export function theRollupTileNamesLevelBucketAndZone(): void {
   const rollup = tile("Rollup").textContent ?? "";
   expect(rollup).toContain("1h");
   expect(rollup).toContain("Asia/Kolkata");
+}
+
+/** `F4.365` (plan Q8) — `tariffVerify` puts the Verify badge on the Indicative cost tile, and only there. */
+export function aVerifyFlagBadgesTheCostTile(): void {
+  renderTiles(view({ current: period({ indicativeCost: 1018.4, tariffPerKwh: 10.184, currency: "INR", tariffVerify: true }) }));
+  const cost = tile("Indicative cost");
+  const badge = within(cost).getByText("Verify");
+  expect(badge).toBeInTheDocument();
+  expect(badge.closest("[title]")?.getAttribute("title")).toBe(TARIFF_VERIFY_TITLE);
+  expect(screen.getAllByText("Verify")).toHaveLength(1);
+}
+
+/** No flag, no badge — the official and the flat-parameter cost look as before. */
+export function noVerifyFlagNoBadge(): void {
+  renderTiles(view());
+  expect(screen.queryByText("Verify")).toBeNull();
+}
+
+/** A flag on a tile still loading shows no badge (the value is not drawn yet). */
+export function aLoadingTileShowsNoBadge(): void {
+  renderTiles(view({ current: period({ tariffVerify: true }) }), "loading");
+  expect(screen.queryByText("Verify")).toBeNull();
 }
 
 export function aNullPueIsADashWithTheReason(): void {
