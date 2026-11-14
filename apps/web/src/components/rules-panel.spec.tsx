@@ -147,3 +147,30 @@ export async function theCategoryFilterStillWorks(): Promise<void> {
   await vi.waitFor(() => expect(screen.queryByText("AHU low flow")).toBeNull());
   expect(screen.getByText("Chiller high temperature")).toBeTruthy();
 }
+
+/** With a scope in the URL the list waits for the options (D13): no read, "Loading rules...", then one read with the reconciled filter. */
+export async function theListWaitsForTheOptions(): Promise<void> {
+  vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("no fetch expected"))));
+  const list = vi.spyOn(rulesApi, "fetchRuleList").mockResolvedValue({ items: [thresholdRule] });
+  vi.spyOn(rulesApi, "fetchRuleExecutions").mockResolvedValue({ items: [] });
+  vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(vocabularies);
+  let resolve: (value: typeof OPTIONS) => void = () => undefined;
+  const held = new Promise<typeof OPTIONS>((r) => {
+    resolve = r;
+  });
+  vi.spyOn(filterOptionsApi, "fetchFilterOptions").mockReturnValue(held);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/rules?organizationId=${IDS.ORG_A}&locationId=${IDS.SITE_X}`]}>
+        <RulesPanel />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await screen.findByText("Loading rules...");
+  expect(screen.queryByText("No rules match the filters.")).toBeNull();
+  expect(list).not.toHaveBeenCalled();
+  resolve(OPTIONS);
+  await screen.findByText(thresholdRule.name);
+  expect(list.mock.calls.map((call) => call[0])).toEqual([{ organizationId: IDS.ORG_A }]);
+}

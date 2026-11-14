@@ -7,6 +7,7 @@ import {
   choosingALocationRefetchesWithIt,
   theActiveCountIsOfTheFilteredRules,
   theCategoryFilterStillWorks,
+  theListWaitsForTheOptions,
   theSummaryFallsBackToTheLocation,
   theSummaryNamesTheAssetByCodeAndRtu,
 } from "./rules-panel.spec";
@@ -28,4 +29,5 @@ describe("F4.316 PR 4b — the Rule Engine card names its asset as code · RTU (
   it("refetches with the chosen location (F4.361)", () => choosingALocationRefetchesWithIt());
   it("counts the active rules of the filtered list (F4.361)", () => theActiveCountIsOfTheFilteredRules());
   it("keeps the category filter (F4.361)", () => theCategoryFilterStillWorks());
+  it("waits for the options before reading a scoped list (F4.361)", () => theListWaitsForTheOptions());
 });

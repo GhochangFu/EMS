@@ -11,16 +11,16 @@ import {
 } from "@bms/shared";
 
 import { evaluateRules, fetchRuleExecutions, fetchRuleList } from "../api/rules";
-import { useScopeFilter } from "../hooks/use-scope-filter";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
+import { useScopeFilter } from "../hooks/use-scope-filter";
 import { labelFor, toneClass, toneFor } from "../lib/vocabulary";
 import { EvaluateRefusalNotice } from "./evaluate-refusal-notice";
 import { RuleChannelsEditor } from "./rule-channels-editor";
 import { type RuleLifecycleAction, RuleLifecycleWizard } from "./rules/rule-lifecycle-wizard";
 import { RuleToggleWizard } from "./rules/rule-toggle-wizard";
-import { ScopeFilterBar } from "./scope-filter-bar";
 import { RuleBatchWizard } from "./rules/rule-batch-wizard";
 import { RuleWizard } from "./rules/rule-wizard";
+import { ScopeFilterBar } from "./scope-filter-bar";
 
 type RuleFilter = AutomationRuleCategory | "all";
 type StatusFilter = "all" | "enabled" | "disabled";
@@ -273,7 +273,8 @@ export function RulesPanel() {
               sentence does not reflow the filters. */}
           <EvaluateRefusalNotice error={evaluateM.error} />
 
-          {rulesQ.isLoading ? (
+          {/* `isPending`, not `isLoading`: a list waiting on the options (D13) is loading, not empty. */}
+          {rulesQ.isPending ? (
             <p className="p-4 text-sm text-ink-muted">Loading rules...</p>
           ) : rulesQ.isError ? (
             <p className="p-4 text-sm text-critical-ink">Could not load rules.</p>

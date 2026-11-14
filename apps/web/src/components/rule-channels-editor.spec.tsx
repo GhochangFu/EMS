@@ -11,9 +11,11 @@ import type {
   VocabulariesResponse,
 } from "@bms/shared";
 
+import * as filterOptionsApi from "../api/filter-options";
 import * as api from "../api/notifications";
 import * as rulesApi from "../api/rules";
 import * as vocabApi from "../api/vocabularies";
+import { OPTIONS } from "../lib/scope-filter.spec";
 import { RuleChannelsEditor } from "./rule-channels-editor";
 import { RulesPanel } from "./rules-panel";
 
@@ -393,6 +395,7 @@ const EVALUATE_REFUSAL_BODY = JSON.stringify({
  */
 export async function showsTheEvaluateRefusalWhereTheOperatorPressed(): Promise<void> {
   stubApi();
+  vi.spyOn(filterOptionsApi, "fetchFilterOptions").mockResolvedValue(OPTIONS);
   vi.spyOn(rulesApi, "fetchRuleList").mockResolvedValue({ items: [notifyRule] });
   vi.spyOn(rulesApi, "fetchRuleExecutions").mockResolvedValue({ items: [] });
   vi.spyOn(rulesApi, "fetchRuleBuilderCatalog").mockResolvedValue({ assets: [] });
@@ -430,6 +433,7 @@ export async function showsTheEvaluateRefusalWhereTheOperatorPressed(): Promise<
  */
 async function renderToggleKnob(enabled: boolean): Promise<Element | null> {
   stubApi();
+  vi.spyOn(filterOptionsApi, "fetchFilterOptions").mockResolvedValue(OPTIONS);
   vi.spyOn(rulesApi, "fetchRuleList").mockResolvedValue({ items: [{ ...notifyRule, enabled }] });
   vi.spyOn(rulesApi, "fetchRuleExecutions").mockResolvedValue({ items: [] });
   vi.spyOn(rulesApi, "fetchRuleBuilderCatalog").mockResolvedValue({ assets: [] });
@@ -467,6 +471,7 @@ export async function paintsTheDisabledKnobOnDark(): Promise<void> {
  */
 export async function mountsTheEditorOnlyWhenTheCardAsksForIt(): Promise<void> {
   stubApi();
+  vi.spyOn(filterOptionsApi, "fetchFilterOptions").mockResolvedValue(OPTIONS);
   vi.spyOn(rulesApi, "fetchRuleList").mockResolvedValue({ items: [notifyRule] });
   vi.spyOn(rulesApi, "fetchRuleExecutions").mockResolvedValue({ items: [] });
   vi.spyOn(rulesApi, "fetchRuleBuilderCatalog").mockResolvedValue({ assets: [] });
