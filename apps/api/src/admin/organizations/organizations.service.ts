@@ -9,7 +9,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { locations, organizations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { colourProfileSchema, designSystemSchema } from "@bms/shared";
+import { cardPrimaryMetricSchema, colourProfileSchema, designSystemSchema, energyFeaturesSchema } from "@bms/shared";
 import type {
   AdminOrganizationDto,
   AdminOrganizationSummaryDto,
@@ -168,6 +168,9 @@ export class OrganizationsAdminService {
         name: body.name ?? existing.name,
         currency: body.currency ?? existing.currency,
         timezone: body.timezone ?? existing.timezone,
+        // F4.364 (ADR 0133 decision 6, ruling Q2): global admin only, audited as an update.
+        energyFeatures: body.energyFeatures ?? existing.energyFeatures,
+        cardPrimaryMetric: body.cardPrimaryMetric ?? existing.cardPrimaryMetric,
         meta: body.meta !== undefined ? body.meta : existing.meta,
       })
       .where(eq(organizations.id, id))
@@ -384,6 +387,9 @@ export class OrganizationsAdminService {
       colourProfile: colourProfileSchema.safeParse(row.colourProfile).data ?? null,
       designSystem: designSystemSchema.safeParse(row.designSystem).data ?? null,
       ingestEnabled: row.ingestEnabled,
+      // F4.364 (plan D3): an out-of-list value (a CHECK forbids it) reads as `auto`, never a 500.
+      energyFeatures: energyFeaturesSchema.safeParse(row.energyFeatures).data ?? "auto",
+      cardPrimaryMetric: cardPrimaryMetricSchema.safeParse(row.cardPrimaryMetric).data ?? "auto",
       meta: (row.meta as Record<string, unknown> | null) ?? null,
       createdAt: row.createdAt.toISOString(),
     };

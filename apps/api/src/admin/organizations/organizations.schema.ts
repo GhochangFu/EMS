@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { cardPrimaryMetricSchema, energyFeaturesSchema } from "@bms/shared";
+
 import { isValidTimeZone } from "../../reports/report-period";
 
 /**
@@ -69,6 +71,13 @@ export const updateOrganizationBodySchema = z
     name: z.string().min(2).max(255).optional(),
     currency: currencySchema.optional(),
     timezone: timezoneSchema.optional(),
+    // F4.364 (ADR 0133 decision 6, plan D8): edit only — the create body keeps the column defaults.
+    energyFeatures: energyFeaturesSchema
+      .optional()
+      .describe("Energy features (ADR 0133): auto (shown where a location has kW data in 30 days), on or off."),
+    cardPrimaryMetric: cardPrimaryMetricSchema
+      .optional()
+      .describe("Location card first figure (ADR 0133): auto, kw, health, critical_alarms or none."),
     meta: z.record(z.unknown()).optional(),
   })
   .strict();

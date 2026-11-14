@@ -49,7 +49,7 @@ const ESKOM = {
   name: "Eskom SMOC",
   active: true,
   currency: "ZAR",
-  timezone: "UTC", colourProfile: "nexus" as const, designSystem: null, ingestEnabled: true,
+  timezone: "UTC", colourProfile: "nexus" as const, designSystem: null, ingestEnabled: true, energyFeatures: "auto" as const, cardPrimaryMetric: "auto" as const,
   meta: null,
   createdAt: "2026-01-01T00:00:00.000Z",
 };

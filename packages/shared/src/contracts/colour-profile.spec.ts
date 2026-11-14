@@ -60,6 +60,8 @@ export function runTheOrganizationDtoRequiresAProfile(): void {
     currency: "INR",
     timezone: "UTC",
     ingestEnabled: true,
+    energyFeatures: "auto",
+    cardPrimaryMetric: "auto",
     meta: null,
     createdAt: "2026-11-05T00:00:00.000Z",
     designSystem: null,

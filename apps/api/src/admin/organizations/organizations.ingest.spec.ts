@@ -26,6 +26,8 @@ const ROW = {
   timezone: "UTC",
   colourProfile: "nexus",
   ingestEnabled: true,
+  energyFeatures: "auto",
+  cardPrimaryMetric: "auto",
   createdAt: new Date(0),
 };
 
