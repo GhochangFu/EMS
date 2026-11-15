@@ -366,3 +366,25 @@ PR 4 CPU and memory measurement that settles ruling 5.
     478 MB.
   - `amazon/chronos-bolt-small` at `772f3d25d38aec6d914c8949dab4462e2d46f5d8`,
     licence `apache-2.0` (allowed), weights 191 MB.
+- **Plan PR 4, the ruling 5 measurement (2026-11-15).** One `run-once --force`
+  cycle per container run, the whole process timed (start, model load,
+  eligibility, history, inference, write), with `--memory 2g`,
+  `ML_TORCH_THREADS` equal to the CPU limit, and the integration fixture's
+  class with a full 2,016-hour context. Three runs each, on the owner's
+  laptop (Docker Desktop, amd64, 8 CPUs in the VM). Peak memory is the
+  container's `memory.peak`.
+
+  | Model | `--cpus` | 8 series | 21 series | Peak memory |
+  |---|---|---|---|---|
+  | Chronos-2 | 2 | 26–65 s | 39–66 s | 584 MB |
+  | Chronos-2 | 4 | 30–38 s | 27–28 s | 546 MB |
+  | Chronos-Bolt-small | 2 | 17–32 s | 18–26 s | 488 MB |
+  | Chronos-Bolt-small | 4 | 13–19 s | 17–19 s | 481 MB |
+
+  The slowest cycle (66 s, the first, with a cold cache) is under a quarter
+  of ruling 5's 300 s, and no run came near the 2 GB limit, so **Chronos-2
+  ships** at the revision above. The demo host is arm64 (Graviton), not
+  measured here; plan PR 5 reads its first cycles' `duration_seconds` from
+  the `cycle_summary` line and records them below. The image is 2.83 GB
+  unpacked (amd64), above the 1–2 GB estimate in *Consequences*: PyTorch
+  CPU, transformers and pandas, plus the 478 MB of weights.
