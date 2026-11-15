@@ -37,6 +37,13 @@ coverage
 # An .npmrc under an app directory is copied by the same COPY and may hold a
 # registry auth token.
 **/.npmrc
+# Python build litter (apps/ml, ADR 0135): a local virtualenv holds
+# platform-specific binaries and must never enter an image's build context.
+.venv
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
 # Committed *.example files hold placeholders only and are safe to ship.
 # These negations MUST stay last: Docker is last-match-wins, so a pattern added
 # below them could silently re-admit a real secret.

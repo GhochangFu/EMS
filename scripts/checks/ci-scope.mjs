@@ -34,11 +34,36 @@ export function isDocsOnly(paths) {
   return list.length > 0 && list.every(isDocumentationPath);
 }
 
+// ADR 0135 (E1.1, plan R16): the `ml` job — apps/ml's ruff and pytest against a
+// TimescaleDB service — is path-scoped. It runs when the scorer changes, when
+// anything in packages/db changes (the migrations, the roles and the seed build
+// its database, and its fixture reads seeded organizations and locations; step
+// 0's thresholds live there too), when the dependencies that run those CLIs
+// change, or when this gate itself changes. Every doubt answers "ml", as above.
+// The code review of PR 3 widened R16's list from the drizzle folder alone: a
+// seed change that broke the fixture would otherwise pass and stay unseen.
+const ML_PREFIXES = ['apps/ml/', 'packages/db/'];
+const ML_FILES = new Set([
+  'package.json',
+  'pnpm-lock.yaml',
+  '.github/workflows/ci.yml',
+  'scripts/checks/ci-scope.mjs',
+]);
+
+/** True when the change set is empty or any path can affect apps/ml. */
+export function touchesMl(paths) {
+  const list = (paths || []).map((p) => String(p).trim().replace(/\\/g, '/')).filter((p) => p.length > 0);
+  if (list.length === 0) return true;
+  return list.some((p) => ML_FILES.has(p) || ML_PREFIXES.some((prefix) => p.startsWith(prefix)));
+}
+
 // CLI: node scripts/checks/ci-scope.mjs <base> <head> <two-dot|three-dot>
-// Prints `code=true|false`; the workflow appends it to $GITHUB_OUTPUT.
+// Prints `code=true|false` then `ml=true|false`; the workflow appends both to
+// $GITHUB_OUTPUT.
 if (process.argv[1]?.endsWith('ci-scope.mjs')) {
   const [base, head, mode] = process.argv.slice(2);
   let code = true;
+  let ml = true;
   const zero = /^0+$/;
   if (base && head && !zero.test(base)) {
     try {
@@ -47,13 +72,16 @@ if (process.argv[1]?.endsWith('ci-scope.mjs')) {
       const out = execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', range], { encoding: 'utf8' });
       const paths = out.split('\0');
       code = !isDocsOnly(paths);
-      console.error(`ci-scope: ${paths.filter(Boolean).length} changed path(s) in ${range}; docs only: ${!code}`);
+      ml = touchesMl(paths);
+      console.error(`ci-scope: ${paths.filter(Boolean).length} changed path(s) in ${range}; docs only: ${!code}; ml: ${ml}`);
     } catch (err) {
       console.error(`ci-scope: git diff failed, running the full job (${err instanceof Error ? err.message : String(err)})`);
       code = true;
+      ml = true;
     }
   } else {
     console.error('ci-scope: no usable base commit, running the full job');
   }
   console.log(`code=${code}`);
+  console.log(`ml=${ml}`);
 }
