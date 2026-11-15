@@ -17,9 +17,15 @@ import { type ReadinessRow, renderReport } from "./ml-data-readiness";
  */
 export const READINESS_SQL = `
 WITH point_source AS (
+  -- apps/sim skips assets whose meta.telemetrySource is 'mqtt', so those rows
+  -- can only have come from ingest; a measured point on an ingest-enabled RTU
+  -- is real too.
   SELECT ap.asset_id, ap.point_key,
-         CASE WHEN ap.source_kind = 'measured' AND r.ingest_enabled THEN 'real' ELSE 'simulated' END AS source
+         CASE WHEN a.meta->>'telemetrySource' = 'mqtt'
+                OR (ap.source_kind = 'measured' AND r.ingest_enabled)
+              THEN 'real' ELSE 'simulated' END AS source
   FROM bms.asset_points ap
+  JOIN bms.assets a ON a.id = ap.asset_id
   LEFT JOIN bms.rtus r ON r.id = ap.rtu_id
   WHERE ap.active
 ),

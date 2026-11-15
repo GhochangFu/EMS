@@ -6,8 +6,9 @@
  * output? Pure rules live here so they carry a spec; the database read is in
  * `ml-data-readiness-cli.ts`.
  *
- * "Real" means a point measured through an RTU whose `ingest_enabled` is true —
- * the only path that carries field data (ADR 0007, ADR 0016). Everything else
+ * "Real" means an asset whose `meta.telemetrySource` is `mqtt` (the simulator
+ * skips those), or a point measured through an RTU whose `ingest_enabled` is
+ * true — the paths that carry field data (ADR 0007, ADR 0016). Everything else
  * that has rows was written by `apps/sim`, and a model trained on it learns the
  * simulator's formulas, not the plant.
  */
