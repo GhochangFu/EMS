@@ -58,8 +58,8 @@ def test_the_input_is_not_modified():
     assert raw.tolist() == [[[3.0, 1.0, 2.0]]]
 
 
-def test_this_build_installs_no_model():
-    with pytest.raises(NoModelError, match="no model installed in this build"):
-        load_forecaster("/opt/bms-ml/model")
-    with pytest.raises(NoModelError, match="no model installed in this build"):
-        installed_model("/opt/bms-ml/model")
+def test_a_directory_with_no_baked_model_refuses(tmp_path):
+    with pytest.raises(NoModelError, match="no model installed"):
+        load_forecaster(str(tmp_path))
+    with pytest.raises(NoModelError, match="no model installed"):
+        installed_model(str(tmp_path))
