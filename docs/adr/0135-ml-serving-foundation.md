@@ -343,3 +343,26 @@ PR 4 CPU and memory measurement that settles ruling 5.
     and `colorama 0.4.6` on Windows only) and `ruff 0.17.5` (MIT).
   - Not yet: `torch` and `chronos-forecasting` are plan PR 4's (`pandas`
     arrives with them, transitively); `scikit-learn` is `E1.2`'s.
+- **Plan PR 4, package pins (2026-11-15).** Same uv, same lock.
+  - `torch==2.15.0` from `https://download.pytorch.org/whl/cpu`, an
+    `explicit = true` index used by `torch` alone (`[tool.uv.sources]`): the
+    lock holds `2.15.0+cpu` wheels for `linux x86_64`, `linux aarch64` and
+    Windows, and **no `nvidia-*` or `triton` package** (decision 6;
+    `tests/e1.1-ml-image.test.ts`). Licence: Apache-2.0 with bundled BSD, MIT,
+    BSL-1.0, ISC and Zlib parts. The tool-time dependency hook refused the
+    `explicit = true` line (uv has no flag for it); the owner approved writing
+    that one line from the shell, in chat on 2026-11-15.
+  - `chronos-forecasting==2.3.2` (Apache-2.0), which brings `accelerate
+    1.15.0`, `transformers 5.23.0`, `huggingface-hub 2.4.0`, `safetensors
+    0.8.0`, `tokenizers 0.23.3` and `hf-xet 1.8.0` (Apache-2.0), `einops
+    0.8.2` (MIT) and `pandas 3.1.1` (BSD-3-Clause). Their own dependencies are
+    MIT, BSD, Apache-2.0, ISC or PSF, except `tqdm 4.70.1` (MPL-2.0 and MIT, a
+    file-level licence, used unmodified). The full list with versions is
+    `apps/ml/uv.lock`.
+- **Plan PR 4, model revisions (read from the Hub on 2026-11-15).** Both are
+  ungated, so no token is needed at build time.
+  - `amazon/chronos-2` at `29ec3766d36d6f73f0696f85560a422f50e8498c`,
+    licence `apache-2.0` on the model card (decision 1: allowed), weights
+    478 MB.
+  - `amazon/chronos-bolt-small` at `772f3d25d38aec6d914c8949dab4462e2d46f5d8`,
+    licence `apache-2.0` (allowed), weights 191 MB.
