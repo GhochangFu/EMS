@@ -1,8 +1,8 @@
 # ADR 0096 — start or stop an optional service on the AWS demo host.
 #
 # Actions tab -> "AWS demo services" -> Run workflow -> choose the service
-# (sim: the telemetry simulator; ingest: the MQTT ingest host, Amendment 1)
-# and the action (start | stop | status). bms-ctl remembers the choice, so a
+# (sim: the telemetry simulator; ingest: the MQTT ingest host, Amendment 1;
+# ml: the ML batch scorer, ADR 0135) and the action (start | stop | status). bms-ctl remembers the choice, so a
 # later deploy keeps the service in the state chosen here. Same deploy key and
 # forced command as deploy-aws.yml.
 name: AWS demo services
@@ -14,7 +14,7 @@ on:
         description: "Service"
         required: true
         type: choice
-        options: [sim, ingest]
+        options: [sim, ingest, ml]
         default: sim
       action:
         description: "Action"

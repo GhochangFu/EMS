@@ -18,6 +18,7 @@
 #   rollback              Re-deploy the previous SHA from local images.
 #   sim start|stop|status     Telemetry simulator. The choice survives deploys.
 #   ingest start|stop|status  MQTT ingest host (ADR 0096 Amendment 1). Same.
+#   ml start|stop|status      ML batch scorer (ADR 0135, E1.1). Same.
 #   status                Deployed SHA, containers, health.
 #   logs <service>        Last 200 log lines of one service.
 
@@ -30,10 +31,10 @@ STATE="$BMS_HOME/state"
 ENV_FILE="$BMS_HOME/.env"
 COMPOSE_FILE="$REPO/deploy/aws/docker-compose.yml"
 HEALTH_URL="http://127.0.0.1:5175/health"
-SERVICES="postgres redis minio keycloak keycloak-provision migrate api worker web sim ingest"
+SERVICES="postgres redis minio keycloak keycloak-provision migrate api worker web sim ingest ml"
 # Services that run only when switched on. Each is a compose profile of the
 # same name, and "$STATE/<name>-enabled" records the choice.
-OPTIONAL="sim ingest"
+OPTIONAL="sim ingest ml"
 
 die() { echo "bms-ctl: $*" >&2; exit 1; }
 log() { echo "bms-ctl: $*"; }
@@ -42,7 +43,7 @@ log() { echo "bms-ctl: $*"; }
 [ -f "$ENV_FILE" ] || die "$ENV_FILE is missing — run setup-server.sh"
 mkdir -p "$STATE"
 
-# One change at a time: a deploy and a sim or ingest toggle never interleave.
+# One change at a time: a deploy and a sim, ingest or ml toggle never interleave.
 exec 9>"$STATE/.lock"
 flock -w 900 9 || die "another bms-ctl is running"
 
@@ -75,6 +76,10 @@ images_for() {
   done
   if [ -f "$STATE/ingest-enabled" ]; then
     printf 'ghcr.io/%s/ems-%s:%s\n' "$IMAGE_OWNER" ingest "$tag"
+  fi
+  # ems-ml exists only from ADR 0135 (E1.1 plan PR 4) on: the same rule.
+  if [ -f "$STATE/ml-enabled" ]; then
+    printf 'ghcr.io/%s/ems-%s:%s\n' "$IMAGE_OWNER" ml "$tag"
   fi
 }
 
@@ -122,7 +127,7 @@ prune_images() {
   keep_current="$(current_sha)"
   keep_previous="$(cat "$STATE/previous" 2>/dev/null || true)"
   docker image ls --format '{{.Repository}}:{{.Tag}}' \
-    | grep -E "^ghcr\.io/$IMAGE_OWNER/ems-(api|web|sim|ingest):[0-9a-f]{40}$" \
+    | grep -E "^ghcr\.io/$IMAGE_OWNER/ems-(api|web|sim|ingest|ml):[0-9a-f]{40}$" \
     | while read -r img; do
         case "$img" in
           *":$keep_current" | *":$keep_previous") ;;
@@ -158,13 +163,13 @@ do_deploy() {
     printf '%s' "$token" | DOCKER_CONFIG="$cfg" docker login ghcr.io -u "$IMAGE_OWNER" --password-stdin >/dev/null || rc=$?
     if [ "$rc" -eq 0 ]; then
       log "pulling images for $sha"
-      DOCKER_CONFIG="$cfg" compose "$sha" --profile sim --profile ingest pull --quiet || rc=$?
+      DOCKER_CONFIG="$cfg" compose "$sha" --profile sim --profile ingest --profile ml pull --quiet || rc=$?
     fi
     rm -rf "$cfg"
     [ "$rc" -eq 0 ] || die "GHCR login or pull failed for $sha"
   elif ! have_images "$sha"; then
     log "pulling images for $sha (anonymous)"
-    compose "$sha" --profile sim --profile ingest pull --quiet
+    compose "$sha" --profile sim --profile ingest --profile ml pull --quiet
   fi
 
   log "starting the stack at $sha"
@@ -232,14 +237,14 @@ do_logs() {
   sha="$(current_sha)"
   [ -n "$sha" ] || die "nothing is deployed yet"
   [[ "$service" =~ ^[a-z-]+$ && " $SERVICES " == *" $service "* ]]     || die "unknown service '$service' (one of: $SERVICES)"
-  compose "$sha" --profile sim --profile ingest logs --no-color --tail 200 "$service"
+  compose "$sha" --profile sim --profile ingest --profile ml logs --no-color --tail 200 "$service"
 }
 
 case "${1:-status}" in
   deploy)   [ $# -eq 2 ] || die "usage: bms-ctl deploy <sha>"; do_deploy "$2" ;;
   rollback) [ $# -eq 1 ] || die "usage: bms-ctl rollback"; do_rollback ;;
-  sim|ingest) [ $# -eq 2 ] || die "usage: bms-ctl $1 start|stop|status"; do_optional "$1" "$2" ;;
+  sim|ingest|ml) [ $# -eq 2 ] || die "usage: bms-ctl $1 start|stop|status"; do_optional "$1" "$2" ;;
   status)   [ $# -le 1 ] || die "usage: bms-ctl status"; do_status ;;
   logs)     [ $# -eq 2 ] || die "usage: bms-ctl logs <service>"; do_logs "$2" ;;
-  *)        die "unknown command '$1' (deploy, rollback, sim, ingest, status, logs)" ;;
+  *)        die "unknown command '$1' (deploy, rollback, sim, ingest, ml, status, logs)" ;;
 esac

@@ -77,6 +77,12 @@ jobs:
           - image: ingest
             dockerfile: apps/ingest/Dockerfile
             build-args: ""
+          # ADR 0135 (E1.1 plan PR 5): the batch scorer. The final stage is
+          # `runtime`; the weights are baked here at the pinned revision and
+          # sha256, so the host never reaches the Hugging Face Hub.
+          - image: ml
+            dockerfile: apps/ml/Dockerfile
+            build-args: ""
     steps:
       - name: Validate the SHA
         run: |
