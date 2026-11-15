@@ -85,6 +85,10 @@ function BillBody({ bill, data }: { bill: NonNullable<EnergyBill["bill"]>; data:
   const money = (n: number, digits = 2): string => formatMoney(n, data.currency, digits) ?? number(n);
   const unit = unitLabel(bill.unitType);
   const meters = data.mapping?.billingMeterAssetIds.length ?? 1;
+  // ADR 0134 Amendment 4: a meter that did not report is left out of the bill, so say how many did.
+  // The bill DTO carries the missing meters' ids only, not their names, so the line is a count.
+  const missing = bill.metersMissing.length;
+  const counted = bill.metersBilled.length;
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -93,7 +97,11 @@ function BillBody({ bill, data }: { bill: NonNullable<EnergyBill["bill"]>; data:
           {number(bill.units)} {unit}
         </span>
         {/* ADR 0134 Amendment 3: several meters on one bill — say so, so the units are not read as one meter's. */}
-        {meters > 1 ? <span className="text-sm text-ink-muted">{`${meters} meters`}</span> : null}
+        {missing > 0 ? (
+          <StatusPill label={`${counted} of ${counted + missing} meters reported`} tone="warning" />
+        ) : meters > 1 ? (
+          <span className="text-sm text-ink-muted">{`${meters} meters`}</span>
+        ) : null}
         {data.complete ? null : <StatusPill label="Month to date" tone="info" />}
         {bill.estimated ? <StatusPill label="Estimated" tone="warning" /> : null}
         {data.dataStatus !== null && data.dataStatus !== "official" ? <TariffVerifyBadge /> : null}

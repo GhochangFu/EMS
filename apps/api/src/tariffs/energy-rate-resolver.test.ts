@@ -6,6 +6,7 @@ import {
   assertATwoMonthRangePricesEachMonthAtItsRate,
   assertAnUnpricedMonthWithEnergyFailsClosed,
   assertTheBlendUsesTheFlatRowOutsideMappedMonths,
+  assertTheRateDividesByTheReportedMetersKwh,
   assertAMonthBeforeTheMappingIsFlat,
   assertAnUnmappedAssetDelegates,
   assertAnUnpricedMappedAssetDoesNotFallBack,
@@ -29,4 +30,5 @@ describe("F4.365 — EnergyRateResolver", () => {
   it("prices each month of a two-month range at its own rate", () => assertATwoMonthRangePricesEachMonthAtItsRate());
   it("fails a range closed when a month with energy is unpriced", () => assertAnUnpricedMonthWithEnergyFailsClosed());
   it("blends the flat row outside mapped months", () => assertTheBlendUsesTheFlatRowOutsideMappedMonths());
+  it("F4.374: divides by the kWh of the meters that reported only", () => assertTheRateDividesByTheReportedMetersKwh());
 });

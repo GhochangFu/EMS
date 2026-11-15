@@ -20,8 +20,9 @@ import { pairKey, pickVersion, readVersions, type TariffVersion } from "./tariff
  * `F4.365` (ADR 0134 decisions 4–7, Amendment 1) — the monthly bill of a
  * mapped location, from its billing meters' register deltas. `F4.373`
  * (Amendment 3): a mapping names one or more meters; the billed quantity is
- * the sum of every meter's, and any meter that cannot be billed fails the
- * whole bill with its reason (`billedUnitsOfMeters`).
+ * the sum of every meter's. `F4.374` (Amendment 4): a meter that did not
+ * report is left out and listed in `metersMissing`; the bill fails only when no
+ * meter reported (`billedUnitsOfMeters`).
  *
  * Window is `[month start, min(next month start, now))` in the location's
  * zone; `complete` is false while the month runs. Reads run on the fleet pool
@@ -45,8 +46,11 @@ export type BillComputation =
       units: number;
       unitType: "kwh" | "kvah";
       estimated: boolean;
-      /** The billing meters' kWh over the window, summed — the live rate's divisor (plan Q4, Amendment 3). */
+      /** The reported billing meters' kWh over the window, summed — the live rate's divisor (plan Q4, Amendments 3–4). */
       kwh: number | null;
+      /** Amendment 4: asset ids of the meters billed, and of those left out, in mapping order. */
+      metersBilled: string[];
+      metersMissing: string[];
       bill: ComputedBill;
     }
   | { ok: false; window: BillWindow; complete: boolean; version: TariffVersion | null; reason: EnergyBillReason };
@@ -147,6 +151,8 @@ export class EnergyBillService {
         unitType: version.energyUnit,
         estimated: units.estimated,
         kwh: units.kwh,
+        metersBilled: units.reported.map((at) => meters[at].assetId),
+        metersMissing: units.missing.map((at) => meters[at].assetId),
         bill,
       });
     }

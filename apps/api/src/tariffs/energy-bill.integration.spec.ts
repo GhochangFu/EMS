@@ -32,7 +32,7 @@ export interface BillFixture {
   child: { locationId: string; asset: string };
   /** `F4.373`: two meters, 100 + 150 kWh. */
   pair: { locationId: string; meter: string; meter2: string };
-  /** `F4.373`: two meters, the second with a single sample. */
+  /** `F4.374`: two meters, the first 250 kWh, the second with a single sample (did not report). */
   pairMissing: { locationId: string; meter: string; meter2: string };
   window: { start: Date; end: Date };
 }
@@ -180,7 +180,7 @@ export async function seedBillFixture(superuser: pg.Pool): Promise<BillFixture> 
     [day(4), pair.meter2, "kwh_total", 9000],
     [day(26), pair.meter2, "kwh_total", 9150],
     [day(3), pairMissing.meter, "kwh_total", 200],
-    [day(27), pairMissing.meter, "kwh_total", 300],
+    [day(27), pairMissing.meter, "kwh_total", 450],
     [day(4), pairMissing.meter2, "kwh_total", 9000],
   ]);
   // Org A revises the LT line from THIS month; org B revises it from last month (must never serve A).
@@ -280,16 +280,28 @@ export async function assertAMalformedVersionFailsOnlyItsTarget(fleet: pg.Pool, 
 
 /**
  * `F4.373` (ADR 0134 Amendment 3) — a mapping with two meters bills their sum: 100 + 150 kWh on
- * MSEDCL LT-I(B) = the golden 2546.00, and the live rate's kWh divisor is the sum too. A second
- * meter with one sample fails the whole bill with `meter_no_reading` (never a partial bill).
+ * MSEDCL LT-I(B) = the golden 2546.00, and the live rate's kWh divisor is the sum too.
  */
 export async function assertTwoMetersAddUp(fleet: pg.Pool, fx: BillFixture): Promise<void> {
   const [mapping] = await readMappingsForLocation(fleet, fx.organizationA, fx.pair.locationId);
   assert(mapping?.billingMeterAssetIds.join() === `${fx.pair.meter},${fx.pair.meter2}`, `the primary first: ${JSON.stringify(mapping)}`);
   const bill = await billOf(fleet, fx, fx.pair);
   assert(bill.ok && bill.units === 250 && bill.kwh === 250 && bill.bill.total === 2546, JSON.stringify(bill.ok ? { units: bill.units, total: bill.bill.total } : bill));
-  const missing = await billOf(fleet, fx, fx.pairMissing);
-  assert(!missing.ok && missing.reason === "meter_no_reading", JSON.stringify(missing));
+  assert(bill.ok && bill.metersBilled.join() === `${fx.pair.meter},${fx.pair.meter2}` && bill.metersMissing.length === 0, "both meters billed");
   const assets = await readMappingsForAssets(fleet, [fx.pair.meter2]);
   assert(assets.get(fx.pair.meter2)?.[0]?.billingMeterAssetIds.length === 2, "the asset read carries the meter list too");
+}
+
+/**
+ * `F4.374` (ADR 0134 Amendment 4) — the second meter has one sample (no usable delta): it is left
+ * out, not fatal. The bill is the first meter's 250 kWh = the golden 2546.00, the kWh divisor is
+ * the first meter's alone, and `metersMissing` names the second.
+ */
+export async function assertASilentMeterIsLeftOut(fleet: pg.Pool, fx: BillFixture): Promise<void> {
+  const bill = await billOf(fleet, fx, fx.pairMissing);
+  assert(bill.ok, `one silent meter must not fail the bill: ${JSON.stringify(bill)}`);
+  if (!bill.ok) return;
+  assert(bill.units === 250 && bill.kwh === 250 && bill.bill.total === 2546, JSON.stringify({ units: bill.units, kwh: bill.kwh, total: bill.bill.total }));
+  assert(bill.metersBilled.join() === fx.pairMissing.meter, `metersBilled: ${JSON.stringify(bill.metersBilled)}`);
+  assert(bill.metersMissing.join() === fx.pairMissing.meter2, `metersMissing: ${JSON.stringify(bill.metersMissing)}`);
 }

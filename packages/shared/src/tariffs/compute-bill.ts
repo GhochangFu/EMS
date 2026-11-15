@@ -228,29 +228,49 @@ export interface MeterReading {
 }
 
 export type MetersBilledUnitsResult =
-  | { ok: true; units: number; estimated: boolean; kwh: number | null }
+  | {
+      ok: true;
+      units: number;
+      estimated: boolean;
+      kwh: number | null;
+      /** Indexes into the meters given, in order, of the meters whose units were billed. */
+      reported: number[];
+      /** Indexes of the meters left out: no reading, a falling register, or kVAh unavailable. */
+      missing: number[];
+    }
   | { ok: false; reason: Extract<BilledUnitsResult, { ok: false }>["reason"] };
 
 /**
- * ADR 0134 Amendment 3 — the billed quantity of a mapping with one or more
- * meters: the sum of each meter's {@link billedUnits}. A kVAh meter with no
- * kVAh register is estimated from its OWN kWh ÷ its OWN pf, and the sum is
- * `estimated` when any meter's is. The first meter that cannot be billed fails
- * the whole bill with its reason (fail closed, never a partial bill). `kwh` is
- * the meters' kWh deltas summed — the live rate's divisor — or null when any
- * meter has none. No meter at all is `meter_no_reading`.
+ * ADR 0134 Amendment 3, as amended by Amendment 4 — the billed quantity of a
+ * mapping with one or more meters: the sum of {@link billedUnits} over the
+ * meters that REPORTED. A meter that cannot be billed (`meter_no_reading`,
+ * `meter_decreasing`, `kvah_unavailable`) is left out and listed in `missing`,
+ * never fatal; the bill fails, with the FIRST meter's reason, only when no
+ * meter reported. A kVAh meter with no kVAh register is estimated from its OWN
+ * kWh ÷ its OWN pf, and the sum is `estimated` when any reported meter's is.
+ * `kwh` — the live rate's divisor — is the kWh deltas of the reported meters
+ * that have one, summed, or null when none has. No meter at all is
+ * `meter_no_reading`.
  */
 export function billedUnitsOfMeters(energyUnit: TariffEnergyUnit, meters: readonly MeterReading[]): MetersBilledUnitsResult {
-  if (meters.length === 0) return { ok: false, reason: "meter_no_reading" };
   let units = 0;
   let estimated = false;
-  let kwh: number | null = 0;
-  for (const meter of meters) {
+  let kwh: number | null = null;
+  let firstReason: Extract<BilledUnitsResult, { ok: false }>["reason"] | null = null;
+  const reported: number[] = [];
+  const missing: number[] = [];
+  meters.forEach((meter, index) => {
     const one = billedUnits({ energyUnit, kwh: meter.kwh, kvah: meter.kvah, averagePf: meter.averagePf });
-    if (!one.ok) return { ok: false, reason: one.reason };
+    if (!one.ok) {
+      firstReason ??= one.reason;
+      missing.push(index);
+      return;
+    }
+    reported.push(index);
     units += one.units;
     estimated = estimated || one.estimated;
-    kwh = kwh !== null && meter.kwh.ok ? kwh + meter.kwh.value : null;
-  }
-  return { ok: true, units, estimated, kwh };
+    if (meter.kwh.ok) kwh = (kwh ?? 0) + meter.kwh.value;
+  });
+  if (reported.length === 0) return { ok: false, reason: firstReason ?? "meter_no_reading" };
+  return { ok: true, units, estimated, kwh, reported, missing };
 }

@@ -406,6 +406,11 @@ export async function assertSeveralMetersBillTogether(ctx: RoutesCtx): Promise<v
   const bill = await ctx.bills.bill(fx.viewer, fx.multi, fx.month, fx.now);
   assert(bill.reason === null && bill.bill?.units === 250 && bill.bill.total === 2546, JSON.stringify(bill.bill ?? bill.reason));
   assert(bill.mapping?.billingMeterAssetIds.join() === `${fx.multiMeter1},${fx.multiMeter2}`, JSON.stringify(bill.mapping));
+  // F4.374 (Amendment 4): the DTO names the meters billed; both reported, none missing.
+  assert(
+    bill.bill?.metersBilled.join() === `${fx.multiMeter1},${fx.multiMeter2}` && bill.bill.metersMissing.length === 0,
+    JSON.stringify(bill.bill && { metersBilled: bill.bill.metersBilled, metersMissing: bill.bill.metersMissing }),
+  );
 
   // groupViewer reads MULTI and its first meter, not the second: the one 404.
   const partial = await refusal(ctx.bills.bill(fx.groupViewer, fx.multi, fx.month, fx.now));
