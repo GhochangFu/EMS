@@ -142,7 +142,8 @@ Facts that shape the choice:
      forecasting is **PARTIAL** until about 2026-12-02, when they reach 56 days.
    - **BCPL water flow meters** (21) and **WBLDC cold rooms** (19) have only
      7–8 days. They are **NOT READY** for anything yet. They pass 28 days
-     around 2026-12-06.
+     around 2026-12-06. *WBLDC superseded the same day by Amendment 1: after
+     a history import, the cold rooms are READY for both jobs.*
    - Battery health is **NOT READY** everywhere: no real asset carries battery
      voltage or temperature, and every UPS asset is simulated.
    - RUL is **NOT READY** everywhere: no real asset has a closed work order.
@@ -193,8 +194,70 @@ Facts that shape the choice:
 3. ~~Anomaly stays advisory~~: **ruled 2026-11-15, advisory** (decision 5).
 4. ~~Which asset class first~~: **ruled 2026-11-15 by acceptance, PHEWB
    pumping stations first.** WBLDC cold rooms may join if their MySQL history
-   import (owner, 2026-11-15, option A via the connector) brings them past
-   28 days. The decision 8 run *(recommended)* points to
+   import brings them past 28 days. *They did (Amendment 1): WBLDC cold rooms
+   join PHEWB as a first class.* The decision 8 run *(recommended)* points to
    the **PHEWB pumping stations**, the only real data with enough history. The
    model would be anomaly detection on energy meter and pump signals, with
    Chronos forecasting added as the history grows past 56 days.
+
+## Amendment 1 — WBLDC cold-room history import (2026-11-15)
+
+**What changed.** The owner imported the WBLDC cold rooms' past readings from
+the WBLDC MySQL database into `bms.demosites.co.in` on 2026-11-15. The import
+ran from a session on the owner's own computer, because the connector route
+did not work and cloud sessions cannot reach that MySQL server. It used the
+existing `F1.9` import (`/admin/telemetry/import`) and followed
+[`docs/plans/wbldc-history-import.md`](../plans/wbldc-history-import.md), with
+these owner rulings:
+
+- **Window:** 4 months, from 2026-07-09 00:00 IST to each room's first live
+  day (exclusive), the same window for every room. Old and live data do not
+  overlap.
+- **Volume:** 15-minute averages rather than 1-minute, because the importer
+  caps a file at 20,000 rows. That gave 168,877 rows in 9 files, 0 rejected.
+- **Values:** `attribute_value_clibrated` (raw plus each sensor's offset),
+  which matches the live points' `scale_offset`.
+- **Time:** device time, IST.
+- **Source gaps:** the WBLDC server clock ran on UTC from 2026-07-08 to
+  2026-07-23, so each of those 15 days has a 5.5 h gap. The VAP device has no
+  source data from 2026-06-04 to 2026-10-14.
+- **Dropped:** PORK device rows with a 1970 clock, 5 GOAT dropout minutes,
+  and 252 VAP_Blast_Freezer_2 readings above 50 °C. Same-minute duplicates
+  were averaged.
+
+**Re-run** (read-only API, same rules; hourly coverage measured over each
+point's full span, as the CLI's SQL does):
+[`docs/plans/ml-data-readiness-2026-11-15-wbldc.txt`](../plans/ml-data-readiness-2026-11-15-wbldc.txt).
+
+| WBLDC cold rooms | Days | Hourly coverage |
+|---|---|---|
+| GOAT (4 rooms) | 130 | 96.9 % |
+| CHK (7) | 117 | 85.1 % |
+| PORK (5) | 113 | 81.9 % |
+| VAP_Chiller_Room_3, VAP_Deep_Freezer_2 | 33 | 97.3 % |
+| VAP_Blast_Freezer_2 | 17 | 17.1 % |
+
+As a class this gives 130 days and 84 % coverage, so **forecasting and
+anomaly detection are both READY**. RUL stays NOT READY (no closed work
+orders).
+
+**Decisions:**
+
+1. **WBLDC cold rooms join the PHEWB pumping stations as a first class**
+   (question 4's condition is met). Cold rooms are the first class with enough
+   history for forecasting today. PHEWB reaches 56 days around 2026-12-02.
+2. **Readiness is judged per room, not only per class** *(recommended)*. The
+   class verdict uses the best point's days, so it hides weak rooms. The
+   scorer runs a model on a room only if that room itself meets the
+   threshold. As of this run:
+   - The 16 CHK, PORK and GOAT rooms take both jobs.
+   - The two 33-day VAP rooms take anomaly only, until 56 days
+     (about 2026-12-09).
+   - VAP_Blast_Freezer_2 (17 % coverage) takes neither until live data fills
+     it.
+   The per-room check belongs in `apps/ml`'s input step; the readiness CLI
+   stays a class-level report.
+3. **The imported gaps are data, not anomalies** *(recommended)*. The anomaly
+   baseline is trained only on hours that have data. The 5.5 h July gaps and
+   the VAP gap are skipped rather than filled. Missing data is reported by
+   device health (`F3.16`), not by `ml.anomaly_scores`.

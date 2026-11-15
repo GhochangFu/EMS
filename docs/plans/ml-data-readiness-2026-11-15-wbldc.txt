@@ -1,0 +1,38 @@
+# Re-run for WBLDC cold rooms only, after the MySQL history import (owner, 2026-11-15:
+# 168,877 rows, 15-minute averages from 2026-07-09 00:00 IST to each room's live start).
+# Read-only API on bms.demosites.co.in; same rules as `pnpm --filter @bms/db ml:readiness`.
+# Days: daily buckets over the last 365 days. Coverage: hourly buckets over each point's
+# full span (first to last hour with data), as the CLI's SQL computes it. The earlier run
+# measured coverage over the last 28 days only. Other classes: see ml-data-readiness-2026-11-15.txt.
+
+ML data readiness — generated 2026-11-15T08:22:05.802Z
+Source: telemetry.point_values_1h · real = fed by MQTT ingest (the simulator never writes it)
+
+[REAL] facility / cold_room
+  19 assets · 19 points · 130 days · 84% coverage · 2026-07-09 → 2026-11-15
+  READY     forecasting     130 days, 84% hourly coverage
+  READY     anomaly         130 days, 84% hourly coverage
+  NOT READY rul             0 closed work orders; need 10+ with failure history
+
+Summary: 1 asset class(es) with real data, 0 with simulator data only.
+
+Per room (days with data · hourly coverage over its span · first → last day):
+  CHK_Blast_Freezer_1      117 d ·  85.1 % · 2026-07-09 → 2026-11-15
+  CHK_Blast_Freezer_2      117 d ·  85.1 % · 2026-07-09 → 2026-11-15
+  CHK_By_Product_Chiller   117 d ·  85.1 % · 2026-07-09 → 2026-11-15
+  CHK_Cold_Room            117 d ·  85.1 % · 2026-07-09 → 2026-11-15
+  CHK_Main_Chiller         117 d ·  85.1 % · 2026-07-09 → 2026-11-15
+  CHK_VAP_Pack_Chiller     117 d ·  85.1 % · 2026-07-09 → 2026-11-15
+  CHK_VAP_Raw_Chiller      117 d ·  85.1 % · 2026-07-09 → 2026-11-15
+  GOAT_Blast_Freezer       130 d ·  96.9 % · 2026-07-09 → 2026-11-15
+  GOAT_Chiller_1           130 d ·  96.9 % · 2026-07-09 → 2026-11-15
+  GOAT_Chiller_2           130 d ·  96.9 % · 2026-07-09 → 2026-11-15
+  GOAT_Deep_Freezer        130 d ·  96.9 % · 2026-07-09 → 2026-11-15
+  PORK_Blast_Freezer       113 d ·  81.9 % · 2026-07-09 → 2026-11-15
+  PORK_Cold_Room           113 d ·  81.9 % · 2026-07-09 → 2026-11-15
+  PORK_Main_Chiller        113 d ·  81.9 % · 2026-07-09 → 2026-11-15
+  PORK_VAP_Pack_Chiller    113 d ·  81.9 % · 2026-07-09 → 2026-11-15
+  PORK_VAP_Raw_Chiller     113 d ·  81.9 % · 2026-07-09 → 2026-11-15
+  VAP_Blast_Freezer_2       17 d ·  17.1 % · 2026-10-14 → 2026-11-15
+  VAP_Chiller_Room_3        33 d ·  97.3 % · 2026-10-14 → 2026-11-15
+  VAP_Deep_Freezer_2        33 d ·  97.3 % · 2026-10-14 → 2026-11-15
