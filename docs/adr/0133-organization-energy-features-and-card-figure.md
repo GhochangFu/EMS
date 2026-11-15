@@ -168,3 +168,61 @@ none reopens a decision (Q1 is Amendment 1).
 
 **Measured.** `GET /dashboard/locations`: local median 25 ms → 37 ms (16
 locations, 11 health cards); AWS 186–278 ms per read (25 locations).
+
+## Amendment 2 — The leftover kW readers and editing by an organization admin (2026-11-15)
+
+**Accepted — 2026-11-15** (owner, in chat: "Accepted"). Three owner rulings in chat on 2026-11-15, one at a
+time, for row `F4.375`; each took the recommended option. They close three of
+the four follow-ups named in build note 5 and decision 6. The fourth follow-up,
+the clock-dependent freshness fixtures, is a test fix and needs no decision.
+
+1. **The estate ribbon sums shown locations only** *(owner, 2026-11-15: "Sum
+   shown sites only")*. `DashboardService.kpis()`'s Total load sums the latest
+   `kw` only over assets whose location shows energy (decision 2, same 30-day
+   rule and same organization setting). When no location in the caller's scope
+   shows energy, the Total load tile is not drawn. This replaces the "risk 7"
+   carve-out in build note 5.
+
+2. **A kW-bound widget on a site-layout dashboard is hidden at render** *(owner,
+   2026-11-15: "Hide it at render")*. The stored dashboard is not changed. While
+   the site's energy is not shown, a widget whose every data source reads the
+   `kw` point key (for example the stock "Total load" tile,
+   `sustainability.total` with `pointKey: "kw"`) is not drawn; it returns when
+   energy is shown again. A widget that mixes `kw` with other sources is drawn.
+   The plan states the exact predicate and whether other power keys count. This
+   replaces the "site-layout dashboard keeps its own widget" carve-out in build
+   note 5.
+
+3. **An organization admin may change the two settings for their own
+   organization** *(owner, 2026-11-15: "Yes, own organization")*. Decision 6 is
+   widened: `energyFeatures` and `cardPrimaryMetric` take the appearance gate —
+   `requireMasterDataUser`, then `isOrganizationLevelAdmin` for that
+   organization — and every change is audited. The other organization fields
+   (name, currency, timezone and the rest) stay global-admin only. The plan
+   chooses the route (a dedicated settings route beside `PUT :id/appearance`,
+   or the appearance route widened) and the audit action name.
+
+No migration and no dependency.
+
+**Plan-gate rulings** (owner, in chat, 2026-11-15, one at a time; plan
+[`docs/plans/f4.375-energy-follow-ups.md`](../plans/f4.375-energy-follow-ups.md)
+§2, option A each time). Four of them widen the words above:
+
+- **Q1:** the estate Total load tile shows the server's `totalKw`, not the sum
+  of the last live socket frame, so ruling 1 reaches the screen.
+- **Q5:** the organization page's KPI strip follows ruling 2's predicate — a
+  kW-only strip tile is not drawn when no site of that organization in the
+  caller's scope shows energy.
+- **Q6:** the two settings have one write path,
+  `PUT /admin/organizations/:id/energy-settings` (audited
+  `master.organization.energy_settings.update` with the organization id).
+  `PATCH /admin/organizations/:id` no longer takes them, and the Edit dialog
+  loses its two selects; decision 6's "on the organization's edit form" now
+  means an **Energy settings** row action beside **Appearance**.
+- **Q7:** the estate "Campus load" chart and the organization "Load · last 60
+  minutes" chart are not drawn when no location in their scope shows energy.
+
+The others narrow the plan's own choices: Q2 the predicate counts `kw` only
+(exact key); Q3 widgets are hidden on the site page and its wall, never in the
+Dashboards viewer or the builder; Q4 a hidden tile's gap closes inside a row of
+same-size tiles.
