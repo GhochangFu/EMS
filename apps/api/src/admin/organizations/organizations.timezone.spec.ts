@@ -67,6 +67,8 @@ export function theDtoContractRequiresTimezone(): void {
     colourProfile: "nexus",
     designSystem: null,
     ingestEnabled: true,
+    energyFeatures: "auto",
+    cardPrimaryMetric: "auto",
     meta: null,
     createdAt: new Date(0).toISOString(),
   };

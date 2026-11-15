@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { colourProfileSchema } from "./colour-profile";
 import { designSystemSchema } from "./design-system";
+import { cardPrimaryMetricSchema, energyFeaturesSchema } from "./energy-features";
 import { locationTypeCodeSchema } from "./location-types";
 import { assetRoleCodeSchema } from "./operations";
 import { pointMetadataFieldsSchema, pointMetadataShape } from "./point-metadata";
@@ -34,6 +35,10 @@ export const adminOrganizationDtoSchema = z.object({
   designSystem: designSystemSchema.nullable(),
   /** F4.330 (ADR 0115 decision 1): the organization's ingest switch; `false` = the host skips all its RTUs. */
   ingestEnabled: z.boolean(),
+  /** F4.364 (ADR 0133 decision 1): whether its locations show energy; `auto` follows the data. */
+  energyFeatures: energyFeaturesSchema,
+  /** F4.364 (ADR 0133 decision 3): the location card's first figure, as stored (`auto` included). */
+  cardPrimaryMetric: cardPrimaryMetricSchema,
   meta: z.record(z.unknown()).nullable(),
   createdAt: z.string(),
 });

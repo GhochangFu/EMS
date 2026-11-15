@@ -109,6 +109,8 @@ export async function theOrganizationDialogWritesItsRowAndInheritsThePortal(): P
     colourProfile: "nexus" as const,
     designSystem: null,
     ingestEnabled: true,
+    energyFeatures: "auto" as const,
+    cardPrimaryMetric: "auto" as const,
     meta: null,
     createdAt: new Date(0).toISOString(),
   };
