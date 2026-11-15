@@ -47,3 +47,50 @@ describe("E1.1 readiness thresholds: one source", () => {
     expect(actual).toBe(expected);
   });
 });
+
+/**
+ * "Real" is one rule too: apps/sim skips assets whose meta.telemetrySource is
+ * 'mqtt', and a measured point on an ingest-enabled RTU is field data. If the
+ * scorer's eligibility read used a looser rule than step 0's report, it could
+ * forecast a simulated asset the report calls simulated (ADR 0135 Context).
+ * The CLI module runs `main()` on import, so both files are read as text.
+ */
+const REAL_PREDICATE =
+  "a.meta->>'telemetrySource' = 'mqtt' OR (ap.source_kind = 'measured' AND r.ingest_enabled)";
+
+const normalise = (text: string): string => text.replace(/\s+/g, " ").trim();
+
+function between(source: string, start: string, end: string): string | undefined {
+  const from = source.indexOf(start);
+  if (from < 0) return undefined;
+  const to = source.indexOf(end, from + start.length);
+  return to < 0 ? undefined : source.slice(from + start.length, to);
+}
+
+const cliTs = readFileSync(join(repoRoot, "packages/db/src/ml-data-readiness-cli.ts"), "utf8");
+const sqlPy = readFileSync(join(repoRoot, "apps/ml/src/bms_ml/db/sql.py"), "utf8");
+const readinessSql = between(cliTs, "export const READINESS_SQL = `", "`;");
+const eligibilitySql = between(sqlPy, 'ELIGIBILITY_SQL = """', '"""');
+
+describe("E1.1 real-data predicate: one source", () => {
+  it("the extractors and the normaliser work (positive and negative control)", () => {
+    expect(between("x A = `body` ; y", "A = `", "`")).toBe("body");
+    expect(between("nothing here", "A = `", "`")).toBeUndefined();
+    const sample = "WHERE a.meta->>'telemetrySource' = 'mqtt'\n   OR (ap.source_kind = 'measured'\n AND r.ingest_enabled)";
+    expect(normalise(sample)).toContain(REAL_PREDICATE);
+    expect(normalise(sample.replace(" AND r.ingest_enabled", ""))).not.toContain(REAL_PREDICATE);
+  });
+
+  it("both statements were found", () => {
+    expect(readinessSql, "READINESS_SQL not found in ml-data-readiness-cli.ts").toBeDefined();
+    expect(eligibilitySql, "ELIGIBILITY_SQL not found in apps/ml/src/bms_ml/db/sql.py").toBeDefined();
+  });
+
+  it("step 0's READINESS_SQL carries the predicate", () => {
+    expect(normalise(readinessSql ?? "")).toContain(REAL_PREDICATE);
+  });
+
+  it("the scorer's ELIGIBILITY_SQL carries the same predicate", () => {
+    expect(normalise(eligibilitySql ?? "")).toContain(REAL_PREDICATE);
+  });
+});
