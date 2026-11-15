@@ -564,6 +564,19 @@ jobs:
         working-directory: apps/ml
         run: uv run pytest
 
+      # ADR 0135 decision 7 (plan T4.6): the weights are baked at build time by
+      # exact revision, and nothing is fetched at run time. The runtime stage
+      # is the shipped image; model-test is the same base plus pytest and
+      # tests/, run with no network at all, and ML_REQUIRE_MODEL=1 (set in the
+      # stage) makes a missing bake fail instead of skip.
+      - name: Build the ml image
+        run: |
+          docker build -f apps/ml/Dockerfile --target runtime -t bms-ml:ci .
+          docker build -f apps/ml/Dockerfile --target model-test -t bms-ml:ci-model-test .
+
+      - name: Model tests inside the image, with no network
+        run: docker run --rm --network none bms-ml:ci-model-test
+
   client-dashboard-leak-check:
     name: Client dashboard leak check
     runs-on: ubuntu-latest

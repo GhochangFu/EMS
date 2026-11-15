@@ -255,4 +255,13 @@ describe("ci.yml — the docs-only split and the concurrency rule", () => {
       ml.includes("pnpm db:migrate") && ml.includes("pnpm db:seed"),
     ]).toEqual([true, true, true, true, true, true, true, true]);
   });
+
+  it("builds the ml image and runs its model tests inside it with no network (ADR 0135 decision 7)", () => {
+    const ml = job("ml");
+    expect([
+      ml.includes("docker build -f apps/ml/Dockerfile --target runtime"),
+      ml.includes("docker build -f apps/ml/Dockerfile --target model-test -t bms-ml:ci-model-test ."),
+      /docker run --rm --network none bms-ml:ci-model-test\s*$/m.test(ml),
+    ]).toEqual([true, true, true]);
+  });
 });
