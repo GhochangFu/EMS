@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { expect } from "vitest";
 
-import { assetIdsScopeSql, assetWindowsCteSql, LIVE_ASSETS_CTE_SQL } from "./telemetry-cadence";
+import {
+  ASSET_WINDOW_SECONDS_SQL,
+  assetIdsScopeSql,
+  assetWindowsCteSql,
+  LIVE_ASSETS_CTE_SQL,
+} from "./telemetry-cadence";
 
 /**
  * `F4.350` (ADR 0075 Amendment 3) — the per-asset window against a real database: a device is
@@ -15,9 +20,17 @@ import { assetIdsScopeSql, assetWindowsCteSql, LIVE_ASSETS_CTE_SQL } from "./tel
  * sample's age is exact however long seeding takes. Every read is scoped to the fixture's asset
  * ids, so the fleet's own telemetry cannot move a result.
  *
- * Only the **configured** interval is exercised here. The learned interval reads the
- * `point_values_1h` aggregate, whose completed hours an uncommitted fixture row cannot enter,
- * so that path is NOT covered by a gate here: it was checked by hand on a stub Postgres (PR body) and is owed to the AWS check.
+ * Only the **configured** interval is exercised against fixture telemetry. The learned interval
+ * reads the `point_values_1h` aggregate, which is **real-time** (`materialized_only = false`, as
+ * are `_5m` and `_1m` beneath it) — so an uncommitted fixture row stamped before the current hour
+ * began is visible in the last completed hour whenever it lies above the `_1m` watermark (always
+ * on a fresh test database), and one such sample teaches an
+ * interval-less RTU `3600 / 1` s, a 900 s window. (`F4.375`: an earlier version of this note said
+ * the opposite; that belief is why fixtures stayed interval-less and CI failed across the hour.)
+ * So a case here never leaves an interval-less RTU with a sample that could reach a completed
+ * hour and still expects "not live": C3 and C5 stage the unknown cadence with no sample, or with
+ * one that is live under any window. C7 pins the precedence (configured over learned) on literal
+ * rows, with no fixture and no clock.
  */
 
 const RUN_CODE = `F4350-${randomUUID().slice(0, 8)}`;
@@ -64,12 +77,15 @@ async function seedFixture(client: pg.PoolClient): Promise<Fixture> {
   return { organizationId, locationId, domainCode };
 }
 
-/** An RTU with the given configured interval (null = not configured) and one asset on it with a sample `ageSeconds` old. */
+/**
+ * An RTU with the given configured interval (null = not configured) and one asset on it with a
+ * sample `ageSeconds` old — or no sample at all when `ageSeconds` is null.
+ */
 async function seedDevice(
   client: pg.PoolClient,
   fixture: Fixture,
   expectedIntervalSeconds: number | null,
-  ageSeconds: number,
+  ageSeconds: number | null,
 ): Promise<string> {
   const tag = `${RUN_CODE}-${randomUUID().slice(0, 8)}`;
   const rtu = await client.query<{ id: string }>(
@@ -86,6 +102,7 @@ async function seedDevice(
   );
   const assetId = asset.rows[0]?.id;
   if (!assetId) throw new Error("failed to insert the F4.350 fixture asset");
+  if (ageSeconds === null) return assetId;
   await client.query(
     `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
      VALUES (now() - make_interval(secs => $2), $1, 'kw', 1, 'u')`,
@@ -122,13 +139,21 @@ export async function assertFastDeviceKeepsTheFloor(client: pg.PoolClient): Prom
   expect([live.has(at20), live.has(at30)]).toEqual([true, false]);
 }
 
-/** C3 — an RTU with no interval and no history takes the floor, not a wider window. */
+/**
+ * C3 — an RTU with no interval and no history takes the floor, not a wider window.
+ * `F4.375`: a "not live at 30 s" sample on an interval-less RTU could itself fall in the last
+ * completed hour and widen the window, so the floor is read from `asset_windows` for a device
+ * with no sample at all, and the 20 s device is only asked to be live (true under any window).
+ */
 export async function assertUnknownCadenceTakesTheFloor(client: pg.PoolClient): Promise<void> {
   const fixture = await seedFixture(client);
   const at20 = await seedDevice(client, fixture, null, 20);
-  const at30 = await seedDevice(client, fixture, null, 30);
-  const live = await liveAmong(client, [at20, at30]);
-  expect([live.has(at20), live.has(at30)]).toEqual([true, false]);
+  const silent = await seedDevice(client, fixture, null, null);
+  const live = await liveAmong(client, [at20]);
+  const result = await client.query<{ window_seconds: number }>(
+    `WITH ${assetWindowsCteSql(assetIdsScopeSql([silent]))} SELECT window_seconds FROM asset_windows`,
+  );
+  expect([live.has(at20), result.rows.map((row) => Number(row.window_seconds))]).toEqual([true, [25]]);
 }
 
 /** C4 — the cap: a very slow device is live at 800 s and offline at 1000 s (window 900 s). */
@@ -146,7 +171,8 @@ export async function assertAssetWindowsReportTheWindow(client: pg.PoolClient): 
   const sixty = await seedDevice(client, fixture, 60, 5);
   const fast = await seedDevice(client, fixture, 2, 5);
   const slow = await seedDevice(client, fixture, 86_400, 5);
-  const unknown = await seedDevice(client, fixture, null, 5);
+  // F4.375: no sample, so nothing can enter a completed hour and teach this RTU an interval.
+  const unknown = await seedDevice(client, fixture, null, null);
   const result = await client.query<{ asset_id: string; window_seconds: number }>(
     `WITH ${assetWindowsCteSql(assetIdsScopeSql([sixty, fast, slow, unknown]))} SELECT asset_id, window_seconds FROM asset_windows`,
   );
@@ -160,4 +186,23 @@ export async function assertTheCheckRefusesANonPositiveInterval(client: pg.PoolC
   await client.query("SAVEPOINT before_bad_interval");
   await expect(seedDevice(client, fixture, 0, 5)).rejects.toThrow(/rtus_expected_interval_seconds_check/);
   await client.query("ROLLBACK TO SAVEPOINT before_bad_interval");
+}
+
+/**
+ * C7 — `F4.375` (plan U1): a configured interval beats a learned one. Evaluates
+ * {@link ASSET_WINDOW_SECONDS_SQL} over literal rows — no fixture and no clock — so the fixture
+ * pin in the freshness suites (`expected_interval_seconds = 1`) is guaranteed to hold the floor
+ * however much history the `learned` CTE reads. Configured 1 with learned 3600 → 25; learned 3600
+ * alone → 900; neither → 25. Swapping the `COALESCE` order reddens the first row.
+ */
+export async function assertConfiguredIntervalBeatsLearned(client: pg.PoolClient): Promise<void> {
+  const result = await client.query<{ window_seconds: number }>(
+    `SELECT ${ASSET_WINDOW_SECONDS_SQL} AS window_seconds
+     FROM (VALUES (1, 1::int, 3600::float8), (2, NULL::int, 3600::float8), (3, NULL::int, NULL::float8))
+       AS t(ord, configured, learned)
+     CROSS JOIN LATERAL (SELECT t.configured AS expected_interval_seconds) r
+     CROSS JOIN LATERAL (SELECT t.learned AS interval_seconds) l
+     ORDER BY t.ord`,
+  );
+  expect(result.rows.map((row) => Number(row.window_seconds))).toEqual([25, 900, 25]);
 }

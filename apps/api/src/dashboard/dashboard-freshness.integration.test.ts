@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
+  assertAHistorySampleInTheLastCompletedHourDoesNotWidenTheWindow,
   assertKpisTotalKwUnchanged,
   assertLocationDashboardCodeIsLocationsCode,
   assertLocationKpiCodeIsLocationsCode,
@@ -102,6 +103,15 @@ describe.skipIf(!connectionString)("F3.30 — dashboard freshness counts use the
   it(
     "F3.70 — locationDashboard's code is bms.locations.code, not a copy of the name",
     run(assertLocationDashboardCodeIsLocationsCode),
+    60_000,
+  );
+
+  it(
+    "F4.375 — a history sample in the last completed hour does not widen the window",
+    (ctx) =>
+      inRolledBackTransaction(pool as pg.Pool, (client) =>
+        assertAHistorySampleInTheLastCompletedHourDoesNotWidenTheWindow(client, (reason) => ctx.skip(reason)),
+      ),
     60_000,
   );
 });

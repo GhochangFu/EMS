@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertAssetWindowsReportTheWindow,
+  assertConfiguredIntervalBeatsLearned,
   assertFastDeviceKeepsTheFloor,
   assertSixtySecondDeviceFollowsItsInterval,
   assertTheCapBoundsTheWindow,
@@ -51,4 +52,6 @@ describe.skipIf(!connectionString)("F4.350 — an asset is live inside its own R
   it("asset_windows reports 150, 25, 900 and the floor", run(assertAssetWindowsReportTheWindow), 60_000);
 
   it("the CHECK refuses a zero interval", run(assertTheCheckRefusesANonPositiveInterval), 60_000);
+
+  it("F4.375 — a configured interval beats a learned one", run(assertConfiguredIntervalBeatsLearned), 60_000);
 });

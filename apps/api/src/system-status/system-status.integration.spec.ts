@@ -8,6 +8,10 @@ import type { LivenessResponse, StorageHealth, SystemStatusResponse } from "@bms
 
 import type { QueueHealthService } from "../queue/queue-health.service";
 import type { StorageHealthService } from "../storage/storage-health.service";
+import {
+  FIXTURE_RTU_INTERVAL_SECONDS,
+  HISTORY_SAMPLE_NOT_STAGED,
+} from "../dashboard/dashboard-freshness.integration.spec";
 import { countingDb } from "../testing/counting-db";
 import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
 import { withRollback } from "../testing/with-rollback";
@@ -111,6 +115,9 @@ async function buildScene(tx: Tx): Promise<Scene> {
         code: `F330SS-${run}-S`,
         displayName: `F330SS ${run} simulator RTU`,
         sourceType: "simulator",
+        // F4.375 (plan U1): a configured interval wins over a learned one, so a sample that lands
+        // in the last completed hour cannot widen this RTU's window to 900 s (case 8b).
+        expectedIntervalSeconds: FIXTURE_RTU_INTERVAL_SECONDS,
       },
     ])
     .returning({ id: rtus.id });
@@ -345,8 +352,8 @@ export async function assertAMissingHostMonitorsNothing(db: BmsDb): Promise<void
 
 /**
  * Case 8 — security L1: A (mqtt) fresh 5 s but outside the scope; the scope
- * is [B], and B's only sample is 200 s old, beyond the 150 s reporting
- * window. A must reach neither count: no
+ * is [B], and B's only sample is 200 s old, beyond B's 25 s floor window
+ * (its RTU is pinned at the fixture interval, `F4.375`). A must reach neither count: no
  * mqtt asset is in scope, nothing in scope is fresh, and B alone streams —
  * the positive control that the scoped read ran at all.
  */
@@ -360,6 +367,41 @@ export async function assertOutOfScopeFreshMqttIsNotCounted(db: BmsDb): Promise<
         r.dataQuality.freshAssets === 0 &&
         fieldData(r) === "not_monitored",
       `expected streaming 1, fresh 0, field_data not_monitored; got ${summary(r)}`,
+    );
+  });
+}
+
+/**
+ * Case 8b — `F4.375` (plan U1): case 8's scene with one more sample on B, stamped 30 s before
+ * the current hour began (30 s, not less, so that sample is never itself inside B's 25 s floor
+ * window at the start of an hour). The aggregates are real-time, so above the `_1m` watermark
+ * that uncommitted row enters the last completed hour, and an interval-less simulator RTU would
+ * learn `3600 / 1` s — a 900 s window that makes B fresh. Case 8 failed exactly so whenever its
+ * 200 s sample itself fell before the hour boundary. B's RTU carries a configured interval, which
+ * wins. The positive control first checks the sample reached the 1 h aggregate; when it did not
+ * (the `_1m` watermark is past it), the case calls `skip` with the reason instead of passing.
+ */
+export async function assertAHistorySampleDoesNotWidenTheSimulatorWindow(
+  db: BmsDb,
+  skip: (reason: string) => never,
+): Promise<void> {
+  await withScene(db, async (scene) => {
+    await scene.tx.execute(sql`
+      INSERT INTO telemetry.point_values (time, asset_id, point_key, value)
+      VALUES (date_trunc('hour', now()) - interval '30 seconds', ${scene.b}, 'temp_c', 1)
+    `);
+    const reached = await scene.tx.execute(sql`
+      SELECT max(sample_count)::text AS n FROM telemetry.point_values_1h
+      WHERE asset_id = ${scene.b} AND bucket = date_trunc('hour', now()) - interval '1 hour'
+    `);
+    const n = Number((reached.rows[0] as { n?: string | null } | undefined)?.n ?? 0);
+    if (n < 1) skip(HISTORY_SAMPLE_NOT_STAGED);
+    await addSample(scene, scene.a, 5);
+    await addSample(scene, scene.b, 200);
+    const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.b]);
+    assert(
+      r.dataQuality.streamingAssets === 1 && r.dataQuality.freshAssets === 0,
+      `expected streaming 1, fresh 0 (a history sample must not widen the window); got ${summary(r)}`,
     );
   });
 }
