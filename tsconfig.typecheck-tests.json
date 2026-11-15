@@ -29,6 +29,7 @@
     "tests/e1.1-ml-schema.test.ts",
     "tests/e1.1-ml-schema.integration.test.ts",
     "tests/e1.1-ml-readiness-single-source.test.ts",
+    "tests/e1.1-ml-image.test.ts",
     "tests/f3.16-device-alarms-schema.test.ts",
     "tests/f3.16-device-alarms-schema.integration.test.ts",
     "tests/f4.359-maintenance-windows-schema.test.ts",
