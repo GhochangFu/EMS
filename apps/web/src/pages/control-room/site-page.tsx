@@ -221,7 +221,7 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                   Loading the site view…
                 </p>
               ) : onAssetsTab ? (
-                <SiteAssetsView locationId={site.id} siteName={site.name} />
+                <SiteAssetsView locationId={site.id} siteName={site.name} energyShown={site.energyShown} />
               ) : onTrendsTab ? (
                 <SiteTrendsView locationId={site.id} energyShown={site.energyShown} />
               ) : (
@@ -362,7 +362,7 @@ function SiteViewBody({ view, site, scope, tab, tabParam, role }: SiteViewBodyPr
           siteName={site.name}
         />
       ) : (
-        <GeneratedSiteView locationId={site.id} />
+        <GeneratedSiteView locationId={site.id} energyShown={site.energyShown} />
       )}
     </>
   );

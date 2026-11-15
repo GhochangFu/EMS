@@ -127,3 +127,44 @@ Decision 5 is replaced by:
 
 The other plan-gate rulings (Q2–Q6, owner 2026-11-14) need no amendment; they
 are recorded in the plan's §2 and become build notes when the row closes.
+
+## Build notes
+
+Six plan-gate rulings (owner, in chat, 2026-11-14; plan
+[`docs/plans/f4.364-energy-features.md`](../plans/f4.364-energy-features.md) §2)
+and what the build found. They fill gaps between this ADR's words and the code;
+none reopens a decision (Q1 is Amendment 1).
+
+1. **Whose assets the card's health covers (decision 4, ruling Q3).** The card's
+   `healthScore` is the ADR 0050 score of the location's **own** active assets,
+   not its subtree — one asset set per card. For a leaf location it equals
+   `GET /asset-health/summary?locationId=` (checked on AWS for every card).
+2. **When the health score is read (decision 4, ruling Q6).** Only for locations
+   whose resolved `primaryMetric` is `health`; `null` otherwise. One batch read,
+   `AssetHealthService.scoresByLocation` — four statements whatever the location
+   count (a test holds three locations to the statement count of one), sharing a
+   private `scoreAssets` step with `summary()`; the window is
+   `DEFAULT_HEALTH_WINDOW_MINUTES` (one day), the endpoint's own default.
+3. **"Has energy data" (decision 2, plan D1).** `bool_or(a.active AND newest kw
+   >= now() - 30 days)` inside the existing `kw_by_location` CTE, under the same
+   `$2` asset scope — no new scan. `energyShown` and `healthScore` are therefore
+   scope-relative: a caller who reads only an HVAC group sees that group's answer.
+4. **`kw` honoured when hidden (decision 3, ruling Q5).** Only `auto` reads the
+   energy state; a stored `kw` shows `—` when energy is not shown.
+5. **Other kW readers (ruling Q4).** The "Total load" tiles on the generated site
+   view and Assets & RTUs are not drawn when energy is not shown. Since the AWS
+   check (2026-11-15) both views take the site summary's resolved `energyShown`
+   from the site page, so the tile never flashes while their own read is
+   pending (it did, for a few seconds, on a no-energy site), and an energy site
+   keeps it while a new page or RTU tab loads. The organization accordion header
+   omits its kW part when no shown location has a value. **Not covered:** a site
+   whose view is a site-layout dashboard keeps that dashboard's own "Total load"
+   widget (owner, 2026-11-14: dashboard content is per site and editable), and
+   the estate ribbon (`kpis()`) still sums old kW (risk 7). Both are follow-ups.
+6. **Editing (decision 6, ruling Q2).** The Edit dialog and `PATCH
+   /admin/organizations/:id` only — global admin, audited
+   `master.organization.update` with `organization_id` NULL. The create body is
+   unchanged; an `organization_admin` gets 403.
+
+**Measured.** `GET /dashboard/locations`: local median 25 ms → 37 ms (16
+locations, 11 health cards); AWS 186–278 ms per read (25 locations).

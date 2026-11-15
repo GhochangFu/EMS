@@ -19,6 +19,8 @@ type SiteAssetsViewProps = {
   locationId: string;
   /** The site's own name — the label's `where` for an asset with no RTU (F4.316, ADR 0111). */
   siteName: string;
+  /** `F4.364` — the site summary's resolved `energyShown`; decides the Total load tile. */
+  energyShown: boolean;
 };
 
 type LocationAssetRow = LocationDashboardDto["assets"]["items"][number];
@@ -123,7 +125,7 @@ function formatTime(value: string | null): string {
  * not move — the site page owns them. The one prose change is the Access
  * denied link (OQ8).
  */
-export function SiteAssetsView({ locationId, siteName }: SiteAssetsViewProps) {
+export function SiteAssetsView({ locationId, siteName, energyShown }: SiteAssetsViewProps) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<(typeof pageSizeOptions)[number]>(10);
   const [rtuFilter, setRtuFilter] = useState<string>("all");
@@ -189,8 +191,8 @@ export function SiteAssetsView({ locationId, siteName }: SiteAssetsViewProps) {
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {/* `F4.364` (plan ruling Q4): no Total load tile when the site's energy is not shown. */}
-            {location?.energyShown === false ? null : (
+            {/* `F4.364` Q4: Total load follows the site's `energyShown`, never this view's own pending read. */}
+            {!energyShown ? null : (
               <KpiTile
                 label="Total load"
                 status={status}

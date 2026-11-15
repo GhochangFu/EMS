@@ -11,6 +11,7 @@ import {
   theStripHasThreeEntriesWithTrendsCurrent,
   aNoEnergySiteNamesTheThirdEntryTrends,
   theSectionGetsTheSitesEnergyShown,
+  bothBodiesGetTheSitesEnergyShown,
 } from "./site-page-trends.spec";
 
 /**
@@ -52,5 +53,9 @@ describe("F4.302 the site page's Trends & Energy section", () => {
 
   it("F4.364 T8: the section gets the site's energyShown", async () => {
     await theSectionGetsTheSitesEnergyShown();
+  });
+
+  it("F4.364 T9: the site view and Assets & RTUs get the site's energyShown", async () => {
+    await bothBodiesGetTheSitesEnergyShown();
   });
 });
