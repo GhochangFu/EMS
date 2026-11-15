@@ -28,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.scope.outputs.code }}
+      ml: ${{ steps.scope.outputs.ml }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -459,6 +460,110 @@ jobs:
   # therefore reports in well under a minute instead of being buried behind the
   # full build, and a leak fails on its own line rather than looking like a test
   # failure.
+  # ADR 0135 (E1.1, plan T3.11): apps/ml, the Python batch scorer. Its own job,
+  # so the pnpm pipeline above is untouched (ADR 0135 Dependencies). Path-scoped
+  # (plan R16, scripts/checks/ci-scope.mjs touchesMl): a PR that changes neither
+  # the scorer, a migration, the roles, step 0's thresholds nor this workflow
+  # pays nothing for it, and every doubt runs it.
+  #
+  # The integration suite (apps/ml/tests/integration) refuses to skip under CI
+  # when ML_TEST_DATABASE_URL_* is unset (AGENTS.md §4.6's asymmetric rule), and
+  # refuses any database not named bms_ml_test. The service database is named
+  # that here; the three CLIs build it exactly as build-and-migrate builds bms
+  # (0157 creates the ml schema itself, so the init line stays bms + telemetry).
+  #
+  # uv comes from pipx at the version that wrote apps/ml/uv.lock, not from a
+  # third-party setup action, so no new action is trusted. setup-python is
+  # GitHub's own; UV_PYTHON_DOWNLOADS=never keeps uv on that interpreter.
+  ml:
+    name: ML scorer (apps/ml)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.ml != 'false' }}
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: timescale/timescaledb:2.29.1-pg16
+        env:
+          POSTGRES_DB: bms_ml_test
+          POSTGRES_USER: bms_app
+          POSTGRES_PASSWORD: bms_app_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bms_app -d bms_ml_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://bms_owner:bms_owner_dev@localhost:5432/bms_ml_test
+      DATABASE_URL_SUPERUSER: postgres://bms_app:bms_app_dev@localhost:5432/bms_ml_test
+      BMS_OWNER_PASSWORD: bms_owner_dev
+      BMS_AUTH_PASSWORD: bms_auth_dev
+      BMS_TENANT_PASSWORD: bms_tenant_dev
+      BMS_FLEET_PASSWORD: bms_fleet_dev
+      ML_TEST_DATABASE_URL_SUPERUSER: postgres://bms_app:bms_app_dev@localhost:5432/bms_ml_test
+      ML_TEST_DATABASE_URL_FLEET: postgres://bms_fleet:bms_fleet_dev@localhost:5432/bms_ml_test
+      UV_PYTHON_DOWNLOADS: never
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Initialise database schemas
+        run: |
+          docker exec "${{ job.services.postgres.id }}" \
+            psql -U bms_app -d bms_ml_test \
+            -c "CREATE EXTENSION IF NOT EXISTS timescaledb; CREATE SCHEMA IF NOT EXISTS bms AUTHORIZATION bms_app; CREATE SCHEMA IF NOT EXISTS telemetry AUTHORIZATION bms_app;"
+
+      - name: Provision database roles
+        run: pnpm --filter @bms/db roles
+
+      - name: Migrate
+        run: pnpm db:migrate
+
+      - name: Seed
+        run: pnpm db:seed
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pipx install uv==0.8.13
+
+      - name: Sync the locked environment
+        working-directory: apps/ml
+        run: uv sync --frozen
+
+      - name: Lint
+        working-directory: apps/ml
+        run: uv run ruff check .
+
+      - name: Format check
+        working-directory: apps/ml
+        run: uv run ruff format --check .
+
+      - name: Unit and integration tests
+        working-directory: apps/ml
+        run: uv run pytest
+
   client-dashboard-leak-check:
     name: Client dashboard leak check
     runs-on: ubuntu-latest
