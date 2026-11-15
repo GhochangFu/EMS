@@ -108,7 +108,7 @@ function dashboard(widgets: DashboardWidgetDto[]): DashboardDto {
 
 let fetchSpy: Mock | null = null;
 
-function renderCanvas(dto: DashboardDto, tabKey?: string): ReturnType<typeof render> {
+function renderCanvas(dto: DashboardDto, tabKey?: string, energyShown?: boolean): ReturnType<typeof render> {
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
   vi.stubGlobal("fetch", fetchSpy);
   mocks.io.mockImplementation(() => ({ on: vi.fn(), disconnect: mocks.disconnect }));
@@ -120,7 +120,7 @@ function renderCanvas(dto: DashboardDto, tabKey?: string): ReturnType<typeof ren
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <DashboardLiveCanvas dashboard={dto} tabKey={tabKey} />
+      <DashboardLiveCanvas dashboard={dto} tabKey={tabKey} energyShown={energyShown} />
     </QueryClientProvider>,
   );
 }
@@ -341,4 +341,73 @@ export async function aTrendStripWidgetDrawsOneStripWithItsTabsGroup(): Promise<
   expect(screen.getAllByRole("navigation", { name: "Trend range" })).toHaveLength(1);
   await waitFor(() => expect(mocks.fetchSiteTrendStrip).toHaveBeenCalled());
   expect(mocks.fetchSiteTrendStrip.mock.calls[0]).toEqual(["loc-1", { range: "24h", assetGroupId: GROUP_G }]);
+}
+
+/**
+ * `F4.375` (ADR 0133 Amendment 2 ruling 2, plan U6, D9, D10) — with `energyShown={false}` the
+ * canvas does not draw (or read) a widget whose every binding is `kw`; a mixed widget and an
+ * unbound one stay. The default, and `true`, draw everything.
+ */
+function energyWidgets(): DashboardWidgetDto[] {
+  const kwOnly = { ...widget(true), id: "kw-only", title: "Total load" } as DashboardWidgetDto;
+  const mixed = {
+    ...widget(false),
+    id: "mixed",
+    title: "Load and alarms",
+    gridX: 4,
+    sources: [
+      { id: "source-kw", catalogKey: "sustainability.total", params: { pointKey: "kw" }, sortOrder: 0 },
+      { id: "source-alarms", catalogKey: "alarms.active.count", params: {}, sortOrder: 1 },
+    ],
+  } as DashboardWidgetDto;
+  const unbound = { ...widget(false), id: "unbound", title: "Legend", gridX: 8 } as DashboardWidgetDto;
+  return [kwOnly, mixed, unbound];
+}
+
+function drawnTiles(container: HTMLElement): string[] {
+  return [...container.querySelectorAll("[data-canvas-tile]")].map((el) => el.getAttribute("data-canvas-tile") ?? "");
+}
+
+/** EK1 — energy not shown: the kW-only widget's tile is absent; the mixed and unbound ones are drawn. */
+export async function aKwOnlyWidgetIsNotDrawnWithoutEnergy(): Promise<void> {
+  const { container } = renderCanvas(dashboard(energyWidgets()), undefined, false);
+  expect(await screen.findByText("Load and alarms")).toBeInTheDocument();
+  expect(drawnTiles(container)).toEqual(["mixed", "unbound"]);
+  expect(screen.queryByText("Total load")).toBeNull();
+}
+
+/** EK2 — the default and `energyShown={true}` draw every widget. */
+export async function everyWidgetIsDrawnWithEnergy(energyShown: boolean | undefined): Promise<void> {
+  const { container } = renderCanvas(dashboard(energyWidgets()), undefined, energyShown);
+  expect(await screen.findByText("Total load")).toBeInTheDocument();
+  expect(drawnTiles(container)).toEqual(["kw-only", "mixed", "unbound"]);
+}
+
+/** EK3 — a hidden widget is not read: its `kw` ref is never fetched (the shown twin is L3). */
+export async function aHiddenWidgetIsNotRead(): Promise<void> {
+  renderCanvas(dashboard(energyWidgets()), undefined, false);
+  await screen.findByText("Load and alarms");
+  await waitFor(() => expect(mocks.fetchDashboardCatalogValues).toHaveBeenCalled());
+  expect(mocks.fetchTelemetryRecent).not.toHaveBeenCalledWith(REF, expect.any(String));
+}
+
+/** EK4 — D10: a tab whose every widget is hidden says why, not "This tab has no widgets yet." */
+export async function aTabOfHiddenWidgetsSaysWhy(): Promise<void> {
+  const dto = tabbedDashboard();
+  const kwTile = { ...widget(true), id: "kw-sld", title: "Incomer load", tabId: TAB_SLD } as DashboardWidgetDto;
+  renderCanvas({ ...dto, widgets: [dto.widgets[0] as DashboardWidgetDto, kwTile] }, "sld", false);
+  const line = await screen.findByTestId("site-energy-hidden-tab");
+  expect(line).toHaveAttribute("role", "status");
+  expect(line).toHaveTextContent("No widget on this tab is shown while energy is not shown for this site.");
+  expect(screen.queryByText("This tab has no widgets yet.")).toBeNull();
+}
+
+/** EK5 — D10 on a dashboard with no tabs: the line names the dashboard, not a tab. */
+export async function anUntabbedDashboardOfHiddenWidgetsSaysWhy(): Promise<void> {
+  const kwTile = { ...widget(true), id: "kw-only", title: "Total load" } as DashboardWidgetDto;
+  renderCanvas(dashboard([kwTile]), undefined, false);
+  expect(await screen.findByTestId("site-energy-hidden-tab")).toHaveTextContent(
+    "No widget on this dashboard is shown while energy is not shown for this site.",
+  );
+  expect(screen.queryByText("This dashboard has no widgets yet.")).toBeNull();
 }

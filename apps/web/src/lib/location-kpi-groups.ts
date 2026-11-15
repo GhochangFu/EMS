@@ -62,6 +62,15 @@ export function hasLiveTelemetry(location: LocationKpiSummary): boolean {
   return location.freshAssetCount > 0;
 }
 
+/**
+ * `F4.375` (ADR 0133 Amendment 2 rulings Q5, Q7) — some location shows energy. The organization
+ * page reads it over its own sites to decide whether a kW-only strip tile and the load card are
+ * drawn. `false` for an empty list.
+ */
+export function anyEnergyShown(locations: readonly LocationKpiSummary[]): boolean {
+  return locations.some((location) => location.energyShown);
+}
+
 /** `F4.259` — the sites split into live and not live, each list keeping the input order. */
 export function splitByLiveTelemetry(locations: readonly LocationKpiSummary[]): {
   live: LocationKpiSummary[];

@@ -38,6 +38,7 @@ import {
   theWallHidesTheTitle,
   theWallKeepsTheTabStrip,
   theWallShowsNoOpenLink,
+  theViewHandsEnergyShownToTheCanvas,
 } from "./site-dashboard-view.spec";
 
 /**
@@ -200,5 +201,19 @@ describe("F4.305 SiteDashboardView draws no fixed trend strip", () => {
 
   it("U5c the wall renders the strip widget", async () => {
     await theWallRendersTheStripWidget();
+  });
+});
+
+describe("F4.375 — the site view hands energyShown to the canvas (ADR 0133 Amendment 2)", () => {
+  afterEach(() => {
+    cleanupView();
+  });
+
+  it("hands energyShown false", async () => {
+    await theViewHandsEnergyShownToTheCanvas(false);
+  });
+
+  it("hands energyShown true", async () => {
+    await theViewHandsEnergyShownToTheCanvas(true);
   });
 });

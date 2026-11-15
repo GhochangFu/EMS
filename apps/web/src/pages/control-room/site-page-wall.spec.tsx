@@ -29,8 +29,24 @@ import * as copilotApi from "../../api/copilot";
  * `ScopedDashboardsList` are stand-ins too. `fetch` is a spy and `cleanupWall` fails the case if anything reached it.
  */
 vi.mock("../../components/control-room/site-dashboard-view", () => ({
-  SiteDashboardView: ({ slug, tab, wall }: { slug: string; tab: string | undefined; wall?: boolean }) => (
-    <div data-testid="site-dashboard-view" data-slug={slug} data-tab={tab ?? ""} data-wall={String(wall ?? false)} />
+  SiteDashboardView: ({
+    slug,
+    tab,
+    wall,
+    energyShown,
+  }: {
+    slug: string;
+    tab: string | undefined;
+    wall?: boolean;
+    energyShown?: boolean;
+  }) => (
+    <div
+      data-testid="site-dashboard-view"
+      data-slug={slug}
+      data-tab={tab ?? ""}
+      data-wall={String(wall ?? false)}
+      data-energy-shown={String(energyShown)}
+    />
   ),
 }));
 
@@ -119,14 +135,14 @@ function tabbedDashboard(): DashboardDto {
 let fetchSpy: Mock | null = null;
 let dashboardRead: Mock | null = null;
 
-function stubReads(view: ResolvedSiteControlRoomViewDto): void {
+function stubReads(view: ResolvedSiteControlRoomViewDto, siteRow: LocationKpiSummary = SITE): void {
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
   vi.stubGlobal("fetch", fetchSpy);
   useAuthStore.setState({ scope: { kind: "global", locations: [], assetGroups: [], assetIds: [] } });
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([]);
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue({ assetDomains: [] } as never);
-  vi.spyOn(locationsApi, "fetchLocationKpis").mockResolvedValue({ items: [SITE] });
+  vi.spyOn(locationsApi, "fetchLocationKpis").mockResolvedValue({ items: [siteRow] });
   vi.spyOn(controlRoomApi, "fetchResolvedSiteControlRoomView").mockResolvedValue(view);
   dashboardRead = vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(tabbedDashboard()) as unknown as Mock;
 }
@@ -281,4 +297,19 @@ export async function theWallRotatesByTheDashboardsTabOrder(): Promise<void> {
     vi.advanceTimersByTime(15_000);
   });
   expect(screen.getByTestId("location").textContent).toBe(`${SITE_PATH}/sld?wall=1&every=15`);
+}
+
+/**
+ * P10 — `F4.375` (ADR 0133 Amendment 2 ruling 2, plan U6): the page hands the site summary's
+ * `energyShown` to the view, on the wall and in the page body; the view's canvas drops kW-only
+ * widgets on `false`. Each branch is run with both values, so a hardcoded one fails.
+ */
+export async function thePageHandsTheSitesEnergyShown(wall: boolean, energyShown: boolean): Promise<void> {
+  stubReads(DASHBOARD_VIEW, site({ id: LOCATION_ID, name: "Lotapata", organization: ORG_A, energyShown }));
+  renderPage(wall ? `${SITE_PATH}/sld?wall=1&every=30` : `${SITE_PATH}/sld`);
+  const view = await screen.findByTestId("site-dashboard-view");
+  expect({ wall: view.dataset.wall, energyShown: view.dataset.energyShown }).toEqual({
+    wall: String(wall),
+    energyShown: String(energyShown),
+  });
 }

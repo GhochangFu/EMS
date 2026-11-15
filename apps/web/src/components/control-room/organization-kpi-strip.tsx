@@ -8,6 +8,7 @@ import {
   resetOrganizationLayout,
 } from "../../api/control-room";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { isKwOnly, stripTilePointKeys } from "../../lib/energy-widgets";
 import { STRIP_REFETCH_MS, STRIP_STALE_MS, stripTileProps } from "../../lib/organization-strip";
 import { KpiTile } from "../kpi-tile";
 import { WidgetIconGlyph } from "../widget-icon";
@@ -42,6 +43,8 @@ function useOrganizationStripView(organizationId: string) {
   return { viewQ, now };
 }
 
+type OrganizationKpiStripTilesProps = OrganizationKpiStripProps & { energyShown: boolean };
+
 /**
  * `F4.317` task 5.3 (ADR 0112 decisions 2 to 6) — the organization page's KPI strip: the tiles of
  * `GET /control-room/organizations/:id/view`, drawn on the estate grid, with a "Layout: …" status
@@ -52,8 +55,12 @@ function useOrganizationStripView(organizationId: string) {
  *
  * A failed read draws one line and leaves the rest of the page standing: the strip is a summary,
  * not a gate. Tile rules live in `lib/organization-strip.ts`.
+ *
+ * `F4.375` (ADR 0133 Amendment 2 ruling Q5) — `energyShown` is "some site of this organization in
+ * the caller's scope shows energy" (`anyEnergyShown`). When `false`, a kW-only tile (every source
+ * on point key `kw`, `lib/energy-widgets.ts`) is not drawn; the auto-flow grid reflows by itself.
  */
-export function OrganizationKpiStrip({ organizationId }: OrganizationKpiStripProps) {
+export function OrganizationKpiStrip({ organizationId, energyShown }: OrganizationKpiStripTilesProps) {
   const queryClient = useQueryClient();
   const key = organizationStripKey(organizationId);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -89,6 +96,7 @@ export function OrganizationKpiStrip({ organizationId }: OrganizationKpiStripPro
   // the page puts it (below the alarms), whatever grid row the layout gives them.
   const tiles = view.tiles
     .filter((tile) => tile.widgetType !== "chart")
+    .filter((tile) => energyShown || !isKwOnly(stripTilePointKeys(tile)))
     .sort((a, b) => a.gridY - b.gridY || a.gridX - b.gridX);
   const busy = make.isPending || reset.isPending;
   // Age is the browser's own clock from when the answer arrived, never the server's `resolvedAt`

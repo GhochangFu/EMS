@@ -676,3 +676,35 @@ export function cleanupPage(): void {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 }
+
+/**
+ * `F4.375` (ADR 0133 Amendment 2 rulings Q5, Q7) — the organization page reads "energy shown"
+ * from its own sites: with none showing energy it draws no "Load · last 60 minutes" card and its
+ * strip drops a kW-only tile; one shown site keeps both (the positive twin).
+ */
+export async function theLoadCardAndKwTileFollowTheSites(anyShown: boolean): Promise<void> {
+  stubReads([
+    site({ id: "a1", name: "Alpha One", organization: ORG_A, energyShown: false }),
+    site({ id: "a2", name: "Alpha Two", organization: ORG_A, energyShown: anyShown }),
+  ]);
+  vi.spyOn(controlRoomApi, "fetchOrganizationControlRoomView").mockImplementation(async (organizationId) => {
+    const base = stripView(organizationId);
+    const first = base.tiles[0] as OrganizationControlRoomViewDto["tiles"][number];
+    const totalLoad = {
+      ...first,
+      key: "total-load-tile",
+      title: "Total load",
+      gridX: 3,
+      sources: [{ ...first.sources[0], catalogKey: "sustainability.total", pointKey: "kw" }],
+    } as OrganizationControlRoomViewDto["tiles"][number];
+    return { ...base, tiles: [...base.tiles, totalLoad] };
+  });
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  expect(await screen.findByTestId("org-strip-tile-sites-live-tile")).toBeInTheDocument();
+  expect({
+    totalLoad: screen.queryByTestId("org-strip-tile-total-load-tile") !== null,
+    loadCard: screen.queryByTestId("trend-panel") !== null,
+  }).toEqual({ totalLoad: anyShown, loadCard: anyShown });
+}

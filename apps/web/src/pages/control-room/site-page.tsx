@@ -180,6 +180,7 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
           locationId={wallSite.id}
           tab={tabParam}
           wall
+          energyShown={wallSite.energyShown}
         />
       </WallFrame>
     );
@@ -360,6 +361,7 @@ function SiteViewBody({ view, site, scope, tab, tabParam, role }: SiteViewBodyPr
           tab={tabParam}
           role={role}
           siteName={site.name}
+          energyShown={site.energyShown}
         />
       ) : (
         <GeneratedSiteView locationId={site.id} energyShown={site.energyShown} />

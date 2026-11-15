@@ -19,6 +19,7 @@ import {
   aTabbedDashboardRendersOnlyTheSelectedTabsWidgets,
   aTabbedDashboardShowsTheStripWithTheFirstTabSelected,
   aWidgetRendersViaTheLiveCanvas,
+  theViewerStillDrawsAKwOnlyWidget,
   anUntabbedDashboardShowsNoStrip,
   assetGroupAdminSeesTheEditLink,
   switchingTabsSwapsTheWidgets,
@@ -46,6 +47,10 @@ describe("F3.1d dashboard viewer page", () => {
 
   it("DV1 renders a widget via DashboardLiveCanvas", async () => {
     await aWidgetRendersViaTheLiveCanvas();
+  });
+
+  it("F4.375 Q3 — the viewer still draws a kW-only widget", async () => {
+    await theViewerStillDrawsAKwOnlyWidget();
   });
 
   it("F3.73 D11 shows the tab strip with the first tab by sortOrder selected", async () => {

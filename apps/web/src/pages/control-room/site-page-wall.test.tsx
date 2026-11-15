@@ -14,6 +14,7 @@ import {
   wallOnTheAssetsTabRendersTheNormalPage,
   wallOnTheTrendsSectionRendersTheNormalPage,
   theWallLinkOmitsTheTrendsSegment,
+  thePageHandsTheSitesEnergyShown,
 } from "./site-page-wall.spec";
 
 /**
@@ -67,5 +68,27 @@ describe("F3.77 the site page's wall mode (plan D8)", () => {
 
   it("P11 omits the trends segment from the Wall link", async () => {
     await theWallLinkOmitsTheTrendsSegment();
+  });
+});
+
+describe("F4.375 — the site page hands energyShown to the site layout (ADR 0133 Amendment 2)", () => {
+  afterEach(() => {
+    cleanupWall();
+  });
+
+  it("P10 the wall hands energyShown false", async () => {
+    await thePageHandsTheSitesEnergyShown(true, false);
+  });
+
+  it("P10 the wall hands energyShown true", async () => {
+    await thePageHandsTheSitesEnergyShown(true, true);
+  });
+
+  it("P10 the page body hands energyShown false", async () => {
+    await thePageHandsTheSitesEnergyShown(false, false);
+  });
+
+  it("P10 the page body hands energyShown true", async () => {
+    await thePageHandsTheSitesEnergyShown(false, true);
   });
 });

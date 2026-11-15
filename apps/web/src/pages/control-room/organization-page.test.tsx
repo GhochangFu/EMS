@@ -30,6 +30,7 @@ import {
   theSiteMapReadsByTheOrganizationId,
   theSiteMapSitsAboveTheSiteCards,
   theCostChartSitsBetweenTheAlarmsAndAssetHealth,
+  theLoadCardAndKwTileFollowTheSites,
 } from "./organization-page.spec";
 
 // `F4.337` — the daily cost chart draws through ECharts, which jsdom cannot (no canvas).
@@ -151,5 +152,19 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
 
   it("P9 hands the map the site read's dataUpdatedAt (F4.260)", async () => {
     await theMapIsSyncedToTheSiteRead();
+  });
+});
+
+describe("F4.375 — the organization page follows its sites' energy (ADR 0133 Amendment 2 Q5, Q7)", () => {
+  afterEach(() => {
+    cleanupPage();
+  });
+
+  it("no site shows energy: no load card, no kW-only strip tile", async () => {
+    await theLoadCardAndKwTileFollowTheSites(false);
+  });
+
+  it("one site shows energy: the load card and the kW tile stay", async () => {
+    await theLoadCardAndKwTileFollowTheSites(true);
   });
 });

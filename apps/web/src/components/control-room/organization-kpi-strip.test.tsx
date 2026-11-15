@@ -15,6 +15,7 @@ import {
   makeSendsThePutAndRereads,
   theStripDrawsFourteenTilesInOrder,
   tileTwoReadsLiveOverTotal,
+  aKwOnlyStripTileFollowsEnergyShown,
 } from "./organization-kpi-strip.spec";
 
 // `F4.332` — the daily cost chart draws through ECharts, which jsdom cannot (no canvas).
@@ -68,4 +69,18 @@ describe("F4.317 OrganizationKpiStrip", () => {
   it("draws the daily energy cost chart and its total in the chart block", () => theChartBlockDrawsTheDailyCostChart());
   it("F4.337 the strip draws no chart", () => theStripDrawsNoChart());
   it("F4.337 a strip with no chart draws no chart block", () => aStripWithNoChartDrawsNoBlock());
+});
+
+describe("F4.375 — the strip drops a kW-only tile when no site shows energy (ADR 0133 Amendment 2 Q5)", () => {
+  afterEach(() => {
+    cleanupStrip();
+  });
+
+  it("does not draw Total load without energy; Energy today stays", async () => {
+    await aKwOnlyStripTileFollowsEnergyShown(false);
+  });
+
+  it("draws both with energy", async () => {
+    await aKwOnlyStripTileFollowsEnergyShown(true);
+  });
 });

@@ -13,6 +13,11 @@ import {
   theCanvasReportsTheNewerSample,
   theCanvasReportsTheSiteWidgetsRead,
   aTrendStripWidgetDrawsOneStripWithItsTabsGroup,
+  aHiddenWidgetIsNotRead,
+  aKwOnlyWidgetIsNotDrawnWithoutEnergy,
+  aTabOfHiddenWidgetsSaysWhy,
+  anUntabbedDashboardOfHiddenWidgetsSaysWhy,
+  everyWidgetIsDrawnWithEnergy,
 } from "./dashboard-live-canvas.spec";
 
 /**
@@ -68,5 +73,29 @@ describe("F3.69 U1 DashboardLiveCanvas", () => {
 
   it("L10 draws one trend strip for a trend_strip widget, reading its tab's group (F4.305)", async () => {
     await aTrendStripWidgetDrawsOneStripWithItsTabsGroup();
+  });
+
+  it("EK1 does not draw a kW-only widget when energy is not shown; mixed and unbound stay (F4.375)", async () => {
+    await aKwOnlyWidgetIsNotDrawnWithoutEnergy();
+  });
+
+  it("EK2 draws every widget by default (F4.375)", async () => {
+    await everyWidgetIsDrawnWithEnergy(undefined);
+  });
+
+  it("EK2 draws every widget when energy is shown (F4.375)", async () => {
+    await everyWidgetIsDrawnWithEnergy(true);
+  });
+
+  it("EK3 does not read a hidden widget's kw ref (F4.375 D9)", async () => {
+    await aHiddenWidgetIsNotRead();
+  });
+
+  it("EK4 says why a tab of hidden widgets is empty (F4.375 D10)", async () => {
+    await aTabOfHiddenWidgetsSaysWhy();
+  });
+
+  it("EK5 names the dashboard when it has no tabs (F4.375 D10)", async () => {
+    await anUntabbedDashboardOfHiddenWidgetsSaysWhy();
   });
 });
