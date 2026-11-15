@@ -49,7 +49,12 @@ jobs:
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
+    # ADR 0135 (E1.1 plan PR 5): the ml image (PyTorch plus weights from the
+    # Hugging Face Hub) gets a longer limit, and its failure never blocks or
+    # cancels the deploy of the others. A host with ml enabled then fails its
+    # own pull loudly; a host with ml off is not affected.
+    timeout-minutes: ${{ matrix.image == 'ml' && 45 || 30 }}
+    continue-on-error: ${{ matrix.image == 'ml' }}
     permissions:
       contents: read
       packages: write
@@ -103,7 +108,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # A dispatch to an older SHA (the rollback route) checks out a tree that may
+      # predate an image: such a SHA has no apps/ml/Dockerfile, and its compose
+      # file no ml service, so that leg builds nothing.
       - name: Build and push
+        if: hashFiles(matrix.dockerfile) != ''
         uses: docker/build-push-action@v6
         with:
           context: .

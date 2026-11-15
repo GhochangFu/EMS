@@ -854,6 +854,8 @@ services:
     networks:
       - ml
     mem_limit: 2g
+    memswap_limit: 2g
+    pids_limit: 256
     cpus: 2
     # The scorer writes nothing to disk: a read-only root, /tmp in memory, no
     # Linux capabilities and no privilege gain (security review, plan PR 4).

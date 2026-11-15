@@ -17,8 +17,9 @@ import { describe, expect, it } from "vitest";
  *   Hugging Face token.
  *
  * Both compose files carry the service (the AWS one since plan PR 5, pulled
- * from GHCR instead of built), and `bms-ctl`, its ssh forced command and the
- * two AWS workflows agree on the optional services. The reader helpers are copied from
+ * from GHCR instead of built), and `bms-ctl` and the two AWS workflows agree on
+ * the optional services. (The ssh forced command needs no list of its own: it
+ * hands words to `bms-ctl`, which validates them.) The reader helpers are copied from
  * `tests/f4.61-ingest-network-isolation.test.ts` (file-local there); there is no
  * YAML parser in the repo, so a form the reader cannot read throws.
  */
@@ -172,8 +173,11 @@ describe.each(FILES)("E1.1 the `ml` compose service ($file)", ({ file, fleetUrl 
     expect(ml).not.toMatch(/HF_TOKEN|HUGGING_FACE_HUB_TOKEN/);
   });
 
-  it("has a memory and a CPU limit", () => {
-    expect(ml).toMatch(/^ {4}mem_limit: \S+/m);
+  it("has a memory limit with no swap beyond it, a process limit and a CPU limit", () => {
+    const mem = /^ {4}mem_limit: (\S+)/m.exec(ml)?.[1];
+    expect(mem).toBeDefined();
+    expect(/^ {4}memswap_limit: (\S+)/m.exec(ml)?.[1]).toBe(mem);
+    expect(ml).toMatch(/^ {4}pids_limit: \d+/m);
     expect(ml).toMatch(/^ {4}cpus: \S+/m);
   });
 
@@ -209,15 +213,28 @@ describe("E1.1 bms-ctl and the AWS workflows know the ml service", () => {
     expect(ctl).toMatch(/unknown command '\$1' \(deploy, rollback, sim, ingest, ml, status, logs\)/);
   });
 
-  it("pulls, keeps and prunes the ems-ml image like the other optional images", () => {
+  it("keeps and prunes the ems-ml image like the other optional images", () => {
     expect(ctl).toMatch(/ems-\(api\|web\|sim\|ingest\|ml\)/);
     expect(ctl).toMatch(/"\$STATE\/ml-enabled"/);
-    const pulls = ctl.split("\n").filter((line) => /\bpull --quiet\b/.test(line));
-    expect(pulls.length).toBe(2);
-    for (const line of pulls) expect(line).toMatch(/--profile ml\b/);
   });
 
-  it("builds ems-ml for arm64 in the deploy workflow", () => {
-    expect(deploy).toMatch(/- image: ml\n\s+dockerfile: apps\/ml\/Dockerfile\n/);
+  it("pulls ems-ml (2.8 GB) only while ml is enabled: compose() adds that profile, the pull lines never name it", () => {
+    const pulls = ctl.split("\n").filter((line) => /\bpull --quiet\b/.test(line));
+    expect(pulls.length).toBe(2);
+    for (const line of pulls) expect(line).not.toMatch(/--profile ml\b/);
+    expect(ctl).toMatch(/for opt in \$OPTIONAL; do\n\s+\[ -f "\$STATE\/\$opt-enabled" \] && profiles\+=\(--profile "\$opt"\)/);
+  });
+
+  it("`ml start` without the image records the choice and leaves the pull to the next deploy", () => {
+    expect(ctl).toMatch(/if \[ "\$svc" = ml \] && ! docker image inspect "ghcr\.io\/\$IMAGE_OWNER\/ems-ml:\$sha"/);
+  });
+
+  it("builds ems-ml in the arm64 build job, and its failure never blocks the deploy", () => {
+    const build = deploy.slice(deploy.indexOf("\n  build:\n"), deploy.indexOf("\n  deploy:\n"));
+    expect(build).toMatch(/runs-on: ubuntu-24\.04-arm/);
+    expect(build).toMatch(/- image: ml\n\s+dockerfile: apps\/ml\/Dockerfile\n/);
+    expect(build).toMatch(/continue-on-error: \$\{\{ matrix\.image == 'ml' \}\}/);
+    // A rollback dispatch to a SHA before the image existed builds nothing for it.
+    expect(build).toMatch(/if: hashFiles\(matrix\.dockerfile\) != ''/);
   });
 });

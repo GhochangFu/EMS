@@ -361,9 +361,10 @@ services:
   # enables it and the choice survives deploys. It joins the internal `ml`
   # network alone (shared with postgres alone, so no outbound call), publishes
   # no port, writes nothing to disk, and connects as bms_fleet. Limits: one of
-  # the host's two vCPUs and 1 GiB (Amendment 2 ruling 1). Measured on the
-  # owner's laptop: a 21-series cycle took 146 s at one CPU, peak 485 MB under
-  # a 1 GiB limit; the cycle timeout is 900 s.
+  # the host's two vCPUs and 1 GiB with no swap beyond it (ADR 0135 Amendment 2
+  # ruling 1). Measured on the owner's laptop: a 21-series cycle took 80–149 s
+  # at one CPU, peak 522 MB under a 1 GiB limit (ADR 0135 build record); the
+  # cycle timeout is 900 s.
   ml:
     profiles: ["ml"]
     image: ghcr.io/${IMAGE_OWNER:?}/ems-ml:${IMAGE_TAG:?}
@@ -375,6 +376,8 @@ services:
     networks:
       - ml
     mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 256
     cpus: 1
     read_only: true
     tmpfs:

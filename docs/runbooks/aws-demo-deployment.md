@@ -27,9 +27,13 @@ Use the GitHub Actions tab for these:
 
 - **Deploy again, or deploy an older `main` commit (rollback):** "Deploy to AWS
   demo" → Run workflow → enter the SHA, or leave it empty for the latest.
-- **Start or stop the simulator or the ingest host:** "AWS demo services" →
-  Run workflow → choose `sim` or `ingest`, then `start`, `stop` or `status`.
-  The choice survives later deploys.
+- **Start or stop the simulator, the ingest host or the ML scorer:** "AWS demo
+  services" → Run workflow → choose `sim`, `ingest` or `ml`, then `start`,
+  `stop` or `status`. The choice survives later deploys. A deploy pulls the
+  `ems-ml` image (2.8 GB) only while `ml` is on, so the first `ml start` only
+  records the choice: run "Deploy to AWS demo" once to pull and start it (see
+  [`apps/ml/README.md`](../../apps/ml/README.md)). Stop `ml` before a rollback
+  to a commit from before ADR 0135's plan PR 5.
 
 On the host, as the administrator:
 
@@ -51,6 +55,10 @@ sudo bms-ctl sim start
 
 ```bash
 sudo bms-ctl ingest status
+```
+
+```bash
+sudo bms-ctl ml status
 ```
 
 ## Logins

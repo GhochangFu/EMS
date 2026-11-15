@@ -163,13 +163,15 @@ do_deploy() {
     printf '%s' "$token" | DOCKER_CONFIG="$cfg" docker login ghcr.io -u "$IMAGE_OWNER" --password-stdin >/dev/null || rc=$?
     if [ "$rc" -eq 0 ]; then
       log "pulling images for $sha"
-      DOCKER_CONFIG="$cfg" compose "$sha" --profile sim --profile ingest --profile ml pull --quiet || rc=$?
+      # ems-ml (2.8 GB) is pulled only while ml is enabled: compose() adds the
+      # profile of every enabled optional service.
+      DOCKER_CONFIG="$cfg" compose "$sha" --profile sim --profile ingest pull --quiet || rc=$?
     fi
     rm -rf "$cfg"
     [ "$rc" -eq 0 ] || die "GHCR login or pull failed for $sha"
   elif ! have_images "$sha"; then
     log "pulling images for $sha (anonymous)"
-    compose "$sha" --profile sim --profile ingest --profile ml pull --quiet
+    compose "$sha" --profile sim --profile ingest pull --quiet
   fi
 
   log "starting the stack at $sha"
@@ -203,6 +205,15 @@ do_optional() {
     start)
       if [ "$svc" = ingest ]; then
         [ -n "$(env_value MQTT_USERNAME)" ] && [ -n "$(env_value MQTT_PASSWORD)" ]           || die "set MQTT_USERNAME and MQTT_PASSWORD in $ENV_FILE first"
+      fi
+      # A deploy pulls ems-ml only while ml is enabled, and the package may be
+      # private, so the image is usually not here yet: record the choice and
+      # let the next deploy (it has the GHCR token) pull and start it.
+      if [ "$svc" = ml ] && ! docker image inspect "ghcr.io/$IMAGE_OWNER/ems-ml:$sha" >/dev/null 2>&1; then
+        touch "$STATE/ml-enabled"
+        log "ml enabled; ems-ml:$sha is not on this host yet, so run the deploy workflow once:"
+        log "it pulls the image and starts ml (Actions -> Deploy to AWS demo -> Run workflow)"
+        return 0
       fi
       touch "$STATE/$svc-enabled"
       compose "$sha" up -d "$svc"
