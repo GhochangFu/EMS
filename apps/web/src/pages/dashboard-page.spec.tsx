@@ -57,6 +57,7 @@ function asUser(role: UserRole): AuthUser {
 function kpis(pueEstimate: number | null, overrides: Partial<DashboardKpis> = {}): DashboardKpis {
   return {
     totalKw: 1447.3,
+    energyShown: true,
     sitesOnline: 9,
     sitesTotal: 9,
     alarmsOpen: 0,
@@ -86,7 +87,8 @@ function stubDashboard(
     kpiQuery: { data: kpis(pueEstimate, overrides), isLoading: false, isError: false },
     trendQuery: { data: { points: [] }, isLoading: false, isError: false },
     stale,
-    displayTotalKw: 1447.3,
+    // F4.375 (plan Q1): the hook's figure is the server's `totalKw`, so the stub mirrors it.
+    displayTotalKw: overrides.totalKw !== undefined ? overrides.totalKw : 1447.3,
     chartPoints: [],
   } as unknown as ReturnType<typeof executiveDashboard.useExecutiveDashboard>);
   vi.spyOn(locationsApi, "fetchLocationKpis").mockResolvedValue({ items: locations });
@@ -243,7 +245,7 @@ export async function aNullLoadPriorRendersTheFixedHint(): Promise<void> {
   renderPage();
 
   const tile = tileLabelled("Total load");
-  expect(await within(tile).findByText("Sum of latest kW per asset")).toBeInTheDocument();
+  expect(await within(tile).findByText("Latest kW at sites showing energy")).toBeInTheDocument();
 }
 
 /** OQ5: with no alarm delta the Open alarms hint reads "Active — not yet cleared". */
@@ -491,4 +493,92 @@ export async function theOfflineDevicesTileHidesAtZeroMonitored(): Promise<void>
   // The footer reads the same `["system","status"]` query: once it shows the verdict, the body has landed.
   await screen.findByText("All systems operational");
   expect(screen.queryByText("Offline devices")).toBeNull();
+}
+
+/**
+ * `F4.375` (ADR 0133 Amendment 2 ruling 1, plan U4, Q7 and D7) — the estate ribbon follows the
+ * server's `energyShown`: no Total load tile and no Campus load card when nothing in scope shows
+ * energy, the grid narrowing with the tile count; a shown estate with no `kw` value reads `—`.
+ */
+
+/** The grid the KPI tiles sit in, found from a tile that is always drawn. */
+function kpiGrid(): HTMLElement {
+  const grid = tileLabelled("Sites online").parentElement;
+  expect(grid).toBeTruthy();
+  return grid as HTMLElement;
+}
+
+/** P1 — energy not shown: no Total load tile, three tiles, a three-column grid. */
+export async function noEnergyHidesTheTotalLoadTile(): Promise<void> {
+  stubDashboard(1.42, false, { energyShown: false, totalKw: null });
+  renderPage();
+
+  await screen.findByText("Sites online");
+  expect(screen.queryByText("Total load")).toBeNull();
+  expect(kpiGrid().children).toHaveLength(3);
+  expect(kpiGrid().className).toContain("lg:grid-cols-3");
+}
+
+/** P2 — energy shown but no `kw` value: the tile is drawn and reads the dash, never `0`. */
+export async function shownWithoutAValueReadsTheDash(): Promise<void> {
+  stubDashboard(1.42, false, { energyShown: true, totalKw: null });
+  renderPage();
+
+  const tile = tileLabelled("Total load");
+  expect(within(tile).getByText("—")).toBeInTheDocument();
+  expect(within(tile).queryByText("0")).toBeNull();
+}
+
+/** P3 — energy shown with a value: the tile and its figure, four tiles (the positive twin of P1). */
+export async function shownDrawsTheTotalLoadTile(): Promise<void> {
+  stubDashboard(1.42, false, { energyShown: true, totalKw: 42 });
+  renderPage();
+
+  const tile = tileLabelled("Total load");
+  expect(within(tile).getByText("42")).toBeInTheDocument();
+  expect(kpiGrid().className).toContain("lg:grid-cols-4");
+}
+
+/** P4 — energy not shown, devices tile drawn: four tiles, a four-column grid. */
+export async function noEnergyWithTheDevicesTileIsFourColumns(): Promise<void> {
+  stubDashboard(1.42, false, { energyShown: false, totalKw: null });
+  vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue({
+    ...OPERATIONAL,
+    devices: { monitored: 5, offline: 2 },
+  });
+  renderPage();
+
+  await screen.findByText("Offline devices");
+  expect(screen.queryByText("Total load")).toBeNull();
+  expect(kpiGrid().children).toHaveLength(4);
+  expect(kpiGrid().className).toContain("lg:grid-cols-4");
+}
+
+/** P5 (Q7) — the Campus load card follows the same flag: absent when hidden, present when shown. */
+export async function theCampusLoadCardFollowsTheFlag(shown: boolean): Promise<void> {
+  stubDashboard(1.42, false, { energyShown: shown, totalKw: shown ? 42 : null });
+  renderPage();
+
+  await screen.findByText("Sites online");
+  if (shown) {
+    expect(screen.getByText("Campus load · last 60 minutes")).toBeInTheDocument();
+  } else {
+    expect(screen.queryByText("Campus load · last 60 minutes")).toBeNull();
+  }
+}
+
+/** P6 (D7) — the KPI read has not answered yet: the Total load tile is drawn in its loading state. */
+export async function aPendingReadDrawsTheTileLoading(): Promise<void> {
+  stubDashboard(1.42);
+  vi.spyOn(executiveDashboard, "useExecutiveDashboard").mockReturnValue({
+    kpiQuery: { data: undefined, isLoading: true, isError: false },
+    trendQuery: { data: { points: [] }, isLoading: false, isError: false },
+    stale: false,
+    displayTotalKw: null,
+    chartPoints: [],
+  } as unknown as ReturnType<typeof executiveDashboard.useExecutiveDashboard>);
+  renderPage();
+
+  const tile = tileLabelled("Total load");
+  expect(tile.querySelector(".animate-pulse")).not.toBeNull();
 }

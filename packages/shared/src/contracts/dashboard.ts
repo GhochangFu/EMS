@@ -134,7 +134,15 @@ export const telemetryReadingSchema = z.object({
 
 /** Snapshot for Executive Dashboard KPI row (`GET /api/v1/dashboard/kpis`). */
 export const dashboardKpisSchema = z.object({
-  totalKw: z.number(),
+  /**
+   * `F4.375` (ADR 0133 Amendment 2 ruling 1, plan D1) — the summed latest `kw` over the in-scope
+   * assets at active locations whose energy is shown (decision 2's rule, the cards' own). `null`
+   * when no location in scope shows energy, and `null` (never `0`) when one does but no shown
+   * asset has a `kw` value.
+   */
+  totalKw: z.number().nullable(),
+  /** `F4.375` — at least one location in the caller's scope shows energy; the Total load tile is drawn only then. */
+  energyShown: z.boolean(),
   sitesOnline: z.number(),
   sitesTotal: z.number(),
   alarmsOpen: z.number(),

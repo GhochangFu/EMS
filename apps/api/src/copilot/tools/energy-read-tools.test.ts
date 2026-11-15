@@ -11,7 +11,7 @@ import {
   assertReportPreviewRefusesLocationIdBesideLocationIds,
   assertReportPreviewWithoutSitesNeverAsksTheLocationService,
   assertReportPreviewDescriptionNamesLocationIds,
-  assertDashboardKpisReturnsTheContractPerOrganizationAndNamesTheSocketCaveat,
+  assertDashboardKpisReturnsTheContractPerOrganizationAndNamesTheNullTotal,
   assertEnergySummaryDefaultsTheWindowAndRefusesAnotherGrammar,
   assertEveryEnergyToolReadsASubtreeWhenGivenALocation,
   assertEveryEnergyToolRefusesAnOwnKeyOrganizationAndReadsAnAllowedOne,
@@ -37,7 +37,7 @@ describe("F4.275 — the copilot's energy and portfolio read tools", () => {
   it("readPerOrganization caps the items across organizations and flags truncated", assertReadPerOrganizationCapsItemsAndFlagsTruncated);
   it("resampleSeries never upsamples and cuts 10,080 points to 24 contiguous buckets", assertResampleSeriesBoundsTheBucketCount);
   it("every energy tool refuses an own-key organization and reads an allowed one with its assets", assertEveryEnergyToolRefusesAnOwnKeyOrganizationAndReadsAnAllowedOne);
-  it("get_dashboard_kpis reads the contract per organization and its description names the socket", assertDashboardKpisReturnsTheContractPerOrganizationAndNamesTheSocketCaveat);
+  it("get_dashboard_kpis reads the contract per organization and its description says total kW can be null (F4.375)", assertDashboardKpisReturnsTheContractPerOrganizationAndNamesTheNullTotal);
   it("get_energy_summary defaults to 24h and refuses another window grammar", assertEnergySummaryDefaultsTheWindowAndRefusesAnotherGrammar);
   it("get_load_trend resamples to 24 buckets with stats over the full series, and refuses 0 or 169 hours", assertLoadTrendIsResampledAndBoundedWithStats);
   it("get_energy_source_mix resamples, averages every point, and shares the item room", assertSourceMixIsResampledWithAverageKwPerSource);

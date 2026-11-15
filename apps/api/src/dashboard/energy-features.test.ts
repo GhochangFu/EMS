@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runAnUnknownValueActsAsAuto,
+  runIsEnergyShownTable,
   runTheCardSettingTable,
   runTheEnergySettingTable,
   runTheTotalKw,
@@ -28,5 +29,11 @@ describe("F4.364 — resolveLocationEnergy (ADR 0133 decisions 2–4)", () => {
 
   it("R5 — an unknown stored value acts as auto", () => {
     runAnUnknownValueActsAsAuto();
+  });
+});
+
+describe("F4.375 — isEnergyShown, the one rule (plan D2)", () => {
+  it("R6 — on / off / auto × energy data; an unknown value acts as auto", () => {
+    runIsEnergyShownTable();
   });
 });

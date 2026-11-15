@@ -4,7 +4,7 @@ import {
   Injectable,
 } from "@nestjs/common";
 import type { Pool } from "pg";
-import type { EnergyCentreSummary, LocationDashboardDto, LocationKpiSummary } from "@bms/shared";
+import type { DashboardKpis, EnergyCentreSummary, LocationDashboardDto, LocationKpiSummary } from "@bms/shared";
 
 import { alarmVisibleToSql } from "../alarms/alarm-scope";
 import { DEFAULT_HEALTH_WINDOW_MINUTES } from "../asset-health/asset-health.schema";
@@ -22,6 +22,7 @@ import { assetWindowsCteSql, LIVE_ASSETS_CTE_SQL, FRESHNESS_FLOOR_SECONDS } from
 import { telemetryFreshnessAt } from "../telemetry/telemetry-freshness";
 import * as energyCentre from "./energy-centre";
 import { ENERGY_DATA_WINDOW_DAYS, resolveLocationEnergy } from "./energy-features";
+import { readEstateEnergy } from "./estate-energy";
 import { emptyKpiPrior, priorInstant, readKpiPrior, type KpiPrior } from "./kpi-prior";
 
 type LocationDashboardAssetRow = LocationDashboardDto["assets"]["items"][number];
@@ -520,17 +521,15 @@ export class DashboardService {
    * so the estate tile agrees with its location cards ("4 / 17" read 16
    * cards). Like the cards, an inactive location is not a site. The
    * organization strip's `sites.live.count` is the same rule.
+   *
+   * `F4.375` (ADR 0133 Amendment 2 ruling 1) — `totalKw` sums the latest `kw`
+   * only over in-scope assets at active locations whose energy is shown, and
+   * `energyShown` says whether any location in scope shows energy
+   * (`readEstateEnergy`, the cards' own rule and population). `totalKw` is
+   * `null` when none does, and when no shown asset has a value; the prior sums
+   * the same locations (plan D4). An empty scope shows nothing (D5).
    */
-  async kpis(assetIds?: string[] | null): Promise<{
-    totalKw: number;
-    sitesOnline: number;
-    sitesTotal: number;
-    alarmsOpen: number;
-    alarmsCritical: number;
-    pueEstimate: number | null;
-    asOf: string;
-    prior: KpiPrior;
-  }> {
+  async kpis(assetIds?: string[] | null): Promise<DashboardKpis> {
     // Captured once so every return site's `asOf`/`prior.asOf` pair reports the
     // same instant — two `new Date()` calls a query apart would let `prior`
     // drift 24 h behind a slightly different `asOf` than the one shipped.
@@ -539,7 +538,8 @@ export class DashboardService {
     const emptyPrior = (): KpiPrior => emptyKpiPrior(prior);
     if (assetIds && assetIds.length === 0) {
       return {
-        totalKw: 0,
+        totalKw: null,
+        energyShown: false,
         sitesOnline: 0,
         sitesTotal: 0,
         alarmsOpen: 0,
@@ -550,19 +550,12 @@ export class DashboardService {
       };
     }
     const r = await this.pool.query<{
-      total_kw: string;
       sites_online: string;
       sites_total: string;
       alarms_open: string;
       alarms_critical: string;
     }>(`
-      WITH kw_latest AS (
-        SELECT DISTINCT ON (asset_id) asset_id, time AS kw_time, value AS kw
-        FROM telemetry.point_values
-        WHERE point_key = 'kw' AND ($1::uuid[] IS NULL OR asset_id = ANY($1::uuid[]))
-        ORDER BY asset_id, time DESC
-      ),
-      ${LIVE_ASSETS_CTE_SQL},
+      WITH ${LIVE_ASSETS_CTE_SQL},
       -- F4.317 (ADR 0112 decision 7): a site is an ACTIVE location, not a site_name --
       -- the cards' l.active = true and sites.live.count's l.active. The alarm
       -- counts read no location either.
@@ -572,9 +565,6 @@ export class DashboardService {
         WHERE ($1::uuid[] IS NULL OR a.id = ANY($1::uuid[]))
       )
       SELECT
-        -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
-        (SELECT COALESCE(SUM(k.kw), 0) FROM kw_latest k
-          INNER JOIN bms.assets a ON a.id = k.asset_id)::float8 AS total_kw,
         (SELECT COUNT(DISTINCT s.location_id)::int FROM live k
           JOIN site_locations s ON s.id = k.asset_id) AS sites_online,
         (SELECT COUNT(DISTINCT location_id)::int FROM site_locations) AS sites_total,
@@ -589,7 +579,8 @@ export class DashboardService {
     const row = r.rows[0];
     if (!row) {
       return {
-        totalKw: 0,
+        totalKw: null,
+        energyShown: false,
         sitesOnline: 0,
         sitesTotal: 0,
         alarmsOpen: 0,
@@ -599,22 +590,25 @@ export class DashboardService {
         prior: emptyPrior(),
       };
     }
-    const totalKw = Number(row.total_kw);
+    // F4.375: the Total load and its flag — shown locations only, the cards' rule.
+    const energy = await readEstateEnergy(this.pool, assetIds ?? null);
     return {
-      totalKw,
+      totalKw: energy.totalKw,
+      energyShown: energy.energyShown,
       sitesOnline: Number(row.sites_online),
       sitesTotal: Number(row.sites_total),
       alarmsOpen: Number(row.alarms_open),
       alarmsCritical: Number(row.alarms_critical),
       // A second query rather than a join into the CTE above: the PUE read pairs
       // two point keys per asset and drops the unpaired ones, which is a
-      // different shape from `kw_latest`'s per-asset sum and would obscure both.
-      // Same pool, same `$1` scope; unlike `kw_latest` it has a 900 s freshness
+      // different shape from `readEstateEnergy`'s per-asset sum and would obscure both.
+      // Same pool, same `$1` scope; unlike the estate kW read it has a 900 s freshness
       // bound (`PUE_LATEST_MAX_AGE_SECONDS`, the ruling of 2026-09-06).
       pueEstimate: await latestPueRatio(this.pool, assetIds ?? null),
       asOf: now.toISOString(),
       // ADR 0074 decision 5 / OQ2: the same three reads at `asOf − 24 h`.
-      prior: await readKpiPrior(this.pool, assetIds ?? null, prior),
+      // F4.375 (plan D4): the prior sums the locations shown now.
+      prior: await readKpiPrior(this.pool, assetIds ?? null, prior, energy.shownLocationIds),
     };
   }
 

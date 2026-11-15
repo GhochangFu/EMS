@@ -13,13 +13,12 @@ import { formatDelta } from "./widget-value";
  * does not exist — and each tile then falls back to the fixed line it carried
  * before `F3.28`.
  *
- * **Total load compares the server with the server** (plan decision 5). The
- * tile *displays* the live socket sum (`displayTotalKw` in
- * `use-executive-dashboard.ts`), but the delta is `kpi.totalKw` against
- * `kpi.prior.totalKw`: both halves come from the same SQL definition at two
- * instants, whereas the socket sum has no prior to compare with. The printed
- * value and the delta can therefore disagree by up to one `kpiQuery` refetch
- * interval.
+ * **Total load compares the server with the server** (plan decision 5): the
+ * delta is `kpi.totalKw` against `kpi.prior.totalKw`, both halves from the same
+ * SQL definition at two instants. Since `F4.375` (ADR 0133 Amendment 2, plan
+ * Q1) the tile also *displays* `kpi.totalKw` — the sum over the locations whose
+ * energy is shown — so the printed value and its delta share one definition.
+ * A `null` live total (nothing shown, or no `kw` value) gives the fixed line.
  *
  * **Open alarms** (owner ruling OQ5): the delta goes in `hint`; "N critical"
  * moves to `KpiTile`'s `note` line; with no delta the hint reads
@@ -34,7 +33,7 @@ import { formatDelta } from "./widget-value";
  */
 
 /** Total load's line when there is no computable delta. */
-export const TOTAL_LOAD_FALLBACK_HINT = "Sum of latest kW per asset";
+export const TOTAL_LOAD_FALLBACK_HINT = "Latest kW at sites showing energy";
 
 /** Open alarms' line when there is no computable delta (OQ5). The dash is U+2014. */
 export const OPEN_ALARMS_FALLBACK_HINT = "Active — not yet cleared";

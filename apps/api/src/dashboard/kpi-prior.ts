@@ -21,7 +21,10 @@ import { latestPueRatio } from "../telemetry/pue-ratio";
  *   freshness bound, because the live `kw_latest` has none; a bound on one side
  *   only would make the delta compare two different populations. For the same
  *   reason both sums join `bms.assets` after the `DISTINCT ON` (`F4.159`): a
- *   `kw` sample whose asset row is gone counts in neither.
+ *   `kw` sample whose asset row is gone counts in neither. Since `F4.375`
+ *   (ADR 0133 Amendment 2, plan D4) the live sum covers only the locations that
+ *   show energy, so the prior takes the same location list — the locations
+ *   shown **now** — and an empty list is `null`.
  * - **`alarmsOpen`** — alarms that were open at `at`: raised by then and not yet
  *   cleared by then. Scoped through the same `INNER JOIN` on the `$1`-scoped
  *   assets as the live count.
@@ -55,10 +58,11 @@ export async function readKpiPrior(
   pool: Pick<Pool, "query">,
   assetIds: string[] | null,
   at: Date,
+  shownLocationIds: readonly string[] | null,
 ): Promise<KpiPrior> {
   return {
     asOf: at.toISOString(),
-    totalKw: await priorTotalKw(pool, assetIds, at),
+    totalKw: await priorTotalKw(pool, assetIds, at, shownLocationIds),
     alarmsOpen: await priorOpenAlarms(pool, assetIds, at),
     pueEstimate: await latestPueRatio(pool, assetIds, at),
   };
@@ -79,13 +83,18 @@ export function priorInstant(asOf: Date): Date {
  * a site that was not reporting yesterday has no yesterday to compare with, and
  * a `0` would render as an infinite rise. An empty scope is `null` for the same
  * reason; `null` scope is every asset.
+ *
+ * `locationIds` (`F4.375`, plan D4) narrows the sum to assets at those
+ * locations — the live sum's shown locations. `null` adds no location bound; an
+ * empty list is `null` without a query.
  */
 export async function priorTotalKw(
   pool: Pick<Pool, "query">,
   assetIds: string[] | null,
   at: Date,
+  locationIds: readonly string[] | null,
 ): Promise<number | null> {
-  if (assetIds && assetIds.length === 0) {
+  if ((assetIds && assetIds.length === 0) || (locationIds && locationIds.length === 0)) {
     return null;
   }
   const r = await pool.query<{ assets: number; total_kw: string | null }>(
@@ -101,8 +110,9 @@ export async function priorTotalKw(
     -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
     SELECT COUNT(*)::int AS assets, SUM(k.kw)::float8 AS total_kw
     FROM kw_prior k INNER JOIN bms.assets a ON a.id = k.asset_id
+    WHERE ($3::uuid[] IS NULL OR a.location_id = ANY($3::uuid[]))
     `,
-    [assetIds ?? null, at.toISOString()],
+    [assetIds ?? null, at.toISOString(), locationIds === null ? null : [...locationIds]],
   );
   const row = r.rows[0];
   if (!row || Number(row.assets) === 0 || row.total_kw === null) {

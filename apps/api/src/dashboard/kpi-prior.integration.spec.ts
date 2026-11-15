@@ -143,7 +143,7 @@ export async function assertPriorKwIsTheLatestSampleAtOrBeforeAt(client: pg.Pool
   await insertSample(client, s.assetId, "kw", s.at, 6);
   await insertSample(client, s.assetId, "kw", hoursBefore(s.now, 23), 7);
   await insertSample(client, s.assetId, "kw", s.now, 9);
-  const got = await priorTotalKw(client, [s.assetId], s.at);
+  const got = await priorTotalKw(client, [s.assetId], s.at, null);
   assert(got === 6, `expected the sample stamped exactly at T − 24 h (6), got ${JSON.stringify(got)}`);
 }
 
@@ -152,7 +152,7 @@ export async function assertPriorKwIsNullWithNoSampleAtOrBeforeAt(client: pg.Poo
   const s = await seedAsset(client);
   await insertSample(client, s.assetId, "kw", hoursBefore(s.now, 23), 7);
   await insertSample(client, s.assetId, "kw", s.now, 9);
-  const got = await priorTotalKw(client, [s.assetId], s.at);
+  const got = await priorTotalKw(client, [s.assetId], s.at, null);
   assert(got === null, `no kw at or before T − 24 h must be null, got ${JSON.stringify(got)}`);
 }
 
@@ -262,7 +262,7 @@ export async function assertComposedPriorReadsEveryFieldAtAt(client: pg.PoolClie
   await insertSample(client, s.assetId, "site_kw", fresh, 90);
   await insertSample(client, s.assetId, "it_kw", fresh, 30);
   await insertAlarm(client, s, hoursBefore(s.now, 30), hoursBefore(s.now, 23));
-  const got = await readKpiPrior(client, [s.assetId], s.at);
+  const got = await readKpiPrior(client, [s.assetId], s.at, null);
   const expected = { asOf: s.at.toISOString(), totalKw: 6, alarmsOpen: 1, pueEstimate: 2 };
   assert(
     JSON.stringify(got) === JSON.stringify(expected),
@@ -381,7 +381,7 @@ export async function assertKpisPriorPueExcludesTheOutOfScopePair(client: pg.Poo
 /** `priorTotalKw` scoped to [A] reads A's 6 and not A + B's 106. */
 export async function assertPriorTotalKwScopedExcludesTheOutOfScopeAsset(client: pg.PoolClient): Promise<void> {
   const f = await seedScopeFixture(client);
-  const got = await priorTotalKw(client, [f.a.assetId], f.at);
+  const got = await priorTotalKw(client, [f.a.assetId], f.at, null);
   assert(got === 6, `priorTotalKw([A]) must exclude B's kw (6, not 106), got ${JSON.stringify(got)}`);
 }
 
@@ -432,7 +432,7 @@ export async function assertKpisTotalKwIgnoresAnOrphanId(client: pg.PoolClient):
 export async function assertPriorTotalKwIgnoresAnOrphanId(client: pg.PoolClient): Promise<void> {
   const t0 = new Date();
   const { a, orphan } = await seedOrphanPair(client, secondsFrom(t0, -5), hoursBefore(t0, 25));
-  const got = await priorTotalKw(client, [a.assetId, orphan], priorInstant(t0));
+  const got = await priorTotalKw(client, [a.assetId, orphan], priorInstant(t0), null);
   assert(got === 3, `the prior total must count only the asset that exists (3), got ${JSON.stringify(got)}`);
 }
 
@@ -440,7 +440,7 @@ export async function assertPriorTotalKwIgnoresAnOrphanId(client: pg.PoolClient)
 export async function assertPriorTotalKwIsNullForAnOrphanOnlyScope(client: pg.PoolClient): Promise<void> {
   const t0 = new Date();
   const { orphan } = await seedOrphanPair(client, secondsFrom(t0, -5), hoursBefore(t0, 25));
-  const got = await priorTotalKw(client, [orphan], priorInstant(t0));
+  const got = await priorTotalKw(client, [orphan], priorInstant(t0), null);
   assert(got === null, `a scope of only an orphan id must be null, got ${JSON.stringify(got)}`);
 }
 
@@ -464,7 +464,8 @@ export async function assertGlobalKpisTotalKwIgnoresAnOrphanId(client: pg.PoolCl
   const t0 = new Date();
   await seedOrphanPair(client, secondsFrom(t0, -5), hoursBefore(t0, 25));
   const after = await service.kpis(null);
-  const delta = after.totalKw - before.totalKw;
+  // F4.375: totalKw is null when nothing in scope shows energy; null before counts as 0.
+  const delta = (after.totalKw ?? 0) - (before.totalKw ?? 0);
   assert(Math.abs(delta - 7) < 1e-6, `the global totalKw must rise by A's 7 only, rose by ${delta}`);
 }
 
@@ -472,10 +473,10 @@ export async function assertGlobalKpisTotalKwIgnoresAnOrphanId(client: pg.PoolCl
 export async function assertGlobalPriorTotalKwIgnoresAnOrphanId(client: pg.PoolClient): Promise<void> {
   await repeatableRead(client);
   const at = priorInstant(new Date());
-  const before = await priorTotalKw(client, null, at);
+  const before = await priorTotalKw(client, null, at, null);
   // Stamped an hour before `at`, so it is the latest sample at or before it.
   await seedOrphanPair(client, new Date(), hoursBefore(at, 1));
-  const after = await priorTotalKw(client, null, at);
+  const after = await priorTotalKw(client, null, at, null);
   const delta = (after ?? 0) - (before ?? 0);
   assert(Math.abs(delta - 3) < 1e-6, `the global prior total must rise by A's 3 only, rose by ${delta}`);
 }
