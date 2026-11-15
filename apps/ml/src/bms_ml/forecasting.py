@@ -51,6 +51,14 @@ def finalise_quantiles(raw: np.ndarray, n_points: int, horizon: int) -> tuple[np
     return np.sort(values, axis=2), ok
 
 
+def installed_model(model_dir: str) -> tuple[str, str]:
+    """(name, version) of the model baked at `model_dir`, read without importing torch.
+
+    `serve` calls this: the parent process reports the model on /health but
+    never loads it (plan R11)."""
+    raise NoModelError("no model installed in this build")
+
+
 def load_forecaster(model_dir: str) -> Forecaster:
     """The production forecaster baked into the image at `model_dir`."""
     raise NoModelError("no model installed in this build")

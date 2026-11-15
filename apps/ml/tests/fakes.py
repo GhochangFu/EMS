@@ -73,6 +73,12 @@ class FakeDb:
     runs: list[RunRecord] = field(default_factory=list)
     forecasts: list[tuple[UUID, datetime, ForecastRow]] = field(default_factory=list)
     history_requests: list[list[PointRef]] = field(default_factory=list)
+    preflight_error: BaseException | None = None
+
+    def preflight(self) -> tuple[int, str]:
+        if self.preflight_error is not None:
+            raise self.preflight_error
+        return 1, "bms_fleet"
 
     def eligibility(
         self, targets: Sequence[Target], lookback_from: datetime, as_of_hour: datetime

@@ -7,6 +7,7 @@ from bms_ml.forecasting import (
     ForecastShapeError,
     NoModelError,
     finalise_quantiles,
+    installed_model,
     load_forecaster,
 )
 from tests.fakes import FakeForecaster
@@ -60,3 +61,5 @@ def test_the_input_is_not_modified():
 def test_this_build_installs_no_model():
     with pytest.raises(NoModelError, match="no model installed in this build"):
         load_forecaster("/opt/bms-ml/model")
+    with pytest.raises(NoModelError, match="no model installed in this build"):
+        installed_model("/opt/bms-ml/model")
