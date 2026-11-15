@@ -9,6 +9,7 @@ import {
   assertInvalidInputThrows,
   assertMetersAddUp,
   assertOverflowTakesTheLastSlabRate,
+  assertSilentMetersAreLeftOut,
 } from "./compute-bill.spec";
 
 /** `F4.365` U1 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
@@ -43,7 +44,13 @@ describe("F4.365 — computeBill rules", () => {
 });
 
 describe("F4.373 — several billing meters (ADR 0134 Amendment 3)", () => {
-  it("sums the meters' units, estimates each kVAh meter from its own pf, fails on any bad meter", () => {
+  it("sums the meters' units, estimates each kVAh meter from its own pf", () => {
     assertMetersAddUp();
+  });
+});
+
+describe("F4.374 — bill the meters that reported (ADR 0134 Amendment 4)", () => {
+  it("leaves a silent or falling meter out, and fails only when no meter reported", () => {
+    assertSilentMetersAreLeftOut();
   });
 });

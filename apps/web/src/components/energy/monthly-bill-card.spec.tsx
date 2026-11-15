@@ -49,6 +49,8 @@ const BILLED: EnergyBill = {
     units: 1500,
     unitType: "kwh",
     estimated: false,
+    metersBilled: ["55555555-5555-4555-8555-555555555555"],
+    metersMissing: [],
     overflowUnits: 0,
     slabLines: [
       { slabNo: 1, fromUnits: 0, toUnits: 1000, units: 1000, energyRate: 5, energyCharge: 5000, wheelingRate: 0, wheelingCharge: 0 },
@@ -256,6 +258,28 @@ export async function severalMetersSayHowMany(): Promise<void> {
   stubBill({ ...BILLED, mapping: { ...BILLED.mapping!, billingMeterAssetIds: ids } });
   renderCard();
   expect(await screen.findByText("2 meters")).toBeTruthy();
+}
+
+/** `F4.374` (ADR 0134 Amendment 4) — a meter that did not report: "1 of 2 meters reported", not "2 meters". */
+export async function aMissingMeterSaysHowManyReported(): Promise<void> {
+  const ids = ["55555555-5555-4555-8555-555555555555", "66666666-6666-4666-8666-666666666666"];
+  stubBill({
+    ...BILLED,
+    mapping: { ...BILLED.mapping!, billingMeterAssetIds: ids },
+    bill: { ...BILLED.bill!, metersBilled: [ids[0]!], metersMissing: [ids[1]!] },
+  });
+  renderCard();
+  expect(await screen.findByText("1 of 2 meters reported")).toBeTruthy();
+  expect(screen.queryByText("2 meters")).toBeNull();
+}
+
+/** Every meter reported: the plain count, never the "reported" line. */
+export async function allMetersReportedSaysNoMissing(): Promise<void> {
+  const ids = ["55555555-5555-4555-8555-555555555555", "66666666-6666-4666-8666-666666666666"];
+  stubBill({ ...BILLED, mapping: { ...BILLED.mapping!, billingMeterAssetIds: ids }, bill: { ...BILLED.bill!, metersBilled: ids, metersMissing: [] } });
+  renderCard();
+  expect(await screen.findByText("2 meters")).toBeTruthy();
+  expect(screen.queryByText(/meters reported/)).toBeNull();
 }
 
 export async function oneMeterSaysNoCount(): Promise<void> {

@@ -135,6 +135,8 @@ export class LocationEnergyBillService {
             units: computed.units,
             unitType: computed.unitType,
             estimated: computed.estimated,
+            metersBilled: computed.metersBilled,
+            metersMissing: computed.metersMissing,
             overflowUnits: computed.bill.overflowUnits,
             slabLines: computed.bill.slabLines,
             energyCharge: computed.bill.energyCharge,

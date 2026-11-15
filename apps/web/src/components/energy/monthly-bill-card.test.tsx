@@ -8,8 +8,10 @@ import {
   aFailedMonthKeepsTheSelector,
   aFailedReadIsAFixedSentence,
   aKvahBillNamesItsUnitType,
+  aMissingMeterSaysHowManyReported,
   aNonHttpSourceUrlIsNotALink,
   aNonOfficialTariffShowsTheVerifyBadge,
+  allMetersReportedSaysNoMissing,
   anEstimatedBillSaysEstimated,
   anIncompleteMonthSaysMonthToDate,
   anOfficialTariffShowsNoVerifyBadge,
@@ -110,5 +112,13 @@ describe("F4.365 the monthly bill card", () => {
 
   it("F4.373: says no meter count for a one-meter bill", async () => {
     await oneMeterSaysNoCount();
+  });
+
+  it("F4.374: says 1 of 2 meters reported when a meter is left out", async () => {
+    await aMissingMeterSaysHowManyReported();
+  });
+
+  it("F4.374: says N meters, not 'reported', when every meter reported", async () => {
+    await allMetersReportedSaysNoMissing();
   });
 });

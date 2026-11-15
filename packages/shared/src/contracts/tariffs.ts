@@ -222,6 +222,10 @@ export const energyBillSchema = z.object({
       units: z.number(),
       unitType: tariffEnergyUnitSchema,
       estimated: z.boolean(),
+      /** ADR 0134 Amendment 4: the meters whose units were billed, asset ids in mapping order. */
+      metersBilled: z.array(z.string().uuid()),
+      /** The mapping's meters that did not report this month and were left out, in mapping order. */
+      metersMissing: z.array(z.string().uuid()),
       overflowUnits: z.number(),
       slabLines: z.array(energyBillSlabLineSchema),
       energyCharge: z.number(),

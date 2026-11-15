@@ -261,3 +261,26 @@ over two meters' energy.
    `billingMeterAssetId` stays accepted as a one-meter shorthand. The DTO and
    the bill's `mapping` carry `billingMeterAssetIds`. The location Tariff page
    picks several meters.
+
+## Amendment 4 — bill the meters that reported (2026-11-15)
+
+**Accepted 2026-11-15** (owner, in chat: "out of the two meters, only one will
+return, and the other may not. In that case, for that only meter, the bill
+will be generated"). Supersedes Amendment 3 decision 2's fail-closed rule.
+Backlog row `F4.374`.
+
+1. **A billing meter with no usable reading in the month is left out, not
+   fatal.** The billed quantity is the sum of the register deltas of the
+   meters that reported; a meter with no reading (`meter_no_reading`) or a
+   falling register (`meter_decreasing`) contributes nothing. The bill fails
+   only when **no** meter reported (the reason of the first meter, as before).
+2. **The bill says which meters were counted.** `bill.metersBilled` and
+   `bill.metersMissing` (asset ids, in mapping order) go into the bill DTO; the
+   Monthly bill card shows "1 of 2 meters reported" when any is missing (the
+   count only: the bill DTO carries meter ids, not names; the location Tariff
+   page lists the meters by name).
+3. **The live rate** divides by the kWh of the meters that reported, so a
+   silent meter's energy is not priced in the cost tiles from the bill (its
+   own energy, if any reaches the cost read, is still priced at that rate).
+4. kVAh estimation stays per meter (Amendment 3); a kVAh-category meter with
+   neither `kvah_total` nor `pf` counts as not reported.

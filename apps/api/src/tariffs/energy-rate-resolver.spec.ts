@@ -1,11 +1,11 @@
-import type { ComputedBill } from "@bms/shared";
+import { billedUnitsOfMeters, type ComputedBill } from "@bms/shared";
 
 import { inputKey } from "../calc/calc-batch";
 import { ORGANIZATION_RANK, parameterValueAt, type ParameterSeriesRow } from "../calc/calc-parameter-series";
 import { ENERGY_TARIFF_KEY } from "../telemetry/energy-cost";
 import type { BillComputation, BillTarget } from "./energy-bill.service";
 import type { HourlyEnergy } from "../telemetry/energy-cost-by-day";
-import { blendRangeRate, EnergyRateResolver, MAPPED_MONTH_RANK, type FlatParameters } from "./energy-rate-resolver";
+import { billRate, blendRangeRate, EnergyRateResolver, MAPPED_MONTH_RANK, type FlatParameters } from "./energy-rate-resolver";
 import type { MappingRow } from "./location-tariff-read";
 import { monthWindow } from "./month-window";
 import type { TariffVersion } from "./tariff-versions";
@@ -69,6 +69,8 @@ function ok(total: number, kwh: number | null, dataStatus: TariffVersion["dataSt
     unitType: "kwh",
     estimated: false,
     kwh,
+    metersBilled: [],
+    metersMissing: [],
     bill: { total } as ComputedBill,
   };
 }
@@ -288,4 +290,19 @@ export function assertTheBlendUsesTheFlatRowOutsideMappedMonths(): void {
   assert(mixed.rate === (1 * FLAT + 3 * 10) / 4, `expected the flat-and-mapped blend, got ${String(mixed.rate)}`);
   const none = blendRangeRate([hour("a", "2026-10-05T10:00:00.000Z", 0)], months, flat);
   assert(none.rate === 10, `no energy: the latest priced month stands in, got ${String(none.rate)}`);
+}
+
+/**
+ * `F4.374` (ADR 0134 Amendment 4 item 3) — the live rate divides the bill by the kWh of the
+ * meters that REPORTED: a silent second meter neither fails the rate nor dilutes it.
+ */
+export function assertTheRateDividesByTheReportedMetersKwh(): void {
+  const units = billedUnitsOfMeters("kwh", [
+    { kwh: { ok: true, value: 250 }, kvah: { ok: false, reason: "empty" }, averagePf: null },
+    { kwh: { ok: false, reason: "empty" }, kvah: { ok: false, reason: "empty" }, averagePf: null },
+  ]);
+  if (!units.ok) throw new Error(`one of two meters reported still bills: ${JSON.stringify(units)}`);
+  assert(units.kwh === 250, `the divisor is the reported meter's kWh, got ${String(units.kwh)}`);
+  const priced = billRate(ok(2546, units.kwh));
+  assert(priced.rate === 2546 / 250, `expected 2546 ÷ 250, got ${String(priced.rate)}`);
 }
