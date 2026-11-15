@@ -3,10 +3,11 @@
 import pytest
 
 from tests.sql_guard import (
+    ALLOWED_FUNCTIONS,
     READ_SOURCES,
     WRITE_TARGETS,
     GuardError,
-    check_gateway,
+    check_calls,
     check_statement,
     check_tree,
     source_files,
@@ -20,9 +21,12 @@ from tests.sql_guard import (
 def test_the_allowlists_by_value():
     assert READ_SOURCES == {
         "telemetry.point_values_1h", "telemetry.point_values_1d", "bms.assets", "bms.asset_points",
-        "bms.asset_templates", "bms.rtus", "ml.model_runs", "pg_namespace", "pg_roles",
+        "bms.asset_templates", "bms.rtus", "ml.model_runs", "ml.forecasts", "pg_namespace", "pg_roles",
     }  # fmt: skip
     assert WRITE_TARGETS == {"ml.model_runs", "ml.forecasts", "ml.anomaly_scores"}
+    assert ALLOWED_FUNCTIONS == {
+        "obj_description", "has_table_privilege", "unnest", "min", "max", "count", "date_trunc",
+    }  # fmt: skip
     assert "bms.alarms" not in READ_SOURCES | WRITE_TARGETS
     assert "bms.work_orders" not in READ_SOURCES | WRITE_TARGETS
 
@@ -39,7 +43,7 @@ def test_the_real_tree_passes_and_the_guard_saw_every_statement():
         "INSERT_MODEL_RUN_SQL": "write",
         "INSERT_FORECASTS_SQL": "write",
     }
-    assert check_gateway(files["db/gateway.py"], set(kinds)) >= len(kinds)
+    assert check_calls(files, set(kinds)) >= len(kinds)
 
 
 def test_no_statement_calls_now():
@@ -85,6 +89,35 @@ BAD_STATEMENTS = {
     ),
     "set role": ("SET ROLE bms_owner", "forbidden word"),
     "copy": ("COPY ml.forecasts TO STDOUT", "forbidden word"),
+    # The security review's bypasses of the first guard, each of which passed it.
+    "a relation named in a string": (
+        "SELECT query_to_xml('SELECT password_hash FROM bms.users', true, false, '') FROM pg_roles",
+        "function 'query_to_xml'",
+    ),
+    "notify through a function": ("SELECT pg_notify('bms_alarms', '{}')", "function 'pg_notify'"),
+    "end other sessions": (
+        "SELECT pg_terminate_backend(1) FROM pg_roles",
+        "function 'pg_terminate_backend'",
+    ),
+    "write a sequence": (
+        "INSERT INTO ml.model_runs (id) VALUES (nextval('bms.some_seq'))",
+        "function 'nextval'",
+    ),
+    "large object": (
+        "INSERT INTO ml.model_runs (id) VALUES (lo_from_bytea(0, ''))",
+        "function 'lo_from_bytea'",
+    ),
+    "TABLE read": ("SELECT ARRAY(TABLE pg_stat_activity)", "forbidden word"),
+    "unknown schema": (
+        "SELECT _timescaledb_catalog.hypertable.id FROM pg_roles r",
+        "not an allowed relation or an alias's column",
+    ),
+    "a CTE shadowing a catalog in a subquery": (
+        "SELECT 1 FROM pg_roles r WHERE 1 IN (WITH pg_authid AS (SELECT 1) SELECT 1 FROM pg_authid)",
+        "WITH is allowed only as the first word",
+    ),
+    "a pg_ CTE": ("WITH pg_authid AS (SELECT 1) SELECT 1 FROM pg_authid", "may not be named 'pg_authid'"),
+    "an unknown function": ("SELECT pg_sleep(1)", "function 'pg_sleep'"),
 }
 
 
@@ -92,13 +125,6 @@ BAD_STATEMENTS = {
 def test_a_bad_statement_fails_for_its_reason(statement, reason):
     with pytest.raises(GuardError, match=reason):
         check_statement(statement)
-
-
-def test_the_guard_does_not_judge_functions():
-    # Stated, not hidden: the guard is about relations and verbs. A server-side
-    # function call in a read passes it; preflight's superuser refusal is what keeps
-    # pg_read_file and its kind out of the scorer's reach.
-    assert check_statement("SELECT pg_sleep(1)") == "read"
 
 
 def _mutated(path: str, old: str, new: str) -> dict[str, str]:
@@ -175,6 +201,49 @@ BAD_TREES = {
         "FROM telemetry.point_values_1h h\nJOIN",
         "FROM telemetry.point_values h\nJOIN",
         "cannot classify the source",
+    ),
+    # The security review's call-shape bypasses of the first guard.
+    "getattr in the gateway": (
+        "db/gateway.py",
+        EXECUTE,
+        'getattr(cursor, "execute")("DELETE FROM bms.alarms")',
+        "getattr is not allowed",
+    ),
+    "a bound-method alias": (
+        "db/gateway.py",
+        EXECUTE,
+        'run = cursor.execute\n            run("DELETE FROM bms.alarms")',
+        r"\.execute is not an allowed database call",
+    ),
+    "the raw libpq connection": (
+        "db/gateway.py",
+        EXECUTE,
+        'self._conn.pgconn.exec_(b"DELETE FROM bms.alarms")',
+        r"\.(pgconn|exec_) is not an allowed database call",
+    ),
+    "execute outside the gateway": (
+        "scorer.py",
+        "def package_versions",
+        'def _x(db):\n    db._conn.execute("UPDATE bms.assets SET name = 1")\n\n\ndef package_versions',
+        r"\.execute is not an allowed database call",
+    ),
+    "another driver": (
+        "readiness.py",
+        "from dataclasses import dataclass\n",
+        "from dataclasses import dataclass\nimport psycopg2\n",
+        "another database driver",
+    ),
+    "a dynamic import": (
+        "scorer.py",
+        "def package_versions",
+        'def _x():\n    import importlib\n    importlib.import_module("psycopg")\n\n\ndef package_versions',
+        "import_module is not allowed",
+    ),
+    "a statement reassigned": (
+        "db/gateway.py",
+        "EXPECTED_ML_SCHEMA_VERSION = 1\n",
+        'EXPECTED_ML_SCHEMA_VERSION = 1\nsql.HISTORY_SQL = "DELETE FROM bms.alarms"\n',
+        "may not be assigned",
     ),
 }
 

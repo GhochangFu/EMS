@@ -15,6 +15,7 @@ from bms_ml.scheduler import (
     RETRY_SECONDS,
     CycleResult,
     next_tick,
+    retry_at,
     run_cycle_process,
     run_scheduler,
 )
@@ -117,8 +118,10 @@ def test_a_stop_ends_the_sleep_promptly_and_runs_nothing():
 
 def test_the_process_runner_relays_output_and_keeps_the_summary():
     child = (
-        "import json; print(json.dumps({'event': 'run_succeeded'})); "
-        "print(json.dumps({'event': 'cycle_summary', 'scored': 3, 'rows_written': 144}))"
+        "import json; base = {'ts': 't', 'level': 'info'}; "
+        "print(json.dumps({**base, 'event': 'run_succeeded'})); "
+        "print(json.dumps({'event': 'third_party', 'data': 'not ours'})); "
+        "print(json.dumps({**base, 'event': 'cycle_summary', 'scored': 3, 'rows_written': 144}))"
     )
     out = io.StringIO()
     result = run_cycle_process([sys.executable, "-c", child], timeout_seconds=30, out=out)
@@ -167,4 +170,33 @@ def test_a_stop_during_a_cycle_terminates_the_child():
         stop=stop,
     )
     assert result.exit_code == EXIT_CYCLE_FAILED
+    assert result.stopped and not result.timed_out
     assert time.monotonic() - began < 20
+
+
+def test_a_stopped_cycle_ends_the_loop_and_is_not_counted_as_a_failure():
+    clock = FakeClock(T0, step=timedelta(0))
+    state = health(clock)
+    code = run_scheduler(
+        clock=clock,
+        wait=Recorder(clock, limit=5),
+        run_cycle_process=lambda: CycleResult(EXIT_CYCLE_FAILED, None, stopped=True),
+        health=state,
+        interval_seconds=3600,
+    )
+    assert code == EXIT_OK
+    assert state.cycles_failed == 0
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        (datetime(2026, 11, 15, 12, 30, tzinfo=UTC), datetime(2026, 11, 15, 12, 35, tzinfo=UTC)),
+        (datetime(2026, 11, 15, 12, 54, 59, tzinfo=UTC), datetime(2026, 11, 15, 12, 59, 59, tzinfo=UTC)),
+        # 300 s would land at 13:01, before HH:05: wait for the 13:05 tick instead.
+        (datetime(2026, 11, 15, 12, 56, tzinfo=UTC), datetime(2026, 11, 15, 13, 5, tzinfo=UTC)),
+        (datetime(2026, 11, 15, 12, 55, tzinfo=UTC), datetime(2026, 11, 15, 13, 5, tzinfo=UTC)),
+    ],
+)
+def test_a_retry_never_crosses_into_the_next_hour_early(now, expected):
+    assert retry_at(now, 3600) == expected

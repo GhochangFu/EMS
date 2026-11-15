@@ -106,7 +106,10 @@ class FakeDb:
             and run.organization_id == organization_id
             and (run.model_name, run.model_version, run.config_hash)
             == (model_name, model_version, config_hash)
-            and run.started_at >= as_of_hour
+            and min(
+                (row.horizon_bucket for run_id, _, row in self.forecasts if run_id == run.id), default=None
+            )
+            == as_of_hour
             for run in self.runs
         )
 

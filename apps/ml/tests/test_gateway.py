@@ -40,7 +40,7 @@ FLEET = {
     "is_superuser": False,
     "can_insert_runs": True,
     "can_insert_forecasts": True,
-    "can_update_forecasts": False,
+    "can_rewrite_ml": False,
 }
 
 
@@ -54,7 +54,7 @@ def test_bms_fleet_passes():
         ({"is_superuser": True}, "superuser"),
         ({"can_insert_runs": False}, "cannot insert"),
         ({"can_insert_forecasts": False}, "cannot insert"),
-        ({"can_update_forecasts": True}, "can update ml.forecasts"),
+        ({"can_rewrite_ml": True}, "can update, delete or truncate"),
     ],
 )
 def test_a_role_outside_the_contract_is_refused(change, message):

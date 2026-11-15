@@ -71,6 +71,10 @@ def load_config(environ: Mapping[str, str] | None = None) -> Config:
         raise ConfigError("DATABASE_URL_FLEET is required (there is no fallback to DATABASE_URL)")
 
     interval = _integer(source, "ML_INTERVAL_SECONDS", 3600, 900, 86400)
+    # Ticks land at k * interval + 5 min. A multiple of 900 that divides a day keeps
+    # every tick at :05, :20, :35 or :50, never in an hour's first five minutes.
+    if interval % 900 or 86400 % interval:
+        raise ConfigError("ML_INTERVAL_SECONDS must be a multiple of 900 that divides 86400")
     timeout = _integer(source, "ML_CYCLE_TIMEOUT_SECONDS", 900, 60, interval - 60)
     horizon = _integer(source, "ML_FORECAST_HORIZON_HOURS", 48, 1, 64)
     context = _integer(source, "ML_CONTEXT_HOURS", 2016, 336, 2048)

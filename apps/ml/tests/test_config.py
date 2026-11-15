@@ -60,6 +60,8 @@ def test_database_url_fleet_is_required_with_no_fallback():
 
 BOUNDS = [
     ("ML_INTERVAL_SECONDS", "899"),
+    ("ML_INTERVAL_SECONDS", "1000"),  # not a multiple of 900
+    ("ML_INTERVAL_SECONDS", "4500"),  # a multiple of 900 that does not divide a day
     ("ML_INTERVAL_SECONDS", "86401"),
     ("ML_CYCLE_TIMEOUT_SECONDS", "59"),
     ("ML_CYCLE_TIMEOUT_SECONDS", "3541"),  # interval - 60 is the ceiling

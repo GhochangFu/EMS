@@ -46,10 +46,11 @@ describe("ci-scope — which paths are documentation", () => {
 });
 
 // ADR 0135 (E1.1, plan R16): the `ml` job (Python, a Postgres service, about 4
-// billed minutes) runs only when the scorer, the schema it reads, step 0's
-// thresholds or this gate itself changes — and on every doubt.
+// billed minutes) runs only when the scorer, anything in packages/db (the
+// migrations, roles and seed that build its database; step 0's thresholds), the
+// dependencies that run those CLIs or this gate itself changes — and on every doubt.
 describe("ci-scope — which change sets need the ml job", () => {
-  it("answers ml for the scorer, a migration, step 0's thresholds, the roles, the workflow and this script", () => {
+  it("answers ml for the scorer, packages/db, the dependencies, the workflow and this script", () => {
     expect(
       [
         ["apps/ml/src/bms_ml/scorer.py"],
@@ -57,13 +58,16 @@ describe("ci-scope — which change sets need the ml job", () => {
         ["packages/db/drizzle/0158_x.sql"],
         ["packages/db/drizzle/meta/_journal.json"],
         ["packages/db/src/ml-data-readiness.ts"],
-        ["packages/db/src/ml-data-readiness-cli.ts"],
         ["packages/db/src/roles.ts"],
+        ["packages/db/src/seed.ts"],
+        ["packages/db/package.json"],
+        ["package.json"],
+        ["pnpm-lock.yaml"],
         [".github/workflows/ci.yml"],
         ["scripts/checks/ci-scope.mjs"],
         ["docs/BACKLOG.md", "apps\\ml\\README.md"],
       ].map(touchesMl),
-    ).toEqual([true, true, true, true, true, true, true, true, true, true]);
+    ).toEqual(Array(13).fill(true));
   });
 
   it("answers no ml for a change set that touches none of them", () => {
@@ -71,8 +75,8 @@ describe("ci-scope — which change sets need the ml job", () => {
       [
         ["apps/api/src/app.module.ts", "apps/web/src/app.tsx"],
         ["docs/BACKLOG.md"],
-        ["packages/db/src/schema/bms-schema.ts"],
-        ["apps/mlx/readme.md", "packages/db/drizzle.config.ts"],
+        ["packages/shared/src/contracts/alarms.ts"],
+        ["apps/mlx/readme.md", "apps/web/package.json"],
       ].map(touchesMl),
     ).toEqual([false, false, false, false]);
   });

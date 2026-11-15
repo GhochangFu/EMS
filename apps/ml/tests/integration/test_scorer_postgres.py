@@ -139,7 +139,7 @@ def test_one_cycle_end_to_end(planted: Planted, superuser: psycopg.Connection, f
     # A second cycle in the same hour writes nothing: the ledger says it is scored.
     with Gateway.connect(fleet_url) as db:
         again = run_cycle(db, forecaster, clock, cfg)
-    assert again.skipped["already_scored"] == 2 and again.rows_written == 0
+    assert again.organizations_already_scored == 2 and again.rows_written == 0
     count_runs = "SELECT count(*) FROM ml.model_runs WHERE model_name = %s"
     assert superuser.execute(count_runs, (FORECASTER_NAME,)).fetchone()[0] == 2
 
@@ -153,6 +153,48 @@ def test_one_cycle_end_to_end(planted: Planted, superuser: psycopg.Connection, f
     ).fetchone()[0]
     assert total == 2 * 4 * 48
     assert {run_id: _fingerprint(superuser, run_id) for run_id in before} == before
+
+    # The ledger is keyed on the hour scored: the next hour is scored, and so is a
+    # backfill of the previous hour run later (code review, PR 3: a started_at
+    # comparison skipped the one and never skipped the other).
+    with Gateway.connect(fleet_url) as db:
+        next_hour = run_cycle(db, forecaster, FakeClock(planted.as_of + timedelta(hours=1, minutes=5)), cfg)
+        backfill = run_cycle(db, forecaster, clock, cfg, as_of=planted.as_of - timedelta(hours=1))
+        backfill_again = run_cycle(db, forecaster, clock, cfg, as_of=planted.as_of - timedelta(hours=1))
+    assert next_hour.runs_succeeded == 2
+    assert backfill.runs_succeeded == 2
+    assert backfill_again.organizations_already_scored == 2 and backfill_again.rows_written == 0
+    assert superuser.execute(count_runs, (FORECASTER_NAME,)).fetchone()[0] == 8
+
+
+def test_a_short_forecast_write_rolls_the_run_row_back(planted: Planted, fleet_url, superuser):
+    from uuid import uuid4
+
+    from bms_ml.db.gateway import WriteMismatchError
+    from bms_ml.records import ForecastRow, RunRecord
+
+    run_id = uuid4()
+    when = planted.as_of + timedelta(days=1)
+    run = RunRecord(run_id, planted.organizations["A"], FORECASTER_NAME, "fixture-1", "0" * 64,
+                    when, when, 2, "succeeded", None)  # fmt: skip
+    rows = [
+        ForecastRow(planted.assets["MLFX-R1"], "ml_fixture_temp_c", when.replace(minute=0), 1.0, 2.0, 3.0),
+        ForecastRow(uuid4(), "ml_fixture_temp_c", when.replace(minute=0), 1.0, 2.0, 3.0),  # no such asset
+    ]
+    with Gateway.connect(fleet_url) as db, pytest.raises(WriteMismatchError):
+        db.write_succeeded_run(run, rows)
+    assert superuser.execute("SELECT count(*) FROM ml.model_runs WHERE id = %s", (run_id,)).fetchone()[0] == 0
+    assert (
+        superuser.execute("SELECT count(*) FROM ml.forecasts WHERE model_run_id = %s", (run_id,)).fetchone()[
+            0
+        ]
+        == 0
+    )
+
+
+def test_reads_run_in_a_read_only_transaction(fleet_url):
+    with Gateway.connect(fleet_url) as db, db._read() as cursor:
+        assert cursor.execute("SHOW transaction_read_only").fetchone()["transaction_read_only"] == "on"
 
 
 def test_bms_fleet_cannot_rewrite_a_forecast(planted: Planted, fleet_url):

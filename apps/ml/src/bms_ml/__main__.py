@@ -1,6 +1,7 @@
 """python -m bms_ml serve | run-once [--force] [--as-of ISO] | eligibility [--as-of ISO] | preflight | health
 
-Exit codes: 0 ok; 1 a cycle failed (the scheduler retries in 300 s); 78 the
+Exit codes: 0 ok (a partial failure is counted, not retried); 1 the cycle
+failed for every organization it tried (the scheduler retries); 78 the
 configuration, the database's ml schema, the role or the model is not one the
 scorer may run with (the scheduler stops, and `serve` exits 78 too).
 
@@ -113,16 +114,24 @@ def cmd_run_once(config: Config, *, force: bool, as_of: datetime | None) -> int:
         log.event("cycle_failed", "error", error=f"{stage}:{type(exc).__name__}")
         return EXIT_CYCLE_FAILED
     log.event("cycle_summary", **summary.counts())
-    return EXIT_OK if summary.runs_failed == 0 else EXIT_CYCLE_FAILED
+    # Exit 1 (retry in 300 s) only when nothing succeeded. A partial failure is
+    # counted and logged, and retried at the next tick: a retry would reload the
+    # model only to fail the same organization again (code review, PR 3).
+    complete_failure = summary.runs_failed > 0 and summary.runs_succeeded == 0
+    return EXIT_CYCLE_FAILED if complete_failure else EXIT_OK
 
 
 def cmd_eligibility(config: Config, *, as_of: datetime | None) -> int:
     as_of_hour = floor_to_hour(as_of if as_of is not None else SystemClock().now())
     try:
         with connect(config) as db:
+            _preflight(db)  # the same role contract as run-once: never read as a superuser
             stats = db.eligibility(
                 config.forecast_targets, as_of_hour - timedelta(days=LOOKBACK_DAYS), as_of_hour
             )
+    except PreflightRefused as err:
+        log.event("preflight_failed", "error", reason=str(err))
+        return EXIT_CONFIG
     except Exception as exc:  # noqa: BLE001
         log.event("eligibility_failed", "error", error=f"eligibility:{type(exc).__name__}")
         return EXIT_CYCLE_FAILED

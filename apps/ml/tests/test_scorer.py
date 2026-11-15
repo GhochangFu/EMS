@@ -1,4 +1,4 @@
-from dataclasses import fields
+from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -138,7 +138,7 @@ def test_already_scored_skips_and_force_writes_a_new_run():
     assert len(db.runs) == 1
     second = cycle(db, clock=clock)
     assert len(db.runs) == 1
-    assert second.skipped["already_scored"] == 1
+    assert second.organizations_already_scored == 1
     forced = cycle(db, clock=clock, force=True)
     assert forced.runs_succeeded == 1
     first_run, forced_run = db.runs
@@ -146,6 +146,25 @@ def test_already_scored_skips_and_force_writes_a_new_run():
     assert forced_run.started_at > first_run.started_at
     issued = {issued for _, issued, _ in db.forecasts}
     assert issued == {first_run.started_at, forced_run.started_at}
+
+
+def test_the_ledger_is_keyed_on_the_scored_hour_not_on_when_it_ran():
+    db = db_for(ready(ORG_A, 1))
+    clock = FakeClock(NOW)
+    run_cycle(db, FakeForecaster(), clock, config())
+    # A backfill of the previous hour, run later, is not "already scored".
+    earlier = run_cycle(db, FakeForecaster(), clock, config(), as_of=AS_OF - timedelta(hours=1))
+    assert earlier.runs_succeeded == 1
+    # A future --as-of run twice writes once.
+    future = AS_OF + timedelta(days=70)
+    shift = timedelta(days=70)
+    db.histories = {
+        ref: [replace(row, bucket=row.bucket + shift) for row in rows] for ref, rows in db.histories.items()
+    }
+    db.stats = [replace(point, first_bucket=point.first_bucket + shift, last_bucket=point.last_bucket + shift)
+                for point in db.stats]  # fmt: skip
+    assert run_cycle(db, FakeForecaster(), clock, config(), as_of=future).runs_succeeded == 1
+    assert run_cycle(db, FakeForecaster(), clock, config(), as_of=future).organizations_already_scored == 1
 
 
 def test_a_changed_config_is_not_already_scored():

@@ -31,6 +31,7 @@ COUNT_KEYS = (
     "rows_written",
     "runs_succeeded",
     "runs_failed",
+    "organizations_already_scored",
     "duration_seconds",
 )
 SKIP_REASONS = (
@@ -40,7 +41,6 @@ SKIP_REASONS = (
     "stale",
     "context_too_sparse",
     "non_finite_output",
-    "already_scored",
 )
 
 
@@ -54,7 +54,10 @@ def _counts_only(summary: dict[str, Any] | None) -> dict[str, Any] | None:
             counts[key] = value
     as_of = summary.get("as_of_hour")
     if isinstance(as_of, str) and len(as_of) <= 40:
-        counts["as_of_hour"] = as_of
+        try:
+            counts["as_of_hour"] = datetime.fromisoformat(as_of).isoformat()
+        except ValueError:
+            pass
     skipped = summary.get("skipped")
     if isinstance(skipped, dict):
         counts["skipped"] = {
@@ -142,7 +145,7 @@ def make_server(
         def _refuse(self) -> None:
             self._send(405, {"error": "method not allowed"}, allow=True)
 
-        do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _refuse  # noqa: N815
+        do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_HEAD = _refuse  # noqa: N815
 
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - silence the access log
             return

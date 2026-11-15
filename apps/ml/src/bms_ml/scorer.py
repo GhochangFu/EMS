@@ -74,7 +74,9 @@ class CycleSummary:
     rows_written: int = 0
     runs_succeeded: int = 0
     runs_failed: int = 0
+    organizations_already_scored: int = 0
     duration_seconds: float = 0.0
+    # Points only: every key counts points that were not scored, and why.
     skipped: Counter[str] = field(default_factory=Counter)
 
     def counts(self) -> dict[str, Any]:
@@ -87,6 +89,7 @@ class CycleSummary:
             "rows_written": self.rows_written,
             "runs_succeeded": self.runs_succeeded,
             "runs_failed": self.runs_failed,
+            "organizations_already_scored": self.organizations_already_scored,
             "duration_seconds": round(self.duration_seconds, 3),
             "skipped": dict(sorted(self.skipped.items())),
         }
@@ -178,7 +181,7 @@ def _score_organization(
         if not force and db.already_scored(
             organization_id, forecaster.name, forecaster.version, fingerprint, as_of_hour
         ):
-            summary.skipped["already_scored"] += 1
+            summary.organizations_already_scored += 1
             log.event("organization_already_scored", organization_id=str(organization_id))
             return
 

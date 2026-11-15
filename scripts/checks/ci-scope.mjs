@@ -36,11 +36,19 @@ export function isDocsOnly(paths) {
 
 // ADR 0135 (E1.1, plan R16): the `ml` job — apps/ml's ruff and pytest against a
 // TimescaleDB service — is path-scoped. It runs when the scorer changes, when
-// the schema it reads or writes can change (a migration, the roles), when step
-// 0's thresholds change (the single-source test holds them equal), or when this
-// gate itself changes. Every doubt answers "ml", as above.
-const ML_PREFIXES = ['apps/ml/', 'packages/db/drizzle/', 'packages/db/src/ml-data-readiness'];
-const ML_FILES = new Set(['packages/db/src/roles.ts', '.github/workflows/ci.yml', 'scripts/checks/ci-scope.mjs']);
+// anything in packages/db changes (the migrations, the roles and the seed build
+// its database, and its fixture reads seeded organizations and locations; step
+// 0's thresholds live there too), when the dependencies that run those CLIs
+// change, or when this gate itself changes. Every doubt answers "ml", as above.
+// The code review of PR 3 widened R16's list from the drizzle folder alone: a
+// seed change that broke the fixture would otherwise pass and stay unseen.
+const ML_PREFIXES = ['apps/ml/', 'packages/db/'];
+const ML_FILES = new Set([
+  'package.json',
+  'pnpm-lock.yaml',
+  '.github/workflows/ci.yml',
+  'scripts/checks/ci-scope.mjs',
+]);
 
 /** True when the change set is empty or any path can affect apps/ml. */
 export function touchesMl(paths) {

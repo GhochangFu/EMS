@@ -21,7 +21,10 @@ PREFLIGHT_ROLE_SQL = """
 SELECT current_user AS role_name, r.rolsuper AS is_superuser,
        has_table_privilege(current_user, 'ml.model_runs', 'INSERT') AS can_insert_runs,
        has_table_privilege(current_user, 'ml.forecasts', 'INSERT')  AS can_insert_forecasts,
-       has_table_privilege(current_user, 'ml.forecasts', 'UPDATE')  AS can_update_forecasts
+       (has_table_privilege(current_user, 'ml.forecasts', 'UPDATE, DELETE, TRUNCATE')
+        OR has_table_privilege(current_user, 'ml.model_runs', 'UPDATE, DELETE, TRUNCATE')
+        OR has_table_privilege(current_user, 'ml.anomaly_scores', 'UPDATE, DELETE, TRUNCATE'))
+         AS can_rewrite_ml
 FROM pg_roles r WHERE r.rolname = current_user
 """
 
@@ -59,11 +62,15 @@ WHERE h.bucket >= %(from_hour)s AND h.bucket < %(as_of_hour)s
 ORDER BY h.asset_id, h.point_key, h.bucket
 """
 
+# The ledger is keyed on the hour a run SCORED, not on when it ran: a run's first
+# horizon bucket is its as_of_hour. Comparing started_at with as_of_hour instead
+# would skip a past --as-of (any later run counts) and never skip a future one.
 ALREADY_SCORED_SQL = """
-SELECT 1 FROM ml.model_runs
-WHERE organization_id = %(organization_id)s AND model_name = %(model_name)s
-  AND model_version = %(model_version)s AND config_hash = %(config_hash)s
-  AND status = 'succeeded' AND started_at >= %(as_of_hour)s
+SELECT 1 FROM ml.model_runs r
+WHERE r.organization_id = %(organization_id)s AND r.model_name = %(model_name)s
+  AND r.model_version = %(model_version)s AND r.config_hash = %(config_hash)s
+  AND r.status = 'succeeded'
+  AND (SELECT min(f.horizon_bucket) FROM ml.forecasts f WHERE f.model_run_id = r.id) = %(as_of_hour)s
 LIMIT 1
 """
 

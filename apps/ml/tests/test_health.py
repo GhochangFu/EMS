@@ -77,6 +77,15 @@ def test_the_body_carries_counts_only_whatever_the_child_printed():
     assert body["lastCycle"]["skipped"] == {"stale": 1}
 
 
+def test_an_as_of_hour_that_is_not_an_instant_is_dropped():
+    health = state()
+    health.record(CycleResult(EXIT_OK, {**SUMMARY, "as_of_hour": "ROOM-1 at PHEWB"}), T0)
+    _, body = health.snapshot(T0)
+    assert "as_of_hour" not in body["lastCycle"]
+    health.record(CycleResult(EXIT_OK, SUMMARY), T0)
+    assert health.snapshot(T0)[1]["lastCycle"]["as_of_hour"] == "2026-11-15T12:00:00+00:00"
+
+
 @pytest.fixture
 def server():
     health = state()
@@ -114,6 +123,6 @@ def test_any_other_path_is_404(server, path):
     assert _request(server, path)[0] == 404
 
 
-@pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH"])
+@pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 def test_any_other_method_is_405(server, method):
     assert _request(server, "/health", method)[0] == 405

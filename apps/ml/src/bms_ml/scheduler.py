@@ -41,6 +41,7 @@ class CycleResult:
     exit_code: int
     summary: dict[str, Any] | None
     timed_out: bool = False
+    stopped: bool = False  # ended by SIGTERM: not a failure, and not recorded
 
 
 class Clock(Protocol):
@@ -58,6 +59,19 @@ def next_tick(now: datetime, interval_seconds: int) -> datetime:
     return datetime.fromtimestamp(k * interval_seconds + TICK_OFFSET_SECONDS, UTC)
 
 
+def retry_at(now: datetime, interval_seconds: int) -> datetime:
+    """When to retry a failed cycle: in 300 s, unless that crosses into the next hour.
+
+    A retry at 13:01 would score as_of_hour 13:00 before HH:05, when the previous
+    hour is complete, and the ledger would then skip the 13:05 tick (code review,
+    PR 3). Across an hour boundary the retry waits for the next tick instead."""
+    retry = now + timedelta(seconds=RETRY_SECONDS)
+    hour = now.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+    if retry >= hour + timedelta(hours=1):
+        return next_tick(now, interval_seconds)
+    return retry
+
+
 def run_scheduler(
     *,
     clock: Clock,
@@ -70,10 +84,12 @@ def run_scheduler(
     retry = False
     while True:
         now = clock.now()
-        target = now + timedelta(seconds=RETRY_SECONDS) if retry else next_tick(now, interval_seconds)
+        target = retry_at(now, interval_seconds) if retry else next_tick(now, interval_seconds)
         if wait(max(0.0, (target - now).total_seconds())):
             return EXIT_OK
         result = run_cycle_process()
+        if result.stopped:
+            return EXIT_OK
         health.record(result, clock.now())
         if result.exit_code == EXIT_CONFIG:
             log.event("scheduler_stopped", "error", reason="the cycle exited 78")
@@ -89,7 +105,9 @@ def _relay(stream: TextIO, out: TextIO, found: dict[str, Any]) -> None:
             record = json.loads(line)
         except ValueError:
             record = None
-        if not isinstance(record, dict):
+        # Only our own log records (log.py's shape) are relayed; anything else, a
+        # traceback or a third-party library's JSON, is counted and dropped.
+        if not (isinstance(record, dict) and {"ts", "level", "event"} <= record.keys()):
             dropped += 1
             continue
         out.write(line if line.endswith("\n") else line + "\n")
@@ -133,6 +151,7 @@ def run_cycle_process(
     reader.start()
     deadline = time.monotonic() + timeout_seconds
     timed_out = False
+    stopped = False
     code: int | None = None
     while code is None:
         try:
@@ -140,6 +159,7 @@ def run_cycle_process(
         except subprocess.TimeoutExpired:
             if stop is not None and stop.is_set():
                 _end(process, gracefully=True)
+                stopped = True
                 code = EXIT_CYCLE_FAILED
             elif time.monotonic() >= deadline:
                 _end(process, gracefully=False)
@@ -151,4 +171,4 @@ def run_cycle_process(
     if timed_out:
         log.event("cycle_timed_out", "error", timeout_seconds=timeout_seconds)
     exit_code = code if code in (EXIT_OK, EXIT_CONFIG) else EXIT_CYCLE_FAILED
-    return CycleResult(exit_code, found.get("summary"), timed_out)
+    return CycleResult(exit_code, found.get("summary"), timed_out, stopped)

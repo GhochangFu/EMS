@@ -62,9 +62,10 @@ def check_role(row: Mapping[str, Any] | None) -> str:
         raise PreflightError("the database role is a superuser: connect as bms_fleet")
     if not (row["can_insert_runs"] and row["can_insert_forecasts"]):
         raise PreflightError("the database role cannot insert into ml.model_runs and ml.forecasts")
-    if row["can_update_forecasts"]:
+    if row["can_rewrite_ml"]:
         raise PreflightError(
-            "the database role can update ml.forecasts: it is wider than the scorer's contract"
+            "the database role can update, delete or truncate an ml table: "
+            "it is wider than the scorer's contract"
         )
     return str(row["role_name"])
 

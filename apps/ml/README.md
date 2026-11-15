@@ -40,13 +40,15 @@ uv run python -m bms_ml serve                  # the hourly loop, GET /health on
 uv run python -m bms_ml health                 # the Docker HEALTHCHECK client
 ```
 
-Exit codes: `0` ok, `1` a cycle failed (retried in 300 s), `78` configuration,
-schema, role or model refused (the loop stops).
+Exit codes: `0` ok (a partial failure is counted and logged, then retried at the
+next tick), `1` every organization the cycle tried failed (retried in 300 s, or
+at the next tick when 300 s would cross into the next hour), `78`
+configuration, schema, role or model refused (the loop stops).
 
 | Variable | Default | Rule |
 |---|---|---|
 | `DATABASE_URL_FLEET` | — | required; no fallback to `DATABASE_URL` |
-| `ML_INTERVAL_SECONDS` | 3600 | 900–86400 |
+| `ML_INTERVAL_SECONDS` | 3600 | a multiple of 900 that divides 86400 (ticks at :05, :20, :35 or :50) |
 | `ML_CYCLE_TIMEOUT_SECONDS` | 900 | 60 to interval − 60 |
 | `ML_FORECAST_HORIZON_HOURS` | 48 | 1–64 |
 | `ML_CONTEXT_HOURS` | 2016 | 336–2048 |
