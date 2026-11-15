@@ -104,6 +104,28 @@ const journalWith = (entries: ReadonlyArray<{ tag: string; when: unknown }>): st
     entries: entries.map((e, idx) => ({ idx, version: "7", when: e.when, tag: e.tag, breakpoints: true })),
   });
 
+
+/** ADR 0135 / plan E1.1 PR 1 — a minimal Python manifest the Python cases edit. */
+const PYPROJECT = `[project]
+name = "bms-ml"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "numpy==2.1.0",
+]
+
+[tool.ruff]
+line-length = 100
+`;
+
+/** `PYPROJECT` with `old` replaced by `next` — one edit per case, nothing else moves. */
+const pyWith = (old: string, next: string): string => PYPROJECT.replace(old, next);
+
+/** A two-package `uv.lock`, the shape `uv lock` writes. */
+const UV_LOCK = (packages: ReadonlyArray<{ name: string; version: string }>): string =>
+  "version = 1\nrequires-python = \">=3.12\"\n\n" +
+  packages.map((p) => `[[package]]\nname = "${p.name}"\nversion = "${p.version}"\nsource = { registry = "https://pypi.org/simple" }\n`).join("\n");
+
 afterAll(() => {
   for (const dir of scratchDirs) {
     rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
@@ -389,5 +411,142 @@ describe("the Claude Code hooks still work after the shared extraction", () => {
     });
     expect(r.code).toBe(2);
     expect(r.stderr).toContain("ahead of the wall clock");
+  });
+});
+
+describe("pre-commit backstop - Python manifests (ADR 0135)", () => {
+  const PY = "apps/ml/pyproject.toml";
+  const LOCK = "apps/ml/uv.lock";
+
+  it("aborts on a [project] dependency added with no ADR staged", () => {
+    const dir = scratchRepo({ [PY]: PYPROJECT });
+    const r = runGate(dir, { [PY]: pyWith('  "numpy==2.1.0",\n', '  "numpy==2.1.0",\n  "scikit-learn==1.5.0",\n') });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("Dependency specifiers added with no ADR");
+    expect(r.stderr).toContain("scikit-learn==1.5.0");
+  });
+
+  it("aborts on a [dependency-groups] entry added with no ADR staged", () => {
+    const dir = scratchRepo({ [PY]: PYPROJECT });
+    const r = runGate(dir, { [PY]: PYPROJECT + '\n[dependency-groups]\ndev = [\n  "pytest==8.3.0",\n]\n' });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("pytest==8.3.0");
+  });
+
+  it("aborts on a [tool.uv.sources] line added with no ADR staged", () => {
+    const dir = scratchRepo({ [PY]: PYPROJECT });
+    const r = runGate(dir, { [PY]: PYPROJECT + '\n[tool.uv.sources]\ntorch = { index = "pytorch-cpu" }\n' });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("torch = { index");
+  });
+
+  it("aborts on a [[tool.uv.index]] table added with no ADR staged", () => {
+    const dir = scratchRepo({ [PY]: PYPROJECT });
+    const r = runGate(dir, {
+      [PY]: PYPROJECT + '\n[[tool.uv.index]]\nname = "pytorch-cpu"\nurl = "https://download.pytorch.org/whl/cpu"\nexplicit = true\n',
+    });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("download.pytorch.org");
+  });
+
+  it("aborts on a uv.lock that gains a package with no ADR staged", () => {
+    const dir = scratchRepo({ [LOCK]: UV_LOCK([{ name: "numpy", version: "2.1.0" }]) });
+    const r = runGate(dir, {
+      [LOCK]: UV_LOCK([{ name: "left-pad", version: "1.0.0" }, { name: "numpy", version: "2.1.0" }]),
+    });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("left-pad");
+  });
+
+  it("passes each Python dependency addition when an ADR is staged", () => {
+    const dir = scratchRepo({ [PY]: PYPROJECT, [LOCK]: UV_LOCK([{ name: "numpy", version: "2.1.0" }]) });
+    const r = runGate(dir, {
+      [PY]: pyWith('  "numpy==2.1.0",\n', '  "numpy==2.1.0",\n  "scikit-learn==1.5.0",\n'),
+      [LOCK]: UV_LOCK([{ name: "numpy", version: "2.1.0" }, { name: "scikit-learn", version: "1.5.0" }]),
+      "docs/adr/0099-sklearn.md": "# ADR 0099\n\nAccepted.\n",
+    });
+    expect(r.stderr).toBe("");
+    expect(r.code).toBe(0);
+  });
+
+  it("passes a change confined to [tool.ruff] / [tool.pytest.ini_options], multi-line arrays included", () => {
+    const dir = scratchRepo({ [PY]: PYPROJECT });
+    const r = runGate(dir, {
+      [PY]: PYPROJECT + '\n[tool.pytest.ini_options]\naddopts = "-q"\n\n[tool.ruff.lint]\nselect = [\n  "E",\n  "F",\n]\n',
+    });
+    expect(r.stderr).toBe("");
+    expect(r.code).toBe(0);
+  });
+
+  it("passes a uv.lock change that only bumps a version", () => {
+    const dir = scratchRepo({ [LOCK]: UV_LOCK([{ name: "numpy", version: "2.1.0" }]) });
+    const r = runGate(dir, { [LOCK]: UV_LOCK([{ name: "numpy", version: "2.1.1" }]) });
+    expect(r.stderr).toBe("");
+    expect(r.code).toBe(0);
+  });
+
+  it("passes reordered dependencies", () => {
+    const two = pyWith('  "numpy==2.1.0",\n', '  "numpy==2.1.0",\n  "pandas==2.2.0",\n');
+    const dir = scratchRepo({ [PY]: two });
+    const r = runGate(dir, { [PY]: pyWith('  "numpy==2.1.0",\n', '  "pandas==2.2.0",\n  "numpy==2.1.0",\n') });
+    expect(r.stderr).toBe("");
+    expect(r.code).toBe(0);
+  });
+});
+
+describe("the Claude Code dependency hook - Python manifests (ADR 0135)", () => {
+  const deny = (r: { stdout: string }): string | undefined =>
+    r.stdout ? JSON.parse(r.stdout).hookSpecificOutput?.permissionDecision : undefined;
+
+  it("denies a Write of a pyproject.toml that declares dependencies", () => {
+    const r = runClaudeHook("check-dependency-adr.mjs", {
+      tool_name: "Write",
+      tool_input: { file_path: "/repo/apps/ml/pyproject.toml", content: PYPROJECT },
+    });
+    expect(deny(r)).toBe("deny");
+  });
+
+  it("denies an Edit that adds a dependency, reading the section from the file on disk", () => {
+    const dir = scratchRepo({ "apps/ml/pyproject.toml": PYPROJECT });
+    const r = runClaudeHook("check-dependency-adr.mjs", {
+      tool_name: "Edit",
+      tool_input: {
+        file_path: join(dir, "apps/ml/pyproject.toml"),
+        old_string: '  "numpy==2.1.0",\n',
+        new_string: '  "numpy==2.1.0",\n  "scikit-learn==1.5.0",\n',
+      },
+    });
+    expect(deny(r)).toBe("deny");
+  });
+
+  it("stays silent on a [tool.ruff] Edit", () => {
+    const dir = scratchRepo({ "apps/ml/pyproject.toml": PYPROJECT });
+    const r = runClaudeHook("check-dependency-adr.mjs", {
+      tool_name: "Edit",
+      tool_input: {
+        file_path: join(dir, "apps/ml/pyproject.toml"),
+        old_string: "line-length = 100",
+        new_string: 'line-length = 100\nselect = ["E", "F"]',
+      },
+    });
+    expect(r.stdout).toBe("");
+  });
+
+  it("denies any edit of uv.lock, and says the lock is produced by `uv lock`", () => {
+    for (const tool_name of ["Edit", "Write", "MultiEdit"]) {
+      const r = runClaudeHook("check-dependency-adr.mjs", {
+        tool_name,
+        tool_input: { file_path: "apps/ml/uv.lock", content: "", old_string: "a", new_string: "b", edits: [] },
+      });
+      expect(deny(r), tool_name).toBe("deny");
+      expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason).toContain("uv lock");
+    }
+  });
+
+  it("ignores manifests under node_modules/ or .venv/", () => {
+    for (const file_path of ["/repo/node_modules/x/pyproject.toml", "/repo/apps/ml/.venv/lib/x/pyproject.toml", "/repo/.venv/uv.lock"]) {
+      const r = runClaudeHook("check-dependency-adr.mjs", { tool_name: "Write", tool_input: { file_path, content: PYPROJECT } });
+      expect(r.stdout, file_path).toBe("");
+    }
   });
 });
