@@ -36,9 +36,19 @@
 
 import { execFileSync } from 'node:child_process';
 
-import { addedSpecLines } from '../scripts/checks/dependency-spec.mjs';
+import {
+  addedPyDependencyEntries,
+  addedSpecLines,
+  addedUvLockPackageNames,
+} from '../scripts/checks/dependency-spec.mjs';
 import { journalProblems } from '../scripts/checks/drizzle-journal.mjs';
-import { isDrizzleMigration, isPackageJson, isStyleCheckedSource } from '../scripts/checks/paths.mjs';
+import {
+  isDrizzleMigration,
+  isPackageJson,
+  isPyprojectToml,
+  isStyleCheckedSource,
+  isUvLock,
+} from '../scripts/checks/paths.mjs';
 import { lineCapViolation, styleViolations } from '../scripts/checks/style-hygiene.mjs';
 
 // Deliberately the CURRENT WORKING DIRECTORY, not this file's own location.
@@ -126,14 +136,26 @@ function checkAppliedMigrationEdit() {
  * everyone learns to skip.
  */
 function checkDependencyAdr() {
-  const manifests = stagedPaths('ACMR').filter(isPackageJson);
+  // Three manifest kinds feed one list (ADR 0135): npm's package.json, and for
+  // apps/ml the Python pyproject.toml and the uv.lock `uv lock` generates.
+  const manifests = stagedPaths('ACMR')
+    .map((path) =>
+      isPackageJson(path)
+        ? { path, added: addedSpecLines }
+        : isPyprojectToml(path)
+          ? { path, added: addedPyDependencyEntries }
+          : isUvLock(path)
+            ? { path, added: (b, a) => addedUvLockPackageNames(b, a).map((n) => `locked package "${n}"`) }
+            : null,
+    )
+    .filter(Boolean);
   if (manifests.length === 0) return [];
 
   const added = [];
-  for (const path of manifests) {
+  for (const { path, added: diff } of manifests) {
     const before = headContent(path) ?? '';
     const after = stagedContent(path) ?? '';
-    for (const line of addedSpecLines(before, after)) added.push(`${path}: ${line}`);
+    for (const line of diff(before, after)) added.push(`${path}: ${line}`);
   }
   if (added.length === 0) return [];
 
