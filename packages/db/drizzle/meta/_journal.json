@@ -1086,6 +1086,13 @@
       "when": 1794661506961,
       "tag": "0155_location_tariffs",
       "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1794710125419,
+      "tag": "0156_location_tariff_meters",
+      "breakpoints": true
     }
   ]
 }

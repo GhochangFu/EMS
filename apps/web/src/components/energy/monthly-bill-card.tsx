@@ -84,6 +84,7 @@ function TariffLine({ tariff }: { tariff: NonNullable<EnergyBill["tariff"]> }) {
 function BillBody({ bill, data }: { bill: NonNullable<EnergyBill["bill"]>; data: EnergyBill }) {
   const money = (n: number, digits = 2): string => formatMoney(n, data.currency, digits) ?? number(n);
   const unit = unitLabel(bill.unitType);
+  const meters = data.mapping?.billingMeterAssetIds.length ?? 1;
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -91,6 +92,8 @@ function BillBody({ bill, data }: { bill: NonNullable<EnergyBill["bill"]>; data:
         <span className="text-sm text-ink-muted">
           {number(bill.units)} {unit}
         </span>
+        {/* ADR 0134 Amendment 3: several meters on one bill — say so, so the units are not read as one meter's. */}
+        {meters > 1 ? <span className="text-sm text-ink-muted">{`${meters} meters`}</span> : null}
         {data.complete ? null : <StatusPill label="Month to date" tone="info" />}
         {bill.estimated ? <StatusPill label="Estimated" tone="warning" /> : null}
         {data.dataStatus !== null && data.dataStatus !== "official" ? <TariffVerifyBadge /> : null}

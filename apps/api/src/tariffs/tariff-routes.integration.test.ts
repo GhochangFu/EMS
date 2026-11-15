@@ -11,6 +11,7 @@ import {
   assertAMappingWriteIsAuditedOnce,
   assertAnOverlapIs409,
   assertASlashKeyRoundTrips,
+  assertSeveralMetersBillTogether,
   assertAViewerReadsCategoriesAndTheBill,
   assertUnreadableLocationAndMeterAreOne404,
   assertUpdateAndDeleteAreAudited,
@@ -68,6 +69,8 @@ describe.skipIf(!connectionString)("F4.365 — tariff routes and location mappin
   it("a foreign or out-of-subtree meter is one 400; an unknown key or a wrong load unit is a 400", () => assertAForeignMeterIs400(use()));
   it("a viewer reads categories (state= narrows) and a readable location's bill", () => assertAViewerReadsCategoriesAndTheBill(use()));
   it("an unreadable location and an unreadable billing meter are the same 404", () => assertUnreadableLocationAndMeterAreOne404(use()));
+  it("F4.373: several meters bill together; a foreign meter is a 400; every meter must be readable; PATCH replaces the set", () =>
+    assertSeveralMetersBillTogether(use()));
   it("a key containing / round-trips through the versions read", () => assertASlashKeyRoundTrips(use()));
   it("update and delete are audited; a mapping under another location is a 404", () => assertUpdateAndDeleteAreAudited(use()));
 });

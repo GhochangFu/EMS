@@ -17,7 +17,14 @@ export interface MappingRow {
   organizationId: string;
   locationId: string;
   tariffKey: string;
+  /** The primary billing meter: the first of {@link billingMeterAssetIds}. */
   billingMeterAssetId: string;
+  /**
+   * Every billing meter (ADR 0134 Amendment 3), read from `bms.location_tariff_meters`,
+   * the primary first. Never empty: a mapping with no meter rows (written by raw SQL,
+   * not by the API, which writes both in one transaction) reads as its primary alone.
+   */
+  billingMeterAssetIds: string[];
   sanctionedLoad: number;
   sanctionedLoadUnit: "kw" | "kva" | "hp";
   effectiveFrom: string;
@@ -40,6 +47,7 @@ interface Row {
   location_id: string;
   tariff_key: string;
   billing_meter_asset_id: string;
+  billing_meter_asset_ids: string[] | null;
   sanctioned_load: string;
   sanctioned_load_unit: "kw" | "kva" | "hp";
   effective_from: string;
@@ -51,6 +59,9 @@ interface Row {
 
 const SELECT = `
   SELECT lt.id, lt.organization_id, lt.location_id, lt.tariff_key, lt.billing_meter_asset_id,
+         ARRAY(SELECT m.asset_id::text FROM bms.location_tariff_meters m
+                WHERE m.location_tariff_id = lt.id AND m.organization_id = lt.organization_id
+                ORDER BY m.asset_id = lt.billing_meter_asset_id DESC, m.asset_id) AS billing_meter_asset_ids,
          lt.sanctioned_load, lt.sanctioned_load_unit,
          to_char(lt.effective_from, 'YYYY-MM-DD') AS effective_from,
          to_char(lt.effective_to, 'YYYY-MM-DD') AS effective_to,
@@ -58,6 +69,12 @@ const SELECT = `
     FROM bms.location_tariffs lt
     JOIN bms.locations l ON l.id = lt.location_id AND l.organization_id = lt.organization_id
     JOIN bms.organizations o ON o.id = lt.organization_id`;
+
+/** The meter rows with the primary first; the primary alone when there are none. */
+export function meterList(primary: string, rows: readonly string[] | null): string[] {
+  const others = (rows ?? []).filter((id) => id !== primary);
+  return [primary, ...others];
+}
 
 export function toMappingRow(r: Row): MappingRow {
   const zone = resolveSiteTimeZone(r.location_zone, r.organization_zone);
@@ -67,6 +84,7 @@ export function toMappingRow(r: Row): MappingRow {
     locationId: r.location_id,
     tariffKey: r.tariff_key,
     billingMeterAssetId: r.billing_meter_asset_id,
+    billingMeterAssetIds: meterList(r.billing_meter_asset_id, r.billing_meter_asset_ids),
     sanctionedLoad: Number(r.sanctioned_load),
     sanctionedLoadUnit: r.sanctioned_load_unit,
     effectiveFrom: r.effective_from,

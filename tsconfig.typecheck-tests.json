@@ -151,6 +151,8 @@
     "tests/f4.365-tariff-catalog.test.ts",
     "tests/f4.365-tariff-catalog.integration.test.ts",
     "tests/f4.365-tariff-surface-reachable.test.ts",
+    "tests/f4.373-location-tariff-meters-schema.test.ts",
+    "tests/f4.373-location-tariff-meters-schema.integration.test.ts",
     "tests/e4.1a-calc-parameters-surface-reachable.test.ts",
     "tests/e4.1b-location-timezone-schema.test.ts",
     "tests/e4.1c-organization-currency-schema.test.ts",

@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import {
   createLocationTariffBodySchema,
   loadUnitForBasis,
+  MAX_BILLING_METERS,
   type LocationTariffDto,
   type TariffLineDto,
   updateLocationTariffBodySchema,
@@ -44,7 +45,8 @@ type FormState = {
   state: string;
   search: string;
   tariffKey: string;
-  billingMeterAssetId: string;
+  /** The billing meters in the order picked; the first is the primary (ADR 0134 Amendment 3). */
+  billingMeterAssetIds: string[];
   /** Kept as text; `Number()` on submit. */
   sanctionedLoad: string;
   sanctionedLoadUnit: LoadUnit;
@@ -73,7 +75,8 @@ function lockedUnit(line: TariffLineDto | undefined): LoadUnit | null {
 /**
  * `F4.365` U8 (ADR 0134 decision 3; plan Q10) — a location's tariff mappings, reached from the
  * "Tariff" row action on the Locations screen: which tariff line bills the location, through
- * which meter, at which sanctioned load, over which months. Each date is a month (plan D8); a
+ * which meters, at which sanctioned load, over which months. A mapping names one or more billing
+ * meters whose units add up to one bill (`F4.373`, ADR 0134 Amendment 3). Each date is a month (plan D8); a
  * window's end is the first month it no longer covers.
  *
  * A line whose data status is not `official` carries the Verify badge (plan Q8). The line itself
@@ -202,7 +205,7 @@ export function LocationTariffAdminPage({ user }: { user: AuthUser }) {
           <thead>
             <tr className="border-b text-left text-xs uppercase text-ink-muted">
               <th className="px-2 py-2">Tariff</th>
-              <th className="px-2 py-2">Billing meter</th>
+              <th className="px-2 py-2">Billing meters</th>
               <th className="px-2 py-2">Sanctioned load</th>
               <th className="px-2 py-2">From</th>
               <th className="px-2 py-2">Until (excl.)</th>
@@ -223,7 +226,13 @@ export function LocationTariffAdminPage({ user }: { user: AuthUser }) {
                     </span>
                     <code className="block text-xs text-ink-muted">{row.tariffKey}</code>
                   </td>
-                  <td className="px-2 py-2">{row.billingMeterName ?? row.billingMeterAssetId}</td>
+                  <td className="px-2 py-2">
+                    <ul aria-label={`Billing meters of ${name}`}>
+                      {row.billingMeterAssetIds.map((id, i) => (
+                        <li key={id}>{row.billingMeterNames[i] ?? id}</li>
+                      ))}
+                    </ul>
+                  </td>
                   <td className="px-2 py-2 font-mono">
                     {row.sanctionedLoad} {loadUnitLabel(row.sanctionedLoadUnit)}
                   </td>
@@ -310,7 +319,7 @@ function initialForm(editing: LocationTariffDto | null, zone: string | undefined
       state: "",
       search: "",
       tariffKey: editing.tariffKey,
-      billingMeterAssetId: editing.billingMeterAssetId,
+      billingMeterAssetIds: [...editing.billingMeterAssetIds],
       sanctionedLoad: String(editing.sanctionedLoad),
       sanctionedLoadUnit: editing.sanctionedLoadUnit,
       effectiveFrom: toMonthInput(editing.effectiveFrom),
@@ -321,7 +330,7 @@ function initialForm(editing: LocationTariffDto | null, zone: string | undefined
     state: "",
     search: "",
     tariffKey: "",
-    billingMeterAssetId: "",
+    billingMeterAssetIds: [],
     sanctionedLoad: "",
     sanctionedLoadUnit: "kw",
     effectiveFrom: currentMonthInput(new Date(), zone),
@@ -331,8 +340,9 @@ function initialForm(editing: LocationTariffDto | null, zone: string | undefined
 
 /**
  * The add/edit modal. Add picks the line by state, then a search over key, name and code, then
- * the category; Edit restates the line. The meter list is the location's own active assets
- * (`fetchAdminAssets`). The body is parsed with the route's own schema before it is sent, so the
+ * the category; Edit restates the line. The meters are a checkbox list of the location's own
+ * active assets (`fetchAdminAssets`), at least one and at most {@link MAX_BILLING_METERS}; the
+ * first ticked is the primary. The body is parsed with the route's own schema before it is sent, so the
  * request is exactly the contract's shape, and a refusal is the server's sentence.
  */
 function LocationTariffForm({ locationId, editing, zone, lines, lineByKey, onClose, onSaved }: LocationTariffFormProps) {
@@ -375,9 +385,14 @@ function LocationTariffForm({ locationId, editing, zone, lines, lineByKey, onClo
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
 
+  function toggleMeter(assetId: string, checked: boolean): void {
+    const rest = form.billingMeterAssetIds.filter((id) => id !== assetId);
+    setForm({ ...form, billingMeterAssetIds: checked ? [...rest, assetId] : rest });
+  }
+
   function submit(): void {
     const fields = {
-      billingMeterAssetId: form.billingMeterAssetId,
+      billingMeterAssetIds: form.billingMeterAssetIds,
       sanctionedLoad: form.sanctionedLoad.trim() === "" ? undefined : Number(form.sanctionedLoad),
       sanctionedLoadUnit: unit,
       effectiveFrom: fromMonthInput(form.effectiveFrom) ?? undefined,
@@ -462,22 +477,29 @@ function LocationTariffForm({ locationId, editing, zone, lines, lineByKey, onClo
             </div>
           ) : null}
 
-          <label className={labelClass}>
-            Billing meter
-            <select
-              className={fieldClass}
-              value={form.billingMeterAssetId}
-              required
-              onChange={(e) => setForm({ ...form, billingMeterAssetId: e.target.value })}
-            >
-              <option value="">Select meter</option>
-              {assets.map((asset) => (
-                <option key={asset.id} value={asset.id}>
-                  {asset.code} · {asset.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <fieldset>
+            <legend className={labelClass}>Billing meters</legend>
+            <p className="text-2xs text-ink-muted">
+              {`Tick every meter on the utility's bill (1 to ${MAX_BILLING_METERS}); their units add up to one bill.`}
+            </p>
+            {assetsQ.isSuccess && assets.length === 0 ? <p className="text-sm text-ink-muted">This location has no assets.</p> : null}
+            <div className="mt-1 max-h-40 space-y-1 overflow-y-auto surface-field px-3 py-2">
+              {assets.map((asset) => {
+                const checked = form.billingMeterAssetIds.includes(asset.id);
+                return (
+                  <label key={asset.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!checked && form.billingMeterAssetIds.length >= MAX_BILLING_METERS}
+                      onChange={(e) => toggleMeter(asset.id, e.target.checked)}
+                    />
+                    {asset.code} · {asset.name}
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
 
           <div className="flex gap-3">
             <label className={`${labelClass} flex-1`}>

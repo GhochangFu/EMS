@@ -6,12 +6,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Pool } from "pg";
 
-import { assets, locations, locationTariffs } from "@bms/db";
+import { assets, locations, locationTariffMeters, locationTariffs } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { loadUnitForBasis } from "@bms/shared";
+import { billingMetersOf, loadUnitForBasis } from "@bms/shared";
 import type {
   CreateLocationTariffBody,
   JwtPayload,
@@ -25,6 +25,7 @@ import { AccessControlService } from "../auth/access-control.service";
 import { expandLocationSubtrees } from "../auth/location-tree";
 import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
+import { meterList } from "./location-tariff-read";
 import { listedVersion, readLineVersions } from "./tariff-lines.service";
 
 const NOT_FOUND = "Tariff mapping not found";
@@ -55,7 +56,7 @@ export function translateLocationTariffWriteError(err: unknown, organizationId: 
         "effectiveTo later, and the sanctioned load is a non-negative number in kw, kva or hp.",
     );
   }
-  if (code === "23503" && constraint?.startsWith("location_tariffs_")) {
+  if (code === "23503" && (constraint?.startsWith("location_tariffs_") || constraint?.startsWith("location_tariff_meters_"))) {
     return new BadRequestException("The location or the billing meter no longer exists.");
   }
   return err;
@@ -72,6 +73,8 @@ interface DtoRow extends Record<string, unknown> {
   data_status: LocationTariffDto["dataStatus"];
   billing_meter_asset_id: string;
   billing_meter_name: string | null;
+  billing_meter_asset_ids: string[] | null;
+  billing_meter_names: (string | null)[] | null;
   sanctioned_load: string;
   sanctioned_load_unit: LocationTariffDto["sanctionedLoadUnit"];
   effective_from: string;
@@ -85,9 +88,9 @@ interface DtoRow extends Record<string, unknown> {
  * **Gate.** Every route: `requireMasterDataUser`, then `canManageLocation` on
  * the path's location (a `location_admin` manages its own subtree only).
  *
- * **Parents.** The billing meter must belong to the location's organization
- * and sit in the location's subtree; "not yours" and "does not exist" are one
- * 400 sentence. The `tariffKey` must name a line with at least one version the
+ * **Parents.** Every billing meter (1–8, ADR 0134 Amendment 3) must belong
+ * to the location's organization and sit in the location's subtree; "not
+ * yours" and "does not exist" are one 400 sentence. The `tariffKey` must name a line with at least one version the
  * organization can see, and a per-load fixed basis needs the matching
  * sanctioned-load unit.
  *
@@ -97,6 +100,10 @@ interface DtoRow extends Record<string, unknown> {
  * ({@link translateLocationTariffWriteError}). Pre-reads run on the fleet
  * handles; the list and every write run inside `withTenant`, with the audit
  * row in the same transaction.
+ *
+ * **Meters** (`F4.373`). The set lives in `bms.location_tariff_meters`, written
+ * in the mapping's own transaction; `billing_meter_asset_id` is its first
+ * meter. A PATCH that names meters replaces the set.
  */
 @Injectable()
 export class LocationTariffsService {
@@ -118,10 +125,12 @@ export class LocationTariffsService {
     const organizationId = await this.requireManageable(jwt, locationId);
     await this.assertKeyAndUnit(organizationId, body.tariffKey, body.effectiveFrom, body.sanctionedLoadUnit);
     const window: Window = { from: body.effectiveFrom, to: body.effectiveTo ?? null };
+    const meters = billingMetersOf(body);
+    if (meters === undefined) throw new BadRequestException("Name at least one billing meter.");
 
     return this.translating(organizationId, () =>
       withTenant(this.db, organizationId, async (tx) => {
-        await this.assertMeterInSubtree(tx, organizationId, locationId, body.billingMeterAssetId);
+        await this.assertMetersInSubtree(tx, organizationId, locationId, meters);
         await this.refuseOverlap(tx, locationId, window, null);
         const [written] = await tx
           .insert(locationTariffs)
@@ -129,7 +138,7 @@ export class LocationTariffsService {
             organizationId,
             locationId,
             tariffKey: body.tariffKey,
-            billingMeterAssetId: body.billingMeterAssetId,
+            billingMeterAssetId: meters[0],
             sanctionedLoad: String(body.sanctionedLoad),
             sanctionedLoadUnit: body.sanctionedLoadUnit,
             effectiveFrom: window.from,
@@ -137,6 +146,7 @@ export class LocationTariffsService {
           })
           .returning({ id: locationTariffs.id });
         if (!written) throw new Error("create: the insert returned no row");
+        await this.writeMeters(tx, organizationId, written.id, meters);
         await this.audit.write(
           {
             actor: jwt,
@@ -144,7 +154,7 @@ export class LocationTariffsService {
             entityType: "location_tariff",
             entityId: written.id,
             organizationId,
-            payload: { locationId, ...body },
+            payload: { locationId, ...body, billingMeterAssetId: meters[0], billingMeterAssetIds: meters },
           },
           tx,
         );
@@ -161,10 +171,11 @@ export class LocationTariffsService {
       withTenant(this.db, organizationId, async (tx) => {
         // The stored row and the meter are tenant rows: read under the write's own GUC and transaction.
         const existing = await this.fetchExisting(tx, organizationId, locationId, id);
-        const meter = body.billingMeterAssetId ?? existing.billingMeterAssetId;
-        if (body.billingMeterAssetId !== undefined) {
-          await this.assertMeterInSubtree(tx, organizationId, locationId, meter);
+        const replaced = billingMetersOf(body);
+        if (replaced !== undefined) {
+          await this.assertMetersInSubtree(tx, organizationId, locationId, replaced);
         }
+        const meters = replaced ?? existing.billingMeterAssetIds;
         const window: Window = {
           from: body.effectiveFrom ?? existing.effectiveFrom,
           to: body.effectiveTo === undefined ? existing.effectiveTo : body.effectiveTo,
@@ -178,7 +189,7 @@ export class LocationTariffsService {
         const updated = await tx
           .update(locationTariffs)
           .set({
-            billingMeterAssetId: meter,
+            billingMeterAssetId: meters[0],
             ...(body.sanctionedLoad === undefined ? {} : { sanctionedLoad: String(body.sanctionedLoad) }),
             sanctionedLoadUnit: unit,
             effectiveFrom: window.from,
@@ -188,6 +199,12 @@ export class LocationTariffsService {
           .where(and(eq(locationTariffs.id, id), eq(locationTariffs.locationId, locationId)))
           .returning({ id: locationTariffs.id });
         if (updated.length === 0) throw new NotFoundException(NOT_FOUND);
+        if (replaced !== undefined) {
+          await tx
+            .delete(locationTariffMeters)
+            .where(and(eq(locationTariffMeters.locationTariffId, id), eq(locationTariffMeters.organizationId, organizationId)));
+          await this.writeMeters(tx, organizationId, id, replaced);
+        }
         await this.audit.write(
           {
             actor: jwt,
@@ -195,7 +212,12 @@ export class LocationTariffsService {
             entityType: "location_tariff",
             entityId: id,
             organizationId,
-            payload: { locationId, tariffKey: existing.tariffKey, ...body },
+            payload: {
+              locationId,
+              tariffKey: existing.tariffKey,
+              ...body,
+              ...(replaced === undefined ? {} : { billingMeterAssetId: replaced[0], billingMeterAssetIds: replaced }),
+            },
           },
           tx,
         );
@@ -247,22 +269,28 @@ export class LocationTariffsService {
     return row.organizationId;
   }
 
-  /** Inside the write's transaction: the meter and the subtree are read under the tenant GUC. */
-  private async assertMeterInSubtree(tx: BmsTx, organizationId: string, locationId: string, assetId: string): Promise<void> {
-    const [row] = await tx
-      .select({ organizationId: assets.organizationId, locationId: assets.locationId })
+  /**
+   * Inside the write's transaction: every meter and the subtree are read under the tenant GUC
+   * (ADR 0134 decision 3's rule, per meter — Amendment 3 item 4). One sentence for all failures.
+   */
+  private async assertMetersInSubtree(tx: BmsTx, organizationId: string, locationId: string, assetIds: readonly string[]): Promise<void> {
+    const rows = await tx
+      .select({ id: assets.id, organizationId: assets.organizationId, locationId: assets.locationId })
       .from(assets)
-      .where(eq(assets.id, assetId))
-      .limit(1);
-    const subtree =
-      row?.organizationId === organizationId && row.locationId !== null
-        ? await expandLocationSubtrees(tx, { organizationIds: [organizationId], ids: [locationId] })
-        : [];
-    if (!row || row.locationId === null || !subtree.includes(row.locationId)) {
+      .where(inArray(assets.id, [...assetIds]));
+    const own = rows.filter((row) => row.organizationId === organizationId && row.locationId !== null);
+    const subtree = own.length > 0 ? await expandLocationSubtrees(tx, { organizationIds: [organizationId], ids: [locationId] }) : [];
+    const ok = new Set(own.filter((row) => subtree.includes(row.locationId as string)).map((row) => row.id));
+    if (!assetIds.every((id) => ok.has(id))) {
       throw new BadRequestException(
-        "The billingMeterAssetId you supplied is not an asset of this location or a location under it, or does not exist.",
+        "A billing meter you supplied is not an asset of this location or a location under it, or does not exist.",
       );
     }
+  }
+
+  /** The mapping's meter rows, in the caller's tenant transaction. */
+  private async writeMeters(tx: BmsTx, organizationId: string, mappingId: string, assetIds: readonly string[]): Promise<void> {
+    await tx.insert(locationTariffMeters).values(assetIds.map((assetId) => ({ locationTariffId: mappingId, organizationId, assetId })));
   }
 
   private async assertKeyAndUnit(organizationId: string, key: string, effectiveFrom: string, unit: string): Promise<void> {
@@ -317,10 +345,15 @@ export class LocationTariffsService {
       .where(and(eq(locationTariffs.id, id), eq(locationTariffs.organizationId, organizationId), eq(locationTariffs.locationId, locationId)))
       .limit(1);
     if (!row) throw new NotFoundException(NOT_FOUND);
+    const meterRows = await tx
+      .select({ assetId: locationTariffMeters.assetId })
+      .from(locationTariffMeters)
+      .where(and(eq(locationTariffMeters.locationTariffId, id), eq(locationTariffMeters.organizationId, organizationId)));
     return {
       id: row.id,
       tariffKey: row.tariffKey,
       billingMeterAssetId: row.billingMeterAssetId,
+      billingMeterAssetIds: meterList(row.billingMeterAssetId, meterRows.map((m) => m.assetId).sort()),
       sanctionedLoad: Number(row.sanctionedLoad),
       sanctionedLoadUnit: row.sanctionedLoadUnit,
       effectiveFrom: row.effectiveFrom,
@@ -343,10 +376,18 @@ export class LocationTariffsService {
   private async selectDtos(tx: BmsTx, where: ReturnType<typeof sql>): Promise<LocationTariffDto[]> {
     const result = await tx.execute<DtoRow>(sql`
       SELECT lt.id, lt.organization_id, lt.location_id, lt.tariff_key, line.name AS tariff_name, line.data_status,
-             lt.billing_meter_asset_id, a.name AS billing_meter_name, lt.sanctioned_load, lt.sanctioned_load_unit,
+             lt.billing_meter_asset_id, a.name AS billing_meter_name, meters.ids AS billing_meter_asset_ids,
+             meters.names AS billing_meter_names, lt.sanctioned_load, lt.sanctioned_load_unit,
              to_char(lt.effective_from, 'YYYY-MM-DD') AS effective_from, to_char(lt.effective_to, 'YYYY-MM-DD') AS effective_to
         FROM bms.location_tariffs lt
         LEFT JOIN bms.assets a ON a.id = lt.billing_meter_asset_id AND a.organization_id = lt.organization_id
+        LEFT JOIN LATERAL (
+          SELECT array_agg(m.asset_id::text ORDER BY m.asset_id = lt.billing_meter_asset_id DESC, m.asset_id) AS ids,
+                 array_agg(ma.name ORDER BY m.asset_id = lt.billing_meter_asset_id DESC, m.asset_id) AS names
+            FROM bms.location_tariff_meters m
+            LEFT JOIN bms.assets ma ON ma.id = m.asset_id AND ma.organization_id = m.organization_id
+           WHERE m.location_tariff_id = lt.id AND m.organization_id = lt.organization_id
+        ) meters ON true
         LEFT JOIN LATERAL (
           SELECT v.name, v.data_status FROM (
             SELECT c.name, c.data_status, c.effective_from, 0 AS rank FROM bms.tariff_categories c WHERE c.key = lt.tariff_key
@@ -357,19 +398,26 @@ export class LocationTariffsService {
         ) line ON true
        WHERE ${where}
        ORDER BY lt.effective_from`);
-    return result.rows.map((r) => ({
-      id: r.id,
-      organizationId: r.organization_id,
-      locationId: r.location_id,
-      tariffKey: r.tariff_key,
-      tariffName: r.tariff_name,
-      dataStatus: r.data_status,
-      billingMeterAssetId: r.billing_meter_asset_id,
-      billingMeterName: r.billing_meter_name,
-      sanctionedLoad: Number(r.sanctioned_load),
-      sanctionedLoadUnit: r.sanctioned_load_unit,
-      effectiveFrom: r.effective_from,
-      effectiveTo: r.effective_to,
-    }));
+    return result.rows.map((r) => {
+      const ids = meterList(r.billing_meter_asset_id, r.billing_meter_asset_ids);
+      const nameOf = new Map((r.billing_meter_asset_ids ?? []).map((id, i) => [id, r.billing_meter_names?.[i] ?? null] as const));
+      nameOf.set(r.billing_meter_asset_id, r.billing_meter_name);
+      return {
+        id: r.id,
+        organizationId: r.organization_id,
+        locationId: r.location_id,
+        tariffKey: r.tariff_key,
+        tariffName: r.tariff_name,
+        dataStatus: r.data_status,
+        billingMeterAssetId: r.billing_meter_asset_id,
+        billingMeterName: r.billing_meter_name,
+        billingMeterAssetIds: ids,
+        billingMeterNames: ids.map((id) => nameOf.get(id) ?? null),
+        sanctionedLoad: Number(r.sanctioned_load),
+        sanctionedLoadUnit: r.sanctioned_load_unit,
+        effectiveFrom: r.effective_from,
+        effectiveTo: r.effective_to,
+      };
+    });
   }
 }

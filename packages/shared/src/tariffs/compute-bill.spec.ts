@@ -1,4 +1,4 @@
-import { billedUnits, computeBill, roundMoney, type BillSlab, type TariffFixedBasis } from "./compute-bill";
+import { billedUnits, billedUnitsOfMeters, computeBill, roundMoney, type BillSlab, type TariffFixedBasis } from "./compute-bill";
 
 /**
  * `F4.365` U1 — the golden bills of the step-3 plan §1, computed with the
@@ -148,4 +148,49 @@ export function assertChargesAreTheSumOfTheRoundedLines(): void {
   assert(bill.slabLines.every((l) => l.energyCharge === 0 && l.wheelingCharge === 0), JSON.stringify(bill.slabLines));
   assert(bill.energyCharge === 0 && bill.wheelingCharge === 0, `energy ${bill.energyCharge} wheeling ${bill.wheelingCharge}`);
   assert(bill.total === 0, `total ${bill.total}`);
+}
+
+/**
+ * `F4.373` (ADR 0134 Amendment 3) — several meters: units add up, a kVAh meter
+ * with no kVAh register is estimated from its own pf, one bad meter fails all.
+ */
+export function assertMetersAddUp(): void {
+  const none = { ok: false as const, reason: "empty" as const };
+  const two = billedUnitsOfMeters("kwh", [
+    { kwh: { ok: true, value: 100 }, kvah: none, averagePf: null },
+    { kwh: { ok: true, value: 150 }, kvah: none, averagePf: null },
+  ]);
+  assert(two.ok && two.units === 250 && !two.estimated && two.kwh === 250, `two kWh meters: ${JSON.stringify(two)}`);
+
+  // Meter 1 measures kVAh; meter 2 has none and is estimated from ITS OWN pf (0.5, not meter 1's 0.8).
+  const mixed = billedUnitsOfMeters("kvah", [
+    { kwh: { ok: true, value: 800 }, kvah: { ok: true, value: 1000 }, averagePf: 0.8 },
+    { kwh: { ok: true, value: 400 }, kvah: none, averagePf: 0.5 },
+  ]);
+  assert(mixed.ok && Math.abs(mixed.units - 1800) < 1e-9 && mixed.estimated, `measured + estimated kVAh: ${JSON.stringify(mixed)}`);
+  assert(mixed.ok && mixed.kwh === 1200, "kwh is the sum of both meters' kWh");
+
+  const missing = billedUnitsOfMeters("kwh", [
+    { kwh: { ok: true, value: 100 }, kvah: none, averagePf: null },
+    { kwh: none, kvah: none, averagePf: null },
+  ]);
+  assert(!missing.ok && missing.reason === "meter_no_reading", `one meter with no reading fails the bill: ${JSON.stringify(missing)}`);
+  const falling = billedUnitsOfMeters("kwh", [
+    { kwh: { ok: false, reason: "decreasing" }, kvah: none, averagePf: null },
+    { kwh: { ok: true, value: 100 }, kvah: none, averagePf: null },
+  ]);
+  assert(!falling.ok && falling.reason === "meter_decreasing", "a falling register fails the bill");
+  const noPf = billedUnitsOfMeters("kvah", [
+    { kwh: { ok: true, value: 800 }, kvah: { ok: true, value: 1000 }, averagePf: null },
+    { kwh: { ok: true, value: 400 }, kvah: none, averagePf: null },
+  ]);
+  assert(!noPf.ok && noPf.reason === "kvah_unavailable", "the second meter has no kVAh and no pf");
+  // kVAh measured on both, but meter 2's kWh register is empty: units bill, the kWh divisor is null.
+  const noKwh = billedUnitsOfMeters("kvah", [
+    { kwh: { ok: true, value: 800 }, kvah: { ok: true, value: 1000 }, averagePf: null },
+    { kwh: none, kvah: { ok: true, value: 500 }, averagePf: null },
+  ]);
+  assert(noKwh.ok && noKwh.units === 1500 && noKwh.kwh === null, "kwh is null when any meter has none");
+  const empty = billedUnitsOfMeters("kwh", []);
+  assert(!empty.ok && empty.reason === "meter_no_reading", "no meter is no reading");
 }

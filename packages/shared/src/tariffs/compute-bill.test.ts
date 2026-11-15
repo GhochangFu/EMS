@@ -7,6 +7,7 @@ import {
   assertFixedFractionScalesOnlyTheFixedCharge,
   assertGoldenBill,
   assertInvalidInputThrows,
+  assertMetersAddUp,
   assertOverflowTakesTheLastSlabRate,
 } from "./compute-bill.spec";
 
@@ -38,5 +39,11 @@ describe("F4.365 — computeBill rules", () => {
 
   it("billedUnits: kWh delta, measured kVAh, kVAh estimated from kWh ÷ pf", () => {
     assertBilledUnitsRules();
+  });
+});
+
+describe("F4.373 — several billing meters (ADR 0134 Amendment 3)", () => {
+  it("sums the meters' units, estimates each kVAh meter from its own pf, fails on any bad meter", () => {
+    assertMetersAddUp();
   });
 });

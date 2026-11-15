@@ -36,6 +36,10 @@ export interface RoutesFixture {
   meterChild: string;
   meterSibling: string;
   meterForeign: string;
+  /** `F4.373`: a location billed by two meters, 100 + 150 kWh last month. */
+  multi: string;
+  multiMeter1: string;
+  multiMeter2: string;
   orgAdmin: JwtPayload;
   viewer: JwtPayload;
   locationAdmin: JwtPayload;
@@ -112,6 +116,9 @@ export async function seedRoutesFixture(superuser: pg.Pool, run: string): Promis
   const meterChild = await asset(organizationA, child, "M-CHILD");
   const meterSibling = await asset(organizationA, sibling, "M-SIBLING");
   const meterForeign = await asset(organizationB, foreignSite, "M-FOREIGN");
+  const multi = await location(organizationA, "MULTI", null);
+  const multiMeter1 = await asset(organizationA, multi, "M-MULTI-1");
+  const multiMeter2 = await asset(organizationA, multi, "M-MULTI-2");
 
   const user = async (tag: string, role: JwtPayload["role"]): Promise<JwtPayload> => {
     const email = emailOf(tag, run);
@@ -140,6 +147,14 @@ export async function seedRoutesFixture(superuser: pg.Pool, run: string): Promis
   );
   await superuser.query(`INSERT INTO bms.asset_group_members (asset_group_id, asset_id) VALUES ($1, $2)`, [group, otherSite]);
   await superuser.query(`INSERT INTO bms.user_asset_group_access (user_id, asset_group_id) VALUES ($1, $2)`, [groupViewer.sub, group]);
+  // F4.373: the same viewer reads MULTI through a group holding its FIRST meter only.
+  const multiGroup = await one(
+    superuser,
+    `INSERT INTO bms.asset_groups (organization_id, location_id, code, name) VALUES ($1, $2, $3, 'F4.373 group') RETURNING id`,
+    [organizationA, multi, `${code}-G2`],
+  );
+  await superuser.query(`INSERT INTO bms.asset_group_members (asset_group_id, asset_id) VALUES ($1, $2)`, [multiGroup, multiMeter1]);
+  await superuser.query(`INSERT INTO bms.user_asset_group_access (user_id, asset_group_id) VALUES ($1, $2)`, [groupViewer.sub, multiGroup]);
 
   const now = new Date();
   const thisMonth = monthOf(now, KOLKATA);
@@ -151,8 +166,15 @@ export async function seedRoutesFixture(superuser: pg.Pool, run: string): Promis
      VALUES ($1, $3, 'kwh_total', 1000, 'kWh'), ($2, $3, 'kwh_total', 1250, 'kWh') ON CONFLICT DO NOTHING`,
     [day(10).toISOString(), day(20).toISOString(), meterSite],
   );
+  await superuser.query(
+    `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
+     VALUES ($1, $3, 'kwh_total', 500, 'kWh'), ($2, $3, 'kwh_total', 600, 'kWh'),
+            ($1, $4, 'kwh_total', 7000, 'kWh'), ($2, $4, 'kwh_total', 7150, 'kWh') ON CONFLICT DO NOTHING`,
+    [day(5).toISOString(), day(25).toISOString(), multiMeter1, multiMeter2],
+  );
   return {
     run, organizationA, organizationB, site, child, sibling, meterSite, meterChild, meterSibling, meterForeign,
+    multi, multiMeter1, multiMeter2,
     orgAdmin, viewer, locationAdmin, groupViewer, now, month, thisMonth, window,
   };
 }
@@ -344,4 +366,57 @@ export async function assertUpdateAndDeleteAreAudited(ctx: RoutesCtx): Promise<v
   );
   const gone = await refusal(ctx.mappings.remove(fx.orgAdmin, fx.site, id));
   assert(gone.status === 404, JSON.stringify(gone));
+}
+
+/**
+ * `F4.373` (ADR 0134 Amendment 3) — one mapping, two meters. The create writes both meter rows
+ * with the first as `billing_meter_asset_id`; a list naming another organization's meter is the
+ * one 400 and writes nothing; the bill sums the meters (100 + 150 kWh on MSEDCL LT-I(B) = the
+ * golden 2546.00); a caller who cannot read EVERY meter gets the one 404; a PATCH replaces the set.
+ */
+export async function assertSeveralMetersBillTogether(ctx: RoutesCtx): Promise<void> {
+  const { fx } = ctx;
+  const body = { tariffKey: MSEDCL_LT, sanctionedLoad: 3, sanctionedLoadUnit: "kw" as const, effectiveFrom: monthFirstDay(fx.month) };
+  const foreign = await refusal(
+    ctx.mappings.create(fx.orgAdmin, fx.multi, { ...body, billingMeterAssetIds: [fx.multiMeter1, fx.meterForeign] }),
+  );
+  assert(foreign.status === 400 && foreign.message.startsWith("A billing meter you supplied is not an asset"), JSON.stringify(foreign));
+  const none = await ctx.superuser.query(`SELECT 1 FROM bms.location_tariffs WHERE location_id = $1`, [fx.multi]);
+  assert(none.rows.length === 0, "the refused list wrote no mapping");
+
+  const created = await ctx.mappings.create(fx.orgAdmin, fx.multi, { ...body, billingMeterAssetIds: [fx.multiMeter1, fx.multiMeter2] });
+  assert(
+    created.billingMeterAssetId === fx.multiMeter1 &&
+      created.billingMeterAssetIds.join() === `${fx.multiMeter1},${fx.multiMeter2}` &&
+      created.billingMeterNames.join() === "F4.365 M-MULTI-1,F4.365 M-MULTI-2",
+    JSON.stringify(created),
+  );
+  const rows = await ctx.superuser.query<{ asset_id: string }>(
+    `SELECT m.asset_id FROM bms.location_tariff_meters m JOIN bms.location_tariffs lt ON lt.id = m.location_tariff_id
+      WHERE lt.id = $1 AND lt.billing_meter_asset_id = $2 AND m.organization_id = $3 ORDER BY m.asset_id`,
+    [created.id, fx.multiMeter1, fx.organizationA],
+  );
+  assert(rows.rows.map((r) => r.asset_id).join() === [fx.multiMeter1, fx.multiMeter2].sort().join(), JSON.stringify(rows.rows));
+  const audit = await ctx.superuser.query<{ payload: { billingMeterAssetIds?: string[] } }>(
+    `SELECT payload FROM bms.audit_log WHERE entity_id = $1 AND action = 'master.location_tariff.create'`,
+    [created.id],
+  );
+  assert(audit.rows[0]?.payload.billingMeterAssetIds?.join() === `${fx.multiMeter1},${fx.multiMeter2}`, JSON.stringify(audit.rows));
+
+  const bill = await ctx.bills.bill(fx.viewer, fx.multi, fx.month, fx.now);
+  assert(bill.reason === null && bill.bill?.units === 250 && bill.bill.total === 2546, JSON.stringify(bill.bill ?? bill.reason));
+  assert(bill.mapping?.billingMeterAssetIds.join() === `${fx.multiMeter1},${fx.multiMeter2}`, JSON.stringify(bill.mapping));
+
+  // groupViewer reads MULTI and its first meter, not the second: the one 404.
+  const partial = await refusal(ctx.bills.bill(fx.groupViewer, fx.multi, fx.month, fx.now));
+  assert(partial.status === 404 && partial.message === BILL_NOT_FOUND, JSON.stringify(partial));
+
+  const patched = await ctx.mappings.update(fx.orgAdmin, fx.multi, created.id, { billingMeterAssetIds: [fx.multiMeter2] });
+  assert(patched.billingMeterAssetId === fx.multiMeter2 && patched.billingMeterAssetIds.join() === fx.multiMeter2, JSON.stringify(patched));
+  const after = await ctx.superuser.query<{ asset_id: string }>(`SELECT asset_id FROM bms.location_tariff_meters WHERE location_tariff_id = $1`, [
+    created.id,
+  ]);
+  assert(after.rows.map((r) => r.asset_id).join() === fx.multiMeter2, `the PATCH replaced the set: ${JSON.stringify(after.rows)}`);
+  const single = await ctx.bills.bill(fx.viewer, fx.multi, fx.month, fx.now);
+  assert(single.bill?.units === 150, `one meter left: ${JSON.stringify(single.bill)}`);
 }

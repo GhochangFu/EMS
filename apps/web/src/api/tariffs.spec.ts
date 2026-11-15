@@ -95,6 +95,8 @@ export async function createMappingPostsTheBodyToTheLocation(): Promise<void> {
     tariffName: "Domestic",
     dataStatus: "official",
     billingMeterName: "Main meter",
+    billingMeterAssetIds: [body.billingMeterAssetId],
+    billingMeterNames: ["Main meter"],
     ...body,
   });
   await createLocationTariff(LOCATION_ID, body);

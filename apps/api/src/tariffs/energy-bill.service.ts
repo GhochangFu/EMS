@@ -1,4 +1,12 @@
-import { billedUnits, computeBill, loadUnitForBasis, type ComputedBill, type EnergyBillReason } from "@bms/shared";
+import {
+  billedUnitsOfMeters,
+  computeBill,
+  loadUnitForBasis,
+  type ComputedBill,
+  type EnergyBillReason,
+  type MeterReading,
+  type RegisterDelta,
+} from "@bms/shared";
 import type { Pool } from "pg";
 
 import { averagePf } from "../reports/energy-view-read";
@@ -10,7 +18,10 @@ import { pairKey, pickVersion, readVersions, type TariffVersion } from "./tariff
 
 /**
  * `F4.365` (ADR 0134 decisions 4–7, Amendment 1) — the monthly bill of a
- * mapped location, from its billing meter's register deltas.
+ * mapped location, from its billing meters' register deltas. `F4.373`
+ * (Amendment 3): a mapping names one or more meters; the billed quantity is
+ * the sum of every meter's, and any meter that cannot be billed fails the
+ * whole bill with its reason (`billedUnitsOfMeters`).
  *
  * Window is `[month start, min(next month start, now))` in the location's
  * zone; `complete` is false while the month runs. Reads run on the fleet pool
@@ -34,7 +45,7 @@ export type BillComputation =
       units: number;
       unitType: "kwh" | "kvah";
       estimated: boolean;
-      /** The billing meter's kWh over the window — the live rate's divisor (plan Q4). */
+      /** The billing meters' kWh over the window, summed — the live rate's divisor (plan Q4, Amendment 3). */
       kwh: number | null;
       bill: ComputedBill;
     }
@@ -70,12 +81,12 @@ export class EnergyBillService {
     const requests: RegisterRequest[] = [];
     const index = plans.map((p) => {
       if (p.version === null || p.window.end <= p.window.start) return null;
-      const kwhAt = requests.push({ assetId: p.t.mapping.billingMeterAssetId, pointKey: "kwh_total", from: p.window.start, to: p.window.end }) - 1;
-      const kvahAt =
-        p.version.energyUnit === "kvah"
-          ? requests.push({ assetId: p.t.mapping.billingMeterAssetId, pointKey: "kvah_total", from: p.window.start, to: p.window.end }) - 1
-          : null;
-      return { kwhAt, kvahAt };
+      const kvah = p.version.energyUnit === "kvah";
+      return p.t.mapping.billingMeterAssetIds.map((assetId) => ({
+        assetId,
+        kwhAt: requests.push({ assetId, pointKey: "kwh_total", from: p.window.start, to: p.window.end }) - 1,
+        kvahAt: kvah ? requests.push({ assetId, pointKey: "kvah_total", from: p.window.start, to: p.window.end }) - 1 : null,
+      }));
     });
     const probes = await readRegisterProbes(this.pool, requests);
 
@@ -92,16 +103,21 @@ export class EnergyBillService {
         out.push(fail("load_unit_mismatch"));
         continue;
       }
-      const at = index[i];
-      if (at === null) {
+      const meters = index[i];
+      if (meters === null) {
         out.push(fail("meter_no_reading"));
         continue;
       }
-      const kwh = deltaOfProbe(probes[at.kwhAt]);
-      const kvah = at.kvahAt === null ? ({ ok: false, reason: "empty" } as const) : deltaOfProbe(probes[at.kvahAt]);
-      const needsPf = version.energyUnit === "kvah" && !kvah.ok && kvah.reason === "empty" && kwh.ok;
-      const pf = needsPf ? await this.pf({ start: window.start, end: window.end, assetId: t.mapping.billingMeterAssetId, now }) : null;
-      const units = billedUnits({ energyUnit: version.energyUnit, kwh, kvah, averagePf: pf });
+      const readings: MeterReading[] = [];
+      for (const meter of meters) {
+        const kwh = deltaOfProbe(probes[meter.kwhAt]);
+        const kvah: RegisterDelta = meter.kvahAt === null ? { ok: false, reason: "empty" } : deltaOfProbe(probes[meter.kvahAt]);
+        // Each meter's own pf, read only when that meter's kVAh is estimated (Amendment 3 item 2).
+        const needsPf = version.energyUnit === "kvah" && !kvah.ok && kvah.reason === "empty" && kwh.ok;
+        const averagePf = needsPf ? await this.pf({ start: window.start, end: window.end, assetId: meter.assetId, now }) : null;
+        readings.push({ kwh, kvah, averagePf });
+      }
+      const units = billedUnitsOfMeters(version.energyUnit, readings);
       if (!units.ok) {
         out.push(fail(units.reason));
         continue;
@@ -130,7 +146,7 @@ export class EnergyBillService {
         units: units.units,
         unitType: version.energyUnit,
         estimated: units.estimated,
-        kwh: kwh.ok ? kwh.value : null,
+        kwh: units.kwh,
         bill,
       });
     }
