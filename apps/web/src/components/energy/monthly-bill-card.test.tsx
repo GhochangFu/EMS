@@ -17,7 +17,9 @@ import {
   eachOtherReasonShowsItsOwnSentence,
   noMappingRendersNothing,
   noOverflowShowsNoWarning,
+  oneMeterSaysNoCount,
   overflowUnitsShowTheLastSlabWarning,
+  severalMetersSayHowMany,
   theSelectorOffersTheCurrentMonthAnd24Back,
   theSelectorStaysWhileTheNextMonthLoads,
   theTariffNameStateDateAndSafeSourceLinkShow,
@@ -100,5 +102,13 @@ describe("F4.365 the monthly bill card", () => {
 
   it("keeps the selector when a chosen month fails, so the reader can go back", async () => {
     await aFailedMonthKeepsTheSelector();
+  });
+
+  it("F4.373: says N meters when several meters make the bill", async () => {
+    await severalMetersSayHowMany();
+  });
+
+  it("F4.373: says no meter count for a one-meter bill", async () => {
+    await oneMeterSaysNoCount();
   });
 });
