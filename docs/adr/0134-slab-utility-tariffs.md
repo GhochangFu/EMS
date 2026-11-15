@@ -228,3 +228,36 @@ Recorded build facts that differ from the decision text:
   databases until removed by hand.
 - The importer refuses a Rate Chart over 5,000 data rows rather than cutting
   it, and reads only the sheet's 22 columns (security review L1, L2).
+
+## Amendment 3 — several billing meters on one mapping (2026-11-15)
+
+**Accepted 2026-11-15** (owner, in chat: "One bill, both meters add up";
+"Yes, build it first"). Backlog row `F4.373`.
+
+Context: every PHEWB station has two MFM meters on two RTUs, and WBSEDCL
+sends **one** bill per station for both. Decision 4 billed one meter, so the
+Monthly bill undercounted and the live rate was the bill of one meter spread
+over two meters' energy.
+
+1. **A mapping names one or more billing meters.** Migration `0156` adds the
+   tenant table `bms.location_tariff_meters` (`location_tariff_id`,
+   `organization_id`, `asset_id`; primary key on the pair; composite FK to
+   `location_tariffs (id, organization_id)` `ON DELETE CASCADE`; FORCE RLS
+   with the own-column and asset legs, the `0155` shape) and copies every
+   existing `billing_meter_asset_id` into it. `billing_meter_asset_id` stays
+   and is the first meter of the list, so nothing that reads it breaks.
+2. **The billed quantity is the sum of the meters' register deltas** over the
+   month (decision 4). Each meter must have a usable delta; one meter with no
+   reading or a falling register fails the whole bill with that meter's
+   reason (fail closed, never a partial bill). For a kVAh category, a meter
+   with no `kvah_total` is estimated from its own kWh ÷ its own average `pf`
+   and the bill is marked estimated.
+3. **The live rate divides by the sum of the meters' kWh** (Amendment 1, Q4).
+4. **Every meter must sit in the location's subtree and organization** (the
+   decision 3 write rule, per meter), at most 8 meters, no duplicates. The bill
+   read needs **every** meter in the caller's `readableAssetIds` (one 404, as
+   before).
+5. API: the mapping bodies take `billingMeterAssetIds: uuid[]` (1–8);
+   `billingMeterAssetId` stays accepted as a one-meter shorthand. The DTO and
+   the bill's `mapping` carry `billingMeterAssetIds`. The location Tariff page
+   picks several meters.
