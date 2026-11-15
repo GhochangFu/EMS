@@ -58,6 +58,7 @@ import {
   setPortalAppearanceBodySchema,
   setOrganizationAppearanceBodySchema,
   setMyAppearanceBodySchema,
+  setOrganizationEnergySettingsBodySchema,
   // `F4.309` (ADR 0088 Amendment 3): the state-label write bodies.
   createPointKeyStateBodySchema,
   updatePointKeyStateBodySchema,
@@ -407,6 +408,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   setPortalAppearanceBodySchema,
   setOrganizationAppearanceBodySchema,
   setMyAppearanceBodySchema,
+  setOrganizationEnergySettingsBodySchema,
   updatePointKeyBodySchema,
   updatePointKeyStateBodySchema,
   updateRtuBodySchema,

@@ -710,6 +710,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   setPortalAppearanceBodySchema: STRICT(CALLER_ERROR),
   setOrganizationAppearanceBodySchema: STRICT(CALLER_ERROR),
   setMyAppearanceBodySchema: STRICT(CALLER_ERROR),
+  // `F4.375` (ADR 0133 Amendment 2 ruling 3): both keys required; a stray key (an organization id,
+  // a name) is a caller error, never a write to another field.
+  setOrganizationEnergySettingsBodySchema: STRICT(CALLER_ERROR),
   updatePointKeyBodySchema: STRICT(CALLER_ERROR),
   // `F3.40`. `code` is deliberately absent from this body — it is the primary
   // key and the target of `asset_group_members_role_fkey` — so a caller sending

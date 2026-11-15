@@ -8,6 +8,7 @@ import {
   cardPrimaryMetricSchema,
   energyFeaturesSchema,
   resolvedCardPrimaryMetricSchema,
+  setOrganizationEnergySettingsBodySchema,
 } from "./energy-features";
 
 /**
@@ -95,4 +96,34 @@ export function runTheDashboardDtoCarriesTheKeys(): void {
   }
   const { energyShown: _omitted, ...without } = dto;
   expect(locationDashboardDtoSchema.safeParse(without).success).toBe(false);
+}
+
+/**
+ * E6 — `F4.375` (ADR 0133 Amendment 2 ruling 3, plan U8, D11): the `PUT …/energy-settings` body —
+ * both keys required, every listed value of each accepted, and `.strict()`: a missing key, a stray
+ * key, `"maybe"` and `null` are refused.
+ */
+export function runTheEnergySettingsBody(): void {
+  for (const energyFeatures of ENERGY_FEATURES) {
+    for (const cardPrimaryMetric of CARD_PRIMARY_METRICS) {
+      expect(
+        setOrganizationEnergySettingsBodySchema.safeParse({ energyFeatures, cardPrimaryMetric }).success,
+        `${energyFeatures} / ${cardPrimaryMetric}`,
+      ).toBe(true);
+    }
+  }
+  const ok = { energyFeatures: "off", cardPrimaryMetric: "health" };
+  const refused = [
+    { energyFeatures: "off" },
+    { cardPrimaryMetric: "health" },
+    { ...ok, organizationId: "11111111-1111-4111-8111-111111111111" },
+    { ...ok, name: "Renamed" },
+    { ...ok, energyFeatures: "maybe" },
+    { ...ok, cardPrimaryMetric: "maybe" },
+    { ...ok, energyFeatures: null },
+    { ...ok, cardPrimaryMetric: null },
+  ];
+  for (const body of refused) {
+    expect(setOrganizationEnergySettingsBodySchema.safeParse(body).success, JSON.stringify(body)).toBe(false);
+  }
 }

@@ -38,9 +38,10 @@ import {
   aRefusedIngestSwitchShowsTheSentenceInTheDialog,
   theIngestSwitchShowsForAnInactiveOrganization,
   addOrganizationShowsNeitherEnergySelect,
-  editShowsBothEnergySelectsWithTheStoredValues,
+  editShowsNoEnergySelect,
+  editSaveSendsNoEnergyKey,
+  theEnergySettingsActionFollowsTheRole,
   saveInvalidatesTheLocationCards,
-  saveSendsBothEnergySettings,
 } from "./organizations-page.spec";
 
 /**
@@ -185,12 +186,12 @@ describe("E4.1c organizations page — the Currency field", () => {
     await theIngestSwitchShowsForAnInactiveOrganization();
   });
 
-  it("F4.364 EF1 Edit shows both energy selects with the stored values", async () => {
-    await editShowsBothEnergySelectsWithTheStoredValues();
+  it("F4.375 EF1 Edit shows no energy select (Q6)", async () => {
+    await editShowsNoEnergySelect();
   });
 
-  it("F4.364 EF2 Save sends both energy settings in the PATCH body", async () => {
-    await saveSendsBothEnergySettings();
+  it("F4.375 EF2 the Edit save sends no energy key (Q6)", async () => {
+    await editSaveSendsNoEnergyKey();
   });
 
   it("F4.364 EF3 Add organization shows neither energy select", async () => {
@@ -199,5 +200,9 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("F4.364 EF4 a save invalidates the location cards' query", async () => {
     await saveInvalidatesTheLocationCards();
+  });
+
+  it("F4.375 EF5 Energy settings shows for an organization admin and not a location admin", async () => {
+    await theEnergySettingsActionFollowsTheRole();
   });
 });

@@ -176,13 +176,11 @@ export async function editPrefillsTheCurrencyAndSendsIt(): Promise<void> {
   });
   const [id, payload] = vi.mocked(api.updateAdminOrganization).mock.calls[0]!;
   expect(id).toBe("22222222-2222-2222-2222-222222222222");
-  // `F4.364` (plan U10): the Edit save also sends the two energy settings, here the stored ones.
+  // `F4.375` (ruling Q6): the Edit save sends no energy setting — those have their own route.
   expect(payload).toEqual({
     name: "Rupee organization",
     currency: "USD",
     timezone: "Asia/Kolkata",
-    energyFeatures: "auto",
-    cardPrimaryMetric: "auto",
   });
 }
 
@@ -719,43 +717,27 @@ async function openRupeeEdit(): Promise<void> {
 }
 
 /**
- * EF1 (`F4.364`, plan U10) — Edit shows **Energy features** and **Location card first figure**
- * with the stored values and the option labels the plan names.
+ * EF1 (`F4.375`, ruling Q6) — the Edit dialog no longer shows **Energy features** or **Location
+ * card first figure**: the two settings have one write path, the Energy settings dialog.
  */
-export async function editShowsBothEnergySelectsWithTheStoredValues(): Promise<void> {
+export async function editShowsNoEnergySelect(): Promise<void> {
   stubWithStoredEnergySettings();
   renderPage();
   await openRupeeEdit();
-  const energy = screen.getByLabelText("Energy features") as HTMLSelectElement;
-  const card = screen.getByLabelText("Location card first figure") as HTMLSelectElement;
-  expect(energy.value).toBe("off");
-  expect(card.value).toBe("health");
-  expect([...energy.options].map((o) => [o.value, o.textContent])).toEqual([
-    ["auto", "Auto — show where there is energy data"],
-    ["on", "On"],
-    ["off", "Off"],
-  ]);
-  expect([...card.options].map((o) => [o.value, o.textContent])).toEqual([
-    ["auto", "Auto — kW with energy, asset health without"],
-    ["kw", "kW"],
-    ["health", "Asset health %"],
-    ["critical_alarms", "Critical alarms"],
-    ["none", "None"],
-  ]);
+  expect(screen.getByLabelText("Currency (ISO 4217)")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Energy features")).toBeNull();
+  expect(screen.queryByLabelText("Location card first figure")).toBeNull();
 }
 
-/** EF2 (`F4.364`) — Save sends both chosen values in the `PATCH` body. */
-export async function saveSendsBothEnergySettings(): Promise<void> {
+/** EF2 (`F4.375`, ruling Q6) — the Edit save's `PATCH` body carries neither energy key. */
+export async function editSaveSendsNoEnergyKey(): Promise<void> {
   stubWithStoredEnergySettings();
   renderPage();
   await openRupeeEdit();
-  await userEvent.selectOptions(screen.getByLabelText("Energy features"), "on");
-  await userEvent.selectOptions(screen.getByLabelText("Location card first figure"), "critical_alarms");
   await userEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(api.updateAdminOrganization).toHaveBeenCalledTimes(1));
-  const [id, payload] = vi.mocked(api.updateAdminOrganization).mock.calls[0]!;
-  expect(id).toBe("22222222-2222-2222-2222-222222222222");
-  expect(payload).toMatchObject({ energyFeatures: "on", cardPrimaryMetric: "critical_alarms" });
+  const [, payload] = vi.mocked(api.updateAdminOrganization).mock.calls[0]!;
+  expect(Object.keys(payload).sort()).toEqual(["currency", "name", "timezone"]);
 }
 
 /** EF3 (`F4.364`, plan D8) — Add organization shows neither select, and the create sends neither key. */
@@ -777,4 +759,26 @@ export async function saveInvalidatesTheLocationCards(): Promise<void> {
   await waitFor(() => expect(api.updateAdminOrganization).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ["dashboard", "locations"] }));
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["admin", "organizations"] });
+}
+
+/**
+ * EF5 (`F4.375`, ADR 0133 Amendment 2 ruling 3) — an `organization_admin` sees **Energy
+ * settings** beside **Appearance** and "View only" (no Edit), and it opens the dialog on that
+ * row's stored values; a `location_admin` sees no Energy settings action.
+ */
+export async function theEnergySettingsActionFollowsTheRole(): Promise<void> {
+  stubWithStoredEnergySettings();
+  renderPageAs("organization_admin");
+  const row = (await screen.findByText("Rupee organization")).closest("tr")!;
+  expect(within(row).getByText("View only")).toBeInTheDocument();
+  expect(within(row).queryByRole("button", { name: "Edit" })).toBeNull();
+  await userEvent.click(within(row).getByRole("button", { name: "Energy settings" }));
+  screen.getByRole("dialog", { name: "Energy settings — Rupee organization" });
+  expect((screen.getByLabelText("Energy features") as HTMLSelectElement).value).toBe("off");
+  expect((screen.getByLabelText("Location card first figure") as HTMLSelectElement).value).toBe("health");
+  cleanup();
+  stubApi();
+  renderPageAs("location_admin");
+  const other = (await screen.findByText("Rupee organization")).closest("tr")!;
+  expect(within(other).queryByRole("button", { name: "Energy settings" })).toBeNull();
 }

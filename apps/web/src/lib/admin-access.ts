@@ -28,6 +28,16 @@ export function canChooseColourProfile(role: UserRole): boolean {
   return role === "admin" || role === "organization_admin";
 }
 
+/**
+ * `F4.375` (ADR 0133 Amendment 2 ruling 3) — whether the role sees an organization's **Energy
+ * settings** action: the global admin (any organization) and an organization admin (the API then
+ * allows only an organization they administer, `isOrganizationLevelAdmin`). Its own predicate, so
+ * the appearance rule can change without moving this one.
+ */
+export function canEditOrganizationEnergySettings(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
 /** Whether the role may create or edit the global/org point key catalog. */
 export function canWritePointKeys(role: UserRole): boolean {
   // `F3.39` / ADR 0051: `organization_admin` was dropped from this list. The

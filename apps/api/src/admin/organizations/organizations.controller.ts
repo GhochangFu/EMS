@@ -16,6 +16,7 @@ import { ZodError } from "zod";
 
 import {
   setOrganizationAppearanceBodySchema,
+  setOrganizationEnergySettingsBodySchema,
   setOrganizationColourProfileBodySchema,
   setOrganizationIngestBodySchema,
 } from "@bms/shared";
@@ -88,6 +89,25 @@ export class OrganizationsAdminController {
     try {
       const parsed = setOrganizationAppearanceBodySchema.parse(body);
       return await this.service.setAppearance(user, idParamSchema.parse(id), parsed);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F4.375` (ADR 0133 Amendment 2 ruling 3, plan-gate ruling Q6) — the organization's two energy
+   * settings, both required (`.strict()`). The `setAppearance` shape: its own route, not a `PATCH`
+   * field, because an `organization_admin` may make this write for their own organization and no
+   * other organization write. A body other than the strict two-key shape is a 400.
+   */
+  @Put(":id/energy-settings")
+  async setEnergySettings(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    try {
+      const parsed = setOrganizationEnergySettingsBodySchema.parse(body);
+      return await this.service.setEnergySettings(user, idParamSchema.parse(id), parsed);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

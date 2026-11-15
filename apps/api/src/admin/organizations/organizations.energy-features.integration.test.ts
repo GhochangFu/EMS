@@ -11,14 +11,20 @@ import { jwtFor, primeSeededSubjects, SEEDED } from "../../testing/seeded-subjec
 import { OrganizationsAdminService } from "./organizations.service";
 import {
   aCreatedOrganizationReadsAuto,
-  anAdminPatchSetsAndKeepsBoth,
-  anOrganizationAdminIsRefused,
-  theAuditRowCarriesBothKeys,
+  aLocationAdminIsRefused,
+  anOrganizationAdminSetsTheirOwnOrganization,
+  anOrganizationAdminWithoutAGrantIsRefused,
+  anUnchangedWriteWritesNothing,
+  anUnknownIdIsNotAnOracle,
+  aPatchLeavesBothColumns,
+  theAuditRowCarriesTheOrganizationAndFromTo,
+  theGlobalAdminSetsAnyOrganization,
   type EnergyCtx,
 } from "./organizations.energy-features.integration.spec";
 
 /**
- * `F4.364` — Vitest entry point for the organization energy settings on the admin write path.
+ * `F4.364` / `F4.375` — Vitest entry point for the organization energy settings on their one write
+ * path, `PUT …/energy-settings` (ADR 0133 Amendment 2 ruling 3).
  * Every row this suite creates carries the per-run family, is registered the moment it exists and
  * is deleted (with its audit rows) in `afterAll`; a stale sweep reaps a run that died before.
  */
@@ -26,7 +32,7 @@ const connectionString = requireIntegrationDb({
   item: "F4.364",
   label: "organization energy settings on the OrganizationsAdminService write path",
   because:
-    "what the row and the audit log hold after a PATCH, and that an organization_admin is refused, " +
+    "what the row and the audit log hold after the energy-settings write, and who may make it, " +
     "are only answered by the real database.",
 });
 
@@ -50,7 +56,7 @@ async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
   }
 }
 
-describe.skipIf(!connectionString)("F4.364 — organization energy settings on the admin write path", () => {
+describe.skipIf(!connectionString)("F4.364 / F4.375 — organization energy settings on their write path", () => {
   let fleetPool: pg.Pool;
   let authPool: pg.Pool;
   let tenantPool: pg.Pool;
@@ -81,6 +87,7 @@ describe.skipIf(!connectionString)("F4.364 — organization energy settings on t
       fleetPool,
       adminJwt: jwtFor(SEEDED.globalAdmin, "admin"),
       organizationAdminJwt: jwtFor(SEEDED.organizationAdmin, "organization_admin"),
+      locationAdminJwt: jwtFor(SEEDED.locationAdmin, "location_admin"),
       grantedOrganizationId: granted,
       register: (id) => createdIds.push(id),
       family: FAMILY,
@@ -99,15 +106,35 @@ describe.skipIf(!connectionString)("F4.364 — organization energy settings on t
     await aCreatedOrganizationReadsAuto(ctx);
   }, 60_000);
 
-  it("I2 the admin's PATCH sets both and a PATCH without them keeps them", async () => {
-    await anAdminPatchSetsAndKeepsBoth(ctx);
+  it("I2 the global admin sets any organization", async () => {
+    await theGlobalAdminSetsAnyOrganization(ctx);
   }, 60_000);
 
-  it("I3 the audit row is master.organization.update, organization_id NULL, both keys in the payload", async () => {
-    await theAuditRowCarriesBothKeys(ctx);
+  it("I3 the audit row is energy_settings.update with the organization id and from / to", async () => {
+    await theAuditRowCarriesTheOrganizationAndFromTo(ctx);
   }, 60_000);
 
-  it("I4 an organization_admin is refused and the row is unchanged (Q2)", async () => {
-    await anOrganizationAdminIsRefused(ctx);
+  it("I4 an organization_admin sets their own organization (ruling 3)", async () => {
+    await anOrganizationAdminSetsTheirOwnOrganization(ctx);
+  }, 60_000);
+
+  it("I5 an organization_admin without a grant is refused; no audit row", async () => {
+    await anOrganizationAdminWithoutAGrantIsRefused(ctx);
+  }, 60_000);
+
+  it("I6 a location_admin is refused", async () => {
+    await aLocationAdminIsRefused(ctx);
+  }, 60_000);
+
+  it("I7 an unchanged write writes no audit row", async () => {
+    await anUnchangedWriteWritesNothing(ctx);
+  }, 60_000);
+
+  it("I8 a PATCH of name leaves both columns (Q6)", async () => {
+    await aPatchLeavesBothColumns(ctx);
+  }, 60_000);
+
+  it("I9 an unknown id is 404 for the global admin and 403 for an organization admin", async () => {
+    await anUnknownIdIsNotAnOracle(ctx);
   }, 60_000);
 });

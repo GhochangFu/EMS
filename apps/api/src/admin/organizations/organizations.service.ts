@@ -17,6 +17,7 @@ import type {
   DesignSystem,
   JwtPayload,
   SetOrganizationAppearanceBody,
+  SetOrganizationEnergySettingsBody,
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
@@ -39,11 +40,14 @@ import type {
  * `E7.1c` (item D) — every `audit.write` here is a platform event, not a
  * tenant one: `bms.audit_log.organizationId`'s own schema comment names
  * `"organization X created"` as the canonical example of a `NULL`-org row.
- * Every method here is `assertAdminRole`-gated (global admin only) and acts
+ * The lifecycle methods are `assertAdminRole`-gated (global admin only) and act
  * on an organization's own lifecycle, not on a resource a tenant owns, so
- * each `audit.write` passes `organizationId: null` and `this.fleetDb`
+ * each of their `audit.write`s passes `organizationId: null` and `this.fleetDb`
  * explicitly as `executor` — the default tenant pool admits neither `null`
- * nor a real id once `0048` lands.
+ * nor a real id once `0048` lands. Two exceptions are the organization's own
+ * settings, which its `organization_admin` may change: `writeAppearance`
+ * (`F4.341`) and `setEnergySettings` (`F4.375`) audit with the organization's
+ * id inside a `withTenant` transaction.
  */
 @Injectable()
 export class OrganizationsAdminService {
@@ -168,9 +172,8 @@ export class OrganizationsAdminService {
         name: body.name ?? existing.name,
         currency: body.currency ?? existing.currency,
         timezone: body.timezone ?? existing.timezone,
-        // F4.364 (ADR 0133 decision 6, ruling Q2): global admin only, audited as an update.
-        energyFeatures: body.energyFeatures ?? existing.energyFeatures,
-        cardPrimaryMetric: body.cardPrimaryMetric ?? existing.cardPrimaryMetric,
+        // F4.375 (ADR 0133 Amendment 2, ruling Q6): the two energy settings are written only by
+        // `setEnergySettings`; this body refuses them.
         meta: body.meta !== undefined ? body.meta : existing.meta,
       })
       .where(eq(organizations.id, id))
@@ -205,6 +208,67 @@ export class OrganizationsAdminService {
    */
   async setAppearance(jwt: JwtPayload, id: string, body: SetOrganizationAppearanceBody): Promise<AdminOrganizationDto> {
     return this.writeAppearance(jwt, id, body, "master.organization.appearance.update");
+  }
+
+  /**
+   * `F4.375` (ADR 0133 Amendment 2 ruling 3, plan-gate ruling Q6, plan D11) — the organization's
+   * two energy settings, their one write path. The appearance gate: the global `admin` may set any
+   * organization; an `organization_admin` only one they hold a **direct** organization grant on
+   * (`isOrganizationLevelAdmin`). Every other role, and an `organization_admin` without that grant,
+   * is a 403 before any read — so an unknown id is a 404 for the global admin only, never an
+   * existence oracle.
+   *
+   * The write and its audit row (`master.organization.energy_settings.update`, the organization's
+   * id, `{ from, to }` with both keys) run in one `withTenant` transaction, so the organization's
+   * own admins see it in their audit view. Values equal to the stored ones write nothing: no
+   * `UPDATE`, no audit row (`setIngestEnabled`'s rule).
+   */
+  async setEnergySettings(
+    jwt: JwtPayload,
+    id: string,
+    body: SetOrganizationEnergySettingsBody,
+  ): Promise<AdminOrganizationDto> {
+    await this.accessControl.requireMasterDataUser(jwt);
+    if (!(await this.accessControl.isOrganizationLevelAdmin(jwt, id))) {
+      throw new ForbiddenException("Only an administrator of this organization can change its energy settings");
+    }
+
+    return withTenant(this.tenantDb, id, async (tx) => {
+      // Locked, so two concurrent saves audit a true `from` (security review, Low 1).
+      const [existing] = await tx.select().from(organizations).where(eq(organizations.id, id)).limit(1).for("update");
+      if (!existing) {
+        throw new NotFoundException("Organization not found");
+      }
+      if (
+        existing.energyFeatures === body.energyFeatures &&
+        existing.cardPrimaryMetric === body.cardPrimaryMetric
+      ) {
+        return this.mapRow(existing);
+      }
+
+      const [updated] = await tx
+        .update(organizations)
+        .set({ energyFeatures: body.energyFeatures, cardPrimaryMetric: body.cardPrimaryMetric })
+        .where(eq(organizations.id, id))
+        .returning();
+
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.organization.energy_settings.update",
+          entityType: "organization",
+          entityId: id,
+          organizationId: id,
+          payload: {
+            from: { energyFeatures: existing.energyFeatures, cardPrimaryMetric: existing.cardPrimaryMetric },
+            to: { energyFeatures: body.energyFeatures, cardPrimaryMetric: body.cardPrimaryMetric },
+          },
+        },
+        tx,
+      );
+
+      return this.mapRow(updated);
+    });
   }
 
   /**
