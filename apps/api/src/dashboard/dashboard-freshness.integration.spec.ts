@@ -7,9 +7,16 @@ import { FRESHNESS_FLOOR_SECONDS } from "../telemetry/telemetry-cadence";
 import { DashboardService } from "./dashboard.service";
 
 /**
- * `F4.350` (ADR 0075 Amendment 3) — a sample just outside the 25 s floor (the fixture RTUs have no interval), and one just
- * inside it. The 60 s-device cases are in `telemetry-cadence.integration.spec.ts`.
+ * `F4.350` (ADR 0075 Amendment 3) — a sample just outside the 25 s floor, and one just inside it.
+ * The 60 s-device cases are in `telemetry-cadence.integration.spec.ts`.
+ *
+ * `F4.375` (plan U1): every fixture RTU here is configured at {@link FIXTURE_RTU_INTERVAL_SECONDS},
+ * so its window is the floor whatever the `learned` CTE reads. Without it, a fixture sample that
+ * lands in the last completed hour (the 1 h aggregate is real-time) taught the RTU 3600 s and a
+ * 900 s window, and every "not live" case failed when a run crossed the hour.
  */
+export const FIXTURE_RTU_INTERVAL_SECONDS = 1;
+
 const PAST_SITE_WINDOW_S = FRESHNESS_FLOOR_SECONDS + 10;
 const INSIDE_SITE_WINDOW_S = FRESHNESS_FLOOR_SECONDS - 10;
 
@@ -80,7 +87,7 @@ export interface Site {
   readonly tag: string;
 }
 
-/** A fresh organization, active location and one RTU, inside the caller's transaction. */
+/** A fresh organization, active location and one RTU (configured at the fixture interval), inside the caller's transaction. */
 export async function seedSite(client: pg.PoolClient): Promise<Site> {
   const tag = `${RUN_CODE}-${randomUUID().slice(0, 8)}`;
   const domain = await client.query<{ code: string }>(
@@ -104,9 +111,9 @@ export async function seedSite(client: pg.PoolClient): Promise<Site> {
   const locationId = loc.rows[0]?.id;
   if (!locationId) throw new Error("failed to insert the F3.30 fixture location");
   const rtu = await client.query<{ id: string }>(
-    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type)
-     VALUES ($1, $2, $3, $4, 'simulator') RETURNING id`,
-    [organizationId, locationId, `${tag}-RTU`, "F3.30 freshness fixture RTU"],
+    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type, expected_interval_seconds)
+     VALUES ($1, $2, $3, $4, 'simulator', $5) RETURNING id`,
+    [organizationId, locationId, `${tag}-RTU`, "F3.30 freshness fixture RTU", FIXTURE_RTU_INTERVAL_SECONDS],
   );
   const rtuId = rtu.rows[0]?.id;
   if (!rtuId) throw new Error("failed to insert the F3.30 fixture RTU");
@@ -114,7 +121,7 @@ export async function seedSite(client: pg.PoolClient): Promise<Site> {
 }
 
 /** `F4.317` — a second location (and RTU) in the site's organization; active unless told not. */
-async function seedLocation(client: pg.PoolClient, site: Site, active = true): Promise<Site> {
+export async function seedLocation(client: pg.PoolClient, site: Site, active = true): Promise<Site> {
   const tag = `${site.tag}-${randomUUID().slice(0, 8)}`;
   const loc = await client.query<{ id: string }>(
     `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude, active)
@@ -124,9 +131,9 @@ async function seedLocation(client: pg.PoolClient, site: Site, active = true): P
   const locationId = loc.rows[0]?.id;
   if (!locationId) throw new Error("failed to insert the F4.317 fixture location");
   const rtu = await client.query<{ id: string }>(
-    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type)
-     VALUES ($1, $2, $3, $4, 'simulator') RETURNING id`,
-    [site.organizationId, locationId, `${tag}-RTU`, "F4.317 second fixture RTU"],
+    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type, expected_interval_seconds)
+     VALUES ($1, $2, $3, $4, 'simulator', $5) RETURNING id`,
+    [site.organizationId, locationId, `${tag}-RTU`, "F4.317 second fixture RTU", FIXTURE_RTU_INTERVAL_SECONDS],
   );
   const rtuId = rtu.rows[0]?.id;
   if (!rtuId) throw new Error("failed to insert the F4.317 fixture RTU");
@@ -136,9 +143,15 @@ async function seedLocation(client: pg.PoolClient, site: Site, active = true): P
 /** A further RTU at the site's location. */
 async function seedRtu(client: pg.PoolClient, site: Site): Promise<string> {
   const rtu = await client.query<{ id: string }>(
-    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type)
-     VALUES ($1, $2, $3, $4, 'simulator') RETURNING id`,
-    [site.organizationId, site.locationId, `${site.tag}-RTU-${randomUUID().slice(0, 8)}`, "F4.158 fixture RTU"],
+    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type, expected_interval_seconds)
+     VALUES ($1, $2, $3, $4, 'simulator', $5) RETURNING id`,
+    [
+      site.organizationId,
+      site.locationId,
+      `${site.tag}-RTU-${randomUUID().slice(0, 8)}`,
+      "F4.158 fixture RTU",
+      FIXTURE_RTU_INTERVAL_SECONDS,
+    ],
   );
   const id = rtu.rows[0]?.id;
   if (!id) throw new Error("failed to insert the F4.158 fixture RTU");
@@ -598,5 +611,61 @@ export async function assertRtuRowsUseTheReportingWindow(client: pg.PoolClient):
   assert(
     rtu?.freshAssetCount === 1 && rtu?.assetCount === 2,
     `expected the fixture RTU at 1 fresh of 2 (15 s counts, 35 s does not), got ${JSON.stringify(rtu ?? null)}`,
+  );
+}
+
+/**
+ * `F4.375` (plan U1) — a history sample in the last completed hour does not widen the window.
+ * The aggregates are real-time, so an uncommitted fixture row stamped just before the hour
+ * boundary is visible to the `learned` CTE whenever it lies above the `_1m` aggregate's
+ * watermark (always on a fresh test database; on a busy one, only in the first minute or two of
+ * the hour). One sample there teaches the RTU `3600 / 1` s, a 900 s window, and every "not live"
+ * expectation on the same RTU flips — this is how CI failed when a run crossed the hour. H
+ * carries that sample (outside the read's scope, so it is never itself the fresh one); S, on the
+ * same RTU, is past the floor window and must still read not fresh — which holds only because the
+ * fixture RTU's configured interval wins over anything learned. The positive control first
+ * checks the sample reached the 1 h aggregate; when it did not (the `_1m` watermark is past it —
+ * routine in a full suite run, where other suites commit telemetry and the refresh job runs), the
+ * case cannot stage its scenario and calls `skip` with the reason, so it reads skipped, never a
+ * silent green. Telemetry-cadence C7 gates the precedence rule itself with no clock.
+ */
+/**
+ * `F4.375` — the reason a history-sample case cannot run on this database, or `null` when it can:
+ * `assetId`'s sample must be visible in the last completed hour of `telemetry.point_values_1h`,
+ * as the `learned` CTE reads it. It is not when the `_1m` aggregate's watermark is already past
+ * the sample. Exported for `system-status.integration.spec.ts`.
+ */
+export const HISTORY_SAMPLE_NOT_STAGED =
+  "the history sample did not reach point_values_1h's last completed hour (the _1m watermark is past it), " +
+  "so this database cannot stage the scenario; C7 in telemetry-cadence gates the rule";
+
+async function historySampleReachedTheHourAggregate(client: pg.PoolClient, assetId: string): Promise<boolean> {
+  const r = await client.query<{ n: string | null }>(
+    `SELECT max(sample_count)::text AS n FROM telemetry.point_values_1h
+     WHERE asset_id = $1 AND bucket = date_trunc('hour', now()) - interval '1 hour'`,
+    [assetId],
+  );
+  return Number(r.rows[0]?.n ?? 0) >= 1;
+}
+
+export async function assertAHistorySampleInTheLastCompletedHourDoesNotWidenTheWindow(
+  client: pg.PoolClient,
+  skip: (reason: string) => never,
+): Promise<void> {
+  const site = await seedSite(client);
+  const h = await seedAsset(client, site, "H");
+  const s = await seedAsset(client, site, "S");
+  await client.query(
+    `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
+     VALUES (date_trunc('hour', now()) - interval '5 seconds', $1, 'temp_c', 20, 'u')`,
+    [h],
+  );
+  if (!(await historySampleReachedTheHourAggregate(client, h))) skip(HISTORY_SAMPLE_NOT_STAGED);
+  await insertSampleBeforeNow(client, s, "temp_c", 21, PAST_SITE_WINDOW_S);
+  const { items } = await service(client).locationKpis({ locationIds: [site.locationId], assetIds: [s] });
+  const got = { freshAssetCount: items[0]?.freshAssetCount, assetCount: items[0]?.assetCount };
+  assert(
+    got.freshAssetCount === 0 && got.assetCount === 1,
+    `expected { freshAssetCount: 0, assetCount: 1 } (a history sample must not widen the window), got ${JSON.stringify(got)}`,
   );
 }

@@ -7,6 +7,7 @@ import type { BmsDb } from "@bms/db";
 
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
+  assertAHistorySampleDoesNotWidenTheSimulatorWindow,
   assertEmptyScopeRunsNoQuery,
   assertAMissingHostMonitorsNothing,
   assertFreshHostWithSilentDevicesIsOk,
@@ -89,6 +90,10 @@ describe.skipIf(!connectionString)("F3.30 — GET /system/status read (real data
 
   it("a fresh mqtt asset outside the scope reaches neither count", async () => {
     await assertOutOfScopeFreshMqttIsNotCounted(db);
+  }, 60_000);
+
+  it("F4.375 — a history sample in the last completed hour does not widen the simulator RTU's window", async (ctx) => {
+    await assertAHistorySampleDoesNotWidenTheSimulatorWindow(db, (reason) => ctx.skip(reason));
   }, 60_000);
 
   it("three samples of one asset inside the window count one fresh asset", async () => {
