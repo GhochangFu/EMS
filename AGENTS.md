@@ -1324,6 +1324,19 @@
 > Tariff page and the site Energy view's Monthly bill card. Duty, FPPAS, ToD,
 > PF rebates and asset-level mapping are follow-ups (`F4.366`–`F4.372`). No
 > dependency.
+> And **per-organization energy features and the location card's first
+> figure** (**ADR 0133** with Amendment 1 and six build notes, row `F4.364`;
+> plan #1325, PRs #1329, #1330, #1331, #1335). Migration `0153` adds
+> `bms.organizations.energy_features` (`auto`/`on`/`off`) and
+> `card_primary_metric` (`auto`/`kw`/`health`/`critical_alarms`/`none`), both
+> `auto`. `resolveLocationEnergy` (`apps/api/src/dashboard/energy-features.ts`)
+> decides per location: `auto` shows energy when an active asset has a `kw`
+> value in the last 30 days, and the card's `auto` figure is kW then, otherwise
+> the ADR 0050 health % of the location's own assets (`—`, never `0`, when
+> nothing is scored). A no-energy site's third section reads **Trends** with no
+> Energy sub-tab, and its Total load tiles are not drawn. The estate ribbon's
+> kW and a site-layout dashboard's own energy widgets are follow-ups. No
+> dependency.
 > And **state labels for switching points, managed in the portal** (**ADR 0088
 > Amendment 3**, #1026, and **ADR 0099 Amendment 13**, #1027; row `F4.309`;
 > PR 1 #1034, PR 2 #1036, PR 3 #1038; this sweep merges last).
@@ -2904,6 +2917,14 @@ Do not add top-level folders without updating this section.
   maintenance-window wizard pass it as a bare `queryFn`, and TanStack would pass
   its context object; a filtered read is
   `fetchRuleList(filter)`.
+- **A site's energy UI follows the site summary's `energyShown`** (**ADR 0133**
+  Amendment 1, `F4.364`). The site page reads it once and passes it down:
+  `SiteSectionStrip` labels the third entry **Trends** (same `/trends` path) and
+  `SiteTrendsView` drops the Energy sub-tab when it is `false`; an explicit
+  `?view=energy` there shows `site-energy-off-note`. `GeneratedSiteView` and
+  `SiteAssetsView` take it as a required prop and draw "Total load" only when it
+  is `true` — never from their own location read, which is pending on first
+  paint and made the tile flash on a no-energy site (AWS, 2026-11-15).
 
 ### 4.3 NestJS
 - Module-per-domain: `auth`, `assets`, `alarms`, `telemetry`, `audit`.
@@ -3922,6 +3943,16 @@ is open to any signed-in user, takes no input and lists only that read scope
 limited to listed assets). The picker and the lists use the same rule, so an
 option is always a filter the list accepts.
 
+**Organization energy settings** (**ADR 0133** decision 6, `F4.364` ruling
+Q2). `energyFeatures` and `cardPrimaryMetric` are written only by
+`PATCH /admin/organizations/:id` — `requireMasterDataUser`, then
+`assertAdminRole`, so a global admin only (an `organization_admin` gets 403) —
+and audited as `master.organization.update` with `organization_id` NULL. The
+create body does not take them, and `PUT :id/appearance` does not touch them.
+Letting an organization admin change them is a follow-up. The resolved
+`energyShown` and `healthScore` on the location summary are scope-relative:
+they are computed under the caller's readable-asset scope, like `totalKw`.
+
 **Tariff gates** (**ADR 0134**, `F4.365`). The catalog reads
 (`GET /tariffs/categories`, `GET /tariffs/lines/versions?key=`) are open to any
 signed-in user; an organization's own lines are added only for an
@@ -4340,6 +4371,15 @@ before (or with) the web. `contracts/filter-options.ts` (**ADR 0132**,
 `contracts/tariffs.ts` (**ADR 0134**, `F4.365`) does too, beside the zod-free
 `tariffs/compute-bill.ts` (`computeBill`, `billedUnits`); `energyCentreSummarySchema`
 and `energyViewPeriodSchema` gained a required `tariffVerify`.
+`contracts/energy-features.ts` (**ADR 0133**, `F4.364`) holds the two
+vocabularies (`energyFeaturesSchema`, `cardPrimaryMetricSchema`, and
+`resolvedCardPrimaryMetricSchema`, which never carries `auto`) with their own
+types. The location summary in `contracts/dashboard.ts` gained required
+`energyShown`, `primaryMetric` (resolved) and `healthScore` (`0..1` or `null`,
+set only for a `health` card), and its `totalKw` became nullable — `null` when
+energy is not shown or no asset has a `kw` value, never a fake `0`.
+`adminOrganizationDtoSchema` gained `energyFeatures` and `cardPrimaryMetric` as
+stored (`auto` included).
 
 **Three encodings preserve type identity and their obvious siblings do not.**
 Measured on **9** conversions in the ADR's spike, each asserted against *two*
