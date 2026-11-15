@@ -38,3 +38,20 @@ export type CardPrimaryMetric = z.infer<typeof cardPrimaryMetricSchema>;
 
 /** `F4.364` — a resolved card figure, never `auto`. */
 export type ResolvedCardPrimaryMetric = z.infer<typeof resolvedCardPrimaryMetricSchema>;
+
+/**
+ * `F4.375` (ADR 0133 Amendment 2 ruling 3 and plan-gate ruling Q6, plan D11) — the body of
+ * `PUT /api/v1/admin/organizations/:id/energy-settings`, the two settings' one write path: the
+ * global admin for any organization, an `organization_admin` for one they administer. Both keys
+ * required, `.strict()`: a stray key (an organization id, a name) is a 400, never ignored.
+ */
+export const setOrganizationEnergySettingsBodySchema = z
+  .object({
+    energyFeatures: energyFeaturesSchema,
+    cardPrimaryMetric: cardPrimaryMetricSchema,
+  })
+  .strict()
+  .describe("An organization's two energy settings (ADR 0133): both required.");
+
+/** `F4.375` — exported from here: `src/index.ts` sits at the line cap. */
+export type SetOrganizationEnergySettingsBody = z.infer<typeof setOrganizationEnergySettingsBodySchema>;

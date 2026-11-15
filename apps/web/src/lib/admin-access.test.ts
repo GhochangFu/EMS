@@ -157,4 +157,7 @@ describe("admin-access", () => {
   it("canAcknowledgeAlarms admits every role but viewer (F4.357)", () => {
     spec.runCanAcknowledgeAlarmsTruthTableTest();
   });
+  it("canEditOrganizationEnergySettings admits the global and organization admins (F4.375)", () => {
+    spec.runCanEditOrganizationEnergySettingsTruthTableTest();
+  });
 });

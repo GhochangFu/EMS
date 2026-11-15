@@ -1,5 +1,8 @@
+import type { UserRole } from "@bms/shared";
+
 import {
   canAcknowledgeAlarms,
+  canEditOrganizationEnergySettings,
   canApproveWorkOrders,
   canManageMaintenanceWindows,
   canManageAssetDomains,
@@ -661,6 +664,28 @@ export function runCanManageMaintenanceWindowsTruthTableTest(): void {
     assert(
       canManageMaintenanceWindows(role) === expected,
       `${role} must ${expected ? "" : "not "}manage maintenance windows`,
+    );
+  }
+}
+
+/**
+ * `F4.375` (ADR 0133 Amendment 2 ruling 3) — who sees an organization's **Energy settings**: the
+ * global admin and an organization admin (the API then allows only their own organization). A
+ * `Record<UserRole, boolean>`, so a new role fails the build until it is placed.
+ */
+export function runCanEditOrganizationEnergySettingsTruthTableTest(): void {
+  const table: Record<UserRole, boolean> = {
+    admin: true,
+    organization_admin: true,
+    location_admin: false,
+    asset_group_admin: false,
+    operator: false,
+    viewer: false,
+  };
+  for (const [role, expected] of Object.entries(table) as Array<[UserRole, boolean]>) {
+    assert(
+      canEditOrganizationEnergySettings(role) === expected,
+      `${role} must ${expected ? "" : "not "}edit an organization's energy settings`,
     );
   }
 }

@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runAnUnknownValueIsRefused,
   runTheDashboardDtoCarriesTheKeys,
+  runTheEnergySettingsBody,
   runTheListsInOrder,
   runTheNullableFigures,
   runTheRowRequiresTheNewKeys,
@@ -28,5 +29,9 @@ describe("F4.364 — organization energy features and the location row (ADR 0133
 
   it("E5 — the dashboard DTO stays an intersection and carries the keys", () => {
     runTheDashboardDtoCarriesTheKeys();
+  });
+
+  it("E6 — the energy-settings body: both keys required, strict (F4.375)", () => {
+    runTheEnergySettingsBody();
   });
 });

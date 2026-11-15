@@ -63,6 +63,7 @@ import {
   adoptAssetsBodySchema,
   setOrganizationColourProfileBodySchema,
   setOrganizationAppearanceBodySchema,
+  setOrganizationEnergySettingsBodySchema,
   setPortalAppearanceBodySchema,
   setMyAppearanceBodySchema,
   // `F4.309` (ADR 0088 Amendment 3): the state-label write bodies.
@@ -417,6 +418,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // where the level may inherit. `PortalSettingsController_getAppearance` and
   // `PublicAppearanceController_getAppearance` take no body and no query.
   OrganizationsAdminController_setAppearance: setOrganizationAppearanceBodySchema,
+  // `F4.375` (ADR 0133 Amendment 2 ruling 3): the energy settings' one write path, `.strict()`.
+  OrganizationsAdminController_setEnergySettings: setOrganizationEnergySettingsBodySchema,
   PortalSettingsController_setAppearance: setPortalAppearanceBodySchema,
   MeController_setAppearance: setMyAppearanceBodySchema,
   // `F4.300` (ADR 0108 decision 3.7). `_forOrganization` and `SiteTrendPointsController_forSite`

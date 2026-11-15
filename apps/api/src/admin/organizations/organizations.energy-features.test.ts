@@ -6,12 +6,13 @@ import {
   runEveryListedValueIsAccepted,
   runTheCreateBodyRefusesBothKeys,
   runTheDtoRequiresBothSettings,
+  runThePatchBodyRefusesBothKeys,
   runTheUpdateBodyStaysStrict,
 } from "./organizations.energy-features.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
-describe("F4.364 — organization energy settings on the read and write contracts (ADR 0133)", () => {
-  it("S1 every listed value is accepted on update", () => {
+describe("F4.364 / F4.375 — organization energy settings on the read and write contracts (ADR 0133)", () => {
+  it("S1 every listed value is accepted on the energy-settings body (F4.375)", () => {
     runEveryListedValueIsAccepted();
   });
 
@@ -19,8 +20,12 @@ describe("F4.364 — organization energy settings on the read and write contract
     runAnUnknownValueIsRefused();
   });
 
-  it("S3 the update body stays strict", () => {
+  it("S3 the energy-settings body is strict (F4.375)", () => {
     runTheUpdateBodyStaysStrict();
+  });
+
+  it("S3b PATCH refuses both keys (F4.375, Q6)", () => {
+    runThePatchBodyRefusesBothKeys();
   });
 
   it("S4 the create body refuses both keys", () => {

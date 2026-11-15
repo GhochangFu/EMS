@@ -5,10 +5,9 @@ import {
 } from "@bms/shared/contracts";
 import type {
   AdminOrganizationDto,
-  CardPrimaryMetric,
   ColourProfile,
-  EnergyFeatures,
   AdminOrganizationSummaryDto,
+  SetOrganizationEnergySettingsBody,
   MasterDataActiveFilter,
   OrganizationsListResponse,
 } from "@bms/shared";
@@ -53,15 +52,28 @@ export async function updateAdminOrganization(
     name: string;
     currency?: string;
     timezone?: string;
-    /** `F4.364` (ADR 0133 decision 6): edit only, global admin only. */
-    energyFeatures?: EnergyFeatures;
-    cardPrimaryMetric?: CardPrimaryMetric;
   },
 ): Promise<AdminOrganizationDto> {
   return adminFetch(`/admin/organizations/${id}`, adminOrganizationDtoSchema, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
+  });
+}
+
+/**
+ * `F4.375` (ADR 0133 Amendment 2 ruling 3, plan-gate ruling Q6) — `PUT
+ * /admin/organizations/:id/energy-settings`, the two energy settings' one write path. The global
+ * admin may set any organization; an organization admin one they administer (else 403).
+ */
+export async function setOrganizationEnergySettings(
+  id: string,
+  body: SetOrganizationEnergySettingsBody,
+): Promise<AdminOrganizationDto> {
+  return adminFetch(`/admin/organizations/${id}/energy-settings`, adminOrganizationDtoSchema, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
 }
 
