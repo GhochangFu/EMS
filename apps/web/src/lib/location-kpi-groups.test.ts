@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runK1, runK2, runK3, runK4, runK5, runK6 } from "./location-kpi-groups.spec";
+import { runK1, runK2, runK3, runK4, runK5, runK6, runK7 } from "./location-kpi-groups.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
 describe("location-kpi-groups", () => {
@@ -26,5 +26,9 @@ describe("location-kpi-groups", () => {
 
   it("K6 — no energy location gives a null section kW (F4.364)", () => {
     runK6();
+  });
+
+  it("K7 — anyEnergyShown is true when one location shows energy (F4.375)", () => {
+    runK7();
   });
 });

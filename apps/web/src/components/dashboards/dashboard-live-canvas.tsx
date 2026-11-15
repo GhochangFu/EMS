@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo } from "react";
 
 import { useAssetWindows } from "../../hooks/use-asset-windows";
 import { useDashboardTelemetry } from "../../hooks/use-dashboard-telemetry";
+import { isKwOnly, visibleTiles, widgetPointKeys } from "../../lib/energy-widgets";
 import { FRESH_MS } from "../../lib/schematic-telemetry";
 import { siteWidgetsQueryPrefix, useSiteWidgetsAlarmRefresh } from "../../hooks/use-site-widgets";
 import { newestReadMs } from "../../lib/wall-mode";
@@ -21,7 +22,17 @@ type DashboardLiveCanvasProps = {
    * A key the dashboard has no tab for renders none — it fails closed, never to every tab.
    */
   tabKey?: string;
+  /**
+   * `F4.375` (ADR 0133 Amendment 2 ruling 2, plan D9) — `false` on a site whose energy is not
+   * shown: a widget whose every binding reads `kw` is not drawn and its point refs are not read;
+   * a catalog source of it is still resolved server-side with the dashboard's others (the catalog
+   * read is per dashboard). A uniform tile row closes the gap it leaves (`visibleTiles`). Default `true`; the Dashboards viewer passes
+   * nothing, so it draws every stored widget (ruling Q3). Nothing stored changes.
+   */
+  energyShown?: boolean;
 };
+
+const isKwOnlyWidget = (widget: DashboardWidgetDto): boolean => isKwOnly(widgetPointKeys(widget));
 
 type WidgetTile = CanvasTile & { widget: DashboardWidgetDto };
 
@@ -49,16 +60,22 @@ function SiteWidgetsAlarmRefresh() {
  * selected tab) and `DashboardCanvas` + `DashboardWidgetLive`. The caller owns the query,
  * loading and error states.
  */
-export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey }: DashboardLiveCanvasProps) {
+export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey, energyShown = true }: DashboardLiveCanvasProps) {
   // `F3.73` — the selected tab's slice. The telemetry hook keys its reads on the slice's point refs,
   // not on this object, so a tab switch re-tracks only the refs the new tab shows.
-  const dashboard = useMemo(() => {
-    if (tabKey === undefined) {
-      return fullDashboard;
-    }
-    const tabId = fullDashboard.tabs.find((tab) => tab.key === tabKey)?.id;
-    return { ...fullDashboard, widgets: fullDashboard.widgets.filter((widget) => widget.tabId === tabId) };
-  }, [fullDashboard, tabKey]);
+  // `F4.375` (D9) — the kW-only filter runs here too, before `useDashboardTelemetry`, so a hidden
+  // widget's point refs and asset windows are never read (its catalog source still rides the
+  // dashboard's one catalog read, which the server resolves whole).
+  const { dashboard, hiddenCount } = useMemo(() => {
+    const tabId = tabKey === undefined ? undefined : fullDashboard.tabs.find((tab) => tab.key === tabKey)?.id;
+    const slice =
+      tabKey === undefined ? fullDashboard.widgets : fullDashboard.widgets.filter((widget) => widget.tabId === tabId);
+    const visible = visibleTiles(slice, energyShown, isKwOnlyWidget);
+    return {
+      dashboard: visible.tiles === fullDashboard.widgets ? fullDashboard : { ...fullDashboard, widgets: [...visible.tiles] },
+      hiddenCount: visible.hidden,
+    };
+  }, [fullDashboard, tabKey, energyShown]);
   const { latestByRef, historyByRef, aggregateByKey, catalog } = useDashboardTelemetry(dashboard);
   const now = Date.now();
   // `F4.350` (ADR 0075 Amendment 3): each bound asset is aged on its own RTU's window. Until the
@@ -105,6 +122,19 @@ export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey }: Dashbo
     gridH: widget.gridH,
     widget,
   }));
+
+  if (tiles.length === 0 && hiddenCount > 0) {
+    // `F4.375` (D10) — "no widgets yet" would be false and invites a duplicate.
+    return (
+      <p
+        role="status"
+        data-testid="site-energy-hidden-tab"
+        className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted"
+      >
+        {`No widget on this ${tabKey === undefined ? "dashboard" : "tab"} is shown while energy is not shown for this site.`}
+      </p>
+    );
+  }
 
   if (tiles.length === 0) {
     return (

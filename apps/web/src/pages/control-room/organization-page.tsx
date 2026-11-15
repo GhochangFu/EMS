@@ -19,7 +19,7 @@ import {
   organizationCards,
   organizationEntryTarget,
 } from "../../lib/control-room-levels";
-import { groupByOrganization, splitByLiveTelemetry } from "../../lib/location-kpi-groups";
+import { anyEnergyShown, groupByOrganization, splitByLiveTelemetry } from "../../lib/location-kpi-groups";
 import { organizationNodes } from "../../lib/map-site";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { useBoard } from "../../lib/board-spans";
@@ -132,6 +132,9 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
   const card = organizationCards(sites)[0];
   // `F4.259` — each group keeps the name order.
   const { live, notLive } = splitByLiveTelemetry(sites);
+  // `F4.375` (ADR 0133 Amendment 2 rulings Q5, Q7) — no site of this organization in scope shows
+  // energy: the strip drops its kW-only tiles and the load card is not drawn.
+  const energyShown = anyEnergyShown(sites);
 
   return (
     <>
@@ -141,7 +144,7 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
         title={card.organization.name}
         subtitle={`${card.organization.code} · ${card.siteCount} sites · ${card.openAlarms} alarms`}
       />
-      <OrganizationKpiStrip key={`kpi-strip-${organizationId}`} organizationId={organizationId} />
+      <OrganizationKpiStrip key={`kpi-strip-${organizationId}`} organizationId={organizationId} energyShown={energyShown} />
       <OrganizationSiteMap
         key={organizationId}
         organizationId={organizationId}
@@ -164,7 +167,7 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
       {/* `F4.337` — the strip's daily cost chart, between the alarms and Asset health. */}
       <OrganizationStripCharts key={`strip-charts-${organizationId}`} organizationId={organizationId} />
       <HealthSummarySection organizationId={organizationId} />
-      <OrganizationLoadTrend organizationId={organizationId} />
+      {energyShown ? <OrganizationLoadTrend organizationId={organizationId} /> : null}
       <ScopedDashboardsList organizationId={organizationId} />
     </>
   );

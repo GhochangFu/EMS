@@ -112,6 +112,7 @@ function renderView({ role, wall = false, dto = DTO }: { role?: UserRole; wall?:
           locationId={LOCATION_ID}
           tab={undefined}
           wall={wall}
+          energyShown
           siteName={SITE_NAME}
           {...(role === undefined ? {} : { role })}
         />

@@ -13,6 +13,7 @@ import * as vocabulariesApi from "../api/vocabularies";
 import * as systemStatusApi from "../api/system-status";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import type { AuthUser } from "../stores/auth-store";
+import { isKwOnly, widgetPointKeys } from "../lib/energy-widgets";
 import { DashboardViewerPage } from "./dashboard-viewer-page";
 import * as copilotApi from "../api/copilot";
 
@@ -444,6 +445,16 @@ export async function aWidgetRendersViaTheLiveCanvas(): Promise<void> {
 
   await screen.findByRole("heading", { name: "Site A Overview" });
   expect(await screen.findByText("Energy today")).toBeInTheDocument();
+}
+
+/**
+ * `F4.375` (ADR 0133 Amendment 2 ruling Q3) — the Dashboards viewer draws every stored widget,
+ * a kW-only one included, so an author can find and edit it; only the site page and its wall hide
+ * it. The fixture's widget is kW-only by the predicate (the first expectation keeps it honest).
+ */
+export async function theViewerStillDrawsAKwOnlyWidget(): Promise<void> {
+  expect(isKwOnly(widgetPointKeys(DTO_WITH_WIDGET.widgets[0] as DashboardDto["widgets"][number]))).toBe(true);
+  await aWidgetRendersViaTheLiveCanvas();
 }
 
 const ASSET_DTO: DashboardDto = { ...DTO, locationId: null, assetId: ASSET_ID };

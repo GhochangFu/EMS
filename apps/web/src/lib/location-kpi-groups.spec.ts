@@ -2,6 +2,7 @@ import { locationKpiSummarySchema } from "@bms/shared/contracts";
 import type { LocationKpiSummary } from "@bms/shared";
 
 import {
+  anyEnergyShown,
   groupByOrganization,
   hasLiveTelemetry,
   orgSectionSummary,
@@ -126,4 +127,13 @@ export function runK6(): void {
   // have no kW value is null too, so the header shows no "0.0 kW".
   const shownNoMeter = orgSectionSummary([site({ id: "a3", name: "A3", organization: ORG_A, totalKw: null })]);
   assert(shownNoMeter.totalKw === null, `shown locations with no kW value must give null — got ${shownNoMeter.totalKw}`);
+}
+
+/** `K7` (`F4.375`, Q5/Q7) — some location shows energy; none, or an empty list, is `false`. */
+export function runK7(): void {
+  const hidden = site({ id: "a1", name: "A1", organization: ORG_A, totalKw: null, energyShown: false });
+  const shown = site({ id: "a2", name: "A2", organization: ORG_A, totalKw: null });
+  assert(anyEnergyShown([hidden, shown]), "one shown location must answer true");
+  assert(!anyEnergyShown([hidden]), "only hidden locations must answer false");
+  assert(!anyEnergyShown([]), "no location must answer false");
 }

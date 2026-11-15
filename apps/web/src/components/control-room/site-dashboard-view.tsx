@@ -27,6 +27,11 @@ type SiteDashboardViewProps = {
   role?: UserRole;
   /** `F4.306` — the site's name, shown on the trend strip wizard's Site step. */
   siteName?: string;
+  /**
+   * `F4.375` (ADR 0133 Amendment 2 ruling 2) — the site summary's resolved `energyShown`.
+   * Required, so every host names it; `false` drops kW-only widgets at render (`DashboardLiveCanvas`).
+   */
+  energyShown: boolean;
 };
 
 /**
@@ -89,7 +94,16 @@ const SITE_VIEW_RESOLVE_PREFIX = ["control-room", "site-view"] as const;
  * posts once through the trend arm, then this view's read is invalidated, so the canvas draws the
  * stored strips. The server decides the dashboard; a refused user sees the wizard's fixed sentence.
  */
-export function SiteDashboardView({ slug, organizationId, locationId, tab, wall = false, role, siteName }: SiteDashboardViewProps) {
+export function SiteDashboardView({
+  slug,
+  organizationId,
+  locationId,
+  tab,
+  wall = false,
+  role,
+  siteName,
+  energyShown,
+}: SiteDashboardViewProps) {
   const queryClient = useQueryClient();
   const { search } = useLocation();
   const detailKey = ["dashboards", "detail", slug, organizationId] as const;
@@ -140,7 +154,7 @@ export function SiteDashboardView({ slug, organizationId, locationId, tab, wall 
             })}
           </nav>
         ) : null}
-        <DashboardLiveCanvas dashboard={dashboardQ.data} tabKey={selected?.key} />
+        <DashboardLiveCanvas dashboard={dashboardQ.data} tabKey={selected?.key} energyShown={energyShown} />
       </>
     ) : dashboardQ.isError ? (
       <div role="alert" className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">

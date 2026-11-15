@@ -37,8 +37,21 @@ import { SiteDashboardView } from "./site-dashboard-view";
 vi.mock("../dashboards/dashboard-live-canvas", async () => {
   const { TrendStripWidgetLive } = await import("../dashboards/trend-strip-widget-live");
   return {
-    DashboardLiveCanvas: ({ dashboard, tabKey }: { dashboard: DashboardDto; tabKey?: string }) => (
-      <div data-testid="dashboard-live-canvas" data-dashboard-id={dashboard.id} data-tab-key={tabKey ?? "(all)"}>
+    DashboardLiveCanvas: ({
+      dashboard,
+      tabKey,
+      energyShown,
+    }: {
+      dashboard: DashboardDto;
+      tabKey?: string;
+      energyShown?: boolean;
+    }) => (
+      <div
+        data-testid="dashboard-live-canvas"
+        data-dashboard-id={dashboard.id}
+        data-tab-key={tabKey ?? "(all)"}
+        data-energy-shown={energyShown === undefined ? "(default)" : String(energyShown)}
+      >
         {dashboard.widgets.map((widget) =>
           widget.widgetType === "trend_strip" ? (
             <TrendStripWidgetLive key={widget.id} widget={widget} locationId={dashboard.locationId} tabs={dashboard.tabs} />
@@ -137,11 +150,18 @@ function stubRead(...answers: Answer[]): Mock {
 
 function renderView(
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  energyShown = true,
 ): QueryClient {
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <SiteDashboardView slug={SLUG} organizationId={ORG_PHE.id} locationId={LOCATION_ID} tab={undefined} />
+        <SiteDashboardView
+          slug={SLUG}
+          organizationId={ORG_PHE.id}
+          locationId={LOCATION_ID}
+          tab={undefined}
+          energyShown={energyShown}
+        />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -364,6 +384,7 @@ function TabRoute() {
       organizationId={ORG_PHE.id}
       locationId={LOCATION_ID}
       tab={segment === "" ? undefined : segment}
+      energyShown
     />
   );
 }
@@ -392,7 +413,7 @@ function renderWall(): void {
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`${SITE_PATH}?wall=1&every=30`]}>
-        <SiteDashboardView slug={SLUG} organizationId={ORG_PHE.id} locationId={LOCATION_ID} tab={undefined} wall />
+        <SiteDashboardView slug={SLUG} organizationId={ORG_PHE.id} locationId={LOCATION_ID} tab={undefined} wall energyShown />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -698,4 +719,16 @@ export function cleanupView(): void {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   expect(networkCalls, "a read reached the network").toEqual([]);
+}
+
+/**
+ * `F4.375` (ADR 0133 Amendment 2 ruling 2, plan U6) — the view hands the site's `energyShown`
+ * to the canvas, which drops kW-only widgets (`dashboard-live-canvas.spec.tsx` EK1–EK4 hold
+ * what it drops). Both values, so a hardcoded `true` or `false` fails one of them.
+ */
+export async function theViewHandsEnergyShownToTheCanvas(energyShown: boolean): Promise<void> {
+  stubRead(DTO);
+  renderView(undefined, energyShown);
+  const canvas = await screen.findByTestId("dashboard-live-canvas");
+  expect(canvas.dataset.energyShown).toBe(String(energyShown));
 }

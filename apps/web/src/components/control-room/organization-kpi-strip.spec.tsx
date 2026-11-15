@@ -40,6 +40,9 @@ const TILES: readonly (readonly [string, string, string])[] = [
   ["cost-this-month-tile", "Cost this month", "energy.cost.total"],
 ];
 
+/** `F4.375` — the two energy tiles' stored point keys (the stock layout's), so the kW-only rule can see them. */
+const POINT_KEYS: Readonly<Record<string, string>> = { "total-load-tile": "kw", "energy-today-tile": "kwh_today" };
+
 function tileDto(slot: number): OrganizationStripTileDto {
   const [key, title, catalogKey] = TILES[slot];
   const isSites = catalogKey === "sites.live.count";
@@ -55,6 +58,7 @@ function tileDto(slot: number): OrganizationStripTileDto {
       {
         catalogKey,
         sortOrder: 0,
+        pointKey: POINT_KEYS[key] ?? null,
         resolved: {
           shape: "metric",
           key: catalogKey,
@@ -82,12 +86,12 @@ function view(overrides: Partial<OrganizationControlRoomViewDto> = {}): Organiza
   };
 }
 
-function renderStrip(): void {
+function renderStrip(energyShown = true): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <OrganizationKpiStrip organizationId={ORG_ID} />
+        <OrganizationKpiStrip organizationId={ORG_ID} energyShown={energyShown} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -317,4 +321,16 @@ export async function aStripWithNoChartDrawsNoBlock(): Promise<void> {
   await waitFor(() => expect(controlRoomApi.fetchOrganizationControlRoomView).toHaveBeenCalled());
   await act(async () => {});
   expect(screen.queryByTestId("organization-strip-charts")).toBeNull();
+}
+
+/**
+ * `F4.375` (ADR 0133 Amendment 2 ruling Q5) — with no site of the organization showing energy, a
+ * kW-only strip tile (Total load, `pointKey: "kw"`) is not drawn; Energy today (`kwh_today`) is.
+ * With energy shown both are drawn (the positive twin).
+ */
+export async function aKwOnlyStripTileFollowsEnergyShown(energyShown: boolean): Promise<void> {
+  vi.spyOn(controlRoomApi, "fetchOrganizationControlRoomView").mockResolvedValue(view());
+  renderStrip(energyShown);
+  expect(await screen.findByTestId("org-strip-tile-energy-today-tile")).toBeInTheDocument();
+  expect(screen.queryByTestId("org-strip-tile-total-load-tile") !== null).toBe(energyShown);
 }
