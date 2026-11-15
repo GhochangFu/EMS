@@ -326,3 +326,20 @@ section 3; the owner accepted the plan without vetoing any):
 **Build record** (to be filled as the PRs land): package pins, the model
 revision SHAs and their licences (checked against decision 1), and the plan
 PR 4 CPU and memory measurement that settles ruling 5.
+
+- **Plan PR 3, package pins (2026-11-15).** Written by `uv 0.8.13` (the CI
+  job installs the same version) for Python 3.12 (`apps/ml/.python-version`).
+  Every artifact comes from PyPI; `apps/ml/uv.lock` holds its hash, and the
+  lock has `cp312` wheels for `linux x86_64` and `linux aarch64`.
+  - Build backend: `uv_build>=0.8.13,<0.9.0` (`[build-system] requires`,
+    written by `uv init --package`; Apache 2.0 or MIT, from the uv project).
+  - Runtime: `psycopg[binary]==3.3.9` (`psycopg 3.3.9`, `psycopg-binary
+    3.3.9`, LGPL 3.0, used unmodified as a library; with `typing-extensions
+    4.16.0` on Python below 3.13 and `tzdata 2026.6` on Windows only) and
+    `numpy 2.5.4` (BSD-3-Clause, with bundled 0BSD, MIT, Zlib and CC0
+    parts).
+  - Development group, never in an image: `pytest 9.2.0` (MIT; with
+    `iniconfig 2.3.1`, `packaging 26.3`, `pluggy 1.7.0`, `pygments 2.21.0`,
+    and `colorama 0.4.6` on Windows only) and `ruff 0.17.5` (MIT).
+  - Not yet: `torch` and `chronos-forecasting` are plan PR 4's (`pandas`
+    arrives with them, transitively); `scikit-learn` is `E1.2`'s.
