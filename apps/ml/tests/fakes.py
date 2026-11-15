@@ -5,8 +5,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from uuid import UUID
 
 import numpy as np
+
+from bms_ml.readiness import PointStats
+from bms_ml.records import ForecastRow, PointRef, RunRecord
+from bms_ml.series import HourRow
+from bms_ml.targets import Target
 
 
 @dataclass
@@ -35,11 +41,14 @@ class FakeForecaster:
     version: str = "test-1"
     crossed: bool = False
     fail_with: BaseException | None = None
+    fail_on_calls: frozenset[int] = frozenset({0})
     non_finite_for: frozenset[int] = frozenset()
     seen: list[np.ndarray] = field(default_factory=list)
+    calls: int = 0
 
     def predict(self, contexts: Sequence[np.ndarray], horizon: int) -> np.ndarray:
-        if self.fail_with is not None:
+        call, self.calls = self.calls, self.calls + 1
+        if self.fail_with is not None and call in self.fail_on_calls:
             raise self.fail_with
         out = np.empty((len(contexts), horizon, 3), dtype=np.float64)
         for i, context in enumerate(contexts):
@@ -51,3 +60,54 @@ class FakeForecaster:
             if i in self.non_finite_for:
                 out[i, 0, 1] = np.nan
         return out
+
+
+@dataclass
+class FakeDb:
+    """In-memory `Db`. `eligibility` returns `stats` as given: the scorer must score
+    only what it returns, so `histories` may hold series it must never see."""
+
+    stats: list[PointStats] = field(default_factory=list)
+    histories: dict[PointRef, list[HourRow]] = field(default_factory=dict)
+    fail_history_with: BaseException | None = None
+    runs: list[RunRecord] = field(default_factory=list)
+    forecasts: list[tuple[UUID, datetime, ForecastRow]] = field(default_factory=list)
+    history_requests: list[list[PointRef]] = field(default_factory=list)
+
+    def eligibility(
+        self, targets: Sequence[Target], lookback_from: datetime, as_of_hour: datetime
+    ) -> list[PointStats]:
+        return list(self.stats)
+
+    def history(
+        self, points: Sequence[PointRef], from_hour: datetime, as_of_hour: datetime
+    ) -> dict[PointRef, list[HourRow]]:
+        self.history_requests.append(list(points))
+        if self.fail_history_with is not None:
+            raise self.fail_history_with
+        return {point: list(self.histories.get(point, [])) for point in points}
+
+    def already_scored(
+        self,
+        organization_id: UUID,
+        model_name: str,
+        model_version: str,
+        config_hash: str,
+        as_of_hour: datetime,
+    ) -> bool:
+        return any(
+            run.status == "succeeded"
+            and run.organization_id == organization_id
+            and (run.model_name, run.model_version, run.config_hash)
+            == (model_name, model_version, config_hash)
+            and run.started_at >= as_of_hour
+            for run in self.runs
+        )
+
+    def write_succeeded_run(self, run: RunRecord, forecasts: Sequence[ForecastRow]) -> int:
+        self.runs.append(run)
+        self.forecasts.extend((run.id, run.started_at, row) for row in forecasts)
+        return len(forecasts)
+
+    def write_failed_run(self, run: RunRecord) -> None:
+        self.runs.append(run)
