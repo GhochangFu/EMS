@@ -99,8 +99,16 @@ describe("E1.1 the apps/ml image: CPU only, pinned weights, offline at run time"
     expect(["amazon/chronos-2", "amazon/chronos-bolt-small"]).toContain(repo);
   });
 
-  it("refuses at build time a revision that is not 40 hex", () => {
-    expect(steps.some((s) => /^RUN .*ML_MODEL_REVISION.*\[0-9a-f\]\{40\}/.test(s))).toBe(true);
+  it("pins the weights' content: a 64-hex ML_MODEL_SHA256, checked after the download", () => {
+    expect(/^ARG ML_MODEL_SHA256=(\S+)$/m.exec(steps.join("\n"))?.[1]).toMatch(/^[0-9a-f]{64}$/);
+    const run = steps.find((s) => /^RUN .*snapshot_download/.test(s)) ?? "";
+    expect(run).toMatch(/hashlib\.sha256/);
+    expect(run).toMatch(/digest == sha or sys\.exit/);
+  });
+
+  it("refuses at build time a revision that is not 40 hex, with a full match", () => {
+    // A shell `grep` tests each line, so a value with a newline would pass it.
+    expect(steps.some((s) => /^RUN .*ML_MODEL_REVISION.*re\.fullmatch\(r'\[0-9a-f\]\{40\}'/.test(s))).toBe(true);
   });
 
   it("runs offline: HF_HUB_OFFLINE=1 and TRANSFORMERS_OFFLINE=1 in the runtime stage", () => {

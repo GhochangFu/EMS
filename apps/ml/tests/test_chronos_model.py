@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import torch
 
-from bms_ml.chronos_model import ChronosForecaster, stack_bolt, stack_chronos2
+from bms_ml.chronos_model import ChronosForecaster, load, stack_bolt, stack_chronos2
 from bms_ml.forecasting import QUANTILES, NoModelError, installed_model
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "bms_ml"
@@ -81,10 +81,13 @@ def test_name_and_version_are_the_baked_identity():
     assert (forecaster.name, forecaster.version) == BOLT
 
 
-def _model_dir(tmp_path, content):
+def _model_dir(tmp_path, content, weights=True):
     (tmp_path / "MODEL.json").write_text(
         json.dumps(content) if isinstance(content, dict) else content, "utf-8"
     )
+    if weights:
+        (tmp_path / "config.json").write_text("{}", "utf-8")
+        (tmp_path / "model.safetensors").write_bytes(b"")
     return str(tmp_path)
 
 
@@ -100,6 +103,8 @@ def test_installed_model_reads_model_json(tmp_path, identity):
         {"repo": "amazon/chronos-2", "revision": "29EC3766D36D6F73F0696F85560A422F50E8498C"},
         {"repo": "salesforce/moirai", "revision": "a" * 40},
         {"repo": "amazon/chronos-2"},
+        {"repo": ["amazon/chronos-2"], "revision": "a" * 40},  # unhashable: still a fixed refusal
+        {"repo": {"x": 1}, "revision": "a" * 40},
         "not json",
     ],
 )
@@ -111,6 +116,44 @@ def test_installed_model_refuses_a_bad_identity(tmp_path, content):
 def test_installed_model_refuses_an_empty_directory(tmp_path):
     with pytest.raises(NoModelError, match="no model installed"):
         installed_model(str(tmp_path))
+
+
+def test_installed_model_refuses_model_json_without_the_weights(tmp_path):
+    # serve would pass its start-up check and every run-once child would fail later.
+    with pytest.raises(NoModelError, match="not the weights"):
+        installed_model(_model_dir(tmp_path, {"repo": CHRONOS_2[0], "revision": CHRONOS_2[1]}, weights=False))
+
+
+def test_load_sets_the_torch_threads_and_loads_offline_on_the_cpu(tmp_path, monkeypatch):
+    import chronos
+
+    calls = {}
+    monkeypatch.setattr(torch, "set_num_threads", lambda n: calls.setdefault("threads", n))
+
+    def fake_from_pretrained(path, **kwargs):
+        calls["load"] = (path, kwargs)
+        return StubChronos2()
+
+    monkeypatch.setattr(chronos.Chronos2Pipeline, "from_pretrained", staticmethod(fake_from_pretrained))
+    model_dir = _model_dir(tmp_path, {"repo": CHRONOS_2[0], "revision": CHRONOS_2[1]})
+    forecaster = load(model_dir, 2)
+    assert calls["threads"] == 2
+    path, kwargs = calls["load"]
+    assert path == model_dir
+    assert kwargs["local_files_only"] is True and kwargs["device_map"] == "cpu"
+    assert (forecaster.name, forecaster.version) == CHRONOS_2
+
+
+def test_load_leaves_the_threads_alone_when_unset(tmp_path, monkeypatch):
+    import chronos
+
+    calls = []
+    monkeypatch.setattr(torch, "set_num_threads", calls.append)
+    monkeypatch.setattr(
+        chronos.ChronosBoltPipeline, "from_pretrained", staticmethod(lambda *a, **k: StubBolt())
+    )
+    load(_model_dir(tmp_path, {"repo": BOLT[0], "revision": BOLT[1]}), None)
+    assert calls == []
 
 
 HEAVY = ("torch", "chronos", "transformers", "accelerate", "huggingface_hub", "safetensors")

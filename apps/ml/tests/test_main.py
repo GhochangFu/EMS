@@ -107,8 +107,12 @@ def test_serve_without_a_model_exits_78(fake_db, capsys):
 
 
 def test_run_once_with_a_forecaster_prints_the_summary_last(fake_db, monkeypatch, capsys):
-    monkeypatch.setattr(cli, "load_forecaster", lambda *_args: FakeForecaster())
-    assert cli.main(["run-once", "--as-of", "2026-11-15T12:30:00+00:00"], ENV) == 0
+    loads = []
+    monkeypatch.setattr(cli, "load_forecaster", lambda *args: loads.append(args) or FakeForecaster())
+    env = {**ENV, "ML_TORCH_THREADS": "2"}
+    assert cli.main(["run-once", "--as-of", "2026-11-15T12:30:00+00:00"], env) == 0
+    # ML_TORCH_THREADS reaches the loader: torch would otherwise count the host's CPUs.
+    assert loads == [("/nonexistent/bms-ml-model", 2)]
     last = events(capsys.readouterr().out)[-1]
     assert last["event"] == "cycle_summary"
     assert (last["scored"], last["rows_written"], last["skipped"]) == (1, 2, {"too_few_days": 1})

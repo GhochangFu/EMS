@@ -363,9 +363,15 @@ PR 4 CPU and memory measurement that settles ruling 5.
   ungated, so no token is needed at build time.
   - `amazon/chronos-2` at `29ec3766d36d6f73f0696f85560a422f50e8498c`,
     licence `apache-2.0` on the model card (decision 1: allowed), weights
-    478 MB.
+    478 MB, `model.safetensors` sha256
+    `ddcda3c7508bf2528087723e98a20707cc04b7f370ae275a9fd88078ddba4f42`.
   - `amazon/chronos-bolt-small` at `772f3d25d38aec6d914c8949dab4462e2d46f5d8`,
-    licence `apache-2.0` (allowed), weights 191 MB.
+    licence `apache-2.0` (allowed), weights 191 MB, sha256
+    `06a6a19bbe74bc10a9cd193bd4bf2bf638ae07f7e0d51653ae7ab8ea968a21dd`.
+  - The image build checks the downloaded weights against the pinned sha256
+    (the Hub's LFS hash, which matched a local download of each) and writes
+    it into `MODEL.json`: the revision pins the tree, the hash pins the
+    content.
 - **Plan PR 4, the ruling 5 measurement (2026-11-15).** One `run-once --force`
   cycle per container run, the whole process timed (start, model load,
   eligibility, history, inference, write), with `--memory 2g`,

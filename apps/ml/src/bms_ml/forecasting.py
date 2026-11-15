@@ -23,6 +23,7 @@ import numpy as np
 
 QUANTILES: tuple[float, float, float] = (0.1, 0.5, 0.9)
 MODEL_FILE = "MODEL.json"
+WEIGHT_FILES = ("config.json", "model.safetensors")
 # Decision 1 / decision 5: Apache-2.0 models only; ruling 5 picks one of these two.
 MODEL_KINDS = {"amazon/chronos-2": "chronos2", "amazon/chronos-bolt-small": "bolt"}
 _REVISION = re.compile(r"[0-9a-f]{40}")
@@ -75,10 +76,13 @@ def installed_model(model_dir: str) -> tuple[str, str]:
         raise NoModelError("MODEL.json is not readable JSON") from None
     repo = identity.get("repo") if isinstance(identity, dict) else None
     revision = identity.get("revision") if isinstance(identity, dict) else None
-    if repo not in MODEL_KINDS:
+    if not isinstance(repo, str) or repo not in MODEL_KINDS:
         raise NoModelError("MODEL.json names a model outside the ADR 0135 allowlist")
     if not isinstance(revision, str) or not _REVISION.fullmatch(revision):
         raise NoModelError("MODEL.json revision is not a 40-hex commit")
+    for name in WEIGHT_FILES:
+        if not (Path(model_dir) / name).is_file():
+            raise NoModelError("ML_MODEL_DIR holds MODEL.json but not the weights it names")
     return repo, revision
 
 

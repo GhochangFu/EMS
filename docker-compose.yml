@@ -855,6 +855,15 @@ services:
       - ml
     mem_limit: 2g
     cpus: 2
+    # The scorer writes nothing to disk: a read-only root, /tmp in memory, no
+    # Linux capabilities and no privilege gain (security review, plan PR 4).
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     # migrate is waited for when its profile is active (with `core`); with
     # `--profile ml` alone the preflight still refuses a database without 0157.

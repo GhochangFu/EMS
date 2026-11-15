@@ -44,6 +44,9 @@ export function isDocsOnly(paths) {
 // seed change that broke the fixture would otherwise pass and stay unseen.
 const ML_PREFIXES = ['apps/ml/', 'packages/db/'];
 const ML_FILES = new Set([
+  // The ml image builds from the repo root, so the root .dockerignore decides
+  // what apps/ml/Dockerfile can COPY (code review of plan PR 4).
+  '.dockerignore',
   'package.json',
   'pnpm-lock.yaml',
   '.github/workflows/ci.yml',

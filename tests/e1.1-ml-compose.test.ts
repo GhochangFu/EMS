@@ -144,4 +144,10 @@ describe("E1.1 the local `ml` compose service (docker-compose.yml)", () => {
     expect(ml).toMatch(/^ {4}mem_limit: \S+/m);
     expect(ml).toMatch(/^ {4}cpus: \S+/m);
   });
+
+  it("is hardened: read-only root, no capabilities, no privilege gain", () => {
+    expect(ml).toMatch(/^ {4}read_only: true\s*$/m);
+    expect(ml).toMatch(/^ {4}cap_drop:\s*\n {6}- ALL\s*$/m);
+    expect(ml).toMatch(/^ {4}security_opt:\s*\n {6}- no-new-privileges:true\s*$/m);
+  });
 });

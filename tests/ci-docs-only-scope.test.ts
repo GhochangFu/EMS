@@ -63,11 +63,12 @@ describe("ci-scope — which change sets need the ml job", () => {
         ["packages/db/package.json"],
         ["package.json"],
         ["pnpm-lock.yaml"],
+        [".dockerignore"],
         [".github/workflows/ci.yml"],
         ["scripts/checks/ci-scope.mjs"],
         ["docs/BACKLOG.md", "apps\\ml\\README.md"],
       ].map(touchesMl),
-    ).toEqual(Array(13).fill(true));
+    ).toEqual(Array(14).fill(true));
   });
 
   it("answers no ml for a change set that touches none of them", () => {
