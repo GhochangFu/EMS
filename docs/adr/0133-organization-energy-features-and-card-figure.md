@@ -171,7 +171,7 @@ locations, 11 health cards); AWS 186–278 ms per read (25 locations).
 
 ## Amendment 2 — The leftover kW readers and editing by an organization admin (2026-11-15)
 
-**Proposed — 2026-11-15.** Three owner rulings in chat on 2026-11-15, one at a
+**Accepted — 2026-11-15** (owner, in chat: "Accepted"). Three owner rulings in chat on 2026-11-15, one at a
 time, for row `F4.375`; each took the recommended option. They close three of
 the four follow-ups named in build note 5 and decision 6. The fourth follow-up,
 the clock-dependent freshness fixtures, is a test fix and needs no decision.
@@ -203,3 +203,26 @@ the clock-dependent freshness fixtures, is a test fix and needs no decision.
    or the appearance route widened) and the audit action name.
 
 No migration and no dependency.
+
+**Plan-gate rulings** (owner, in chat, 2026-11-15, one at a time; plan
+[`docs/plans/f4.375-energy-follow-ups.md`](../plans/f4.375-energy-follow-ups.md)
+§2, option A each time). Four of them widen the words above:
+
+- **Q1:** the estate Total load tile shows the server's `totalKw`, not the sum
+  of the last live socket frame, so ruling 1 reaches the screen.
+- **Q5:** the organization page's KPI strip follows ruling 2's predicate — a
+  kW-only strip tile is not drawn when no site of that organization in the
+  caller's scope shows energy.
+- **Q6:** the two settings have one write path,
+  `PUT /admin/organizations/:id/energy-settings` (audited
+  `master.organization.energy_settings.update` with the organization id).
+  `PATCH /admin/organizations/:id` no longer takes them, and the Edit dialog
+  loses its two selects; decision 6's "on the organization's edit form" now
+  means an **Energy settings** row action beside **Appearance**.
+- **Q7:** the estate "Campus load" chart and the organization "Load · last 60
+  minutes" chart are not drawn when no location in their scope shows energy.
+
+The others narrow the plan's own choices: Q2 the predicate counts `kw` only
+(exact key); Q3 widgets are hidden on the site page and its wall, never in the
+Dashboards viewer or the builder; Q4 a hidden tile's gap closes inside a row of
+same-size tiles.
