@@ -90,8 +90,8 @@ describe("ci-scope — the CLI the workflow runs", () => {
   const run = (cwd: string, ...args: string[]): string => output(cwd, ...args).find((line) => line.startsWith("code=")) ?? "";
   const runMl = (cwd: string, ...args: string[]): string => output(cwd, ...args).find((line) => line.startsWith("ml=")) ?? "";
 
-  /** A throwaway repository: a base commit, a docs-only commit, a code commit, then a code file moved into docs/. */
-  function fixtureRepo(): { dir: string; base: string; docs: string; code: string; moved: string } {
+  /** A throwaway repository: a base commit, a docs-only commit, a code commit, a code file moved into docs/, then an apps/ml commit. */
+  function fixtureRepo(): { dir: string; base: string; docs: string; code: string; moved: string; ml: string } {
     const dir = mkdtempSync(join(tmpdir(), "ci-scope-"));
     const git = (...args: string[]) =>
       execFileSync("git", ["-c", "user.name=ci-scope", "-c", "user.email=ci-scope@example.invalid", "-c", "commit.gpgsign=false", ...args], { cwd: dir, encoding: "utf8" }).trim();
