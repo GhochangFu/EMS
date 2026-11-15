@@ -61,8 +61,8 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
         </p>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {/* `F4.364` (plan ruling Q4): no Total load tile when the site's energy is not shown. */}
-        {location?.energyShown === false ? null : (
+        {/* `F4.364` (plan ruling Q4): Total load only once the site is known to show energy — never while the read is pending (it flashed on a no-energy site, AWS 2026-11-15). */}
+        {location?.energyShown !== true ? null : (
           <div data-tile="total-load" className={board.span("total-load")}>
             <KpiTile
               label="Total load"

@@ -395,6 +395,18 @@ export async function noEnergyDropsTheTotalLoadTile(): Promise<void> {
   expect(tileValue("Open alarms")).toBe("7");
 }
 
+/**
+ * W3c (`F4.364`, AWS check 2026-11-15) — while the location read is pending the "Total load" tile
+ * is not drawn: the site may turn out to show no energy, and the tile flashed for a few seconds on
+ * a no-energy site. The other tiles render in their loading state, so the absence is not an empty page.
+ */
+export async function aPendingReadDrawsNoTotalLoadTile(): Promise<void> {
+  renderView({ dashboard: "hang" });
+  expect(await screen.findByText("Assets fresh")).toBeInTheDocument();
+  expect(screen.queryByText("Total load")).toBeNull();
+  expect(document.querySelector('[data-tile="total-load"]')).toBeNull();
+}
+
 /** W4a — a partial scope prints the partial-scope line. */
 export async function partialScopeShowsTheLine(): Promise<void> {
   renderView({ dashboard: kpis("partial") });

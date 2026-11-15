@@ -212,8 +212,8 @@ export async function theAccessDeniedCardLinksToTheControlRoom(): Promise<void> 
 export async function theTotalLoadTileFollowsEnergyShown(): Promise<void> {
   stubApi();
   renderView();
-  expect(await screen.findByText("Assets fresh")).toBeInTheDocument();
-  expect(screen.getByText("Total load")).toBeInTheDocument();
+  // Drawn once the read answers that the site shows energy (not while it is pending: L8).
+  expect(await screen.findByText("Total load")).toBeInTheDocument();
   cleanup();
   vi.restoreAllMocks();
 
@@ -222,4 +222,16 @@ export async function theTotalLoadTileFollowsEnergyShown(): Promise<void> {
   expect(await screen.findByText("Assets fresh")).toBeInTheDocument();
   // While the read is pending the tile shows as loading; once it answers it is gone.
   await waitFor(() => expect(screen.queryByText("Total load")).toBeNull());
+}
+
+/**
+ * L8 (`F4.364`, AWS check 2026-11-15) — while the location read is pending the "Total load" tile
+ * is not drawn (it flashed on BCPL BARBARUAH, a no-energy site); "Assets fresh" renders loading.
+ */
+export async function aPendingReadDrawsNoTotalLoadTile(): Promise<void> {
+  vi.spyOn(locationsApi, "fetchLocationDashboard").mockReturnValue(new Promise(() => undefined));
+  vi.spyOn(assetImagesApi, "fetchAssetImages").mockResolvedValue([]);
+  renderView();
+  expect(await screen.findByText("Assets fresh")).toBeInTheDocument();
+  expect(screen.queryByText("Total load")).toBeNull();
 }

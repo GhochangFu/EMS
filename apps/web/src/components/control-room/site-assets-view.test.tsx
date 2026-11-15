@@ -10,6 +10,7 @@ import {
   theAccessDeniedCardLinksToTheControlRoom,
   theHeaderChipShowsTheTypeLabel,
   theTotalLoadTileFollowsEnergyShown,
+  aPendingReadDrawsNoTotalLoadTile,
 } from "./site-assets-view.spec";
 
 /**
@@ -49,5 +50,9 @@ describe("F3.72 SiteAssetsView (moved from the F3.4 location dashboard)", () => 
 
   it("L7 (F4.364) the Total load tile follows energyShown", async () => {
     await theTotalLoadTileFollowsEnergyShown();
+  });
+
+  it("L8 (F4.364) a pending read draws no Total load tile", async () => {
+    await aPendingReadDrawsNoTotalLoadTile();
   });
 });
