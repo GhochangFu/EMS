@@ -33,6 +33,13 @@ import { SectionCard } from "../components/section-card";
  */
 const DASHBOARD_TITLE = "Control Room · Estate";
 
+/** `F4.375` — the KPI grid's large-screen columns by tile count; literal classes, so Tailwind keeps each one. */
+const KPI_GRID_COLUMNS: Readonly<Record<number, string>> = {
+  3: "lg:grid-cols-3",
+  4: "lg:grid-cols-4",
+  5: "lg:grid-cols-5",
+};
+
 type DashboardPageProps = {
   user: AuthUser;
 };
@@ -89,9 +96,19 @@ export function DashboardPage({ user }: DashboardPageProps) {
    * longer needs to gate the caption separately from the ring.
    */
   const pueProps = pueTileProps(kpiStatus, kpi?.pueEstimate);
-  // `F3.28` task 2.5 — vs-yesterday deltas; see `kpi-ribbon.ts` for why Total
-  // load compares the server's `totalKw` while the tile shows the socket sum.
+  // `F3.28` task 2.5 — vs-yesterday deltas. Since `F4.375` (plan Q1) the Total
+  // load tile and its delta both read the server's `totalKw` (`kpi-ribbon.ts`).
   const hints = kpiRibbonHints(kpi);
+
+  /**
+   * `F4.375` (ADR 0133 Amendment 2 ruling 1, plan D7, Q7) — Total load and the
+   * Campus load card are drawn unless the KPI read says no location in scope
+   * shows energy. While the read has never answered the tile is drawn in its
+   * loading state (hiding it would make it pop in for every energy user); after
+   * that it follows the last answer. Shown but no `kw` value reads `—`.
+   */
+  const energyShown = kpi?.energyShown !== false;
+  const totalLoadStatus = kpiStatus === "ready" && displayTotalKw === null ? "empty" : kpiStatus;
 
   const trendStatus = trendQuery.isLoading
     ? "loading"
@@ -108,6 +125,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
    */
   const devices = useSystemStatus().data?.devices;
   const showDevices = devices !== undefined && devices.monitored > 0;
+  const tileCount = 3 + (energyShown ? 1 : 0) + (showDevices ? 1 : 0);
 
   const fmtKw = (v: number | null) =>
     v === null || Number.isNaN(v) ? null : v.toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -142,16 +160,18 @@ export function DashboardPage({ user }: DashboardPageProps) {
           subtitle="Choose an organization or a site · live KPIs · asset health · load trend"
         />
 
-        <div className={`grid gap-3 sm:grid-cols-2 ${showDevices ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
-          <KpiTile
-            label="Total load"
-            status={kpiStatus}
-            value={fmtKw(displayTotalKw)}
-            unit="kW"
-            hint={hints.totalLoadHint}
-            icon={WidgetIconGlyph("bolt")}
-            stale={stale && kpiStatus === "ready"}
-          />
+        <div className={`grid gap-3 sm:grid-cols-2 ${KPI_GRID_COLUMNS[tileCount] ?? "lg:grid-cols-4"}`}>
+          {energyShown ? (
+            <KpiTile
+              label="Total load"
+              status={totalLoadStatus}
+              value={fmtKw(displayTotalKw)}
+              unit="kW"
+              hint={hints.totalLoadHint}
+              icon={WidgetIconGlyph("bolt")}
+              stale={stale && totalLoadStatus === "ready"}
+            />
+          ) : null}
           <KpiTile
             label="Sites online"
             status={kpiStatus}
@@ -284,17 +304,19 @@ export function DashboardPage({ user }: DashboardPageProps) {
 
         <HealthSummarySection />
 
-        <SectionCard
-          title="Campus load · last 60 minutes"
-          subtitle="1-minute buckets · total kW (all assets)"
-          bodyClassName="p-3"
-        >
+        {energyShown ? (
+          <SectionCard
+            title="Campus load · last 60 minutes"
+            subtitle="1-minute buckets · total kW (all assets)"
+            bodyClassName="p-3"
+          >
             <LoadTrendChart
               points={chartPoints}
               status={trendStatus}
               stale={stale && trendStatus === "ready"}
             />
-        </SectionCard>
+          </SectionCard>
+        ) : null}
 
         {/* `F3.72` (plan D7) — no filter: the library dashboards of the whole read scope. */}
         <ScopedDashboardsList />

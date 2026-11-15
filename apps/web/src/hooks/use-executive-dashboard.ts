@@ -16,13 +16,18 @@ function socketUrl(): string {
 }
 
 /**
- * KPI polling + telemetry WebSocket for live totals, chart tail, and stale detection (10 s).
+ * KPI polling + telemetry WebSocket for the chart's live tail and stale detection (10 s).
+ *
+ * `F4.375` (ADR 0133 Amendment 2, plan Q1): the Total load tile shows the server's `totalKw`
+ * (4 s poll) — the sum over the locations whose energy is shown, `null` when none in scope does.
+ * It used to prefer the sum of the last socket frame's `kw` readings, which counted every `kw`
+ * the socket carried (an `off` organization's included) and so differed from the ribbon's rule
+ * and from its own "vs yesterday" line. The socket keeps the Live/Stale pill and the chart tail.
  */
 export function useExecutiveDashboard() {
   const mountedAt = useRef(Date.now());
   const accessToken = useAuthStore((state) => state.accessToken);
   const [lastTickAt, setLastTickAt] = useState<number | null>(null);
-  const [liveTotalKw, setLiveTotalKw] = useState<number | null>(null);
   const [liveTrendAdds, setLiveTrendAdds] = useState<LoadTrendPoint[]>([]);
   const [now, setNow] = useState(() => Date.now());
 
@@ -53,7 +58,6 @@ export function useExecutiveDashboard() {
       const kws = readings.filter((r) => r.pointKey === "kw");
       if (kws.length > 0) {
         const sum = kws.reduce((acc, r) => acc + r.value, 0);
-        setLiveTotalKw(sum);
         const t = kws[0]?.time ?? new Date().toISOString();
         setLiveTrendAdds((prev) => {
           const next = [...prev, { t, totalKw: sum }];
@@ -72,9 +76,7 @@ export function useExecutiveDashboard() {
       !kpiQ.isLoading) ||
     (lastTickAt !== null && now - lastTickAt > 10_000);
 
-  const displayTotalKw = stale
-    ? (kpiQ.data?.totalKw ?? null)
-    : (liveTotalKw ?? kpiQ.data?.totalKw ?? null);
+  const displayTotalKw = kpiQ.data?.totalKw ?? null;
 
   const chartPoints = useMemo(() => {
     const map = new Map<number, number>();

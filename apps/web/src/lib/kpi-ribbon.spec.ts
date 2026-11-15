@@ -15,6 +15,7 @@ import { kpiRibbonHints } from "./kpi-ribbon";
 function kpis(overrides: Partial<DashboardKpis> = {}): DashboardKpis {
   return {
     totalKw: 1100,
+    energyShown: true,
     sitesOnline: 9,
     sitesTotal: 9,
     alarmsOpen: 0,
@@ -34,7 +35,7 @@ export function aTenPercentLoadRiseIsAnUpDelta(): void {
 /** No prior load: the fixed line from before `F3.28`. */
 export function aNullLoadPriorKeepsTheFixedHint(): void {
   const kpi = kpis({ prior: { ...kpis().prior, totalKw: null } });
-  expect(kpiRibbonHints(kpi).totalLoadHint).toBe("Sum of latest kW per asset");
+  expect(kpiRibbonHints(kpi).totalLoadHint).toBe("Latest kW at sites showing energy");
 }
 
 /** OQ5: with no alarm delta the hint is the fixed "Active — not yet cleared". */
@@ -75,9 +76,14 @@ export function aNullPuePriorHasNoDeltaText(): void {
 /** A query that has not settled: every tile shows its fixed line. */
 export function anUnsettledQueryShowsTheFixedLines(): void {
   expect(kpiRibbonHints(undefined)).toEqual({
-    totalLoadHint: "Sum of latest kW per asset",
+    totalLoadHint: "Latest kW at sites showing energy",
     openAlarmsHint: "Active — not yet cleared",
     openAlarmsNote: undefined,
     pueDeltaText: undefined,
   });
+}
+
+/** `F4.375` — a live `totalKw` of `null` (no `kw` value at a shown location, or nothing shown) keeps the fixed line. */
+export function aNullLoadKeepsTheFixedHint(): void {
+  expect(kpiRibbonHints(kpis({ totalKw: null })).totalLoadHint).toBe("Latest kW at sites showing energy");
 }

@@ -24,6 +24,12 @@ import {
   theEstateTitleIsControlRoomEstate,
   theUnacknowledgedRowsLiteralIsGone,
   totalLoadWearsTheBoltIcon,
+  aPendingReadDrawsTheTileLoading,
+  noEnergyHidesTheTotalLoadTile,
+  noEnergyWithTheDevicesTileIsFourColumns,
+  shownDrawsTheTotalLoadTile,
+  shownWithoutAValueReadsTheDash,
+  theCampusLoadCardFollowsTheFlag,
 } from "./dashboard-page.spec";
 
 /**
@@ -147,5 +153,40 @@ describe("F3.16 offline devices tile (ADR 0127 decision 19)", () => {
 
   it("hides when no device is monitored", async () => {
     await theOfflineDevicesTileHidesAtZeroMonitored();
+  });
+});
+
+describe("F4.375 — the estate ribbon follows energyShown (ADR 0133 Amendment 2)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("P1 — energy not shown: no Total load tile, three columns", async () => {
+    await noEnergyHidesTheTotalLoadTile();
+  });
+
+  it("P2 — energy shown with no kw value: the tile reads the dash", async () => {
+    await shownWithoutAValueReadsTheDash();
+  });
+
+  it("P3 — energy shown: the tile and its figure, four columns", async () => {
+    await shownDrawsTheTotalLoadTile();
+  });
+
+  it("P4 — energy not shown with the devices tile: four columns", async () => {
+    await noEnergyWithTheDevicesTileIsFourColumns();
+  });
+
+  it("P5 — the Campus load card is absent when energy is not shown (Q7)", async () => {
+    await theCampusLoadCardFollowsTheFlag(false);
+  });
+
+  it("P5 — the Campus load card is present when energy is shown (Q7)", async () => {
+    await theCampusLoadCardFollowsTheFlag(true);
+  });
+
+  it("P6 — a pending read draws the tile in its loading state (D7)", async () => {
+    await aPendingReadDrawsTheTileLoading();
   });
 });

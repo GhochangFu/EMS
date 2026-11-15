@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runDashboardKpisEnergyShownTest,
   runLocationKpiSummaryRequiresTypeLabelTest,
   runMapSiteDtoRequiresKindLabelTest,
   runRowWithCodeParsesTest,
@@ -27,5 +28,11 @@ describe("F4.157 — mapSiteDtoSchema gains kindLabel (ADR 0077 D8)", () => {
 describe("F4.157 U8 — locationKpiSummarySchema gains typeLabel (OQ4)", () => {
   it("K2 — refuses a row without typeLabel, parses one with it", () => {
     runLocationKpiSummaryRequiresTypeLabelTest();
+  });
+});
+
+describe("F4.375 — the estate KPI payload says whether energy is shown (ADR 0133 Amendment 2)", () => {
+  it("U2 — energyShown is a required boolean; totalKw is nullable, never undefined", () => {
+    runDashboardKpisEnergyShownTest();
   });
 });

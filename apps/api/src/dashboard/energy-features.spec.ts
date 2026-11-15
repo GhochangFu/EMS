@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import { ENERGY_DATA_WINDOW_DAYS, resolveLocationEnergy } from "./energy-features";
+import { ENERGY_DATA_WINDOW_DAYS, isEnergyShown, resolveLocationEnergy } from "./energy-features";
 
 /**
  * `F4.364` (ADR 0133 decisions 2–4, plan rulings Q5 and D3) — the pure resolution of an
@@ -74,4 +74,30 @@ export function runAnUnknownValueActsAsAuto(): void {
     totalKw: 42,
   });
   expect(resolveLocationEnergy({ ...base, energyFeatures: null, cardPrimaryMetric: undefined }).primaryMetric).toBe("kw");
+}
+
+/**
+ * R6 — `F4.375` (plan D2): `isEnergyShown` is the one rule both the cards and the estate ribbon
+ * read. on / off / auto × data yes / no; an unknown or non-string stored value acts as `auto`.
+ */
+export function runIsEnergyShownTable(): void {
+  const cases: readonly (readonly [unknown, boolean, boolean])[] = [
+    ["on", true, true],
+    ["on", false, true],
+    ["off", true, false],
+    ["off", false, false],
+    ["auto", true, true],
+    ["auto", false, false],
+    ["maybe", true, true],
+    ["maybe", false, false],
+    [null, true, true],
+    [null, false, false],
+  ];
+  for (const [energyFeatures, hasEnergyData, shown] of cases) {
+    expect({ energyFeatures, hasEnergyData, shown: isEnergyShown(energyFeatures, hasEnergyData) }).toEqual({
+      energyFeatures,
+      hasEnergyData,
+      shown,
+    });
+  }
 }

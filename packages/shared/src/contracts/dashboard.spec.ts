@@ -1,4 +1,4 @@
-import { locationKpiSummarySchema, mapSiteDtoSchema } from "./dashboard";
+import { dashboardKpisSchema, locationKpiSummarySchema, mapSiteDtoSchema } from "./dashboard";
 
 /**
  * `F3.70` (ADR 0076 decision 9, D7) — `code` on the location KPI row, so the
@@ -109,5 +109,41 @@ export function runMapSiteDtoRequiresKindLabelTest(): void {
     `the same site with kindLabel: "Pump station" — expected success, got a refusal: ${
       withLabel.success ? "" : JSON.stringify(withLabel.error.issues)
     }`,
+  );
+}
+
+/** A full `GET /dashboard/kpis` payload with energy shown (`F4.375`, plan U2). */
+const KPIS = {
+  totalKw: 42,
+  energyShown: true,
+  sitesOnline: 1,
+  sitesTotal: 2,
+  alarmsOpen: 0,
+  alarmsCritical: 0,
+  pueEstimate: null,
+  asOf: "2026-11-15T00:00:00.000Z",
+  prior: { asOf: "2026-11-14T00:00:00.000Z", totalKw: null, alarmsOpen: 0, pueEstimate: null },
+};
+
+/**
+ * `F4.375` (ADR 0133 Amendment 2, plan D1) — the estate KPI payload carries a required
+ * `energyShown` and a nullable `totalKw`: a payload without `energyShown` or with a non-boolean
+ * one fails; `totalKw: null` passes and `undefined` fails; the full payload parses.
+ */
+export function runDashboardKpisEnergyShownTest(): void {
+  assert(dashboardKpisSchema.safeParse(KPIS).success, "the full KPI payload — expected success");
+  const { energyShown: _omitted, ...withoutFlag } = KPIS;
+  assert(!dashboardKpisSchema.safeParse(withoutFlag).success, "a KPI payload without energyShown — expected a refusal");
+  assert(
+    !dashboardKpisSchema.safeParse({ ...KPIS, energyShown: "yes" }).success,
+    "energyShown: \"yes\" — expected a refusal",
+  );
+  assert(
+    dashboardKpisSchema.safeParse({ ...KPIS, energyShown: false, totalKw: null }).success,
+    "totalKw: null — expected success",
+  );
+  assert(
+    !dashboardKpisSchema.safeParse({ ...KPIS, totalKw: undefined }).success,
+    "totalKw: undefined — expected a refusal",
   );
 }

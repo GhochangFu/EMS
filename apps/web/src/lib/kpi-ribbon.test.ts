@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  aNullLoadKeepsTheFixedHint,
   aNullLoadPriorKeepsTheFixedHint,
   aNullPuePriorHasNoDeltaText,
   anAlarmDeltaGoesInTheHint,
@@ -16,6 +17,10 @@ import {
 describe("F3.28 executive KPI ribbon hints", () => {
   it("renders a 10 % load rise as an up delta", () => {
     aTenPercentLoadRiseIsAnUpDelta();
+  });
+
+  it("keeps the fixed load hint when the live total is null (F4.375)", () => {
+    aNullLoadKeepsTheFixedHint();
   });
 
   it("keeps the fixed load hint when the prior is null", () => {

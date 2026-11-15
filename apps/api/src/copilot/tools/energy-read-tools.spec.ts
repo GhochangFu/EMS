@@ -154,6 +154,7 @@ function fakeEnergyServices() {
         log.kpis.push({ assetIds });
         return {
           totalKw: 120.5,
+          energyShown: true,
           sitesOnline: 2,
           sitesTotal: 3,
           alarmsOpen: 4,
@@ -378,8 +379,12 @@ export async function assertEveryEnergyToolRefusesAnOwnKeyOrganizationAndReadsAn
   }
 }
 
-/** One KPI read per organization, the contract strips an extra key, and the description names the socket. */
-export async function assertDashboardKpisReturnsTheContractPerOrganizationAndNamesTheSocketCaveat(): Promise<void> {
+/**
+ * One KPI read per organization, the contract strips an extra key, and the description says total
+ * kW is null when nothing in scope shows energy. `F4.375` (plan Q1): the on-screen tile shows this
+ * same server figure, so the description no longer warns of a newer socket value.
+ */
+export async function assertDashboardKpisReturnsTheContractPerOrganizationAndNamesTheNullTotal(): Promise<void> {
   const { tools, log } = fakeEnergyServices();
   const result = okResult(await tools.dispatch("get_dashboard_kpis", {}, ctx([ORG_X, ORG_Y])));
   expect(log.kpis).toEqual([{ assetIds: [ASSET_X] }, { assetIds: [ASSET_Y] }]);
@@ -390,7 +395,10 @@ export async function assertDashboardKpisReturnsTheContractPerOrganizationAndNam
     expect(organization.items[0]).toEqual(expect.objectContaining({ totalKw: 120.5, prior: expect.objectContaining({ totalKw: 110 }) }));
   }
   expect(JSON.stringify(result)).not.toContain("internalNote");
-  expect(getDashboardKpisTool.description).toMatch(/socket/i);
+  expect(organizations[0]?.items[0]).toEqual(expect.objectContaining({ energyShown: true }));
+  expect(getDashboardKpisTool.description).toMatch(/null when no location in scope shows energy/i);
+  expect(getDashboardKpisTool.description).toMatch(/or when no shown location has a kW value/i);
+  expect(getDashboardKpisTool.description).not.toMatch(/socket/i);
 }
 
 /** The window defaults to `24h`; another grammar is refused by the schema; the item is the contract DTO. */

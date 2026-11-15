@@ -30,18 +30,28 @@ export interface LocationEnergy {
 }
 
 /**
+ * `F4.375` (ADR 0133 decision 2, plan D2) — the one "energy shown" rule: `on` → shown; `off` →
+ * not; `auto` (and any unknown stored value, F4.364 D3) → `hasEnergyData`. The location cards
+ * (`resolveLocationEnergy`) and the estate ribbon (`summariseEstateEnergy`) both call it; no SQL
+ * restates it.
+ */
+export function isEnergyShown(energyFeatures: unknown, hasEnergyData: boolean): boolean {
+  const energy = energyFeaturesSchema.safeParse(energyFeatures);
+  const setting = energy.success ? energy.data : "auto";
+  return setting === "on" || (setting === "auto" && hasEnergyData);
+}
+
+/**
  * `F4.364` (ADR 0133 decisions 2–4, plan ruling Q5) — resolves an organization's two settings for
  * one location: `on`/`off` win; `auto` follows `hasEnergyData`. A card setting other than `auto`
  * is honoured whether or not energy is shown; `auto` is `kw` with energy and `health` without.
  * `totalKw` is `null` whenever energy is not shown.
  */
 export function resolveLocationEnergy(facts: LocationEnergyFacts): LocationEnergy {
-  const energy = energyFeaturesSchema.safeParse(facts.energyFeatures);
   const card = cardPrimaryMetricSchema.safeParse(facts.cardPrimaryMetric);
-  const energyFeatures = energy.success ? energy.data : "auto";
   const cardPrimaryMetric = card.success ? card.data : "auto";
 
-  const energyShown = energyFeatures === "on" || (energyFeatures === "auto" && facts.hasEnergyData);
+  const energyShown = isEnergyShown(facts.energyFeatures, facts.hasEnergyData);
   const primaryMetric: ResolvedCardPrimaryMetric =
     cardPrimaryMetric === "auto" ? (energyShown ? "kw" : "health") : cardPrimaryMetric;
   return { energyShown, primaryMetric, totalKw: energyShown ? facts.totalKw : null };
