@@ -30,6 +30,21 @@ build record: `--build-arg ML_MODEL_REPO=amazon/chronos-bolt-small
 Locally the service is the compose profile `ml`
 (`docker compose --profile core --profile ml up -d --build ml`).
 
+## The demo host (ADR 0096, Amendment 2 ruling 1)
+
+The deploy workflow builds `ems-ml` for arm64 with the other images. The
+service is off until an administrator enables it; the choice survives deploys:
+
+```bash
+sudo bms-ctl ml start      # or: Actions -> "AWS demo services" -> ml -> start
+sudo bms-ctl ml status
+sudo bms-ctl logs ml       # the hourly cycle_summary lines
+```
+
+`bms-ctl` is installed by `deploy/aws/setup-server.sh`, not run from the
+checkout, so re-run that script once after this change lands. On the host the
+service has one vCPU, 1 GiB, a read-only root and no network but Postgres.
+
 ## Toolchain
 
 Managed with [uv](https://docs.astral.sh/uv/) at the version that wrote
