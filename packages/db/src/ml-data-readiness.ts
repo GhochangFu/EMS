@@ -171,7 +171,7 @@ const MARK: Record<Verdict, string> = { ready: "READY", partial: "PARTIAL", not_
 export function renderReport(rows: readonly ReadinessRow[], generatedAt: string): string {
   const lines: string[] = [];
   lines.push(`ML data readiness — generated ${generatedAt}`);
-  lines.push(`Source: telemetry.point_values_1h · real = measured via an ingest-enabled RTU`);
+  lines.push(`Source: telemetry.point_values_1h · real = fed by MQTT ingest (the simulator never writes it)`);
   lines.push("");
   if (rows.length === 0) {
     lines.push("No telemetry in telemetry.point_values_1h. Nothing to assess.");

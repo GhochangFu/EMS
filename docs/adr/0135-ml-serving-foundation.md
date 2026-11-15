@@ -122,6 +122,20 @@ Facts that shape the choice:
    whichever asset class it shows READY first**. The plan's assumption is
    pumps, which needs confirming.
 
+   **First run, 2026-11-15** (on `bms.demosites.co.in` through the read-only
+   API; the session had no database access): [`docs/plans/ml-data-readiness-2026-11-15.txt`](../plans/ml-data-readiness-2026-11-15.txt).
+   Six classes hold real data and fifteen are simulator-only.
+   - **PHEWB pumping stations**: energy meters, pump breakers, chlorine pumps
+     and RTU health, 5 assets each. They have 40 days of history (from
+     2026-10-07) at 99–100 % hourly coverage. Anomaly detection is **READY**;
+     forecasting is **PARTIAL** until about 2026-12-02, when they reach 56 days.
+   - **BCPL water flow meters** (21) and **WBLDC cold rooms** (19) have only
+     7–8 days. They are **NOT READY** for anything yet. They pass 28 days
+     around 2026-12-06.
+   - Battery health is **NOT READY** everywhere: no real asset carries battery
+     voltage or temperature, and every UPS asset is simulated.
+   - RUL is **NOT READY** everywhere: no real asset has a closed work order.
+
 9. **Scope of `E1.1` under this ADR**: decisions 2–4 and 7, plus one model
    from decision 5 (forecasting, the one that needs no training) running end
    to end on one READY asset class. Reading the scores through the API
@@ -169,5 +183,7 @@ Facts that shape the choice:
    first build, as the ingest host still does (`bms_ingest` is owed there too).
 3. **Anomaly stays advisory** (decision 5). Confirm no alarm is raised from a
    score until `E1.2`.
-4. **Which asset class first.** This waits on the decision 8 report from a
-   database with real pilot data.
+4. **Which asset class first.** The decision 8 run *(recommended)* points to
+   the **PHEWB pumping stations**, the only real data with enough history. The
+   model would be anomaly detection on energy meter and pump signals, with
+   Chronos forecasting added as the history grows past 56 days.

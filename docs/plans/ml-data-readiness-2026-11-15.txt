@@ -1,0 +1,136 @@
+# Run against bms.demosites.co.in on 2026-11-15 through the read-only API (no DB access
+# from the session), same rules as `pnpm --filter @bms/db ml:readiness`. Point counts for
+# simulated classes were not read (their verdict is fixed). Daily history: last 365 days;
+# coverage: hourly buckets over the last 28 days.
+
+ML data readiness — generated 2026-11-15T06:04:51.012Z
+Source: telemetry.point_values_1h · real = fed by MQTT ingest (the simulator never writes it)
+
+[REAL] electrical / chlorine_pump
+  5 assets · 5 points · 40 days · 100% coverage · 2026-10-07 → 2026-11-15
+  PARTIAL   forecasting     40 days, 100% hourly coverage: zero-shot works, accuracy improves past 56 days
+  READY     anomaly         40 days, 100% hourly coverage
+  NOT READY rul             0 closed work orders; need 10+ with failure history
+
+[REAL] electrical / energy_meter
+  5 assets · 80 points · 40 days · 100% coverage · 2026-10-07 → 2026-11-15
+  PARTIAL   forecasting     40 days, 100% hourly coverage: zero-shot works, accuracy improves past 56 days
+  READY     anomaly         40 days, 100% hourly coverage
+  NOT READY rul             0 closed work orders; need 10+ with failure history
+
+[REAL] electrical / pump_breaker
+  5 assets · 5 points · 40 days · 100% coverage · 2026-10-07 → 2026-11-15
+  PARTIAL   forecasting     40 days, 100% hourly coverage: zero-shot works, accuracy improves past 56 days
+  READY     anomaly         40 days, 100% hourly coverage
+  NOT READY rul             0 closed work orders; need 10+ with failure history
+
+[REAL] environment / rtu_health
+  5 assets · 15 points · 40 days · 99% coverage · 2026-10-07 → 2026-11-15
+  PARTIAL   forecasting     40 days, 99% hourly coverage: zero-shot works, accuracy improves past 56 days
+  READY     anomaly         40 days, 99% hourly coverage
+  NOT READY battery_health  missing: voltage, temperature
+  NOT READY rul             0 closed work orders; need 10+ with failure history
+
+[REAL] facility / cold_room
+  19 assets · 19 points · 7 days · 92% coverage · 2026-11-09 → 2026-11-15
+  NOT READY forecasting     7 days; need at least 14
+  NOT READY anomaly         7 days; need 28 of normal operation
+  NOT READY rul             0 closed work orders; need 10+ with failure history
+
+[REAL] water / flow_meter
+  21 assets · 42 points · 8 days · 89% coverage · 2026-11-08 → 2026-11-15
+  NOT READY forecasting     8 days; need at least 14
+  NOT READY anomaly         8 days; need 28 of normal operation
+  NOT READY rul             0 closed work orders; need 10+ with failure history
+
+[SIMULATED] electrical / baseline
+  39 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] electrical / chlorine_pump
+  7 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] electrical / energy_meter
+  7 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] electrical / pump_breaker
+  7 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] environment / baseline
+  22 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] environment / rtu_health
+  7 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] hvac / baseline
+  15 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] it / baseline
+  14 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] ups / baseline
+  22 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] water / baseline
+  3 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] water / cooling_tower
+  1 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] water / etp
+  1 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] water / ro_skid
+  1 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] water / stp
+  1 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+[SIMULATED] water / wtp
+  1 assets · 0 points · 0 days · 0% coverage · — → —
+  NOT READY forecasting     simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY anomaly         simulator data only: fine for testing the pipeline, not for judging a model
+  NOT READY rul             simulator data only: fine for testing the pipeline, not for judging a model
+
+Summary: 6 asset class(es) with real data, 15 with simulator data only.
