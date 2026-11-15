@@ -150,7 +150,10 @@ class Gateway:
             cursor.execute(sql.HISTORY_SQL, params)
             for row in cursor.fetchall():
                 key = PointRef(row["asset_id"], row["point_key"])
-                out.setdefault(key, []).append(HourRow(row["bucket"], row["sum_value"], row["sample_count"]))
+                # _1h's live branch sums the 5m counts, so sample_count arrives as numeric.
+                count = None if row["sample_count"] is None else int(row["sample_count"])
+                total = None if row["sum_value"] is None else float(row["sum_value"])
+                out.setdefault(key, []).append(HourRow(row["bucket"], total, count))
         return out
 
     def already_scored(
