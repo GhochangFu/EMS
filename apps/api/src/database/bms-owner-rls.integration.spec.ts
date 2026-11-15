@@ -109,6 +109,10 @@ export const FORCED_TABLES = [
   "org_tariff_categories",
   "org_tariff_slabs",
   "location_tariffs",
+  // `F4.373` (ADR 0134 Amendment 3, migration `0156`). Vacuous here for the
+  // same reason; `tests/f4.373-location-tariff-meters-schema.integration.test.ts`
+  // holds the non-vacuous half as bms_tenant.
+  "location_tariff_meters",
 ] as const;
 
 function assert(condition: boolean, message: string): void {

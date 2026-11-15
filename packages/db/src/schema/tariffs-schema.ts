@@ -101,3 +101,21 @@ export const locationTariffs = bmsSchema.table("location_tariffs", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * The billing meters of a mapping (TENANT, FORCE RLS, own + asset legs, `0156`, ADR 0134
+ * Amendment 3). The composite FK `(location_tariff_id, organization_id)` →
+ * `location_tariffs (id, organization_id)` lives in `0156`. `billing_meter_asset_id` on the
+ * mapping stays the first meter of this list.
+ */
+export const locationTariffMeters = bmsSchema.table(
+  "location_tariff_meters",
+  {
+    locationTariffId: uuid("location_tariff_id").notNull(),
+    organizationId: uuid("organization_id").notNull(),
+    assetId: uuid("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.locationTariffId, t.assetId] })],
+);
