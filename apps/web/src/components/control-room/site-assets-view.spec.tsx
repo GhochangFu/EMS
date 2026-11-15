@@ -207,8 +207,8 @@ export async function theAccessDeniedCardLinksToTheControlRoom(): Promise<void> 
 }
 
 /**
- * L7 (`F4.364`, plan ruling Q4) — "Total load" shows with energy and is gone without it; "Assets
- * fresh" renders in both, so the absence is not a pending read.
+ * L7 (`F4.364`, plan ruling Q4) — "Total load" shows with energy and is gone without it, asserted
+ * once the read has answered (its fresh count `0 / 2` renders), so the absence is not a pending read.
  */
 export async function theTotalLoadTileFollowsEnergyShown(): Promise<void> {
   stubApi();
