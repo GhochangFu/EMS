@@ -5,8 +5,9 @@
 **Proposed — 2026-11-15.** Drafted by an agent for backlog row `E1.1` from an
 owner request on 2026-11-15. Lines marked *(owner, 2026-11-15)* are owner
 statements made in chat; lines marked *(recommended)* are the agent's calls and
-become rulings only if the owner accepts the ADR with them as written. Open
-questions are listed at the end.
+become rulings only if the owner accepts the ADR with them as written. The
+owner ruled open questions 1–3 in chat on 2026-11-15; those rulings are folded
+into decisions 2, 3 and 5. Question 4 stays open (see the end).
 
 Builds on [ADR 0023](./0023-telemetry-continuous-aggregates.md) (the `_1h` and
 `_1d` aggregates are the model input), [ADR 0043](./0043-multi-tenant-architecture.md)
@@ -55,7 +56,8 @@ Facts that shape the choice:
    *(recommended)* Salesforce Moirai is **excluded until its weight licence is
    confirmed**, because some of its released weights are non-commercial.
 
-2. **A new app, `apps/ml`, in Python 3.12** *(recommended)*. It is a
+2. **A new app, `apps/ml`, in Python 3.12** *(owner, 2026-11-15: "go with
+   Python"; ONNX run from Node was the alternative and is rejected)*. It is a
    **batch scorer, not a web service**: a long-running process that wakes on a
    schedule, reads aggregates, scores, writes results and sleeps. It has no
    HTTP API apart from `GET /health`. The NestJS API stays the only thing the
@@ -67,9 +69,15 @@ Facts that shape the choice:
    `bms.asset_templates`, and writes only the `ml.*` tables in decision 4. It
    **never runs DDL**: Drizzle migrations in `packages/db` stay the only schema
    owner, and `apps/ml` fails at start-up if the `ml` schema version it expects
-   is absent. It connects as a **new role `bms_ml`** with `SELECT` on those
-   inputs and `INSERT/UPDATE` on `ml.*` only. It does not use `bms_fleet`,
-   because `bms_fleet`'s write grants are wider than a scorer needs.
+   is absent. It connects as **`bms_fleet`** *(owner, 2026-11-15: "reuse
+   bms_fleet")*, the role the worker and the ingest host already use, through
+   `DATABASE_URL_FLEET`. The migration grants `bms_fleet` `SELECT` and
+   `INSERT` on `ml.*`. A dedicated `bms_ml` role, limited to the reads above
+   and writes on `ml.*`, is **owed rather than dropped**, the same way
+   `bms_ingest` is owed for the ingest host. Until it exists, `apps/ml`'s
+   database layer contains only `SELECT` statements on its inputs and
+   `INSERT` statements on `ml.*`, and a test holds that, because the role
+   itself does not.
 
 4. **Three tenant tables in a new `ml` schema** *(recommended)*, each with
    `organization_id` under RLS (ADR 0043 decision 5):
@@ -92,9 +100,10 @@ Facts that shape the choice:
    | Battery / UPS health | later `E1.x` | **BatteryML** features | Only once decision 8 shows the signals exist |
    | RUL | `E1.5` | **Not chosen here** | Needs failure history from `E3.1` work orders; decided in its own ADR |
 
-   A detector is **advisory**: an anomaly score does **not** raise an alarm in
-   `bms.alarms` under this ADR. Routing scores into the alarm lifecycle is
-   `E1.2`'s decision, made once real scores have been looked at.
+   A detector is **advisory** *(owner, 2026-11-15: "keep anomaly advisory")*:
+   an anomaly score does **not** raise an alarm in `bms.alarms`, notify
+   anyone, or open a work order. Routing scores into the alarm lifecycle needs
+   its own amendment or ADR, made once real scores have been looked at.
 
 6. **CPU only** *(recommended)*. No GPU instance is provisioned. A first
    production size is **one 4 vCPU / 16 GB instance** for `apps/ml`. That is
@@ -169,21 +178,18 @@ Facts that shape the choice:
 - Simulator-only asset classes can test the pipeline but cannot validate a
   model. Until decision 8 shows real history, accuracy claims are not made.
 - **Follow-ups owed** (not done by this ADR): AGENTS.md §2 *Stack* and §3
-  *Layout* gain `apps/ml` and the `bms_ml` role through a `chore(agents):` PR
+  *Layout* gain `apps/ml` (and `bms_fleet` as its role) through a `chore(agents):` PR
   (§9.10). The `E1.1` backlog row's A2 note is replaced by this ADR. The
   roadmap row flips when the build starts. This is **not a §6 promotion**: no
   §6 line names ML.
 
 ## Open questions for the owner
 
-1. **Python as a second language** (decision 2). The alternative is ONNX models
-   run from Node. That keeps one language, but Chronos and BatteryML would have
-   to be exported and kept in step by hand.
-2. **A dedicated `bms_ml` role** (decision 3), or reuse `bms_fleet` for the
-   first build, as the ingest host still does (`bms_ingest` is owed there too).
-3. **Anomaly stays advisory** (decision 5). Confirm no alarm is raised from a
-   score until `E1.2`.
-4. **Which asset class first.** The decision 8 run *(recommended)* points to
+1. ~~Python as a second language~~: **ruled 2026-11-15, Python** (decision 2).
+2. ~~A dedicated `bms_ml` role~~: **ruled 2026-11-15, reuse `bms_fleet`**;
+   `bms_ml` is owed (decision 3).
+3. ~~Anomaly stays advisory~~: **ruled 2026-11-15, advisory** (decision 5).
+4. **Which asset class first.** *Still open.* The decision 8 run *(recommended)* points to
    the **PHEWB pumping stations**, the only real data with enough history. The
    model would be anomaly detection on energy meter and pump signals, with
    Chronos forecasting added as the history grows past 56 days.
