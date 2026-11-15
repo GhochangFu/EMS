@@ -261,3 +261,68 @@ orders).
    baseline is trained only on hours that have data. The 5.5 h July gaps and
    the VAP gap are skipped rather than filled. Missing data is reported by
    device health (`F3.16`), not by `ml.anomaly_scores`.
+
+## Amendment 2 — build-plan rulings (2026-11-15)
+
+The step-3 plan is [`docs/plans/e1.1-ml-serving-foundation.md`](../plans/e1.1-ml-serving-foundation.md).
+The owner answered its seven questions (section 15) in chat on 2026-11-15:
+"accept all recommended". Each answer below is now a ruling.
+
+1. **First host: the AWS demo host** (ADR 0096: 2 vCPU, 7.6 GiB shared).
+   `apps/ml` runs there behind an opt-in `ml` compose profile, started with
+   `bms-ctl ml start`, with a CPU and memory limit. Decision 6's 4 vCPU /
+   16 GB instance stays the production size. This row does not provision it.
+2. **PHEWB forecast target: `electrical/energy_meter/kw` only.**
+   `breaker_main` and `chlorine_pump_on` are on/off states and go to the
+   anomaly row (`E1.2`). The first targets are
+   `facility/cold_room/cold_room_temp_c` and `electrical/energy_meter/kw`.
+   A `kw` point becomes eligible on its own when it reaches 56 days (around
+   2026-12-02).
+3. **Decision 3's read list gains `bms.rtus`** (the "real data" rule needs
+   `ingest_enabled`, as step 0 already does) **and `ml.model_runs`** (the
+   check that skips an hour that is already scored).
+4. **`ml.anomaly_scores` key is `(asset_id, bucket, detector, model_run_id)`.**
+   Without the run id, a re-run could only overwrite, which decision 4
+   forbids.
+5. **Fallback rule:** Chronos-2, unless one cycle takes longer than 300 s at
+   `--cpus 2` or exceeds the first host's memory limit. Then
+   `chronos-bolt-small`. This widens decision 5's "CPU time" trigger to
+   include memory. The choice is made from the measurement in plan PR 4 and
+   recorded below in the build record.
+6. **Who builds:** plan PR 1 and the static halves of PR 2 can be built in a
+   cloud session. **PRs 3–5 and their checks run in a session on the owner's
+   machine**, because cloud sessions cannot reach the Hugging Face Hub or the
+   PyTorch wheel index and have no Docker daemon or Postgres.
+7. **Volume accepted:** hourly runs with a 48 h horizon, never dropped, give
+   about 8.8 M `ml.forecasts` rows a year for 21 points. Cadence or retention
+   is revisited by amendment before 50 M rows, or when a class above 100
+   points is targeted.
+
+**Plan refinements adopted with the plan** (R-numbers are the plan's
+section 3; the owner accepted the plan without vetoing any):
+
+- R1: the migration creates the `ml` schema itself.
+- R2: the schema version is a `COMMENT ON SCHEMA ml`
+  (`bms-ml-schema-version=N`). The scorer requires `stored ≥ expected`.
+- R3: plain tables, not hypertables.
+- R4: `ml.model_runs` is insert-once, written in the same transaction as its
+  forecasts. A failed run gets a fixed-vocabulary error, never an exception
+  message.
+- R5: one run row per organization per cycle. `organization_id` comes from
+  `bms.assets` in SQL, and composite foreign keys enforce it.
+- R6: the forecast key uses the run's start instant.
+- R8: the per-point eligibility order.
+- R9: 48 h horizon, 1 h buckets, hourly at HH:05, 2,016 h of context.
+- R10: gaps are passed as NaN, never filled.
+- R11: each cycle runs in a child process.
+- R12: an hour that is already scored is skipped unless `--force` is given.
+- R13: quantiles are kept in order, with a CHECK on the table.
+- R14: the `ml` service sits on an internal-only network with Postgres.
+- R15: the dependency gate covers `pyproject.toml` and `uv.lock`.
+- R16: the `ml` CI job runs only when relevant paths change.
+- R17: Python naming follows Python conventions; recorded in the
+  `chore(agents):` PR.
+
+**Build record** (to be filled as the PRs land): package pins, the model
+revision SHAs and their licences (checked against decision 1), and the plan
+PR 4 CPU and memory measurement that settles ruling 5.
