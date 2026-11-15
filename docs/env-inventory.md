@@ -151,6 +151,28 @@ gitignored root `.env` via `env_file`.
 | `INGEST_HOST_HEALTH_PORT` | No | `9103` | Health port for the ingest host, which since ADR 0016 §6 commit 4 is the only entry point (`pnpm start` → `dist/main.js`). The default stays 9103 rather than 9102 — the ADR 0007 entry point held 9102 and §6 commit 3 needed both at once; keeping them apart means two hosts side by side still need only one variable set. **`docker-compose.yml` sets it to `9102`** inside the container; since `F4.61` (ADR 0016 Amendment 8) it is not published to the host — read it with `docker compose exec ingest wget -qO- http://127.0.0.1:9102/`. |
 | ~~`INGEST_NOTIFY`~~ | — | **removed** | Whether the host emitted `pg_notify('bms_telemetry', …)`. Deleted at ADR 0016 §6 commit 4: realtime is now unconditional. It defaulted off for the §6 parallel-run window, when two notifying processes would have doubled every reading on the dashboards; after the 2026-08-06 cutover that default became the only way to write telemetry while every dashboard went silently dead, so the flag was removed rather than re-defaulted. A copy left in an old `.env` is inert. See [`docs/ingest-host.md`](./ingest-host.md). |
 
+## ML (`apps/ml`, ADR 0135)
+
+Runs only with the `ml` compose profile. Python; `src/bms_ml/config.py` is the
+only reader of these. A refusal names the variable, never its value, and exits
+78.
+
+| Variable | Required | Default / compose value | Purpose |
+|----------|----------|-------------------------|---------|
+| `DATABASE_URL_FLEET` | Yes | `postgres://bms_fleet:bms_fleet_dev@postgres:5432/bms` in compose | The scorer's only connection, as `bms_fleet` (ADR 0135 decision 3). **No fallback to `DATABASE_URL`.** The preflight refuses a superuser, a role without `INSERT` on `ml.model_runs`/`ml.forecasts`, and a role that can update, delete or truncate an `ml` table. |
+| `ML_INTERVAL_SECONDS` | No | `3600` | Scoring cadence. A multiple of 900 that divides 86400; ticks land at :05, :20, :35 or :50. |
+| `ML_CYCLE_TIMEOUT_SECONDS` | No | `900` | Hard timeout of one cycle (a child process, killed at the timeout). 60 to interval − 60. |
+| `ML_FORECAST_HORIZON_HOURS` | No | `48` | Forecast horizon, 1–64 hours. |
+| `ML_CONTEXT_HOURS` | No | `2016` | History given to the model, 336–2048 hours. |
+| `ML_FORECAST_TARGETS` | No | `facility/cold_room/cold_room_temp_c,electrical/energy_meter/kw` | `domain/asset_type/point_key` list, at most 32 (Amendment 2 ruling 2). |
+| `ML_MODEL_DIR` | No | `/opt/bms-ml/model` (baked in the image) | Where the weights and `MODEL.json` are. The image reads them offline (`HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`). |
+| `ML_TORCH_THREADS` | No | unset; `2` in compose | torch CPU threads, 1–64. Set it to the container's CPU limit: torch otherwise counts the host's CPUs. |
+| `ML_HEALTH_PORT` | No | `4200` | `GET /health`, bound to `127.0.0.1` inside the container and never published; `python -m bms_ml health` is the client. |
+| `LOG_LEVEL` | No | `info` | `debug`, `info`, `warning` or `error`. |
+
+The image takes no Hugging Face token: both pinned models are ungated
+(`tests/e1.1-ml-image.test.ts` refuses `HF_TOKEN` anywhere).
+
 ## Observability Containers
 
 These services run only with the `observability` compose profile.

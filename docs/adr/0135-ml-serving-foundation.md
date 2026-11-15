@@ -343,3 +343,54 @@ PR 4 CPU and memory measurement that settles ruling 5.
     and `colorama 0.4.6` on Windows only) and `ruff 0.17.5` (MIT).
   - Not yet: `torch` and `chronos-forecasting` are plan PR 4's (`pandas`
     arrives with them, transitively); `scikit-learn` is `E1.2`'s.
+- **Plan PR 4, package pins (2026-11-15).** Same uv, same lock.
+  - `torch==2.15.0` from `https://download.pytorch.org/whl/cpu`, an
+    `explicit = true` index used by `torch` alone (`[tool.uv.sources]`): the
+    lock holds `2.15.0+cpu` wheels for `linux x86_64`, `linux aarch64` and
+    Windows, and **no `nvidia-*` or `triton` package** (decision 6;
+    `tests/e1.1-ml-image.test.ts`). Licence: Apache-2.0 with bundled BSD, MIT,
+    BSL-1.0, ISC and Zlib parts. The tool-time dependency hook refused the
+    `explicit = true` line (uv has no flag for it); the owner approved writing
+    that one line from the shell, in chat on 2026-11-15.
+  - `chronos-forecasting==2.3.2` (Apache-2.0), which brings `accelerate
+    1.15.0`, `transformers 5.23.0`, `huggingface-hub 2.4.0`, `safetensors
+    0.8.0`, `tokenizers 0.23.3` and `hf-xet 1.8.0` (Apache-2.0), `einops
+    0.8.2` (MIT) and `pandas 3.1.1` (BSD-3-Clause). Their own dependencies are
+    MIT, BSD, Apache-2.0, ISC or PSF, except `tqdm 4.70.1` (MPL-2.0 and MIT, a
+    file-level licence, used unmodified). The full list with versions is
+    `apps/ml/uv.lock`.
+- **Plan PR 4, model revisions (read from the Hub on 2026-11-15).** Both are
+  ungated, so no token is needed at build time.
+  - `amazon/chronos-2` at `29ec3766d36d6f73f0696f85560a422f50e8498c`,
+    licence `apache-2.0` on the model card (decision 1: allowed), weights
+    478 MB, `model.safetensors` sha256
+    `ddcda3c7508bf2528087723e98a20707cc04b7f370ae275a9fd88078ddba4f42`.
+  - `amazon/chronos-bolt-small` at `772f3d25d38aec6d914c8949dab4462e2d46f5d8`,
+    licence `apache-2.0` (allowed), weights 191 MB, sha256
+    `06a6a19bbe74bc10a9cd193bd4bf2bf638ae07f7e0d51653ae7ab8ea968a21dd`.
+  - The image build checks the downloaded weights against the pinned sha256
+    (the Hub's LFS hash, which matched a local download of each) and writes
+    it into `MODEL.json`: the revision pins the tree, the hash pins the
+    content.
+- **Plan PR 4, the ruling 5 measurement (2026-11-15).** One `run-once --force`
+  cycle per container run, the whole process timed (start, model load,
+  eligibility, history, inference, write), with `--memory 2g`,
+  `ML_TORCH_THREADS` equal to the CPU limit, and the integration fixture's
+  class with a full 2,016-hour context. Three runs each, on the owner's
+  laptop (Docker Desktop, amd64, 8 CPUs in the VM). Peak memory is the
+  container's `memory.peak`.
+
+  | Model | `--cpus` | 8 series | 21 series | Peak memory |
+  |---|---|---|---|---|
+  | Chronos-2 | 2 | 26–65 s | 39–66 s | 584 MB |
+  | Chronos-2 | 4 | 30–38 s | 27–28 s | 546 MB |
+  | Chronos-Bolt-small | 2 | 17–32 s | 18–26 s | 488 MB |
+  | Chronos-Bolt-small | 4 | 13–19 s | 17–19 s | 481 MB |
+
+  The slowest cycle (66 s, the first, with a cold cache) is under a quarter
+  of ruling 5's 300 s, and no run came near the 2 GB limit, so **Chronos-2
+  ships** at the revision above. The demo host is arm64 (Graviton), not
+  measured here; plan PR 5 reads its first cycles' `duration_seconds` from
+  the `cycle_summary` line and records them below. The image is 2.83 GB
+  unpacked (amd64), above the 1–2 GB estimate in *Consequences*: PyTorch
+  CPU, transformers and pandas, plus the 478 MB of weights.

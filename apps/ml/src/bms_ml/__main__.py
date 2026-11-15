@@ -101,7 +101,7 @@ def cmd_run_once(config: Config, *, force: bool, as_of: datetime | None) -> int:
             stage = "preflight"
             _preflight(db)
             stage = "model"
-            forecaster = load_forecaster(config.model_dir)
+            forecaster = load_forecaster(config.model_dir, config.torch_threads)
             stage = "cycle"
             summary = run_cycle(db, forecaster, SystemClock(), config, force=force, as_of=as_of)
     except PreflightRefused as err:

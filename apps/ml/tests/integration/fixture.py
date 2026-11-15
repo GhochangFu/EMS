@@ -21,6 +21,8 @@ watermark mid-test (the F4.28 pattern).
 
 Runnable for plan PR 4's step 6: `python -m tests.integration.fixture` plants it
 through ML_TEST_DATABASE_URL_SUPERUSER and prints `as_of` and the target.
+`--extra-ready N` adds N more ready rooms (MLFX-X00..), 90 days each, so plan
+T4.4 can time a cycle at 8 and at 21 series with a full 2,016-hour context.
 """
 
 from __future__ import annotations
@@ -86,7 +88,14 @@ SHAPES = (
 )
 
 
+def extra_shapes(count: int) -> tuple[Shape, ...]:
+    """More ready rooms, 90 days each (a full 2,016-hour context), for plan T4.4's measurement."""
+    return tuple(Shape(f"MLFX-X{i:02d}", "A", True, None, POINT, 3.0 + i / 10) for i in range(count))
+
+
 def hours_for(code: str, as_of: datetime) -> list[int]:
+    if code.startswith("MLFX-X"):
+        return full(90)
     if code == "MLFX-G1":
         return with_daily_hole(60, as_of)
     if code == "MLFX-W1":
@@ -119,8 +128,9 @@ def require_test_database(conn: psycopg.Connection) -> None:
 def clean(conn: psycopg.Connection) -> None:
     """Remove every row an earlier plant or run left. Superuser only; bms_ml_test only."""
     require_test_database(conn)
-    ids = [asset_id(shape.code) for shape in SHAPES]
     with conn.transaction():
+        rows = conn.execute("SELECT id FROM bms.assets WHERE code LIKE %s", ("MLFX-%",)).fetchall()
+        ids = sorted({asset_id(shape.code) for shape in SHAPES} | {row[0] for row in rows})
         conn.execute("DELETE FROM ml.forecasts WHERE asset_id = ANY(%s)", (ids,))
         conn.execute("DELETE FROM ml.model_runs WHERE model_name = %s", (FORECASTER_NAME,))
         conn.execute("DELETE FROM telemetry.point_values WHERE asset_id = ANY(%s)", (ids,))
@@ -130,8 +140,9 @@ def clean(conn: psycopg.Connection) -> None:
         conn.execute("DELETE FROM bms.asset_templates WHERE code = %s", (TEMPLATE_CODE,))
 
 
-def plant(conn: psycopg.Connection, now: datetime | None = None) -> Planted:
+def plant(conn: psycopg.Connection, now: datetime | None = None, extra_ready: int = 0) -> Planted:
     clean(conn)
+    shapes = SHAPES + extra_shapes(extra_ready)
     current = now if now is not None else datetime.now(UTC)
     as_of = current.astimezone(UTC).replace(minute=0, second=0, microsecond=0) + timedelta(days=70)
     organizations: dict[str, uuid.UUID] = {}
@@ -163,7 +174,7 @@ def plant(conn: psycopg.Connection, now: datetime | None = None) -> Planted:
                 "INSERT INTO bms.point_keys (code, name) VALUES (%s, %s) ON CONFLICT (code) DO NOTHING",
                 (key, key),
             )
-        for shape in SHAPES:
+        for shape in shapes:
             org = organizations[shape.organization]
             rtu = rtus.get(shape.rtu) if shape.rtu else None
             meta = {"telemetrySource": "mqtt"} if shape.mqtt else {}
@@ -182,7 +193,7 @@ def plant(conn: psycopg.Connection, now: datetime | None = None) -> Planted:
         with conn.cursor().copy(
             "COPY telemetry.point_values (time, asset_id, point_key, value, unit) FROM STDIN"
         ) as copy:
-            for shape in SHAPES:
+            for shape in shapes:
                 for h in hours_for(shape.code, as_of):
                     when = as_of - timedelta(hours=h) + timedelta(minutes=10)
                     value = shape.level + 0.25 * math.sin(h / 24 * 2 * math.pi)
@@ -190,8 +201,8 @@ def plant(conn: psycopg.Connection, now: datetime | None = None) -> Planted:
     return Planted(
         as_of=as_of,
         organizations=organizations,
-        assets={shape.code: asset_id(shape.code) for shape in SHAPES},
-        asset_organization={shape.code: organizations[shape.organization] for shape in SHAPES},
+        assets={shape.code: asset_id(shape.code) for shape in shapes},
+        asset_organization={shape.code: organizations[shape.organization] for shape in shapes},
     )
 
 
@@ -200,8 +211,9 @@ def main() -> int:
     if not url:
         sys.stderr.write("ML_TEST_DATABASE_URL_SUPERUSER is required\n")
         return 78
+    extra = int(sys.argv[sys.argv.index("--extra-ready") + 1]) if "--extra-ready" in sys.argv else 0
     with psycopg.connect(url, autocommit=True) as conn:
-        planted = plant(conn)
+        planted = plant(conn, extra_ready=extra)
     sys.stdout.write(json.dumps({"as_of": planted.as_of.isoformat(), "target": TARGET}) + "\n")
     return 0
 

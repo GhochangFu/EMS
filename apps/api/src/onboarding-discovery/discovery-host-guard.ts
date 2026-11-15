@@ -35,10 +35,11 @@ import { networkInterfaces } from "node:os";
  */
 
 /**
- * Every name Docker DNS answers inside the stack. The 17 services of
+ * Every name Docker DNS answers inside the stack. The 18 services of
  * `docker-compose.yml` (the AWS file declares a subset of them and no
  * aliases today), Docker Desktop's three `*.docker.internal` names, and
- * `localhost`. Lower-case.
+ * `localhost`. Lower-case. `ml` (ADR 0135) sits on an internal network the
+ * worker never joins, but the rule is every compose name, not every reachable one.
  */
 export const DISCOVERY_BLOCKED_HOSTNAMES: readonly string[] = [
   "postgres",
@@ -58,6 +59,7 @@ export const DISCOVERY_BLOCKED_HOSTNAMES: readonly string[] = [
   "promtail",
   "grafana",
   "mailpit",
+  "ml",
   "host.docker.internal",
   "gateway.docker.internal",
   "kubernetes.docker.internal",

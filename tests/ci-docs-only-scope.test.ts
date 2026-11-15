@@ -63,11 +63,12 @@ describe("ci-scope — which change sets need the ml job", () => {
         ["packages/db/package.json"],
         ["package.json"],
         ["pnpm-lock.yaml"],
+        [".dockerignore"],
         [".github/workflows/ci.yml"],
         ["scripts/checks/ci-scope.mjs"],
         ["docs/BACKLOG.md", "apps\\ml\\README.md"],
       ].map(touchesMl),
-    ).toEqual(Array(13).fill(true));
+    ).toEqual(Array(14).fill(true));
   });
 
   it("answers no ml for a change set that touches none of them", () => {
@@ -254,5 +255,14 @@ describe("ci.yml — the docs-only split and the concurrency rule", () => {
       /ML_TEST_DATABASE_URL_FLEET: postgres:\/\/bms_fleet:\S+\/bms_ml_test/.test(ml),
       ml.includes("pnpm db:migrate") && ml.includes("pnpm db:seed"),
     ]).toEqual([true, true, true, true, true, true, true, true]);
+  });
+
+  it("builds the ml image and runs its model tests inside it with no network (ADR 0135 decision 7)", () => {
+    const ml = job("ml");
+    expect([
+      ml.includes("docker build -f apps/ml/Dockerfile --target runtime"),
+      ml.includes("docker build -f apps/ml/Dockerfile --target model-test -t bms-ml:ci-model-test ."),
+      /docker run --rm --network none bms-ml:ci-model-test\s*$/m.test(ml),
+    ]).toEqual([true, true, true]);
   });
 });

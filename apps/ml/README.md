@@ -10,9 +10,25 @@ pass, and inserts `p10/p50/p90` rows into `ml.forecasts` under one
 Decision record: [`docs/adr/0135-ml-serving-foundation.md`](../../docs/adr/0135-ml-serving-foundation.md).
 Build plan: [`docs/plans/e1.1-ml-serving-foundation.md`](../../docs/plans/e1.1-ml-serving-foundation.md).
 
-> **This build has no model.** Plan PR 3 is the pipeline with a fake model in
-> the tests. `run-once` and `serve` exit 78 ("no model installed in this
-> build") until plan PR 4 adds Chronos; `preflight` and `eligibility` work.
+The model is **Chronos-2** (`amazon/chronos-2`, Apache-2.0) at an exact
+revision, baked into the image at build time (ADR 0135 decision 7 and
+Amendment 2 ruling 5; the measurement that chose it is in the ADR's build
+record). Outside the image, `run-once` and `serve` exit 78 unless
+`ML_MODEL_DIR` holds a baked model and its `MODEL.json`.
+
+## The image
+
+```bash
+docker build -f apps/ml/Dockerfile --target runtime -t bms-ml .                    # from the repo root
+docker build -f apps/ml/Dockerfile --target model-test -t bms-ml-model-test .
+docker run --rm --network none bms-ml-model-test                                    # the model tests, offline
+```
+
+The fallback model is a build argument pair, changed together with the ADR's
+build record: `--build-arg ML_MODEL_REPO=amazon/chronos-bolt-small
+--build-arg ML_MODEL_REVISION=772f3d25d38aec6d914c8949dab4462e2d46f5d8`.
+Locally the service is the compose profile `ml`
+(`docker compose --profile core --profile ml up -d --build ml`).
 
 ## Toolchain
 
@@ -53,8 +69,8 @@ configuration, schema, role or model refused (the loop stops).
 | `ML_FORECAST_HORIZON_HOURS` | 48 | 1–64 |
 | `ML_CONTEXT_HOURS` | 2016 | 336–2048 |
 | `ML_FORECAST_TARGETS` | `facility/cold_room/cold_room_temp_c,electrical/energy_meter/kw` | `domain/asset_type/point_key`, at most 32 |
-| `ML_MODEL_DIR` | `/opt/bms-ml/model` | read by plan PR 4 |
-| `ML_TORCH_THREADS` | unset | 1–64 (plan PR 4) |
+| `ML_MODEL_DIR` | `/opt/bms-ml/model` | the baked weights and `MODEL.json` |
+| `ML_TORCH_THREADS` | unset | 1–64; set it to the container's CPU limit |
 | `ML_HEALTH_PORT` | 4200 | 1024–65535 |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warning`, `error` |
 

@@ -53,9 +53,12 @@ services:
     # `ingest` is for the ingest host, the only service the health endpoint
     # (loopback-only, unauthenticated, names every enabled RTU) shares a
     # network with.
+    # ADR 0135 (E1.1, plan R14): `ml` is the batch scorer's only network,
+    # `internal: true`, shared with postgres alone.
     networks:
       - default
       - ingest
+      - ml
 
   redis:
     profiles: ["core", "pilot", "phe", "realtime-smoke"]
@@ -828,6 +831,49 @@ services:
       - "8025:8025" # web inbox
       - "1025:1025" # SMTP
 
+  # ADR 0135 (E1.1, plan T4.5): the batch scorer. Opt-in profile `ml` only:
+  # the image holds PyTorch and the model weights (about 2.8 GB) and a
+  # developer database holds no real telemetry, so `core` never starts it.
+  # Start it with `docker compose --profile core --profile ml up -d ml`.
+  #
+  # It joins the internal `ml` network alone (no outbound call, plan R14),
+  # publishes no port (/health binds loopback inside; the image's HEALTHCHECK
+  # calls it), and connects as bms_fleet with no other database URL. The CPU
+  # and memory limits are the first host's (Amendment 2 rulings 1 and 5).
+  # `tests/e1.1-ml-compose.test.ts` holds this shape.
+  ml:
+    profiles: ["ml"]
+    build:
+      context: .
+      dockerfile: apps/ml/Dockerfile
+      target: runtime
+    environment:
+      DATABASE_URL_FLEET: postgres://bms_fleet:bms_fleet_dev@postgres:5432/bms
+      ML_TORCH_THREADS: "2"
+      LOG_LEVEL: info
+    networks:
+      - ml
+    mem_limit: 2g
+    cpus: 2
+    # The scorer writes nothing to disk: a read-only root, /tmp in memory, no
+    # Linux capabilities and no privilege gain (security review, plan PR 4).
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    # migrate is waited for when its profile is active (with `core`); with
+    # `--profile ml` alone the preflight still refuses a database without 0157.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+        required: false
+
 volumes:
   bms-postgres-data:
   redis-data:
@@ -850,6 +896,11 @@ volumes:
 # network with `ingest`. Not `internal: true` — the host still dials the PHE
 # broker on the internet. `tests/f4.61-ingest-network-isolation.test.ts`
 # holds this shape statically, since CI never runs `docker compose`.
+#
+# ADR 0135 (E1.1, plan R14): `ml` is internal. The batch scorer joins it and
+# nothing else, and only postgres shares it, so "a running scorer makes no
+# outbound call" is topology, not a promise. `tests/e1.1-ml-compose.test.ts`.
 networks:
   ingest: {}
   edge-uplink: {}
+  ml: { internal: true }

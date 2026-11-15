@@ -140,9 +140,15 @@ describe("F4.61 — the ingest network topology (ADR 0016 Amendment 8, Decisions
   });
 
   it("the ingest network is not `internal`", () => {
-    // T2 — the host still dials the PHE broker on the internet.
+    // T2 — the host still dials the PHE broker on the internet. Scoped to the
+    // `ingest` entry since ADR 0135 (E1.1): the `ml` network is internal on
+    // purpose (tests/e1.1-ml-compose.test.ts).
     const networks = topLevelSection(compose, "networks");
-    expect(networks).not.toMatch(/internal:\s*true/);
+    const ingest = /^ {2}ingest:(.*)$/m.exec(networks);
+    expect(ingest, "a top-level `ingest` network").not.toBeNull();
+    const entry = networks.slice(ingest?.index ?? 0).split(/\n(?= {2}[A-Za-z_])/)[0] ?? "";
+    expect(entry).toMatch(/^ {2}ingest:/);
+    expect(entry).not.toMatch(/internal/);
   });
 
   it("the ingest service joins exactly `ingest` and `edge-uplink`", () => {
@@ -172,20 +178,22 @@ describe("F4.61 — the ingest network topology (ADR 0016 Amendment 8, Decisions
     expect([...networksOf(serviceBlock(compose, "web"))].sort()).toEqual(["default", "edge-uplink"]);
   });
 
-  it("the postgres service joins `default` and `ingest`", () => {
+  it("the postgres service joins `default`, `ingest` and `ml`", () => {
     // T4 — naming any network drops the implicit `default`, so it must be
     // listed explicitly for postgres to still be reached by every other
-    // service that stays on `default` alone.
+    // service that stays on `default` alone. `ml` is the batch scorer's
+    // internal network (ADR 0135, E1.1).
     const networks = [...networksOf(serviceBlock(compose, "postgres"))].sort();
-    expect(networks).toEqual(["default", "ingest"]);
+    expect(networks).toEqual(["default", "ingest", "ml"]);
   });
 
-  it("no service other than ingest, postgres and web declares `networks:`", () => {
+  it("no service other than ingest, postgres, web and ml declares `networks:`", () => {
     // T5 — every other service stays on `default` alone, so the key has no use
     // there, and refusing the key itself holds in every YAML form: a map, an
-    // alias or a quoted item would each slip past a parse of the list.
+    // alias or a quoted item would each slip past a parse of the list. `ml`
+    // joins its internal network alone (tests/e1.1-ml-compose.test.ts).
     const others = serviceNames(compose).filter(
-      (name) => name !== "postgres" && name !== "ingest" && name !== "web",
+      (name) => name !== "postgres" && name !== "ingest" && name !== "web" && name !== "ml",
     );
     const declaring = others.filter((name) => /^ {4}networks:/m.test(serviceBlock(compose, name)));
     expect(declaring).toEqual([]);

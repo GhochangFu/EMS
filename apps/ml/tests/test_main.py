@@ -19,6 +19,8 @@ PASSWORD = "hunter2-secret"
 ENV = {
     "DATABASE_URL_FLEET": f"postgres://bms_fleet:{PASSWORD}@db.internal/bms",
     "ML_FORECAST_HORIZON_HOURS": "2",
+    # Never the image's baked model: these tests drive the CLI, not torch.
+    "ML_MODEL_DIR": "/nonexistent/bms-ml-model",
 }
 AS_OF = datetime(2026, 11, 15, 12, tzinfo=UTC)
 ORG = UUID(int=0xA)
@@ -95,18 +97,22 @@ def test_run_once_without_a_model_names_the_reason(fake_db, capsys):
     assert cli.main(["run-once"], ENV) == 78
     last = events(capsys.readouterr().out)[-1]
     assert last["event"] == "model_missing"
-    assert last["reason"] == "no model installed in this build"
+    assert last["reason"].startswith("no model installed")
     assert fake_db.runs == []
 
 
 def test_serve_without_a_model_exits_78(fake_db, capsys):
     assert cli.main(["serve"], ENV) == 78
-    assert events(capsys.readouterr().out)[-1]["reason"] == "no model installed in this build"
+    assert events(capsys.readouterr().out)[-1]["reason"].startswith("no model installed")
 
 
 def test_run_once_with_a_forecaster_prints_the_summary_last(fake_db, monkeypatch, capsys):
-    monkeypatch.setattr(cli, "load_forecaster", lambda _dir: FakeForecaster())
-    assert cli.main(["run-once", "--as-of", "2026-11-15T12:30:00+00:00"], ENV) == 0
+    loads = []
+    monkeypatch.setattr(cli, "load_forecaster", lambda *args: loads.append(args) or FakeForecaster())
+    env = {**ENV, "ML_TORCH_THREADS": "2"}
+    assert cli.main(["run-once", "--as-of", "2026-11-15T12:30:00+00:00"], env) == 0
+    # ML_TORCH_THREADS reaches the loader: torch would otherwise count the host's CPUs.
+    assert loads == [("/nonexistent/bms-ml-model", 2)]
     last = events(capsys.readouterr().out)[-1]
     assert last["event"] == "cycle_summary"
     assert (last["scored"], last["rows_written"], last["skipped"]) == (1, 2, {"too_few_days": 1})

@@ -628,6 +628,21 @@ docker compose --profile realtime-smoke up -d --build api api-replica
 pnpm --filter web smoke:realtime
 ```
 
+To run the ML batch scorer (`apps/ml`, ADR 0135), opt in to the `ml` profile.
+The image holds PyTorch CPU and the Chronos-2 weights (about 2.8 GB):
+
+```bash
+docker compose --profile core --profile ml up -d --build ml
+docker compose exec ml python -m bms_ml health
+```
+
+It joins an internal network shared with Postgres alone, so it has no internet
+access and publishes no port. A developer database holds no real telemetry, so
+it scores nothing until a real point has 56 days of `_1h` history;
+`docker compose exec ml python -m bms_ml eligibility` shows why. The Python
+toolchain, the tests and the throwaway `bms_ml_test` database are in
+[`apps/ml/README.md`](../apps/ml/README.md).
+
 To watch notification email (`F3.8`, ADR 0041), start the Mailpit catcher in its
 own profile:
 
