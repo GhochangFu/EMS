@@ -30,7 +30,14 @@ import { kwText } from "../../lib/location-card-figure";
  * The two reads fail independently: either error line leaves the other
  * read's content on screen.
  */
-export function GeneratedSiteView({ locationId }: { locationId: string }) {
+export function GeneratedSiteView({
+  locationId,
+  energyShown,
+}: {
+  locationId: string;
+  /** `F4.364` — the site summary's resolved `energyShown`; decides the Total load tile. */
+  energyShown: boolean;
+}) {
   const kpiQuery = useQuery({
     queryKey: ["dashboard", "location", locationId],
     queryFn: () => fetchLocationDashboard(locationId),
@@ -61,8 +68,8 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
         </p>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {/* `F4.364` (plan ruling Q4): Total load only once the site is known to show energy — never while the read is pending (it flashed on a no-energy site, AWS 2026-11-15). */}
-        {location?.energyShown !== true ? null : (
+        {/* `F4.364` Q4: Total load follows the site's `energyShown`, never this view's own pending read. */}
+        {!energyShown ? null : (
           <div data-tile="total-load" className={board.span("total-load")}>
             <KpiTile
               label="Total load"

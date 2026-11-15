@@ -30,7 +30,9 @@ vi.mock("../../components/control-room/site-trends-view", () => ({
   ),
 }));
 vi.mock("../../components/control-room/generated-site-view", () => ({
-  GeneratedSiteView: () => <div data-testid="generated-site-view" />,
+  GeneratedSiteView: ({ energyShown }: { energyShown: boolean }) => (
+    <div data-testid="generated-site-view" data-energy-shown={String(energyShown)} />
+  ),
 }));
 vi.mock("../../components/control-room/smoc-site-view", () => ({
   SmocSiteView: () => <div data-testid="smoc-site-view" />,
@@ -39,7 +41,9 @@ vi.mock("../../components/control-room/site-dashboard-view", () => ({
   SiteDashboardView: () => <div data-testid="site-dashboard-view" />,
 }));
 vi.mock("../../components/control-room/site-assets-view", () => ({
-  SiteAssetsView: () => <div data-testid="site-assets-view" />,
+  SiteAssetsView: ({ energyShown }: { energyShown: boolean }) => (
+    <div data-testid="site-assets-view" data-energy-shown={String(energyShown)} />
+  ),
 }));
 vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
   ScopedDashboardsList: () => <div data-testid="scoped-dashboards-list" />,
@@ -202,4 +206,27 @@ export async function theSectionGetsTheSitesEnergyShown(): Promise<void> {
   stubReads(view("a1"));
   renderAt("/control-room/site/a1/trends");
   expect(await screen.findByTestId("site-trends-view")).toHaveAttribute("data-energy-shown", "true");
+}
+
+/**
+ * T9 (`F4.364`, AWS check 2026-11-15) — the site view and Assets & RTUs get the site's resolved
+ * `energyShown`, so their Total load tile does not wait on their own read (it flashed while
+ * pending). Both ways, on both views.
+ */
+export async function bothBodiesGetTheSitesEnergyShown(): Promise<void> {
+  stubReads(view("h1"));
+  renderAt("/control-room/site/h1");
+  expect(await screen.findByTestId("generated-site-view")).toHaveAttribute("data-energy-shown", "false");
+  cleanupTrends();
+  stubReads(view("h1"));
+  renderAt("/control-room/site/h1/assets");
+  expect(await screen.findByTestId("site-assets-view")).toHaveAttribute("data-energy-shown", "false");
+  cleanupTrends();
+  stubReads(view("a1"));
+  renderAt("/control-room/site/a1");
+  expect(await screen.findByTestId("generated-site-view")).toHaveAttribute("data-energy-shown", "true");
+  cleanupTrends();
+  stubReads(view("a1"));
+  renderAt("/control-room/site/a1/assets");
+  expect(await screen.findByTestId("site-assets-view")).toHaveAttribute("data-energy-shown", "true");
 }

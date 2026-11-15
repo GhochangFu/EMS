@@ -43,7 +43,7 @@ import {
   unregisteredKeyChangesNothing,
   viewReadErrorLine,
   noEnergyDropsTheTotalLoadTile,
-  aPendingReadDrawsNoTotalLoadTile,
+  aPendingReadFollowsTheSitesEnergyShown,
 } from "./generated-site-view.spec";
 
 /**
@@ -220,7 +220,7 @@ describe("F3.68 GeneratedSiteView", () => {
     await noEnergyDropsTheTotalLoadTile();
   });
 
-  it("W3c (F4.364) a pending read draws no Total load tile", async () => {
-    await aPendingReadDrawsNoTotalLoadTile();
+  it("W3c (F4.364) a pending read follows the site's energyShown", async () => {
+    await aPendingReadFollowsTheSitesEnergyShown();
   });
 });

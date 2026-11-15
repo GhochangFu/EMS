@@ -172,10 +172,13 @@ function renderView({
   view = siteView(),
   dashboard = kpis(),
   coveredAssetIds = [],
+  energyShown = true,
 }: {
   view?: Answer<GeneratedSiteViewDto>;
   dashboard?: Answer<LocationDashboardDto>;
   coveredAssetIds?: string[];
+  /** `F4.364`: the site summary's resolved flag, which the site page passes down. */
+  energyShown?: boolean;
 } = {}): { unmount: () => void } {
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
   vi.stubGlobal("fetch", fetchSpy);
@@ -199,7 +202,7 @@ function renderView({
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <GeneratedSiteView locationId={LOCATION_ID} />
+        <GeneratedSiteView locationId={LOCATION_ID} energyShown={energyShown} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -388,7 +391,7 @@ export async function kpiTilesReadTheLocationDashboard(): Promise<void> {
  * render, so the absence is not a pending read. W3 above is the positive twin.
  */
 export async function noEnergyDropsTheTotalLoadTile(): Promise<void> {
-  renderView({ dashboard: { ...kpis(), totalKw: null, energyShown: false, primaryMetric: "health" } });
+  renderView({ dashboard: { ...kpis(), totalKw: null, energyShown: false, primaryMetric: "health" }, energyShown: false });
   await screen.findByText("2 / 5");
   expect(screen.queryByText("Total load")).toBeNull();
   expect(document.querySelector('[data-tile="total-load"]')).toBeNull();
@@ -396,15 +399,20 @@ export async function noEnergyDropsTheTotalLoadTile(): Promise<void> {
 }
 
 /**
- * W3c (`F4.364`, AWS check 2026-11-15) — while the location read is pending the "Total load" tile
- * is not drawn: the site may turn out to show no energy, and the tile flashed for a few seconds on
- * a no-energy site. The other tiles render in their loading state, so the absence is not an empty page.
+ * W3c (`F4.364`, AWS check 2026-11-15) — the tile follows the site page's `energyShown`, not this
+ * view's own read: a no-energy site draws no "Total load" while the read is pending (it flashed for
+ * a few seconds), and an energy site keeps the tile, loading, while it is pending.
  */
-export async function aPendingReadDrawsNoTotalLoadTile(): Promise<void> {
-  renderView({ dashboard: "hang" });
+export async function aPendingReadFollowsTheSitesEnergyShown(): Promise<void> {
+  const hidden = renderView({ dashboard: "hang", energyShown: false });
   expect(await screen.findByText("Assets fresh")).toBeInTheDocument();
   expect(screen.queryByText("Total load")).toBeNull();
   expect(document.querySelector('[data-tile="total-load"]')).toBeNull();
+  hidden.unmount();
+
+  renderView({ dashboard: "hang", energyShown: true });
+  expect(await screen.findByText("Assets fresh")).toBeInTheDocument();
+  expect(screen.getByText("Total load")).toBeInTheDocument();
 }
 
 /** W4a — a partial scope prints the partial-scope line. */

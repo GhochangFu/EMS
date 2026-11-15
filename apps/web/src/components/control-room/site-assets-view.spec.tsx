@@ -109,12 +109,13 @@ function stubApi(location: LocationDashboardDto = LOCATION): ReturnType<typeof v
   return list;
 }
 
-function renderView(): void {
+/** `energyShown` is the site summary's resolved flag, which the site page passes down (`F4.364`). */
+function renderView(energyShown = true): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <SiteAssetsView locationId={LOCATION_ID} siteName={SITE_NAME} />
+        <SiteAssetsView locationId={LOCATION_ID} siteName={SITE_NAME} energyShown={energyShown} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -211,27 +212,33 @@ export async function theAccessDeniedCardLinksToTheControlRoom(): Promise<void> 
  */
 export async function theTotalLoadTileFollowsEnergyShown(): Promise<void> {
   stubApi();
-  renderView();
-  // Drawn once the read answers that the site shows energy (not while it is pending: L8).
-  expect(await screen.findByText("Total load")).toBeInTheDocument();
+  renderView(true);
+  expect(await screen.findByText("0 / 2")).toBeInTheDocument();
+  expect(screen.getByText("Total load")).toBeInTheDocument();
   cleanup();
   vi.restoreAllMocks();
 
   stubApi(locationDashboardDtoSchema.parse({ ...LOCATION, totalKw: null, energyShown: false, primaryMetric: "health" }));
-  renderView();
-  expect(await screen.findByText("Assets fresh")).toBeInTheDocument();
-  // While the read is pending the tile shows as loading; once it answers it is gone.
-  await waitFor(() => expect(screen.queryByText("Total load")).toBeNull());
+  renderView(false);
+  // Wait for the answered read (its fresh count), so the absence is not a pending state.
+  expect(await screen.findByText("0 / 2")).toBeInTheDocument();
+  expect(screen.queryByText("Total load")).toBeNull();
 }
 
 /**
- * L8 (`F4.364`, AWS check 2026-11-15) — while the location read is pending the "Total load" tile
- * is not drawn (it flashed on BCPL BARBARUAH, a no-energy site); "Assets fresh" renders loading.
+ * L8 (`F4.364`, AWS check 2026-11-15) — while the read is pending (first load, or a new page, page
+ * size or RTU tab) the tile follows the site page's `energyShown`: none on a no-energy site (it
+ * flashed on BCPL BARBARUAH), and kept, loading, on an energy site so the row does not reflow.
  */
-export async function aPendingReadDrawsNoTotalLoadTile(): Promise<void> {
+export async function aPendingReadFollowsTheSitesEnergyShown(): Promise<void> {
   vi.spyOn(locationsApi, "fetchLocationDashboard").mockReturnValue(new Promise(() => undefined));
   vi.spyOn(assetImagesApi, "fetchAssetImages").mockResolvedValue([]);
-  renderView();
+  renderView(false);
   expect(await screen.findByText("Assets fresh")).toBeInTheDocument();
   expect(screen.queryByText("Total load")).toBeNull();
+  cleanup();
+
+  renderView(true);
+  expect(await screen.findByText("Assets fresh")).toBeInTheDocument();
+  expect(screen.getByText("Total load")).toBeInTheDocument();
 }
