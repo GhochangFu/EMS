@@ -120,6 +120,19 @@ read the inbox at `http://localhost:8025`. The compose file deliberately sets no
 which is what an unconfigured deployment should do, instead of quietly posting
 alarms into a catcher.
 
+To run the ML batch scorer (`apps/ml`, ADR 0135) beside the core app, opt in
+to its own profile. The image is large (PyTorch CPU plus the Chronos-2
+weights, about 2.8 GB) and a developer database holds no real telemetry, so
+`core` never starts it:
+
+```bash
+docker compose --profile core --profile ml up -d --build ml
+```
+
+It sits on an internal network with Postgres alone and publishes no port; read
+its health with `docker compose exec ml python -m bms_ml health`. See
+[`apps/ml/README.md`](./apps/ml/README.md).
+
 To start the optional Sprint D observability stack alongside the core app:
 
 ```bash
