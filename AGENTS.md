@@ -1334,8 +1334,15 @@
 > value in the last 30 days, and the card's `auto` figure is kW then, otherwise
 > the ADR 0050 health % of the location's own assets (`—`, never `0`, when
 > nothing is scored). A no-energy site's third section reads **Trends** with no
-> Energy sub-tab, and its Total load tiles are not drawn. The estate ribbon's
-> kW and a site-layout dashboard's own energy widgets are follow-ups. No
+> Energy sub-tab, and its Total load tiles are not drawn. No dependency.
+> And **its follow-ups** (**ADR 0133 Amendment 2** with plan-gate rulings Q1–Q7
+> and build notes, row `F4.375`; plan #1339, PRs #1341, #1342, #1343, #1345,
+> #1347): the estate ribbon's Total load sums only locations whose energy is
+> shown, and is not drawn when none is; a widget whose every binding is exactly
+> `kw` is not drawn on a no-energy site page or wall (never in the viewer or
+> builder); an `organization_admin` changes the two settings for their own
+> organization through `PUT /admin/organizations/:id/energy-settings`; the
+> freshness fixtures no longer depend on the hour boundary. No migration, no
 > dependency.
 > And **state labels for switching points, managed in the portal** (**ADR 0088
 > Amendment 3**, #1026, and **ADR 0099 Amendment 13**, #1027; row `F4.309`;
@@ -2929,6 +2936,23 @@ Do not add top-level folders without updating this section.
   `SiteAssetsView` take it as a required prop and draw "Total load" only when it
   is `true` — never from their own location read, which is pending on first
   paint and made the tile flash on a no-energy site (AWS, 2026-11-15).
+- **kW-only widgets and the estate ribbon follow `energyShown` too** (**ADR
+  0133** Amendment 2, `F4.375`). `lib/energy-widgets.ts` is the one predicate: a
+  widget (or organization strip tile) is kW-only when its bound point keys —
+  points' `pointKey`, sources' string `params.pointKey` — are **not empty** and
+  every one is exactly `kw`; `it_kw`, `kwh_today`, a mixed binding and an
+  unbound widget stay drawn. `DashboardLiveCanvas` takes `energyShown` (default
+  `true`) and drops them inside its tab-slice memo, before the telemetry hook
+  (their point refs and asset windows go unread; a catalog source still rides
+  the dashboard's one catalog read, which the server resolves whole), closing
+  the gap only inside a uniform tile row (`visibleTiles`, never onto
+  another tile); `SiteDashboardView` requires it, and the site page passes the
+  summary's value on the body and the wall. The Dashboards viewer and the
+  builder pass nothing, so an author can still find the widget. The organization
+  page reads `anyEnergyShown(sites)` for its strip and its load card. The estate
+  Total load tile shows the server's `totalKw` (4 s poll), not a socket sum; it
+  and the Campus load card are not drawn when the KPI read says
+  `energyShown: false`, and read `—` when shown with no value.
 
 ### 4.3 NestJS
 - Module-per-domain: `auth`, `assets`, `alarms`, `telemetry`, `audit`.
@@ -3564,6 +3588,17 @@ Do not add top-level folders without updating this section.
   describes now, which for a policy is `last_run_status`. And when a check can
   only ever fail outside CI, say so where it is written — that is a static
   invariant's job, not a suite's. Held in `tests/repo-invariants.test.ts`.
+- **An integration fixture RTU carries a configured interval** unless the
+  unknown-cadence path is the subject (**ADR 0075** Amendment 3; `F4.375`). The
+  aggregates the `learned` CTE reads are real-time, so an *uncommitted* fixture
+  sample stamped before the current hour began reaches the last completed hour
+  whenever it lies above the `_1m` watermark — always on a fresh CI database —
+  and one such sample teaches an interval-less RTU `3600 / 1` s, a 900 s window:
+  every "not live" expectation on that RTU then fails when a run crosses the
+  hour. Configured wins over learned, so `FIXTURE_RTU_INTERVAL_SECONDS`
+  (`dashboard-freshness.integration.spec.ts`) pins the 25 s floor. A case that
+  stages history on purpose first checks its sample reached the aggregate and
+  skips, with that reason, when it did not.
 - New behaviour ships with its test in the same PR. Bug fixes ship with the
   test that would have caught the bug.
 - **Coverage is a ratchet, not a target.** Thresholds in `vitest.config.ts` sit
@@ -3947,13 +3982,22 @@ is open to any signed-in user, takes no input and lists only that read scope
 limited to listed assets). The picker and the lists use the same rule, so an
 option is always a filter the list accepts.
 
-**Organization energy settings** (**ADR 0133** decision 6, `F4.364` ruling
-Q2). `energyFeatures` and `cardPrimaryMetric` are written only by
-`PATCH /admin/organizations/:id` — `requireMasterDataUser`, then
-`assertAdminRole`, so a global admin only (an `organization_admin` gets 403) —
-and audited as `master.organization.update` with `organization_id` NULL. The
-create body does not take them, and `PUT :id/appearance` does not touch them.
-Letting an organization admin change them is a follow-up. The resolved
+**Organization energy settings** (**ADR 0133** decision 6, Amendment 2 ruling 3
+and plan-gate ruling Q6; `F4.364`, `F4.375`). `energyFeatures` and
+`cardPrimaryMetric` are written only by
+`PUT /admin/organizations/:id/energy-settings`, both keys required — the
+appearance gate: `requireMasterDataUser`, then `isOrganizationLevelAdmin`, so
+the global admin for any organization and an `organization_admin` for one they
+hold a direct grant on, a 403 before any read (an unknown id is a 404 only for
+the global admin). The row is read `FOR UPDATE` and written with its audit row,
+`master.organization.energy_settings.update` with the organization's id and a
+`{ from, to }` payload, in one `withTenant` transaction; unchanged values write
+nothing. `PATCH /admin/organizations/:id` refuses both keys (a 400) and still
+audits its remaining fields as `master.organization.update` with
+`organization_id` NULL; the create body does not take them, and
+`PUT :id/appearance` does not touch them. On the web the settings live in an
+**Energy settings** row action beside **Appearance**
+(`canEditOrganizationEnergySettings`); the Edit dialog has no energy select. The resolved
 `energyShown` and `healthScore` on the location summary are scope-relative:
 they are computed under the caller's readable-asset scope, like `totalKw`.
 
@@ -4383,7 +4427,15 @@ types. The location summary in `contracts/dashboard.ts` gained required
 set only for a `health` card), and its `totalKw` became nullable — `null` when
 energy is not shown or no asset has a `kw` value, never a fake `0`.
 `adminOrganizationDtoSchema` gained `energyFeatures` and `cardPrimaryMetric` as
-stored (`auto` included).
+stored (`auto` included). Since **Amendment 2** (`F4.375`) the same file holds
+`setOrganizationEnergySettingsBodySchema` (both keys, `.strict()`) and its type,
+and `dashboardKpisSchema` (`GET /dashboard/kpis`) carries a required
+`energyShown` and a nullable `totalKw` — `null` when no location in scope shows
+energy, and when a shown one has no `kw` value. Its producer,
+`DashboardService.kpis()`, returns `DashboardKpis`; the sum comes from
+`readEstateEnergy`, which uses the cards' own rule (`isEnergyShown`) and
+population (active locations), so the ribbon equals the cards' sum for every
+location that holds an in-scope asset, before the cards' 2-decimal rounding.
 
 **Three encodings preserve type identity and their obvious siblings do not.**
 Measured on **9** conversions in the ADR's spike, each asserted against *two*
