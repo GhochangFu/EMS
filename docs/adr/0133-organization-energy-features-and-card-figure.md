@@ -226,3 +226,49 @@ The others narrow the plan's own choices: Q2 the predicate counts `kw` only
 (exact key); Q3 widgets are hidden on the site page and its wall, never in the
 Dashboards viewer or the builder; Q4 a hidden tile's gap closes inside a row of
 same-size tiles.
+
+## Build notes for Amendment 2 (`F4.375`, 2026-11-15)
+
+Built in a cloud session as #1341, #1342, #1343 and #1345; checked on AWS by the owner on
+`1bfd8b74` (all pass). What the build fixed in place, and where it departs from the plan's words.
+None reopens a ruling.
+
+1. **The ribbon (ruling 1, plan D1, D3, D4).** `GET /dashboard/kpis` carries `energyShown` and a
+   nullable `totalKw`. `readEstateEnergy` reads, per **active** location of the in-scope assets, the
+   summed latest `kw`, the 30-day flag and the organization setting, and `isEnergyShown` — the same
+   rule `resolveLocationEnergy` now calls — decides. So the ribbon equals the cards' sum of non-null
+   `totalKw`, a `kw` at an inactive location no longer counts (none existed on AWS), and
+   `prior.totalKw` sums the locations shown now. **Edge:** the ribbon sees only locations that hold
+   an in-scope asset; an `on` organization whose only location has no assets shows a card reading
+   `—` while the ribbon draws no Total load. The figure is `null` either way. On AWS the ribbon read
+   9.54 kW, the cards' sum; ESKOM's 381 kW of old values is gone.
+2. **The tile (ruling Q1).** It shows the server's `totalKw` on the 4 s poll; the socket keeps the
+   Live/Stale pill and the chart tail. Shown with no value reads `—`.
+3. **The predicate (ruling 2, Q2, plan D8).** `apps/web/src/lib/energy-widgets.ts`: kW-only means the
+   bound point keys (points' `pointKey`, sources' string `params.pointKey`) are not empty and every
+   one is exactly `kw`. The site page and its wall pass the site's `energyShown`; the Dashboards
+   viewer and the builder draw everything (Q3). The gap rule (Q4) moves tiles left only inside a
+   uniform row with no drawn tile covering the gap, and never onto another tile.
+4. **What "not read" means (plan D9, U6).** A hidden widget's point refs and asset windows are not
+   read. Its catalog source is still resolved on the server, because the catalog read is per
+   dashboard and resolves every source; nothing is drawn from it. The plan's test "the hidden
+   widget's source is not in the catalog request" could not hold under that API and was replaced
+   by "its `kw` ref is never fetched".
+5. **Write path (ruling 3, Q6, plan D11).** `PUT /admin/organizations/:id/energy-settings`, both keys
+   required. `requireMasterDataUser`, then `isOrganizationLevelAdmin` — a 403 before any read, so an
+   unknown id is a 404 only for the global admin. The read is `FOR UPDATE` (security review: two
+   concurrent saves then audit a true `from`; `writeAppearance` keeps its unlocked read, out of
+   scope), the write and the audit row share one `withTenant` transaction, and unchanged values write
+   nothing. `PATCH` refuses both keys. On AWS the WBLDC organization admin set On and back to Auto;
+   two audit rows, each with the organization id and `from` / `to`.
+6. **The fixture flake (plan D13).** The aggregates under `learned` are real-time, so an uncommitted
+   fixture sample stamped before the hour began reaches the last completed hour whenever it lies
+   above the `_1m` watermark. Fixture RTUs now carry a configured interval (configured wins over
+   learned; pinned on literal rows by the cadence suite's C7). The two cases that stage a history
+   sample first check it reached the aggregate; on a database whose `_1m` watermark is already past
+   it (routine in a full suite run) they skip with that reason instead of passing.
+
+**AWS notes.** A single-organization user is routed from `/` to their organization page, so a
+WBLDC-only user never sees the estate ribbon; the API read (`energyShown: false, totalKw: null`)
+is the evidence. WBLDC's stored strip is custom with no kW tile, so the strip rule is held by its
+tests, not by that page. Banchukamari's stored Electrical tab has no cost tiles, only Frequency.
