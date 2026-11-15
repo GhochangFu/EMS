@@ -2,12 +2,14 @@
 
 ## Status
 
-**Proposed — 2026-11-15.** Drafted by an agent for backlog row `E1.1` from an
-owner request on 2026-11-15. Lines marked *(owner, 2026-11-15)* are owner
-statements made in chat; lines marked *(recommended)* are the agent's calls and
-become rulings only if the owner accepts the ADR with them as written. The
-owner ruled open questions 1–3 in chat on 2026-11-15; those rulings are folded
-into decisions 2, 3 and 5. Question 4 stays open (see the end).
+**Accepted — 2026-11-15** (owner, in chat: "accepted, mark ADR 0135
+accepted"; proposed the same day). Drafted by an agent for backlog row `E1.1`
+from an owner request on 2026-11-15. Lines marked *(owner, 2026-11-15)* are
+owner statements made in chat. Lines marked *(recommended)* were the agent's
+calls; the owner accepted the ADR with them as written, so **every
+*(recommended)* line is now a ruling**, question 4's included. The owner ruled
+open questions 1–3 in chat before accepting; those rulings are folded into
+decisions 2, 3 and 5.
 
 Builds on [ADR 0023](./0023-telemetry-continuous-aggregates.md) (the `_1h` and
 `_1d` aggregates are the model input), [ADR 0043](./0043-multi-tenant-architecture.md)
@@ -183,13 +185,16 @@ Facts that shape the choice:
   roadmap row flips when the build starts. This is **not a §6 promotion**: no
   §6 line names ML.
 
-## Open questions for the owner
+## Open questions for the owner (all ruled)
 
 1. ~~Python as a second language~~: **ruled 2026-11-15, Python** (decision 2).
 2. ~~A dedicated `bms_ml` role~~: **ruled 2026-11-15, reuse `bms_fleet`**;
    `bms_ml` is owed (decision 3).
 3. ~~Anomaly stays advisory~~: **ruled 2026-11-15, advisory** (decision 5).
-4. **Which asset class first.** *Still open.* The decision 8 run *(recommended)* points to
+4. ~~Which asset class first~~: **ruled 2026-11-15 by acceptance, PHEWB
+   pumping stations first.** WBLDC cold rooms may join if their MySQL history
+   import (owner, 2026-11-15, option A via the connector) brings them past
+   28 days. The decision 8 run *(recommended)* points to
    the **PHEWB pumping stations**, the only real data with enough history. The
    model would be anomaly detection on energy meter and pump signals, with
    Chronos forecasting added as the history grows past 56 days.
