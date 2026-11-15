@@ -23,6 +23,7 @@ import { LocationTariffAdminPage } from "./location-tariff-page";
 const ORG_ID = "33333333-3333-4333-8333-333333333333";
 const LOCATION_ID = "22222222-2222-4222-8222-222222222222";
 const METER_ID = "44444444-4444-4444-8444-444444444444";
+const METER_2 = "66666666-6666-4666-8666-666666666666";
 const MAPPING_ID = "55555555-5555-4555-8555-555555555555";
 
 const admin = { id: "u1", email: "admin@bms.local", displayName: "Admin", role: "admin" } as unknown as AuthUser;
@@ -68,6 +69,8 @@ const MAPPING: LocationTariffDto = {
   dataStatus: "secondary",
   billingMeterAssetId: METER_ID,
   billingMeterName: "Main incomer meter",
+  billingMeterAssetIds: [METER_ID],
+  billingMeterNames: ["Main incomer meter"],
   sanctionedLoad: 25,
   sanctionedLoadUnit: "kw",
   effectiveFrom: "2026-01-01",
@@ -88,7 +91,10 @@ function stubApi(mappings: LocationTariffDto[] = [MAPPING]): void {
     timeZone: "Asia/Kolkata",
   });
   vi.spyOn(assetsApi, "fetchAdminAssets").mockResolvedValue({
-    items: [{ id: METER_ID, code: "EM-01", name: "Main incomer meter", locationId: LOCATION_ID, active: true }],
+    items: [
+      { id: METER_ID, code: "EM-01", name: "Main incomer meter", locationId: LOCATION_ID, active: true },
+      { id: METER_2, code: "EM-02", name: "Second RTU meter", locationId: LOCATION_ID, active: true },
+    ],
   } as never);
   vi.spyOn(tariffsApi, "fetchTariffLines").mockResolvedValue({ items: LINES });
   vi.spyOn(mappingApi, "fetchLocationTariffs").mockResolvedValue({ items: mappings });
@@ -125,11 +131,13 @@ function categoryOptions(dialog: HTMLElement): string[] {
     .filter((value) => value !== "");
 }
 
-/** Fills the add form for `key` with meter, load and months. */
-async function fillAdd(dialog: HTMLElement, key: string): Promise<void> {
+/** Fills the add form for `key` with load and months, and ticks `meters` (by label) in that order. */
+async function fillAdd(dialog: HTMLElement, key: string, meters: readonly string[] = ["EM-01 · Main incomer meter"]): Promise<void> {
   await userEvent.selectOptions(within(dialog).getByRole("combobox", { name: "Category" }), key);
-  await within(dialog).findByRole("option", { name: "EM-01 · Main incomer meter" });
-  await userEvent.selectOptions(within(dialog).getByRole("combobox", { name: "Billing meter" }), METER_ID);
+  await within(dialog).findByRole("checkbox", { name: "EM-01 · Main incomer meter" });
+  for (const meter of meters) {
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: meter }));
+  }
   await userEvent.type(within(dialog).getByRole("spinbutton", { name: "Sanctioned load" }), "40");
   fireEvent.change(within(dialog).getByLabelText("From month"), { target: { value: "2026-04" } });
 }
@@ -206,7 +214,7 @@ export async function thePostBodyIsTheContractShape(): Promise<void> {
   expect(locationId).toBe(LOCATION_ID);
   expect(body).toEqual({
     tariffKey: "MH|HT-I(A)",
-    billingMeterAssetId: METER_ID,
+    billingMeterAssetIds: [METER_ID],
     sanctionedLoad: 40,
     sanctionedLoadUnit: "kva",
     effectiveFrom: "2026-04-01",
@@ -308,4 +316,53 @@ export async function aRoleWithoutTheGateSeesNoWriteControl(): Promise<void> {
   await within(table).findByText("Domestic Service");
   expect(screen.queryByRole("button", { name: "Add tariff" })).toBeNull();
   expect(within(table).queryByRole("button", { name: /Edit|Delete|End/ })).toBeNull();
+}
+
+/** `F4.373` (ADR 0134 Amendment 3) — two ticked meters are sent as the list, in the order ticked. */
+export async function twoTickedMetersAreSentAsTheList(): Promise<void> {
+  stubApi([]);
+  const create = vi.spyOn(mappingApi, "createLocationTariff").mockResolvedValue(MAPPING);
+  renderPage(admin);
+  const dialog = await openAdd();
+  await fillAdd(dialog, "MH|LT-I(B)", ["EM-02 · Second RTU meter", "EM-01 · Main incomer meter"]);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  const body = create.mock.calls[0]![1];
+  expect(body.billingMeterAssetIds).toEqual([METER_2, METER_ID]);
+  expect(body).not.toHaveProperty("billingMeterAssetId");
+  expect(createLocationTariffBodySchema.parse(body)).toEqual(body);
+}
+
+/** Unticking leaves the list; no meter at all is held client-side with the contract's sentence. */
+export async function noTickedMeterIsHeldWithoutARequest(): Promise<void> {
+  stubApi([]);
+  const create = vi.spyOn(mappingApi, "createLocationTariff").mockResolvedValue(MAPPING);
+  renderPage(admin);
+  const dialog = await openAdd();
+  await fillAdd(dialog, "MH|LT-I(B)");
+  const first = within(dialog).getByRole("checkbox", { name: "EM-01 · Main incomer meter" });
+  expect(first).toBeChecked();
+  await userEvent.click(first);
+  expect(first).not.toBeChecked();
+  await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent("name at least one billing meter");
+  expect(create).not.toHaveBeenCalled();
+}
+
+/** The table lists every meter of a mapping; Edit pre-ticks them and sends the replaced set. */
+export async function everyMeterIsListedAndEditSendsTheSet(): Promise<void> {
+  stubApi([{ ...MAPPING, billingMeterAssetIds: [METER_ID, METER_2], billingMeterNames: ["Main incomer meter", "Second RTU meter"] }]);
+  const update = vi.spyOn(mappingApi, "updateLocationTariff").mockResolvedValue(MAPPING);
+  renderPage(admin);
+  const list = await screen.findByRole("list", { name: "Billing meters of Domestic Service" });
+  expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Main incomer meter", "Second RTU meter"]);
+  await userEvent.click(screen.getByRole("button", { name: "Edit Domestic Service" }));
+  const dialog = await screen.findByRole("dialog", { name: "Edit tariff mapping" });
+  const second = await within(dialog).findByRole("checkbox", { name: "EM-02 · Second RTU meter" });
+  expect(second).toBeChecked();
+  expect(within(dialog).getByRole("checkbox", { name: "EM-01 · Main incomer meter" })).toBeChecked();
+  await userEvent.click(second);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  expect(update.mock.calls[0]![2]).toMatchObject({ billingMeterAssetIds: [METER_ID] });
 }

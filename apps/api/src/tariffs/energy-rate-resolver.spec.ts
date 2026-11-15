@@ -34,6 +34,7 @@ function mapping(id: string, from = "2026-01-01", to: string | null = null): Map
     locationId: `loc-${id}`,
     tariffKey: "LINE",
     billingMeterAssetId: `meter-${id}`,
+    billingMeterAssetIds: [`meter-${id}`],
     sanctionedLoad: 3,
     sanctionedLoadUnit: "kw",
     effectiveFrom: from,

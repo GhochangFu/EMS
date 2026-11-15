@@ -41,6 +41,7 @@ const BILLED: EnergyBill = {
   mapping: {
     id: "44444444-4444-4444-8444-444444444444",
     billingMeterAssetId: "55555555-5555-4555-8555-555555555555",
+    billingMeterAssetIds: ["55555555-5555-4555-8555-555555555555"],
     sanctionedLoad: 10,
     sanctionedLoadUnit: "kw",
   },
@@ -247,4 +248,19 @@ export async function aFailedMonthKeepsTheSelector(): Promise<void> {
   fireEvent.change(back, { target: { value: "" } });
   await waitFor(() => expect(screen.getAllByText(money(9250))).toHaveLength(2));
   expect(screen.queryByText("Could not load the monthly bill.")).toBeNull();
+}
+
+/** `F4.373` (ADR 0134 Amendment 3) — a bill of several meters says how many; one meter says nothing. */
+export async function severalMetersSayHowMany(): Promise<void> {
+  const ids = ["55555555-5555-4555-8555-555555555555", "66666666-6666-4666-8666-666666666666"];
+  stubBill({ ...BILLED, mapping: { ...BILLED.mapping!, billingMeterAssetIds: ids } });
+  renderCard();
+  expect(await screen.findByText("2 meters")).toBeTruthy();
+}
+
+export async function oneMeterSaysNoCount(): Promise<void> {
+  stubBill(BILLED);
+  renderCard();
+  await screen.findByText(/1,500 kWh/);
+  expect(screen.queryByText(/\d meters?$/)).toBeNull();
 }

@@ -30,6 +30,10 @@ export interface BillFixture {
   /** Mapped to an organization line with no slabs: `computeBill` refuses it. */
   empty: { locationId: string; meter: string };
   child: { locationId: string; asset: string };
+  /** `F4.373`: two meters, 100 + 150 kWh. */
+  pair: { locationId: string; meter: string; meter2: string };
+  /** `F4.373`: two meters, the second with a single sample. */
+  pairMissing: { locationId: string; meter: string; meter2: string };
   window: { start: Date; end: Date };
 }
 
@@ -64,11 +68,26 @@ async function asset(pool: pg.Pool, organizationId: string, locationId: string, 
   return rows[0]!.id;
 }
 
-async function mapTo(pool: pg.Pool, organizationId: string, locationId: string, key: string, meter: string, load: number, unit: string, from: string): Promise<void> {
-  await pool.query(
+/** A mapping and its meter rows (`F4.373`): `meter` is the primary, `more` the other billing meters. */
+async function mapTo(
+  pool: pg.Pool,
+  organizationId: string,
+  locationId: string,
+  key: string,
+  meter: string,
+  load: number,
+  unit: string,
+  from: string,
+  more: readonly string[] = [],
+): Promise<void> {
+  const { rows } = await pool.query<{ id: string }>(
     `INSERT INTO bms.location_tariffs (organization_id, location_id, tariff_key, billing_meter_asset_id, sanctioned_load, sanctioned_load_unit, effective_from)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
     [organizationId, locationId, key, meter, load, unit, from],
+  );
+  await pool.query(
+    `INSERT INTO bms.location_tariff_meters (location_tariff_id, organization_id, asset_id) SELECT $1, $2, unnest($3::uuid[])`,
+    [rows[0]!.id, organizationId, [meter, ...more]],
   );
 }
 
@@ -128,6 +147,15 @@ export async function seedBillFixture(superuser: pg.Pool): Promise<BillFixture> 
     [organizationA, MSEDCL_LT, EMPTY_LINE, mappedFrom],
   );
   const empty = await site("EMPTY", EMPTY_LINE, 3, "kw");
+  const twoMeters = async (suffix: string) => {
+    const locationId = await location(superuser, organizationA, suffix);
+    const meter = await asset(superuser, organizationA, locationId, `${suffix}-M1`);
+    const meter2 = await asset(superuser, organizationA, locationId, `${suffix}-M2`);
+    await mapTo(superuser, organizationA, locationId, MSEDCL_LT, meter, 3, "kw", mappedFrom, [meter2]);
+    return { locationId, meter, meter2 };
+  };
+  const pair = await twoMeters("PAIR");
+  const pairMissing = await twoMeters("PAIRX");
   const childLocation = await location(superuser, organizationA, "CHILD", lt.locationId);
   const child = { locationId: childLocation, asset: await asset(superuser, organizationA, childLocation, "CHILD-A") };
 
@@ -147,11 +175,18 @@ export async function seedBillFixture(superuser: pg.Pool): Promise<BillFixture> 
     [day(25), falling.meter, "kwh_total", 400],
     [day(10), empty.meter, "kwh_total", 0],
     [day(20), empty.meter, "kwh_total", 50],
+    [day(3), pair.meter, "kwh_total", 200],
+    [day(27), pair.meter, "kwh_total", 300],
+    [day(4), pair.meter2, "kwh_total", 9000],
+    [day(26), pair.meter2, "kwh_total", 9150],
+    [day(3), pairMissing.meter, "kwh_total", 200],
+    [day(27), pairMissing.meter, "kwh_total", 300],
+    [day(4), pairMissing.meter2, "kwh_total", 9000],
   ]);
   // Org A revises the LT line from THIS month; org B revises it from last month (must never serve A).
   await revision(superuser, organizationA, MSEDCL_LT, monthFirstDay(thisMonth), 1);
   await revision(superuser, organizationB, MSEDCL_LT, monthFirstDay(month), 100);
-  return { organizationA, organizationB, now, month, thisMonth, lt, ht, estimated, single, falling, empty, child, window };
+  return { organizationA, organizationB, now, month, thisMonth, lt, ht, estimated, single, falling, empty, child, pair, pairMissing, window };
 }
 
 export async function cleanupBillFixture(superuser: pg.Pool, fx?: BillFixture): Promise<void> {
@@ -241,4 +276,20 @@ export async function assertAMalformedVersionFailsOnlyItsTarget(fleet: pg.Pool, 
   );
   assert(bad !== undefined && !bad.ok && bad.reason === "version_invalid", `expected version_invalid, got ${JSON.stringify(bad)}`);
   assert(good !== undefined && good.ok && good.bill.total === 2546, `the neighbour still bills: ${JSON.stringify(good)}`);
+}
+
+/**
+ * `F4.373` (ADR 0134 Amendment 3) — a mapping with two meters bills their sum: 100 + 150 kWh on
+ * MSEDCL LT-I(B) = the golden 2546.00, and the live rate's kWh divisor is the sum too. A second
+ * meter with one sample fails the whole bill with `meter_no_reading` (never a partial bill).
+ */
+export async function assertTwoMetersAddUp(fleet: pg.Pool, fx: BillFixture): Promise<void> {
+  const [mapping] = await readMappingsForLocation(fleet, fx.organizationA, fx.pair.locationId);
+  assert(mapping?.billingMeterAssetIds.join() === `${fx.pair.meter},${fx.pair.meter2}`, `the primary first: ${JSON.stringify(mapping)}`);
+  const bill = await billOf(fleet, fx, fx.pair);
+  assert(bill.ok && bill.units === 250 && bill.kwh === 250 && bill.bill.total === 2546, JSON.stringify(bill.ok ? { units: bill.units, total: bill.bill.total } : bill));
+  const missing = await billOf(fleet, fx, fx.pairMissing);
+  assert(!missing.ok && missing.reason === "meter_no_reading", JSON.stringify(missing));
+  const assets = await readMappingsForAssets(fleet, [fx.pair.meter2]);
+  assert(assets.get(fx.pair.meter2)?.[0]?.billingMeterAssetIds.length === 2, "the asset read carries the meter list too");
 }

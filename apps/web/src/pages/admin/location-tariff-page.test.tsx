@@ -69,4 +69,16 @@ describe("F4.365 U8 location tariff page", () => {
   it("a role without the gate sees no write control", async () => {
     await spec.aRoleWithoutTheGateSeesNoWriteControl();
   });
+
+  it("F4.373: two ticked meters are sent as the list, in the order ticked", async () => {
+    await spec.twoTickedMetersAreSentAsTheList();
+  });
+
+  it("F4.373: no ticked meter is held without a request", async () => {
+    await spec.noTickedMeterIsHeldWithoutARequest();
+  });
+
+  it("F4.373: the table lists every meter; Edit pre-ticks them and sends the set", async () => {
+    await spec.everyMeterIsListedAndEditSendsTheSet();
+  });
 });

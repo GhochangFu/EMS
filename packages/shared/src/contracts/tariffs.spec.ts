@@ -1,5 +1,6 @@
 import {
   createLocationTariffBodySchema,
+  billingMetersOf,
   createTariffVersionBodySchema,
   tariffSlabsSchema,
   updateLocationTariffBodySchema,
@@ -105,4 +106,36 @@ export function assertACustomKeyNeedsThePrefix(): void {
 export function assertEffectiveToMustFollowEffectiveFrom(): void {
   const r = createLocationTariffBodySchema.safeParse({ ...MAPPING, effectiveTo: "2026-11-01" });
   assert(!r.success && r.error.issues.some((i) => i.path.join(".") === "effectiveTo"), "effectiveTo == effectiveFrom");
+}
+
+const METER_2 = "44444444-4444-4444-8444-444444444444";
+
+/** `F4.373` (ADR 0134 Amendment 3) — a mapping names one or more billing meters, in exactly one form. */
+export function assertAMappingNamesItsMetersInExactlyOneForm(): void {
+  const { billingMeterAssetId: _one, ...noMeter } = MAPPING;
+  const list = createLocationTariffBodySchema.safeParse({ ...noMeter, billingMeterAssetIds: [METER, METER_2] });
+  assert(list.success && billingMetersOf(list.data)?.join() === `${METER},${METER_2}`, "the list form, in order");
+  const one = createLocationTariffBodySchema.safeParse(MAPPING);
+  assert(one.success && billingMetersOf(one.data)?.join() === METER, "the one-meter shorthand is a one-item list");
+
+  const neither = createLocationTariffBodySchema.safeParse(noMeter);
+  assert(!neither.success && neither.error.issues.some((i) => i.message.includes("exactly one of billingMeterAssetIds")), "neither form");
+  const both = createLocationTariffBodySchema.safeParse({ ...MAPPING, billingMeterAssetIds: [METER] });
+  assert(!both.success && both.error.issues.some((i) => i.path.join(".") === "billingMeterAssetIds"), "both forms");
+  assert(!updateLocationTariffBodySchema.safeParse({ billingMeterAssetId: METER, billingMeterAssetIds: [METER] }).success, "both forms on PATCH");
+  const patch = updateLocationTariffBodySchema.safeParse({ billingMeterAssetIds: [METER_2, METER] });
+  assert(patch.success && billingMetersOf(patch.data)?.join() === `${METER_2},${METER}`, "a PATCH replaces the set");
+  const keep = updateLocationTariffBodySchema.safeParse({ sanctionedLoad: 4 });
+  assert(keep.success && billingMetersOf(keep.data) === undefined, "a PATCH without meters keeps the set");
+}
+
+export function assertTheMeterListIsOneToEightDistinct(): void {
+  const { billingMeterAssetId: _one, ...noMeter } = MAPPING;
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `33333333-3333-4333-8333-${String(i).padStart(12, "0")}`);
+  assert(!createLocationTariffBodySchema.safeParse({ ...noMeter, billingMeterAssetIds: [] }).success, "empty list");
+  assert(createLocationTariffBodySchema.safeParse({ ...noMeter, billingMeterAssetIds: ids(8) }).success, "eight meters");
+  assert(!createLocationTariffBodySchema.safeParse({ ...noMeter, billingMeterAssetIds: ids(9) }).success, "nine meters");
+  const dup = createLocationTariffBodySchema.safeParse({ ...noMeter, billingMeterAssetIds: [METER, METER] });
+  assert(!dup.success && dup.error.issues.some((i) => i.message === "a billing meter is named twice"), "a duplicate meter");
+  assert(!createLocationTariffBodySchema.safeParse({ ...noMeter, billingMeterAssetIds: ["not-a-uuid"] }).success, "not a uuid");
 }

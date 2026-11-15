@@ -9,6 +9,7 @@ import {
   assertBadRegistersAnswerAReason,
   assertKvahIsEstimatedFromPf,
   assertAMalformedVersionFailsOnlyItsTarget,
+  assertTwoMetersAddUp,
   assertVersionsAreDatedAndIsolated,
   cleanupBillFixture,
   seedBillFixture,
@@ -50,4 +51,5 @@ describe.skipIf(!connectionString)("F4.365 — the monthly energy bill (ADR 0134
   it("(g, h) serves dated organization versions, never another organization's", () => assertVersionsAreDatedAndIsolated(fleet, fx));
   it("prices a child location's asset at its nearest mapped ancestor", () => assertAnAssetInheritsTheNearestMapping(fleet, fx));
   it("fails a malformed version with version_invalid, target by target", () => assertAMalformedVersionFailsOnlyItsTarget(fleet, fx));
+  it("F4.373: sums two meters to the golden 2546.00; one meter with no reading fails the bill", () => assertTwoMetersAddUp(fleet, fx));
 });
