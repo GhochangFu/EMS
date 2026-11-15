@@ -1306,6 +1306,24 @@
 > filter in the URL; `/alarms` also gets Severity and a State dropdown (All /
 > Active / Suppressed) in place of "Suppressed only". No migration, no
 > dependency.
+> And **slab utility tariffs and the monthly energy bill** (**ADR 0134** with
+> Amendments 1–2, row `F4.365`, PR #1327). The owner's India tariff workbook
+> (Rate Chart: 316 categories, 461 slabs) is imported by
+> `pnpm --filter api tariffs:import <file> [--out] [--apply]` into the committed
+> snapshot `packages/db/src/tariff-catalog.json`, which `db:seed` upserts into
+> the global `bms.tariff_categories` / `bms.tariff_slabs` (migration `0154`).
+> `bms.location_tariffs` (migration `0155`) maps a location to a tariff line
+> with its billing meter and sanctioned load; `bms.org_tariff_categories` /
+> `bms.org_tariff_slabs` hold an organization's effective-dated revisions and
+> `custom:` lines. `EnergyBillService` bills a month from the billing meter's
+> `kwh_total`/`kvah_total` delta (telescopic slabs, fixed/demand, wheeling;
+> kVAh estimated from kWh ÷ `pf` and flagged); `EnergyRateResolver` prices a
+> mapped site's cost reads per local month (month-to-date with the fixed charge
+> prorated), fails closed and never falls back to `energy_tariff_per_kwh`.
+> Routes under `apps/api/src/tariffs/`; screens Admin → Tariffs, the location
+> Tariff page and the site Energy view's Monthly bill card. Duty, FPPAS, ToD,
+> PF rebates and asset-level mapping are follow-ups (`F4.366`–`F4.372`). No
+> dependency.
 > And **state labels for switching points, managed in the portal** (**ADR 0088
 > Amendment 3**, #1026, and **ADR 0099 Amendment 13**, #1027; row `F4.309`;
 > PR 1 #1034, PR 2 #1036, PR 3 #1038; this sweep merges last).
@@ -2609,6 +2627,14 @@ bms/
 │   │                            src/assets/asset-kpis.service.ts is that host,
 │   │                            behind GET assets/:assetId/kpis; AssetsModule
 │   │                            imports CalcModule, never the reverse
+│   │                            src/tariffs/ is ADR 0134 (F4.365): the bill
+│   │                            core (EnergyBillService, month windows,
+│   │                            register probes), the provider-only
+│   │                            TariffRatesModule (EnergyRateResolver, which
+│   │                            DashboardModule and ReportsCoreModule import
+│   │                            in place of CalcModule's parameter read), the
+│   │                            tariff routes, and the tariffs:import CLI
+│   │                            (import-xlsx.ts over rate-chart.ts)
 │   │                            src/queue/ is the ADR 0063 BullMQ registry
 │   │                            (F4.24): defineQueue with a Zod payload
 │   │                            schema, enqueue guards, tenancy-bound
@@ -3062,6 +3088,17 @@ Do not add top-level folders without updating this section.
   a composite key to `bms.rtus (id, organization_id)` (`ON DELETE CASCADE`),
   `SELECT` only for `bms_tenant` (the `0142` pattern), and an
   `organization_id` the writer derives in SQL from `bms.rtus`, never supplies.
+  Since **ADR 0134** (`F4.365`) the global tariff catalog
+  `bms.tariff_categories` / `bms.tariff_slabs` is platform vocabulary too:
+  `SELECT` only for `bms_tenant` (migration `0154`, the `0085` proof), written
+  by `db:seed` as `bms_owner` and by `tariffs:import --apply` as `bms_fleet`,
+  never by a route, and deliberately unaudited (the committed JSON's git
+  history is the record). An organization's own versions live in the tenant
+  tables `bms.org_tariff_categories` / `bms.org_tariff_slabs` (a composite FK
+  `(category_id, organization_id)` ties a slab to its own organization's
+  version), and `bms.location_tariffs`' policy checks **both** the location and
+  the billing-meter asset leg (migration `0155`), because RI checks run with
+  row security off.
   **The ruling is not only about a NEW table.** `bms.point_keys` was tenant
   data for the whole of its life until migration `0057` dropped its
   `organization_id`, its unique index, its policy and its FORCE flag together —
@@ -3885,6 +3922,23 @@ is open to any signed-in user, takes no input and lists only that read scope
 limited to listed assets). The picker and the lists use the same rule, so an
 option is always a filter the list accepts.
 
+**Tariff gates** (**ADR 0134**, `F4.365`). The catalog reads
+(`GET /tariffs/categories`, `GET /tariffs/lines/versions?key=`) are open to any
+signed-in user; an organization's own lines are added only for an
+organization in `readableOrganizationIds` (403 otherwise). Location mappings
+(`/admin/locations/:locationId/tariffs`) take `requireMasterDataUser`, then
+`canManageLocation`; the billing meter must sit in the location's subtree and
+organization. Organization versions (`/admin/tariffs/versions`) take
+`requireMasterDataUser`, then `isOrganizationLevelAdmin` — never
+`canManageOrganization`, which admits a `location_admin`; a version already in
+force is read-only (409), and every write is audited with its reason. The bill
+(`GET /locations/:locationId/energy-bill`) needs the location in
+`readableLocationIds` **and** the mapping's billing meter in
+`readableAssetIds`, with one 404 for either failure; the cost tiles' slab rate
+is visible to anyone who reads the site's assets (Amendment 2 records that
+trade-off). The web mirrors the gates with `canManageOrgTariffs` and
+`canManageLocationTariffs` (`lib/admin-access.ts`).
+
 **Device alarms** (**ADR 0127** decision 14, `F3.16`) keep the read-scope
 model, with one rule for who sees an alarm stated once in
 `apps/api/src/alarms/alarm-scope.ts` (SQL for the list, summary, details,
@@ -4283,6 +4337,9 @@ The window contracts live in `contracts/maintenance-windows.ts`, which
 exports its own `z.infer` types (`src/index.ts` is at the cap). Ship the API
 before (or with) the web. `contracts/filter-options.ts` (**ADR 0132**,
 `F4.361`) follows the same pattern: five plain `z.object`s and its own types.
+`contracts/tariffs.ts` (**ADR 0134**, `F4.365`) does too, beside the zod-free
+`tariffs/compute-bill.ts` (`computeBill`, `billedUnits`); `energyCentreSummarySchema`
+and `energyViewPeriodSchema` gained a required `tariffVerify`.
 
 **Three encodings preserve type identity and their obvious siblings do not.**
 Measured on **9** conversions in the ADR's spike, each asserted against *two*
