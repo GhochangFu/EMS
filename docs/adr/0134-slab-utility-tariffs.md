@@ -276,8 +276,9 @@ Backlog row `F4.374`.
    only when **no** meter reported (the reason of the first meter, as before).
 2. **The bill says which meters were counted.** `bill.metersBilled` and
    `bill.metersMissing` (asset ids, in mapping order) go into the bill DTO; the
-   Monthly bill card shows "1 of 2 meters reported" and names the missing
-   meters when any is missing.
+   Monthly bill card shows "1 of 2 meters reported" when any is missing (the
+   count only: the bill DTO carries meter ids, not names; the location Tariff
+   page lists the meters by name).
 3. **The live rate** divides by the kWh of the meters that reported, so a
    silent meter's energy is not priced in the cost tiles from the bill (its
    own energy, if any reaches the cost read, is still priced at that rate).

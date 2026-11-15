@@ -19,7 +19,7 @@ export const BILL_FOOTNOTE =
 export const BILL_REASON_TEXT: Record<EnergyBillReason, string> = {
   no_mapping: "No tariff was mapped to this site for this month.",
   no_version_in_force: "No tariff was in force for this month.",
-  meter_no_reading: "The billing meter has no readings for this month.",
+  meter_no_reading: "None of the billing meters has readings for this month.",
   meter_decreasing: "The billing meter's reading went down during this month, so the units cannot be billed.",
   kvah_unavailable: "This tariff bills in kVAh, but the billing meter does not report kVAh.",
   load_unit_mismatch: "The sanctioned load unit does not match what this tariff charges its fixed amount on.",
