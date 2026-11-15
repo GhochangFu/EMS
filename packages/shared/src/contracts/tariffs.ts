@@ -155,8 +155,13 @@ export const locationTariffDtoSchema = z.object({
   tariffKey: z.string(),
   tariffName: z.string().nullable(),
   dataStatus: tariffDataStatusSchema.nullable(),
+  /** The first of `billingMeterAssetIds` (ADR 0134 Amendment 3). */
   billingMeterAssetId: z.string().uuid(),
   billingMeterName: z.string().nullable(),
+  /** Every billing meter, the primary first; their register deltas add up to the bill. */
+  billingMeterAssetIds: z.array(z.string().uuid()).min(1),
+  /** The meters' names, index for index with `billingMeterAssetIds`. */
+  billingMeterNames: z.array(z.string().nullable()),
   sanctionedLoad: z.number().finite().min(0),
   sanctionedLoadUnit: sanctionedLoadUnitSchema,
   effectiveFrom: monthStartSchema,
@@ -205,7 +210,9 @@ export const energyBillSchema = z.object({
   mapping: z
     .object({
       id: z.string().uuid(),
+      /** The first of `billingMeterAssetIds`. */
       billingMeterAssetId: z.string().uuid(),
+      billingMeterAssetIds: z.array(z.string().uuid()).min(1),
       sanctionedLoad: z.number(),
       sanctionedLoadUnit: sanctionedLoadUnitSchema,
     })
@@ -237,23 +244,58 @@ function refineMonthWindow(body: MappingWindow, ctx: z.RefinementCtx): void {
   }
 }
 
+/** ADR 0134 Amendment 3 item 4: at most this many billing meters on one mapping. */
+export const MAX_BILLING_METERS = 8;
+
+/** 1–8 distinct meter asset ids; the first is the mapping's `billingMeterAssetId`. */
+export const billingMeterAssetIdsSchema = z
+  .array(z.string().uuid())
+  .min(1, "name at least one billing meter")
+  .max(MAX_BILLING_METERS, `name at most ${MAX_BILLING_METERS} billing meters`)
+  .refine((ids) => new Set(ids).size === ids.length, "a billing meter is named twice")
+  .describe(`the billing meters whose register deltas add up to the bill: 1 to ${MAX_BILLING_METERS} distinct asset ids, the first is the primary`);
+
+type MeterChoice = { billingMeterAssetId?: string | undefined; billingMeterAssetIds?: string[] | undefined };
+function refineOneMeterForm(body: MeterChoice, ctx: z.RefinementCtx, required: boolean): void {
+  const both = body.billingMeterAssetId !== undefined && body.billingMeterAssetIds !== undefined;
+  const neither = body.billingMeterAssetId === undefined && body.billingMeterAssetIds === undefined;
+  if (both || (required && neither)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["billingMeterAssetIds"],
+      message: "send exactly one of billingMeterAssetIds (the list) or billingMeterAssetId (one meter)",
+    });
+  }
+}
+
+/** The meter list a body names, or `undefined` when it names none (a PATCH that keeps the set). */
+export function billingMetersOf(body: MeterChoice): string[] | undefined {
+  if (body.billingMeterAssetIds !== undefined) return body.billingMeterAssetIds;
+  return body.billingMeterAssetId === undefined ? undefined : [body.billingMeterAssetId];
+}
+
 export const createLocationTariffBodySchema = z
   .object({
     tariffKey: tariffKeySchema,
-    billingMeterAssetId: z.string().uuid(),
+    billingMeterAssetId: z.string().uuid().optional().describe("one billing meter; shorthand for a one-item billingMeterAssetIds"),
+    billingMeterAssetIds: billingMeterAssetIdsSchema.optional(),
     sanctionedLoad: z.number().finite().min(0).max(10_000_000),
     sanctionedLoadUnit: sanctionedLoadUnitSchema,
     effectiveFrom: monthStartSchema,
     effectiveTo: monthStartSchema.nullish(),
   })
   .strict()
-  .superRefine(refineMonthWindow)
+  .superRefine((body, ctx) => {
+    refineOneMeterForm(body, ctx, true);
+    refineMonthWindow(body, ctx);
+  })
   .describe("map a location to a tariff line");
 export type CreateLocationTariffBody = z.infer<typeof createLocationTariffBodySchema>;
 
 export const updateLocationTariffBodySchema = z
   .object({
-    billingMeterAssetId: z.string().uuid().optional(),
+    billingMeterAssetId: z.string().uuid().optional().describe("one billing meter; replaces the set with this one"),
+    billingMeterAssetIds: billingMeterAssetIdsSchema.optional(),
     sanctionedLoad: z.number().finite().min(0).max(10_000_000).optional(),
     sanctionedLoadUnit: sanctionedLoadUnitSchema.optional(),
     effectiveFrom: monthStartSchema.optional(),
@@ -264,6 +306,7 @@ export const updateLocationTariffBodySchema = z
     if (Object.values(body).every((v) => v === undefined)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [], message: "name at least one field to change" });
     }
+    refineOneMeterForm(body, ctx, false);
     refineMonthWindow(body, ctx);
   })
   .describe("change a location's tariff mapping (the line itself is immutable)");

@@ -22,7 +22,7 @@ const monthIndex = (month: string): number => Number(month.slice(0, 4)) * 12 + N
  * `F4.365` U5 (ADR 0134 decision 6) — `GET /locations/:locationId/energy-bill`.
  *
  * **Gate (plan D6).** The location must be in `readableLocationIds` and, when
- * a mapping is in force for the month, its billing meter in
+ * a mapping is in force for the month, every one of its billing meters in
  * `readableAssetIds`; either failure is the same 404 sentence, so a caller
  * cannot tell an unreadable meter from a missing location. An unmapped month
  * answers 200 with `reason: "no_mapping"`.
@@ -90,7 +90,8 @@ export class LocationEnergyBillService {
       };
     }
     const readableAssets = await this.accessControl.readableAssetIds(jwt);
-    if (readableAssets !== null && !readableAssets.includes(mapping.billingMeterAssetId)) {
+    // ADR 0134 Amendment 3 item 4: EVERY billing meter must be readable, else the one 404.
+    if (readableAssets !== null && !mapping.billingMeterAssetIds.every((id) => readableAssets.includes(id))) {
       throw new NotFoundException(BILL_NOT_FOUND);
     }
 
@@ -125,6 +126,7 @@ export class LocationEnergyBillService {
       mapping: {
         id: mapping.id,
         billingMeterAssetId: mapping.billingMeterAssetId,
+        billingMeterAssetIds: mapping.billingMeterAssetIds,
         sanctionedLoad: mapping.sanctionedLoad,
         sanctionedLoadUnit: mapping.sanctionedLoadUnit,
       },

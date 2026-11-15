@@ -72,4 +72,9 @@ export function assertTheFleetReadsKeepTheirOrganizationEquality(): void {
   const mappings = source("location-tariff-read.ts");
   assert(mappings.includes("JOIN bms.locations l ON l.id = lt.location_id AND l.organization_id = lt.organization_id"), "mapping ↔ location organization");
   assert(mappings.includes("lt.organization_id = n.organization_id"), "nearest mapping keeps the asset's organization");
+  // F4.373: the meter list is read on the same fleet pool, so its organization equality is the isolation too.
+  assert(
+    mappings.includes("WHERE m.location_tariff_id = lt.id AND m.organization_id = lt.organization_id"),
+    "meter rows ↔ mapping organization",
+  );
 }

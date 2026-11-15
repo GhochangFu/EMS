@@ -219,3 +219,38 @@ export function billedUnits(input: {
   }
   return { ok: true, units: input.kwh.value / pf, estimated: true };
 }
+
+/** One billing meter's register deltas over the month, and its own average `pf` (null when not read). */
+export interface MeterReading {
+  kwh: RegisterDelta;
+  kvah: RegisterDelta;
+  averagePf: number | null;
+}
+
+export type MetersBilledUnitsResult =
+  | { ok: true; units: number; estimated: boolean; kwh: number | null }
+  | { ok: false; reason: Extract<BilledUnitsResult, { ok: false }>["reason"] };
+
+/**
+ * ADR 0134 Amendment 3 — the billed quantity of a mapping with one or more
+ * meters: the sum of each meter's {@link billedUnits}. A kVAh meter with no
+ * kVAh register is estimated from its OWN kWh ÷ its OWN pf, and the sum is
+ * `estimated` when any meter's is. The first meter that cannot be billed fails
+ * the whole bill with its reason (fail closed, never a partial bill). `kwh` is
+ * the meters' kWh deltas summed — the live rate's divisor — or null when any
+ * meter has none. No meter at all is `meter_no_reading`.
+ */
+export function billedUnitsOfMeters(energyUnit: TariffEnergyUnit, meters: readonly MeterReading[]): MetersBilledUnitsResult {
+  if (meters.length === 0) return { ok: false, reason: "meter_no_reading" };
+  let units = 0;
+  let estimated = false;
+  let kwh: number | null = 0;
+  for (const meter of meters) {
+    const one = billedUnits({ energyUnit, kwh: meter.kwh, kvah: meter.kvah, averagePf: meter.averagePf });
+    if (!one.ok) return { ok: false, reason: one.reason };
+    units += one.units;
+    estimated = estimated || one.estimated;
+    kwh = kwh !== null && meter.kwh.ok ? kwh + meter.kwh.value : null;
+  }
+  return { ok: true, units, estimated, kwh };
+}
