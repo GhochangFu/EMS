@@ -52,7 +52,7 @@ export type MlForecastFixtures = {
   assets: { l1: string; l2: string; p1: string; l3: string };
   organizations: { a: string; b: string };
   pointKey: string;
-  runs: { a: string; failed: string; past: string; future: string; l2: string; p1: string; l3: string };
+  runs: { a: string; failed: string; past: string; future: string; l2: string; p1: string; l3: string; anomaly: string };
   /** What each fixture asset's row should carry (read on the superuser connection). */
   expected: Record<
     "l1" | "l2" | "p1" | "l3",
@@ -437,6 +437,48 @@ export async function assertThePastForecastIsScopedOnBothBranches(ctx: MlForecas
     readPastForecast(tx, { assetId: ctx.pastAsset, pointKey: ctx.pointKey }, from, H),
   );
   expect(fleetRows.map((row) => row.p50)).toEqual([9, 8, 1, 10]);
+}
+
+/**
+ * `E1.2b` / ADR 0135 Amendment 5 A-a (plan T2.8) — the forecast reads ignore `bms-anomaly` runs.
+ * The wrapper plants a succeeded `bms-anomaly` run, newer than every forecast fixture run, started
+ * H + 20 min with score rows for L1 (H−1, both detectors). The one-point forecast, the past forecast
+ * and the list are what they are without it, and the list has no extra row. The list's
+ * `recent_runs` CTE takes the anomaly run (it has no model filter); its lateral finds no forecast.
+ */
+export async function assertAnAnomalyRunChangesNoForecastRead(ctx: MlForecastFixtures): Promise<void> {
+  // Positive control: the anomaly run is there, succeeded, newer than every forecast fixture run, with scores for L1.
+  const others = Object.entries(ctx.runs)
+    .filter(([name]) => name !== "anomaly")
+    .map(([, id]) => id);
+  const planted = await ctx.superuserDb.execute<{ newer: boolean; scores: number }>(sql`
+    SELECT (SELECT r.status = 'succeeded' AND r.started_at > (SELECT max(o.started_at) FROM ml.model_runs o
+                                                               WHERE o.id = ANY(${`{${others.join(",")}}`}::uuid[]))
+              FROM ml.model_runs r WHERE r.id = ${ctx.runs.anomaly}::uuid) AS newer,
+           (SELECT count(*) FROM ml.anomaly_scores s WHERE s.model_run_id = ${ctx.runs.anomaly}::uuid
+               AND s.asset_id = ${ctx.assets.l1}::uuid)::float8 AS scores`);
+  expect(planted.rows[0]?.newer).toBe(true);
+  expect(Number(planted.rows[0]?.scores)).toBe(2);
+
+  const current = await ctx.svc.current({ assetId: ctx.assets.l1, pointKey: ctx.pointKey }, ctx.now);
+  expect(current.forecast?.issuedAt).toBe(new Date(ctx.currentHourMs - 2 * HOUR_MS + 5 * 60_000).toISOString());
+  expect(current.forecast?.modelName).toBe("amazon/chronos-2");
+  expect(current.forecast?.buckets).toHaveLength(46);
+
+  const past = await ctx.svc.past(
+    { assetId: ctx.assets.l1, pointKey: ctx.pointKey },
+    { from: new Date(ctx.currentHourMs - 40 * HOUR_MS), to: new Date(ctx.currentHourMs + HOUR_MS) },
+    ctx.now,
+  );
+  expect(past.buckets).toEqual([{ t: isoAt(ctx.currentHourMs - HOUR_MS), p50: -1000 }]);
+
+  for (const readable of [ctx.readable.globalAdmin, Object.values(ctx.assets)]) {
+    const list = await ctx.svc.list(readable, ctx.now);
+    const fixtureRows = list.items.filter((item) => Object.values(ctx.assets).includes(item.assetId));
+    // One row per fixture asset (each has one forecast point), so no row came from the anomaly run.
+    expect(fixtureRows.map((item) => item.assetId).sort()).toEqual(Object.values(ctx.assets).sort());
+    expect(fixtureRows.every((item) => item.modelName === "amazon/chronos-2")).toBe(true);
+  }
 }
 
 /** For the wrapper: what a row's zone should be, by the history page's chain (C7). */

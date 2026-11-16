@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 
 import { ROLE_TOKENS, fromTokenMap } from "../test-role-tokens";
-import { echartsTheme, forecastPalette, pastForecastPalette, seriesPalette } from "./chart-theme";
+import { anomalyMarkColour, echartsTheme, forecastPalette, pastForecastPalette, seriesPalette } from "./chart-theme";
 import { NEXUS_SOFT_CHART_TYPE, resolveTypeTokens, type ChartType } from "./design";
 import { resolveRoles, type Roles } from "./theme";
 
@@ -130,4 +130,17 @@ export function c6TheActualPastAndForecastPalettesShareNoColour(name: ThemeName)
   expect(future.filter((c) => past.includes(c)), "forecast vs past").toEqual([]);
   expect(new Set(future).size, "no forecast colour twice").toBe(future.length);
   expect(new Set(past).size, "no past colour twice").toBe(past.length);
+}
+
+/**
+ * `E1.2b` / ADR 0135 Amendment 5 ruling 4(b) — the unusual-hour marks take `ink`, a role no actual,
+ * past-forecast or forecast line uses, and not an alarm colour: a mark is advisory.
+ */
+export function c7TheAnomalyMarkSharesNoLineColour(name: ThemeName): void {
+  const roles = rolesOf(name);
+  const mark = anomalyMarkColour(roles);
+  expect(mark).toBe(roles.ink);
+  const lines = [...seriesPalette(roles), ...pastForecastPalette(roles), ...forecastPalette(roles)];
+  expect(lines.includes(mark), "mark vs every line palette").toBe(false);
+  expect([roles.critical, roles.warning].includes(mark), "mark vs the alarm colours").toBe(false);
 }

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi, type MockInstance } from "vitest";
@@ -8,6 +8,7 @@ import { assetListRowSchema, pointAggregateResponseSchema } from "@bms/shared/co
 import { encodePointRef } from "@bms/shared";
 import type {
   AppendChartWidgetResponse,
+  AssetAnomaliesResponse,
   AssetListRow,
   AssetPointPickerRow,
   DashboardDto,
@@ -29,6 +30,7 @@ import * as telemetryApi from "../api/telemetry";
 import * as exportsApi from "../api/view-exports";
 import { stubScheduleWizardApis } from "../components/view-actions/schedule-button.spec";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
+import { ANOMALY_CAPTION } from "../lib/anomaly-series";
 import { PAST_FORECAST_CAPTION } from "../lib/forecast-series";
 import { formatBucketWidth } from "../lib/widget-value";
 import type { AuthUser } from "../stores/auth-store";
@@ -120,6 +122,7 @@ interface Stubs {
   readonly rawSpy: MockInstance<typeof telemetryApi.fetchPointRawRecords>;
   readonly forecastSpy: MockInstance<typeof mlApi.fetchPointForecast>;
   readonly pastSpy: MockInstance<typeof mlApi.fetchPastForecast>;
+  readonly anomalySpy: MockInstance<typeof mlApi.fetchAssetAnomalies>;
 }
 
 /** Every read the page and the shell make. */
@@ -135,6 +138,9 @@ export function stubApis(
     /** `E1.4e`: the past read's answer (default: no buckets), or its failure. */
     pastForecast?: PastForecastResponse;
     pastError?: Error;
+    /** `E1.2b`: the asset's anomaly read's answer (default: no scores), or its failure. */
+    anomalies?: AssetAnomaliesResponse;
+    anomalyError?: Error;
   } = {},
 ): Stubs {
   // `F4.359` U16: the header reads the asset's active maintenance; no spec makes the real request.
@@ -166,7 +172,11 @@ export function stubApis(
   const pastSpy = options.pastError
     ? vi.spyOn(mlApi, "fetchPastForecast").mockRejectedValue(options.pastError)
     : vi.spyOn(mlApi, "fetchPastForecast").mockResolvedValue(options.pastForecast ?? { asOf: FORECAST_AS_OF, buckets: [] });
-  return { aggregateSpy, rawSpy, forecastSpy, pastSpy };
+  // `E1.2b`: likewise the anomaly read.
+  const anomalySpy = options.anomalyError
+    ? vi.spyOn(mlApi, "fetchAssetAnomalies").mockRejectedValue(options.anomalyError)
+    : vi.spyOn(mlApi, "fetchAssetAnomalies").mockResolvedValue(options.anomalies ?? { asOf: FORECAST_AS_OF, scores: [] });
+  return { aggregateSpy, rawSpy, forecastSpy, pastSpy, anomalySpy };
 }
 
 export function renderHistoryPage(search = "", role: UserRole = "admin", assetId = ASSET_ID): void {
@@ -684,3 +694,82 @@ export async function aFailedPastReadDrawsNothingAndIsNotRetried(): Promise<void
   expect(pastSpy).toHaveBeenCalledTimes(1);
 }
 
+
+// --- `E1.2b` (ADR 0135 Amendment 5 ruling 4(b)): the unusual-hour marks on the chart. ---
+
+const UNUSUAL: AssetAnomaliesResponse = {
+  asOf: FORECAST_AS_OF,
+  scores: [
+    { t: "2026-10-31T05:00:00.000Z", detector: "baseline_mad", score: 0.4, contributingPoints: ["kw"] },
+    { t: "2026-10-31T05:00:00.000Z", detector: "isolation_forest", score: 0.995, contributingPoints: ["kw"] },
+  ],
+};
+
+/** Beside `avg` the page asks for the asset's scores over the served window, and a drawn mark brings the caption. */
+export async function anUnusualHourIsAskedForAndCaptioned(): Promise<void> {
+  const { anomalySpy } = stubApis({ anomalies: UNUSUAL });
+  renderHistoryPage();
+  const caption = await screen.findByTestId("anomaly-caption");
+  expect(caption.textContent).toBe(ANOMALY_CAPTION);
+  expect(anomalySpy).toHaveBeenCalledWith(ASSET_ID, aggregate().from, aggregate().to);
+  expect(anomalySpy).toHaveBeenCalledTimes(1);
+}
+
+/** No unusual hour in the answer: no caption. */
+export async function noUnusualHourMeansNoAnomalyCaption(): Promise<void> {
+  const { anomalySpy } = stubApis();
+  renderHistoryPage();
+  await waitFor(() => expect(anomalySpy).toHaveBeenCalled());
+  await screen.findByTestId("history-level");
+  expect(screen.queryByTestId("anomaly-caption")).toBeNull();
+}
+
+/** R14: beside `max` a mark is about another quantity — no read, no caption. */
+export async function aMaxPageAsksForNoAnomalies(): Promise<void> {
+  const { aggregateSpy, anomalySpy } = stubApis({ anomalies: UNUSUAL });
+  renderHistoryPage("?fn=max");
+  await waitFor(() => expect(aggregateSpy).toHaveBeenCalled());
+  await screen.findByTestId("history-level");
+  expect(anomalySpy).not.toHaveBeenCalled();
+  expect(screen.queryByTestId("anomaly-caption")).toBeNull();
+}
+
+/** R14: the `1y` preset (a 365-day window) and a 32-day custom range ask for no scores. */
+export async function aWindowOver31DaysAsksForNoAnomalies(): Promise<void> {
+  const cases = [
+    { search: "?range=1y", served: aggregate({ from: "2025-10-31T06:00:00.000Z", to: "2026-10-31T06:00:00.000Z" }) },
+    {
+      search: "?from=2026-09-29T06:00:00.000Z&to=2026-10-31T06:00:00.000Z",
+      served: aggregate({ from: "2026-09-29T06:00:00.000Z", to: "2026-10-31T06:00:00.000Z" }),
+    },
+  ];
+  for (const { search, served } of cases) {
+    const { aggregateSpy, anomalySpy } = stubApis({ served, anomalies: UNUSUAL });
+    renderHistoryPage(search);
+    await waitFor(() => expect(aggregateSpy).toHaveBeenCalled());
+    await screen.findByTestId("history-level");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(anomalySpy, search).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("anomaly-caption")).toBeNull();
+    cleanup();
+    vi.restoreAllMocks();
+  }
+}
+
+/** A rejected read (a 403 is final) leaves the chart, draws no mark, shows no banner and is not retried. */
+export async function aRejectedAnomalyReadLeavesTheChartWithoutABanner(): Promise<void> {
+  const { anomalySpy } = stubApis({ anomalyError: new Error("ml asset anomalies 403") });
+  renderHistoryPage();
+  await waitFor(() => expect(anomalySpy).toHaveBeenCalledTimes(1));
+  expect(await screen.findByTestId("history-level")).toBeInTheDocument();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(anomalySpy).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText(/ml asset anomalies/)).toBeNull();
+  expect(screen.queryByText("Asset not found or outside your access.")).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByTestId("anomaly-caption")).toBeNull();
+}

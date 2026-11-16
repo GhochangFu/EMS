@@ -1,9 +1,10 @@
 import type { EChartsOption } from "echarts";
 
-import type { ForecastBucket, PastForecastBucket, PointAggregateBucket } from "@bms/shared";
+import type { AnomalyScore, ForecastBucket, PastForecastBucket, PointAggregateBucket } from "@bms/shared";
 
+import { ANOMALY_MARK_NAME, anomalyMarkSeries, unusualHours } from "./anomaly-series";
 import { axisForUnit, shiftCompareBuckets } from "./asset-history-range";
-import { forecastPalette, pastForecastPalette, seriesPalette } from "./chart-theme";
+import { anomalyMarkColour, forecastPalette, pastForecastPalette, seriesPalette } from "./chart-theme";
 import {
   clipForecastToAxis,
   forecastAxisMax,
@@ -70,6 +71,11 @@ export interface HistorySeriesInput {
  * the actual or the past palette. Each point's forecast is traced to its point by the legend's
  * point key (R9). With one point: actual `series-1`, past `series-2`, live forecast `series-3`.
  *
+ * **`E1.2b` (ADR 0135 Amendment 5 ruling 4(b)).** The asset's anomaly `scores` add one scatter
+ * series, "Unusual hour (advisory)", with a legend entry: one mark per unusual hour inside
+ * `[from, to]`, at the hour's start, on a hidden 0..1 y axis after the unit axes, in `ink`
+ * (`anomalyMarkColour`). With no unusual hour the option is exactly what it was without.
+ *
  * **`F4.379`.** The tooltip prints a value as the Latest cell does (`withoutFloatNoise`): a stored
  * int16 × 0.1 shows `0.3`, not `0.3000000000000007`, and every real digit stays.
  */
@@ -81,6 +87,8 @@ export function buildHistoryChartOption(args: {
   readonly roles: Roles;
   /** The forecast reads' server instant (epoch ms); `null`/absent draws no forecast. */
   readonly asOf?: number | null;
+  /** `E1.2b`: the asset's anomaly scores over the window (every score); `null`/absent draws no mark. */
+  readonly anomalies?: readonly AnomalyScore[] | null;
 }): EChartsOption {
   const { from, to, series, compare, roles } = args;
   const asOf = args.asOf ?? null;
@@ -178,7 +186,13 @@ export function buildHistoryChartOption(args: {
       name: pastName(input),
     }),
   );
-  const all = [...host, ...pastLines, ...forecastLines];
+  const unitAxes = units.length > 0 ? units.length : 1;
+  const marks = anomalyMarkSeries({
+    hours: unusualHours(args.anomalies ?? [], from, to),
+    colour: anomalyMarkColour(roles),
+    yAxisIndex: unitAxes,
+  });
+  const all = [...host, ...pastLines, ...forecastLines, ...marks];
   // The p50 before its band, and the band's two series as one entry (they share the name).
   const legendNames = [
     ...lines.map((line) => line.name),
@@ -186,6 +200,7 @@ export function buildHistoryChartOption(args: {
     ...forecasting.flatMap(({ input }, index) =>
       forecastLegendEntries(forecastNames(forecasting.length > 1 ? input.name : null), futureColour(index)),
     ),
+    ...(marks.length > 0 ? [ANOMALY_MARK_NAME] : []),
   ];
 
   return {
@@ -193,10 +208,14 @@ export function buildHistoryChartOption(args: {
     tooltip: { trigger: "axis", valueFormatter: tooltipValue },
     ...(all.length > 0 ? { legend: { type: "scroll" as const, data: legendNames } } : {}),
     xAxis: { type: "time", min: from, max: xMax },
-    yAxis: (units.length > 0 ? units : [null]).map((unit) => ({
-      type: "value" as const,
-      ...(unit ? { name: unit } : {}),
-    })),
+    yAxis: [
+      ...(units.length > 0 ? units : [null]).map((unit) => ({
+        type: "value" as const,
+        ...(unit ? { name: unit } : {}),
+      })),
+      // The marks' own axis: hidden, 0..1, so a mark sits at its score and never rescales a unit axis.
+      ...(marks.length > 0 ? [{ type: "value" as const, show: false, min: 0, max: 1 }] : []),
+    ],
     series: all,
   };
 }

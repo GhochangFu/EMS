@@ -41,6 +41,11 @@ import {
   aPastCustomRangeStillAsksForThePastForecast,
   noPastBucketsMeansNoPastCaption,
   thePastForecastIsAskedForOverTheServedWindowAndCaptioned,
+  aMaxPageAsksForNoAnomalies,
+  anUnusualHourIsAskedForAndCaptioned,
+  aRejectedAnomalyReadLeavesTheChartWithoutABanner,
+  aWindowOver31DaysAsksForNoAnomalies,
+  noUnusualHourMeansNoAnomalyCaption,
 } from "./asset-history-page.spec";
 
 vi.mock("echarts-for-react", () => ({
@@ -213,5 +218,25 @@ describe("F4.297 asset history page", () => {
 
   it("E1.4e a failed past read draws nothing and is not retried", async () => {
     await aFailedPastReadDrawsNothingAndIsNotRetried();
+  });
+
+  it("E1.2b asks for the asset's anomalies over the served window and captions a mark", async () => {
+    await anUnusualHourIsAskedForAndCaptioned();
+  });
+
+  it("E1.2b no unusual hour means no anomaly caption", async () => {
+    await noUnusualHourMeansNoAnomalyCaption();
+  });
+
+  it("E1.2b a max page asks for no anomalies", async () => {
+    await aMaxPageAsksForNoAnomalies();
+  });
+
+  it("E1.2b a window over 31 days (1y, a 32-day custom range) asks for no anomalies", async () => {
+    await aWindowOver31DaysAsksForNoAnomalies();
+  });
+
+  it("E1.2b a rejected anomaly read leaves the chart without a banner", async () => {
+    await aRejectedAnomalyReadLeavesTheChartWithoutABanner();
   });
 });

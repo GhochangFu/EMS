@@ -2,7 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import { encodePointRef } from "@bms/shared";
 import { expect } from "vitest";
 
-import { POINT_KEY_MAX_CHARS, decodeBoundedPointRef, decodeGuardedPointRef } from "./guarded-point-ref";
+import { POINT_KEY_MAX_CHARS, assertAssetIdParam, decodeBoundedPointRef, decodeGuardedPointRef } from "./guarded-point-ref";
 
 /**
  * `E1.4a` / ADR 0135 Amendment 3 S2 (plan R6, T1.7) — the shared point-ref
@@ -69,4 +69,14 @@ export function theBoundCountsCodePointsAsPostgresDoes(): void {
   expect(astral.length).toBe(256);
   expect(decodeBoundedPointRef(param(ASSET, astral)).pointKey).toBe(astral);
   expect(refusal(() => decodeBoundedPointRef(param(ASSET, `${astral}x`)))).toBeInstanceOf(BadRequestException);
+}
+
+/** `E1.2b`: the bare asset-id param guard — a UUID passes through unchanged, anything else is a 400. */
+export function aBareAssetIdParamIsCheckedAsAUuid(): void {
+  expect(assertAssetIdParam(ASSET)).toBe(ASSET);
+  for (const bad of ["", "not-a-uuid", `${ASSET}x`, ` ${ASSET}`, "11111111111141118111111111111111", `${ASSET},${ASSET}`]) {
+    const err = refusal(() => assertAssetIdParam(bad));
+    expect(err, JSON.stringify(bad)).toBeInstanceOf(BadRequestException);
+    expect((err as BadRequestException).message).toBe("Invalid asset id: not a UUID");
+  }
 }

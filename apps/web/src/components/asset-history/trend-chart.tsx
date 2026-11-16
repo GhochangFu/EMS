@@ -2,8 +2,9 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import { useMemo } from "react";
 
-import type { PastForecastBucket, PointAggregateResponse, PointForecast } from "@bms/shared";
+import type { AnomalyScore, PastForecastBucket, PointAggregateResponse, PointForecast } from "@bms/shared";
 
+import { ANOMALY_CAPTION, unusualHours } from "../../lib/anomaly-series";
 import { buildHistoryChartOption } from "../../lib/asset-history-chart-option";
 import { useChartTheme } from "../../lib/chart-theme";
 import { forecastIsLive, PAST_FORECAST_CAPTION } from "../../lib/forecast-series";
@@ -35,6 +36,8 @@ type TrendChartProps = {
   siteZone: SiteZone;
   /** `E1.4a`: the forecast reads' server instant (ISO); `null`/absent draws no forecast. */
   forecastAsOf?: string | null;
+  /** `E1.2b`: the asset's anomaly scores over the window; `null`/absent draws no mark. */
+  anomalies?: readonly AnomalyScore[] | null;
 };
 
 /** True when a compare was asked and no series has a single previous-period value. */
@@ -55,8 +58,11 @@ export function previousPeriodIsEmpty(series: readonly TrendSeries[]): boolean {
  *
  * `E1.4e` (ADR 0135 Amendment 4): a series with a past forecast draws it as a dashed line in its
  * own colour on any window, with one caption line saying what it is, and no accuracy number.
+ *
+ * `E1.2b` (ADR 0135 Amendment 5 ruling 4(b)): the asset's unusual hours are marked on the chart,
+ * advisory, and one caption line says what a mark is — only when at least one mark is drawn.
  */
-export function TrendChart({ series, chartedCount, compare, siteZone, forecastAsOf = null }: TrendChartProps) {
+export function TrendChart({ series, chartedCount, compare, siteZone, forecastAsOf = null, anomalies = null }: TrendChartProps) {
   const { roles, theme } = useChartTheme();
   const first = series[0]?.data;
   const asOfMs = forecastAsOf === null ? null : Date.parse(forecastAsOf);
@@ -85,6 +91,7 @@ export function TrendChart({ series, chartedCount, compare, siteZone, forecastAs
       compare: compare ? { spanMs: to - from } : null,
       roles,
       asOf: asOfMs,
+      anomalies,
     });
     const built = base.xAxis as { readonly max?: number } | undefined;
     return {
@@ -96,7 +103,9 @@ export function TrendChart({ series, chartedCount, compare, siteZone, forecastAs
         axisLabel: timeAxisLabel(siteZone.zone),
       },
     };
-  }, [first, series, compare, roles, siteZone.zone, asOfMs]);
+  }, [first, series, compare, roles, siteZone.zone, asOfMs, anomalies]);
+  const marked =
+    first !== undefined && unusualHours(anomalies ?? [], Date.parse(first.from), Date.parse(first.to)).length > 0;
 
   if (first === undefined || option === null) {
     return (
@@ -150,6 +159,11 @@ export function TrendChart({ series, chartedCount, compare, siteZone, forecastAs
       {series.some((s) => (s.pastForecast?.length ?? 0) > 0) ? (
         <p className="text-xs text-ink-muted" data-testid="past-forecast-caption">
           {PAST_FORECAST_CAPTION}
+        </p>
+      ) : null}
+      {marked ? (
+        <p className="text-xs text-ink-muted" data-testid="anomaly-caption">
+          {ANOMALY_CAPTION}
         </p>
       ) : null}
       {compare && previousPeriodIsEmpty(series) ? (

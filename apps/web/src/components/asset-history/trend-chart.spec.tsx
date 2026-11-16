@@ -2,8 +2,9 @@ import { render, screen } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
 import { encodePointRef, pointAggregateResponseSchema } from "@bms/shared";
-import type { PointAggregateResponse, PointForecast } from "@bms/shared";
+import type { AnomalyScore, PointAggregateResponse, PointForecast } from "@bms/shared";
 
+import { ANOMALY_CAPTION, ANOMALY_MARK_NAME } from "../../lib/anomaly-series";
 import { siteZoneOf } from "./history-format";
 import { TrendChart, type TrendSeries } from "./trend-chart";
 
@@ -85,4 +86,47 @@ export function aStaleWindowDrawsNoForecastOrCaption(): void {
   renderChart([{ pointKey: "kw", unit: "kW", data: DATA, forecast: FORECAST }], "2026-11-16T12:00:00.000Z");
   expect(recorded.at(-1)?.option.xAxis.max).toBe(Date.parse(TO));
   expect(screen.queryByTestId("forecast-caption")).toBeNull();
+}
+
+/** `E1.2b` — a score at the line inside the window, one just under it, one at the line outside the window. */
+const UNUSUAL: AnomalyScore = { t: "2026-11-16T09:00:00.000Z", detector: "baseline_mad", score: 0.99, contributingPoints: ["kw"] };
+const USUAL: AnomalyScore = { ...UNUSUAL, score: 0.9899 };
+const OUTSIDE: AnomalyScore = { ...UNUSUAL, t: "2026-11-14T09:00:00.000Z" };
+
+const renderMarks = (anomalies: readonly AnomalyScore[] | null): void => {
+  render(
+    <TrendChart
+      series={[{ pointKey: "kw", unit: "kW", data: DATA }]}
+      chartedCount={1}
+      compare={false}
+      siteZone={siteZoneOf("Asia/Kolkata")}
+      anomalies={anomalies}
+    />,
+  );
+};
+
+/** `E1.2b` — a drawn mark passes into the option and brings the advisory caption. */
+export function aMarkBringsTheCaption(): void {
+  renderMarks([USUAL, UNUSUAL]);
+  expect(recorded.at(-1)?.option.series.map((s) => s.name)).toContain(ANOMALY_MARK_NAME);
+  expect(screen.getByTestId("anomaly-caption").textContent).toBe(ANOMALY_CAPTION);
+}
+
+/** `E1.2b` — no mark drawn (no read, none at the line, none in the window): no series and no caption. */
+export function noMarkNoCaption(): void {
+  for (const anomalies of [null, [], [USUAL], [OUTSIDE]]) {
+    resetRecorded();
+    const { unmount } = render(
+      <TrendChart
+        series={[{ pointKey: "kw", unit: "kW", data: DATA }]}
+        chartedCount={1}
+        compare={false}
+        siteZone={siteZoneOf("Asia/Kolkata")}
+        anomalies={anomalies}
+      />,
+    );
+    expect(recorded.at(-1)?.option.series.map((s) => s.name)).not.toContain(ANOMALY_MARK_NAME);
+    expect(screen.queryByTestId("anomaly-caption")).toBeNull();
+    unmount();
+  }
 }

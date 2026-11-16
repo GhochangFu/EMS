@@ -36,9 +36,9 @@ import { assets, organizations } from "./bms-schema";
  * `tests/e1.4a-ml-read-grant.integration.test.ts` the columns.
  *
  * Row level security, the `tenant_isolation` policies and the grants live in
- * the migrations only (`0157`, `0158`): `bms_fleet` writes, `bms_tenant` reads
- * `forecasts` and `model_runs` under the tenant GUC, and nobody reads
- * `anomaly_scores` but `bms_fleet` until `E1.2`.
+ * the migrations only (`0157`, `0158`, `0160`): `bms_fleet` writes, `bms_tenant`
+ * reads `forecasts` and `model_runs` (`0158`) and `anomaly_scores` (`0160`,
+ * `E1.2b`) under the tenant GUC, and `bms_auth` reads none of them.
  */
 export const mlSchema = pgSchema("ml");
 

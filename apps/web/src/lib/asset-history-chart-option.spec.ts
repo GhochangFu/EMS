@@ -1,6 +1,9 @@
 import { expect } from "vitest";
 
 import { ROLE_TOKENS, fromTokenMap } from "../test-role-tokens";
+import type { AnomalyScore } from "@bms/shared";
+
+import { ANOMALY_MARK_NAME } from "./anomaly-series";
 import { buildHistoryChartOption, type HistorySeriesInput } from "./asset-history-chart-option";
 import { resolveRoles } from "./theme";
 import { CHART_SERIES } from "./widget-catalog";
@@ -31,7 +34,7 @@ interface Shape {
 }
 
 /** The legend's entry names, whether an entry is a bare name or a styled object. */
-const legendNames = (option: Shape): string[] =>
+const legendNames = (option: Pick<Shape, "legend">): string[] =>
   (option.legend?.data ?? []).map((entry) => (typeof entry === "string" ? entry : entry.name));
 
 function build(
@@ -335,4 +338,76 @@ export function theTooltipDropsFloatNoiseAndKeepsRealDigits(): void {
   expect(format?.(125000, 0), "grouped as ECharts' default was").toBe("125,000");
   expect(format?.(null, 0)).toBe("-");
   expect(format?.(["2026-10-31T00:00:00.000Z", 0.1 + 0.2], 0), "a [t, v] pair formats its value").toBe("0.3");
+}
+
+/** `E1.2b` — one asset's scores: 00:00 unusual by the forest, 01:00 just under the line, 03:00 outside the window. */
+const SCORES: readonly AnomalyScore[] = [
+  { t: "2026-10-31T00:00:00.000Z", detector: "baseline_mad", score: 0.42, contributingPoints: ["kw"] },
+  { t: "2026-10-31T00:00:00.000Z", detector: "isolation_forest", score: 0.9931, contributingPoints: ["kw", "v"] },
+  { t: "2026-10-31T01:00:00.000Z", detector: "baseline_mad", score: 0.9899, contributingPoints: ["kw"] },
+  { t: "2026-10-31T03:00:00.000Z", detector: "baseline_mad", score: 1, contributingPoints: ["kw"] },
+];
+
+type MarkShape = Omit<Shape, "yAxis" | "series"> & {
+  readonly yAxis: readonly { readonly name?: string; readonly show?: boolean; readonly min?: number; readonly max?: number }[];
+  readonly series: readonly (Shape["series"][number] & {
+    readonly tooltip?: { readonly valueFormatter?: (v: unknown, i: number) => string };
+  })[];
+};
+
+function buildMarks(series: readonly HistorySeriesInput[], anomalies: readonly AnomalyScore[] | null, asOf: number | null = null): MarkShape {
+  return buildHistoryChartOption({ from: FROM, to: TO, series, compare: null, roles, asOf, anomalies }) as unknown as MarkShape;
+}
+
+/**
+ * `E1.2b` / ADR 0135 Amendment 5 ruling 4(b) — an unusual hour adds exactly one series, named in
+ * the legend, a scatter in `ink` on a hidden 0..1 third y axis, one item per unusual hour inside
+ * the window at the hour's start and its score; the existing axes and series are untouched.
+ */
+export function anUnusualHourAddsOneMarkSeriesAndALegendEntry(): void {
+  const without = buildMarks([kw, volts], null);
+  const option = buildMarks([kw, volts], SCORES);
+  expect(option.series).toHaveLength(without.series.length + 1);
+  expect(option.series.slice(0, without.series.length)).toEqual(without.series);
+  expect(legendNames(option)).toEqual([...legendNames(without), ANOMALY_MARK_NAME]);
+  const mark = option.series.at(-1);
+  expect(mark).toMatchObject({ name: ANOMALY_MARK_NAME, type: CHART_SERIES.scatter.type, yAxisIndex: 2 });
+  expect(mark?.itemStyle?.color).toBe(roles.ink);
+  expect(mark?.data).toEqual([["2026-10-31T00:00:00.000Z", 0.9931]]);
+  expect(option.yAxis).toHaveLength(3);
+  expect(option.yAxis.slice(0, 2)).toEqual(without.yAxis);
+  expect(option.yAxis[2]).toMatchObject({ type: "value", show: false, min: 0, max: 1 });
+}
+
+/** One unit: the hidden axis is the second, and nothing else moves. */
+export function oneUnitPutsTheMarksOnASecondHiddenAxis(): void {
+  const option = buildMarks([kw], SCORES);
+  expect(option.yAxis).toHaveLength(2);
+  expect(option.yAxis[1]).toMatchObject({ show: false, min: 0, max: 1 });
+  expect(option.series.at(-1)?.yAxisIndex).toBe(1);
+}
+
+/** No unusual hour — no scores, all under the line, or all outside the window — no series, no axis, no legend entry. */
+export function noUnusualHourAddsNothing(): void {
+  const without = buildMarks([kw], null);
+  for (const anomalies of [[], SCORES.filter((s) => s.score < 0.99), [SCORES[3]]]) {
+    expect(buildMarks([kw], anomalies)).toEqual(without);
+  }
+}
+
+/** The mark's tooltip value holds the score, the detector labels and the point keys. */
+export function theMarksTooltipHoldsScoreDetectorsAndPoints(): void {
+  const mark = buildMarks([kw], SCORES).series.at(-1);
+  expect(mark?.tooltip?.valueFormatter?.(0.9931, 0)).toBe("score 0.9931 · Isolation Forest · kw, v");
+}
+
+/** Beside a forecast the forecast's series, axis and legend entries are unchanged; the marks come last. */
+export function marksBesideAForecastLeaveItUntouched(): void {
+  const without = buildMarks([kwForecast], null, AS_OF);
+  const option = buildMarks([kwForecast], SCORES, AS_OF);
+  // JSON drops the band's tooltip formatter, a new closure on each build.
+  expect(JSON.stringify(option.series.slice(0, without.series.length))).toBe(JSON.stringify(without.series));
+  expect(option.series.at(-1)?.name).toBe(ANOMALY_MARK_NAME);
+  expect(option.xAxis).toEqual(without.xAxis);
+  expect(legendNames(option)).toEqual([...legendNames(without), ANOMALY_MARK_NAME]);
 }
