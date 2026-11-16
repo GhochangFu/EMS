@@ -54,6 +54,8 @@ export const moduleGroups = [
       { label: "Energy Analytics", path: "/energy" },
       // `E1.4b` (ADR 0135 Amendment 3 R-e, plan §7): every signed-in user; the API filters the rows.
       { label: "Forecasts", path: "/forecasts" },
+      // `E1.2c` (ADR 0135 Amendment 5 ruling 4(a), plan §8): every signed-in user; advisory scores.
+      { label: "Anomalies", path: "/anomalies" },
     ],
   },
   {

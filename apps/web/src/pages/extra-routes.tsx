@@ -1,5 +1,6 @@
 import { Route } from "react-router-dom";
 
+import { AnomaliesRoute } from "./anomalies-route";
 import { ForecastsRoute } from "./forecasts-route";
 
 /**
@@ -10,9 +11,11 @@ import { ForecastsRoute } from "./forecasts-route";
  * that is nginx's static prefix (`tests/f4.297-no-spa-route-under-static-prefix.test.ts`).
  *
  * - `E1.4b` (ADR 0135 Amendment 3 R-e): `/forecasts` (`forecasts-route.tsx`).
+ * - `E1.2c` (ADR 0135 Amendment 5 ruling 4(a)): `/anomalies` (`anomalies-route.tsx`).
  */
 export const EXTRA_ROUTES = (
   <>
     <Route path="/forecasts" element={<ForecastsRoute />} />
+    <Route path="/anomalies" element={<AnomaliesRoute />} />
   </>
 );

@@ -25,6 +25,8 @@ export const NAV_ICONS = {
   "HVAC · CRAC": "fan",
   "Energy Analytics": "chart-line",
   Forecasts: "target",
+  // `E1.2c` (plan §17 Q4, owner 2026-11-16): a notice, not an alarm.
+  Anomalies: "circle-alert",
   Maintenance: "wrench",
   "Schedule Centre": "clock",
   "Rule Engine": "cpu",
