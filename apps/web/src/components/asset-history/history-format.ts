@@ -62,6 +62,23 @@ export function axisLabelInZone(ms: number, zone: string): string {
 }
 
 /**
+ * `16 Nov 14:05` in the row's site zone; `—` for an unreadable instant (a drifted payload passes
+ * through in production). The zone goes through `siteZoneOf`, as on the history page: a name the
+ * server's time-zone data accepts but this browser's does not falls back to UTC rather than making
+ * `Intl` throw in render and blank the app (PR 3 security review).
+ */
+export function formatShortInZone(iso: string, reportedZone: string): string {
+  const zone = siteZoneOf(reportedZone).zone;
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) {
+    return "—";
+  }
+  const day = new Intl.DateTimeFormat("en-GB", { timeZone: zone, day: "numeric", month: "short" }).format(ms);
+  const time = new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(ms);
+  return `${day} ${time}`;
+}
+
+/**
  * The time axis's `axisLabel` in `zone`. ECharts drops a label that would
  * overlap its neighbour, and the forced labels at the exact `min`/`max` of the
  * range are off: those two sat on top of the nearest round tick and made the

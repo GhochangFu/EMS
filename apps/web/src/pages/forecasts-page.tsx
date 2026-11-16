@@ -5,7 +5,7 @@ import { assetLabelOf } from "@bms/shared";
 import type { ForecastListRow } from "@bms/shared";
 
 import { fetchForecastList } from "../api/ml";
-import { retryUnlessForbidden, siteZoneOf } from "../components/asset-history/history-format";
+import { formatShortInZone, retryUnlessForbidden } from "../components/asset-history/history-format";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 import { StatusPill } from "../components/status-pill";
@@ -17,23 +17,6 @@ import type { AuthUser } from "../stores/auth-store";
 /** C8 (replaces R-e's copy): the page promises nothing to a point type the scorer does not target. */
 export const FORECASTS_EMPTY_SENTENCE =
   "No forecasts yet. Forecasts are made for a few point types with enough recent real data.";
-
-/**
- * `16 Nov 14:05` in the row's site zone; `—` for an unreadable instant (a drifted payload passes
- * through in production). The zone goes through `siteZoneOf`, as on the history page: a name the
- * server's time-zone data accepts but this browser's does not falls back to UTC rather than making
- * `Intl` throw in render and blank the app (PR 3 security review).
- */
-function formatShortInZone(iso: string, reportedZone: string): string {
-  const zone = siteZoneOf(reportedZone).zone;
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) {
-    return "—";
-  }
-  const day = new Intl.DateTimeFormat("en-GB", { timeZone: zone, day: "numeric", month: "short" }).format(ms);
-  const time = new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(ms);
-  return `${day} ${time}`;
-}
 
 const formatValue = (value: number): string =>
   value.toLocaleString("en-GB", { maximumFractionDigits: 2, useGrouping: false });

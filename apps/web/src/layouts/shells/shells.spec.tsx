@@ -110,6 +110,7 @@ const ADMIN_ITEMS = [
   "Assets",
   "Sites Map",
   "Energy Analytics",
+  "Anomalies",
   "Maintenance",
   "Schedule Centre",
   "Rule Engine",

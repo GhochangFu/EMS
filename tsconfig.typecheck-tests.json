@@ -32,6 +32,7 @@
     "tests/e1.1-ml-image.test.ts",
     "tests/e1.1-ml-compose.test.ts",
     "tests/e1.4b-forecasts-reachable.test.ts",
+    "tests/e1.2c-anomalies-reachable.test.ts",
     "tests/adr-0096-deploy-newest-only.test.ts",
     "tests/e1.4a-ml-read-grant.test.ts",
     "tests/e1.4a-ml-read-grant.integration.test.ts",
