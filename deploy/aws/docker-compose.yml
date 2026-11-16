@@ -75,9 +75,11 @@ services:
     # ADR 0016 Amendment 8, Decision 2 (F4.61), as in the root compose file:
     # `ingest` shares a network with the database only, because its health
     # endpoint is unauthenticated and names every enabled RTU.
+    # `ml`: the batch scorer's internal network (ADR 0135, plan R14).
     networks:
       - default
       - ingest
+      - ml
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bms_app -d bms"]
       interval: 10s
@@ -355,9 +357,45 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # ADR 0135 (E1.1 plan PR 5): the ML batch scorer, opt-in. `bms-ctl ml start`
+  # enables it and the choice survives deploys. It joins the internal `ml`
+  # network alone (shared with postgres alone, so no outbound call), publishes
+  # no port, writes nothing to disk, and connects as bms_fleet. Limits: one of
+  # the host's two vCPUs and 1 GiB with no swap beyond it (ADR 0135 Amendment 2
+  # ruling 1). Measured on the owner's laptop: a 21-series cycle took 80–149 s
+  # at one CPU, peak 522 MB under a 1 GiB limit (ADR 0135 build record); the
+  # cycle timeout is 900 s.
+  ml:
+    profiles: ["ml"]
+    image: ghcr.io/${IMAGE_OWNER:?}/ems-ml:${IMAGE_TAG:?}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL_FLEET: postgres://bms_fleet:${BMS_FLEET_PASSWORD:?}@postgres:5432/bms
+      ML_TORCH_THREADS: "1"
+      LOG_LEVEL: info
+    networks:
+      - ml
+    mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 256
+    cpus: 1
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
 networks:
   ingest: {}
   edge-uplink: {}
+  ml: { internal: true }
 
 volumes:
   postgres-data:

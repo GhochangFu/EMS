@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const searchRoots = ["apps", "packages"];
-const skipDirs = new Set(["node_modules", "dist", "build", "coverage", ".git"]);
+const skipDirs = new Set(["node_modules", "dist", "build", "coverage", ".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache"]);
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

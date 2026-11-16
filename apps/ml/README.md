@@ -30,6 +30,29 @@ build record: `--build-arg ML_MODEL_REPO=amazon/chronos-bolt-small
 Locally the service is the compose profile `ml`
 (`docker compose --profile core --profile ml up -d --build ml`).
 
+## The demo host (ADR 0096; ADR 0135 Amendment 2 ruling 1)
+
+The deploy workflow builds `ems-ml` for arm64 with the other images; a failed
+`ems-ml` build never blocks the others. The service is off until an
+administrator enables it, the choice survives deploys, and a deploy pulls the
+2.8 GB image only while it is enabled. The first time:
+
+1. Re-run `deploy/aws/setup-server.sh` on the host: `bms-ctl` is installed by
+   it, not run from the checkout.
+2. `sudo bms-ctl ml start` (or Actions -> "AWS demo services" -> `ml` ->
+   `start`). If the image is not on the host yet, this only records the choice.
+3. Run the deploy workflow once (Actions -> "Deploy to AWS demo"). It pulls
+   `ems-ml` with its GHCR token and starts the service.
+
+```bash
+sudo bms-ctl ml status
+sudo bms-ctl logs ml       # the hourly cycle_summary lines
+```
+
+On the host the service has one vCPU, 1 GiB with no swap beyond it, a
+read-only root, and no network but Postgres. Before a rollback to a SHA from
+before `ems-ml` existed, run `sudo bms-ctl ml stop`.
+
 ## Toolchain
 
 Managed with [uv](https://docs.astral.sh/uv/) at the version that wrote

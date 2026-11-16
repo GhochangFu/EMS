@@ -391,6 +391,9 @@ PR 4 CPU and memory measurement that settles ruling 5.
   of ruling 5's 300 s, and no run came near the 2 GB limit, so **Chronos-2
   ships** at the revision above. The demo host is arm64 (Graviton), not
   measured here; plan PR 5 reads its first cycles' `duration_seconds` from
-  the `cycle_summary` line and records them below. The image is 2.83 GB
+  the `cycle_summary` line and records them below. For the first host's
+  limits (plan PR 5), Chronos-2 at `--cpus 1 --memory 1g`, read-only and
+  without capabilities, 21 series: 80–149 s, peak 522 MB, three runs; the
+  demo host runs it at one of its two vCPUs and 1 GiB. The image is 2.83 GB
   unpacked (amd64), above the 1–2 GB estimate in *Consequences*: PyTorch
   CPU, transformers and pandas, plus the 478 MB of weights.
