@@ -28,6 +28,8 @@ export function useAssetHistory(
   assetId: string,
   pointKeys: readonly string[],
   range: HistoryRange,
+  /** `E1.4a`: re-read every `refetchMs` (a live preset beside a forecast); `false`, the default, never. */
+  refetchMs: number | false = false,
 ): AssetHistorySeries[] {
   // The range without its point list: adding a point must not move `now` for the others.
   const rangeKey = rangeToSearch({ ...range, points: [] }).toString();
@@ -49,6 +51,7 @@ export function useAssetHistory(
             bucketFunction: range.fn,
             bucketStats: true,
           }),
+        refetchInterval: refetchMs,
         retry: retryUnlessForbidden,
       };
     }),

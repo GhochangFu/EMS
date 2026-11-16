@@ -1,12 +1,18 @@
 import { describe, it } from "vitest";
 
 import {
+  aForecastAddsThreeSeriesTheLegendAndTheNowLine,
+  aPastWindowDrawsNoForecast,
+  aRefusedThirdUnitGetsNoForecast,
+  aShortWindowClipsTheForecast,
   aSecondUnitGetsASecondAxis,
   compareSeriesAreDashedAndShifted,
   noCompareMeansNoDashedSeries,
+  noForecastKeepsTheWindowAndDrawsNoNowLine,
   oneUnitKeepsOneAxis,
   theSeriesTypeComesFromTheCatalog,
   theXAxisIsTheRequestedWindow,
+  twoForecastsAreNamedByPoint,
 } from "./asset-history-chart-option.spec";
 
 /** Vitest entry point (ADR 0014). */
@@ -28,5 +34,23 @@ describe("F4.297 asset history chart option", () => {
   });
   it("keeps one axis for one unit", () => {
     oneUnitKeepsOneAxis();
+  });
+  it("E1.4a a forecast adds three series, the legend and the now line, and moves the axis past to", () => {
+    aForecastAddsThreeSeriesTheLegendAndTheNowLine();
+  });
+  it("E1.4a no forecast keeps the window and draws no now line", () => {
+    noForecastKeepsTheWindowAndDrawsNoNowLine();
+  });
+  it("E1.4a a window that ended over an hour before asOf draws no forecast", () => {
+    aPastWindowDrawsNoForecast();
+  });
+  it("E1.4a a point refused a third axis gets no forecast", () => {
+    aRefusedThirdUnitGetsNoForecast();
+  });
+  it("E1.4a two forecasts are named by point", () => {
+    twoForecastsAreNamedByPoint();
+  });
+  it("E1.4a a short window clips the forecast to the axis plus one bucket", () => {
+    aShortWindowClipsTheForecast();
   });
 });

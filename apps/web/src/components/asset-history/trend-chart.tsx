@@ -2,11 +2,13 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import { useMemo } from "react";
 
-import type { PointAggregateResponse } from "@bms/shared";
+import type { PointAggregateResponse, PointForecast } from "@bms/shared";
 
 import { buildHistoryChartOption } from "../../lib/asset-history-chart-option";
 import { useChartTheme } from "../../lib/chart-theme";
+import { forecastIsLive } from "../../lib/forecast-series";
 import { formatBucketWidth } from "../../lib/widget-value";
+import { ForecastCaption } from "../forecast-caption";
 import { SectionCard } from "../section-card";
 import { formatInZone, timeAxisLabel, type SiteZone } from "./history-format";
 
@@ -16,6 +18,8 @@ export interface TrendSeries {
   readonly pointKey: string;
   readonly unit: string | null;
   readonly data: PointAggregateResponse;
+  /** `E1.4a`: the point's current forecast, or `null`/absent. */
+  readonly forecast?: PointForecast | null;
 }
 
 type TrendChartProps = {
@@ -27,6 +31,8 @@ type TrendChartProps = {
   chartedCount: number;
   compare: boolean;
   siteZone: SiteZone;
+  /** `E1.4a`: the forecast reads' server instant (ISO); `null`/absent draws no forecast. */
+  forecastAsOf?: string | null;
 };
 
 /** True when a compare was asked and no series has a single previous-period value. */
@@ -40,10 +46,19 @@ export function previousPeriodIsEmpty(series: readonly TrendSeries[]): boolean {
  * 1.4), the window ends and the zone they are in (decision 1.9). The x axis labels are formatted
  * in the site zone, never the browser's. A compare whose previous period has no value says so
  * (ruling 4.6) rather than drawing an empty dashed line silently.
+ *
+ * `E1.4a` (ADR 0135 Amendment 3 R-d, C2): a series with a forecast draws its band and p50 when the
+ * window is live by the server's `forecastAsOf`, and the x axis then ends where the built option
+ * says — not at `to`, or the forecast would be clipped off. One caption line per drawn forecast.
  */
-export function TrendChart({ series, chartedCount, compare, siteZone }: TrendChartProps) {
+export function TrendChart({ series, chartedCount, compare, siteZone, forecastAsOf = null }: TrendChartProps) {
   const { roles, theme } = useChartTheme();
   const first = series[0]?.data;
+  const asOfMs = forecastAsOf === null ? null : Date.parse(forecastAsOf);
+  const live = first !== undefined && forecastIsLive(Date.parse(first.to), asOfMs);
+  // `?.` on `buckets` too: production passes a drifted payload through, and a throw here would take
+  // the page down for an advisory overlay.
+  const forecasting = live ? series.filter((s) => (s.forecast?.buckets?.length ?? 0) > 0) : [];
 
   const option = useMemo<EChartsOption | null>(() => {
     if (first === undefined) {
@@ -59,20 +74,23 @@ export function TrendChart({ series, chartedCount, compare, siteZone }: TrendCha
         unit: s.unit,
         buckets: s.data.buckets ?? [],
         compareBuckets: s.data.compare?.buckets ?? null,
+        forecast: s.forecast?.buckets ?? null,
       })),
       compare: compare ? { spanMs: to - from } : null,
       roles,
+      asOf: asOfMs,
     });
+    const built = base.xAxis as { readonly max?: number } | undefined;
     return {
       ...base,
       xAxis: {
         type: "time",
         min: from,
-        max: to,
+        max: built?.max ?? to,
         axisLabel: timeAxisLabel(siteZone.zone),
       },
     };
-  }, [first, series, compare, roles, siteZone.zone]);
+  }, [first, series, compare, roles, siteZone.zone, asOfMs]);
 
   if (first === undefined || option === null) {
     return (
@@ -110,6 +128,19 @@ export function TrendChart({ series, chartedCount, compare, siteZone }: TrendCha
           </dd>
         </div>
       </dl>
+      {forecastAsOf === null
+        ? null
+        : forecasting.map((s) =>
+            s.forecast ? (
+              <ForecastCaption
+                key={s.pointKey}
+                forecast={s.forecast}
+                asOf={forecastAsOf}
+                zone={siteZone.zone}
+                pointKey={forecasting.length > 1 ? s.pointKey : null}
+              />
+            ) : null,
+          )}
       {compare && previousPeriodIsEmpty(series) ? (
         <p className="mt-1 text-xs text-ink-muted" data-testid="history-no-previous">
           {NO_PREVIOUS_SENTENCE}
