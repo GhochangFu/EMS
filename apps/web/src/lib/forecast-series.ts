@@ -215,4 +215,3 @@ export function pastForecastSeries(args: {
     },
   ];
 }
-

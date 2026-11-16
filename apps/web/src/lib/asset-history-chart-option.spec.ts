@@ -222,3 +222,18 @@ export function noPastForecastAddsNothing(): void {
   expect(build([kw, volts, third], null, null).series.map((s) => s.name)).toEqual(["kw", "v"]);
 }
 
+/**
+ * Ruling 2 holds with several points: the past lines take the chart's spare series roles, which
+ * no actual line uses, so no past line ever shares a colour with an actual one (compliance review:
+ * the six-colour actual palette wraps).
+ */
+export function pastColoursNeverMatchAnActualColour(): void {
+  const points = ["a", "b", "c", "d"].map((name) => ({ ...kwPast, name }));
+  const option = build(points, null, null);
+  const actual = option.series.filter((s) => !s.name.startsWith("Past forecast")).map((s) => s.itemStyle?.color);
+  const past = option.series.filter((s) => s.name.startsWith("Past forecast")).map((s) => s.itemStyle?.color);
+  expect(past).toHaveLength(4);
+  expect(past.filter((c) => actual.includes(c))).toEqual([]);
+  expect(new Set(past).size).toBe(4);
+}
+

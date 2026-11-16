@@ -3,7 +3,7 @@ import type { EChartsOption } from "echarts";
 import type { ForecastBucket, PastForecastBucket, PointAggregateBucket } from "@bms/shared";
 
 import { axisForUnit, shiftCompareBuckets } from "./asset-history-range";
-import { seriesPalette } from "./chart-theme";
+import { pastForecastPalette, seriesPalette } from "./chart-theme";
 import {
   clipForecastToAxis,
   forecastAxisMax,
@@ -47,8 +47,8 @@ export interface HistorySeriesInput {
  *
  * **`E1.4e` (ADR 0135 Amendment 4).** A series that carries a `pastForecast` adds one dashed line:
  * the forecast made 1 h ahead of each past hour. Unlike the live forecast it is drawn on any
- * window, a past one included, and in the next palette colour after the plotted actual lines, so
- * it never shares a colour with one.
+ * window, a past one included, in a colour from the chart's spare series roles
+ * (`pastForecastPalette`), so it never shares a colour with an actual line.
  */
 export function buildHistoryChartOption(args: {
   readonly from: number;
@@ -143,11 +143,12 @@ export function buildHistoryChartOption(args: {
             : line,
         );
   const pasting = plotted.filter(({ input }) => (input.pastForecast?.length ?? 0) > 0);
+  const pastPalette = pastForecastPalette(roles);
   const pastName = (input: HistorySeriesInput) => pastForecastName(pasting.length > 1 ? input.name : null);
   const pastLines = pasting.flatMap(({ input, axis }, index) =>
     pastForecastSeries({
       buckets: input.pastForecast ?? [],
-      colour: palette[(plotted.length + index) % palette.length],
+      colour: pastPalette[index % pastPalette.length],
       yAxisIndex: axis,
       name: pastName(input),
     }),

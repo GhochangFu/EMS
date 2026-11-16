@@ -16,6 +16,7 @@ import {
   aPastForecastIsADashedLineInAColourNoActualLineUses,
   aPastWindowStillDrawsThePastForecast,
   noPastForecastAddsNothing,
+  pastColoursNeverMatchAnActualColour,
   twoPastForecastsAreNamedByPointInTheirOwnColours,
 } from "./asset-history-chart-option.spec";
 
@@ -68,5 +69,8 @@ describe("F4.297 asset history chart option", () => {
   });
   it("E1.4e no past forecast adds nothing", () => {
     noPastForecastAddsNothing();
+  });
+  it("E1.4e past colours never match an actual colour", () => {
+    pastColoursNeverMatchAnActualColour();
   });
 });
