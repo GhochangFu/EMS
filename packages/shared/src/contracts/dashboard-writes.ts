@@ -486,6 +486,14 @@ const bindsNothingArm = <T extends z.infer<typeof widgetTypeSchema>, C extends z
     .strict();
 
 /**
+ * One write arm of a widget that binds one point through `dashboard_widget_points` and no source
+ * (`E1.4c`, `E1.2d`): `points` and `sources` are `{1, 1}` and `{0, 0}` in the shared cardinality
+ * records, and the config is the shared one, `.strict()`. The same shape as `bindsNothingArm` —
+ * only the records differ — so it is that helper under the name its callers mean.
+ */
+const onePointArm = bindsNothingArm;
+
+/**
  * The arms, one per widget type (fourteen since `E1.4c`). Each stays a plain `.strict()` `ZodObject` — never
  * wrapped in its own `.refine()`/`.superRefine()` — because `z.discriminatedUnion` accepts only
  * `ZodObject` arms; the cross-widget grid-fit check lives on the ARRAY field in
@@ -574,15 +582,7 @@ export const widgetWriteSchema = z.discriminatedUnion("widgetType", [
   // `E1.4c` / ADR 0135 Amendment 3 C1 — the forecast widget binds exactly one point (`{1, 1}`)
   // and no source; its config is `{}` (plan R11). The point is a `dashboard_widget_points` row, so
   // `assertBoundPointsInOrganization` and the cascade already hold it.
-  z
-    .object({
-      ...widgetIdentityWriteFields,
-      widgetType: z.literal("forecast"),
-      config: forecastWidgetConfigSchema.strict(),
-      points: pointsFieldFor("forecast"),
-      sources: sourcesFieldFor("forecast"),
-    })
-    .strict(),
+  onePointArm("forecast", forecastWidgetConfigSchema),
 ]);
 
 const eachWidgetFitsTheGrid = (
