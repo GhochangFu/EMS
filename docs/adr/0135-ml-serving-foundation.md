@@ -1079,7 +1079,7 @@ peak are recorded here after the deploy.
 #1372, #1373 and #1374 (plan build record §20). Two calls made in the build,
 recorded so a reader does not take them for drift:
 - **The `anomaly` widget is exempt from ADR 0133 Amendment 2's kW-only hiding**
-  on the site page *(drafter, E1.2d code review; open to the owner's veto)*.
+  on the site page *(drafter, E1.2d code review; **kept by the owner, 2026-11-16**, in chat: "keep the exception")*.
   Its one point only names the asset (plan R16) and it draws a unitless score,
   so "never had fresh data to show" does not apply to it.
 - **The widget's time axis is UTC and says so**: the anomaly read carries no
