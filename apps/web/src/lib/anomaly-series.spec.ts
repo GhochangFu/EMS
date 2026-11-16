@@ -62,6 +62,8 @@ export function theLineIsInclusive(): void {
   const to = Date.parse(T2);
   const hours = unusualHours([score(T0, "baseline_mad", 0.99), score(T1, "baseline_mad", 0.9899)], from, to);
   expect(hours.map((h) => h.t)).toEqual([T0]);
+  // The detector filter is `>=` too: an hour at exactly 0.99 names its detector.
+  expect(hours[0].detectors).toEqual(["baseline_mad"]);
 }
 
 /** An hour outside `[from, to]` is dropped; the ends are inside. */

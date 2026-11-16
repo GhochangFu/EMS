@@ -25,8 +25,8 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 /** 15-minute actual buckets over the window. */
 const BUCKETS: PointAggregateBucket[] = Array.from({ length: 24 }, (_, i) => ({ t: iso(FROM + i * 15 * 60_000), v: 20 + i }));
 const SCORES: AnomalyScore[] = [
-  { t: iso(FROM + 2 * HOUR), detector: "baseline_mad", score: 0.9912, contributingPoints: ["kw"] },
-  { t: iso(FROM + 2 * HOUR), detector: "isolation_forest", score: 0.9987, contributingPoints: ["kw", "pf"] },
+  { t: iso(FROM + 2 * HOUR), detector: "baseline_mad", score: 0.9912, contributingPoints: ["pf"] },
+  { t: iso(FROM + 2 * HOUR), detector: "isolation_forest", score: 0.9987, contributingPoints: ["pf", "kvar"] },
 ];
 
 /** jsdom has no canvas: ECharts measures label text through this instead. */
@@ -80,7 +80,7 @@ export function theMarkJoinsOnlyItsHoursTooltip(): void {
     FROM + 4 * HOUR,
   ]);
   expect(atHour?.names).toEqual(["kw", ANOMALY_MARK_NAME]);
-  expect(atHour?.text).toContain("score 0.9987 · Baseline, Isolation Forest · kw, pf");
+  expect(atHour?.text).toContain("score 0.9987 · Baseline, Isolation Forest · pf, kvar");
   expect(nearHour?.names).toEqual(["kw", ANOMALY_MARK_NAME]);
   expect(quarterPast?.names).toEqual(["kw"]);
   expect(otherHour?.names).toEqual(["kw"]);

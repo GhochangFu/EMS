@@ -20,7 +20,7 @@ import { CHART_SERIES } from "./widget-catalog";
 export const ANOMALY_MARK_NAME = "Unusual hour (advisory)";
 
 /** What a mark is, under the chart, shown only when at least one mark is drawn. */
-export const ANOMALY_CAPTION = "Unusual hours: anomaly score 0.99 or above · advisory";
+export const ANOMALY_CAPTION = `Unusual hours: anomaly score ${ANOMALY_UNUSUAL_SCORE} or above · advisory`;
 
 const HOUR_MS = 3_600_000;
 const MAX_SPAN_MS = ANOMALY_MAX_SPAN_DAYS * 24 * HOUR_MS;
