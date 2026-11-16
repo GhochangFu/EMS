@@ -786,3 +786,202 @@ drawn beside `max`, past colours that wrap into the actual palette) each turned
 cases red. The demo-host check (the line on a real point after deploy) follows
 the deploy.
 
+
+## Amendment 5 — `E1.2`: advisory anomaly scores, end to end (2026-11-16)
+
+**Status: Proposed — 2026-11-16.** Drafted by an agent for backlog row `E1.2`.
+Lines marked *(owner, 2026-11-16)* are the owner's answers to five questions
+asked in chat that day; three were the option the agent recommended, and
+questions 1 and 4 took the wider option. Lines marked *(drafter)* are
+the agent's calls inside those answers; each is open to veto when the owner
+accepts.
+
+**What stays.** Decision 5 stays as written: a robust baseline (median/MAD per
+point) plus an Isolation Forest (scikit-learn) over an asset's points
+together, and the scores are **advisory**. No score writes a row in
+`bms.alarms`, sends a notification, or opens a work order. Routing into alarms
+still needs its own amendment, after the owner has looked at real scores.
+Amendment 1 decision 3 stays: a gap is data, not an anomaly. Amendment 2
+item 4 stays: `ml.anomaly_scores` is keyed `(asset_id, bucket, detector,
+model_run_id)` and a row is never rewritten.
+
+**What changes.** `apps/ml` writes `ml.anomaly_scores`; the API reads it;
+three screens draw it. This amendment adds **one Python package**
+(`scikit-learn`, already in the *Dependencies* first-package list) and **no**
+npm package. It needs two migrations: a grant and a widget kind.
+
+**Owner rulings (2026-11-16):**
+
+1. **First points** *(owner, 2026-11-16: "PHEWB + WBLDC + RTU health")*.
+   Real points only (step 0's rule, the same predicate as forecasting). An
+   asset is scored only when each of its scored points itself meets the
+   anomaly threshold: 28 days and 80 % hourly coverage (`ANOMALY_MIN_DAYS`,
+   `MIN_COVERAGE`), and fresh within 3 h. Amendment 1 decision 2's per-room
+   rule applies to every class here.
+
+   | Class (`domain/asset_type`) | Points scored | Assets now |
+   |---|---|---|
+   | `electrical/energy_meter` (PHEWB) | the 15 meter points; **not** `kwh_total`, a counter that only climbs *(drafter)* | 5 |
+   | `electrical/pump_breaker` (PHEWB) | `breaker_main` (Amendment 2 item 2) | 5 |
+   | `electrical/chlorine_pump` (PHEWB) | `chlorine_pump_on` (Amendment 2 item 2) | 5 |
+   | `environment/rtu_health` (PHEWB) | `battery_charge_pct`, `network_strength`, `controller_power_status` | 5 |
+   | `facility/cold_room` (WBLDC) | `cold_room_temp_c` | 18 (VAP_Blast_Freezer_2 waits by itself) |
+
+   The list is class-keyed, as `ML_FORECAST_TARGETS` is: a new asset of a
+   listed class joins by itself when its own history passes. A **new class**
+   (for example BCPL flow meters, which pass 28 days around 2026-12-06) needs
+   its own amendment. RTU health scores a value (a low battery, a weak
+   signal); a **missing** value stays device health's (`F3.16`), as
+   Amendment 1 decision 3 says. An on/off point is scored on its hourly mean,
+   which is the fraction of the hour it was on *(drafter)*.
+
+2. **Where the Isolation Forest runs** *(owner, 2026-11-16)*. The baseline
+   scores **every** scored point. The Isolation Forest runs only on an asset
+   with **two or more** scored points (today the 5 meters and the 5 RTU
+   health assets). An asset with one point gets the baseline only: an
+   Isolation Forest over one feature adds nothing to it. Each asset is fitted
+   on its own points; nothing is pooled across assets or sites.
+
+3. **How a score is made** *(owner, 2026-11-16: percentile, 0.99)*.
+   - **Fitted every cycle, in memory, from the database.** No fitted model is
+     stored: there is no model file, no pickle and no volume. The fit is
+     deterministic (a fixed `random_state`), and the hyper-parameters go into
+     the run's `config_hash`, so one run can be reproduced from its inputs.
+     Decision 7's "no download at run time" holds: scikit-learn has no
+     weights.
+   - **The scored hour** is the last complete hour, `as_of_hour − 1 h`
+     *(drafter)*. The feature of a point for an hour is its `_1h` mean
+     (`sum / count`). An hour where a point has no data is not scored for
+     that point, and an Isolation Forest hour needs all of the asset's
+     points; a gap is never filled (R10).
+   - **The reference window** is the 28 days (672 h) before the scored hour.
+     The Isolation Forest is fitted on it, and both detectors' percentiles
+     are taken against it.
+   - **The baseline slot.** Per point, the median and MAD are taken per
+     **hour of day** (UTC). A point moves to **hour of week** only when every
+     one of its 168 slots holds at least 8 samples. For that test, and only
+     for the median/MAD, the baseline may read up to 91 days back
+     *(drafter: 28 days give 4 samples per hour-of-week slot, which is too
+     few)*. The MAD has a floor, so a flat or on/off point does not divide by
+     zero *(drafter; the exact floor is the plan's)*.
+   - **The score** of a detector for an hour is its **percentile against the
+     reference window**: the share of the window's hours whose statistic is
+     at or below this hour's. The baseline's statistic is the largest robust
+     z over the asset's points; the Isolation Forest's is its
+     `score_samples` value, negated so that higher means more unusual. So
+     every score is in 0..1 and the two detectors share one scale.
+   - **"Unusual"** means a score **≥ 0.99**. By construction that is about
+     1 % of normal hours, about 7 hours a month per asset. It is a shared
+     constant (`ANOMALY_UNUSUAL_SCORE`), applied at read time: the scorer
+     writes **every** scored hour, so the chart and the widget can draw the
+     score line, not only the marks.
+   - **Contributing points** are the up to 3 points with the largest robust
+     z in that hour, on both detectors' rows *(drafter)*. The Isolation
+     Forest has no per-point attribution of its own; the baseline gives the
+     explanation per point that decision 5 asks for.
+   - **Detectors** (the `detector` column): `baseline_mad` and
+     `isolation_forest` *(drafter)*.
+
+4. **Three surfaces** *(owner, 2026-11-16: "List + chart + widget")*. The
+   mockups have no anomaly screen, so each keeps the existing language
+   (AGENTS.md §5), as Amendment 3's surfaces do.
+   - (a) An **Anomalies** list page, route `/anomalies`, in *Operations*
+     after *Forecasts*, with a Lucide key in `NAV_ICONS` that no other item
+     uses, for every signed-in user; the API filters the rows. A
+     `SectionCard` table of the unusual hours in the last 7 days *(drafter)*:
+     *Site · Asset · Hour · Score · Detector · Top points · Status* (an
+     *Advisory* pill). A row links to `/asset-history/:assetId` at that hour.
+   - (b) **Marks on the asset history chart** at each unusual hour of the
+     charted asset, with the score and the contributing points in the
+     tooltip. They are drawn beside the hourly mean (`avg`) only, as the
+     forecast is (R-d).
+   - (c) An **`anomaly` dashboard widget kind**: the asset's hourly score
+     (the larger of the two detectors) over the last 7 days, with the 0.99
+     line and the unusual hours marked *(drafter)*. It binds **one point**
+     through `bms.dashboard_widget_points`, and the asset is that point's
+     (Amendment 3 C1, ADR 0047 decision 3). Its migration widens
+     `dashboard_widgets_widget_type_check` as `0159` did. Builder palette
+     only; no stock template changes.
+   - Every surface says **advisory**. No anomaly reaches an alarm, a
+     notification, a report, an export or a copilot answer, and no accuracy
+     figure is shown.
+
+5. **The budget** *(owner, 2026-11-16)*. The anomaly job runs in the
+   **existing `ml` service**, in the same HH:05 cycle, in **its own child
+   process after the forecast** child, so the two peaks never add. The demo
+   host's limit stays **1 vCPU, 1 GiB** (Amendment 2 item 1). The parent
+   still imports neither torch nor scikit-learn. The plan measures one cycle
+   at `--cpus 1 --memory 1g`; if the anomaly child peaks above **900 MiB**,
+   or a whole cycle takes more than **300 s**, the build stops and the owner
+   rules again. No new compose service, so `DISCOVERY_BLOCKED_HOSTNAMES` does
+   not change.
+
+**Recommended calls** *(drafter; veto at acceptance)*:
+
+- **A-a. One run row per organization per job.** An anomaly run is its own
+  `ml.model_runs` row, `model_name = 'bms-anomaly'`, `model_version` = the
+  `bms-ml` and `scikit-learn` versions. The ledger skips a scored hour when a
+  succeeded `bms-anomaly` run already holds that bucket, unless `--force`.
+  The forecast reads join `ml.forecasts` by run id, so an anomaly run (no
+  forecast rows) never reads as a forecast; the plan proves it with a test.
+- **A-b. SQL stays in `db/sql.py`.** The new statements are a `SELECT` on the
+  inputs and an `INSERT INTO ml.anomaly_scores`; the SQL guard and
+  `PREFLIGHT_ROLE_SQL` gain the table's `INSERT` check. `organization_id`
+  comes from `bms.assets` in SQL (R5). The owed `bms_ml` role stays owed.
+- **A-c. Configuration.** `ML_ANOMALY_TARGETS`, the same
+  `domain/asset_type/point_key` shape as `ML_FORECAST_TARGETS`, defaulting to
+  ruling 1's list. `ML_ANOMALY_ENABLED` (default on) lets the operator stop
+  the job without stopping forecasts.
+- **A-d. The grant.** `bms_tenant` gets `SELECT` on `ml.anomaly_scores`,
+  nothing else. No write anywhere in `ml`; `bms_auth` gets nothing. The
+  migration moves the marker to `bms-ml-schema-version=3` and proves itself
+  in a `DO $$` block, as `0158` does (Amendment 3 S5). The tests that assert
+  "`bms_tenant` holds nothing on `ml.anomaly_scores`" change with it.
+- **A-e. The API.** Two `GET` routes in `apps/api/src/ml/`, the same guards
+  and pools as the forecast routes (S1, S2, S4):
+  - `GET /ml/assets/:assetId/anomalies?from=&to=` — one asset's scores
+    (hour, detector, score, contributing points) in a window of at most 31
+    days. UUID check (400), `canReadAsset` (403), then `withReadScope`.
+  - `GET /ml/anomalies?since=` — the unusual hours (score ≥ 0.99) of every
+    asset the caller can read, at most the last 7 days, newest first, with
+    the site, its IANA time zone and the asset label (`assetLabelOf`).
+    `readableAssetIds` is applied on **both** branches (S1).
+  - Only the hour, detector, score, contributing points, model name and
+    version reach the wire; never `error_text` or `config_hash` (S3). Each
+    read is bounded by the window and served by `anomaly_scores_pkey` or
+    `anomaly_scores_model_run_idx`; the plan shows `EXPLAIN` for both and
+    adds an index to the grant migration only if it shows a need.
+  - Contracts in `packages/shared/src/contracts/ml-anomalies.ts`, types by
+    `z.infer` (ADR 0030).
+- **A-f. Volume.** Two detectors at most per asset per hour: about 38 assets
+  × 24 × 365 × 2 ≈ **0.7 M rows a year**, far under Amendment 2 item 7's
+  50 M line. Retention follows `_1h`, as decision 4 says.
+- **A-g. The lock step.** `uv add scikit-learn` from Bash, with this ADR's
+  build record staged in the same commit (§9.4, the dependency gate). Its
+  transitive packages (`scipy`, `joblib`, `threadpoolctl`, all BSD-3-Clause)
+  and exact pins go into the build record. A cloud session cannot reach the
+  PyTorch wheel index; if the lock needs it, the owner allows
+  `download.pytorch.org` for the session or runs the step on their machine
+  (Amendment 2 item 6).
+- **A-h. The row splits into four children**, serial:
+
+  | Child | Scope | Depends |
+  |---|---|---|
+  | `E1.2a` | `apps/ml`: scikit-learn, the two detectors, the anomaly child process, the ledger, the measurement of ruling 5 | `E1.1` |
+  | `E1.2b` | The grant migration, contracts, both API routes, surface (b) | `E1.2a` |
+  | `E1.2c` | Surface (a), the Anomalies page and its navigation item | `E1.2b` |
+  | `E1.2d` | Surface (c), the `anomaly` widget kind and its migration | `E1.2b` |
+
+  The `E1.2` umbrella closes when all four are done. `E2.3` and `E1.6` keep
+  their edge on the umbrella.
+
+**Not in this amendment:** alarms, notifications or work orders from a score;
+a new asset class (BCPL flow meters included); per-station or cross-asset
+models; a stored or versioned fitted model (MLflow stays deferred, decision
+7); anomaly scores in exports, reports or the copilot; an accuracy or
+precision figure; the owed `bms_ml` role; a change to the demo host's
+1 vCPU / 1 GiB limit.
+
+**Consequences.** After the build, AGENTS.md §3 *Layout* (`src/ml/` routes)
+and §5 (the *Anomalies* item) are caught up through a `chore(agents):` PR
+(§9.10), queued in BACKLOG §5. This is not a §6 promotion.
