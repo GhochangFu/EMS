@@ -5,6 +5,7 @@ import { encodePointRef, FORECAST_WIDGET_ACTUAL_HOURS } from "@bms/shared";
 import type { DashboardWidgetDto } from "@bms/shared";
 
 import { fetchPointAggregate } from "../../api/telemetry";
+import { usePastForecasts } from "../../hooks/use-past-forecasts";
 import { forecastRefetchMs, usePointForecasts } from "../../hooks/use-point-forecasts";
 import { hourlyMeans } from "../../lib/forecast-hourly";
 import type { WidgetStatus } from "../../lib/widget-catalog";
@@ -49,6 +50,15 @@ export function ForecastWidgetLive({ widget }: ForecastWidgetLiveProps) {
 
   const data = aggregate.data;
   const forecast = forecastRead?.data ?? null;
+  // `E1.4e` (ADR 0135 Amendment 4 ruling 4): the forecast made 1 h ahead of each past hour, over
+  // the window the actual read was served.
+  const [pastRead] = usePastForecasts(
+    point?.assetId ?? "",
+    point === null ? [] : [point.pointKey],
+    data === undefined ? null : { from: data.from, to: data.to },
+    point !== null,
+  );
+  const pastForecast = pastRead?.buckets ?? null;
   const read = useMemo<ForecastWidgetRead | null>(
     () =>
       data === undefined
@@ -59,8 +69,9 @@ export function ForecastWidgetLive({ widget }: ForecastWidgetLiveProps) {
             actual: hourlyMeans(data.buckets ?? [], Date.parse(data.from), Date.parse(data.to)),
             forecast,
             zone: siteZoneOf(data.timeZone).zone,
+            pastForecast,
           },
-    [data, forecast],
+    [data, forecast, pastForecast],
   );
 
   const forbidden = isForbidden(aggregate.error);

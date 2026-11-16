@@ -23,7 +23,8 @@ interface Shape {
     readonly name: string;
     readonly type: string;
     readonly yAxisIndex: number;
-    readonly lineStyle?: { readonly type?: string };
+    readonly itemStyle?: { readonly color?: string };
+    readonly lineStyle?: { readonly type?: string; readonly color?: string };
     readonly markLine?: { readonly data?: readonly { readonly xAxis?: number }[] };
     readonly data: readonly [string, number | null][];
   }[];
@@ -172,3 +173,67 @@ export function aShortWindowClipsTheForecast(): void {
   // Buckets at TO and TO + 1 h: the first is inside the axis, the second the one kept past it.
   expect(p50?.data.map(([t]) => t)).toEqual([new Date(TO).toISOString(), new Date(TO + HOUR).toISOString()]);
 }
+
+const PAST = [
+  { t: "2026-10-31T00:00:00.000Z", p50: 1.5 },
+  { t: "2026-10-31T01:00:00.000Z", p50: 2.5 },
+];
+const kwPast: HistorySeriesInput = { ...kw, compareBuckets: null, pastForecast: PAST };
+
+/**
+ * `E1.4e` (ADR 0135 Amendment 4 rulings 1–2): the past forecast is a dashed line in a colour no
+ * actual line uses, listed in the legend after the actual lines, on the actual's axis.
+ */
+export function aPastForecastIsADashedLineInAColourNoActualLineUses(): void {
+  const option = build([kwPast, volts], null, AS_OF);
+  const actualColours = option.series.filter((s) => s.name === "kw" || s.name === "v").map((s) => s.itemStyle?.color);
+  const past = option.series.find((s) => s.name === "Past forecast (1 h ahead)");
+  expect(past?.lineStyle?.type).toBe("dashed");
+  expect(past?.yAxisIndex).toBe(0);
+  expect(actualColours).not.toContain(past?.itemStyle?.color);
+  expect(past?.data).toEqual([
+    ["2026-10-31T00:00:00.000Z", 1.5],
+    ["2026-10-31T01:00:00.000Z", 2.5],
+  ]);
+  expect(legendNames(option)).toEqual(["kw", "v", "Past forecast (1 h ahead)"]);
+}
+
+/** Unlike the live forecast, the past one is drawn on a window that ended in the past (Amendment 4). */
+export function aPastWindowStillDrawsThePastForecast(): void {
+  for (const asOf of [null, TO + 5 * HOUR]) {
+    const option = build([kwPast], null, asOf);
+    expect(option.series.map((s) => s.name)).toEqual(["kw", "Past forecast (1 h ahead)"]);
+    expect(option.xAxis.max).toBe(TO);
+  }
+}
+
+/** Two points with a past forecast: each is named by point and has its own colour. */
+export function twoPastForecastsAreNamedByPointInTheirOwnColours(): void {
+  const option = build([kwPast, { ...kwPast, name: "kw2" }], null, null);
+  const pasts = option.series.filter((s) => s.name.startsWith("Past forecast"));
+  expect(pasts.map((s) => s.name)).toEqual(["Past forecast (1 h ahead) · kw", "Past forecast (1 h ahead) · kw2"]);
+  expect(new Set(pasts.map((s) => s.itemStyle?.color)).size).toBe(2);
+}
+
+/** No past forecast, or an empty one, adds nothing; a point refused an axis gets none. */
+export function noPastForecastAddsNothing(): void {
+  expect(build([{ ...kw, pastForecast: [] }], null, null).series.map((s) => s.name)).toEqual(["kw"]);
+  const third: HistorySeriesInput = { name: "pf", unit: "PF", buckets: [], pastForecast: PAST };
+  expect(build([kw, volts, third], null, null).series.map((s) => s.name)).toEqual(["kw", "v"]);
+}
+
+/**
+ * Ruling 2 holds with several points: the past lines take the chart's spare series roles, which
+ * no actual line uses, so no past line ever shares a colour with an actual one (compliance review:
+ * the six-colour actual palette wraps).
+ */
+export function pastColoursNeverMatchAnActualColour(): void {
+  const points = ["a", "b", "c", "d"].map((name) => ({ ...kwPast, name }));
+  const option = build(points, null, null);
+  const actual = option.series.filter((s) => !s.name.startsWith("Past forecast")).map((s) => s.itemStyle?.color);
+  const past = option.series.filter((s) => s.name.startsWith("Past forecast")).map((s) => s.itemStyle?.color);
+  expect(past).toHaveLength(4);
+  expect(past.filter((c) => actual.includes(c))).toEqual([]);
+  expect(new Set(past).size).toBe(4);
+}
+

@@ -16,6 +16,12 @@ import {
   liveWindowRefetchMs,
   forecastSeries,
   modelLabel,
+  PAST_FORECAST_CAPTION,
+  PAST_FORECAST_NAME,
+  pastForecastApplies,
+  pastForecastName,
+  pastForecastSeries,
+  pastForecastWindow,
 } from "./forecast-series";
 
 /**
@@ -163,3 +169,81 @@ export function theBandsLegendEntryIsAShadedSwatch(): void {
     { name: "Forecast p10–p90", icon: "roundRect", itemStyle: { color: "rgba(10, 20, 30, 0.36)" } },
   ]);
 }
+
+/**
+ * `E1.4e` (ADR 0135 Amendment 4 ruling 2): the past forecast is one dashed p50 line in the colour
+ * it is given. An hour the API left out (no forecast made 1 h ahead) is a `null`, so ECharts
+ * breaks the line there instead of joining across the gap.
+ */
+export function thePastForecastIsADashedLineThatBreaksAtAMissingHour(): void {
+  const [line] = pastForecastSeries({
+    buckets: [
+      { t: "2026-10-31T00:00:00.000Z", p50: 1 },
+      { t: "2026-10-31T01:00:00.000Z", p50: 2 },
+      { t: "2026-10-31T03:00:00.000Z", p50: 4 },
+    ],
+    colour: "#123456",
+    yAxisIndex: 1,
+    name: PAST_FORECAST_NAME,
+  });
+  expect(line).toMatchObject({
+    name: "Past forecast (1 h ahead)",
+    yAxisIndex: 1,
+    showSymbol: false,
+    connectNulls: false,
+    itemStyle: { color: "#123456" },
+    lineStyle: { color: "#123456", type: "dashed" },
+  });
+  expect(line?.data).toEqual([
+    ["2026-10-31T00:00:00.000Z", 1],
+    ["2026-10-31T01:00:00.000Z", 2],
+    ["2026-10-31T02:00:00.000Z", null],
+    ["2026-10-31T03:00:00.000Z", 4],
+  ]);
+  expect(pastForecastSeries({ buckets: [], colour: "#123456", yAxisIndex: 0, name: "x" })).toEqual([]);
+}
+
+/** Named by point when more than one point has one (R9), and captioned without a number (ruling 3). */
+export function thePastForecastIsNamedAndCaptionedWithoutANumber(): void {
+  expect(pastForecastName(null)).toBe("Past forecast (1 h ahead)");
+  expect(pastForecastName("kw")).toBe("Past forecast (1 h ahead) · kw");
+  expect(PAST_FORECAST_CAPTION).toBe("Past forecast: made 1 h ahead of each hour · advisory");
+  expect(PAST_FORECAST_CAPTION).not.toMatch(/\d+\s*%|error|accura/i);
+}
+
+/** Beside the hourly mean only, as the live forecast; but on any window, a past custom range too. */
+export function thePastForecastAppliesBesideAvgOnAnyWindow(): void {
+  const base = { points: ["kw"], compare: false } as const;
+  expect(pastForecastApplies({ ...base, range: "24h", fn: "avg" } as HistoryRange)).toBe(true);
+  expect(
+    pastForecastApplies({
+      ...base,
+      range: "custom",
+      fn: "avg",
+      from: "2026-01-01T00:00:00.000Z",
+      to: "2026-01-02T00:00:00.000Z",
+    } as HistoryRange),
+  ).toBe(true);
+  expect(pastForecastApplies({ ...base, range: "24h", fn: "max" } as HistoryRange)).toBe(false);
+  expect(pastForecastApplies({ ...base, range: "24h", fn: "sum" } as HistoryRange)).toBe(false);
+}
+
+/**
+ * The window a past read is asked for: `from` floored and `to` raised to whole UTC hours. The
+ * server answers the same buckets for either form, and a live window's 15-minute moves stay inside
+ * one query key, so the line does not blink out on every refresh (PR #1365 code review).
+ */
+export function thePastWindowIsRoundedToWholeHours(): void {
+  expect(pastForecastWindow({ from: "2026-11-15T10:20:00.000Z", to: "2026-11-16T10:20:00.000Z" })).toEqual({
+    from: "2026-11-15T10:00:00.000Z",
+    to: "2026-11-16T11:00:00.000Z",
+  });
+  expect(pastForecastWindow({ from: "2026-11-15T10:00:00.000Z", to: "2026-11-16T10:00:00.000Z" })).toEqual({
+    from: "2026-11-15T10:00:00.000Z",
+    to: "2026-11-16T10:00:00.000Z",
+  });
+  expect(pastForecastWindow({ from: "2026-11-16T10:20:00.000Z", to: "2026-11-16T10:35:00.000Z" })).toEqual(
+    pastForecastWindow({ from: "2026-11-16T10:05:00.000Z", to: "2026-11-16T10:50:00.000Z" }),
+  );
+}
+

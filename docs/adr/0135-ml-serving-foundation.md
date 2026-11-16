@@ -696,3 +696,93 @@ scored, at the cost of one model load. `tests/test_scheduler.py` holds the
 window and the loop. Two mutations, the catch-up removed and the margin
 removed, turned 2 and 5 cases red.
 
+## Amendment 4 — `E1.4e`: the past forecast beside the actual line (2026-11-16)
+
+**Status: Accepted — 2026-11-16** (owner, in chat). Drafted by an agent for
+backlog row `E1.4e`. Lines marked *(owner, 2026-11-16)* are the owner's
+answers to four questions asked in chat that day; each was the option the
+agent recommended except ruling 4, where the owner chose the wider one. Lines
+marked *(drafter)* are the agent's calls inside those answers. The owner asked
+for the build to go straight through and merge on green CI.
+
+**Why.** After the `E1.4` demo checks the owner asked to see, on the streamed
+history chart, the actual values together with the forecast values for the
+earlier hours of whatever window is selected, in two colours. Ruling 4 of
+Amendment 3 said past forecasts are **not** drawn over the actual line,
+because that reads as an accuracy claim. This amendment reverses that one
+sentence of ruling 4 and nothing else: the live 48 h band, the "now" line, the
+stale rule and the caption stay as they are.
+
+**What changes.** One new read route and two screens draw its answer. No npm
+or Python package, no migration, no new grant (`0158` already lets
+`bms_tenant` read `ml.forecasts` and `ml.model_runs`).
+
+**Rulings.**
+
+1. **Which past forecast: the one made 1 hour ahead** *(owner, 2026-11-16)*.
+   For each whole UTC hour `t` in the window, the p50 of the forecast row for
+   bucket `t` that was issued **before `t`** and **no more than 3 hours before
+   it** (`PAST_FORECAST_MAX_LEAD_HOURS`), from a succeeded run; when several
+   qualify, the newest. With hourly runs at HH:05 that is the run scored at
+   (t−1h):05, a 55-minute lead. The 3-hour cap *(drafter)* covers a missed
+   hour; past it the hour is a **gap**, never a day-old forecast and never a
+   filled value.
+2. **How it looks: a p50 line in a second colour** *(owner, 2026-11-16)*. A
+   dashed p50 line, no band over the past. Its colour *(drafter)* comes from
+   the chart's spare series roles (`series-2` onward), which no actual line
+   uses, so a past line never shares a colour with an actual line however many
+   points are charted; with more than one charted point each past line carries
+   the point key, as the live forecast's do (R9). An hour with no forecast
+   breaks the line.
+3. **No accuracy number** *(owner, 2026-11-16)*. No error figure, score or
+   percentage anywhere. The screens still say **advisory**, and a caption names
+   what the line is: "Past forecast: made 1 h ahead of each hour · advisory".
+   *Consequences*' "accuracy claims are not made" stands for numbers.
+4. **Where: the asset history chart and the `forecast` widget** *(owner,
+   2026-11-16)*. The chart draws it over its own window; the widget over its
+   last-24-hours actual line.
+
+**Drafter choices inside the rulings.**
+
+- **Route** `GET /ml/points/:pointRef/forecast/past?from=&to=`, the same guard
+  and order as the live forecast (S2): the bounded decode (400), the query
+  (400: `from` and `to` ISO instants with an offset, `from` before `to`, at
+  most `PAST_FORECAST_MAX_SPAN_DAYS` = 366 days apart, no other key), then
+  `canReadAsset` (403), then the read through `withReadScope`. Response
+  `{ asOf, buckets: [{ t, p50 }] }` (`pastForecastResponseSchema`): buckets
+  from the hour `from` falls in, up to `to` and strictly before the current
+  hour, which the live forecast owns. Only `t` and `p50` reach the wire.
+- **When it is asked for**: beside the hourly mean (`avg`) only, as the live
+  forecast is (R7), but on **any** window, a past custom range included,
+  because the point is to look back. On a long window whose actual buckets are
+  wider than an hour, the line stays hourly beside the coarser means; ruling 4
+  asks for every window, so that is accepted. The browser asks for the window
+  rounded to whole hours, so a live window reads it again only when the hour
+  turns.
+- **The read** is one range scan of `forecasts_pkey`
+  `(asset_id, point_key, horizon_bucket, issued_at)` with `DISTINCT ON
+  (horizon_bucket)`, at most one row per hour of the window.
+
+**Not in this amendment:** an accuracy figure of any kind, a 24-hour-ahead or
+user-chosen lead, a band over the past, past forecasts on the Forecasts page,
+in exports, reports or the copilot.
+
+**Consequences.** AGENTS.md §3 says `src/ml/` serves **two** GET routes; after
+`E1.4e` it is three. A `chore(agents):` catch-up is queued in BACKLOG §5 and
+waits for the owner's yes (§9.10), as Amendment 3's did.
+
+**Build record — `E1.4e` (2026-11-16).** Built in one PR: the route (API
+half by an implementer, then the web half), tests first. The integration
+suite ran against a real Postgres: the forecast issued 30 minutes ahead wins
+over 2½ h, 4 h, one issued after the hour began and a newer failed run; an hour
+whose only forecast is 4 h ahead, or issued after it began, is absent; exactly
+3 h ahead is kept; the current hour and later never return; a second
+organization's rows never appear on the tenant branch and are filtered by asset
+on the fleet branch; the `EXPLAIN` case holds the new read to no unbound scan of
+`ml.forecasts`. Eight API mutations (the lead rule, the 3 h cap, the succeeded
+join, the newest-first order, the current-hour clip, the floor of `from`, an
+inclusive `to`, a 2 h cap) and four web mutations (a shared colour, gaps joined,
+drawn beside `max`, past colours that wrap into the actual palette) each turned
+cases red. The demo-host check (the line on a real point after deploy) follows
+the deploy.
+

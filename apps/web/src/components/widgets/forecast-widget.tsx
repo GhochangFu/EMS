@@ -2,12 +2,12 @@ import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
 import { useMemo } from "react";
 
-import type { PointForecastResponse } from "@bms/shared";
+import type { PastForecastBucket, PointForecastResponse } from "@bms/shared";
 
 import { buildHistoryChartOption } from "../../lib/asset-history-chart-option";
 import { useChartTheme } from "../../lib/chart-theme";
 import type { HourlyMean } from "../../lib/forecast-hourly";
-import { forecastIsLive } from "../../lib/forecast-series";
+import { forecastIsLive, PAST_FORECAST_CAPTION } from "../../lib/forecast-series";
 import type { WidgetStatus } from "../../lib/widget-catalog";
 import { ACCESS_SENTENCE, timeAxisLabel } from "../asset-history/history-format";
 import { ForecastCaption } from "../forecast-caption";
@@ -31,6 +31,8 @@ export type ForecastWidgetRead = {
   readonly forecast: PointForecastResponse | null;
   /** The site zone the axis and the caption format times in. */
   readonly zone: string;
+  /** `E1.4e`: the forecast made 1 h ahead of each past hour of the window; `null`/absent draws none. */
+  readonly pastForecast?: readonly PastForecastBucket[] | null;
 };
 
 type ForecastWidgetProps = {
@@ -65,7 +67,15 @@ export function ForecastWidget({ title, status, pointKey, unit, forbidden = fals
     const base = buildHistoryChartOption({
       from: read.from,
       to: read.to,
-      series: [{ name: pointKey, unit, buckets: read.actual, forecast: read.forecast?.forecast?.buckets ?? null }],
+      series: [
+        {
+          name: pointKey,
+          unit,
+          buckets: read.actual,
+          forecast: read.forecast?.forecast?.buckets ?? null,
+          pastForecast: read.pastForecast ?? null,
+        },
+      ],
       compare: null,
       roles,
       asOf: asOfMs,
@@ -98,6 +108,11 @@ export function ForecastWidget({ title, status, pointKey, unit, forbidden = fals
         )}
       </div>
       {drawn && answer?.forecast ? <ForecastCaption forecast={answer.forecast} asOf={answer.asOf} zone={read.zone} /> : null}
+      {(read.pastForecast?.length ?? 0) > 0 ? (
+        <p className="text-xs text-ink-muted" data-testid="past-forecast-caption">
+          {PAST_FORECAST_CAPTION}
+        </p>
+      ) : null}
       {answer !== null && answer.forecast === null ? (
         <p className="mt-1 text-xs text-ink-muted" data-testid="forecast-widget-none">
           {NO_FORECAST_YET_SENTENCE}

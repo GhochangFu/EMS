@@ -1,7 +1,14 @@
 import { sql, type SQL } from "drizzle-orm";
 
+import { PAST_FORECAST_MAX_LEAD_HOURS } from "@bms/shared";
+
 import type { BmsTx } from "../database/tenant-context";
-import { lookBackStartOf, type ForecastListDbRow, type PointForecastDbRow } from "./ml-forecasts.pure";
+import {
+  lookBackStartOf,
+  type ForecastListDbRow,
+  type PastForecastDbRow,
+  type PointForecastDbRow,
+} from "./ml-forecasts.pure";
 
 /**
  * `E1.4a` / ADR 0135 Amendment 3 R-c, S1, S3, C3, C4, C6 — the forecast SQL.
@@ -159,5 +166,49 @@ export async function readForecastList(
   currentHourMs: number,
 ): Promise<ForecastListDbRow[]> {
   const result = await tx.execute<ForecastListDbRow>(forecastListStatement(ids, currentHourMs));
+  return result.rows;
+}
+
+/**
+ * `E1.4e` / ADR 0135 Amendment 4 — the past-forecast read: for each whole hour
+ * `t` in `[fromHourMs, endMs)`, the p50 of the forecast for bucket `t` that was
+ * issued **before `t`** and no more than `PAST_FORECAST_MAX_LEAD_HOURS` before
+ * it, from a succeeded run; the newest such issue when several qualify. A row
+ * issued once its hour had begun is never used (it saw part of the hour it
+ * forecasts), and an hour with no qualifying row has no row here (a gap).
+ *
+ * `DISTINCT ON (horizon_bucket) … ORDER BY horizon_bucket, issued_at DESC` walks
+ * `forecasts_pkey (asset_id, point_key, horizon_bucket, issued_at)` for one point
+ * over the window. The service has already clipped `endMs` to the current hour
+ * (`pastForecastWindowOf`), so the live forecast's hours never appear.
+ * Parameterised throughout, times out as epoch ms; the lead is bound as a number.
+ */
+export function pastForecastStatement(
+  point: { assetId: string; pointKey: string },
+  fromHourMs: number,
+  endMs: number,
+): SQL {
+  return sql`
+    SELECT DISTINCT ON (f.horizon_bucket)
+           (extract(epoch FROM f.horizon_bucket) * 1000)::float8 AS bucket_ms,
+           f.p50
+      FROM ml.forecasts f
+      JOIN ml.model_runs r ON r.id = f.model_run_id AND r.organization_id = f.organization_id
+                          AND r.status = 'succeeded'
+     WHERE f.asset_id = ${point.assetId}::uuid AND f.point_key = ${point.pointKey}
+       AND f.horizon_bucket >= ${at(fromHourMs)} AND f.horizon_bucket < ${at(endMs)}
+       AND f.issued_at < f.horizon_bucket
+       AND f.issued_at >= f.horizon_bucket - make_interval(hours => ${PAST_FORECAST_MAX_LEAD_HOURS}::int)
+     ORDER BY f.horizon_bucket, f.issued_at DESC`;
+}
+
+/** Runs {@link pastForecastStatement} on `tx`: one row per past bucket with a qualifying forecast, ascending. */
+export async function readPastForecast(
+  tx: BmsTx,
+  point: { assetId: string; pointKey: string },
+  fromHourMs: number,
+  endMs: number,
+): Promise<PastForecastDbRow[]> {
+  const result = await tx.execute<PastForecastDbRow>(pastForecastStatement(point, fromHourMs, endMs));
   return result.rows;
 }

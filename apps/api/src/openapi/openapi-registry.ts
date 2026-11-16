@@ -162,6 +162,7 @@ import { mimicLayoutPreviewQuerySchema } from "../mimic-layouts/mimic-layouts.sc
 import { listMaintenanceQuerySchema } from "../maintenance/maintenance.schema";
 import { maintenanceWindowListQuerySchema } from "../maintenance-windows/maintenance-windows.schema";
 import { listReportFilesQuerySchema } from "../reports/report-files.schema";
+import { pastForecastQuerySchema } from "../ml/ml.schema";
 // `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`;
 // `F4.284`: the alarm, work-order and convert bodies too.
 import {
@@ -497,6 +498,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   LocationEnergyBillController_bill: locationEnergyBillQuerySchema,
   LocationTariffsController_create: createLocationTariffBodySchema,
   LocationTariffsController_update: updateLocationTariffBodySchema,
+  // `E1.4e` (ADR 0135 Amendment 4): the past forecast's `from`/`to` window, `.strict()`, no body.
+  // `MlController_pointForecast` and `_list` take no body and no query.
+  MlController_pastForecast: pastForecastQuerySchema,
   // `F4.365` U6 (ADR 0134 Amendment 1): the organization version bodies; DELETE carries `?reason=`.
   AdminTariffVersionsController_create: createTariffVersionBodySchema,
   AdminTariffVersionsController_update: updateTariffVersionBodySchema,

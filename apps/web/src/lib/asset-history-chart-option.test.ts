@@ -13,6 +13,11 @@ import {
   theSeriesTypeComesFromTheCatalog,
   theXAxisIsTheRequestedWindow,
   twoForecastsAreNamedByPoint,
+  aPastForecastIsADashedLineInAColourNoActualLineUses,
+  aPastWindowStillDrawsThePastForecast,
+  noPastForecastAddsNothing,
+  pastColoursNeverMatchAnActualColour,
+  twoPastForecastsAreNamedByPointInTheirOwnColours,
 } from "./asset-history-chart-option.spec";
 
 /** Vitest entry point (ADR 0014). */
@@ -52,5 +57,20 @@ describe("F4.297 asset history chart option", () => {
   });
   it("E1.4a a short window clips the forecast to the axis plus one bucket", () => {
     aShortWindowClipsTheForecast();
+  });
+  it("E1.4e a past forecast is a dashed line in a colour no actual line uses", () => {
+    aPastForecastIsADashedLineInAColourNoActualLineUses();
+  });
+  it("E1.4e a past window still draws the past forecast", () => {
+    aPastWindowStillDrawsThePastForecast();
+  });
+  it("E1.4e two past forecasts are named by point in their own colours", () => {
+    twoPastForecastsAreNamedByPointInTheirOwnColours();
+  });
+  it("E1.4e no past forecast adds nothing", () => {
+    noPastForecastAddsNothing();
+  });
+  it("E1.4e past colours never match an actual colour", () => {
+    pastColoursNeverMatchAnActualColour();
   });
 });

@@ -2,7 +2,7 @@ import { expect, vi } from "vitest";
 
 import { encodePointRef } from "@bms/shared";
 
-import { fetchForecastList, fetchPointForecast } from "./ml";
+import { fetchForecastList, fetchPastForecast, fetchPointForecast } from "./ml";
 
 /**
  * `E1.4a` — the forecast reads' wire shape and contract parse. `node` environment, like
@@ -84,3 +84,23 @@ export async function aWrongShapeOrAFailureThrows(): Promise<void> {
   answer({ message: "boom" }, 500);
   await expect(fetchForecastList()).rejects.toThrow(/ml forecasts 500$/);
 }
+
+/**
+ * `E1.4e` — the past read sends its window as query parameters and parses `{ asOf, buckets }`; a
+ * failure names its status, the shape `isForbidden` reads.
+ */
+export async function thePastReadSendsItsWindowAndParses(): Promise<void> {
+  const from = "2026-11-15T10:20:00.000Z";
+  const to = "2026-11-16T10:20:00.000Z";
+  const body = { asOf: AS_OF, buckets: [{ t: "2026-11-16T09:00:00.000Z", p50: -27.5 }] };
+  const seen = answer(body);
+  expect(await fetchPastForecast(REF, from, to)).toEqual(body);
+  expect(seen()).toBe(
+    `${BASE}/api/v1/ml/points/${REF}/forecast/past?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+  );
+  answer({ asOf: AS_OF, buckets: [{ t: "2026-11-16T09:00:00.000Z" }] });
+  await expect(fetchPastForecast(REF, from, to)).rejects.toThrow();
+  answer({ message: "Forbidden" }, 403);
+  await expect(fetchPastForecast(REF, from, to)).rejects.toThrow(/ml past forecast 403$/);
+}
+

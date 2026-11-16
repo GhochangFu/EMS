@@ -7,6 +7,7 @@ import {
   aForbiddenReadDrawsTheAccessSentence,
   resetLiveMocks,
   theTwoReadsNameTheBoundPoint,
+  theWidgetDrawsThePastForecastOverItsWindow,
 } from "./forecast-widget-live.spec";
 
 /** Vitest entry point (ADR 0014, ADR 0042 decision 2). */
@@ -26,4 +27,8 @@ describe("E1.4c — the live forecast widget", () => {
     await aForbiddenReadDrawsTheAccessSentence();
   });
   it("re-polls the actual read every 15 minutes and stops after a 403", () => theActualReadRepollsUntilA403());
+
+  it("E1.4e draws the past forecast over its window", async () => {
+    await theWidgetDrawsThePastForecastOverItsWindow();
+  });
 });

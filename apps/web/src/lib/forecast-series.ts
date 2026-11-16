@@ -1,4 +1,4 @@
-import type { ForecastBucket } from "@bms/shared";
+import type { ForecastBucket, PastForecastBucket } from "@bms/shared";
 
 import type { HistoryRange } from "./asset-history-range";
 import { withAlpha } from "./theme";
@@ -156,3 +156,75 @@ export function modelLabel(modelName: string): string {
   if (modelName === "amazon/chronos-bolt-small") return "Chronos-Bolt";
   return modelName;
 }
+
+/**
+ * `E1.4e` / ADR 0135 Amendment 4 — the past forecast: for each past hour, the p50 of the forecast
+ * made 1 hour ahead (the API's rule). One dashed line, no band over the past (ruling 2), in a
+ * colour the caller picks so that no actual line shares it.
+ */
+export const PAST_FORECAST_NAME = "Past forecast (1 h ahead)";
+
+/** Ruling 3: what the line is, with no accuracy number. */
+export const PAST_FORECAST_CAPTION = "Past forecast: made 1 h ahead of each hour · advisory";
+
+/** The past line's name; suffixed with the point key when several points have one (R9). */
+export function pastForecastName(pointKey: string | null): string {
+  return pointKey === null ? PAST_FORECAST_NAME : `${PAST_FORECAST_NAME} · ${pointKey}`;
+}
+
+/**
+ * Beside the hourly mean only (a forecast is an hourly mean, R7), but on **any** window, a past
+ * custom range included: the point of the line is to look back (Amendment 4).
+ */
+export function pastForecastApplies(range: HistoryRange): boolean {
+  return range.fn === "avg";
+}
+
+/**
+ * The past line's one series. The API leaves out an hour with no forecast made 1 h ahead; every
+ * such hour between the first and the last bucket is a `null` here, so the line breaks there
+ * rather than joining across the gap. No buckets, no series.
+ */
+export function pastForecastSeries(args: {
+  readonly buckets: readonly PastForecastBucket[];
+  readonly colour: string;
+  readonly yAxisIndex: 0 | 1;
+  readonly name: string;
+}) {
+  const { buckets, colour, yAxisIndex, name } = args;
+  if (buckets.length === 0) {
+    return [];
+  }
+  const byHour = new Map(buckets.map((b) => [Date.parse(b.t), b.p50]));
+  const first = Date.parse(buckets[0]?.t ?? "");
+  const last = Date.parse(buckets.at(-1)?.t ?? "");
+  const data: [string, number | null][] = [];
+  for (let ms = first; ms <= last; ms += HOUR_MS) {
+    data.push([new Date(ms).toISOString(), byHour.get(ms) ?? null]);
+  }
+  return [
+    {
+      name,
+      type: CHART_SERIES.line.type,
+      yAxisIndex,
+      showSymbol: false,
+      connectNulls: false,
+      itemStyle: { color: colour },
+      lineStyle: { color: colour, type: "dashed" as const },
+      data,
+    },
+  ];
+}
+
+/**
+ * The window a past read asks for: `from` floored and `to` raised to whole UTC hours. The server
+ * floors `from` and serves buckets before `to`, so either form returns the same hours; rounding
+ * keeps a live window's 15-minute moves inside one query key, so the line does not blink out on
+ * each refresh, and the read runs again only when the hour turns.
+ */
+export function pastForecastWindow(window: { readonly from: string; readonly to: string }): { from: string; to: string } {
+  const from = Math.floor(Date.parse(window.from) / HOUR_MS) * HOUR_MS;
+  const to = Math.ceil(Date.parse(window.to) / HOUR_MS) * HOUR_MS;
+  return { from: new Date(from).toISOString(), to: new Date(to).toISOString() };
+}
+

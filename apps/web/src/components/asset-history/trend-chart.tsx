@@ -2,11 +2,11 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import { useMemo } from "react";
 
-import type { PointAggregateResponse, PointForecast } from "@bms/shared";
+import type { PastForecastBucket, PointAggregateResponse, PointForecast } from "@bms/shared";
 
 import { buildHistoryChartOption } from "../../lib/asset-history-chart-option";
 import { useChartTheme } from "../../lib/chart-theme";
-import { forecastIsLive } from "../../lib/forecast-series";
+import { forecastIsLive, PAST_FORECAST_CAPTION } from "../../lib/forecast-series";
 import { formatBucketWidth } from "../../lib/widget-value";
 import { ForecastCaption } from "../forecast-caption";
 import { SectionCard } from "../section-card";
@@ -20,6 +20,8 @@ export interface TrendSeries {
   readonly data: PointAggregateResponse;
   /** `E1.4a`: the point's current forecast, or `null`/absent. */
   readonly forecast?: PointForecast | null;
+  /** `E1.4e`: the forecast made 1 h ahead of each past hour, or `null`/absent. */
+  readonly pastForecast?: readonly PastForecastBucket[] | null;
 }
 
 type TrendChartProps = {
@@ -50,6 +52,9 @@ export function previousPeriodIsEmpty(series: readonly TrendSeries[]): boolean {
  * `E1.4a` (ADR 0135 Amendment 3 R-d, C2): a series with a forecast draws its band and p50 when the
  * window is live by the server's `forecastAsOf`, and the x axis then ends where the built option
  * says — not at `to`, or the forecast would be clipped off. One caption line per drawn forecast.
+ *
+ * `E1.4e` (ADR 0135 Amendment 4): a series with a past forecast draws it as a dashed line in its
+ * own colour on any window, with one caption line saying what it is, and no accuracy number.
  */
 export function TrendChart({ series, chartedCount, compare, siteZone, forecastAsOf = null }: TrendChartProps) {
   const { roles, theme } = useChartTheme();
@@ -75,6 +80,7 @@ export function TrendChart({ series, chartedCount, compare, siteZone, forecastAs
         buckets: s.data.buckets ?? [],
         compareBuckets: s.data.compare?.buckets ?? null,
         forecast: s.forecast?.buckets ?? null,
+        pastForecast: s.pastForecast ?? null,
       })),
       compare: compare ? { spanMs: to - from } : null,
       roles,
@@ -141,6 +147,11 @@ export function TrendChart({ series, chartedCount, compare, siteZone, forecastAs
               />
             ) : null,
           )}
+      {series.some((s) => (s.pastForecast?.length ?? 0) > 0) ? (
+        <p className="text-xs text-ink-muted" data-testid="past-forecast-caption">
+          {PAST_FORECAST_CAPTION}
+        </p>
+      ) : null}
       {compare && previousPeriodIsEmpty(series) ? (
         <p className="mt-1 text-xs text-ink-muted" data-testid="history-no-previous">
           {NO_PREVIOUS_SENTENCE}

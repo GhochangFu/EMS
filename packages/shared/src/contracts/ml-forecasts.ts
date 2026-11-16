@@ -2,7 +2,8 @@ import { z } from "zod";
 
 /**
  * `E1.4a` / ADR 0135 Amendment 3 R-c, S3, C3, C4, C7 — the forecast read
- * contracts: `GET /ml/points/:pointRef/forecast` and `GET /ml/forecasts`.
+ * contracts: `GET /ml/points/:pointRef/forecast` and `GET /ml/forecasts`;
+ * `E1.4e` (Amendment 4) adds `GET /ml/points/:pointRef/forecast/past`.
  *
  * Every schema is one plain `z.object` (ADR 0030): no intersection and no
  * all-readonly object, so neither `z.intersection` nor `.readonly()` applies.
@@ -97,8 +98,38 @@ export const forecastListResponseSchema = z.object({
   items: z.array(forecastListRowSchema),
 });
 
+/**
+ * `E1.4e` / ADR 0135 Amendment 4 — the past forecast drawn beside the actual
+ * line. For each past hour `t`, the p50 of the newest succeeded forecast for
+ * bucket `t` issued before `t` and no more than this many hours before it. The
+ * hourly scorer makes that the run of the hour before (a 55-minute lead); the cap
+ * covers one or two missed runs and leaves a gap rather than a day-old forecast.
+ */
+export const PAST_FORECAST_MAX_LEAD_HOURS = 3;
+
+/** The widest `from`–`to` window `GET /ml/points/:pointRef/forecast/past` takes, in days. */
+export const PAST_FORECAST_MAX_SPAN_DAYS = 366;
+
+/** One past hour: the bucket's start (a whole UTC hour) and the 1-hour-ahead forecast's p50. Advisory, no accuracy. */
+export const pastForecastBucketSchema = z.object({
+  t: isoDateTime,
+  p50: quantile,
+});
+
+/**
+ * `GET /ml/points/:pointRef/forecast/past?from=&to=`. Buckets ascending, every
+ * one strictly before the current hour (the live forecast owns the current hour
+ * onward). An hour with no qualifying forecast is absent, never filled.
+ */
+export const pastForecastResponseSchema = z.object({
+  asOf: isoDateTime,
+  buckets: z.array(pastForecastBucketSchema),
+});
+
 export type ForecastBucket = z.infer<typeof forecastBucketSchema>;
 export type PointForecast = z.infer<typeof pointForecastSchema>;
 export type PointForecastResponse = z.infer<typeof pointForecastResponseSchema>;
 export type ForecastListRow = z.infer<typeof forecastListRowSchema>;
 export type ForecastListResponse = z.infer<typeof forecastListResponseSchema>;
+export type PastForecastBucket = z.infer<typeof pastForecastBucketSchema>;
+export type PastForecastResponse = z.infer<typeof pastForecastResponseSchema>;

@@ -16,11 +16,17 @@ import { FORECAST_WIDGET_WINDOW_MINUTES, ForecastWidgetLive } from "./forecast-w
 const mocks = vi.hoisted(() => ({
   fetchPointAggregate: vi.fn(),
   fetchPointForecast: vi.fn(),
-  recorded: [] as { option: { series: { name: string; data: [string, number | null][] }[] } }[],
+  fetchPastForecast: vi.fn(),
+  recorded: [] as {
+    option: { series: { name: string; data: [string, number | null][]; lineStyle?: { type?: string } }[] };
+  }[],
 }));
 
 vi.mock("../../api/telemetry", () => ({ fetchPointAggregate: mocks.fetchPointAggregate }));
-vi.mock("../../api/ml", () => ({ fetchPointForecast: mocks.fetchPointForecast }));
+vi.mock("../../api/ml", () => ({
+  fetchPointForecast: mocks.fetchPointForecast,
+  fetchPastForecast: mocks.fetchPastForecast,
+}));
 vi.mock("echarts-for-react", () => ({
   default: (props: (typeof mocks.recorded)[number]) => {
     mocks.recorded.push(props);
@@ -32,6 +38,9 @@ vi.mock("echarts-for-react", () => ({
 export function resetLiveMocks(): void {
   mocks.fetchPointAggregate.mockReset();
   mocks.fetchPointForecast.mockReset();
+  mocks.fetchPastForecast.mockReset();
+  // `E1.4e`: no past buckets unless a case says otherwise.
+  mocks.fetchPastForecast.mockResolvedValue({ asOf: TO, buckets: [] });
   mocks.recorded.length = 0;
 }
 
@@ -145,3 +154,21 @@ export async function theActualReadRepollsUntilA403(): Promise<void> {
   expect(onFocus({ state: { error: null } })).toBe(true);
   expect(onFocus({ state: { error: new Error("telemetry aggregate 403") } })).toBe(false);
 }
+
+/**
+ * `E1.4e` (ADR 0135 Amendment 4 ruling 4): the widget asks for the past forecast over the window
+ * its actual read was served, draws it as a dashed line beside the actual one, and captions it.
+ */
+export async function theWidgetDrawsThePastForecastOverItsWindow(): Promise<void> {
+  mocks.fetchPointAggregate.mockResolvedValue(AGGREGATE);
+  mocks.fetchPointForecast.mockResolvedValue({ asOf: TO, forecast: null });
+  mocks.fetchPastForecast.mockResolvedValue({ asOf: TO, buckets: [{ t: "2026-11-16T09:00:00.000Z", p50: 31 }] });
+  renderLive();
+  expect(await screen.findByTestId("past-forecast-caption")).toBeTruthy();
+  // The served window rounded to whole hours (`pastForecastWindow`).
+  expect(mocks.fetchPastForecast).toHaveBeenCalledWith(REF, "2026-11-15T10:00:00.000Z", "2026-11-16T11:00:00.000Z");
+  const past = mocks.recorded.at(-1)?.option.series.find((s) => s.name === "Past forecast (1 h ahead)");
+  expect(past?.data).toEqual([["2026-11-16T09:00:00.000Z", 31]]);
+  expect(past?.lineStyle?.type).toBe("dashed");
+}
+

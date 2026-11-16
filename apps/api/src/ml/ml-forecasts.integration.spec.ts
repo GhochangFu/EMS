@@ -1,5 +1,10 @@
 import { sql } from "drizzle-orm";
-import { forecastListRowSchema, pointForecastResponseSchema, resolveSiteTimeZone } from "@bms/shared";
+import {
+  forecastListRowSchema,
+  pastForecastResponseSchema,
+  pointForecastResponseSchema,
+  resolveSiteTimeZone,
+} from "@bms/shared";
 import type { BmsDb } from "@bms/db";
 import { expect } from "vitest";
 
@@ -7,7 +12,13 @@ import { withTenant } from "../database/tenant-context";
 import type { BmsTx } from "../database/tenant-context";
 import { withRollback } from "../testing/with-rollback";
 import { HOUR_MS } from "./ml-forecasts.pure";
-import { forecastListStatement, pointForecastStatement, readForecastList } from "./ml-forecasts.reads";
+import {
+  forecastListStatement,
+  pastForecastStatement,
+  pointForecastStatement,
+  readForecastList,
+  readPastForecast,
+} from "./ml-forecasts.reads";
 import type { MlForecastsService } from "./ml-forecasts.service";
 
 /**
@@ -51,6 +62,12 @@ export type MlForecastFixtures = {
   organizationAZone: string;
   /** The superuser pool, for the one rolled-back case that plants bulk rows and runs `ANALYZE`. */
   superuserDb: BmsDb;
+  /**
+   * `E1.4e`: L4 (organization A, the sibling location, outside `wc-admin`'s closure), whose
+   * one-bucket runs plant the past-forecast cases. Kept out of `assets` so the list cases'
+   * "exactly these fixture assets" checks do not change. See {@link assertThePastForecastPicksTheOneHourAheadRow}.
+   */
+  pastAsset: string;
 };
 
 const ids = (items: Array<{ assetId: string }>): string[] => items.map((item) => item.assetId);
@@ -303,6 +320,11 @@ export async function assertNeitherReadSeqScansForecasts(ctx: MlForecastFixtures
       ["one point", pointForecastStatement(point, ctx.currentHourMs)],
       ["the list, no ids", forecastListStatement(null, ctx.currentHourMs)],
       ["the list, ids", forecastListStatement([ctx.assets.l1, ctx.assets.l2, ctx.assets.p1], ctx.currentHourMs)],
+      // `E1.4e`: a week of one bulk point's past hours, on `forecasts_pkey` bound by the point.
+      [
+        "the past forecast",
+        pastForecastStatement({ assetId: ctx.assets.l2, pointKey: "e14a_bulk" }, ctx.currentHourMs - 168 * HOUR_MS, ctx.currentHourMs),
+      ],
     ] as const;
     const asTenant = sql.raw(`SET LOCAL ROLE bms_tenant`);
     for (const role of ["fleet", "tenant"] as const) {
@@ -322,6 +344,99 @@ export async function assertNeitherReadSeqScansForecasts(ctx: MlForecastFixtures
     }
     tx.rollback();
   });
+}
+
+const isoAt = (ms: number): string => new Date(ms).toISOString();
+
+/**
+ * `E1.4e` / ADR 0135 Amendment 4 — the 1-hour-ahead rule against real rows. L4's runs, by the
+ * hour they forecast (H is the current hour; every run holds one bucket unless said):
+ * - H−7: issued 30 min before, p50 9 (only inside a window that reaches back that far);
+ * - H−6: issued exactly 3 h before, p50 8 (the cap is inclusive);
+ * - H−5: issued 4 h before only, p50 7 (beyond the cap: absent);
+ * - H−4: issued 10 min after the hour began only, p50 6 (absent);
+ * - H−3: issued 30 min (p50 1), 2 h 30 min (2) and 4 h (3) before, 10 min after (4), and 10 min
+ *   before by a **failed** run (5) — the 30-minute one wins;
+ * - H−2: nothing (absent);
+ * - H−1: issued 55 min before, p50 10 (the hourly scorer's normal case);
+ * - H and H+1: one run issued 55 min before H, p50 11 — the live forecast's, never returned.
+ */
+export async function assertThePastForecastPicksTheOneHourAheadRow(ctx: MlForecastFixtures): Promise<void> {
+  const H = ctx.currentHourMs;
+  const point = { assetId: ctx.pastAsset, pointKey: ctx.pointKey };
+  const body = pastForecastResponseSchema.parse(
+    await ctx.svc.past(point, { from: new Date(H - 6 * HOUR_MS + 20 * 60_000), to: new Date(H + 5 * HOUR_MS) }, ctx.now),
+  );
+  expect(body.asOf).toBe(ctx.now.toISOString());
+  // `from` floored to H−6 (so H−7 is out); `to` clipped to the current hour (so H and H+1 are out).
+  expect(body.buckets).toEqual([
+    { t: isoAt(H - 6 * HOUR_MS), p50: 8 },
+    { t: isoAt(H - 3 * HOUR_MS), p50: 1 },
+    { t: isoAt(H - HOUR_MS), p50: 10 },
+  ]);
+}
+
+/** `E1.4e`: the window's bounds — `from` floored and inclusive, `to` exclusive, a future window reads nothing. */
+export async function assertThePastForecastWindowBoundsHold(ctx: MlForecastFixtures): Promise<void> {
+  const H = ctx.currentHourMs;
+  const point = { assetId: ctx.pastAsset, pointKey: ctx.pointKey };
+  const past = async (fromMs: number, toMs: number) =>
+    (await ctx.svc.past(point, { from: new Date(fromMs), to: new Date(toMs) }, ctx.now)).buckets;
+
+  // `to` exactly H−3: the bucket H−3 is excluded (`horizon_bucket < to`).
+  expect(await past(H - 8 * HOUR_MS, H - 3 * HOUR_MS)).toEqual([
+    { t: isoAt(H - 7 * HOUR_MS), p50: 9 },
+    { t: isoAt(H - 6 * HOUR_MS), p50: 8 },
+  ]);
+  // One minute later it is in.
+  expect((await past(H - 3 * HOUR_MS, H - 3 * HOUR_MS + 60_000)).map((b) => b.p50)).toEqual([1]);
+  // `to` exactly the current hour, and a window wholly at or after it.
+  expect((await past(H - 2 * HOUR_MS, H)).map((b) => b.t)).toEqual([isoAt(H - HOUR_MS)]);
+  expect(await past(H, H + 10 * HOUR_MS)).toEqual([]);
+  expect(await past(H + 60_000, H + 10 * HOUR_MS)).toEqual([]);
+}
+
+/**
+ * `E1.4e` on the original fixtures: L1's run A (issued H−2 h + 5 min) is the 1-hour-ahead forecast for
+ * H−1 only — its H−2 bucket was issued after that hour began — and run P (an `--as-of` run issued after
+ * every bucket it holds) and the failed run F contribute nothing.
+ */
+export async function assertThePastForecastIgnoresRowsIssuedAfterTheirHour(ctx: MlForecastFixtures): Promise<void> {
+  const H = ctx.currentHourMs;
+  const body = await ctx.svc.past(
+    { assetId: ctx.assets.l1, pointKey: ctx.pointKey },
+    { from: new Date(H - 40 * HOUR_MS), to: new Date(H + HOUR_MS) },
+    ctx.now,
+  );
+  expect(body.buckets).toEqual([{ t: isoAt(H - HOUR_MS), p50: -1000 }]);
+}
+
+/**
+ * `E1.4e`, both branches. P1 (organization B) has 1-hour-ahead rows for H−3, H−2 and H−1 (its run was
+ * issued H−4 h + 5 min, so H−1's lead is 2 h 55 min). Under organization A's GUC the policy hides them;
+ * under B's they are there (the positive control). On the fleet branch the asset equality is the only
+ * filter, and L4's read returns L4's rows and nothing of P1's or L1's.
+ */
+export async function assertThePastForecastIsScopedOnBothBranches(ctx: MlForecastFixtures): Promise<void> {
+  const H = ctx.currentHourMs;
+  const p1 = { assetId: ctx.assets.p1, pointKey: ctx.pointKey };
+  const from = H - 10 * HOUR_MS;
+  const underA = await withTenant(ctx.tenantDb, ctx.organizations.a, (tx) => readPastForecast(tx, p1, from, H));
+  expect(underA).toEqual([]);
+  const underB = await withTenant(ctx.tenantDb, ctx.organizations.b, (tx) => readPastForecast(tx, p1, from, H));
+  expect(underB.map((row) => [row.bucket_ms, row.p50])).toEqual([
+    [H - 3 * HOUR_MS, 30],
+    [H - 2 * HOUR_MS, 30],
+    [H - HOUR_MS, 30],
+  ]);
+  // The service routes P1 to its own organization.
+  const viaService = await ctx.svc.past(p1, { from: new Date(from), to: new Date(H) }, ctx.now);
+  expect(viaService.buckets.map((b) => b.t)).toEqual([3, 2, 1].map((h) => isoAt(H - h * HOUR_MS)));
+
+  const fleetRows = await ctx.fleetDb.transaction((tx) =>
+    readPastForecast(tx, { assetId: ctx.pastAsset, pointKey: ctx.pointKey }, from, H),
+  );
+  expect(fleetRows.map((row) => row.p50)).toEqual([9, 8, 1, 10]);
 }
 
 /** For the wrapper: what a row's zone should be, by the history page's chain (C7). */

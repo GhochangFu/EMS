@@ -49,6 +49,7 @@ import {
 import {
   listReportFilesQuerySchema,
 } from "../reports/report-files.schema";
+import { pastForecastQuerySchema } from "../ml/ml.schema";
 import {
   assetHealthQuerySchema,
   healthSummaryQuerySchema,
@@ -201,4 +202,8 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // (`DELETE /admin/tariffs/versions/:id?reason=`): one required reason, `.strict()`, no body — a
   // DELETE carries none, so the audit row's reason rides the query.
   deleteTariffVersionQuerySchema,
+  // 40 -> 41 (2026-11-16): `E1.4e` (ADR 0135 Amendment 4) registered `pastForecastQuerySchema`
+  // (`GET /ml/points/:pointRef/forecast/past?from=&to=`): two required offset instants, `from` before
+  // `to` and a bounded span, `.strict()`, no body, no ledger entry — the same precedent.
+  pastForecastQuerySchema,
 };

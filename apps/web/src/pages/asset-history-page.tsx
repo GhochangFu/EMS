@@ -20,10 +20,11 @@ import { historyPinSource, PinButton } from "../components/view-actions/pin-dial
 import { ScheduleButton } from "../components/view-actions/schedule-button";
 import { useActiveMaintenance } from "../hooks/use-active-maintenance";
 import { useAssetHistory } from "../hooks/use-asset-history";
+import { usePastForecasts } from "../hooks/use-past-forecasts";
 import { usePointForecasts } from "../hooks/use-point-forecasts";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { chartablePoints, rangeFromSearch, rangeToSearch, type HistoryRange } from "../lib/asset-history-range";
-import { forecastApplies, liveWindowRefetchMs } from "../lib/forecast-series";
+import { forecastApplies, liveWindowRefetchMs, pastForecastApplies } from "../lib/forecast-series";
 import { historySchedulePrefill } from "../lib/schedule-from-view";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
@@ -87,6 +88,11 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
       f.data && (latest === null || Date.parse(f.data.asOf) > Date.parse(latest)) ? f.data.asOf : latest,
     null,
   );
+  // `E1.4e` (ADR 0135 Amendment 4): beside `avg`, on any window, the forecast made 1 h ahead of
+  // each past hour, over the window the first history read was served.
+  const served = history.find((h) => h.data !== undefined)?.data;
+  const pastWindow = served === undefined ? null : { from: served.from, to: served.to };
+  const pasts = usePastForecasts(assetId, selected, pastWindow, pastForecastApplies(range));
   const series: TrendSeries[] = history.flatMap((h) =>
     h.data === undefined
       ? []
@@ -96,6 +102,7 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
             unit: points.find((p) => p.pointKey === h.pointKey)?.unit ?? null,
             data: h.data,
             forecast: forecasts.find((f) => f.pointKey === h.pointKey)?.data?.forecast ?? null,
+            pastForecast: pasts.find((p) => p.pointKey === h.pointKey)?.buckets ?? null,
           },
         ],
   );

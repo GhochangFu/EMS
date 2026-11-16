@@ -28,6 +28,18 @@ export function seriesPalette(roles: Roles): string[] {
   return SERIES_PALETTE.map((role) => roles[role]);
 }
 
+/**
+ * `E1.4e` / ADR 0135 Amendment 4 ruling 2 — the colours a past-forecast line takes: the chart's
+ * spare series roles, none of which `SERIES_PALETTE` uses, so a past line never shares a colour
+ * with an actual line however many points are charted.
+ */
+const PAST_FORECAST_PALETTE: readonly RoleName[] = ["series-2", "series-3", "series-4", "series-5", "series-6", "series-7", "series-8"];
+
+/** {@link PAST_FORECAST_PALETTE}, resolved for the current theme. */
+export function pastForecastPalette(roles: Roles): string[] {
+  return PAST_FORECAST_PALETTE.map((role) => roles[role]);
+}
+
 function axis(roles: Roles) {
   return {
     axisLine: { lineStyle: { color: roles["line-strong"] } },
