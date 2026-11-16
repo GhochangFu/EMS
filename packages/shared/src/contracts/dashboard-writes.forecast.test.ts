@@ -8,7 +8,7 @@ import {
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("E1.4c — the forecast widget write arm (ADR 0135 Amendment 3 C1)", () => {
-  it("has a write arm, last, and accepts a forecast with one point", () => {
+  it("has a write arm at index 13 and accepts a forecast with one point", () => {
     acceptsAForecastWithOnePoint();
   });
 

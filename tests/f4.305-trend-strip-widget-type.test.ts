@@ -71,9 +71,9 @@ describe("F4.305 — migration 0118: the trend_strip widget type and the stock_v
     for (const type of previous) expect(now, `${type} must stay accepted`).toContain(type);
   });
 
-  // E1.4c: 0118 is frozen at thirteen; the effective CHECK is `*_forecast_widget_type.sql`'s.
-  it("lists exactly the contract's widgetTypeSchema less the E1.4c value, trend_strip last", () => {
-    const before = widgetTypes().filter((value) => value !== "forecast");
+  // E1.4c / E1.2d: 0118 is frozen at thirteen; the effective CHECK is `*_anomaly_widget_type.sql`'s.
+  it("lists exactly the contract's widgetTypeSchema less the E1.4c and E1.2d values, trend_strip last", () => {
+    const before = widgetTypes().filter((value) => value !== "forecast" && value !== "anomaly");
     expect(checkList(sqlOnly(read(MIGRATION_REL)))).toEqual(before);
     expect(before.at(-1)).toBe("trend_strip");
   });

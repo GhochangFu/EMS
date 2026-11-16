@@ -34,8 +34,8 @@ export function acceptsAForecastWithOnePoint(): void {
       `${widgetWriteSchema.options.length} arms`,
   );
   assert(
-    widgetWriteSchema.options.at(-1)?.shape.widgetType.value === "forecast",
-    "the forecast arm is appended last, so no existing arm index moves",
+    widgetWriteSchema.options.at(13)?.shape.widgetType.value === "forecast",
+    "the forecast arm is the fourteenth (index 13), so no arm index moved when E1.2d appended anomaly",
   );
   expectAccepts(putDashboardWidgetsBodySchema, { widgets: [validForecastWidget] }, "a forecast with one point");
 }

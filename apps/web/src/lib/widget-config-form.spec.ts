@@ -111,7 +111,15 @@ export function runTemplateWidgetTypeDerivationTests(): void {
   // `forecast` passes both and is refused by name (ADR 0135 Amendment 3 R-f, plan R12).
   const expected = widgetTypeSchema.options.filter(
     (type) =>
-      WIDGET_SOURCE_CARDINALITY[type].min === 0 && WIDGET_POINT_CARDINALITY[type].max > 0 && type !== "forecast",
+      WIDGET_SOURCE_CARDINALITY[type].min === 0 &&
+      WIDGET_POINT_CARDINALITY[type].max > 0 &&
+      type !== "forecast" &&
+      type !== "anomaly",
+  );
+  // `E1.2d` — `anomaly` likewise (ADR 0135 Amendment 5 ruling 4(c), plan R15).
+  assert(
+    !(TEMPLATE_WIDGET_TYPES as readonly string[]).includes("anomaly"),
+    "the template picker must not offer the anomaly widget: it is builder palette only (plan R15)",
   );
   assert(
     !(TEMPLATE_WIDGET_TYPES as readonly string[]).includes("forecast"),

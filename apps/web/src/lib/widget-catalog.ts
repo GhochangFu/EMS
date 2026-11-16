@@ -130,9 +130,10 @@ type WidgetCatalogEntry = {
 };
 
 /**
- * The fourteen widget types, closed (ADR 0047 decision 2; `table` by ADR 0048 decision 5; `mimic` by
+ * The fifteen widget types, closed (ADR 0047 decision 2; `table` by ADR 0048 decision 5; `mimic` by
  * ADR 0079 decision 1; the five site widgets by `F3.73`; `breaker_table` by `F3.74`; `trend_strip`
- * by `F4.305`; `forecast` by `E1.4c`, ADR 0135 Amendment 3 C1). Label,
+ * by `F4.305`; `forecast` by `E1.4c`, ADR 0135 Amendment 3 C1; `anomaly` by `E1.2d`, ADR 0135
+ * Amendment 5 ruling 4(c)). Label,
  * icon and default size are presentation and belong here; `points` and `sources` are validation
  * rules and are imported rather than restated (Amendment 2 §1).
  */
@@ -258,6 +259,15 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     defaultSize: { w: 6, h: 4 },
     points: WIDGET_POINT_CARDINALITY.forecast,
     sources: WIDGET_SOURCE_CARDINALITY.forecast,
+  },
+  anomaly: {
+    label: "Anomaly score",
+    // A low line with one spike crossing a dashed threshold (`E1.2d`).
+    iconPath: "M3 19h18v2H3v-2Zm0-3 4-2 3 1 3-10 2 9 2-1 4 2v2l-4-2-2 1-2-8-3 9-3-1-4 2v-2ZM3 7h3v1H3V7Zm5 0h3v1H8V7Zm8 0h3v1h-3V7Z",
+    // Half the canvas: seven days of hourly score need width more than height.
+    defaultSize: { w: 6, h: 4 },
+    points: WIDGET_POINT_CARDINALITY.anomaly,
+    sources: WIDGET_SOURCE_CARDINALITY.anomaly,
   },
 };
 

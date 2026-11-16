@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runStockCatalogCodesMatchTheParamCharsetTests,
   runNoStockTemplateHoldsAForecastTest,
+  runNoStockTemplateHoldsAnAnomalyTest,
   runStockCatalogTests,
   runBenchmarkTableBindingTest,
   runMeteredPumpingRoleSplitTest,
@@ -67,5 +68,9 @@ describe("stock dashboard template catalog (F3.36 Part D, ADR 0049 decision 3)",
 
   it("holds no forecast widget in any stock template, canvas or tab (E1.4c, R12)", () => {
     runNoStockTemplateHoldsAForecastTest();
+  });
+
+  it("holds no anomaly widget in any stock template, canvas or tab (E1.2d, R15)", () => {
+    runNoStockTemplateHoldsAnAnomalyTest();
   });
 });

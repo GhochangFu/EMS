@@ -10,6 +10,7 @@ import {
   stateLegendConfigSchema,
 } from "./site-widgets";
 import { trendStripWidgetConfigSchema } from "./trend-strip-widget";
+import { anomalyWidgetConfigSchema } from "./anomaly-widget";
 import { forecastWidgetConfigSchema } from "./forecast-widget";
 import {
   bindingExclusiveMessage,
@@ -469,6 +470,8 @@ const mimicConfigWriteSchema = z.discriminatedUnion("source", [
 /**
  * One write arm of a site widget that binds nothing (`F3.73`, plan D13): `points` and `sources` are
  * capped at zero by the shared cardinality records, and the config is the shared one, `.strict()`.
+ * The limits are never this helper's own: `pointsFieldFor`/`sourcesFieldFor` read them from
+ * `WIDGET_POINT_CARDINALITY`/`WIDGET_SOURCE_CARDINALITY`, so its `onePointArm` alias takes one point.
  * Still a plain `.strict()` `ZodObject`, so `z.discriminatedUnion` accepts it.
  */
 const bindsNothingArm = <T extends z.infer<typeof widgetTypeSchema>, C extends z.AnyZodObject>(
@@ -486,7 +489,15 @@ const bindsNothingArm = <T extends z.infer<typeof widgetTypeSchema>, C extends z
     .strict();
 
 /**
- * The arms, one per widget type (fourteen since `E1.4c`). Each stays a plain `.strict()` `ZodObject` — never
+ * One write arm of a widget that binds one point through `dashboard_widget_points` and no source
+ * (`E1.4c`, `E1.2d`): `points` and `sources` are `{1, 1}` and `{0, 0}` in the shared cardinality
+ * records, and the config is the shared one, `.strict()`. The same shape as `bindsNothingArm` —
+ * only the records differ — so it is that helper under the name its callers mean.
+ */
+const onePointArm = bindsNothingArm;
+
+/**
+ * The arms, one per widget type (fifteen since `E1.2d`). Each stays a plain `.strict()` `ZodObject` — never
  * wrapped in its own `.refine()`/`.superRefine()` — because `z.discriminatedUnion` accepts only
  * `ZodObject` arms; the cross-widget grid-fit check lives on the ARRAY field in
  * `widgetsWriteFieldSchema` below instead of here, for exactly that reason.
@@ -574,15 +585,10 @@ export const widgetWriteSchema = z.discriminatedUnion("widgetType", [
   // `E1.4c` / ADR 0135 Amendment 3 C1 — the forecast widget binds exactly one point (`{1, 1}`)
   // and no source; its config is `{}` (plan R11). The point is a `dashboard_widget_points` row, so
   // `assertBoundPointsInOrganization` and the cascade already hold it.
-  z
-    .object({
-      ...widgetIdentityWriteFields,
-      widgetType: z.literal("forecast"),
-      config: forecastWidgetConfigSchema.strict(),
-      points: pointsFieldFor("forecast"),
-      sources: sourcesFieldFor("forecast"),
-    })
-    .strict(),
+  onePointArm("forecast", forecastWidgetConfigSchema),
+  // `E1.2d` / ADR 0135 Amendment 5 ruling 4(c) — the anomaly widget, the same shape: one point
+  // (it names the scored asset and is not drawn), no source, config `{}` (plan R16).
+  onePointArm("anomaly", anomalyWidgetConfigSchema),
 ]);
 
 const eachWidgetFitsTheGrid = (

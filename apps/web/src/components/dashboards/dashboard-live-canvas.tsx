@@ -32,7 +32,12 @@ type DashboardLiveCanvasProps = {
   energyShown?: boolean;
 };
 
-const isKwOnlyWidget = (widget: DashboardWidgetDto): boolean => isKwOnly(widgetPointKeys(widget));
+/**
+ * `E1.2d` — an `anomaly` widget is never kW-only: its one point only names the asset (plan R16)
+ * and is never drawn; the widget draws a unitless ML score, not kW, so it stays with energy off.
+ */
+const isKwOnlyWidget = (widget: DashboardWidgetDto): boolean =>
+  widget.widgetType !== "anomaly" && isKwOnly(widgetPointKeys(widget));
 
 type WidgetTile = CanvasTile & { widget: DashboardWidgetDto };
 

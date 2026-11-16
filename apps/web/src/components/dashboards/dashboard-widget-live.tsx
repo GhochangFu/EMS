@@ -9,6 +9,7 @@ import {
   type LatestByRef,
 } from "../../lib/dashboard-widget-data";
 import { DashboardWidget } from "../widgets/dashboard-widget";
+import { AnomalyWidgetLive } from "./anomaly-widget-live";
 import { ForecastWidgetLive } from "./forecast-widget-live";
 import { MimicWidgetLive } from "./mimic-widget-live";
 import { isSiteWidget, SiteWidgetLive } from "./site-widget-live";
@@ -54,6 +55,8 @@ type DashboardWidgetLiveProps = {
  * **`F4.305` — and for the `trend_strip`** (`TrendStripWidgetLive`, the `F4.301` strip's read).
  * **`E1.4c` — and for the `forecast`** (`ForecastWidgetLive`: its own aggregate and forecast reads;
  * `pointRefsFor` skips it, so nothing in the two maps is its).
+ * **`E1.2d` — and for the `anomaly`** (`AnomalyWidgetLive`: its asset's anomaly read; skipped by
+ * `pointRefsFor` too).
  */
 export function DashboardWidgetLive({
   widget,
@@ -79,6 +82,9 @@ export function DashboardWidgetLive({
   }
   if (widget.widgetType === "forecast") {
     return <ForecastWidgetLive widget={widget} />;
+  }
+  if (widget.widgetType === "anomaly") {
+    return <AnomalyWidgetLive widget={widget} />;
   }
   // Resolved ONCE and reused for both the staleness gate and the chart's rolling window — two
   // clock reads in one render pass could otherwise disagree by the render's own duration.

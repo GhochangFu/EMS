@@ -9,6 +9,7 @@ import { CostByDayChartWidget } from "./cost-by-day-chart-widget";
 import { MimicWidget, NO_LIVE_READINGS, NO_MIMIC_NODES } from "./mimic-widget";
 import { RadialGaugeWidget } from "./radial-gauge-widget";
 import { ActiveAlarmsRailWidget } from "./active-alarms-rail-widget";
+import { AnomalyWidget } from "./anomaly-widget";
 import { AssetClassStripWidget } from "./asset-class-strip-widget";
 import { BreakerTableWidget } from "./breaker-table-widget";
 import { CriticalSystemsListWidget } from "./critical-systems-list-widget";
@@ -304,6 +305,11 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
       return (
         <ForecastWidget title={title} status="ready" pointKey={point?.pointKey ?? null} unit={point?.unit ?? null} read={null} />
       );
+    }
+    // `E1.2d` — the same for the anomaly widget: `AnomalyWidgetLive` draws it on the live canvas.
+    case "anomaly": {
+      const point = widget.points.find((p) => p.role === "primary") ?? widget.points[0] ?? null;
+      return <AnomalyWidget title={title} status="ready" pointKey={point?.pointKey ?? null} read={null} />;
     }
     default: {
       const unreachable: never = widget;

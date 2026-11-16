@@ -77,6 +77,14 @@ export const TEMPLATE_TREND_STRIP_SELECTION_MESSAGE =
 export const TEMPLATE_FORECAST_MESSAGE =
   "a dashboard template holds no forecast widget; a forecast names one asset's point";
 
+/**
+ * `E1.2d` / ADR 0135 Amendment 5 ruling 4(c) (plan R15) — the anomaly widget is builder palette
+ * only, refused as the forecast widget is: by name in the content walk below (tabs included), by
+ * the missing arm in the asset-template contract, and by `isTemplateAuthorableWidgetType` on the web.
+ */
+export const TEMPLATE_ANOMALY_MESSAGE =
+  "a dashboard template holds no anomaly widget; an anomaly widget names one asset's point";
+
 /** The `F4.306` selection fields (and `F4.323`'s `styles`) a template's trend strip may not carry. */
 const TREND_STRIP_SELECTION_KEYS = ["segments", "points", "colors", "styles"] as const;
 
@@ -105,6 +113,13 @@ const templateContentWriteSchema = sectionTemplateContentSchema
           code: z.ZodIssueCode.custom,
           path: [...path.slice(0, -1), "widgetType"],
           message: TEMPLATE_FORECAST_MESSAGE,
+        });
+      }
+      if (widget.widgetType === "anomaly") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [...path.slice(0, -1), "widgetType"],
+          message: TEMPLATE_ANOMALY_MESSAGE,
         });
       }
       if (widget.widgetType === "mimic" && widget.config.source === "layout") {
@@ -151,7 +166,8 @@ const templateContentWriteSchema = sectionTemplateContentSchema
       "content.tabs, so an asset-group template holds none. A mimic's config.tabKey must name " +
       "one of content.tabs whose domain is not null. A trend_strip's config holds no " +
       "segments, points or colors (ADR 0108 Amendment 7): a selection is site-specific. " +
-      "A forecast widget answers 400 (ADR 0135 Amendment 3 R-f): it names one asset's point.",
+      "A forecast widget answers 400 (ADR 0135 Amendment 3 R-f): it names one asset's point. " +
+      "So does an anomaly widget (ADR 0135 Amendment 5 ruling 4(c)).",
   );
 
 /**

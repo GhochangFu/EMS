@@ -78,9 +78,11 @@ describe("E1.4c — the forecast widget type migration", () => {
     for (const type of previous) expect(now, `${type} must stay accepted`).toContain(type);
   });
 
-  it("lists exactly the contract's widgetTypeSchema, in order, forecast last", () => {
-    expect(checkList(sqlOnly(read(migrationRel())))).toEqual(widgetTypes());
-    expect(widgetTypes().at(-1)).toBe("forecast");
+  // E1.2d: 0159 is frozen at fourteen; the effective CHECK is `*_anomaly_widget_type.sql`'s.
+  it("is frozen at fourteen and equals the enum less anomaly, forecast last of those", () => {
+    const before = widgetTypes().filter((value) => value !== "anomaly");
+    expect(checkList(sqlOnly(read(migrationRel())))).toEqual(before);
+    expect(before.at(-1)).toBe("forecast");
   });
 
   it("drops the constraint before adding it, with no IF NOT EXISTS guard on the ADD", () => {

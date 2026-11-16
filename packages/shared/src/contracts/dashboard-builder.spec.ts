@@ -57,10 +57,10 @@ export function runDashboardBuilderTests(): void {
   // over it.
   // -------------------------------------------------------------------------
   assert(
-    widgetTypeSchema.options.length === 14,
-    `the widget vocabulary is fourteen types (ADR 0047 decision 4; ADR 0048 decision 5 added ` +
+    widgetTypeSchema.options.length === 15,
+    `the widget vocabulary is fifteen types (ADR 0047 decision 4; ADR 0048 decision 5 added ` +
       `"table", ADR 0079 decision 1 added "mimic", F3.73 added the five site widgets, F3.74 added ` +
-      `"breaker_table", F4.305 added "trend_strip", E1.4c added "forecast"), got ` +
+      `"breaker_table", F4.305 added "trend_strip", E1.4c added "forecast", E1.2d added "anomaly"), got ` +
       `${widgetTypeSchema.options.length}`,
   );
   assert(
@@ -80,9 +80,10 @@ export function runDashboardBuilderTests(): void {
         "breaker_table",
         "trend_strip",
         "forecast",
+        "anomaly",
       ]),
-    `widget types must match migration 0159's widened CHECK (0118's plus forecast) exactly — NOT 0050's, 0055's, ` +
-      `0086's, 0096's, 0099's or 0118's, which froze four, five, six, eleven, twelve and thirteen and cannot be edited, got ` +
+    `widget types must match migration 0161's widened CHECK (0159's plus anomaly) exactly — NOT 0050's, 0055's, ` +
+      `0086's, 0096's, 0099's, 0118's or 0159's, which froze four, five, six, eleven, twelve, thirteen and fourteen, got ` +
       `${JSON.stringify(widgetTypeSchema.options)}`,
   );
 
@@ -401,11 +402,17 @@ export function runWidgetPointCardinalityTests(): void {
   );
   // `F4.305` — the trend strip, by name: binds nothing, not template-authorable.
   assert(
-    widgetTypeSchema.options.at(-2) === "trend_strip",
+    widgetTypeSchema.options.at(-3) === "trend_strip",
     "trend_strip must be the widget type before forecast (migration 0118 appended it)",
   );
-  // `E1.4c` — the forecast widget, by name: last, binds one point, refused by name in templates (R12).
-  assert(widgetTypeSchema.options.at(-1) === "forecast", "forecast must be the last widget type (migration 0159)");
+  // `E1.4c` — the forecast widget, by name: binds one point, refused by name in templates (R12).
+  assert(widgetTypeSchema.options.at(-2) === "forecast", "forecast must come before anomaly (migration 0159)");
+  // `E1.2d` — the anomaly widget, by name: last, binds one point, refused by name in templates (R15).
+  assert(widgetTypeSchema.options.at(-1) === "anomaly", "anomaly must be the last widget type (migration 0161)");
+  assert(
+    !widgetTypeBindsNothing("anomaly") && !isTemplateAuthorableWidgetType("anomaly"),
+    "anomaly binds one point and no template surface can author it (ADR 0135 Amendment 5 ruling 4(c))",
+  );
   assert(
     !widgetTypeBindsNothing("forecast") && !isTemplateAuthorableWidgetType("forecast"),
     "forecast binds one point and no template surface can author it (ADR 0135 Amendment 3 R-f)",

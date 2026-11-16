@@ -215,6 +215,7 @@ export type TemplateMaintenancePlan = {
  * `Exclude`. **The five `F3.73` site widgets and `F3.74`'s `breaker_table` fail the same second
  * clause**: they read the site-widgets endpoint and bind no point. **`E1.4c`'s `forecast` passes
  * both clauses and is excluded by name** (ADR 0135 Amendment 3 R-f, plan R12): builder palette only.
+ * **`E1.2d`'s `anomaly` likewise** (ADR 0135 Amendment 5 ruling 4(c), plan R15).
  */
 export type TemplateDashboardWidget = {
   pointKeys: string[];
@@ -236,7 +237,8 @@ export type TemplateDashboardWidget = {
       | "critical_systems_list"
       | "breaker_table"
       | "trend_strip"
-      | "forecast";
+      | "forecast"
+      | "anomaly";
   }
 >;
 

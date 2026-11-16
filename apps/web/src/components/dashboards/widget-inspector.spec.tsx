@@ -328,6 +328,21 @@ export function aForecastShowsBoundPointsAndTheAdvisoryLineOnly(): void {
   );
 }
 
+/**
+ * `E1.2d` — an anomaly widget binds one point ("Bound points" shows) but configures nothing: no
+ * Unit, no Decimals, and its advisory line in their place (R16).
+ */
+export function anAnomalyShowsBoundPointsAndTheAdvisoryLineOnly(): void {
+  renderInspector(blankDashboardWidgetRow("anomaly"));
+  expect(screen.queryByText("Bound points", { exact: true })).not.toBeNull();
+  expect(screen.queryByText("Unit", { exact: true })).toBeNull();
+  expect(screen.queryByText("Decimals", { exact: true })).toBeNull();
+  expect(screen.queryByText("Named metric", { exact: true })).toBeNull();
+  expect(screen.getByTestId("anomaly-inspector-note").textContent).toBe(
+    "Advisory. The asset's anomaly score for the last 7 days. The bound point names the asset.",
+  );
+}
+
 export function aRailShowsItsRowsAtTheDefault(): void {
   renderInspector(blankDashboardWidgetRow("active_alarms_rail"));
   expect((screen.getByRole("textbox", { name: /^Rows/ }) as HTMLInputElement).value).toBe("8");

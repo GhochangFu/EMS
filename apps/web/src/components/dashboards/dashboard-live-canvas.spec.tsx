@@ -34,10 +34,15 @@ const mocks = vi.hoisted(() => ({
   fetchSiteTrendStrip: vi.fn(),
   fetchAssetWindows: vi.fn(),
   fetchPointForecast: vi.fn(),
+  fetchAssetAnomalies: vi.fn(),
 }));
 
 // `E1.4c` — the forecast widget's forecast read, mocked like the canvas's other reads.
-vi.mock("../../api/ml", () => ({ fetchPointForecast: mocks.fetchPointForecast }));
+// `E1.2d` — and the anomaly widget's one read.
+vi.mock("../../api/ml", () => ({
+  fetchPointForecast: mocks.fetchPointForecast,
+  fetchAssetAnomalies: mocks.fetchAssetAnomalies,
+}));
 
 // `F4.305` — the trend strip widget's one read, mocked like the canvas's other reads.
 vi.mock("../../api/trend-strip", () => ({ fetchSiteTrendStrip: mocks.fetchSiteTrendStrip }));
@@ -366,6 +371,22 @@ export async function aForecastWidgetReadsItsPointTwice(): Promise<void> {
 }
 
 /**
+ * L12 — `E1.2d` (ADR 0135 Amendment 5 ruling 4(c)): an `anomaly` widget reads its bound point's
+ * asset for the last 7 days and nothing else; its point is not a `recent` read.
+ */
+export async function anAnomalyWidgetReadsItsAssetOnce(): Promise<void> {
+  const anomaly = { ...widget(true), id: "widget-an", title: "Load anomaly", widgetType: "anomaly", config: {} } as DashboardWidgetDto;
+  mocks.fetchAssetAnomalies.mockResolvedValue({ asOf: "2026-11-16T10:20:00.000Z", scores: [] });
+  renderCanvas(dashboard([anomaly]));
+  expect(await screen.findByText("No anomaly scores for this asset yet.")).toBeInTheDocument();
+  expect(mocks.fetchAssetAnomalies).toHaveBeenCalledTimes(1);
+  const [assetId, from, to] = mocks.fetchAssetAnomalies.mock.calls[0] as [string, string, string];
+  expect(assetId).toBe(ASSET_ID);
+  expect(Date.parse(to) - Date.parse(from)).toBe(168 * 3_600_000);
+  expect(mocks.fetchTelemetryRecent).not.toHaveBeenCalledWith(REF, expect.any(String));
+}
+
+/**
  * `F4.375` (ADR 0133 Amendment 2 ruling 2, plan U6, D9, D10) — with `energyShown={false}` the
  * canvas does not draw (or read) a widget whose every binding is `kw`; a mixed widget and an
  * unbound one stay. The default, and `true`, draw everything.
@@ -396,6 +417,28 @@ export async function aKwOnlyWidgetIsNotDrawnWithoutEnergy(): Promise<void> {
   expect(await screen.findByText("Load and alarms")).toBeInTheDocument();
   expect(drawnTiles(container)).toEqual(["mixed", "unbound"]);
   expect(screen.queryByText("Total load")).toBeNull();
+}
+
+/**
+ * EK1b — `E1.2d`: an `anomaly` widget bound to `kw` stays drawn with energy not shown. Its point
+ * only names the asset (R16); it draws a unitless ML score, not kW. A `chart` bound to `kw` is
+ * still hidden.
+ */
+export async function anAnomalyWidgetOnKwIsDrawnWithoutEnergy(): Promise<void> {
+  mocks.fetchAssetAnomalies.mockResolvedValue({ asOf: "2026-11-16T10:20:00.000Z", scores: [] });
+  const anomaly = { ...widget(true), id: "anomaly-kw", title: "Load anomaly", widgetType: "anomaly", config: {} } as DashboardWidgetDto;
+  const chart = {
+    ...widget(true),
+    id: "chart-kw",
+    title: "Load chart",
+    gridX: 4,
+    widgetType: "chart",
+    config: { series: "line" },
+  } as DashboardWidgetDto;
+  const { container } = renderCanvas(dashboard([anomaly, chart]), undefined, false);
+  expect(await screen.findByText("Load anomaly")).toBeInTheDocument();
+  expect(drawnTiles(container)).toEqual(["anomaly-kw"]);
+  expect(screen.queryByText("Load chart")).toBeNull();
 }
 
 /** EK2 — the default and `energyShown={true}` draw every widget. */
