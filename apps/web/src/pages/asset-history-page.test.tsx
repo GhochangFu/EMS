@@ -36,6 +36,10 @@ import {
   theHeaderShowsCodeAndName,
   theLevelIsTheResponsesBucketWidth,
   timesAreInTheSiteZone,
+  aMaxPageAsksForNoPastForecast,
+  aPastCustomRangeStillAsksForThePastForecast,
+  noPastBucketsMeansNoPastCaption,
+  thePastForecastIsAskedForOverTheServedWindowAndCaptioned,
 } from "./asset-history-page.spec";
 
 vi.mock("echarts-for-react", () => ({
@@ -188,5 +192,21 @@ describe("F4.297 asset history page", () => {
 
   it("E1.4a leaves the chart and shows no banner when the forecast read fails", async () => {
     await aFailedForecastReadLeavesTheChart();
+  });
+
+  it("E1.4e asks for the past forecast over the served window and captions it", async () => {
+    await thePastForecastIsAskedForOverTheServedWindowAndCaptioned();
+  });
+
+  it("E1.4e a past custom range still asks for the past forecast", async () => {
+    await aPastCustomRangeStillAsksForThePastForecast();
+  });
+
+  it("E1.4e a max page asks for no past forecast", async () => {
+    await aMaxPageAsksForNoPastForecast();
+  });
+
+  it("E1.4e no past buckets means no past caption", async () => {
+    await noPastBucketsMeansNoPastCaption();
   });
 });

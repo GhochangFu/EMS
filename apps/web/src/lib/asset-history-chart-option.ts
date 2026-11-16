@@ -1,6 +1,6 @@
 import type { EChartsOption } from "echarts";
 
-import type { ForecastBucket, PointAggregateBucket } from "@bms/shared";
+import type { ForecastBucket, PastForecastBucket, PointAggregateBucket } from "@bms/shared";
 
 import { axisForUnit, shiftCompareBuckets } from "./asset-history-range";
 import { seriesPalette } from "./chart-theme";
@@ -11,6 +11,8 @@ import {
   forecastLegendEntries,
   forecastNames,
   forecastSeries,
+  pastForecastName,
+  pastForecastSeries,
 } from "./forecast-series";
 import type { Roles } from "./theme";
 import { CHART_SERIES } from "./widget-catalog";
@@ -24,6 +26,8 @@ export interface HistorySeriesInput {
   readonly compareBuckets?: readonly PointAggregateBucket[] | null;
   /** `E1.4a`: the point's current forecast buckets (from the current hour), or `null`/absent. */
   readonly forecast?: readonly ForecastBucket[] | null;
+  /** `E1.4e`: the forecast made 1 h ahead of each past hour in the window, or `null`/absent. */
+  readonly pastForecast?: readonly PastForecastBucket[] | null;
 }
 
 /**
@@ -40,6 +44,11 @@ export interface HistorySeriesInput {
  * dashed p50 in its own colour (`forecast-series.ts`) — only when `asOf`, the server's instant,
  * says the window is live (N11), and never for a series refused an axis. With a forecast drawn the
  * x axis extends by R8's rule and a "now" line marks `asOf`. A legend lists what is plotted (R9).
+ *
+ * **`E1.4e` (ADR 0135 Amendment 4).** A series that carries a `pastForecast` adds one dashed line:
+ * the forecast made 1 h ahead of each past hour. Unlike the live forecast it is drawn on any
+ * window, a past one included, and in the next palette colour after the plotted actual lines, so
+ * it never shares a colour with one.
  */
 export function buildHistoryChartOption(args: {
   readonly from: number;
@@ -133,10 +142,21 @@ export function buildHistoryChartOption(args: {
               }
             : line,
         );
-  const all = [...host, ...forecastLines];
+  const pasting = plotted.filter(({ input }) => (input.pastForecast?.length ?? 0) > 0);
+  const pastName = (input: HistorySeriesInput) => pastForecastName(pasting.length > 1 ? input.name : null);
+  const pastLines = pasting.flatMap(({ input, axis }, index) =>
+    pastForecastSeries({
+      buckets: input.pastForecast ?? [],
+      colour: palette[(plotted.length + index) % palette.length],
+      yAxisIndex: axis,
+      name: pastName(input),
+    }),
+  );
+  const all = [...host, ...pastLines, ...forecastLines];
   // The p50 before its band, and the band's two series as one entry (they share the name).
   const legendNames = [
     ...lines.map((line) => line.name),
+    ...pasting.map(({ input }) => pastName(input)),
     ...forecasting.flatMap(({ input, colour }) =>
       forecastLegendEntries(forecastNames(forecasting.length > 1 ? input.name : null), colour),
     ),

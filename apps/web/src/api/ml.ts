@@ -1,5 +1,5 @@
-import { forecastListResponseSchema, pointForecastResponseSchema } from "@bms/shared/contracts";
-import type { ForecastListResponse, PointForecastResponse } from "@bms/shared";
+import { forecastListResponseSchema, pastForecastResponseSchema, pointForecastResponseSchema } from "@bms/shared/contracts";
+import type { ForecastListResponse, PastForecastResponse, PointForecastResponse } from "@bms/shared";
 
 import { ApiError } from "../lib/api-error";
 import { clearSessionOnAuthFailure, withAuth } from "./http";
@@ -35,3 +35,20 @@ export async function fetchForecastList(): Promise<ForecastListResponse> {
   }
   return checkResponse(forecastListResponseSchema, await res.json(), "ml/forecasts");
 }
+
+/**
+ * `E1.4e` — `GET /api/v1/ml/points/:pointRef/forecast/past?from=&to=`: for each past hour of the
+ * window, the forecast made 1 h ahead (ADR 0135 Amendment 4). `from` and `to` are ISO instants,
+ * the window the history read was served.
+ */
+export async function fetchPastForecast(pointRefEncoded: string, from: string, to: string): Promise<PastForecastResponse> {
+  const sent = withAuth();
+  const query = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  const res = await fetch(`${base}/api/v1/ml/points/${pointRefEncoded}/forecast/past?${query}`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new ApiError(`ml past forecast ${res.status}`, res.status);
+  }
+  return checkResponse(pastForecastResponseSchema, await res.json(), "ml/points/:pointRef/forecast/past");
+}
+

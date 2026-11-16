@@ -12,6 +12,7 @@ import type {
   AssetPointPickerRow,
   DashboardDto,
   PointAggregateResponse,
+  PastForecastResponse,
   PointForecastResponse,
   PointRawRecordsResponse,
   UserRole,
@@ -28,6 +29,7 @@ import * as telemetryApi from "../api/telemetry";
 import * as exportsApi from "../api/view-exports";
 import { stubScheduleWizardApis } from "../components/view-actions/schedule-button.spec";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
+import { PAST_FORECAST_CAPTION } from "../lib/forecast-series";
 import { formatBucketWidth } from "../lib/widget-value";
 import type { AuthUser } from "../stores/auth-store";
 import { AssetHistoryPage } from "./asset-history-page";
@@ -117,6 +119,7 @@ interface Stubs {
   readonly aggregateSpy: MockInstance<typeof telemetryApi.fetchPointAggregate>;
   readonly rawSpy: MockInstance<typeof telemetryApi.fetchPointRawRecords>;
   readonly forecastSpy: MockInstance<typeof mlApi.fetchPointForecast>;
+  readonly pastSpy: MockInstance<typeof mlApi.fetchPastForecast>;
 }
 
 /** Every read the page and the shell make. */
@@ -129,6 +132,8 @@ export function stubApis(
     /** `E1.4a`: the forecast read's answer (default: no forecast), or its failure. */
     forecast?: PointForecastResponse;
     forecastError?: Error;
+    /** `E1.4e`: the past read's answer (default: no buckets). */
+    pastForecast?: PastForecastResponse;
   } = {},
 ): Stubs {
   // `F4.359` U16: the header reads the asset's active maintenance; no spec makes the real request.
@@ -156,7 +161,11 @@ export function stubApis(
   const forecastSpy = options.forecastError
     ? vi.spyOn(mlApi, "fetchPointForecast").mockRejectedValue(options.forecastError)
     : vi.spyOn(mlApi, "fetchPointForecast").mockResolvedValue(options.forecast ?? { asOf: FORECAST_AS_OF, forecast: null });
-  return { aggregateSpy, rawSpy, forecastSpy };
+  // `E1.4e`: likewise the past read.
+  const pastSpy = vi
+    .spyOn(mlApi, "fetchPastForecast")
+    .mockResolvedValue(options.pastForecast ?? { asOf: FORECAST_AS_OF, buckets: [] });
+  return { aggregateSpy, rawSpy, forecastSpy, pastSpy };
 }
 
 export function renderHistoryPage(search = "", role: UserRole = "admin", assetId = ASSET_ID): void {
@@ -613,3 +622,53 @@ export async function aFailedForecastReadLeavesTheChart(): Promise<void> {
   expect(screen.queryByText("Asset not found or outside your access.")).toBeNull();
   expect(screen.queryByTestId("forecast-caption")).toBeNull();
 }
+
+const PAST: PastForecastResponse = {
+  asOf: FORECAST_AS_OF,
+  buckets: [
+    { t: "2026-10-31T04:00:00.000Z", p50: 40 },
+    { t: "2026-10-31T05:00:00.000Z", p50: 41 },
+  ],
+};
+
+/**
+ * `E1.4e` (ADR 0135 Amendment 4): beside `avg` the page asks for the past forecast over the
+ * window the history read was served, and says what the line is, with no number.
+ */
+export async function thePastForecastIsAskedForOverTheServedWindowAndCaptioned(): Promise<void> {
+  const { pastSpy } = stubApis({ pastForecast: PAST });
+  renderHistoryPage();
+  const caption = await screen.findByTestId("past-forecast-caption");
+  expect(caption.textContent).toBe(PAST_FORECAST_CAPTION);
+  expect(pastSpy).toHaveBeenCalledWith(encodePointRef(ASSET_ID, "kw"), aggregate().from, aggregate().to);
+}
+
+/** Unlike the live forecast, a custom range that ended in the past still gets the past line. */
+export async function aPastCustomRangeStillAsksForThePastForecast(): Promise<void> {
+  const served = aggregate({ from: "2026-10-01T00:00:00.000Z", to: "2026-10-02T00:00:00.000Z" });
+  const { forecastSpy, pastSpy } = stubApis({ served, pastForecast: PAST });
+  renderHistoryPage("?from=2026-10-01T00:00:00.000Z&to=2026-10-02T00:00:00.000Z");
+  await screen.findByTestId("past-forecast-caption");
+  expect(pastSpy).toHaveBeenCalledWith(encodePointRef(ASSET_ID, "kw"), served.from, served.to);
+  expect(forecastSpy).not.toHaveBeenCalled();
+}
+
+/** Beside `max` the past forecast is another quantity too: no read, no caption. */
+export async function aMaxPageAsksForNoPastForecast(): Promise<void> {
+  const { aggregateSpy, pastSpy } = stubApis({ pastForecast: PAST });
+  renderHistoryPage("?fn=max");
+  await waitFor(() => expect(aggregateSpy).toHaveBeenCalled());
+  await screen.findByTestId("history-level");
+  expect(pastSpy).not.toHaveBeenCalled();
+  expect(screen.queryByTestId("past-forecast-caption")).toBeNull();
+}
+
+/** No past buckets (the scorer had not run yet): no caption. */
+export async function noPastBucketsMeansNoPastCaption(): Promise<void> {
+  const { pastSpy } = stubApis();
+  renderHistoryPage();
+  await waitFor(() => expect(pastSpy).toHaveBeenCalled());
+  await screen.findByTestId("history-level");
+  expect(screen.queryByTestId("past-forecast-caption")).toBeNull();
+}
+
