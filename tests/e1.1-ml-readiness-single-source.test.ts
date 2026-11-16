@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { THRESHOLDS } from "../packages/db/src/ml-data-readiness.js";
+import { ANOMALY_DETECTORS, ANOMALY_MODEL_NAME } from "../packages/shared/src/contracts/ml-anomalies.js";
 import { FORECAST_MAX_HORIZON_HOURS } from "../packages/shared/src/contracts/ml-forecasts.js";
 
 /**
@@ -121,5 +122,40 @@ describe("E1.4a forecast look-back: one source", () => {
     const upper = integerUpperBound(configPy, "ML_FORECAST_HORIZON_HOURS");
     expect(upper, "ML_FORECAST_HORIZON_HOURS is missing from config.py or its bound is not a literal").toBeDefined();
     expect(FORECAST_MAX_HORIZON_HOURS).toBe(upper);
+  });
+});
+
+/**
+ * E1.2b (ADR 0135 Amendment 5 A-e, plan T2.5): the API reads anomaly runs by the
+ * scorer's model name and knows its detectors. If `anomaly_baseline.py` renames
+ * either, the list's `recent_runs` CTE finds no run and every mark vanishes.
+ */
+const anomalyPy = readFileSync(join(repoRoot, "apps/ml/src/bms_ml/anomaly_baseline.py"), "utf8");
+
+/** The value of a module-level `NAME = "<string>"` assignment, or undefined. */
+function pythonString(source: string, name: string): string | undefined {
+  const match = new RegExp(`^${name}\\s*=\\s*"([^"\\\\]*)"\\s*$`, "m").exec(source);
+  return match ? match[1] : undefined;
+}
+
+describe("E1.2b anomaly model name and detectors: one source", () => {
+  it("the string reader works on a known line (positive and negative control)", () => {
+    expect(pythonString('A = 1\nFOO = "bar_baz"\n', "FOO")).toBe("bar_baz");
+    expect(pythonString("FOO = 'bar'\n", "FOO")).toBeUndefined();
+    expect(pythonString('FOO = "bar"  # note\n', "FOO")).toBeUndefined();
+  });
+
+  it("ANOMALY_MODEL_NAME equals anomaly_baseline.py's", () => {
+    const name = pythonString(anomalyPy, "ANOMALY_MODEL_NAME");
+    expect(name, "ANOMALY_MODEL_NAME is missing from anomaly_baseline.py or is not a plain string").toBeDefined();
+    expect(ANOMALY_MODEL_NAME).toBe(name);
+  });
+
+  it("ANOMALY_DETECTORS equals anomaly_baseline.py's DETECTOR_BASELINE and DETECTOR_FOREST, in that order", () => {
+    const python = [pythonString(anomalyPy, "DETECTOR_BASELINE"), pythonString(anomalyPy, "DETECTOR_FOREST")];
+    expect(python.every((value) => value !== undefined), "a DETECTOR_* constant is missing").toBe(true);
+    expect([...ANOMALY_DETECTORS]).toEqual(python);
+    const declared = [...anomalyPy.matchAll(/^DETECTOR_[A-Z_]+\s*=/gm)].length;
+    expect(declared, "a new DETECTOR_* in anomaly_baseline.py must join ANOMALY_DETECTORS").toBe(ANOMALY_DETECTORS.length);
   });
 });

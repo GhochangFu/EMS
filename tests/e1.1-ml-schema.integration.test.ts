@@ -217,13 +217,12 @@ describe.skipIf(!has)("E1.1 — ml schema against a live database", () => {
     });
   });
 
-  it("bms_auth cannot read any ml table, and bms_tenant cannot read anomaly_scores (42501)", async () => {
+  it("bms_auth cannot read any ml table (42501)", async () => {
     // E1.4a (Amendment 3 ruling 2) grants bms_tenant SELECT on model_runs and
-    // forecasts; tests/e1.4a-ml-read-grant.integration.test.ts holds that half.
-    for (const [role, tables] of [
-      ["bms_auth", ["model_runs", "forecasts", "anomaly_scores"]],
-      ["bms_tenant", ["anomaly_scores"]],
-    ] as const) {
+    // forecasts, and E1.2b (Amendment 5 A-d) on anomaly_scores;
+    // tests/e1.4a-ml-read-grant.integration.test.ts and
+    // tests/e1.2b-ml-anomaly-read-grant.integration.test.ts hold those halves.
+    for (const [role, tables] of [["bms_auth", ["model_runs", "forecasts", "anomaly_scores"]]] as const) {
       await inTx(role, eskom, async (run) => {
         for (const table of tables) {
           expect((await probe(run, `SELECT 1 FROM ml.${table} LIMIT 1`)).code, `${role} ${table}`).toBe("42501");

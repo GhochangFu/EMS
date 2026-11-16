@@ -2,7 +2,7 @@ import { expect, vi } from "vitest";
 
 import { encodePointRef } from "@bms/shared";
 
-import { fetchForecastList, fetchPastForecast, fetchPointForecast } from "./ml";
+import { fetchAnomalyList, fetchAssetAnomalies, fetchForecastList, fetchPastForecast, fetchPointForecast } from "./ml";
 
 /**
  * `E1.4a` — the forecast reads' wire shape and contract parse. `node` environment, like
@@ -104,3 +104,56 @@ export async function thePastReadSendsItsWindowAndParses(): Promise<void> {
   await expect(fetchPastForecast(REF, from, to)).rejects.toThrow(/ml past forecast 403$/);
 }
 
+
+/**
+ * `E1.2b` — the asset's anomaly read sends its window and parses `{ asOf, scores }`; a wrong shape
+ * throws in test; a failure names its status, the shape `isForbidden` reads.
+ */
+export async function theAssetAnomalyReadSendsItsWindowAndParses(): Promise<void> {
+  const from = "2026-11-15T10:00:00.000Z";
+  const to = "2026-11-16T11:00:00.000Z";
+  const body = {
+    asOf: AS_OF,
+    scores: [{ t: "2026-11-16T09:00:00.000Z", detector: "baseline_mad", score: 0.995, contributingPoints: ["temp_c"] }],
+  };
+  const seen = answer(body);
+  expect(await fetchAssetAnomalies(ASSET, from, to)).toEqual(body);
+  expect(seen()).toBe(`${BASE}/api/v1/ml/assets/${ASSET}/anomalies?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+  answer({ asOf: AS_OF, scores: [{ ...body.scores[0], score: 1.5 }] });
+  await expect(fetchAssetAnomalies(ASSET, from, to)).rejects.toThrow();
+  answer({ message: "Forbidden" }, 403);
+  await expect(fetchAssetAnomalies(ASSET, from, to)).rejects.toThrow(/ml asset anomalies 403$/);
+}
+
+/** `E1.2b` — the list read goes to its path, with `since` when given, and parses; a wrong shape or a failure throws. */
+export async function theAnomalyListReadHitsItsPathAndParses(): Promise<void> {
+  const body = {
+    asOf: AS_OF,
+    since: "2026-11-09T10:00:00.000Z",
+    truncated: false,
+    items: [
+      {
+        assetId: ASSET,
+        assetCode: "CR-1",
+        assetName: "Cold room 1",
+        assetRtuName: null,
+        locationId: "22222222-2222-4222-8222-222222222222",
+        assetLocationName: "Kolkata DC",
+        timeZone: "Asia/Kolkata",
+        t: "2026-11-16T09:00:00.000Z",
+        detector: "isolation_forest",
+        score: 0.999,
+        contributingPoints: ["temp_c", "door_open"],
+      },
+    ],
+  };
+  const seen = answer(body);
+  expect(await fetchAnomalyList()).toEqual(body);
+  expect(seen()).toBe(`${BASE}/api/v1/ml/anomalies`);
+  await fetchAnomalyList("2026-11-10T00:00:00.000Z");
+  expect(seen()).toBe(`${BASE}/api/v1/ml/anomalies?since=${encodeURIComponent("2026-11-10T00:00:00.000Z")}`);
+  answer({ ...body, truncated: "no" });
+  await expect(fetchAnomalyList()).rejects.toThrow();
+  answer({ message: "boom" }, 500);
+  await expect(fetchAnomalyList()).rejects.toThrow(/ml anomalies 500$/);
+}

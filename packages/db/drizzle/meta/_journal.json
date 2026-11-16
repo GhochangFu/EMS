@@ -1114,6 +1114,13 @@
       "when": 1794819219746,
       "tag": "0159_forecast_widget_type",
       "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1794850899097,
+      "tag": "0160_ml_anomaly_read_grant",
+      "breakpoints": true
     }
   ]
 }

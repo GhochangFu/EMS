@@ -53,6 +53,15 @@ export function forecastPalette(roles: Roles): string[] {
   return forecastRoles(roles).live.map((role) => roles[role]);
 }
 
+/**
+ * `E1.2b` / ADR 0135 Amendment 5 ruling 4(b) — the unusual-hour marks' colour on the asset history
+ * chart: `ink`, the strongest neutral of either theme, which no actual, past-forecast or forecast
+ * line uses and which is not an alarm colour — a mark is advisory. `chart-theme.spec.ts` C7.
+ */
+export function anomalyMarkColour(roles: Roles): string {
+  return roles.ink;
+}
+
 function axis(roles: Roles) {
   return {
     axisLine: { lineStyle: { color: roles["line-strong"] } },

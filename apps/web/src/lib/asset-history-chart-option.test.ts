@@ -23,6 +23,11 @@ import {
   onePointDrawsActualPastAndFutureInThreeColours,
   theTooltipDropsFloatNoiseAndKeepsRealDigits,
   theTooltipPrintsNoiseAroundZeroAsZero,
+  anUnusualHourAddsOneMarkSeriesAndALegendEntry,
+  marksBesideAForecastLeaveItUntouched,
+  noUnusualHourAddsNothing,
+  oneUnitPutsTheMarksOnASecondHiddenAxis,
+  theMarksTooltipHoldsScoreDetectorsAndPoints,
 } from "./asset-history-chart-option.spec";
 
 /** Vitest entry point (ADR 0014). */
@@ -92,5 +97,20 @@ describe("F4.297 asset history chart option", () => {
   });
   it("F4.382 the tooltip prints float noise around zero as 0", () => {
     theTooltipPrintsNoiseAroundZeroAsZero();
+  });
+  it("E1.2b an unusual hour adds one mark series on a hidden third axis and a legend entry", () => {
+    anUnusualHourAddsOneMarkSeriesAndALegendEntry();
+  });
+  it("E1.2b one unit puts the marks on a second, hidden axis", () => {
+    oneUnitPutsTheMarksOnASecondHiddenAxis();
+  });
+  it("E1.2b no unusual hour inside the window adds nothing", () => {
+    noUnusualHourAddsNothing();
+  });
+  it("E1.2b a mark's tooltip holds the score, the detector labels and the point keys", () => {
+    theMarksTooltipHoldsScoreDetectorsAndPoints();
+  });
+  it("E1.2b marks beside a forecast leave the forecast untouched", () => {
+    marksBesideAForecastLeaveItUntouched();
   });
 });

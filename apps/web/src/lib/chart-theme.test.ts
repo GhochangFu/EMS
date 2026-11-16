@@ -9,6 +9,7 @@ import {
   c5EveryLeafIsARoleOrARoleWithAlpha,
   c5TheThemeHasStringLeavesToCheck,
   c6TheActualPastAndForecastPalettesShareNoColour,
+  c7TheAnomalyMarkSharesNoLineColour,
   c9TheTextIsInTheTypeTokens,
   c10TheTypeTokensResolve,
   type ThemeName,
@@ -38,6 +39,10 @@ describe.each<ThemeName>(["light", "dark"])("F3.65c ECharts theme (%s)", (name) 
 
   it("C6 F4.377/F4.381 the three palettes share no colour, and their first colours are ΔE2000 ≥ 20 apart", () => {
     c6TheActualPastAndForecastPalettesShareNoColour(name);
+  });
+
+  it("C7 E1.2b the unusual-hour mark is ink, shared with no line", () => {
+    c7TheAnomalyMarkSharesNoLineColour(name);
   });
 
   it("C5 every string leaf is a role or a role with alpha", () => {

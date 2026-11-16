@@ -1056,3 +1056,21 @@ minutes for each PR that runs the `ml` job (the forecast child alone takes
 CI** (`measure_cycle --runs 1`). The step still fails above 900 MiB for the
 anomaly child or 300 s for forecast + anomaly. The demo host's first cycles
 after the deploy are the second sample.
+
+**Build record — the ruling-5 measurement, `E1.2a` (2026-11-16).** CI's `ml`
+job on #1370 (head `ba07e3b`, run 43915761883), an amd64 GitHub runner, one run
+at `--cpus 1 --memory 1g`, read-only, no capabilities, against the fixture at
+the real shape (21 forecast series, of which 4 have about 1,440 h of context
+rather than 2,016 h; 38 anomaly assets, 10 of them with an Isolation Forest).
+Peak memory is the container's `memory.peak`.
+
+| Child | Wall s | Peak MiB | Scored | Rows |
+|---|---|---|---|---|
+| Forecast (`run-once`) | 11.1 | 547.6 | 21 series | 1,008 |
+| Anomaly (`run-anomaly`) | 39.7 | 159.1 | 38 assets | 48 (10 forest) |
+| **Cycle** | **50.8** | | | |
+
+Both are inside ruling 5 (anomaly ≤ 900 MiB, forecast + anomaly ≤ 300 s), so
+the build goes on. `E1.2a` merged as `947f0d0`. The demo host (arm64) is the
+second sample: its first anomaly `cycle_summary` lines and the `docker stats`
+peak are recorded here after the deploy.

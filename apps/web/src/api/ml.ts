@@ -1,5 +1,17 @@
-import { forecastListResponseSchema, pastForecastResponseSchema, pointForecastResponseSchema } from "@bms/shared/contracts";
-import type { ForecastListResponse, PastForecastResponse, PointForecastResponse } from "@bms/shared";
+import {
+  anomalyListResponseSchema,
+  assetAnomaliesResponseSchema,
+  forecastListResponseSchema,
+  pastForecastResponseSchema,
+  pointForecastResponseSchema,
+} from "@bms/shared/contracts";
+import type {
+  AnomalyListResponse,
+  AssetAnomaliesResponse,
+  ForecastListResponse,
+  PastForecastResponse,
+  PointForecastResponse,
+} from "@bms/shared";
 
 import { ApiError } from "../lib/api-error";
 import { clearSessionOnAuthFailure, withAuth } from "./http";
@@ -50,4 +62,35 @@ export async function fetchPastForecast(pointRefEncoded: string, from: string, t
     throw new ApiError(`ml past forecast ${res.status}`, res.status);
   }
   return checkResponse(pastForecastResponseSchema, await res.json(), "ml/points/:pointRef/forecast/past");
+}
+
+/**
+ * `E1.2b` / ADR 0135 Amendment 5 — `GET /api/v1/ml/assets/:assetId/anomalies?from=&to=`: every
+ * detector score of one asset's hours in the window (at most 31 days), advisory. The chart applies
+ * the 0.99 line (`lib/anomaly-series.ts`).
+ */
+export async function fetchAssetAnomalies(assetId: string, from: string, to: string): Promise<AssetAnomaliesResponse> {
+  const sent = withAuth();
+  const query = `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  const res = await fetch(`${base}/api/v1/ml/assets/${encodeURIComponent(assetId)}/anomalies?${query}`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new ApiError(`ml asset anomalies ${res.status}`, res.status);
+  }
+  return checkResponse(assetAnomaliesResponseSchema, await res.json(), "ml/assets/:assetId/anomalies");
+}
+
+/**
+ * `E1.2b` — `GET /api/v1/ml/anomalies[?since=]`: the unusual hours of every asset the caller can
+ * read, newest first, at most the last 7 days (the server clamps `since`). For the Anomalies list.
+ */
+export async function fetchAnomalyList(since?: string): Promise<AnomalyListResponse> {
+  const sent = withAuth();
+  const query = since === undefined ? "" : `?since=${encodeURIComponent(since)}`;
+  const res = await fetch(`${base}/api/v1/ml/anomalies${query}`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new ApiError(`ml anomalies ${res.status}`, res.status);
+  }
+  return checkResponse(anomalyListResponseSchema, await res.json(), "ml/anomalies");
 }

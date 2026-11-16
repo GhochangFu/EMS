@@ -53,3 +53,16 @@ export function decodeBoundedPointRef(pointRef: string): { assetId: string; poin
   }
   return point;
 }
+
+/**
+ * `E1.2b` / ADR 0135 Amendment 5 A-e (Amendment 3 S2) — a bare `:assetId` path
+ * param, checked as {@link decodeGuardedPointRef} checks a ref's asset id and
+ * with the same schema: a non-UUID is a 400, before any scope check or query.
+ * Returns the id unchanged.
+ */
+export function assertAssetIdParam(assetId: string): string {
+  if (!assetIdSchema.safeParse(assetId).success) {
+    throw new BadRequestException("Invalid asset id: not a UUID");
+  }
+  return assetId;
+}

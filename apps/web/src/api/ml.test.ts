@@ -2,6 +2,8 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aWrongShapeOrAFailureThrows,
+  theAnomalyListReadHitsItsPathAndParses,
+  theAssetAnomalyReadSendsItsWindowAndParses,
   thePastReadSendsItsWindowAndParses,
   thePointReadHitsItsPathAndParses,
   theListReadHitsItsPathAndParses,
@@ -16,4 +18,6 @@ describe("E1.4a — the forecast web client", () => {
   it("the list read hits its path and parses", () => theListReadHitsItsPathAndParses());
   it("a wrong shape or a failure throws", () => aWrongShapeOrAFailureThrows());
   it("E1.4e the past read sends its window and parses", () => thePastReadSendsItsWindowAndParses());
+  it("E1.2b the asset anomaly read sends its window and parses", () => theAssetAnomalyReadSendsItsWindowAndParses());
+  it("E1.2b the anomaly list read hits its path and parses", () => theAnomalyListReadHitsItsPathAndParses());
 });
