@@ -983,7 +983,7 @@
 > `tests/adr-0108-no-org-or-segment-literals.test.ts` scans every runtime
 > module the ADR adds. **`F4.305` makes the `F4.301` trend strip a widget
 > type**: migration `0118` widens the widget-type `CHECK` with `trend_strip`,
-> so `widgetType` has **thirteen** values, and adds the nullable stamp
+> so `widgetType` has **thirteen** values (fourteen since `E1.4c`, §4.8), and adds the nullable stamp
 > `bms.dashboards.stock_version`. The config is `{ tabKey?, defaultRange }`
 > (a tab key, never a group uuid). **Stock v5 of "SMOC standard"** puts one
 > strip directly under every tab's top tile row; the v5 step
@@ -3538,7 +3538,7 @@ Do not add top-level folders without updating this section.
   Timescale refuses such a window with `22023` — and never widens `from` to make
   one fit; that is the archive-deleting direction the floor exists to prevent.
 
-- **The `ml` schema is the only schema a migration created** (`0157`, ADR 0135). It runs `CREATE SCHEMA IF NOT EXISTS ml AUTHORIZATION bms_owner` as the migrator, ahead of the `SET ROLE bms_owner` bracket, because `bms_owner` holds no `CREATE` on the database and `roles.ts` may not grow a schema. **0041's default privileges do not reach `ml`**: a new `ml` table reaches no pool role unless its migration grants it, and the grants are deliberate (`bms_fleet` `SELECT, INSERT`; `bms_tenant` `USAGE` and `SELECT` on `ml.forecasts` and `ml.model_runs` since `0158`, `E1.4a`, and nothing on `ml.anomaly_scores`). **The schema carries a version marker**, `COMMENT ON SCHEMA ml IS 'bms-ml-schema-version=N'`: a later migration that changes `ml.*` re-issues it with the next integer, and `apps/ml` refuses to start below the version it expects (forward-only, additive changes keep an older scorer valid). Whole-hour checks there use `date_trunc('hour', x, 'UTC')`, never the two-argument form (the `0150` lesson). `drizzle.config.ts`'s `schemaFilter` stays `["bms", "telemetry"]` until `E1.4` adds the TypeScript mirror; `tests/e1.1-ml-schema.test.ts` is the tripwire.
+- **The `ml` schema is the only schema a migration created** (`0157`, ADR 0135). It runs `CREATE SCHEMA IF NOT EXISTS ml AUTHORIZATION bms_owner` as the migrator, ahead of the `SET ROLE bms_owner` bracket, because `bms_owner` holds no `CREATE` on the database and `roles.ts` may not grow a schema. **0041's default privileges do not reach `ml`**: a new `ml` table reaches no pool role unless its migration grants it, and the grants are deliberate (`bms_fleet` `SELECT, INSERT`; `bms_tenant` `USAGE` and `SELECT` on `ml.forecasts` and `ml.model_runs` since `0158`, `E1.4a`, and nothing on `ml.anomaly_scores`). **The schema carries a version marker**, `COMMENT ON SCHEMA ml IS 'bms-ml-schema-version=N'`: a later migration that changes `ml.*` re-issues it with the next integer, and `apps/ml` refuses to start below the version it expects (forward-only, additive changes keep an older scorer valid). Whole-hour checks there use `date_trunc('hour', x, 'UTC')`, never the two-argument form (the `0150` lesson). `drizzle.config.ts`'s `schemaFilter` names `ml` since `E1.4a` added the read-only TypeScript mirror (§3); `tests/e1.4a-ml-read-grant.test.ts` holds it.
 
 ### 4.5 Style hygiene
 - File names: `kebab-case` for files, `PascalCase` for React components.
