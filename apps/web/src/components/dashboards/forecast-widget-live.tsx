@@ -5,9 +5,8 @@ import { encodePointRef, FORECAST_WIDGET_ACTUAL_HOURS } from "@bms/shared";
 import type { DashboardWidgetDto } from "@bms/shared";
 
 import { fetchPointAggregate } from "../../api/telemetry";
-import { usePointForecasts } from "../../hooks/use-point-forecasts";
+import { forecastRefetchMs, usePointForecasts } from "../../hooks/use-point-forecasts";
 import { hourlyMeans } from "../../lib/forecast-hourly";
-import { FORECAST_REFETCH_MS } from "../../lib/forecast-series";
 import type { WidgetStatus } from "../../lib/widget-catalog";
 import { widgetTitle } from "../../lib/widget-value";
 import { isForbidden, retryUnlessForbidden, siteZoneOf } from "../asset-history/history-format";
@@ -25,8 +24,8 @@ type ForecastWidgetLiveProps = {
  * its primary point twice: the aggregate route for the last 1,440 minutes with
  * `bucketFunction=avg&bucketStats=true` (the history page's 24 h read), averaged to whole UTC hours
  * in the browser, and the point's current forecast. Both refetch every 15 minutes, the scorer's
- * pace; a 403 stops both (`retryUnlessForbidden`, `forecastRefetchMs`) and draws the access
- * sentence. A failed forecast read is "no forecast drawn", never a widget error.
+ * pace; a 403 stops both re-polls and the focus refetch (`retryUnlessForbidden`,
+ * `forecastRefetchMs`), and the aggregate read's 403 draws the access sentence. A failed forecast read is "no forecast drawn", never a widget error.
  */
 export function ForecastWidgetLive({ widget }: ForecastWidgetLiveProps) {
   const title = widgetTitle(widget.title, widget.widgetType);
@@ -42,7 +41,8 @@ export function ForecastWidgetLive({ widget }: ForecastWidgetLiveProps) {
         bucketStats: true,
       }),
     enabled: point !== null,
-    refetchInterval: (query: { state: { error: unknown } }) => (isForbidden(query.state.error) ? false : FORECAST_REFETCH_MS),
+    refetchInterval: (query: { state: { error: unknown } }) => forecastRefetchMs(query.state.error),
+    refetchOnWindowFocus: (query: { state: { error: unknown } }) => !isForbidden(query.state.error),
     retry: retryUnlessForbidden,
   });
   const [forecastRead] = usePointForecasts(point?.assetId ?? "", point === null ? [] : [point.pointKey], point !== null);
@@ -56,7 +56,7 @@ export function ForecastWidgetLive({ widget }: ForecastWidgetLiveProps) {
         : {
             from: Date.parse(data.from),
             to: Date.parse(data.to),
-            actual: hourlyMeans(data.buckets ?? []),
+            actual: hourlyMeans(data.buckets ?? [], Date.parse(data.from), Date.parse(data.to)),
             forecast,
             zone: siteZoneOf(data.timeZone).zone,
           },

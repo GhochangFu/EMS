@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, it } from "vitest";
 
 import {
+  theActualReadRepollsUntilA403,
   aForbiddenReadDrawsTheAccessSentence,
   resetLiveMocks,
   theTwoReadsNameTheBoundPoint,
@@ -24,4 +25,5 @@ describe("E1.4c — the live forecast widget", () => {
   it("draws the access sentence on a 403", async () => {
     await aForbiddenReadDrawsTheAccessSentence();
   });
+  it("re-polls the actual read every 15 minutes and stops after a 403", () => theActualReadRepollsUntilA403());
 });

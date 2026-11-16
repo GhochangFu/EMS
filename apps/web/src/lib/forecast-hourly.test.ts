@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  anHourWithNoBucketIsNullGivenTheWindow,
   aBucketWithoutStatsUsesItsValue,
   anHourWithNoSamplesIsNull,
   hourEdgesAreUtcUnderANonUtcZone,
@@ -24,4 +25,5 @@ describe("E1.4c — the forecast widget's hourly actuals (plan R10)", () => {
   it("cuts hours at UTC edges under a non-UTC zone", () => {
     hourEdgesAreUtcUnderANonUtcZone();
   });
+  it("seeds every hour of the window, so an hour with no bucket is null", () => anHourWithNoBucketIsNullGivenTheWindow());
 });

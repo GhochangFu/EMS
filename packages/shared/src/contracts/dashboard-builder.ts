@@ -90,7 +90,7 @@ export * from "./dashboard-binding-messages";
  * No comment may sit inside the `z.enum` array: the repo gates parse it with a split on commas,
  * and a comment line would swallow the value after it.
  *
- * **Five migrations declare this list, and only the last is current.** `0050` froze the
+ * **Seven migrations declare this list, and only the last is current.** `0050` froze the
  * original four in `dashboard_widgets_widget_type_check`; `F3.35` Stage B's `0055` dropped and
  * re-added that constraint with `table`; `F3.32`'s `0086` does the same with `mimic`; `F3.73`'s
  * `0096` adds the five site widgets; `F3.74`'s `0099` adds `breaker_table`; `F4.305`'s `0118` adds `trend_strip`;

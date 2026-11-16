@@ -84,7 +84,7 @@ export function noForecastYetStillDrawsTheActualLine(): void {
   expect(screen.queryByTestId("forecast-caption")).toBeNull();
 }
 
-/** A 403 on either read: the history page's access sentence, and nothing drawn. */
+/** A 403 on the actual (aggregate) read: the history page's access sentence, and nothing drawn. */
 export function aForbiddenReadSaysTheAccessSentence(): void {
   render(<ForecastWidget title="Chiller" status="ready" pointKey="kw" unit="kW" forbidden read={read(FORECAST)} />);
   expect(screen.getByText(ACCESS_SENTENCE)).toBeTruthy();

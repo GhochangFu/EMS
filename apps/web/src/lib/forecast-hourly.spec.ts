@@ -73,3 +73,20 @@ export function hourEdgesAreUtcUnderANonUtcZone(): void {
     vi.unstubAllEnvs();
   }
 }
+
+/** Given the window, an hour with no bucket at all (an RTU outage) is present and `null`, never joined across. */
+export function anHourWithNoBucketIsNullGivenTheWindow(): void {
+  const means = hourlyMeans(
+    [bucket(HOUR_10 + 5 * MINUTE, 4, 2), bucket(HOUR_10 + 3 * 60 * MINUTE + 5 * MINUTE, 8, 2)],
+    HOUR_10 + 2 * MINUTE,
+    HOUR_10 + 3 * 60 * MINUTE + 30 * MINUTE,
+  );
+  expect(means).toEqual([
+    { t: iso(HOUR_10), v: 4 },
+    { t: iso(HOUR_10 + 60 * MINUTE), v: null },
+    { t: iso(HOUR_10 + 120 * MINUTE), v: null },
+    { t: iso(HOUR_10 + 180 * MINUTE), v: 8 },
+  ]);
+  // Without the window the missing hours are simply absent (the old behaviour, kept for a bare call).
+  expect(hourlyMeans([bucket(HOUR_10 + 5 * MINUTE, 4, 2)]).map((m) => m.t)).toEqual([iso(HOUR_10)]);
+}

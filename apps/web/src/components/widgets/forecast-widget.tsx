@@ -39,7 +39,7 @@ type ForecastWidgetProps = {
   /** The bound point's key; `null` when the widget binds none. */
   pointKey: string | null;
   unit: string | null;
-  /** Either read answered 403: the history page's access sentence, and nothing else. */
+  /** The aggregate read answered 403 (both routes gate on `canReadAsset`): the access sentence, and nothing else. */
   forbidden?: boolean;
   /** `null` is the static draw, for the dispatcher that reads nothing. */
   read: ForecastWidgetRead | null;

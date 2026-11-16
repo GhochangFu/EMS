@@ -70,7 +70,9 @@ export const TEMPLATE_TREND_STRIP_SELECTION_MESSAGE =
 /**
  * `E1.4c` / ADR 0135 Amendment 3 R-f (plan R12) — the forecast widget is builder palette only. A
  * forecast names one asset's point, which a template has not, so neither template surface holds
- * one; the asset-template contract refuses it by `isTemplateAuthorableWidgetType`.
+ * one. This contract refuses it by name in the content walk below (tabs included); the
+ * asset-template contract refuses it because `templateDashboardWidgetVariants` has no forecast arm,
+ * and the web's `TEMPLATE_WIDGET_TYPES` drops it through `isTemplateAuthorableWidgetType`.
  */
 export const TEMPLATE_FORECAST_MESSAGE =
   "a dashboard template holds no forecast widget; a forecast names one asset's point";

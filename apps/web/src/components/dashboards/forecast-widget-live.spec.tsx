@@ -83,13 +83,14 @@ const AGGREGATE = {
   ],
 };
 
-function renderLive(): void {
+function renderLive(): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <ForecastWidgetLive widget={WIDGET} />
     </QueryClientProvider>,
   );
+  return client;
 }
 
 /** Both reads name the bound point's ref; the actual line is the hourly mean (R10). */
@@ -107,7 +108,12 @@ export async function theTwoReadsNameTheBoundPoint(): Promise<void> {
   expect(mocks.fetchPointForecast).toHaveBeenCalledWith(REF);
   const actual = mocks.recorded.at(-1)?.option.series[0];
   expect(actual?.name).toBe("chw_kw");
-  expect(actual?.data).toEqual([["2026-11-16T09:00:00.000Z", 32.5]]);
+  // Every UTC hour of the window, 10:00Z on the 15th to 10:00Z on the 16th, is present (R10 with
+  // the window seeded): the one hour with data carries its mean, the rest are gaps, never joined.
+  expect(actual?.data).toHaveLength(25);
+  expect(actual?.data.find(([t]) => t === "2026-11-16T09:00:00.000Z")).toEqual(["2026-11-16T09:00:00.000Z", 32.5]);
+  expect(actual?.data.filter(([, v]) => v !== null)).toHaveLength(1);
+  expect(actual?.data[0]?.[0]).toBe("2026-11-15T10:00:00.000Z");
 }
 
 /** A 403 on the actual read draws the access sentence and nothing else. */
@@ -118,4 +124,24 @@ export async function aForbiddenReadDrawsTheAccessSentence(): Promise<void> {
   expect(await screen.findByText(ACCESS_SENTENCE)).toBeTruthy();
   await waitFor(() => expect(mocks.fetchPointForecast).toHaveBeenCalled());
   expect(mocks.recorded).toHaveLength(0);
+}
+
+/** The aggregate read re-polls every 15 minutes and stops, focus refetch included, after a 403. */
+export async function theActualReadRepollsUntilA403(): Promise<void> {
+  mocks.fetchPointAggregate.mockResolvedValue(AGGREGATE);
+  mocks.fetchPointForecast.mockResolvedValue({ asOf: TO, forecast: null });
+  const client = renderLive();
+  // `findAll`: `find` matches a key exactly, and the key carries the ref and the window too.
+  const actualQuery = () => client.getQueryCache().findAll({ queryKey: ["forecast-widget-actual"] })[0];
+  await waitFor(() => expect(actualQuery()?.state.status).toBe("success"));
+  // Observer options, merged into the query's options at run time; `QueryOptions` does not declare them.
+  const options = actualQuery()?.options as
+    | { readonly refetchInterval?: unknown; readonly refetchOnWindowFocus?: unknown }
+    | undefined;
+  const interval = options?.refetchInterval as (q: { state: { error: unknown } }) => number | false;
+  const onFocus = options?.refetchOnWindowFocus as (q: { state: { error: unknown } }) => boolean;
+  expect(interval({ state: { error: null } })).toBe(900_000);
+  expect(interval({ state: { error: new Error("telemetry aggregate 403") } })).toBe(false);
+  expect(onFocus({ state: { error: null } })).toBe(true);
+  expect(onFocus({ state: { error: new Error("telemetry aggregate 403") } })).toBe(false);
 }

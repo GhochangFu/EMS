@@ -81,8 +81,8 @@ export function runDashboardBuilderTests(): void {
         "trend_strip",
         "forecast",
       ]),
-    `widget types must match migration 0118's widened CHECK (0099's plus trend_strip) exactly — NOT 0050's, 0055's, ` +
-      `0086's or 0096's, which froze four, five, six and eleven and cannot be edited, got ` +
+    `widget types must match migration 0159's widened CHECK (0118's plus forecast) exactly — NOT 0050's, 0055's, ` +
+      `0086's, 0096's, 0099's or 0118's, which froze four, five, six, eleven, twelve and thirteen and cannot be edited, got ` +
       `${JSON.stringify(widgetTypeSchema.options)}`,
   );
 
