@@ -1,4 +1,4 @@
-import { DASHBOARD_SLUG_MAX, isDashboardSlug } from "./dashboard-slug";
+import { DASHBOARD_SLUG_MAX, DASHBOARD_SLUG_PATTERN, isDashboardSlug } from "./dashboard-slug";
 
 /**
  * `E4.2` PR 2 sweep — `isDashboardSlug` mirrors
@@ -33,4 +33,22 @@ export function refusesASingleCharacter(): void {
 export function refusesMoreThanSixtyFourCharacters(): void {
   assert(isDashboardSlug("a".repeat(DASHBOARD_SLUG_MAX)), "the positive control — 64 is accepted");
   assert(!isDashboardSlug("a".repeat(DASHBOARD_SLUG_MAX + 1)), "65 characters is above the maximum");
+}
+
+/**
+ * `F4.380` (the owner's AWS check, 2026-11-16) — Chrome compiles an `<input pattern>` as
+ * `^(?:pattern)$` with the `v` flag, where a bare `-` at the end of a class is a syntax error;
+ * the browser then logged "Invalid character class" and checked nothing. The pattern must compile
+ * under `v` and still mean the server's rule.
+ */
+export function thePatternCompilesWithTheVFlagAsChromeDoes(): void {
+  let compiled: RegExp | null = null;
+  try {
+    compiled = new RegExp(`^(?:${DASHBOARD_SLUG_PATTERN})$`, "v");
+  } catch (error) {
+    throw new Error(`DASHBOARD_SLUG_PATTERN does not compile with the v flag: ${String(error)}`);
+  }
+  assert(compiled.test("sustainability-overview-2"), "the v-flag pattern accepts a hyphenated slug");
+  assert(!compiled.test("Sustainability Overview"), "the v-flag pattern refuses a capital and a space");
+  assert(!compiled.test("a_b"), "the v-flag pattern refuses an underscore");
 }

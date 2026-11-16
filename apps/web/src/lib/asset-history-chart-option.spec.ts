@@ -237,3 +237,102 @@ export function pastColoursNeverMatchAnActualColour(): void {
   expect(new Set(past).size).toBe(4);
 }
 
+// --- `F4.377` (the owner's AWS check, 2026-11-16): the forecast is not drawn in the actual's colour. ---
+
+/** A point with all three: actual buckets, a live forecast and a past forecast. */
+const kwAll: HistorySeriesInput = { ...kw, compareBuckets: null, forecast: FORECAST, pastForecast: PAST };
+
+/** The colour each kind of line is drawn in, read from the series as built. */
+function coloursOf(option: Shape): { actual: string[]; past: string[]; bandBase: string[]; p50: string[] } {
+  const isPast = (name: string) => name.startsWith("Past forecast");
+  const isP50 = (name: string) => name.startsWith("Forecast p50");
+  const isBand = (name: string) => name.startsWith("Forecast p10–p90");
+  const colour = (s: Shape["series"][number]) => s.lineStyle?.color ?? s.itemStyle?.color ?? "";
+  // The band's lower half carries the base colour; the upper half is that colour with alpha.
+  const bandSeries = option.series.filter((s) => isBand(s.name));
+  return {
+    actual: option.series.filter((s) => !isPast(s.name) && !isP50(s.name) && !isBand(s.name)).map(colour),
+    past: option.series.filter((s) => isPast(s.name)).map(colour),
+    bandBase: bandSeries.filter((_, i) => i % 2 === 0).map((s) => s.itemStyle?.color ?? ""),
+    p50: option.series.filter((s) => isP50(s.name)).map(colour),
+  };
+}
+
+/**
+ * The owner's ruling (2026-11-16, three colours): with one point the actual line is `series-1`, the
+ * past forecast `series-2` and the live forecast — its dashed p50 and its p10–p90 band — `series-3`.
+ */
+export function onePointDrawsActualPastAndFutureInThreeColours(): void {
+  const option = build([kwAll], null, AS_OF);
+  const c = coloursOf(option);
+  expect(c.actual).toEqual([roles["series-1"]]);
+  expect(c.past).toEqual([roles["series-2"]]);
+  expect(c.p50).toEqual([roles["series-3"]]);
+  expect(c.bandBase).toEqual([roles["series-3"]]);
+  // The band's shaded half and its legend swatch are the forecast colour with alpha, never the actual's.
+  const upper = option.series.filter((s) => s.name === "Forecast p10–p90")[1];
+  expect(upper?.itemStyle?.color?.startsWith(roles["series-3"].replace(/^rgb\((.*)\)$/, "rgba($1"))).toBe(true);
+  const swatch = option.legend?.data?.find((entry) => typeof entry !== "string" && entry.name === "Forecast p10–p90");
+  expect(JSON.stringify(swatch)).toContain(roles["series-3"].replace(/^rgb\((.*)\)$/, "rgba($1"));
+}
+
+/**
+ * With several points no forecast colour is any actual line's colour, no live-forecast colour is
+ * any past line's colour, and each point's forecast has its own colour (traced by the legend's
+ * point key, R9) — up to the palette's length, and it never wraps into another kind's colours.
+ */
+export function forecastColoursNeverMatchActualOrPastWithSeveralPoints(): void {
+  for (const count of [2, 3, 6]) {
+    const points = Array.from({ length: count }, (_, i) => ({ ...kwAll, name: `p${i}` }));
+    const c = coloursOf(build(points, null, AS_OF));
+    expect(c.p50, `${count} points`).toHaveLength(count);
+    expect(c.p50, `${count} points: band and p50 match per point`).toEqual(c.bandBase);
+    const future = new Set(c.p50);
+    expect(c.actual.filter((x) => future.has(x)), `${count} points: future vs actual`).toEqual([]);
+    expect(c.past.filter((x) => future.has(x)), `${count} points: future vs past`).toEqual([]);
+    expect(c.actual.filter((x) => c.past.includes(x)), `${count} points: past vs actual`).toEqual([]);
+    if (count <= 3) {
+      expect(future.size, `${count} points: one colour per point`).toBe(count);
+    }
+  }
+}
+
+/** The legend names each point's live forecast and past forecast by its point key, so each traces to its point. */
+export function eachForecastIsTracedToItsPointInTheLegend(): void {
+  const option = build([kwAll, { ...kwAll, name: "kw2" }], null, AS_OF);
+  expect(legendNames(option)).toEqual([
+    "kw",
+    "kw2",
+    "Past forecast (1 h ahead) · kw",
+    "Past forecast (1 h ahead) · kw2",
+    "Forecast p50 · kw",
+    "Forecast p10–p90 · kw",
+    "Forecast p50 · kw2",
+    "Forecast p10–p90 · kw2",
+  ]);
+}
+
+// --- `F4.379` (the owner's AWS check, 2026-11-16): no float noise in the chart's tooltip. ---
+
+interface TooltipShape {
+  readonly tooltip?: { readonly valueFormatter?: (value: unknown, dataIndex: number) => string };
+}
+
+/**
+ * The tooltip prints a value as the Latest cell does: the float's binary tail dropped
+ * (`0.30000000000000004` → `0.3`), every real digit kept (`49.96` stays `49.96`).
+ */
+export function theTooltipDropsFloatNoiseAndKeepsRealDigits(): void {
+  const option = buildHistoryChartOption({ from: FROM, to: TO, series: [kw], compare: null, roles }) as unknown as TooltipShape;
+  const format = option.tooltip?.valueFormatter;
+  expect(format).toBeTypeOf("function");
+  expect(format?.(0.3000000000000007, 0)).toBe("0.3");
+  expect(format?.(-6.3999999999999995, 0)).toBe("-6.4");
+  expect(format?.(1.0000000000000009, 0)).toBe("1");
+  expect(format?.(49.96, 0)).toBe("49.96");
+  expect(format?.(0.0125, 0)).toBe("0.0125");
+  expect(format?.(Math.fround(12.3), 0), "a float32 register").toBe("12.3");
+  expect(format?.(125000, 0), "grouped as ECharts' default was").toBe("125,000");
+  expect(format?.(null, 0)).toBe("-");
+  expect(format?.(["2026-10-31T00:00:00.000Z", 0.1 + 0.2], 0), "a [t, v] pair formats its value").toBe("0.3");
+}

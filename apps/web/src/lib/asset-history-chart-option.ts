@@ -3,7 +3,7 @@ import type { EChartsOption } from "echarts";
 import type { ForecastBucket, PastForecastBucket, PointAggregateBucket } from "@bms/shared";
 
 import { axisForUnit, shiftCompareBuckets } from "./asset-history-range";
-import { pastForecastPalette, seriesPalette } from "./chart-theme";
+import { forecastPalette, pastForecastPalette, seriesPalette } from "./chart-theme";
 import {
   clipForecastToAxis,
   forecastAxisMax,
@@ -14,8 +14,23 @@ import {
   pastForecastName,
   pastForecastSeries,
 } from "./forecast-series";
+import { withoutFloatNoise } from "./telemetry-number";
 import type { Roles } from "./theme";
 import { CHART_SERIES } from "./widget-catalog";
+
+/**
+ * The tooltip's value: a number without its binary tail, grouped in thousands as ECharts' own
+ * default was (`125,000`); a `[t, v]` pair by its value; ECharts' own `-` for a gap. The band's
+ * upper half keeps its own formatter (the true `p10 – p90`). A mean prints every digit the tail
+ * rule keeps (`21.3666666667`), where the bucket table rounds means to three decimals.
+ */
+function tooltipValue(value: unknown): string {
+  const v = Array.isArray(value) ? value.at(-1) : value;
+  if (typeof v !== "number" || !Number.isFinite(v)) {
+    return "-";
+  }
+  return Number(withoutFloatNoise(v)).toLocaleString("en-GB", { maximumFractionDigits: 20 });
+}
 
 /** One plotted point: its buckets and, when a compare is on, the previous period's buckets. */
 export interface HistorySeriesInput {
@@ -41,7 +56,7 @@ export interface HistorySeriesInput {
  * `CHART_SERIES`, never a literal.
  *
  * **`E1.4a` (ADR 0135 Amendment 3 R-d, C2).** A series that carries a `forecast` adds a band and a
- * dashed p50 in its own colour (`forecast-series.ts`) — only when `asOf`, the server's instant,
+ * dashed p50 (`forecast-series.ts`) — only when `asOf`, the server's instant,
  * says the window is live (N11), and never for a series refused an axis. With a forecast drawn the
  * x axis extends by R8's rule and a "now" line marks `asOf`. A legend lists what is plotted (R9).
  *
@@ -49,6 +64,14 @@ export interface HistorySeriesInput {
  * the forecast made 1 h ahead of each past hour. Unlike the live forecast it is drawn on any
  * window, a past one included, in a colour from the chart's spare series roles
  * (`pastForecastPalette`), so it never shares a colour with an actual line.
+ *
+ * **`F4.377` (the owner's ruling, 2026-11-16: three colours).** The live forecast's band and p50 no
+ * longer take the point's actual colour: they take `forecastPalette`, which shares no colour with
+ * the actual or the past palette. Each point's forecast is traced to its point by the legend's
+ * point key (R9). With one point: actual `series-1`, past `series-2`, live forecast `series-3`.
+ *
+ * **`F4.379`.** The tooltip prints a value as the Latest cell does (`withoutFloatNoise`): a stored
+ * int16 × 0.1 shows `0.3`, not `0.3000000000000007`, and every real digit stays.
  */
 export function buildHistoryChartOption(args: {
   readonly from: number;
@@ -115,10 +138,12 @@ export function buildHistoryChartOption(args: {
       ? null
       : Math.max(...forecasting.map(({ input }) => Date.parse(input.forecast?.at(-1)?.t ?? "")));
   const xMax = forecastAxisMax({ from, to, lastBucketMs });
-  const forecastLines = forecasting.flatMap(({ input, axis, colour }, index) =>
+  const futurePalette = forecastPalette(roles);
+  const futureColour = (index: number) => futurePalette[index % futurePalette.length];
+  const forecastLines = forecasting.flatMap(({ input, axis }, index) =>
     forecastSeries({
       buckets: clipForecastToAxis(input.forecast ?? [], xMax),
-      colour,
+      colour: futureColour(index),
       yAxisIndex: axis,
       names: forecastNames(forecasting.length > 1 ? input.name : null),
       stackId: `forecast-band-${index}`,
@@ -158,14 +183,14 @@ export function buildHistoryChartOption(args: {
   const legendNames = [
     ...lines.map((line) => line.name),
     ...pasting.map(({ input }) => pastName(input)),
-    ...forecasting.flatMap(({ input, colour }) =>
-      forecastLegendEntries(forecastNames(forecasting.length > 1 ? input.name : null), colour),
+    ...forecasting.flatMap(({ input }, index) =>
+      forecastLegendEntries(forecastNames(forecasting.length > 1 ? input.name : null), futureColour(index)),
     ),
   ];
 
   return {
     color: palette,
-    tooltip: { trigger: "axis" },
+    tooltip: { trigger: "axis", valueFormatter: tooltipValue },
     ...(all.length > 0 ? { legend: { type: "scroll" as const, data: legendNames } } : {}),
     xAxis: { type: "time", min: from, max: xMax },
     yAxis: (units.length > 0 ? units : [null]).map((unit) => ({

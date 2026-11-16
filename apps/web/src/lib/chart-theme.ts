@@ -29,15 +29,30 @@ export function seriesPalette(roles: Roles): string[] {
 }
 
 /**
- * `E1.4e` / ADR 0135 Amendment 4 ruling 2 — the colours a past-forecast line takes: the chart's
- * spare series roles, none of which `SERIES_PALETTE` uses, so a past line never shares a colour
- * with an actual line however many points are charted.
+ * `E1.4e` / ADR 0135 Amendment 4 ruling 2 — the colours a past-forecast line takes: spare series
+ * roles that `SERIES_PALETTE` does not use, so a past line never shares a colour with an actual
+ * line however many points are charted. `F4.377` (the owner's ruling, 2026-11-16: three colours)
+ * split the spare roles in two: these for the past line, `FORECAST_PALETTE` for the live forecast.
+ * The first point's past line stays `series-2`.
  */
-const PAST_FORECAST_PALETTE: readonly RoleName[] = ["series-2", "series-3", "series-4", "series-5", "series-6", "series-7", "series-8"];
+const PAST_FORECAST_PALETTE: readonly RoleName[] = ["series-2", "series-6", "series-7", "series-8"];
 
 /** {@link PAST_FORECAST_PALETTE}, resolved for the current theme. */
 export function pastForecastPalette(roles: Roles): string[] {
   return PAST_FORECAST_PALETTE.map((role) => roles[role]);
+}
+
+/**
+ * `F4.377` (the owner's ruling, 2026-11-16: three colours) — the colours the live forecast takes,
+ * its dashed p50 and its p10–p90 band: the spare series roles the past line does not use, so the
+ * forecast never shares a colour with an actual line or with a past line. The first point's
+ * forecast is `series-3`. `chart-theme.spec.ts` C6 holds the three palettes apart.
+ */
+const FORECAST_PALETTE: readonly RoleName[] = ["series-3", "series-4", "series-5"];
+
+/** {@link FORECAST_PALETTE}, resolved for the current theme. */
+export function forecastPalette(roles: Roles): string[] {
+  return FORECAST_PALETTE.map((role) => roles[role]);
 }
 
 function axis(roles: Roles) {
