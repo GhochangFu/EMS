@@ -95,7 +95,7 @@ describe("E1.1 the apps/ml image: CPU only, pinned weights, offline at run time"
 
   it("locks scikit-learn and what it pulls in from PyPI (E1.2, ADR 0135 Amendment 5 A-g)", () => {
     const packages = lockPackages(lock);
-    for (const name of ["scikit-learn", "scipy", "joblib", "threadpoolctl"]) {
+    for (const name of ["scikit-learn", "scipy", "joblib", "threadpoolctl", "cloudpickle", "narwhals"]) {
       const sources = packages.filter((p) => p.name === name).map((p) => p.source);
       expect(sources, name).toEqual(['{ registry = "https://pypi.org/simple" }']);
     }

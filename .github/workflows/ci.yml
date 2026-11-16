@@ -582,7 +582,8 @@ jobs:
       # shape into this job's database, then each child of one cycle (run-once,
       # run-anomaly) runs in a container of its own from bms-ml:ci at the demo
       # host's limits (--cpus 1 --memory 1g, read-only, no capabilities), once
-      # (--runs 1: the owner ruled one run to save Actions minutes, 2026-11-16). --network host reaches the postgres service on localhost:5432,
+      # (--runs 1: the owner ruled one run to save Actions minutes, 2026-11-16).
+      # --network host reaches the postgres service on localhost:5432,
       # the URL in ML_TEST_DATABASE_URL_FLEET. The table goes to the log and to
       # the step summary; the step fails when the anomaly child peaks above
       # 900 MiB, forecast + anomaly take above 300 s, or a cycle scored less
