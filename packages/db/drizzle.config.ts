@@ -9,5 +9,5 @@ export default defineConfig({
       process.env.DATABASE_URL ??
       "postgres://bms_app:bms_app_dev@localhost:5432/bms",
   },
-  schemaFilter: ["bms", "telemetry"],
+  schemaFilter: ["bms", "telemetry", "ml"],
 });

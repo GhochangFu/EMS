@@ -18,3 +18,5 @@ export * from "./calc-backfill-schema";
 export * from "./edge-gateways-schema";
 export * from "./device-health-schema";
 export * from "./service-account-schema";
+// `E1.4a` (ADR 0135 Amendment 3 R-a): the read-only mirror of the hand-written `ml` schema.
+export * from "./ml-schema";
