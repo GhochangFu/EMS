@@ -31,6 +31,7 @@
     "tests/e1.1-ml-readiness-single-source.test.ts",
     "tests/e1.1-ml-image.test.ts",
     "tests/e1.1-ml-compose.test.ts",
+    "tests/e1.4b-forecasts-reachable.test.ts",
     "tests/e1.4a-ml-read-grant.test.ts",
     "tests/e1.4a-ml-read-grant.integration.test.ts",
     "tests/e1.4a-ml-read-containment.test.ts",

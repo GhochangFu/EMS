@@ -52,6 +52,8 @@ export const moduleGroups = [
       { label: "Electrical SLD", path: "/sld" },
       { label: "HVAC · CRAC", path: "/crac" },
       { label: "Energy Analytics", path: "/energy" },
+      // `E1.4b` (ADR 0135 Amendment 3 R-e, plan §7): every signed-in user; the API filters the rows.
+      { label: "Forecasts", path: "/forecasts" },
     ],
   },
   {
