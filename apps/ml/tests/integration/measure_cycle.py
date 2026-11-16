@@ -81,7 +81,13 @@ class ChildResult:
 
 
 def docker_command(
-    image: str, child: str, as_of: datetime, *, network: str, targets: Mapping[str, str]
+    image: str,
+    child: str,
+    as_of: datetime,
+    *,
+    network: str,
+    targets: Mapping[str, str],
+    name: str | None = None,
 ) -> list[str]:
     """The `docker run` argv for one child. DATABASE_URL_FLEET is passed by name only."""
     if child not in CHILDREN:
@@ -96,6 +102,8 @@ def docker_command(
     for name, value in sorted(targets.items()):
         command += ["-e", f"{name}={value}"]
     command += ["-e", f"ML_MEASURE_CHILD={child}", "-e", f"ML_MEASURE_AS_OF={as_of.isoformat()}"]
+    if name is not None:
+        command += ["--name", name]
     return [*command, "--entrypoint", "sh", image, "-c", CONTAINER_SCRIPT]
 
 
@@ -225,11 +233,16 @@ def report(results: Sequence[ChildResult]) -> tuple[str, int]:
 
 
 def relayable_lines(output: str) -> list[str]:
-    """The lines that may reach the CI log: JSON objects and the peak marker, nothing else."""
+    """The lines that may reach the CI log: JSON objects, the peak marker, and docker's own
+    `docker: ...` errors (they name the image or a flag, never the child's data)."""
     kept = []
     for raw in output.splitlines():
         line = raw.strip()
-        if line.startswith(PEAK_MARKER) or (line.startswith("{") and line.endswith("}")):
+        if (
+            line.startswith(PEAK_MARKER)
+            or line.startswith("docker: ")
+            or (line.startswith("{") and line.endswith("}"))
+        ):
             kept.append(line)
     return kept
 
@@ -251,7 +264,10 @@ def run_child(
     targets: Mapping[str, str],
     container_url: str,
 ) -> ChildResult:
-    command = docker_command(image, child, as_of, network=network, targets=targets)
+    # A name, so a timed-out child's container can be removed: killing the docker
+    # client on timeout does not stop the container it started.
+    name = f"bms-ml-measure-{os.getpid()}-{run}-{child}"
+    command = docker_command(image, child, as_of, network=network, targets=targets, name=name)
     env = {**os.environ, "DATABASE_URL_FLEET": container_url}
     started = time.monotonic()
     try:
@@ -261,6 +277,7 @@ def run_child(
         exit_code, output = done.returncode, done.stdout + "\n" + done.stderr
     except subprocess.TimeoutExpired:
         exit_code, output = 124, ""
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, check=False)  # noqa: S603, S607
     wall = time.monotonic() - started
     summary = parse_summary(output)
     # Only the child's JSON log lines (counts and fixed reasons, bms_ml.log) and the
@@ -278,6 +295,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runs", type=int, default=RUNS)
     parser.add_argument("--summary-file", default=os.environ.get("GITHUB_STEP_SUMMARY", ""))
     args = parser.parse_args(argv)
+    if args.runs < 1:
+        sys.stderr.write("--runs must be at least 1: a gate that measured nothing proves nothing\n")
+        return 2
 
     superuser = os.environ.get("ML_TEST_DATABASE_URL_SUPERUSER", "").strip()
     fleet = (

@@ -279,3 +279,24 @@ def test_main_refuses_a_childrens_database_that_is_not_the_throwaway_one(monkeyp
     monkeypatch.setenv("ML_TEST_DATABASE_URL_FLEET", "postgres://f:p@localhost:5432/bms")
     monkeypatch.delenv(m.CONTAINER_URL_VAR, raising=False)
     assert m.main(["--image", "bms-ml:ci", "--runs", "1"]) == 78
+
+
+def test_docker_errors_are_relayed_too():
+    assert m.relayable_lines("docker: Error response from daemon: no such image.\nother") == [
+        "docker: Error response from daemon: no such image."
+    ]
+
+
+def test_a_named_child_container_carries_its_name():
+    as_of = datetime(2026, 11, 16, 5, tzinfo=UTC)
+    command = m.docker_command("img", m.CHILDREN[0], as_of, network="host", targets={}, name="c1")
+    assert command[command.index("--name") + 1] == "c1"
+    assert command.index("--name") < command.index("--entrypoint")
+
+
+def test_zero_runs_is_refused():
+    assert m.main(["--image", "bms-ml:ci", "--runs", "0"]) == 2
+
+
+def test_the_other_model_fixture_runs_are_cleaned():
+    assert "ml-fixture-other-model" in fixture.FIXTURE_RUN_NAMES

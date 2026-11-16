@@ -93,7 +93,14 @@ ANOMALY_NOT_SCORED = ("MLFX-AMST", "MLFX-AMSIM")
 ANOMALY_MODEL_NAME = "bms-anomaly"
 ANOMALY_FIXTURE_NAME = "ml-fixture-anomaly"
 PROOF_FORECASTER_NAME = "ml-fixture-forecaster-aa"
-FIXTURE_RUN_NAMES = (FORECASTER_NAME, ANOMALY_MODEL_NAME, ANOMALY_FIXTURE_NAME, PROOF_FORECASTER_NAME)
+OTHER_MODEL_NAME = "ml-fixture-other-model"
+FIXTURE_RUN_NAMES = (
+    FORECASTER_NAME,
+    ANOMALY_MODEL_NAME,
+    ANOMALY_FIXTURE_NAME,
+    PROOF_FORECASTER_NAME,
+    OTHER_MODEL_NAME,
+)
 AHEAD_DAYS = 70
 
 # --- E1.2 T1.10: the anomaly job at the real shape (ruling 5's measurement) -------------

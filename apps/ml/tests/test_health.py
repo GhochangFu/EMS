@@ -222,3 +222,23 @@ def test_the_anomaly_body_carries_counts_only_whatever_the_child_printed():
 def test_an_unknown_job_has_no_recorder():
     with pytest.raises(KeyError):
         both().recorder("export")
+
+
+def test_the_anomaly_allowlists_cover_everything_the_scorer_can_emit():
+    """Build the lists from the scorer's own names, so a new key or reason cannot vanish."""
+    from bms_ml import anomaly_baseline, anomaly_forest, anomaly_scorer, health
+
+    summary = anomaly_scorer.AnomalySummary(
+        as_of_hour=datetime(2026, 11, 16, 5, tzinfo=UTC), scored_hour=datetime(2026, 11, 16, 4, tzinfo=UTC)
+    )
+    keys = set(summary.counts()) - {"job", "skipped"}
+    assert keys == set(health.ANOMALY_COUNT_KEYS) | set(health.ANOMALY_INSTANT_KEYS)
+
+    emitted = {
+        value
+        for module in (anomaly_baseline, anomaly_forest, anomaly_scorer)
+        for name, value in vars(module).items()
+        if name.startswith("SKIP_") and isinstance(value, str)
+    }
+    readiness = {"no_data", "too_few_days", "low_coverage", "stale"}
+    assert emitted | readiness == set(health.ANOMALY_SKIP_REASONS)
