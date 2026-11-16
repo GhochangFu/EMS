@@ -111,6 +111,19 @@ export function runPointRefsForTests(): void {
     withForecast.length === 2 && !withForecast.includes(encodePointRef("asset-c", "chw_kw")),
     `a forecast widget's point is not a recent-read ref — got ${JSON.stringify(withForecast)}`,
   );
+
+  // `E1.2d` — nor is an anomaly widget's: it reads its asset's scores itself (`AnomalyWidgetLive`).
+  const anomaly: DashboardWidgetDto = {
+    ...IDENTITY,
+    widgetType: "anomaly",
+    config: {},
+    points: [point({ assetId: "asset-d", pointKey: "chw_kw" })],
+  };
+  const withAnomaly = pointRefsFor({ ...dashboard, widgets: [...dashboard.widgets, anomaly] });
+  assert(
+    withAnomaly.length === 2 && !withAnomaly.includes(encodePointRef("asset-d", "chw_kw")),
+    `an anomaly widget's point is not a recent-read ref — got ${JSON.stringify(withAnomaly)}`,
+  );
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   theCanvasReportsTheSiteWidgetsRead,
   aTrendStripWidgetDrawsOneStripWithItsTabsGroup,
   aForecastWidgetReadsItsPointTwice,
+  anAnomalyWidgetReadsItsAssetOnce,
   aHiddenWidgetIsNotRead,
   aKwOnlyWidgetIsNotDrawnWithoutEnergy,
   aTabOfHiddenWidgetsSaysWhy,
@@ -78,6 +79,10 @@ describe("F3.69 U1 DashboardLiveCanvas", () => {
 
   it("L11 a forecast widget reads its bound point's actuals and forecast, and no recent read (E1.4c)", async () => {
     await aForecastWidgetReadsItsPointTwice();
+  });
+
+  it("L12 an anomaly widget reads its bound point's asset for 7 days, and no recent read (E1.2d)", async () => {
+    await anAnomalyWidgetReadsItsAssetOnce();
   });
 
   it("EK1 does not draw a kW-only widget when energy is not shown; mixed and unbound stay (F4.375)", async () => {

@@ -54,11 +54,12 @@ export type HistoryByRef = ReadonlyMap<string, readonly WidgetSeriesPoint[]>;
  * `use-dashboard-telemetry.ts` must not open one REST read or one socket subscription per
  * *binding* when it only needs one per *point*.
  * `E1.4c` — a `forecast` widget is skipped: it makes its own two reads (`ForecastWidgetLive`), so its
- * point would cost a wasted `recent` read and a socket subscription nothing draws. */
+ * point would cost a wasted `recent` read and a socket subscription nothing draws.
+ * `E1.2d` — an `anomaly` widget likewise: its point names the asset whose scores it reads. */
 export function pointRefsFor(dashboard: DashboardDto): string[] {
   const refs = new Set<string>();
   for (const widget of dashboard.widgets) {
-    if (widget.widgetType === "forecast") {
+    if (widget.widgetType === "forecast" || widget.widgetType === "anomaly") {
       continue;
     }
     for (const point of widget.points) {

@@ -35,6 +35,7 @@ import {
   type WidgetConfigRow,
 } from "../../lib/widget-config-form";
 import { Field } from "../asset-templates/field";
+import { ANOMALY_INSPECTOR_NOTE } from "../widgets/anomaly-widget";
 import { FORECAST_INSPECTOR_NOTE } from "../widgets/forecast-widget";
 import { ChartPointColorSelect } from "./chart-point-color-select";
 import { rowForChartKind } from "../../lib/cost-by-day-form";
@@ -269,14 +270,20 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
         nothing and the API's `.strict()` would refuse it. `F3.73`: the site widgets
         likewise (`F3.74`: the breaker table too, config `{}`) — a type that binds nothing has no
         value to format. `E1.4c`: the forecast binds a point but its config is `{}` (R11) — the unit
-        is the point's own — so it shows one advisory line in their place.
+        is the point's own — so it shows one advisory line in their place. `E1.2d`: the anomaly
+        widget likewise (R16), with its own line.
       */}
       {row.widgetType === "forecast" ? (
         <p className="text-xs text-ink-muted" data-testid="forecast-inspector-note">
           {FORECAST_INSPECTOR_NOTE}
         </p>
       ) : null}
-      {!widgetTypeBindsNothing(row.widgetType) && row.widgetType !== "forecast" ? (
+      {row.widgetType === "anomaly" ? (
+        <p className="text-xs text-ink-muted" data-testid="anomaly-inspector-note">
+          {ANOMALY_INSPECTOR_NOTE}
+        </p>
+      ) : null}
+      {!widgetTypeBindsNothing(row.widgetType) && row.widgetType !== "forecast" && row.widgetType !== "anomaly" ? (
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Unit" error={problemFor("unit")}>
             <input

@@ -34,10 +34,15 @@ const mocks = vi.hoisted(() => ({
   fetchSiteTrendStrip: vi.fn(),
   fetchAssetWindows: vi.fn(),
   fetchPointForecast: vi.fn(),
+  fetchAssetAnomalies: vi.fn(),
 }));
 
 // `E1.4c` — the forecast widget's forecast read, mocked like the canvas's other reads.
-vi.mock("../../api/ml", () => ({ fetchPointForecast: mocks.fetchPointForecast }));
+// `E1.2d` — and the anomaly widget's one read.
+vi.mock("../../api/ml", () => ({
+  fetchPointForecast: mocks.fetchPointForecast,
+  fetchAssetAnomalies: mocks.fetchAssetAnomalies,
+}));
 
 // `F4.305` — the trend strip widget's one read, mocked like the canvas's other reads.
 vi.mock("../../api/trend-strip", () => ({ fetchSiteTrendStrip: mocks.fetchSiteTrendStrip }));
@@ -362,6 +367,22 @@ export async function aForecastWidgetReadsItsPointTwice(): Promise<void> {
   expect(await screen.findByText("Load forecast")).toBeInTheDocument();
   await waitFor(() => expect(mocks.fetchPointForecast).toHaveBeenCalledWith(REF));
   expect(mocks.fetchPointAggregate).toHaveBeenCalledWith(REF, { windowMinutes: 1440, bucketFunction: "avg", bucketStats: true });
+  expect(mocks.fetchTelemetryRecent).not.toHaveBeenCalledWith(REF, expect.any(String));
+}
+
+/**
+ * L12 — `E1.2d` (ADR 0135 Amendment 5 ruling 4(c)): an `anomaly` widget reads its bound point's
+ * asset for the last 7 days and nothing else; its point is not a `recent` read.
+ */
+export async function anAnomalyWidgetReadsItsAssetOnce(): Promise<void> {
+  const anomaly = { ...widget(true), id: "widget-an", title: "Load anomaly", widgetType: "anomaly", config: {} } as DashboardWidgetDto;
+  mocks.fetchAssetAnomalies.mockResolvedValue({ asOf: "2026-11-16T10:20:00.000Z", scores: [] });
+  renderCanvas(dashboard([anomaly]));
+  expect(await screen.findByText("No anomaly scores for this asset yet.")).toBeInTheDocument();
+  expect(mocks.fetchAssetAnomalies).toHaveBeenCalledTimes(1);
+  const [assetId, from, to] = mocks.fetchAssetAnomalies.mock.calls[0] as [string, string, string];
+  expect(assetId).toBe(ASSET_ID);
+  expect(Date.parse(to) - Date.parse(from)).toBe(168 * 3_600_000);
   expect(mocks.fetchTelemetryRecent).not.toHaveBeenCalledWith(REF, expect.any(String));
 }
 
