@@ -1015,3 +1015,11 @@ re-reads the CPU torch index when it re-locks (Amendment 5 A-g, plan §17 Q2).
   (BSD-3-Clause), `cloudpickle 3.1.2` (BSD-3-Clause, a `joblib` dependency)
   and `narwhals 2.28.0` (MIT, a `scikit-learn` dependency). The plan named
   the first three; `cloudpickle` and `narwhals` are new to this list.
+
+**Owner ruling — the budget step runs once in CI (2026-11-16).** The `E1.2a`
+builder estimated three runs of the ruling-5 measurement at 8–10 Actions
+minutes for each PR that runs the `ml` job (the forecast child alone takes
+80–149 s at one CPU), not the plan's "about 3". The owner ruled **one run in
+CI** (`measure_cycle --runs 1`). The step still fails above 900 MiB for the
+anomaly child or 300 s for forecast + anomaly. The demo host's first cycles
+after the deploy are the second sample.

@@ -4,7 +4,7 @@ One hourly cycle is two children, the forecast (`run-once`) and then the
 anomaly job (`run-anomaly`). This tool runs each child in a container of its
 own, at the demo host's limits (one CPU, 1 GiB with no swap beyond it, a
 read-only root, no capabilities), against the integration fixture planted at
-the real shape, three times, and prints one table.
+the real shape, three times by default (`--runs`), and prints one table.
 
 - **Peak memory** is the container's cgroup `memory.peak`, read inside the
   container after the child exits. The container holds one child, so it is
@@ -19,7 +19,8 @@ the real shape, three times, and prints one table.
   pass it; the owner rules again.
 
 The owner ruled (plan section 17 Q3) that this runs as a step of CI's `ml`
-job, after the image build, and stays there as the budget's gate. Locally,
+job, after the image build, and stays there as the budget's gate. CI runs it
+once (`--runs 1`): the owner ruled one run to save Actions minutes (2026-11-16). Locally,
 with the integration database of `apps/ml/README.md` and an image built:
 
     uv run python -m tests.integration.measure_cycle --image bms-ml --network host

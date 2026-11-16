@@ -269,7 +269,7 @@ describe("ci.yml — the docs-only split and the concurrency rule", () => {
   it("keeps ruling 5's budget gate in the ml job, after the runtime image it measures is built (ADR 0135 A5)", () => {
     const ml = job("ml");
     const build = ml.indexOf("--target runtime -t bms-ml:ci ");
-    const gate = ml.indexOf("uv run python -m tests.integration.measure_cycle --image bms-ml:ci --network host");
+    const gate = ml.indexOf("uv run python -m tests.integration.measure_cycle --image bms-ml:ci --network host --runs 1");
     expect([build > -1, gate > build]).toEqual([true, true]);
   });
 });

@@ -141,7 +141,8 @@ parent imports neither it nor torch, and `run-anomaly` needs no Chronos model.
 
 **The budget (ruling 5)** is held in CI: the `ml` job's last step plants the
 fixture at the real shape and runs each child in its own container at the demo
-host's limits (`--cpus 1 --memory 1g`), three times
+host's limits (`--cpus 1 --memory 1g`), once in CI (`--runs 1`, the owner's
+ruling to save Actions minutes; the default is three runs locally)
 (`tests/integration/measure_cycle.py`). It fails when the anomaly child peaks
 above 900 MiB or forecast + anomaly take more than 300 s; then the owner rules
 again. Locally, with the integration database below and the image built as
