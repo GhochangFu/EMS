@@ -398,12 +398,20 @@ PR 4 CPU and memory measurement that settles ruling 5.
   unpacked (amd64), above the 1–2 GB estimate in *Consequences*: PyTorch
   CPU, transformers and pandas, plus the 478 MB of weights.
 
+  **The demo host, measured (2026-11-16).** The first live cycle on the
+  arm64 (Graviton, t4g.large) host at `cpus: 1`, `mem_limit: 1g`, one torch
+  thread: `duration_seconds` 33.9 for 16 series (24 eligible, 8
+  `too_few_days`), 768 rows, peak 532 MiB in `docker stats`. That is
+  faster than the laptop's one-CPU runs above, which held 21 series with
+  a full 2,016-hour context each.
+
 ## Amendment 3 — `E1.4`: the forecast read path and its screens (2026-11-16)
 
-**Status: Proposed — 2026-11-16.** Drafted by an agent for backlog row `E1.4`.
-Lines marked *(owner, 2026-11-16)* are owner answers given in chat that day.
-Lines marked *(recommended)* are the agent's calls; they become rulings when
-the owner accepts this amendment.
+**Status: Accepted — 2026-11-16** (owner, in chat: "3 is accepted"). Drafted
+by an agent for backlog row `E1.4`. Lines marked *(owner, 2026-11-16)* are
+owner answers given in chat that day. Lines marked *(recommended)* were the
+agent's calls; the owner accepted the amendment with them as written, so
+**every *(recommended)* line is now a ruling**.
 
 **What changes.** Decision 9 gives `E1.4` the read API and the screens for
 forecasts. This amendment sets their shape. It adds **no** npm or Python
