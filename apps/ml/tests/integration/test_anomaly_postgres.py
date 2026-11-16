@@ -446,7 +446,10 @@ def test_an_anomaly_cycle_then_a_forecast_cycle_in_one_tick_both_write(
 
     cfg = load_config({"DATABASE_URL_FLEET": fleet_url, "ML_FORECAST_TARGETS": SINGLE_TARGET})
     forecaster = FakeForecaster(name=PROOF_FORECASTER_NAME, version="fixture-1f")
-    clock = FakeClock(planted.as_of + timedelta(minutes=5))
+    # HH:07, not HH:05: the A-a proof case above already forecast these two assets for this
+    # hour with a clock at HH:05, and `issued_at` is the run's start, part of
+    # `forecasts_pkey`. The same start would collide on the key (CI, 2026-11-16).
+    clock = FakeClock(planted.as_of + timedelta(minutes=7))
     with Gateway.connect(fleet_url) as db:
         forecast = run_cycle(db, forecaster, clock, cfg)
     assert (forecast.organizations_already_scored, forecast.runs_succeeded, forecast.runs_failed) == (
