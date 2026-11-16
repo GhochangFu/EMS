@@ -27,6 +27,8 @@ import type { MlForecastsService } from "./ml-forecasts.service";
  * - L2 (another location of the same organization): one current run.
  * - P1 (the PHEWB organization, a location whose zone differs from the organization's):
  *   one current run whose first bucket is H−4, so it is stale. No asset point, so unit null.
+ * - L3 (organization A, a site of its own with no zone, outside `wc-admin`'s closure): one current
+ *   run, so its row's zone is the organization's (C7's chain) — read on the tenant branch too.
  */
 export type MlForecastFixtures = {
   svc: MlForecastsService;
@@ -36,12 +38,17 @@ export type MlForecastFixtures = {
   readable: { globalAdmin: string[] | null; locationAdmin: string[] | null };
   now: Date;
   currentHourMs: number;
-  assets: { l1: string; l2: string; p1: string };
+  assets: { l1: string; l2: string; p1: string; l3: string };
   organizations: { a: string; b: string };
   pointKey: string;
-  runs: { a: string; failed: string; past: string; future: string; l2: string; p1: string };
+  runs: { a: string; failed: string; past: string; future: string; l2: string; p1: string; l3: string };
   /** What each fixture asset's row should carry (read on the superuser connection). */
-  expected: Record<"l1" | "l2" | "p1", { code: string; name: string; locationId: string; locationName: string; timeZone: string }>;
+  expected: Record<
+    "l1" | "l2" | "p1" | "l3",
+    { code: string; name: string; locationId: string; locationName: string; timeZone: string }
+  >;
+  /** Organization A's own zone, which L3's zone-less site must fall back to. */
+  organizationAZone: string;
   /** The superuser pool, for the one rolled-back case that plants bulk rows and runs `ANALYZE`. */
   superuserDb: BmsDb;
 };
@@ -68,6 +75,19 @@ export async function assertTheNewestSucceededCurrentRunWins(ctx: MlForecastFixt
   expect(forecast?.buckets.at(-1)?.t).toBe(new Date(ctx.currentHourMs + 45 * HOUR_MS).toISOString());
   // First bucket H−2: 2 h ≤ 3 h.
   expect(forecast?.stale).toBe(false);
+}
+
+/**
+ * C3 on the one-point read: the first row is the run's first bucket, so a run that scored 4 h ago is
+ * stale, while its buckets still start at the current hour (C4). The plan's SQL read the run's rows
+ * from the current hour, so its first row was always the current hour and this was never true.
+ */
+export async function assertTheOnePointReadMarksAStaleRun(ctx: MlForecastFixtures): Promise<void> {
+  const body = await ctx.svc.current({ assetId: ctx.assets.p1, pointKey: ctx.pointKey }, ctx.now);
+  expect(body.forecast?.stale).toBe(true);
+  expect(body.forecast?.issuedAt).toBe(new Date(ctx.currentHourMs - 4 * HOUR_MS + 5 * 60_000).toISOString());
+  expect(body.forecast?.buckets[0]?.t).toBe(new Date(ctx.currentHourMs).toISOString());
+  expect(body.forecast?.buckets).toHaveLength(44);
 }
 
 /** B3: the list agrees with the one-point read about which run is current. */
@@ -145,12 +165,27 @@ export async function assertTheListFields(ctx: MlForecastFixtures): Promise<void
   }
 }
 
-/** The tenant branch resolves the zone too: the organization's row is visible to bms_tenant under its GUC. */
+/**
+ * The tenant branch resolves the zone too. L1's site carries its own zone; L3's carries none, so
+ * its row takes the organization's — which proves `bms_tenant` under the GUC reads its own
+ * `bms.organizations` row (plan §2 verify-at-build). Were that row hidden, L3 would read `UTC`.
+ */
 export async function assertTheTenantBranchResolvesTheZone(ctx: MlForecastFixtures): Promise<void> {
   const scoped = await ctx.svc.list(ctx.readable.locationAdmin, ctx.now);
   const l1 = scoped.items.find((item) => item.assetId === ctx.assets.l1);
   expect(l1?.timeZone).toBe(ctx.expected.l1.timeZone);
   expect(l1?.locationName).toBe(ctx.expected.l1.locationName);
+
+  expect(ctx.organizationAZone, "the fallback must differ from the chain's own default").not.toBe("UTC");
+  expect(ctx.expected.l3.timeZone).toBe(ctx.organizationAZone);
+  const tenantRows = await withTenant(ctx.tenantDb, ctx.organizations.a, (tx) =>
+    readForecastList(tx, [ctx.assets.l3], ctx.currentHourMs),
+  );
+  expect(tenantRows).toHaveLength(1);
+  expect(tenantRows[0]?.location_time_zone).toBeNull();
+  expect(tenantRows[0]?.organization_time_zone).toBe(ctx.organizationAZone);
+  const all = await ctx.svc.list(ctx.readable.globalAdmin, ctx.now);
+  expect(all.items.find((item) => item.assetId === ctx.assets.l3)?.timeZone).toBe(ctx.organizationAZone);
 }
 
 /** A point with no forecast, and an asset that no longer exists, are `forecast: null`. */
@@ -222,11 +257,14 @@ const explain = async (tx: BmsTx, statement: ReturnType<typeof forecastListState
  * to a run id or an asset id ({@link unboundedScan}), as the fleet role (the
  * superuser here: both bypass row security) or as `bms_tenant` under its GUC.
  *
- * **The runs reach the current hour on purpose.** With every bulk run older than
- * the 64 h window the run CTE is tiny and the planner keeps the index path even
- * without `OFFSET 0`, so the case stopped gating the mutation (measured at build:
- * the `null`-ids list flips to `Seq Scan on forecasts` once 64 recent runs per
- * organization are in the window, the scorer's real shape).
+ * **The runs reach the current hour on purpose**, the scorer's real shape: 64 recent
+ * runs per organization are in the window.
+ *
+ * **A smoke check of the shipped plan, not the `OFFSET 0` mutation gate** (plan §16
+ * N3). Without `OFFSET 0`, the flattened join (a full walk of `forecasts_pkey`, or a
+ * sequential scan) and the per-run path cost about the same here, so this case went
+ * red on that mutation in only 3–5 runs of 6, full-size statistics included. The
+ * deterministic gate is the text check in `tests/e1.4a-ml-read-containment.test.ts`.
  */
 export async function assertNeitherReadSeqScansForecasts(ctx: MlForecastFixtures): Promise<void> {
   await withRollback(ctx.superuserDb, async (tx) => {
@@ -251,6 +289,9 @@ export async function assertNeitherReadSeqScansForecasts(ctx: MlForecastFixtures
     `);
     const count = await tx.execute<{ n: number }>(sql`SELECT count(*)::float8 AS n FROM ml.forecasts`);
     expect(Number(count.rows[0]?.n)).toBeGreaterThan(130_000);
+    // A sample as large as the table (the default target samples 30,000 rows), so the shipped
+    // plan is judged on the same statistics every run.
+    await tx.execute(sql`SET LOCAL default_statistics_target = 1000`);
     await tx.execute(sql`ANALYZE ml.forecasts`);
     await tx.execute(sql`ANALYZE ml.model_runs`);
 

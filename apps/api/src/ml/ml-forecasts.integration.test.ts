@@ -15,6 +15,7 @@ import {
   assertTheListFields,
   assertTheListPicksTheSameRun,
   assertTheNewestSucceededCurrentRunWins,
+  assertTheOnePointReadMarksAStaleRun,
   assertThePolicyScopesTheTenantBranch,
   assertTheReadFiltersOnTheFleetBranch,
   assertTheServiceAppliesTheCallersScope,
@@ -122,10 +123,18 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
       assetIds.push(rows[0]!.id);
       return rows[0]!.id;
     };
+    // C7's fallback: a site of organization A's own with no zone (outside wc-admin's closure).
+    const { rows: zoneless } = await fleet.query<{ id: string }>(
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+       VALUES ($1, $2, $2, $3, $4, 0, 0) RETURNING id`,
+      [organizations.a, `e14a-${stamp}-nozone`, `E1.4a zone-less site ${stamp}`, mine.type],
+    );
+    locationIds.push(zoneless[0]!.id);
     const assets = {
       l1: await asset("l1", organizations.a, mine.id),
       l2: await asset("l2", organizations.a, siblingRows[0].id),
       p1: await asset("p1", organizations.b, foreignRows[0]!.id),
+      l3: await asset("l3", organizations.a, zoneless[0]!.id),
     };
     const { rows: keyRows } = await fleet.query<{ code: string }>(
       "SELECT code FROM bms.point_keys ORDER BY (code LIKE '%temp%') DESC, code LIMIT 1",
@@ -203,6 +212,7 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
       future: await plant({ org: organizations.a, asset: assets.l1, startedMs: at(0, 5), firstBucket: 1, count: 48, p50: () => 900 }),
       l2: await plant({ org: organizations.a, asset: assets.l2, startedMs: at(-1, 5), firstBucket: -1, count: 48, p50: () => 20 }),
       p1: await plant({ org: organizations.b, asset: assets.p1, startedMs: at(-4, 5), firstBucket: -4, count: 48, p50: () => 30 }),
+      l3: await plant({ org: organizations.a, asset: assets.l3, startedMs: at(-1, 5), firstBucket: -1, count: 48, p50: () => 40 }),
     };
 
     const { rows: facts } = await superuser.query<{
@@ -231,13 +241,22 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
         timeZone: zoneOf(row.location_zone, row.organization_zone),
       };
     };
-    const expected = { l1: expectedOf(assets.l1), l2: expectedOf(assets.l2), p1: expectedOf(assets.p1) };
+    const expected = {
+      l1: expectedOf(assets.l1),
+      l2: expectedOf(assets.l2),
+      p1: expectedOf(assets.p1),
+      l3: expectedOf(assets.l3),
+    };
     if (expected.p1.timeZone !== P1_ZONE) throw new Error("E1.4a: P1's location zone did not resolve first");
     const { rows: orgZone } = await superuser.query<{ timezone: string }>(
       "SELECT timezone FROM bms.organizations WHERE id = $1",
       [organizations.b],
     );
     if (orgZone[0]?.timezone === P1_ZONE) throw new Error(`E1.4a: organization B's zone is already ${P1_ZONE}`);
+    const { rows: orgAZone } = await superuser.query<{ timezone: string }>(
+      "SELECT timezone FROM bms.organizations WHERE id = $1",
+      [organizations.a],
+    );
 
     ctx = {
       svc: new MlForecastsService(tenantDb, fleetDb),
@@ -254,6 +273,7 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
       pointKey: POINT_KEY,
       runs,
       expected,
+      organizationAZone: orgAZone[0]?.timezone ?? "",
       superuserDb: createDb(superuser),
     };
   }, 120_000);
@@ -271,6 +291,10 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
 
   it("the newest succeeded run that holds the current hour wins (failed, past-only and future-first runs ignored)", async () => {
     await assertTheNewestSucceededCurrentRunWins(ctx);
+  });
+
+  it("C3 on the one-point read: a run that scored 4 h ago is stale, its buckets from the current hour", async () => {
+    await assertTheOnePointReadMarksAStaleRun(ctx);
   });
 
   it("the list picks the same run as the one-point read (B3)", async () => {
@@ -297,7 +321,7 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
     await assertTheListFields(ctx);
   });
 
-  it("the tenant branch resolves the site zone too", async () => {
+  it("the tenant branch resolves the site zone, falling back to the organization's (C7)", async () => {
     await assertTheTenantBranchResolvesTheZone(ctx);
   });
 

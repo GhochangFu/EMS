@@ -627,15 +627,18 @@ is `forecasts_pkey` (three equalities) → `model_runs` by key → the run's row
 bounded by the runs in the 64 h window × rows per run, whatever the table's age.
 Without `OFFSET 0` the list plans `Seq Scan on forecasts` for an admin (66–95 ms
 at this size, growing with the table), and at about 140,000 rows a full walk of
-`forecasts_pkey` on `horizon_bucket` alone — so the integration gate
-(`apps/api/src/ml/ml-forecasts.integration.spec.ts`) fails any scan of
-`ml.forecasts` not bound to a run id or an asset id, not only a sequential
-scan, and it plants runs up to the current hour (with only older runs the
-planner keeps the index path and the gate passed the mutation). Plan N3: the
-case is a **mutation gate**, confirmed by removing `OFFSET 0`. Limits: an x86
-cloud VM, synthetic rows; the demo host's real rows are a step-6 check after
-deploy. One correction to the plan's one-point SQL: its second step read the
-run's rows from the current hour, so the first row was always the current
-hour and `stale` (C3, the run's *first* bucket) could never be true; it reads
-from the 64 h look-back start instead, and the pure step drops the earlier
-buckets (C4), as plan §5 T1.8 describes.
+`forecasts_pkey` on `horizon_bucket` alone. The integration case
+(`apps/api/src/ml/ml-forecasts.integration.spec.ts`) therefore fails any scan
+of `ml.forecasts` not bound to a run id or an asset id, not only a sequential
+scan, on runs planted up to the current hour. **Plan N3: it is a smoke check,
+not the mutation gate.** Removing `OFFSET 0` turned it red in only 3–5 runs of
+6, even with full-size statistics, because at that size the flattened join and
+the per-run path cost about the same. The deterministic gate is a text check
+in `tests/e1.4a-ml-read-containment.test.ts` that the lateral subquery keeps
+`OFFSET 0`. Limits: an x86 cloud VM, synthetic rows; the demo host's real rows
+are a step-6 check after deploy. One correction to the plan's one-point SQL:
+its second step read the run's rows from the current hour, so the first row
+was always the current hour and `stale` (C3, the run's *first* bucket) could
+never be true; it reads from the 64 h look-back start instead, the pure step
+drops the earlier buckets (C4) as plan §5 T1.8 describes, and an integration
+case holds it (a run that scored 4 h ago reads `stale`).

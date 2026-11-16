@@ -151,4 +151,15 @@ describe("E1.4a ml read containment (ADR 0135 Amendment 3 S1–S4)", () => {
     expect(reads).toMatch(/asset_id = ANY\(\$\{[^}]+\}::uuid\[\]\)/);
     expect(reads, "the variant is chosen by ids !== null, never by the branch").toMatch(/ids === null|ids !== null/);
   });
+
+  it("the list's per-run lateral subquery keeps OFFSET 0, so the planner cannot flatten it (R4)", () => {
+    // The deterministic half of R4. The EXPLAIN case in `ml-forecasts.integration.spec.ts` checks
+    // the shipped plan, but without `OFFSET 0` the flattened join and the per-run path cost about
+    // the same on its fixture, so that case reddened the mutation in only some runs (build record).
+    const LATERAL_WITH_FENCE = /CROSS JOIN LATERAL \(\s*SELECT f0\.[^()]*?FROM ml\.forecasts f0[\s\S]*?\n\s*OFFSET 0\s*\n\s*\) f\b/;
+    const sample = "CROSS JOIN LATERAL (\n  SELECT f0.asset_id\n    FROM ml.forecasts f0\n   WHERE x = 1\n  OFFSET 0\n) f\n";
+    expect(sample).toMatch(LATERAL_WITH_FENCE);
+    expect(sample.replace("  OFFSET 0\n", "")).not.toMatch(LATERAL_WITH_FENCE);
+    expect(codeOnly(read(READS_REL))).toMatch(LATERAL_WITH_FENCE);
+  });
 });

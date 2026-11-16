@@ -82,6 +82,7 @@ export function pointForecastStatement(point: { assetId: string; pointKey: strin
      ORDER BY f.horizon_bucket`;
 }
 
+/** Runs {@link pointForecastStatement} on `tx`: the current run's rows for one point, ascending. */
 export async function readPointForecast(
   tx: BmsTx,
   point: { assetId: string; pointKey: string },
@@ -150,6 +151,7 @@ export function forecastListStatement(ids: readonly string[] | null, currentHour
      ORDER BY l.name, a.code, c.point_key`;
 }
 
+/** Runs {@link forecastListStatement} on `tx`: one row per point with a current run among `ids`. */
 export async function readForecastList(
   tx: BmsTx,
   ids: readonly string[] | null,
