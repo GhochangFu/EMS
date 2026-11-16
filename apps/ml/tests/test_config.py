@@ -165,3 +165,105 @@ def test_config_hash_ignores_the_dsn_and_the_schedule():
         {"DATABASE_URL_FLEET": "postgres://x@y/z", "ML_INTERVAL_SECONDS": "7200", "ML_HEALTH_PORT": "5000"}
     )
     assert config_hash(other, **HASH_INPUTS) == base
+
+
+# R17: the forecast hash of this fixed Config, computed on the code before the anomaly
+# switch landed. It must never move, or the deploy would re-score every forecast.
+FORECAST_HASH_BEFORE_E1_2A = "9af3c70c7798fe8fb37e3b3631285d147c8b5d794abdd0bf79f28992f4346afa"
+
+
+def test_forecast_config_hash_is_unchanged_by_e1_2a():
+    assert config_hash(load_config(env()), **HASH_INPUTS) == FORECAST_HASH_BEFORE_E1_2A
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"ML_ANOMALY_TARGETS": "water/pump/flow"},
+        {"ML_ANOMALY_ENABLED": "false"},
+    ],
+)
+def test_forecast_config_hash_ignores_the_anomaly_settings(override):
+    assert config_hash(load_config(env(**override)), **HASH_INPUTS) == FORECAST_HASH_BEFORE_E1_2A
+
+
+def test_anomaly_defaults():
+    from bms_ml.targets import DEFAULT_ANOMALY_TARGETS
+
+    config = load_config(env())
+    assert config.anomaly_targets == DEFAULT_ANOMALY_TARGETS
+    assert config.anomaly_enabled is True
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (None, True),
+        ("", True),
+        ("  ", True),
+        ("true", True),
+        ("TRUE", True),
+        ("1", True),
+        ("false", False),
+        ("False", False),
+        ("0", False),
+        (" 0 ", False),
+    ],
+)
+def test_anomaly_enabled_parses(raw, expected):
+    overrides = {} if raw is None else {"ML_ANOMALY_ENABLED": raw}
+    assert load_config(env(**overrides)).anomaly_enabled is expected
+
+
+@pytest.mark.parametrize("raw", ["yes", "no", "2", "on", "truthy-x", "s3cret-value"])
+def test_a_bad_boolean_refuses_naming_the_variable_not_the_value(raw):
+    with pytest.raises(ConfigError) as err:
+        load_config(env(ML_ANOMALY_ENABLED=raw))
+    assert "ML_ANOMALY_ENABLED" in str(err.value)
+    assert raw not in str(err.value)
+
+
+def test_anomaly_targets_override_and_error_names_its_variable():
+    config = load_config(env(ML_ANOMALY_TARGETS="water/pump/flow"))
+    assert [str(t) for t in config.anomaly_targets] == ["water/pump/flow"]
+    with pytest.raises(ConfigError) as err:
+        load_config(env(ML_ANOMALY_TARGETS="BAD_VALUE"))
+    assert "ML_ANOMALY_TARGETS" in str(err.value)
+    assert "BAD_VALUE" not in str(err.value)
+
+
+ANOMALY_INPUTS = dict(
+    job="anomaly",
+    targets=DEFAULT_TARGETS,
+    thresholds={"anomaly_min_days": 28, "min_coverage": 0.8},
+    constants={"window": 672, "ties": "strict"},
+    forest_kwargs={"n_estimators": 100, "random_state": 0},
+    package_versions={"bms-ml": "0.1.0", "numpy": "2.5.4"},
+)
+
+
+def test_anomaly_config_hash_is_hex_stable_and_sensitive():
+    from bms_ml.config import anomaly_config_hash
+
+    first = anomaly_config_hash(**ANOMALY_INPUTS)
+    assert len(first) == 64 and all(c in "0123456789abcdef" for c in first)
+    reordered = dict(ANOMALY_INPUTS, constants={"ties": "strict", "window": 672})
+    assert anomaly_config_hash(**reordered) == first
+    changes = {
+        "job": "other",
+        "targets": (Target("water", "pump", "flow"),),
+        "thresholds": {"anomaly_min_days": 27, "min_coverage": 0.8},
+        "constants": {"window": 672, "ties": "loose"},
+        "forest_kwargs": {"n_estimators": 101, "random_state": 0},
+        "package_versions": {"bms-ml": "0.1.1", "numpy": "2.5.4"},
+    }
+    for key, value in changes.items():
+        assert anomaly_config_hash(**dict(ANOMALY_INPUTS, **{key: value})) != first, key
+    assert first != config_hash(
+        load_config(env()),
+        model_name="fake",
+        model_version="1",
+        thresholds={},
+        quantiles=(),
+        package_versions={},
+    )
