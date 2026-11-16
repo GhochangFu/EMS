@@ -10,6 +10,7 @@ import { TAB_TARGET_UNKNOWN_MESSAGE } from "./dashboard-writes";
 import {
   createDashboardTemplateBodySchema,
   instantiateSectionTemplateBodySchema,
+  TEMPLATE_ANOMALY_MESSAGE,
   TEMPLATE_FORECAST_MESSAGE,
   TEMPLATE_MIMIC_LAYOUT_MESSAGE,
   TEMPLATE_MIMIC_TAB_MESSAGE,
@@ -620,6 +621,45 @@ export function rejectsAForecastWidgetInEitherTemplateContract(): void {
     config: {},
   });
   assert(asAssetTemplate.success === false, "an asset template's dashboard widget must refuse forecast");
+}
+
+// ---------------------------------------------------------------- E1.2d
+
+function anomaly(): unknown {
+  return widget({ key: "an", widgetType: "anomaly", gridW: 6, gridH: 4, config: {} });
+}
+
+/**
+ * `E1.2d` / ADR 0135 Amendment 5 ruling 4(c) (plan R15) — no template surface holds an anomaly
+ * widget. A dashboard template refuses one at its `widgetType`, top-level on `PATCH` and in a tab
+ * on `POST`; an asset template has no anomaly arm at all.
+ */
+export function rejectsAnAnomalyWidgetInEitherTemplateContract(): void {
+  expectRejectsAt(
+    updateDashboardTemplateBodySchema,
+    { content: { widgets: [anomaly()] } },
+    ["content", "widgets", 0, "widgetType"],
+    new RegExp(TEMPLATE_ANOMALY_MESSAGE),
+    "a PATCH body whose top-level widget is an anomaly widget",
+  );
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    createBody({ target: "site", content: { widgets: [], tabs: [siteTab({ widgets: [anomaly()] })] } }),
+    ["content", "tabs", 0, "widgets", 0, "widgetType"],
+    new RegExp(TEMPLATE_ANOMALY_MESSAGE),
+    "a site POST body whose tab holds an anomaly widget",
+  );
+  const asAssetTemplate = templateDashboardWidgetSchema.safeParse({
+    title: "Anomaly",
+    gridX: 0,
+    gridY: 0,
+    gridW: 6,
+    gridH: 4,
+    widgetType: "anomaly",
+    pointKeys: ["kw"],
+    config: {},
+  });
+  assert(asAssetTemplate.success === false, "an asset template's dashboard widget must refuse anomaly");
 }
 
 // ---------------------------------------------------------------- F4.317

@@ -8,9 +8,9 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
 const MIGRATION_REL = "packages/db/drizzle/0096_site_widget_types_and_assets_catalog.sql";
-// `E1.4c`: the effective widget-type CHECK is 0159's (fourteen); 0118's is frozen at thirteen,
-// 0099's at twelve, 0096's at eleven.
-const MIGRATION_0159_REL = "packages/db/drizzle/0159_forecast_widget_type.sql";
+// `E1.2d`: the effective widget-type CHECK is 0161's (fifteen); 0159's is frozen at fourteen,
+// 0118's at thirteen, 0099's at twelve, 0096's at eleven.
+const MIGRATION_0161_REL = "packages/db/drizzle/0161_anomaly_widget_type.sql";
 // `F4.317`: the effective catalog-key CHECK is 0126's (thirteen); 0096's is frozen at ten.
 /** `F4.332` — the effective catalog-key CHECK since `0129` (ADR 0112 Amendment 3); `0126` is frozen. */
 const MIGRATION_0129_REL = "packages/db/drizzle/0129_dashboard_widget_sources_energy_cost_keys.sql";
@@ -87,9 +87,9 @@ describe("F3.73 — migration 0096: site widget types and assets catalog keys", 
     for (const type of NEW_WIDGET_TYPES) expect(listed, `${type} must be accepted`).toContain(type);
   });
 
-  it("the effective widget-type CHECK (0159) is exactly the contract's enum and keeps the five", () => {
+  it("the effective widget-type CHECK (0161) is exactly the contract's enum and keeps the five", () => {
     const listed = checkList(
-      sqlOnly(read(MIGRATION_0159_REL)),
+      sqlOnly(read(MIGRATION_0161_REL)),
       "dashboard_widgets_widget_type_check",
       "widget_type",
     );

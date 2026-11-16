@@ -633,3 +633,21 @@ export function runNoStockTemplateHoldsAForecastTest(): void {
   assert(!types.includes("forecast"), "a stock dashboard template holds a forecast widget (R12 forbids it)");
 }
 
+/**
+ * `E1.2d` / ADR 0135 Amendment 5 ruling 4(c) (plan R15) — no stock template holds an anomaly
+ * widget, for the reason the forecast test above gives: the catalog is parsed with the plain
+ * section content schema, which accepts an anomaly arm. Canvas and every tab are walked.
+ */
+export function runNoStockTemplateHoldsAnAnomalyTest(): void {
+  const types = STOCK_DASHBOARD_TEMPLATE_CATALOG.flatMap((entry) => {
+    const content = entry.content as {
+      readonly widgets?: readonly { readonly widgetType: string }[];
+      readonly tabs?: readonly { readonly widgets?: readonly { readonly widgetType: string }[] }[];
+    };
+    return [...(content.widgets ?? []), ...(content.tabs ?? []).flatMap((tab) => tab.widgets ?? [])].map(
+      (widget) => widget.widgetType,
+    );
+  });
+  assert(types.length > 10, `the walk found only ${types.length} widgets; it is not reading the catalog`);
+  assert(!types.includes("anomaly"), "a stock dashboard template holds an anomaly widget (R15 forbids it)");
+}

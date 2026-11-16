@@ -10,6 +10,7 @@ import {
   stateLegendConfigSchema,
 } from "./site-widgets";
 import { trendStripWidgetConfigSchema } from "./trend-strip-widget";
+import { anomalyWidgetConfigSchema } from "./anomaly-widget";
 import { forecastWidgetConfigSchema } from "./forecast-widget";
 import {
   bindingExclusiveMessage,
@@ -494,7 +495,7 @@ const bindsNothingArm = <T extends z.infer<typeof widgetTypeSchema>, C extends z
 const onePointArm = bindsNothingArm;
 
 /**
- * The arms, one per widget type (fourteen since `E1.4c`). Each stays a plain `.strict()` `ZodObject` — never
+ * The arms, one per widget type (fifteen since `E1.2d`). Each stays a plain `.strict()` `ZodObject` — never
  * wrapped in its own `.refine()`/`.superRefine()` — because `z.discriminatedUnion` accepts only
  * `ZodObject` arms; the cross-widget grid-fit check lives on the ARRAY field in
  * `widgetsWriteFieldSchema` below instead of here, for exactly that reason.
@@ -583,6 +584,9 @@ export const widgetWriteSchema = z.discriminatedUnion("widgetType", [
   // and no source; its config is `{}` (plan R11). The point is a `dashboard_widget_points` row, so
   // `assertBoundPointsInOrganization` and the cascade already hold it.
   onePointArm("forecast", forecastWidgetConfigSchema),
+  // `E1.2d` / ADR 0135 Amendment 5 ruling 4(c) — the anomaly widget, the same shape: one point
+  // (it names the scored asset and is not drawn), no source, config `{}` (plan R16).
+  onePointArm("anomaly", anomalyWidgetConfigSchema),
 ]);
 
 const eachWidgetFitsTheGrid = (

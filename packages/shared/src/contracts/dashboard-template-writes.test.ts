@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   acceptsATemplateTrendStripWithoutASelection,
   rejectsAForecastWidgetInEitherTemplateContract,
+  rejectsAnAnomalyWidgetInEitherTemplateContract,
   rejectsATemplateTrendStripCarryingASelection,
   theStockSiteTemplateStillParsesAsACreateBody,
   acceptsAMimicTabKeyNamingADomainTab,
@@ -200,5 +201,12 @@ describe("F4.317 — the organization template target and its instantiate arm", 
 describe("E1.4c — no template surface holds a forecast widget", () => {
   it("refuses a forecast in a dashboard template, top-level and in a tab, and in an asset template", () => {
     rejectsAForecastWidgetInEitherTemplateContract();
+  });
+});
+
+/** `E1.2d` / ADR 0135 Amendment 5 ruling 4(c) (plan R15) — the anomaly widget is builder palette only. */
+describe("E1.2d — no template surface holds an anomaly widget", () => {
+  it("refuses an anomaly widget in a dashboard template, top-level and in a tab, and in an asset template", () => {
+    rejectsAnAnomalyWidgetInEitherTemplateContract();
   });
 });

@@ -40,6 +40,7 @@
     "tests/e1.2b-ml-anomaly-read-grant.test.ts",
     "tests/e1.2b-ml-anomaly-read-grant.integration.test.ts",
     "tests/e1.4c-forecast-widget-type.test.ts",
+    "tests/e1.2d-anomaly-widget-type.test.ts",
     "tests/e1.2b-ml-anomaly-containment.test.ts",
     "tests/f3.16-device-alarms-schema.test.ts",
     "tests/f3.16-device-alarms-schema.integration.test.ts",

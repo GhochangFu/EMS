@@ -147,6 +147,15 @@ describe.skipIf(!has)("F3.73 — site widget types and catalog keys against a li
     });
   });
 
+  // `E1.2d` (ADR 0135 Amendment 5 ruling 4(c)) — migration `0161` widened the CHECK by `anomaly`.
+  it("accepts anomaly (E1.2d, migration 0161)", async () => {
+    await inTx(async (run) => {
+      const dash = await newDashboard(run);
+      const ok = await run(INSERT_WIDGET, [org, dash, "anomaly"]);
+      expect(ok.rows.length, "anomaly must be accepted").toBe(1);
+    });
+  });
+
   it("accepts both new catalog keys and still refuses an unknown one, naming the CHECK", async () => {
     await inTx(async (run) => {
       const dash = await newDashboard(run);
