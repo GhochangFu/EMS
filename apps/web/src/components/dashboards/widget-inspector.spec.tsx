@@ -313,6 +313,21 @@ export function aSiteWidgetHidesUnitDecimalsAndBoundPoints(): void {
   }
 }
 
+/**
+ * `E1.4c` — a forecast binds one point ("Bound points" shows) but configures nothing: no Unit, no
+ * Decimals (the `breaker_table` precedent), and the advisory line in their place.
+ */
+export function aForecastShowsBoundPointsAndTheAdvisoryLineOnly(): void {
+  renderInspector(blankDashboardWidgetRow("forecast"));
+  expect(screen.queryByText("Bound points", { exact: true })).not.toBeNull();
+  expect(screen.queryByText("Unit", { exact: true })).toBeNull();
+  expect(screen.queryByText("Decimals", { exact: true })).toBeNull();
+  expect(screen.queryByText("Named metric", { exact: true })).toBeNull();
+  expect(screen.getByTestId("forecast-inspector-note").textContent).toBe(
+    "Advisory. The last 24 h and the next 48 h for one point.",
+  );
+}
+
 export function aRailShowsItsRowsAtTheDefault(): void {
   renderInspector(blankDashboardWidgetRow("active_alarms_rail"));
   expect((screen.getByRole("textbox", { name: /^Rows/ }) as HTMLInputElement).value).toBe("8");

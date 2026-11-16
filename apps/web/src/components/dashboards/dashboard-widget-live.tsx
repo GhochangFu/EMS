@@ -9,6 +9,7 @@ import {
   type LatestByRef,
 } from "../../lib/dashboard-widget-data";
 import { DashboardWidget } from "../widgets/dashboard-widget";
+import { ForecastWidgetLive } from "./forecast-widget-live";
 import { MimicWidgetLive } from "./mimic-widget-live";
 import { isSiteWidget, SiteWidgetLive } from "./site-widget-live";
 import { TrendStripWidgetLive, type TrendStripTabScope } from "./trend-strip-widget-live";
@@ -51,6 +52,8 @@ type DashboardWidgetLiveProps = {
  * call it `"empty"`; it has its own read (`MimicWidgetLive`) and branches off BEFORE the mapping.
  * **`F3.73` — the same branch for the five site widgets** (`SiteWidgetLive`, one read per tab).
  * **`F4.305` — and for the `trend_strip`** (`TrendStripWidgetLive`, the `F4.301` strip's read).
+ * **`E1.4c` — and for the `forecast`** (`ForecastWidgetLive`: its own aggregate and forecast reads;
+ * `pointRefsFor` skips it, so nothing in the two maps is its).
  */
 export function DashboardWidgetLive({
   widget,
@@ -73,6 +76,9 @@ export function DashboardWidgetLive({
   }
   if (widget.widgetType === "trend_strip") {
     return <TrendStripWidgetLive widget={widget} locationId={locationId} tabs={tabs} />;
+  }
+  if (widget.widgetType === "forecast") {
+    return <ForecastWidgetLive widget={widget} />;
   }
   // Resolved ONCE and reused for both the staleness gate and the chart's rolling window — two
   // clock reads in one render pass could otherwise disagree by the render's own duration.

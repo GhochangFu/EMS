@@ -12,6 +12,7 @@ import { ActiveAlarmsRailWidget } from "./active-alarms-rail-widget";
 import { AssetClassStripWidget } from "./asset-class-strip-widget";
 import { BreakerTableWidget } from "./breaker-table-widget";
 import { CriticalSystemsListWidget } from "./critical-systems-list-widget";
+import { ForecastWidget } from "./forecast-widget";
 import { ModuleSummaryCardWidget } from "./module-summary-card-widget";
 import { StateLegendWidget } from "./state-legend-widget";
 import { TankLevelWidget } from "./tank-level-widget";
@@ -296,6 +297,14 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
     // preview, which reads nothing.
     case "trend_strip":
       return <TrendStripWidgetPreview title={title} status={status} />;
+    // `E1.4c` — the same for the forecast: the live canvas branches to `ForecastWidgetLive` first, so
+    // here it is the static draw (no read), or "No point bound." for a widget with none.
+    case "forecast": {
+      const point = widget.points.find((p) => p.role === "primary") ?? widget.points[0] ?? null;
+      return (
+        <ForecastWidget title={title} status="ready" pointKey={point?.pointKey ?? null} unit={point?.unit ?? null} read={null} />
+      );
+    }
     default: {
       const unreachable: never = widget;
       return unreachable;

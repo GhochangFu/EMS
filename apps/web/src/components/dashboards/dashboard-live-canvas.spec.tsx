@@ -33,7 +33,11 @@ const mocks = vi.hoisted(() => ({
   fetchDashboardCatalogValues: vi.fn(),
   fetchSiteTrendStrip: vi.fn(),
   fetchAssetWindows: vi.fn(),
+  fetchPointForecast: vi.fn(),
 }));
+
+// `E1.4c` — the forecast widget's forecast read, mocked like the canvas's other reads.
+vi.mock("../../api/ml", () => ({ fetchPointForecast: mocks.fetchPointForecast }));
 
 // `F4.305` — the trend strip widget's one read, mocked like the canvas's other reads.
 vi.mock("../../api/trend-strip", () => ({ fetchSiteTrendStrip: mocks.fetchSiteTrendStrip }));
@@ -341,6 +345,24 @@ export async function aTrendStripWidgetDrawsOneStripWithItsTabsGroup(): Promise<
   expect(screen.getAllByRole("navigation", { name: "Trend range" })).toHaveLength(1);
   await waitFor(() => expect(mocks.fetchSiteTrendStrip).toHaveBeenCalled());
   expect(mocks.fetchSiteTrendStrip.mock.calls[0]).toEqual(["loc-1", { range: "24h", assetGroupId: GROUP_G }]);
+}
+
+/**
+ * L11 — `E1.4c` (ADR 0135 Amendment 3 C1, plan R10): a `forecast` widget makes its own two reads
+ * of its bound point — the 1,440-minute hourly-mean aggregate and the forecast — and its point is
+ * not a `recent` read (`pointRefsFor` skips it).
+ */
+export async function aForecastWidgetReadsItsPointTwice(): Promise<void> {
+  const forecast = { ...widget(true), id: "widget-fc", title: "Load forecast", widgetType: "forecast", config: {} } as DashboardWidgetDto;
+  // The actual read stays pending (a `Once` outranks `renderCanvas`'s default), so the frame draws
+  // its loading state and no chart mounts.
+  mocks.fetchPointAggregate.mockReturnValueOnce(new Promise(() => undefined));
+  mocks.fetchPointForecast.mockResolvedValue({ asOf: "2026-11-16T10:20:00.000Z", forecast: null });
+  renderCanvas(dashboard([forecast]));
+  expect(await screen.findByText("Load forecast")).toBeInTheDocument();
+  await waitFor(() => expect(mocks.fetchPointForecast).toHaveBeenCalledWith(REF));
+  expect(mocks.fetchPointAggregate).toHaveBeenCalledWith(REF, { windowMinutes: 1440, bucketFunction: "avg", bucketStats: true });
+  expect(mocks.fetchTelemetryRecent).not.toHaveBeenCalledWith(REF, expect.any(String));
 }
 
 /**

@@ -130,9 +130,9 @@ type WidgetCatalogEntry = {
 };
 
 /**
- * The thirteen widget types, closed (ADR 0047 decision 2; `table` by ADR 0048 decision 5; `mimic` by
+ * The fourteen widget types, closed (ADR 0047 decision 2; `table` by ADR 0048 decision 5; `mimic` by
  * ADR 0079 decision 1; the five site widgets by `F3.73`; `breaker_table` by `F3.74`; `trend_strip`
- * by `F4.305`). Label,
+ * by `F4.305`; `forecast` by `E1.4c`, ADR 0135 Amendment 3 C1). Label,
  * icon and default size are presentation and belong here; `points` and `sources` are validation
  * rules and are imported rather than restated (Amendment 2 §1).
  */
@@ -249,6 +249,15 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     defaultSize: { w: 12, h: TREND_STRIP_WIDGET_ROWS },
     points: WIDGET_POINT_CARDINALITY.trend_strip,
     sources: WIDGET_SOURCE_CARDINALITY.trend_strip,
+  },
+  forecast: {
+    label: "Forecast",
+    // A solid line up to a vertical "now" mark, then a dashed continuation (`E1.4c`).
+    iconPath: "M3 19h18v2H3v-2Zm0-4 4-4 3 3 1-1V5h2v16h-2v-7.2L10 15l-3-3-2.6 2.6L3 15Zm12-3h2v2h-2v-2Zm4-2h2v2h-2v-2Z",
+    // Half the canvas: a 24 h actual and a 48 h forecast need width more than height.
+    defaultSize: { w: 6, h: 4 },
+    points: WIDGET_POINT_CARDINALITY.forecast,
+    sources: WIDGET_SOURCE_CARDINALITY.forecast,
   },
 };
 

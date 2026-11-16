@@ -35,6 +35,7 @@ import {
   type WidgetConfigRow,
 } from "../../lib/widget-config-form";
 import { Field } from "../asset-templates/field";
+import { FORECAST_INSPECTOR_NOTE } from "../widgets/forecast-widget";
 import { ChartPointColorSelect } from "./chart-point-color-select";
 import { rowForChartKind } from "../../lib/cost-by-day-form";
 import { ChartSeriesPicker } from "./chart-series-picker";
@@ -267,9 +268,15 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
         nodes, each with its own points and units, so one widget-level value would apply to
         nothing and the API's `.strict()` would refuse it. `F3.73`: the site widgets
         likewise (`F3.74`: the breaker table too, config `{}`) — a type that binds nothing has no
-        value to format.
+        value to format. `E1.4c`: the forecast binds a point but its config is `{}` (R11) — the unit
+        is the point's own — so it shows one advisory line in their place.
       */}
-      {!widgetTypeBindsNothing(row.widgetType) ? (
+      {row.widgetType === "forecast" ? (
+        <p className="text-xs text-ink-muted" data-testid="forecast-inspector-note">
+          {FORECAST_INSPECTOR_NOTE}
+        </p>
+      ) : null}
+      {!widgetTypeBindsNothing(row.widgetType) && row.widgetType !== "forecast" ? (
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Unit" error={problemFor("unit")}>
             <input

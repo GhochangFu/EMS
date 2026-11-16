@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runStockCatalogCodesMatchTheParamCharsetTests,
+  runNoStockTemplateHoldsAForecastTest,
   runStockCatalogTests,
   runBenchmarkTableBindingTest,
   runMeteredPumpingRoleSplitTest,
@@ -62,5 +63,9 @@ describe("stock dashboard template catalog (F3.36 Part D, ADR 0049 decision 3)",
 
   it("electrical-metered-pumping v2 binds the chlorine pumps on dosing-pump (F4.319, ADR 0113 decision 5)", () => {
     runMeteredPumpingRoleSplitTest();
+  });
+
+  it("holds no forecast widget in any stock template, canvas or tab (E1.4c, R12)", () => {
+    runNoStockTemplateHoldsAForecastTest();
   });
 });

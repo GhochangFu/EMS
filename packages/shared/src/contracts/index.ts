@@ -105,6 +105,7 @@ export * from "./site-segment-views";
 export * from "./trend-points";
 export * from "./trend-strip";
 export * from "./trend-strip-widget";
+export * from "./forecast-widget";
 export * from "./rtu-writes";
 export * from "./rule-writes";
 export * from "./notification-writes";

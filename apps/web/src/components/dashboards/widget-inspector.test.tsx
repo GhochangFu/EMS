@@ -45,6 +45,7 @@ import {
   aRailRowsProblemRendersUnderTheRows,
   aRailShowsItsRowsAtTheDefault,
   aSiteWidgetHidesUnitDecimalsAndBoundPoints,
+  aForecastShowsBoundPointsAndTheAdvisoryLineOnly,
   aStoredTabKeyTheDashboardNoLongerHasStaysSelected,
   aWidgetOnADashboardWithoutTabsHasNoTabSelect,
   aWidgetOnATabbedDashboardMovesThroughTheTabSelect,
@@ -192,6 +193,10 @@ describe("F3.73 widget inspector — the site widgets", () => {
 
   it("hides Unit, Decimals and both binding fields for each of the five", () => {
     aSiteWidgetHidesUnitDecimalsAndBoundPoints();
+  });
+
+  it("E1.4c a forecast shows Bound points and the advisory line, no Unit or Decimals", () => {
+    aForecastShowsBoundPointsAndTheAdvisoryLineOnly();
   });
 
   it("shows the rail's Rows at the default of 8", () => {

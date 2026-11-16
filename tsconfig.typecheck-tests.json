@@ -35,6 +35,7 @@
     "tests/e1.4a-ml-read-grant.test.ts",
     "tests/e1.4a-ml-read-grant.integration.test.ts",
     "tests/e1.4a-ml-read-containment.test.ts",
+    "tests/e1.4c-forecast-widget-type.test.ts",
     "tests/f3.16-device-alarms-schema.test.ts",
     "tests/f3.16-device-alarms-schema.integration.test.ts",
     "tests/f4.359-maintenance-windows-schema.test.ts",

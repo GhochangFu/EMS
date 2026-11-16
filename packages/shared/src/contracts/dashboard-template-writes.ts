@@ -67,6 +67,16 @@ export const TEMPLATE_MIMIC_TAB_MESSAGE =
 export const TEMPLATE_TREND_STRIP_SELECTION_MESSAGE =
   "a dashboard template's trend strip holds no segments, points, colors or styles; a selection is site-specific";
 
+/**
+ * `E1.4c` / ADR 0135 Amendment 3 R-f (plan R12) — the forecast widget is builder palette only. A
+ * forecast names one asset's point, which a template has not, so neither template surface holds
+ * one. This contract refuses it by name in the content walk below (tabs included); the
+ * asset-template contract refuses it because `templateDashboardWidgetVariants` has no forecast arm,
+ * and the web's `TEMPLATE_WIDGET_TYPES` drops it through `isTemplateAuthorableWidgetType`.
+ */
+export const TEMPLATE_FORECAST_MESSAGE =
+  "a dashboard template holds no forecast widget; a forecast names one asset's point";
+
 /** The `F4.306` selection fields (and `F4.323`'s `styles`) a template's trend strip may not carry. */
 const TREND_STRIP_SELECTION_KEYS = ["segments", "points", "colors", "styles"] as const;
 
@@ -90,6 +100,13 @@ const templateContentWriteSchema = sectionTemplateContentSchema
     const tabKeys = new Set(content.tabs.map((tab) => tab.key));
     const domainTabKeys = new Set(content.tabs.filter((tab) => tab.domain !== null).map((tab) => tab.key));
     const refuse = (widget: (typeof content.widgets)[number], path: (string | number)[]): void => {
+      if (widget.widgetType === "forecast") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [...path.slice(0, -1), "widgetType"],
+          message: TEMPLATE_FORECAST_MESSAGE,
+        });
+      }
       if (widget.widgetType === "mimic" && widget.config.source === "layout") {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path, message: TEMPLATE_MIMIC_LAYOUT_MESSAGE });
       }
@@ -133,7 +150,8 @@ const templateContentWriteSchema = sectionTemplateContentSchema
       "reference in this stage. A module_summary_card's config.targetTabKey must name one of " +
       "content.tabs, so an asset-group template holds none. A mimic's config.tabKey must name " +
       "one of content.tabs whose domain is not null. A trend_strip's config holds no " +
-      "segments, points or colors (ADR 0108 Amendment 7): a selection is site-specific.",
+      "segments, points or colors (ADR 0108 Amendment 7): a selection is site-specific. " +
+      "A forecast widget answers 400 (ADR 0135 Amendment 3 R-f): it names one asset's point.",
   );
 
 /**
