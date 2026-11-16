@@ -12,6 +12,7 @@
 // six small figures. All times are IST — the parser formats them, this file
 // only prints them.
 
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,6 +56,13 @@ const BARE_SECTION = String.raw`(?<!SOW )§\d+(?:\.\d+)*`;
 const REDACT_SECTION = new RegExp(BARE_SECTION, "g");
 const SECTION_STANDIN = "[internal ref]";
 
+// The same rule for a bare `owner/repo#N` reference, GitHub's short link form.
+// It names the repository without `github.com`, so the link check misses it, and
+// board prose carries a few (F4.314's row put one into the client file). Declared
+// once, redacted in `esc` and re-tested by the leak check, like BARE_SECTION.
+const BARE_REPO_REF = String.raw`\b[A-Za-z0-9][\w.-]*\/[\w.-]+#\d+\b`;
+const REDACT_REPO_REF = new RegExp(BARE_REPO_REF, "gi");
+
 // Redaction happens here rather than at each call site on purpose. Board prose
 // arrives from BACKLOG.md and reaches the page through titles, tooltips, lane
 // chips and the search index; a helper applied by hand would have to be
@@ -62,7 +70,10 @@ const SECTION_STANDIN = "[internal ref]";
 // `client` is declared further down with the rest of the audience switch; `esc`
 // is never called before that runs.
 const esc = (s) =>
-  (client ? String(s ?? "").replace(REDACT_SECTION, SECTION_STANDIN) : String(s ?? "")).replace(
+  (client
+    ? String(s ?? "").replace(REDACT_SECTION, SECTION_STANDIN).replace(REDACT_REPO_REF, SECTION_STANDIN)
+    : String(s ?? "")
+  ).replace(
     /[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
   );
@@ -1049,6 +1060,17 @@ writeFileSync(OUT, internal);
 writeFileSync(OUT_FILE, standalone(internal));
 writeFileSync(OUT_CLIENT, standalone(forClient));
 
+// The repository owner from `origin` (`https://host/<owner>/<repo>` or `git@host:<owner>/<repo>`),
+// or null when there is no remote; the leak check below then relies on its patterns alone.
+const REPO_OWNER = (() => {
+  try {
+    const url = execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" }).trim();
+    return /[/:]([^/:]+)\/[^/]+?(?:\.git)?\/?$/.exec(url)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+})();
+
 // Fail loudly rather than shipping a client file that names the repository.
 // This is the whole point of the variant, so it is checked, not assumed.
 const LEAKS = [
@@ -1060,6 +1082,13 @@ const LEAKS = [
   // the assembled document, so it still catches a section number typed straight
   // into the page's own prose, which never passes through `esc`.
   [new RegExp(BARE_SECTION), "internal rulebook section reference"],
+  // GitHub's short form names the repository with no link, so the `github.com`
+  // check above never sees it. Shared with the redaction like BARE_SECTION.
+  [new RegExp(BARE_REPO_REF, "i"), "repository reference (owner/repo#N)"],
+  // The owner itself, in any form (no `#N`, a space, a hard-cut title), read from
+  // `origin` so no literal goes stale. Check-only, so it can never redact client
+  // text; the repository name is left out because "EMS" is ordinary product prose.
+  ...(REPO_OWNER ? [[new RegExp(REPO_OWNER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), "repository owner"]] : []),
 ];
 const found = LEAKS.filter(([re]) => re.test(forClient)).map(([, what]) => what);
 if (found.length) {

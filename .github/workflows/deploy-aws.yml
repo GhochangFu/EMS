@@ -4,7 +4,9 @@
 # Trigger: CI finishing green on a push to main, or "Run workflow" by hand
 # (optionally with an older main SHA, which is a rollback). Never on
 # pull_request: the repository is public, and this workflow holds the deploy
-# key.
+# key. A CI-started run deploys only main's newest commit (the gate job,
+# Amendment 2), so a slow CI run for an older commit cannot roll the host back.
+# The build and deploy jobs read the commit from the gate's output.
 #
 # 1. build  — four arm64 images (the host is Graviton) pushed to GHCR, tagged
 #             with the commit SHA. Nothing is ever built on the host: it shares
@@ -43,12 +45,71 @@ env:
   SHA: ${{ github.event.workflow_run.head_sha || inputs.sha || github.sha }}
 
 jobs:
-  build:
-    name: Build ${{ matrix.image }} (arm64)
+  # ADR 0096 Amendment 2: a run that CI starts deploys only main's newest commit.
+  # CI runs finish out of order (a code commit's full CI can end after a later
+  # docs-only commit's short one), and on 2026-11-16 the last to finish put an
+  # older commit back on the host. This job picks what to deploy:
+  #   - a dispatch ("Run workflow", the rollback route): its own SHA;
+  #   - a CI-started run for main's tip: that commit;
+  #   - a CI-started run for an older commit: the tip instead when the tip's CI
+  #     has already passed (the tip's own deploy run may have been cancelled: a
+  #     concurrency group keeps one pending run, and a later arrival replaces
+  #     it), else nothing, because the tip's own run is still coming.
+  # The workflow-wide concurrency group (above) keeps any other deploy from
+  # landing between this choice and the deploy. bms-ctl on the host still
+  # refuses a commit that is not on main.
+  gate:
+    name: Newest commit on main
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      deploy: ${{ steps.tip.outputs.deploy }}
+      sha: ${{ steps.tip.outputs.sha }}
+    steps:
+      - name: Choose the commit to deploy
+        id: tip
+        env:
+          EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::the commit to deploy is not a full SHA"; exit 1; }
+          if [ "$EVENT" != "workflow_run" ]; then
+            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tip="$(gh api "repos/$REPO/commits/main" --jq .sha)"
+          [[ "$tip" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::could not read the tip of main"; exit 1; }
+          if [ "$tip" = "$SHA" ]; then
+            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tip_ci="$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$tip&event=push&branch=main" \
+            --jq '[.workflow_runs[] | select(.status == "completed")][0].conclusion // ""')"
+          if [ "$tip_ci" = "success" ]; then
+            echo "::notice::$SHA is not main's tip; deploying the tip $tip instead, whose CI has passed"
+            echo "sha=$tip" >> "$GITHUB_OUTPUT"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::not deploying $SHA: main is at $tip, whose CI has not passed yet; its own run deploys it"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build ${{ matrix.image }} (arm64)
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
     runs-on: ubuntu-24.04-arm
+    env:
+      SHA: ${{ needs.gate.outputs.sha }}
     # ADR 0135 (E1.1 plan PR 5): the ml image (PyTorch plus weights from the
     # Hugging Face Hub) gets a longer limit, and its failure never blocks or
     # cancels the deploy of the others. A host with ml enabled then fails its
@@ -130,12 +191,14 @@ jobs:
 
   deploy:
     name: Deploy to bms.demosites.co.in
-    needs: build
+    needs: [gate, build]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
       name: aws-demo
       url: https://bms.demosites.co.in
+    env:
+      SHA: ${{ needs.gate.outputs.sha }}
     permissions:
       contents: read
       packages: read

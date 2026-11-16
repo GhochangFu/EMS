@@ -14,6 +14,7 @@ from bms_ml.scheduler import (
     EXIT_OK,
     RETRY_SECONDS,
     CycleResult,
+    catch_up_on_start,
     next_tick,
     retry_at,
     run_cycle_process,
@@ -200,3 +201,92 @@ def test_a_stopped_cycle_ends_the_loop_and_is_not_counted_as_a_failure():
 )
 def test_a_retry_never_crosses_into_the_next_hour_early(now, expected):
     assert retry_at(now, 3600) == expected
+
+
+# A restart after this hour's tick used to wait for the next one, so the hour went
+# unscored: the AWS demo's deploy at 10:04-10:06 lost the 10:00 forecast (E1.4 demo
+# checks, 2026-11-16). `serve` now scores the current hour at once when it starts
+# between the tick and five minutes before the next hour (the `retry_at` margin);
+# the ledger makes that a no-op when the hour is already scored.
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        (datetime(2026, 11, 16, 10, 4, 59, tzinfo=UTC), False),  # before the tick: the tick will run
+        (datetime(2026, 11, 16, 10, 5, tzinfo=UTC), True),
+        (datetime(2026, 11, 16, 10, 6, tzinfo=UTC), True),  # the demo's restart
+        (datetime(2026, 11, 16, 10, 54, 59, tzinfo=UTC), True),
+        (datetime(2026, 11, 16, 10, 55, tzinfo=UTC), False),  # would cross into 11:00 before HH:05
+        (datetime(2026, 11, 16, 10, 59, 59, tzinfo=UTC), False),
+    ],
+)
+def test_catch_up_on_start_only_between_the_tick_and_the_retry_margin(now, expected):
+    assert catch_up_on_start(now, 3600) is expected
+
+
+def test_a_daily_interval_catches_up_only_in_its_own_tick_hour():
+    assert catch_up_on_start(datetime(2026, 11, 16, 0, 30, tzinfo=UTC), 86400) is True
+    assert catch_up_on_start(datetime(2026, 11, 16, 10, 30, tzinfo=UTC), 86400) is False
+
+
+def test_a_start_after_the_tick_scores_the_current_hour_at_once():
+    start = datetime(2026, 11, 16, 10, 6, tzinfo=UTC)
+    clock = FakeClock(start, step=timedelta(0))
+    wait = Recorder(clock, limit=2)
+    calls = []
+    run_scheduler(
+        clock=clock,
+        wait=wait,
+        run_cycle_process=lambda: calls.append(clock.current) or CycleResult(EXIT_OK, {}),
+        health=health(clock),
+        interval_seconds=3600,
+    )
+    assert calls == [start, datetime(2026, 11, 16, 11, 5, tzinfo=UTC)]
+    assert wait.sleeps[:2] == [0.0, 3540.0]
+
+
+def test_a_start_before_the_tick_waits_for_it():
+    clock = FakeClock(datetime(2026, 11, 16, 10, 3, tzinfo=UTC), step=timedelta(0))
+    calls = []
+    run_scheduler(
+        clock=clock,
+        wait=Recorder(clock, limit=1),
+        run_cycle_process=lambda: calls.append(clock.current) or CycleResult(EXIT_OK, {}),
+        health=health(clock),
+        interval_seconds=3600,
+    )
+    assert calls == [datetime(2026, 11, 16, 10, 5, tzinfo=UTC)]
+
+
+def test_only_the_first_wait_catches_up():
+    # After a successful catch-up the loop waits for the next tick; it never re-runs the hour.
+    start = datetime(2026, 11, 16, 10, 30, tzinfo=UTC)
+    clock = FakeClock(start, step=timedelta(0))
+    calls = []
+    run_scheduler(
+        clock=clock,
+        wait=Recorder(clock, limit=3),
+        run_cycle_process=lambda: calls.append(clock.current) or CycleResult(EXIT_OK, {}),
+        health=health(clock),
+        interval_seconds=3600,
+    )
+    assert calls == [
+        start,
+        datetime(2026, 11, 16, 11, 5, tzinfo=UTC),
+        datetime(2026, 11, 16, 12, 5, tzinfo=UTC),
+    ]
+
+
+def test_a_failed_catch_up_is_retried_in_300_seconds_then_waits_for_the_tick():
+    start = datetime(2026, 11, 16, 10, 6, tzinfo=UTC)
+    clock = FakeClock(start, step=timedelta(0))
+    results = iter([CycleResult(EXIT_CYCLE_FAILED, None), CycleResult(EXIT_OK, {}), CycleResult(EXIT_OK, {})])
+    calls = []
+    run_scheduler(
+        clock=clock,
+        wait=Recorder(clock, limit=3),
+        run_cycle_process=lambda: calls.append(clock.current) or next(results),
+        health=health(clock),
+        interval_seconds=3600,
+    )
+    retry = start + timedelta(seconds=RETRY_SECONDS)
+    assert calls == [start, retry, datetime(2026, 11, 16, 11, 5, tzinfo=UTC)]

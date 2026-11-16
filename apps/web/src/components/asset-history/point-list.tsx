@@ -7,7 +7,7 @@ import type { AssetPointPickerRow, PointValuesAtInstantItem } from "@bms/shared"
 import { fetchPointValuesAt } from "../../api/telemetry";
 import { axisForUnit, MAX_HISTORY_POINTS } from "../../lib/asset-history-range";
 import { SectionCard } from "../section-card";
-import { ageOf, formatInZone, retryUnlessForbidden } from "./history-format";
+import { ageOf, formatInZone, formatReading, retryUnlessForbidden } from "./history-format";
 
 /** The api's `MAX_AT_INSTANT_REFS`: one `at-instant` call reads at most this many refs. */
 const AT_INSTANT_CHUNK = 50;
@@ -117,9 +117,7 @@ export function PointList({ assetId, points, selected, onChange, zone }: PointLi
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{point.pointKey}</td>
                   <td className="px-3 py-2 tabular-nums" data-testid="latest-value">
-                    {latest?.value === null || latest?.value === undefined
-                      ? "—"
-                      : `${latest.value}${unit ? ` ${unit}` : ""}`}
+                    {formatReading(latest?.value, unit ?? null)}
                   </td>
                   <td className="px-3 py-2 text-xs text-ink-muted" data-testid="poll-time">
                     {latest?.time ? (

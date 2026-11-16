@@ -4,7 +4,9 @@ A sleep-loop, never a timer thread per tick. The tick is the next multiple of
 the interval since the epoch plus five minutes (hourly: HH:05, when the
 previous hour is complete in the live branch of `_1h`). A failed cycle is
 retried in 300 s; a cycle that exits 78 (configuration or preflight) stops
-the loop, and `serve` exits 78 too.
+the loop, and `serve` exits 78 too. A start after this hour's tick scores the
+hour at once (`catch_up_on_start`): a restart at 10:06 used to wait for 11:05,
+and the 10:00 hour went unscored.
 
 Each cycle is `python -m bms_ml run-once` in a child process, so a hard
 timeout really kills a hung inference and the model's memory returns to the
@@ -72,6 +74,19 @@ def retry_at(now: datetime, interval_seconds: int) -> datetime:
     return retry
 
 
+def catch_up_on_start(now: datetime, interval_seconds: int) -> bool:
+    """Whether `serve`, starting at `now`, should run a cycle at once instead of waiting.
+
+    True when this hour's tick has already passed and the run would still start five
+    minutes before the next hour, the same margin `retry_at` keeps. A deploy recreates the
+    container, and one that lands just after HH:05 used to skip the hour: the AWS demo's
+    10:04-10:06 deploy left 10:00 with no forecast (E1.4 demo checks, 2026-11-16). The run
+    is safe to repeat: the ledger skips an hour that is already scored."""
+    hour = now.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+    last_tick = next_tick(now, interval_seconds) - timedelta(seconds=interval_seconds)
+    return last_tick >= hour and now + timedelta(seconds=RETRY_SECONDS) < hour + timedelta(hours=1)
+
+
 def run_scheduler(
     *,
     clock: Clock,
@@ -82,9 +97,18 @@ def run_scheduler(
 ) -> int:
     """Loop until `wait` reports a stop (returns True) or a cycle exits 78."""
     retry = False
+    first = True
     while True:
         now = clock.now()
-        target = retry_at(now, interval_seconds) if retry else next_tick(now, interval_seconds)
+        if first and catch_up_on_start(now, interval_seconds):
+            hour = now.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+            log.event("cycle_catch_up", as_of_hour=hour.isoformat())
+            target = now
+        elif retry:
+            target = retry_at(now, interval_seconds)
+        else:
+            target = next_tick(now, interval_seconds)
+        first = False
         if wait(max(0.0, (target - now).total_seconds())):
             return EXIT_OK
         result = run_cycle_process()

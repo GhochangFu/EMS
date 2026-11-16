@@ -184,3 +184,62 @@ does not generalise to any other host or broker.
 - `ingest` uses 256 MiB at most (`mem_limit`).
 - An edit to `bms-ctl.sh` reaches the host only through `setup-server.sh`
   (decision 7 above); this amendment needs that re-run once after it merges.
+
+## Amendment 2 — a CI-started deploy ships only main's newest commit (2026-11-16)
+
+**Status:** Accepted 2026-11-16 (the owner asked for the fix after the `E1.4`
+demo checks).
+
+**Context.** CI runs on `main` finish out of order. A code commit runs the full
+CI, a later docs-only commit runs the short one, and the later commit's run can
+finish first. Each finishing run started a deploy of its own commit, and the
+workflow's concurrency group only queues them, so the last run to finish won.
+On 2026-11-16 that was the run for `6e26cb27`: its deploy put that commit back
+on the host in place of the newer `61af5280`, with a short 502 while the stack
+restarted. The two differed only in docs, but the same order of events rolls
+back code.
+
+**Decision.** A new first job, `gate`, runs before the build and chooses the
+commit; the build and the deploy read it from the gate's output.
+
+- A run that CI started (`workflow_run`) for the **tip of `main`** deploys that
+  commit.
+- A CI-started run for an **older** commit deploys the tip instead when the
+  tip's own CI run has already passed, and nothing otherwise. Skipping alone
+  is not enough: the concurrency group keeps one pending run, and a later
+  arrival replaces it, so an older commit's run can cancel the tip's pending
+  deploy run (the queue `ci.yml`'s own comment warns about). Deploying the tip
+  from the surviving run closes that gap; when the tip's CI is still running,
+  its own run is still to come.
+- "Run workflow" by hand deploys its own SHA: it is the rollback route, and
+  the commit is the owner's choice.
+- A malformed SHA, or a tip the job cannot read, fails the run rather than
+  deploying blind.
+
+The workflow-wide concurrency group (`deploy-aws-demo`, never cancelling a run
+in progress) keeps any other deploy from landing between the gate's choice and
+this run's deploy, so a CI-started deploy never replaces a newer commit.
+
+**Consequences.**
+
+- An older commit is built and deployed only as part of the tip (which
+  contains it). When the tip's CI fails, or the tip has no CI run (a
+  `[skip ci]` push), nothing deploys until a later commit's CI passes.
+- `tests/adr-0096-deploy-newest-only.test.ts` runs the gate's own script under
+  bash with a stub `gh` (a dispatch, the tip, an older commit with the tip's CI
+  passed or not, a malformed SHA, an unreadable tip) and holds the jobs'
+  wiring and the concurrency group the guarantee rests on. Two mutations of
+  the script turned 2 and 4 cases red.
+- **Not changed:** a docs-only commit still deploys on its short CI even when
+  it sits on top of a code commit whose full CI is still running. Closing that
+  needs the deploy to wait for every commit since the last deploy; it is
+  recorded here, not built.
+- **Not changed (security review):** a dispatch is not checked against
+  `main` by the workflow, and a dispatch from another branch runs that
+  branch's copy of the file. `bms-ctl deploy` on the host already refuses a
+  commit that is not on `origin/main` (unless the operator sets
+  `BMS_ALLOW_UNMERGED=1` on the host). Restricting the `aws-demo` environment
+  to the `main` branch in the repository settings would close it in GitHub
+  too; that is a settings change for the owner.
+- `bms-ctl.sh` is unchanged, so the host needs no `setup-server.sh` re-run.
+

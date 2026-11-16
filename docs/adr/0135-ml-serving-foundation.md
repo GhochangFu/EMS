@@ -681,3 +681,18 @@ moving its binding messages to `dashboard-binding-messages.ts`, and the
 builder's tab helpers moved out move-only (R14). Step 6's browser layer for the
 widget (palette → add → bind → save → hard reload) was not run in the build
 session; it is owed on the demo host with the other demo-host checks.
+
+**Defect fix — `serve` scores the current hour when it starts after the tick
+(2026-11-16).** The `E1.4` demo checks found the 10:00 hour unscored: a deploy
+at 10:04–10:06 recreated `ml` at its run time, and a fresh `serve` only ever
+waited for the next tick (11:05). Every merge to `main` recreates `ml`, so a
+deploy near HH:05 could lose an hour again. The screens still read "Fresh",
+because C3's stale limit is 3 hours. `run_scheduler` now runs a cycle at once
+when it starts after this hour's tick and at least five minutes before the next
+hour (`catch_up_on_start`, the margin `retry_at` keeps, so a run never scores
+the next hour before HH:05). Outside that window it waits for the tick as
+before. A catch-up is safe to repeat: the ledger skips an hour that is already
+scored, at the cost of one model load. `tests/test_scheduler.py` holds the
+window and the loop. Two mutations, the catch-up removed and the margin
+removed, turned 2 and 5 cases red.
+
