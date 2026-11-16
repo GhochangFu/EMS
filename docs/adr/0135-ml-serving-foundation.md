@@ -397,3 +397,10 @@ PR 4 CPU and memory measurement that settles ruling 5.
   demo host runs it at one of its two vCPUs and 1 GiB. The image is 2.83 GB
   unpacked (amd64), above the 1–2 GB estimate in *Consequences*: PyTorch
   CPU, transformers and pandas, plus the 478 MB of weights.
+
+  **The demo host, measured (2026-11-16).** The first live cycle on the
+  arm64 (Graviton, t4g.large) host at `cpus: 1`, `mem_limit: 1g`, one torch
+  thread: `duration_seconds` 33.9 for 16 series (24 eligible, 8
+  `too_few_days`), 768 rows, peak 532 MiB in `docker stats`. That is
+  faster than the laptop's one-CPU runs above, which held 21 series with
+  a full 2,016-hour context each.
