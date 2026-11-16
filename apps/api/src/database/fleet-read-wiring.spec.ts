@@ -13,6 +13,7 @@ import { CopilotPurgeService } from "../copilot/copilot-purge.service";
 import { DashboardService } from "../dashboard/dashboard.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { MaintenanceWindowsService } from "../maintenance-windows/maintenance-windows.service";
+import { MlForecastsService } from "../ml/ml-forecasts.service";
 import { QUEUE_CLIENT } from "../queue/queue.tokens";
 import { WorkerHostService } from "../queue/worker-host.service";
 import { ReportDispatchService } from "../reports/report-dispatch.service";
@@ -312,4 +313,19 @@ export function assertMaintenanceWindowsServiceTenantSlot(): void {
 
 export function assertMaintenanceWindowsServiceFleetSlot(): void {
   expect(injectedToken(MaintenanceWindowsService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `E1.4a` — `MlForecastsService(tenantDb, fleetDb)` (ADR 0135 Amendment 3 S4): both reads pass
+ * slot 0 and slot 1 to `withReadScope` in that order. A swap would run a single-organization
+ * caller's read on the BYPASSRLS pool, leaving the `asset_id = ANY(ids)` filter as its only
+ * control, and the integration pair constructs the service with explicit pools, so only this
+ * catches it. Two claims, one function each.
+ */
+export function assertMlForecastsServiceTenantSlot(): void {
+  expect(injectedToken(MlForecastsService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertMlForecastsServiceFleetSlot(): void {
+  expect(injectedToken(MlForecastsService, 1)).toBe(FLEET_DRIZZLE);
 }
