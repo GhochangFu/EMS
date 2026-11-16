@@ -147,11 +147,14 @@ describe.skipIf(!has)("E1.4a — the ml read grant against a live database", () 
     return id;
   };
 
-  it("the schema-version marker reads bms-ml-schema-version=2 as bms_tenant", async () => {
+  it("the schema-version marker reads bms-ml-schema-version=N, N >= 2, as bms_tenant", async () => {
     await inTx(async (run) => {
       await as(run, "bms_tenant", eskom);
       const r = await run(`SELECT obj_description('ml'::regnamespace, 'pg_namespace') AS marker`);
-      expect(r.rows[0]?.marker).toBe("bms-ml-schema-version=2");
+      // E1.2b (migration 0160) moved the marker to 3; the scorer needs stored >= expected.
+      const marker = String(r.rows[0]?.marker);
+      expect(marker).toMatch(/^bms-ml-schema-version=[0-9]+$/);
+      expect(Number(marker.split("=")[1])).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -177,15 +180,11 @@ describe.skipIf(!has)("E1.4a — the ml read grant against a live database", () 
     });
   });
 
-  it("bms_tenant is refused anomaly_scores and every write on every ml table (42501)", async () => {
+  it("bms_tenant is refused every write on every ml table (42501)", async () => {
     await inTx(async (run) => {
       const runId = await plant(run, eskom, eskomAsset);
       await as(run, "bms_tenant", eskom);
-      expect((await probe(run, `SELECT 1 FROM ml.anomaly_scores LIMIT 1`)).code).toBe("42501");
-      expect(
-        (await probe(run, `SELECT organization_id FROM ml.anomaly_scores LIMIT 1`)).code,
-        "no column-level grant either",
-      ).toBe("42501");
+      // E1.2b (0160) grants bms_tenant SELECT on anomaly_scores; the SELECT refusals left with it.
       expect(
         (
           await probe(
