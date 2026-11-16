@@ -404,3 +404,210 @@ PR 4 CPU and memory measurement that settles ruling 5.
   `too_few_days`), 768 rows, peak 532 MiB in `docker stats`. That is
   faster than the laptop's one-CPU runs above, which held 21 series with
   a full 2,016-hour context each.
+
+## Amendment 3 — `E1.4`: the forecast read path and its screens (2026-11-16)
+
+**Status: Accepted — 2026-11-16** (owner, in chat: "3 is accepted"). Drafted
+by an agent for backlog row `E1.4`. Lines marked *(owner, 2026-11-16)* are
+owner answers given in chat that day. Lines marked *(recommended)* were the
+agent's calls; the owner accepted the amendment with them as written, so
+**every *(recommended)* line is now a ruling**.
+
+**What changes.** Decision 9 gives `E1.4` the read API and the screens for
+forecasts. This amendment sets their shape. It adds **no** npm or Python
+package. It needs two migrations: a grant (`E1.4a`) and a widget kind
+(`E1.4c`).
+
+**Owner rulings (2026-11-16):**
+
+1. **Form.** This amendment, not a new ADR *(owner, 2026-11-16)*.
+2. **Grant.** `bms_tenant` gets `USAGE` on schema `ml` and `SELECT` on
+   `ml.forecasts` and `ml.model_runs` only *(owner, 2026-11-16)*. It gets
+   nothing on `ml.anomaly_scores` (that is `E1.2`'s), and no `INSERT`,
+   `UPDATE`, `DELETE` or `TRUNCATE` anywhere in `ml`. `bms_auth` gets nothing.
+   Migration 0157's `tenant_isolation` policies (FORCE, `organization_id`
+   only, no NULL disjunct) are already in place, so the grant is safe the
+   moment it lands. A global-admin or multi-organization read goes through
+   `fleetDb` (`bms_fleet`), which already holds `SELECT`.
+3. **Three surfaces** *(owner, 2026-11-16: "all three")*:
+   - (a) the forecast on the existing trend chart of `/asset-history/:assetId`;
+   - (b) a new **Forecasts** list page;
+   - (c) a new `forecast` dashboard widget kind.
+4. **How a forecast is drawn** *(owner, 2026-11-16)*. A shaded p10–p90 band
+   and a dashed p50 line for the next 48 h, from the **latest succeeded run
+   only**, with a "now" marker. A caption names the issue time, the model and
+   the word "advisory" ("Forecast issued 14:05 · Chronos-2 · advisory"). A
+   forecast issued more than **3 h** ago is marked **stale**. No forecast is
+   drawn when the chart's range ends in the past. Past forecasts are **not**
+   drawn over the actual line: that reads as an accuracy claim, which
+   *Consequences* says we do not make yet.
+5. **The row splits into four children** *(owner, 2026-11-16)*:
+
+   | Child | Scope | Depends |
+   |---|---|---|
+   | `E1.4a` | Grant migration, Drizzle mirror, contracts, `apps/api/src/ml/` (both routes), surface (a) | `E1.1` |
+   | `E1.4b` | Surface (b), the Forecasts page and its navigation item | `E1.4a` |
+   | `E1.4c` | Surface (c), the `forecast` widget kind and its migration | `E1.4a` |
+   | `E1.4d` | More targets in `apps/ml` (water flow, chemical dosing, utility demand) and covariates, when step 0 shows them READY. Parked ⬜; needs its own amendment when it starts | `E1.4a` |
+
+   The `E1.4` umbrella closes when `E1.4a`–`c` are done. `E1.4d` stays open
+   on its own row. `E1.6` keeps its edge on the umbrella.
+
+**Recommended calls** *(recommended)*:
+
+- **R-a. The Drizzle mirror.** `packages/db/src/schema/ml-schema.ts` declares
+  `pgSchema("ml")` and mirrors **all three** tables exactly (columns,
+  keys, checks). `drizzle.config.ts`'s `schemaFilter` gains `"ml"`. A partial
+  mirror would make `drizzle-kit` read the unmirrored table as drift. The
+  mirror is read-only documentation of the SQL: migrations under `ml` stay
+  hand-written, as 0157 is.
+- **R-b. The schema marker.** The grant migration re-issues
+  `COMMENT ON SCHEMA ml IS 'bms-ml-schema-version=2'` (Amendment 2, R2). The
+  scorer requires `stored ≥ expected`, so the running scorer (expects 1)
+  stays valid. 0157's own proof block (bms_tenant holds no `ml` privilege)
+  stays true at its own place in the chain; the tests that assert it after
+  the chain ends change in `E1.4a`.
+- **R-c. The API.** A new `MlModule` in `apps/api/src/ml/`, two `GET` routes:
+  - `GET /ml/points/:pointRef/forecast` — the current forecast for one point.
+    `pointRef` is the same `encodePointRef` value the telemetry routes take.
+    A point with no current forecast returns **200** with `forecast: null`,
+    not 404, so a screen shows nothing quietly.
+  - `GET /ml/forecasts` — one row per forecast point the caller can read:
+    site, asset, point key, unit, issue time, model name and version, the
+    stale flag, the p50 minimum and maximum over the next 48 h, and the hour
+    of the p50 maximum. It feeds surface (b).
+  - **Access is the same as for that asset's telemetry.** One point:
+    `canReadAsset`. The list: `readableAssetIds`, then
+    `withReadScope` (`apps/api/src/database/tenant-read-scope.ts`) — `withTenant` for a single-organization actor,
+    `fleetDb` for a global admin or a multi-organization actor (the `E7.1b`
+    shape). No new permission.
+  - **The read rule.** "Current" means the rows of the newest `issued_at` for
+    that `(asset_id, point_key)` whose `ml.model_runs` row is `succeeded`,
+    and only buckets after the hour now ends in. This **replaces** plan §14's
+    `DISTINCT ON (horizon_bucket)` rule, which mixes runs. The query is
+    bounded by an `issued_at` lower limit (no run older than 48 h has a future
+    bucket), so it is served by `forecasts_pkey` and `model_runs_org_started_idx`.
+    The `E1.4a` plan shows `EXPLAIN` for both routes. If it shows a need for an
+    index, the index goes into the grant migration and is recorded here.
+  - **Stale** is computed on the server from the server clock (issue time
+    older than 3 h), so every surface agrees.
+  - Contracts in `packages/shared/src/contracts/ml-forecasts.ts`, response
+    types by `z.infer` (ADR 0030). Times are ISO UTC; screens format them in
+    the site zone, as the history page does.
+- **R-d. Surface (a).** `buildHistoryChartOption` gains an optional forecast
+  per charted point. It is drawn only when the range ends within the last
+  hour (a live preset). Colours come from role tokens (ADR 0078); no new hex.
+  The legend gains "Forecast p50" and "Forecast p10–p90". The forecast is
+  fetched per charted point and refetched every 15 min. There is no WebSocket
+  push: the scorer writes hourly (*Consequences*).
+- **R-e. Surface (b).** Route `/forecasts`. A **Forecasts** item in the
+  *Operations* group after *Energy Analytics*, in `navigation-model.ts`, with
+  a Lucide key in `NAV_ICONS` that no other item uses (AGENTS.md §5). Every
+  signed-in user sees the item; the rows are filtered by access. The mockups
+  have no forecast screen, so the page keeps the existing list language
+  (§5): shared shell, `PageHeader`, a `SectionCard` table with columns
+  *Site · Asset · Point · Next 48 h (p50 min–max) · Peak at · Issued ·
+  Model · Status* (a Fresh / Stale pill). A row links to
+  `/asset-history/:assetId` with that point charted. Empty state: "No
+  forecasts yet. A point gets a forecast when it has 56 days of real data."
+- **R-f. Surface (c).** A `forecast` value in `widgetTypeSchema`, config
+  `{ assetId, pointKey }` (one point, the same point picker as `chart`). It
+  draws the last 24 h of actual `_1h` values with the band and p50 of
+  ruling 4. Its migration widens `dashboard_widgets_widget_type_check` the way
+  0118 did for `trend_strip` (ADR 0108). It is in the builder palette only;
+  no stock template changes (`SMOC_STANDARD_SITE_TEMPLATE` keeps its
+  version). ADR 0047's widget rules apply.
+- **R-g. Advisory everywhere.** Every surface says "advisory". In `E1.4` no
+  alarm, notification, report, export or copilot answer carries a forecast,
+  and no accuracy figure is shown.
+
+**Review additions (2026-11-16, PR #1356 security review).** These make
+R-b and R-c stricter. They change no ruling.
+
+- **S1. The asset filter is always applied.** RLS on `ml.*` isolates by
+  organization only. So every `ml.forecasts` read applies
+  `asset_id = ANY(readableAssetIds)` when that list is not null, on **both**
+  branches of `withReadScope`. On the `fleetDb` branch it is the only control.
+  The `E1.4a` integration tests prove three cases: a location-scoped user sees
+  only that location's forecasts; a multi-organization user who is not an
+  admin sees no other organization's rows; a global admin sees all rows.
+- **S2. The one-point route uses the guarded decoder.** It decodes
+  `pointRef`, then checks that the asset id is a UUID (400), then runs
+  `canReadAsset` (403), then reads. It uses the same guard as the telemetry
+  routes (`decodeGuardedPointRef`, moved to a shared helper), never the bare
+  decoder. `pointKey` is capped at 128 characters, the column width.
+- **S3. Only named run fields go on the wire.** The contracts carry only the
+  model name, the model version and the issue time from `ml.model_runs`.
+  `error_text`, `config_hash` and `rows_written` are never selected.
+- **S4. The pool is named.** The one-point read runs through
+  `withReadScope(…, [assetId], …)` after `canReadAsset`, so a user who is not
+  an admin also gets the RLS check.
+- **S5. The grant migration proves itself**, with a `DO $$` block in the 0157
+  style. It checks that `bms_tenant` holds `USAGE` on `ml` and `SELECT` on
+  exactly `ml.forecasts` and `ml.model_runs`. It also checks that `bms_tenant`
+  holds nothing on `ml.anomaly_scores` and no write privilege anywhere in
+  `ml`, that `bms_auth` holds nothing, and that the marker reads
+  `bms-ml-schema-version=2`.
+
+**Review corrections (2026-11-16, PR #1356 code review).** Each one replaces
+the line it names. Where a correction and an earlier line disagree, the
+correction wins. They fix defects in the text; no owner ruling changes.
+
+- **C1 (replaces R-f's config).** The `forecast` widget binds its one point
+  through `bms.dashboard_widget_points`, the way `chart` does. Its point
+  cardinality is `{ min: 1, max: 1 }` and its source cardinality is
+  `{ min: 0, max: 0 }` (`WIDGET_POINT_CARDINALITY` /
+  `WIDGET_SOURCE_CARDINALITY`). `config` holds renderer options only. This
+  is ADR 0047 decision 3 ("point references are rows and foreign keys;
+  options are JSON"). The `config { assetId, pointKey }` line is withdrawn.
+- **C2 (adds to R-d).** The chart's x axis today ends at the request's `to`
+  in two places: `asset-history-chart-option.ts` and `trend-chart.tsx`. When
+  a forecast is drawn, both extend `max` to the last forecast bucket, or the
+  forecast is clipped off the chart. The option and the chart have no legend
+  today, so `E1.4a` adds one. On short presets (under 24 h) the axis extends
+  by at most the preset's own length, so the actual line stays readable. The
+  plan states the exact rule.
+- **C3 (replaces R-c's "newest `issued_at`").** A run started with
+  `run-once --as-of <past hour>` has the newest `issued_at` but only past
+  buckets. So "current" is **the newest succeeded run that still has a
+  bucket at or after the current hour** for that `(asset_id, point_key)`.
+  "Stale" means that run's **first bucket** (the hour it scored) is more than
+  3 h before the current hour, not its `issued_at`.
+- **C4 (replaces R-c's bucket rule).** Bucket 0 is the hour in progress. The
+  read returns buckets `>= date_trunc('hour', now(), 'UTC')`, so the p50
+  line joins the actual line with no gap.
+- **C5 (corrects R-b's test list).** The marker bump and the grant change
+  these tests in `E1.4a`:
+  - `tests/e1.1-ml-schema.integration.test.ts`: the marker and the
+    `bms_tenant` refusal;
+  - `tests/e1.1-ml-schema.test.ts`: it forbids `"ml"` in `drizzle.config.ts`,
+    which R-a adds;
+  - `apps/ml/tests/integration/test_scorer_postgres.py`: it asserts marker 1.
+
+  The `ml` CI job runs on any `packages/db/` change, so that last edit is
+  required. *Not in this amendment* is narrowed to "any change to
+  `apps/ml/src`": the one test edit is allowed, and the scorer's code does not
+  change.
+- **C6 (corrects R-c's index sentence).** `forecasts_pkey` serves the
+  one-point read (two equalities, then a range on `horizon_bucket`). The list
+  is served by `model_runs_org_started_idx`, then `forecasts_model_run_idx`
+  (both in 0157), not by `forecasts_pkey`. `EXPLAIN` in the plan proves both.
+- **C7 (adds to R-c's list).** Each list row carries the IANA `timeZone` of
+  its site, resolved the same way the history page resolves it, so the list
+  shows times in each row's site zone.
+- **C8 (replaces R-e's empty-state copy).** "No forecasts yet. Forecasts are
+  made for a few point types with enough recent real data." The page does
+  not promise a forecast to a point type the scorer does not target.
+- **C9 (corrects R-a's reason).** `packages/db/drizzle/meta` holds only
+  `_journal.json`, and nothing here runs `drizzle-kit` introspection, so there
+  is no drift check to trip. All three tables are still mirrored, so the
+  mirror is complete and `E1.2` reads `ml.anomaly_scores` through it.
+
+**Not in this amendment:** the anomaly read path (`E1.2`), forecasts in
+exports, reports or the copilot, an accuracy view, the owed `bms_ml` role, a
+per-organization switch for forecasts, and any change to `apps/ml/src`
+(`E1.4d`'s; C5 allows the one test edit).
+
+**Consequences.** `E1.4a` waits for `E1.1` to be ✅ on `main`. After the build,
+AGENTS.md §3 *Layout* gains `apps/api/src/ml/` and the `ml` Drizzle mirror
+through a `chore(agents):` PR (§9.10). This is not a §6 promotion.
