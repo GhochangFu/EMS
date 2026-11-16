@@ -10,6 +10,7 @@ import { TAB_TARGET_UNKNOWN_MESSAGE } from "./dashboard-writes";
 import {
   createDashboardTemplateBodySchema,
   instantiateSectionTemplateBodySchema,
+  TEMPLATE_FORECAST_MESSAGE,
   TEMPLATE_MIMIC_LAYOUT_MESSAGE,
   TEMPLATE_MIMIC_TAB_MESSAGE,
   TEMPLATE_TARGET_BODY_MESSAGE,
@@ -19,6 +20,8 @@ import {
 } from "./dashboard-template-writes";
 
 import { SMOC_STANDARD_SITE_TEMPLATE } from "../site-templates/smoc-standard";
+
+import { templateDashboardWidgetSchema } from "./asset-template-content-writes";
 
 /**
  * `F3.61` Task 2 — the `PATCH` request boundary reaches the shared contract's
@@ -578,6 +581,45 @@ export function theStockSiteTemplateStillParsesAsACreateBody(): void {
     createBody({ target: "site", content: SMOC_STANDARD_SITE_TEMPLATE.content }),
     "SMOC_STANDARD_SITE_TEMPLATE's content as a site create body",
   );
+}
+
+// ---------------------------------------------------------------- E1.4c
+
+function forecast(): unknown {
+  return widget({ key: "fc", widgetType: "forecast", gridW: 6, gridH: 4, config: {} });
+}
+
+/**
+ * `E1.4c` / ADR 0135 Amendment 3 R-f (plan R12) — no template surface holds a forecast widget.
+ * A dashboard template refuses one at its `widgetType`, top-level on `PATCH` and in a tab on
+ * `POST`; an asset template has no forecast arm at all.
+ */
+export function rejectsAForecastWidgetInEitherTemplateContract(): void {
+  expectRejectsAt(
+    updateDashboardTemplateBodySchema,
+    { content: { widgets: [forecast()] } },
+    ["content", "widgets", 0, "widgetType"],
+    new RegExp(TEMPLATE_FORECAST_MESSAGE),
+    "a PATCH body whose top-level widget is a forecast",
+  );
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    createBody({ target: "site", content: { widgets: [], tabs: [siteTab({ widgets: [forecast()] })] } }),
+    ["content", "tabs", 0, "widgets", 0, "widgetType"],
+    new RegExp(TEMPLATE_FORECAST_MESSAGE),
+    "a site POST body whose tab holds a forecast",
+  );
+  const asAssetTemplate = templateDashboardWidgetSchema.safeParse({
+    title: "Forecast",
+    gridX: 0,
+    gridY: 0,
+    gridW: 6,
+    gridH: 4,
+    widgetType: "forecast",
+    pointKeys: ["kw"],
+    config: {},
+  });
+  assert(asAssetTemplate.success === false, "an asset template's dashboard widget must refuse forecast");
 }
 
 // ---------------------------------------------------------------- F4.317

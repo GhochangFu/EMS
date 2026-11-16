@@ -10,7 +10,10 @@ import {
   moduleSummaryCardConfigSchema,
   stateLegendConfigSchema,
 } from "./site-widgets";
+import { forecastWidgetConfigSchema } from "./forecast-widget";
 import { seriesRoleSchema, trendStripWidgetConfigSchema } from "./trend-strip-widget";
+
+export * from "./dashboard-binding-messages";
 
 /**
  * `F3.1a` — the configurable-dashboard contract (ADR 0047).
@@ -79,10 +82,10 @@ import { seriesRoleSchema, trendStripWidgetConfigSchema } from "./trend-strip-wi
  */
 
 /**
- * The thirteen widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5;
+ * The fourteen widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5;
  * `"mimic"` by ADR 0079 decision 1; five site widgets by `F3.73`, ADR 0087 decision 11;
  * `"breaker_table"` by `F3.74`, ADR 0088 decision 10; `"trend_strip"` by `F4.305`, ADR 0108
- * Amendment 3).
+ * Amendment 3; `"forecast"` by `E1.4c`, ADR 0135 Amendment 3 C1).
  *
  * No comment may sit inside the `z.enum` array: the repo gates parse it with a split on commas,
  * and a comment line would swallow the value after it.
@@ -90,12 +93,13 @@ import { seriesRoleSchema, trendStripWidgetConfigSchema } from "./trend-strip-wi
  * **Five migrations declare this list, and only the last is current.** `0050` froze the
  * original four in `dashboard_widgets_widget_type_check`; `F3.35` Stage B's `0055` dropped and
  * re-added that constraint with `table`; `F3.32`'s `0086` does the same with `mimic`; `F3.73`'s
- * `0096` adds the five site widgets; `F3.74`'s `0099` adds `breaker_table`; `F4.305`'s `0118` adds `trend_strip`. A committed migration
+ * `0096` adds the five site widgets; `F3.74`'s `0099` adds `breaker_table`; `F4.305`'s `0118` adds `trend_strip`;
+ * `E1.4c`'s `0159` adds `forecast`. A committed migration
  * is frozen by the pre-commit hook, so `0050` still reads four, `0055` five, `0086` six and
  * `0096` eleven, and always will.
  *
- * `tests/f3.73-site-widget-types.test.ts` and `tests/f3.74-breaker-table-widget-type.test.ts`
- * compare this enum against `0118`'s list;
+ * `tests/f3.73-site-widget-types.test.ts` and `tests/e1.4c-forecast-widget-type.test.ts`
+ * compare this enum against `0159`'s list;
  * `tests/f3.32-mimic-widget.test.ts` pins `0086` to its six,
  * `tests/f3.35-table-widget-schema.test.ts` pins `0055` to its five and
  * `tests/f3.1a-dashboard-schema.test.ts` pins `0050` to its four. All are correct at once: the
@@ -115,6 +119,7 @@ export const widgetTypeSchema = z.enum([
   "critical_systems_list",
   "breaker_table",
   "trend_strip",
+  "forecast",
 ]);
 
 /**
@@ -465,6 +470,7 @@ export const dashboardWidgetSpecSchema = z.discriminatedUnion("widgetType", [
   }),
   z.object({ widgetType: z.literal("breaker_table"), config: breakerTableConfigSchema }),
   z.object({ widgetType: z.literal("trend_strip"), config: trendStripWidgetConfigSchema }),
+  z.object({ widgetType: z.literal("forecast"), config: forecastWidgetConfigSchema }),
 ]);
 
 /**
@@ -537,6 +543,8 @@ export const WIDGET_POINT_CARDINALITY: Record<
   critical_systems_list: { min: 0, max: 0 },
   breaker_table: { min: 0, max: 0 },
   trend_strip: { min: 0, max: 0 },
+  // `E1.4c` (ADR 0135 Amendment 3 C1) — the one point whose actuals and forecast it draws.
+  forecast: { min: 1, max: 1 },
 };
 
 /**
@@ -582,6 +590,7 @@ export const WIDGET_SOURCE_CARDINALITY: Record<
   critical_systems_list: { min: 0, max: 0 },
   breaker_table: { min: 0, max: 0 },
   trend_strip: { min: 0, max: 0 },
+  forecast: { min: 0, max: 0 },
 };
 
 /**
@@ -608,32 +617,15 @@ export const widgetTypeBindsNothing = (type: z.infer<typeof widgetTypeSchema>): 
  * records are `Record<WidgetType, { min: number }>`, which no conditional type can read, so
  * `TemplateAuthorableWidgetType`'s `Exclude` states the same rule at compile time and the
  * specs hold the two together.
+ *
+ * **`forecast` is refused by name** (`E1.4c`, plan R12): the two clauses would admit it, and
+ * ADR 0135 Amendment 3 R-f ("builder palette only", newer than ADR 0048 Amendment 1) rules that
+ * no template surface holds one. A forecast names one asset's point, which a template has not.
  */
 export const isTemplateAuthorableWidgetType = (
   type: z.infer<typeof widgetTypeSchema>,
 ): type is TemplateAuthorableWidgetType =>
-  WIDGET_SOURCE_CARDINALITY[type].min === 0 && WIDGET_POINT_CARDINALITY[type].max > 0;
-
-/**
- * The two halves of the exactly-one-binding-kind rule, as message templates.
- *
- * **Here rather than in each surface, because two surfaces state the same rule and an author
- * meets both.** `apps/web`'s builder shows the first as an inline error while the author types;
- * `apps/api`'s `putDashboardWidgetsBodySchema` answers a 400 carrying the second if the form is
- * bypassed. Written independently, the two texts drift, and a 400 whose wording differs from the
- * inline error the author already read presents as a second, unrelated problem.
- *
- * The substitution differs on purpose and is not drift: the web passes the catalog's human label
- * ("Value Tile"), the API has only `widgetType` ("value_tile"). One template, two nouns.
- *
- * The rule itself is `WIDGET_POINT_CARDINALITY` and `WIDGET_SOURCE_CARDINALITY` read together —
- * a widget binds a point or a catalog entry, never both, and never neither.
- */
-export const bindingRequiredMessage = (label: string): string =>
-  `A ${label} widget needs a bound point or a named metric.`;
-
-export const bindingExclusiveMessage = (label: string): string =>
-  `A ${label} widget shows a bound point or a named metric, not both. Remove one.`;
+  WIDGET_SOURCE_CARDINALITY[type].min === 0 && WIDGET_POINT_CARDINALITY[type].max > 0 && type !== "forecast";
 
 /**
  * The metric catalog's keys, closed (`F3.35` Stage C, ADR 0048 decision 1).
@@ -861,55 +853,9 @@ export const WIDGET_SOURCE_SHAPES: Record<
   breaker_table: [],
   // `F4.305` — nor does the trend strip.
   trend_strip: [],
+  // `E1.4c` — nor does the forecast widget; it binds one point.
+  forecast: [],
 };
-
-/**
- * The third binding message, for a catalog entry whose shape the widget cannot draw.
- *
- * Here beside `bindingRequiredMessage`/`bindingExclusiveMessage` and for the identical reason:
- * two surfaces state this rule and one author meets both, so the builder's inline error and the
- * API's 400 must read as one problem rather than two. The substitution differs the same way —
- * the web passes the catalog's human label, the API has only `widgetType`.
- *
- * Both arms are written now although only the first can fire today. Stage B's `table` fires the
- * second, and a message added at the same time as the widget type that needs it is a message
- * written to match that widget type rather than to match this sentence.
- */
-export const bindingShapeMessage = (
-  label: string,
-  catalogKey: string,
-  shape: CatalogEntryMeta["shape"],
-): string =>
-  shape === "dataset"
-    ? `A ${label} widget shows one number, and "${catalogKey}" returns rows. Choose a metric.`
-    : `A ${label} widget shows rows, and "${catalogKey}" returns one number. Choose a dataset.`;
-
-/**
- * The fourth binding message: a `table` projecting a column its dataset does not declare
- * (`F3.35` Stage B).
- *
- * Here with the other three because two surfaces state it and one author meets both — and this
- * one is reachable in ordinary use rather than only by a hand-written payload. An author picks
- * four columns of `alarms.active`, then rebinds the widget to `workorders.open`: the source is
- * legal, its shape is legal, and the stored projection now names columns the new dataset has
- * never heard of. The builder catches it as the author rebinds; the API catches the same state
- * arriving from anywhere else.
- *
- * The message names the column AND the entry, because "that column does not exist" is not
- * actionable when the author is looking at a picker that offered it a moment ago.
- */
-export const columnNotDeclaredMessage = (column: string, catalogKey: string): string =>
-  `"${catalogKey}" does not have a column named "${column}". Choose from the columns it returns.`;
-
-/**
- * The fifth binding message: the same column chosen twice on one table.
- *
- * Beside the other four because the same author meets it on both surfaces, and here rather than
- * only in `apps/api` for the reason `noDuplicateSources` is: a duplicate is a constraint-shaped
- * refusal, and it should read as one sentence whichever surface says it.
- */
-export const duplicateColumnMessage = (column: string): string =>
-  `"${column}" is already chosen. Each column appears once.`;
 
 /**
  * One point binding. A row in `bms.dashboard_widget_points`, never an id inside JSON.

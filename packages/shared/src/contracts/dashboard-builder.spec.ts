@@ -57,10 +57,10 @@ export function runDashboardBuilderTests(): void {
   // over it.
   // -------------------------------------------------------------------------
   assert(
-    widgetTypeSchema.options.length === 13,
-    `the widget vocabulary is thirteen types (ADR 0047 decision 4; ADR 0048 decision 5 added ` +
+    widgetTypeSchema.options.length === 14,
+    `the widget vocabulary is fourteen types (ADR 0047 decision 4; ADR 0048 decision 5 added ` +
       `"table", ADR 0079 decision 1 added "mimic", F3.73 added the five site widgets, F3.74 added ` +
-      `"breaker_table", F4.305 added "trend_strip"), got ` +
+      `"breaker_table", F4.305 added "trend_strip", E1.4c added "forecast"), got ` +
       `${widgetTypeSchema.options.length}`,
   );
   assert(
@@ -79,6 +79,7 @@ export function runDashboardBuilderTests(): void {
         "critical_systems_list",
         "breaker_table",
         "trend_strip",
+        "forecast",
       ]),
     `widget types must match migration 0118's widened CHECK (0099's plus trend_strip) exactly — NOT 0050's, 0055's, ` +
       `0086's or 0096's, which froze four, five, six and eleven and cannot be edited, got ` +
@@ -398,10 +399,16 @@ export function runWidgetPointCardinalityTests(): void {
     !isTemplateAuthorableWidgetType("breaker_table"),
     "breaker_table reads the site-widgets endpoint and binds no point, so no template can author it",
   );
-  // `F4.305` — the trend strip, by name: last in the vocabulary, binds nothing, not template-authorable.
+  // `F4.305` — the trend strip, by name: binds nothing, not template-authorable.
   assert(
-    widgetTypeSchema.options.at(-1) === "trend_strip",
-    "trend_strip must be the last widget type (migration 0118 appends it)",
+    widgetTypeSchema.options.at(-2) === "trend_strip",
+    "trend_strip must be the widget type before forecast (migration 0118 appended it)",
+  );
+  // `E1.4c` — the forecast widget, by name: last, binds one point, refused by name in templates (R12).
+  assert(widgetTypeSchema.options.at(-1) === "forecast", "forecast must be the last widget type (migration 0159)");
+  assert(
+    !widgetTypeBindsNothing("forecast") && !isTemplateAuthorableWidgetType("forecast"),
+    "forecast binds one point and no template surface can author it (ADR 0135 Amendment 3 R-f)",
   );
   assert(widgetTypeBindsNothing("trend_strip"), "trend_strip must bind neither a point nor a source");
   assert(

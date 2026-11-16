@@ -138,6 +138,15 @@ describe.skipIf(!has)("F3.73 — site widget types and catalog keys against a li
     });
   });
 
+  // `E1.4c` (ADR 0135 Amendment 3 C1) — migration `0159` widened the CHECK by `forecast`.
+  it("accepts forecast (E1.4c, migration 0159)", async () => {
+    await inTx(async (run) => {
+      const dash = await newDashboard(run);
+      const ok = await run(INSERT_WIDGET, [org, dash, "forecast"]);
+      expect(ok.rows.length, "forecast must be accepted").toBe(1);
+    });
+  });
+
   it("accepts both new catalog keys and still refuses an unknown one, naming the CHECK", async () => {
     await inTx(async (run) => {
       const dash = await newDashboard(run);

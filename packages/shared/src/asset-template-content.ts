@@ -213,7 +213,8 @@ export type TemplateMaintenancePlan = {
  * runtime predicate is `isTemplateAuthorableWidgetType` in `contracts/dashboard-builder.ts` —
  * a source minimum of zero AND a point maximum above zero — and the specs hold it to this
  * `Exclude`. **The five `F3.73` site widgets and `F3.74`'s `breaker_table` fail the same second
- * clause**: they read the site-widgets endpoint and bind no point.
+ * clause**: they read the site-widgets endpoint and bind no point. **`E1.4c`'s `forecast` passes
+ * both clauses and is excluded by name** (ADR 0135 Amendment 3 R-f, plan R12): builder palette only.
  */
 export type TemplateDashboardWidget = {
   pointKeys: string[];
@@ -234,7 +235,8 @@ export type TemplateDashboardWidget = {
       | "module_summary_card"
       | "critical_systems_list"
       | "breaker_table"
-      | "trend_strip";
+      | "trend_strip"
+      | "forecast";
   }
 >;
 

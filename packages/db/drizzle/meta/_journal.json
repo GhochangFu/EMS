@@ -1107,6 +1107,13 @@
       "when": 1794812386116,
       "tag": "0158_ml_tenant_read_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1794819219746,
+      "tag": "0159_forecast_widget_type",
+      "breakpoints": true
     }
   ]
 }

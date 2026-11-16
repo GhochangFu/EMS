@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   acceptsATemplateTrendStripWithoutASelection,
+  rejectsAForecastWidgetInEitherTemplateContract,
   rejectsATemplateTrendStripCarryingASelection,
   theStockSiteTemplateStillParsesAsACreateBody,
   acceptsAMimicTabKeyNamingADomainTab,
@@ -192,5 +193,12 @@ describe("F4.317 — the organization template target and its instantiate arm", 
 
   it("the body/target rule refuses each organization mismatch", () => {
     theTargetBodyRuleRefusesEachOrganizationMismatch();
+  });
+});
+
+/** `E1.4c` / ADR 0135 Amendment 3 R-f (plan R12) — the forecast widget is builder palette only. */
+describe("E1.4c — no template surface holds a forecast widget", () => {
+  it("refuses a forecast in a dashboard template, top-level and in a tab, and in an asset template", () => {
+    rejectsAForecastWidgetInEitherTemplateContract();
   });
 });

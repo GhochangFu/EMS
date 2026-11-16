@@ -10,6 +10,7 @@ import {
   stateLegendConfigSchema,
 } from "./site-widgets";
 import { trendStripWidgetConfigSchema } from "./trend-strip-widget";
+import { forecastWidgetConfigSchema } from "./forecast-widget";
 import {
   bindingExclusiveMessage,
   bindingRequiredMessage,
@@ -485,7 +486,7 @@ const bindsNothingArm = <T extends z.infer<typeof widgetTypeSchema>, C extends z
     .strict();
 
 /**
- * The arms, one per widget type (twelve since `F3.74`). Each stays a plain `.strict()` `ZodObject` — never
+ * The arms, one per widget type (fourteen since `E1.4c`). Each stays a plain `.strict()` `ZodObject` — never
  * wrapped in its own `.refine()`/`.superRefine()` — because `z.discriminatedUnion` accepts only
  * `ZodObject` arms; the cross-widget grid-fit check lives on the ARRAY field in
  * `widgetsWriteFieldSchema` below instead of here, for exactly that reason.
@@ -570,6 +571,18 @@ export const widgetWriteSchema = z.discriminatedUnion("widgetType", [
   bindsNothingArm("breaker_table", breakerTableConfigSchema),
   // `F4.305` — the trend strip; binds nothing. Its `config.tabKey` is `tabRulesHold`'s check.
   bindsNothingArm("trend_strip", trendStripWidgetConfigSchema),
+  // `E1.4c` / ADR 0135 Amendment 3 C1 — the forecast widget binds exactly one point (`{1, 1}`)
+  // and no source; its config is `{}` (plan R11). The point is a `dashboard_widget_points` row, so
+  // `assertBoundPointsInOrganization` and the cascade already hold it.
+  z
+    .object({
+      ...widgetIdentityWriteFields,
+      widgetType: z.literal("forecast"),
+      config: forecastWidgetConfigSchema.strict(),
+      points: pointsFieldFor("forecast"),
+      sources: sourcesFieldFor("forecast"),
+    })
+    .strict(),
 ]);
 
 const eachWidgetFitsTheGrid = (

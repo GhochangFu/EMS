@@ -107,9 +107,15 @@ export function runTemplateWidgetTypeDerivationTests(): void {
   // Two clauses since `F3.32` / ADR 0079, restated from the cardinality records rather than
   // read from `isTemplateAuthorableWidgetType`, so this expectation is independent of the
   // predicate it checks. `table` fails the first clause (a source is required); `mimic` fails
-  // the second (it binds no point, so a template has nothing to carry for it).
+  // the second (it binds no point, so a template has nothing to carry for it). `E1.4c`'s
+  // `forecast` passes both and is refused by name (ADR 0135 Amendment 3 R-f, plan R12).
   const expected = widgetTypeSchema.options.filter(
-    (type) => WIDGET_SOURCE_CARDINALITY[type].min === 0 && WIDGET_POINT_CARDINALITY[type].max > 0,
+    (type) =>
+      WIDGET_SOURCE_CARDINALITY[type].min === 0 && WIDGET_POINT_CARDINALITY[type].max > 0 && type !== "forecast",
+  );
+  assert(
+    !(TEMPLATE_WIDGET_TYPES as readonly string[]).includes("forecast"),
+    "the template picker must not offer the forecast widget: it is builder palette only (plan R12)",
   );
 
   assert(
