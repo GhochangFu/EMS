@@ -68,7 +68,9 @@ export interface HistorySeriesInput {
  * **`F4.377` (the owner's ruling, 2026-11-16: three colours).** The live forecast's band and p50 no
  * longer take the point's actual colour: they take `forecastPalette`, which shares no colour with
  * the actual or the past palette. Each point's forecast is traced to its point by the legend's
- * point key (R9). With one point: actual `series-1`, past `series-2`, live forecast `series-3`.
+ * point key (R9). With one point: actual `series-1`; the past and live colours are the first of
+ * `pastForecastPalette` and `forecastPalette`, which `F4.381` picks (`forecastRoles`) so the three
+ * are each ΔE2000 ≥ 20 apart in every profile (`series-2` and `series-3` wherever they hold).
  *
  * **`F4.379`.** The tooltip prints a value as the Latest cell does (`withoutFloatNoise`): a stored
  * int16 × 0.1 shows `0.3`, not `0.3000000000000007`, and every real digit stays.

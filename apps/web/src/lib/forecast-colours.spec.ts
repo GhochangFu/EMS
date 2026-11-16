@@ -67,6 +67,23 @@ export function aLiveRoleTooCloseToThePastIsSkipped(): void {
   expect(forecastRoles(roles).live[0]).toBe("series-4");
 }
 
+/**
+ * A past role far from the actual but with no live partner is skipped: `series-2` is far from
+ * `series-1` but within 20 of every live role, so the past line takes `series-6`.
+ */
+export function aPastRoleWithNoLivePartnerIsSkipped(): void {
+  const roles = rolesWith({
+    "series-1": "#1D4ED8",
+    "series-2": "#0F766E",
+    "series-3": "#10776F",
+    "series-4": "#0E756D",
+    "series-5": "#117870",
+    "series-6": "#C026D3",
+  });
+  expect(forecastRoles(roles).past[0]).toBe("series-6");
+  expect(forecastRoles(roles).live[0]).toBe("series-3");
+}
+
 /** With no pair that holds, the ruled order stays (the profile gate fails such a profile first). */
 export function withNoPairThatHoldsTheRuledOrderStays(): void {
   const same = Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((i) => [`series-${i}`, "#1D4ED8"]));
