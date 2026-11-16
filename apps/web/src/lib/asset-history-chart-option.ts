@@ -1,9 +1,17 @@
 import type { EChartsOption } from "echarts";
 
-import type { PointAggregateBucket } from "@bms/shared";
+import type { ForecastBucket, PointAggregateBucket } from "@bms/shared";
 
 import { axisForUnit, shiftCompareBuckets } from "./asset-history-range";
 import { seriesPalette } from "./chart-theme";
+import {
+  clipForecastToAxis,
+  forecastAxisMax,
+  forecastIsLive,
+  forecastLegendEntries,
+  forecastNames,
+  forecastSeries,
+} from "./forecast-series";
 import type { Roles } from "./theme";
 import { CHART_SERIES } from "./widget-catalog";
 
@@ -14,6 +22,8 @@ export interface HistorySeriesInput {
   readonly buckets: readonly PointAggregateBucket[];
   /** True timestamps of the previous period; `null`/absent when there is none. */
   readonly compareBuckets?: readonly PointAggregateBucket[] | null;
+  /** `E1.4a`: the point's current forecast buckets (from the current hour), or `null`/absent. */
+  readonly forecast?: readonly ForecastBucket[] | null;
 }
 
 /**
@@ -25,6 +35,11 @@ export interface HistorySeriesInput {
  * that selection before it gets here. Compare series are dashed and carry timestamps shifted
  * forward by `compare.spanMs`, so they overlay the current window. The series type comes from
  * `CHART_SERIES`, never a literal.
+ *
+ * **`E1.4a` (ADR 0135 Amendment 3 R-d, C2).** A series that carries a `forecast` adds a band and a
+ * dashed p50 in its own colour (`forecast-series.ts`) — only when `asOf`, the server's instant,
+ * says the window is live (N11), and never for a series refused an axis. With a forecast drawn the
+ * x axis extends by R8's rule and a "now" line marks `asOf`. A legend lists what is plotted (R9).
  */
 export function buildHistoryChartOption(args: {
   readonly from: number;
@@ -32,8 +47,11 @@ export function buildHistoryChartOption(args: {
   readonly series: readonly HistorySeriesInput[];
   readonly compare: { readonly spanMs: number } | null;
   readonly roles: Roles;
+  /** The forecast reads' server instant (epoch ms); `null`/absent draws no forecast. */
+  readonly asOf?: number | null;
 }): EChartsOption {
   const { from, to, series, compare, roles } = args;
+  const asOf = args.asOf ?? null;
   const palette = seriesPalette(roles);
   const seriesType = CHART_SERIES.line.type;
   const units: (string | null)[] = [];
@@ -80,14 +98,59 @@ export function buildHistoryChartOption(args: {
     ];
   });
 
+  const forecasting = forecastIsLive(to, asOf)
+    ? plotted.filter(({ input }) => (input.forecast?.length ?? 0) > 0)
+    : [];
+  const lastBucketMs =
+    forecasting.length === 0
+      ? null
+      : Math.max(...forecasting.map(({ input }) => Date.parse(input.forecast?.at(-1)?.t ?? "")));
+  const xMax = forecastAxisMax({ from, to, lastBucketMs });
+  const forecastLines = forecasting.flatMap(({ input, axis, colour }, index) =>
+    forecastSeries({
+      buckets: clipForecastToAxis(input.forecast ?? [], xMax),
+      colour,
+      yAxisIndex: axis,
+      names: forecastNames(forecasting.length > 1 ? input.name : null),
+      stackId: `forecast-band-${index}`,
+    }),
+  );
+  // "now" sits on the first actual series, so hiding a forecast in the legend never hides it.
+  const host =
+    forecastLines.length === 0 || asOf === null
+      ? lines
+      : lines.map((line, index) =>
+          index === 0
+            ? {
+                ...line,
+                markLine: {
+                  silent: true,
+                  symbol: "none",
+                  label: { formatter: "now" },
+                  lineStyle: { color: roles["ink-faint"], type: "solid" as const },
+                  data: [{ xAxis: asOf }],
+                },
+              }
+            : line,
+        );
+  const all = [...host, ...forecastLines];
+  // The p50 before its band, and the band's two series as one entry (they share the name).
+  const legendNames = [
+    ...lines.map((line) => line.name),
+    ...forecasting.flatMap(({ input, colour }) =>
+      forecastLegendEntries(forecastNames(forecasting.length > 1 ? input.name : null), colour),
+    ),
+  ];
+
   return {
     color: palette,
     tooltip: { trigger: "axis" },
-    xAxis: { type: "time", min: from, max: to },
+    ...(all.length > 0 ? { legend: { type: "scroll" as const, data: legendNames } } : {}),
+    xAxis: { type: "time", min: from, max: xMax },
     yAxis: (units.length > 0 ? units : [null]).map((unit) => ({
       type: "value" as const,
       ...(unit ? { name: unit } : {}),
     })),
-    series: lines,
+    series: all,
   };
 }

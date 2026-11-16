@@ -4,11 +4,16 @@ import { afterAll, afterEach, beforeAll, describe, it, vi } from "vitest";
 
 import {
   aCoveredAssetsHeaderShowsTheMaintenanceBadge,
+  aFailedForecastReadLeavesTheChart,
+  aLiveForecastShowsItsCaptionInTheSiteZone,
+  aMaxPageAsksForNoForecast,
   anUncoveredAssetsHeaderShowsNoMaintenanceBadge,
   aNonUuidAssetIdMakesNoMaintenanceRead,
   aCustomRangeInTheUrlIsSentAsThePair,
   aFailedReadIsNotAnEmptySelection,
   aFilledPreviousPeriodDoesNotSaySo,
+  aPastCustomRangeAsksForNoForecast,
+  aStaleForecastSaysStale,
   aThirdUnitFromTheUrlIsNotCharted,
   anUnalignedCustomCompareFillsThePreviousColumn,
   anOperatorSeesNoPin,
@@ -163,5 +168,25 @@ describe("F4.297 asset history page", () => {
 
   it("F4.359 U16 makes no maintenance read for an assetId that is not a uuid", async () => {
     await aNonUuidAssetIdMakesNoMaintenanceRead();
+  });
+
+  it("E1.4a shows a live forecast's caption in the site zone", async () => {
+    await aLiveForecastShowsItsCaptionInTheSiteZone();
+  });
+
+  it("E1.4a says Stale for a stale forecast", async () => {
+    await aStaleForecastSaysStale();
+  });
+
+  it("E1.4a asks for no forecast on a past custom range", async () => {
+    await aPastCustomRangeAsksForNoForecast();
+  });
+
+  it("E1.4a asks for no forecast beside max", async () => {
+    await aMaxPageAsksForNoForecast();
+  });
+
+  it("E1.4a leaves the chart and shows no banner when the forecast read fails", async () => {
+    await aFailedForecastReadLeavesTheChart();
   });
 });

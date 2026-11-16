@@ -642,3 +642,16 @@ was always the current hour and `stale` (C3, the run's *first* bucket) could
 never be true; it reads from the 64 h look-back start instead, the pure step
 drops the earlier buckets (C4) as plan §5 T1.8 describes, and an integration
 case holds it (a run that scored 4 h ago reads `stale`).
+
+**Build record — `E1.4a` PR 2 (2026-11-16), the chart.** Three calls the plan
+left open, recorded so a later reader does not mistake them for drift:
+`forecastApplies(range, nowMs)` reads `range.fn` rather than taking `fn` as a
+separate argument; the history chart now carries a legend whether or not a
+forecast is drawn (R9 asks for one "whenever a series is plotted"); and while a
+forecast is drawn beside a **preset**, the window's own reads refresh every
+15 minutes too. Without that the window's `to` froze at load, the server's
+`asOf` moved on, and an hour later N11's live rule dropped the band from a page
+left open (PR 2 code review). A failed forecast refetch drops the last forecast
+rather than drawing it on with its old `stale: false`, and a 403 stops that
+point's re-poll. The "now" line sits on the first actual series, so hiding the
+p50 in the legend keeps it.

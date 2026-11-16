@@ -12,6 +12,7 @@ import type {
   AssetPointPickerRow,
   DashboardDto,
   PointAggregateResponse,
+  PointForecastResponse,
   PointRawRecordsResponse,
   UserRole,
 } from "@bms/shared";
@@ -20,6 +21,7 @@ import * as assetsApi from "../api/assets";
 import * as copilotApi from "../api/copilot";
 import * as dashboardsApi from "../api/dashboards";
 import * as maintenanceApi from "../api/maintenance-windows";
+import * as mlApi from "../api/ml";
 import { APPEND_ANSWER } from "../api/dashboards.spec";
 import * as systemStatusApi from "../api/system-status";
 import * as telemetryApi from "../api/telemetry";
@@ -90,6 +92,23 @@ const RAW_PAGE_2: PointRawRecordsResponse = {
   nextBefore: null,
 };
 
+/** `E1.4a`: 20 minutes after the default aggregate's `to`, so its window is live by the server's clock. */
+const FORECAST_AS_OF = "2026-10-31T06:20:00.000Z";
+
+/** A current forecast for `kw`, issued 05:05Z — 10:35 in the site zone (Asia/Kolkata). */
+function liveForecast(stale = false): PointForecastResponse {
+  return {
+    asOf: FORECAST_AS_OF,
+    forecast: {
+      issuedAt: "2026-10-31T05:05:00.000Z",
+      modelName: "amazon/chronos-2",
+      modelVersion: "0".repeat(40),
+      stale,
+      buckets: [{ t: "2026-10-31T06:00:00.000Z", p10: 4, p50: 5, p90: 6 }],
+    },
+  };
+}
+
 function asUser(role: UserRole = "admin"): AuthUser {
   return { id: "u1", email: `${role}@bms.local`, displayName: role, role } as unknown as AuthUser;
 }
@@ -97,6 +116,7 @@ function asUser(role: UserRole = "admin"): AuthUser {
 interface Stubs {
   readonly aggregateSpy: MockInstance<typeof telemetryApi.fetchPointAggregate>;
   readonly rawSpy: MockInstance<typeof telemetryApi.fetchPointRawRecords>;
+  readonly forecastSpy: MockInstance<typeof mlApi.fetchPointForecast>;
 }
 
 /** Every read the page and the shell make. */
@@ -106,6 +126,9 @@ export function stubApis(
     served?: PointAggregateResponse;
     pointsError?: Error;
     coveredAssetIds?: string[];
+    /** `E1.4a`: the forecast read's answer (default: no forecast), or its failure. */
+    forecast?: PointForecastResponse;
+    forecastError?: Error;
   } = {},
 ): Stubs {
   // `F4.359` U16: the header reads the asset's active maintenance; no spec makes the real request.
@@ -129,7 +152,11 @@ export function stubApis(
   const rawSpy = vi
     .spyOn(telemetryApi, "fetchPointRawRecords")
     .mockImplementation(async (_ref, opts) => (opts?.before ? RAW_PAGE_2 : RAW_PAGE_1));
-  return { aggregateSpy, rawSpy };
+  // `E1.4a`: an unstubbed forecast read would reach a local API on :4000.
+  const forecastSpy = options.forecastError
+    ? vi.spyOn(mlApi, "fetchPointForecast").mockRejectedValue(options.forecastError)
+    : vi.spyOn(mlApi, "fetchPointForecast").mockResolvedValue(options.forecast ?? { asOf: FORECAST_AS_OF, forecast: null });
+  return { aggregateSpy, rawSpy, forecastSpy };
 }
 
 export function renderHistoryPage(search = "", role: UserRole = "admin", assetId = ASSET_ID): void {
@@ -527,4 +554,62 @@ export async function anUncoveredAssetsHeaderShowsNoMaintenanceBadge(): Promise<
     await read.mock.results[0]?.value;
   });
   expect(screen.queryByTestId("asset-maintenance-badge")).toBeNull();
+}
+
+// --- `E1.4a` (ADR 0135 Amendment 3 R-d; plan §6): the forecast on the chart. ---
+
+/** The caption names the issue time in the site zone (the wrapper pins TZ to St John's), the model and "advisory". */
+export async function aLiveForecastShowsItsCaptionInTheSiteZone(): Promise<void> {
+  const { forecastSpy } = stubApis({ forecast: liveForecast() });
+  renderHistoryPage();
+  const caption = await screen.findByTestId("forecast-caption");
+  expect(caption.textContent).toBe("Forecast issued 10:35 · Chronos-2 · advisory");
+  expect(forecastSpy).toHaveBeenCalledWith(encodePointRef(ASSET_ID, "kw"));
+  expect(screen.queryByText("Stale")).toBeNull();
+}
+
+/** A stale forecast says so. */
+export async function aStaleForecastSaysStale(): Promise<void> {
+  stubApis({ forecast: liveForecast(true) });
+  renderHistoryPage();
+  await screen.findByTestId("forecast-caption");
+  expect(screen.getByText("Stale")).toBeInTheDocument();
+}
+
+/** A custom range that ended in the past asks for no forecast (R-d: the chart draws none). */
+export async function aPastCustomRangeAsksForNoForecast(): Promise<void> {
+  const { aggregateSpy, forecastSpy } = stubApis({ forecast: liveForecast() });
+  renderHistoryPage("?from=2026-10-01T00:00:00.000Z&to=2026-10-02T00:00:00.000Z");
+  await waitFor(() => expect(aggregateSpy).toHaveBeenCalled());
+  await screen.findByTestId("history-level");
+  expect(forecastSpy).not.toHaveBeenCalled();
+  expect(screen.queryByTestId("forecast-caption")).toBeNull();
+}
+
+/** Beside `max` a forecast is another quantity (R7): no read. */
+export async function aMaxPageAsksForNoForecast(): Promise<void> {
+  const { aggregateSpy, forecastSpy } = stubApis({ forecast: liveForecast() });
+  renderHistoryPage("?fn=max");
+  await waitFor(() => expect(aggregateSpy).toHaveBeenCalled());
+  await screen.findByTestId("history-level");
+  expect(forecastSpy).not.toHaveBeenCalled();
+}
+
+/**
+ * A failed forecast read leaves the chart and shows no error banner, nor the access sentence. A
+ * 403 is final for `retryUnlessForbidden`, so the read has settled into its error when this looks
+ * (a 500 would still be retrying: PR 2 code review).
+ */
+export async function aFailedForecastReadLeavesTheChart(): Promise<void> {
+  const { forecastSpy } = stubApis({ forecastError: new Error("ml forecast 403") });
+  renderHistoryPage();
+  await waitFor(() => expect(forecastSpy).toHaveBeenCalledTimes(1));
+  expect(await screen.findByTestId("history-level")).toBeInTheDocument();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(forecastSpy).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText(/ml forecast/)).toBeNull();
+  expect(screen.queryByText("Asset not found or outside your access.")).toBeNull();
+  expect(screen.queryByTestId("forecast-caption")).toBeNull();
 }

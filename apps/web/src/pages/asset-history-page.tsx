@@ -20,8 +20,10 @@ import { historyPinSource, PinButton } from "../components/view-actions/pin-dial
 import { ScheduleButton } from "../components/view-actions/schedule-button";
 import { useActiveMaintenance } from "../hooks/use-active-maintenance";
 import { useAssetHistory } from "../hooks/use-asset-history";
+import { usePointForecasts } from "../hooks/use-point-forecasts";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { chartablePoints, rangeFromSearch, rangeToSearch, type HistoryRange } from "../lib/asset-history-range";
+import { forecastApplies, liveWindowRefetchMs } from "../lib/forecast-series";
 import { historySchedulePrefill } from "../lib/schedule-from-view";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
@@ -44,6 +46,9 @@ type AssetHistoryPageProps = {
  * The page is a site view (decision 1.9): every time is in the zone the `aggregate` response
  * names. There is no route guard beyond sign-in: the API's `canReadAsset` is the containment, and
  * a 403 from any read renders {@link ACCESS_SENTENCE} once, with no retry loop.
+ *
+ * `E1.4a`: the chart also draws each charted point's current forecast, advisory. A failed forecast
+ * read is no forecast — never a banner — so the page never depends on the scorer.
  */
 export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
   const { assetId = "" } = useParams();
@@ -71,11 +76,28 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
     return known.length > 0 || points.length === 0 ? known : [points[0].pointKey];
   }, [range.points, points]);
 
-  const history = useAssetHistory(assetId, selected, range);
+  // `E1.4a` (ADR 0135 Amendment 3 R-d): a forecast per charted point, asked for only beside `avg`
+  // on a live window (R7; the browser clock here, the server's `asOf` after the read — N11). A
+  // live preset's own reads then refresh at the forecast's pace, so the window keeps up with it.
+  const nowMs = Date.now();
+  const history = useAssetHistory(assetId, selected, range, liveWindowRefetchMs(range, nowMs));
+  const forecasts = usePointForecasts(assetId, selected, forecastApplies(range, nowMs));
+  const forecastAsOf = forecasts.reduce<string | null>(
+    (latest, f) =>
+      f.data && (latest === null || Date.parse(f.data.asOf) > Date.parse(latest)) ? f.data.asOf : latest,
+    null,
+  );
   const series: TrendSeries[] = history.flatMap((h) =>
     h.data === undefined
       ? []
-      : [{ pointKey: h.pointKey, unit: points.find((p) => p.pointKey === h.pointKey)?.unit ?? null, data: h.data }],
+      : [
+          {
+            pointKey: h.pointKey,
+            unit: points.find((p) => p.pointKey === h.pointKey)?.unit ?? null,
+            data: h.data,
+            forecast: forecasts.find((f) => f.pointKey === h.pointKey)?.data?.forecast ?? null,
+          },
+        ],
   );
   const siteZone = siteZoneOf(series.find((s) => s.data.timeZone !== undefined)?.data.timeZone);
 
@@ -158,6 +180,7 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
                   chartedCount={selected.length}
                   compare={range.compare}
                   siteZone={siteZone}
+                  forecastAsOf={forecastAsOf}
                 />
                 {firstSeries ? (
                   <BucketTable
