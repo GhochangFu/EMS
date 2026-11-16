@@ -165,7 +165,8 @@ export async function theWidgetDrawsThePastForecastOverItsWindow(): Promise<void
   mocks.fetchPastForecast.mockResolvedValue({ asOf: TO, buckets: [{ t: "2026-11-16T09:00:00.000Z", p50: 31 }] });
   renderLive();
   expect(await screen.findByTestId("past-forecast-caption")).toBeTruthy();
-  expect(mocks.fetchPastForecast).toHaveBeenCalledWith(REF, AGGREGATE.from, AGGREGATE.to);
+  // The served window rounded to whole hours (`pastForecastWindow`).
+  expect(mocks.fetchPastForecast).toHaveBeenCalledWith(REF, "2026-11-15T10:00:00.000Z", "2026-11-16T11:00:00.000Z");
   const past = mocks.recorded.at(-1)?.option.series.find((s) => s.name === "Past forecast (1 h ahead)");
   expect(past?.data).toEqual([["2026-11-16T09:00:00.000Z", 31]]);
   expect(past?.lineStyle?.type).toBe("dashed");

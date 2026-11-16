@@ -14,6 +14,7 @@ import {
   thePastForecastAppliesBesideAvgOnAnyWindow,
   thePastForecastIsADashedLineThatBreaksAtAMissingHour,
   thePastForecastIsNamedAndCaptionedWithoutANumber,
+  thePastWindowIsRoundedToWholeHours,
 } from "./forecast-series.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -36,4 +37,5 @@ describe("E1.4e — the past forecast line (ADR 0135 Amendment 4)", () => {
     thePastForecastIsADashedLineThatBreaksAtAMissingHour());
   it("is named by point and captioned without a number", () => thePastForecastIsNamedAndCaptionedWithoutANumber());
   it("applies beside avg on any window", () => thePastForecastAppliesBesideAvgOnAnyWindow());
+  it("asks for a window rounded to whole hours", () => thePastWindowIsRoundedToWholeHours());
 });

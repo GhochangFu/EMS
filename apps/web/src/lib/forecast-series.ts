@@ -215,3 +215,16 @@ export function pastForecastSeries(args: {
     },
   ];
 }
+
+/**
+ * The window a past read asks for: `from` floored and `to` raised to whole UTC hours. The server
+ * floors `from` and serves buckets before `to`, so either form returns the same hours; rounding
+ * keeps a live window's 15-minute moves inside one query key, so the line does not blink out on
+ * each refresh, and the read runs again only when the hour turns.
+ */
+export function pastForecastWindow(window: { readonly from: string; readonly to: string }): { from: string; to: string } {
+  const from = Math.floor(Date.parse(window.from) / HOUR_MS) * HOUR_MS;
+  const to = Math.ceil(Date.parse(window.to) / HOUR_MS) * HOUR_MS;
+  return { from: new Date(from).toISOString(), to: new Date(to).toISOString() };
+}
+

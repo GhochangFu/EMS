@@ -51,4 +51,3 @@ export async function fetchPastForecast(pointRefEncoded: string, from: string, t
   }
   return checkResponse(pastForecastResponseSchema, await res.json(), "ml/points/:pointRef/forecast/past");
 }
-

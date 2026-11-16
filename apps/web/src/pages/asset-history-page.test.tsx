@@ -36,6 +36,7 @@ import {
   theHeaderShowsCodeAndName,
   theLevelIsTheResponsesBucketWidth,
   timesAreInTheSiteZone,
+  aFailedPastReadDrawsNothingAndIsNotRetried,
   aMaxPageAsksForNoPastForecast,
   aPastCustomRangeStillAsksForThePastForecast,
   noPastBucketsMeansNoPastCaption,
@@ -208,5 +209,9 @@ describe("F4.297 asset history page", () => {
 
   it("E1.4e no past buckets means no past caption", async () => {
     await noPastBucketsMeansNoPastCaption();
+  });
+
+  it("E1.4e a failed past read draws nothing and is not retried", async () => {
+    await aFailedPastReadDrawsNothingAndIsNotRetried();
   });
 });

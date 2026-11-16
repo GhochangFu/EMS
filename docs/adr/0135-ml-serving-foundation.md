@@ -754,8 +754,11 @@ or Python package, no migration, no new grant (`0158` already lets
   hour, which the live forecast owns. Only `t` and `p50` reach the wire.
 - **When it is asked for**: beside the hourly mean (`avg`) only, as the live
   forecast is (R7), but on **any** window, a past custom range included,
-  because the point is to look back. A live window re-reads it every
-  15 minutes with the rest of the page.
+  because the point is to look back. On a long window whose actual buckets are
+  wider than an hour, the line stays hourly beside the coarser means; ruling 4
+  asks for every window, so that is accepted. The browser asks for the window
+  rounded to whole hours, so a live window reads it again only when the hour
+  turns.
 - **The read** is one range scan of `forecasts_pkey`
   `(asset_id, point_key, horizon_bucket, issued_at)` with `DISTINCT ON
   (horizon_bucket)`, at most one row per hour of the window.

@@ -21,6 +21,7 @@ import {
   pastForecastApplies,
   pastForecastName,
   pastForecastSeries,
+  pastForecastWindow,
 } from "./forecast-series";
 
 /**
@@ -225,5 +226,24 @@ export function thePastForecastAppliesBesideAvgOnAnyWindow(): void {
   ).toBe(true);
   expect(pastForecastApplies({ ...base, range: "24h", fn: "max" } as HistoryRange)).toBe(false);
   expect(pastForecastApplies({ ...base, range: "24h", fn: "sum" } as HistoryRange)).toBe(false);
+}
+
+/**
+ * The window a past read is asked for: `from` floored and `to` raised to whole UTC hours. The
+ * server answers the same buckets for either form, and a live window's 15-minute moves stay inside
+ * one query key, so the line does not blink out on every refresh (PR #1365 code review).
+ */
+export function thePastWindowIsRoundedToWholeHours(): void {
+  expect(pastForecastWindow({ from: "2026-11-15T10:20:00.000Z", to: "2026-11-16T10:20:00.000Z" })).toEqual({
+    from: "2026-11-15T10:00:00.000Z",
+    to: "2026-11-16T11:00:00.000Z",
+  });
+  expect(pastForecastWindow({ from: "2026-11-15T10:00:00.000Z", to: "2026-11-16T10:00:00.000Z" })).toEqual({
+    from: "2026-11-15T10:00:00.000Z",
+    to: "2026-11-16T10:00:00.000Z",
+  });
+  expect(pastForecastWindow({ from: "2026-11-16T10:20:00.000Z", to: "2026-11-16T10:35:00.000Z" })).toEqual(
+    pastForecastWindow({ from: "2026-11-16T10:05:00.000Z", to: "2026-11-16T10:50:00.000Z" }),
+  );
 }
 

@@ -132,8 +132,9 @@ export function stubApis(
     /** `E1.4a`: the forecast read's answer (default: no forecast), or its failure. */
     forecast?: PointForecastResponse;
     forecastError?: Error;
-    /** `E1.4e`: the past read's answer (default: no buckets). */
+    /** `E1.4e`: the past read's answer (default: no buckets), or its failure. */
     pastForecast?: PastForecastResponse;
+    pastError?: Error;
   } = {},
 ): Stubs {
   // `F4.359` U16: the header reads the asset's active maintenance; no spec makes the real request.
@@ -162,9 +163,9 @@ export function stubApis(
     ? vi.spyOn(mlApi, "fetchPointForecast").mockRejectedValue(options.forecastError)
     : vi.spyOn(mlApi, "fetchPointForecast").mockResolvedValue(options.forecast ?? { asOf: FORECAST_AS_OF, forecast: null });
   // `E1.4e`: likewise the past read.
-  const pastSpy = vi
-    .spyOn(mlApi, "fetchPastForecast")
-    .mockResolvedValue(options.pastForecast ?? { asOf: FORECAST_AS_OF, buckets: [] });
+  const pastSpy = options.pastError
+    ? vi.spyOn(mlApi, "fetchPastForecast").mockRejectedValue(options.pastError)
+    : vi.spyOn(mlApi, "fetchPastForecast").mockResolvedValue(options.pastForecast ?? { asOf: FORECAST_AS_OF, buckets: [] });
   return { aggregateSpy, rawSpy, forecastSpy, pastSpy };
 }
 
@@ -670,5 +671,16 @@ export async function noPastBucketsMeansNoPastCaption(): Promise<void> {
   await waitFor(() => expect(pastSpy).toHaveBeenCalled());
   await screen.findByTestId("history-level");
   expect(screen.queryByTestId("past-forecast-caption")).toBeNull();
+}
+
+/** A failed past read (a 403 is final) draws no line, no caption and no banner, and is not retried. */
+export async function aFailedPastReadDrawsNothingAndIsNotRetried(): Promise<void> {
+  const { pastSpy } = stubApis({ pastError: new Error("ml past forecast 403") });
+  renderHistoryPage();
+  await waitFor(() => expect(pastSpy).toHaveBeenCalledTimes(1));
+  await screen.findByTestId("history-level");
+  expect(screen.queryByTestId("past-forecast-caption")).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(pastSpy).toHaveBeenCalledTimes(1);
 }
 
