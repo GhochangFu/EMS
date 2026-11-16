@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
-import { assetLabelOf } from "@bms/shared";
+import { ANOMALY_LIST_MAX_ROWS, assetLabelOf } from "@bms/shared";
 import type { AnomalyListRow } from "@bms/shared";
 
 import { fetchAnomalyList } from "../api/ml";
@@ -21,7 +21,25 @@ export const ANOMALIES_SUBTITLE =
 export const ANOMALIES_EMPTY_SENTENCE =
   "No unusual hours in the last 7 days. Scores are made for a few asset types with enough recent real data.";
 
-export const ANOMALIES_TRUNCATED_SENTENCE = "Showing the newest 500.";
+export const ANOMALIES_TRUNCATED_SENTENCE = `Showing the newest ${ANOMALY_LIST_MAX_ROWS}.`;
+
+/**
+ * Three decimals, truncated rather than rounded, so 0.99951 reads 0.999 and never "1.000"
+ * (the chart tooltip shows 0.9995 for the same hour). A score that is not a finite number
+ * (a drifted payload, which `checkResponse` passes through in production) reads as a dash
+ * instead of throwing during render.
+ */
+export function formatAnomalyScore(score: unknown): string {
+  if (typeof score !== "number" || !Number.isFinite(score)) {
+    return "—";
+  }
+  return (Math.floor(score * 1000) / 1000).toFixed(3);
+}
+
+/** The contributing points, joined; a drifted non-array reads as empty instead of throwing. */
+function pointsOf(row: AnomalyListRow): readonly string[] {
+  return Array.isArray(row.contributingPoints) ? row.contributingPoints : [];
+}
 
 export const ANOMALIES_ERROR_SENTENCE = "Could not load the unusual hours.";
 
@@ -47,7 +65,7 @@ function historyHref(row: AnomalyListRow, asOf: string): string {
     from: new Date(t - DAY_MS).toISOString(),
     to: new Date(to).toISOString(),
     compare: false,
-    points: row.contributingPoints,
+    points: [...pointsOf(row)],
     fn: "avg",
   });
   return `${path}?${search.toString()}`;
@@ -128,13 +146,13 @@ export function AnomaliesPage({ user }: AnomaliesPageProps) {
                       {formatShortInZone(row.t, row.timeZone)}
                     </td>
                     <td className="px-3 py-1.5 tabular-nums" data-testid="anomaly-score">
-                      {row.score.toFixed(3)}
+                      {formatAnomalyScore(row.score)}
                     </td>
                     <td className="px-3 py-1.5 text-xs" data-testid="anomaly-detector">
                       {detectorLabel(row.detector)}
                     </td>
                     <td className="px-3 py-1.5 font-mono text-xs" data-testid="anomaly-points">
-                      {row.contributingPoints.join(", ")}
+                      {pointsOf(row).join(", ")}
                     </td>
                     <td className="px-3 py-1.5">
                       <StatusPill label="Advisory" tone="info" />

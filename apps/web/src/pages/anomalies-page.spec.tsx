@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
+import { ANOMALY_LIST_MAX_ROWS } from "@bms/shared";
 import type { AnomalyListRow, UserRole } from "@bms/shared";
 
 import * as copilotApi from "../api/copilot";
@@ -16,6 +17,7 @@ import {
   ANOMALIES_SUBTITLE,
   ANOMALIES_TRUNCATED_SENTENCE,
   AnomaliesPage,
+  formatAnomalyScore,
 } from "./anomalies-page";
 
 /**
@@ -129,7 +131,7 @@ export async function scoreDetectorAndPoints(): Promise<void> {
   stub(ROWS);
   renderPage();
   const [kolkata, capeTown] = await bodyRows();
-  expect(within(kolkata as HTMLElement).getByTestId("anomaly-score").textContent).toBe("0.999");
+  expect(within(kolkata as HTMLElement).getByTestId("anomaly-score").textContent).toBe("0.998");
   expect(within(capeTown as HTMLElement).getByTestId("anomaly-score").textContent).toBe("1.000");
   expect(within(kolkata as HTMLElement).getByTestId("anomaly-detector").textContent).toBe("Baseline");
   expect(within(capeTown as HTMLElement).getByTestId("anomaly-detector").textContent).toBe("Isolation Forest");
@@ -189,9 +191,20 @@ export async function aTruncatedListSaysSo(): Promise<void> {
   renderPage();
   await bodyRows();
   expect(screen.getByText(ANOMALIES_TRUNCATED_SENTENCE)).toBeInTheDocument();
-  expect(ANOMALIES_TRUNCATED_SENTENCE).toBe("Showing the newest 500.");
+  expect(ANOMALIES_TRUNCATED_SENTENCE).toBe(`Showing the newest ${ANOMALY_LIST_MAX_ROWS}.`);
 }
 
+/** A score just under 1 is truncated, never rounded up to 1.000; a drifted score is a dash. */
+export function theScoreIsTruncatedAndGuarded(): void {
+  expect(formatAnomalyScore(0.99951)).toBe("0.999");
+  expect(formatAnomalyScore(0.9996)).toBe("0.999");
+  expect(formatAnomalyScore(1)).toBe("1.000");
+  expect(formatAnomalyScore(0.99)).toBe("0.990");
+  expect(formatAnomalyScore(undefined)).toBe("—");
+  expect(formatAnomalyScore(Number.NaN)).toBe("—");
+}
+
+/** A list that is whole never says it was cut. */
 export async function aWholeListSaysNothingOfTruncation(): Promise<void> {
   stub(ROWS, false);
   renderPage();

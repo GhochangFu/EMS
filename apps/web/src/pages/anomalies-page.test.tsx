@@ -15,6 +15,7 @@ import {
   theLinkOpensTheHistoryAroundTheHour,
   theListIsReadEveryFifteenMinutes,
   thePageSaysAdvisory,
+  theScoreIsTruncatedAndGuarded,
 } from "./anomalies-page.spec";
 
 /**
@@ -42,6 +43,7 @@ describe("E1.2c — the Anomalies page", () => {
   it("says why an empty list is empty", () => anEmptyListSaysWhy());
   it("says when the list is truncated", () => aTruncatedListSaysSo());
   it("says nothing of truncation when the list is whole", () => aWholeListSaysNothingOfTruncation());
+  it("truncates a score to three decimals and shows a dash for a drifted one", () => theScoreIsTruncatedAndGuarded());
   it("says advisory, and no alarm language", () => thePageSaysAdvisory());
   it("says loading, not empty, while the read is pending", () => aPendingReadIsLoadingNotEmpty());
   it("reads the list again every 15 minutes", () => theListIsReadEveryFifteenMinutes());
