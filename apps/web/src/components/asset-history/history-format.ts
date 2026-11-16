@@ -74,6 +74,22 @@ export function timeAxisLabel(zone: string): {
   return { hideOverlap: true, showMinLabel: false, showMaxLabel: false, formatter: (value) => axisLabelInZone(value, zone) };
 }
 
+/**
+ * A reading for the point list's Latest cell, with its unit: the dash when there is none.
+ *
+ * Twelve significant digits drop a float's binary tail (`1.2000000000000002` → `1.2`, the AWS
+ * demo's E1.4 checks) and keep every digit a sensor sends. It does not round to a display
+ * precision as a dashboard tile does: this is where an operator reads the raw value, and
+ * 49.96 Hz is not 50 Hz (PR #1364 code review).
+ */
+export function formatReading(value: number | null | undefined, unit: string | null): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "—";
+  }
+  const body = String(Number(value.toPrecision(12)));
+  return unit ? `${body} ${unit}` : body;
+}
+
 /** How long ago `iso` was, from `nowMs`: `12 s ago`, `5 min ago`, `3 h ago`, `3 d ago`. */
 export function ageOf(iso: string, nowMs: number): string {
   const seconds = Math.max(0, Math.floor((nowMs - Date.parse(iso)) / 1000));

@@ -274,3 +274,19 @@ def test_only_the_first_wait_catches_up():
         datetime(2026, 11, 16, 11, 5, tzinfo=UTC),
         datetime(2026, 11, 16, 12, 5, tzinfo=UTC),
     ]
+
+
+def test_a_failed_catch_up_is_retried_in_300_seconds_then_waits_for_the_tick():
+    start = datetime(2026, 11, 16, 10, 6, tzinfo=UTC)
+    clock = FakeClock(start, step=timedelta(0))
+    results = iter([CycleResult(EXIT_CYCLE_FAILED, None), CycleResult(EXIT_OK, {}), CycleResult(EXIT_OK, {})])
+    calls = []
+    run_scheduler(
+        clock=clock,
+        wait=Recorder(clock, limit=3),
+        run_cycle_process=lambda: calls.append(clock.current) or next(results),
+        health=health(clock),
+        interval_seconds=3600,
+    )
+    retry = start + timedelta(seconds=RETRY_SECONDS)
+    assert calls == [start, retry, datetime(2026, 11, 16, 11, 5, tzinfo=UTC)]

@@ -21,9 +21,10 @@ Decision record: [ADR 0096](../adr/0096-aws-demo-deployment-and-continuous-deplo
    `bms-ctl deploy <sha>` on the host.
 4. The job fails if `https://bms.demosites.co.in/health` does not answer.
 5. A deploy that CI starts ships only the newest commit on `main`. If a newer
-   commit has landed by the time CI finishes, the run skips its build and
-   deploy, and the newer commit's own run deploys it (ADR 0096 Amendment 2).
-   A deploy started by hand ("Run workflow") is never skipped.
+   commit has landed by the time CI finishes, the run deploys that newer
+   commit when its CI has passed, and otherwise skips, leaving it to the
+   newer commit's own run (ADR 0096 Amendment 2). A deploy started by hand
+   ("Run workflow") deploys the SHA you give it.
 
 ## Everyday operations
 

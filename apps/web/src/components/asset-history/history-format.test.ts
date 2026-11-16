@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, it, vi } from "vitest";
 
-import { theAxisLabelIsTimeOverDateInTheSiteZone, theTimeAxisHidesOverlapsAndTheForcedEndLabels } from "./history-format.spec";
+import {
+  aReadingLosesOnlyItsBinaryTail,
+  noReadingIsTheDash,
+  theAxisLabelIsTimeOverDateInTheSiteZone,
+  theTimeAxisHidesOverlapsAndTheForcedEndLabels,
+} from "./history-format.spec";
 
 /** Vitest entry point (ADR 0014). `TZ` is pinned to a zone no fixture uses. */
 beforeAll(() => {
@@ -17,5 +22,13 @@ describe("F4.297 history axis labels", () => {
 
   it("the time axis hides overlapping labels and the forced end labels", () => {
     theTimeAxisHidesOverlapsAndTheForcedEndLabels();
+  });
+
+  it("a reading loses only its binary tail, never a digit the sensor sent", () => {
+    aReadingLosesOnlyItsBinaryTail();
+  });
+
+  it("no reading, or a non-finite one, is the dash", () => {
+    noReadingIsTheDash();
   });
 });
