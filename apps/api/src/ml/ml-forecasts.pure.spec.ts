@@ -45,6 +45,7 @@ const listRow = (over: Partial<ForecastListDbRow> = {}): ForecastListDbRow => ({
   p50_peak_ms: CURRENT + 4 * HOUR_MS,
   asset_code: "WBLDC-CR1",
   asset_name: "Cold room 1",
+  asset_rtu_name: "WBLDC RTU 1",
   location_id: "22222222-2222-4222-8222-222222222222",
   location_name: "Kolkata DC",
   location_time_zone: "Asia/Kolkata",
@@ -98,8 +99,9 @@ export function theListRowMapsEveryFieldAndResolvesTheZoneLocationFirst(): void 
     assetId: "11111111-1111-4111-8111-111111111111",
     assetCode: "WBLDC-CR1",
     assetName: "Cold room 1",
+    assetRtuName: "WBLDC RTU 1",
     locationId: "22222222-2222-4222-8222-222222222222",
-    locationName: "Kolkata DC",
+    assetLocationName: "Kolkata DC",
     timeZone: "Asia/Kolkata",
     pointKey: "temp_c",
     unit: "°C",
@@ -117,6 +119,7 @@ export function theListRowMapsEveryFieldAndResolvesTheZoneLocationFirst(): void 
   expect(toForecastListRow(listRow({ location_time_zone: null }), CURRENT).timeZone).toBe("Africa/Johannesburg");
   expect(toForecastListRow(listRow({ location_time_zone: null, organization_time_zone: null }), CURRENT).timeZone).toBe("UTC");
   expect(toForecastListRow(listRow({ unit: null }), CURRENT).unit).toBeNull();
+  expect(toForecastListRow(listRow({ asset_rtu_name: null }), CURRENT).assetRtuName).toBeNull();
   expect(toForecastListRow(listRow({ first_bucket_ms: CURRENT - 4 * HOUR_MS }), CURRENT).stale).toBe(true);
   expect(toForecastListRow(listRow({ first_bucket_ms: CURRENT - 3 * HOUR_MS }), CURRENT).stale).toBe(false);
 }

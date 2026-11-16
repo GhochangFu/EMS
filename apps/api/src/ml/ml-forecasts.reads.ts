@@ -129,7 +129,7 @@ export function forecastListStatement(ids: readonly string[] | null, currentHour
            (extract(epoch FROM agg.first_bucket) * 1000)::float8 AS first_bucket_ms,
            agg.p50_min AS p50_min, agg.p50_max AS p50_max,
            (extract(epoch FROM agg.p50_peak_at) * 1000)::float8 AS p50_peak_ms,
-           a.code AS asset_code, a.name AS asset_name,
+           a.code AS asset_code, a.name AS asset_name, rtu.display_name AS asset_rtu_name,
            l.id AS location_id, l.name AS location_name,
            l.timezone AS location_time_zone, o.timezone AS organization_time_zone,
            ap.unit AS unit
@@ -146,6 +146,7 @@ export function forecastListStatement(ids: readonly string[] | null, currentHour
      ) agg
       JOIN bms.assets a ON a.id = c.asset_id
       JOIN bms.locations l ON l.id = a.location_id
+      LEFT JOIN bms.rtus rtu ON rtu.id = a.rtu_id
       LEFT JOIN bms.organizations o ON o.id = a.organization_id
       LEFT JOIN bms.asset_points ap ON ap.asset_id = c.asset_id AND ap.point_key = c.point_key
      ORDER BY l.name, a.code, c.point_key`;

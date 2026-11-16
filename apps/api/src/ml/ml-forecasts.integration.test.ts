@@ -60,6 +60,7 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
   const runIds: string[] = [];
   const assetIds: string[] = [];
   const locationIds: string[] = [];
+  const rtuIds: string[] = [];
   /** A catalog key (`asset_points.point_key` references `bms.point_keys`), resolved at setup. */
   let POINT_KEY = "";
 
@@ -113,12 +114,19 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
     const { rows: dom } = await fleet.query<{ code: string }>(
       "SELECT code FROM bms.asset_domains WHERE active = true ORDER BY created_at, code LIMIT 1",
     );
-    const asset = async (suffix: string, orgId: string, locId: string): Promise<string> => {
+    // ADR 0111: L1 sits on an RTU of its own, so the row's assetRtuName is read, not assumed null.
+    const { rows: rtuRows } = await fleet.query<{ id: string }>(
+      `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type)
+       VALUES ($1, $2, $3, $4, 'mqtt') RETURNING id`,
+      [mine.organization_id, mine.id, `e14a-${stamp}-rtu`, `E1.4a RTU ${stamp}`],
+    );
+    rtuIds.push(rtuRows[0]!.id);
+    const asset = async (suffix: string, orgId: string, locId: string, rtuId: string | null = null): Promise<string> => {
       const code = `e14a-${stamp}-${suffix}`;
       const { rows } = await fleet.query<{ id: string }>(
-        `INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain)
-         VALUES ($1, $2, $3, 'E1.4a site', $4, $5) RETURNING id`,
-        [orgId, code, `E1.4a asset ${suffix}`, locId, dom[0]!.code],
+        `INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain, rtu_id)
+         VALUES ($1, $2, $3, 'E1.4a site', $4, $5, $6) RETURNING id`,
+        [orgId, code, `E1.4a asset ${suffix}`, locId, dom[0]!.code, rtuId],
       );
       assetIds.push(rows[0]!.id);
       return rows[0]!.id;
@@ -131,13 +139,13 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
     );
     locationIds.push(zoneless[0]!.id);
     const assets = {
-      l1: await asset("l1", organizations.a, mine.id),
+      l1: await asset("l1", organizations.a, mine.id, rtuRows[0]!.id),
       l2: await asset("l2", organizations.a, siblingRows[0].id),
       p1: await asset("p1", organizations.b, foreignRows[0]!.id),
       l3: await asset("l3", organizations.a, zoneless[0]!.id),
     };
     const { rows: keyRows } = await fleet.query<{ code: string }>(
-      "SELECT code FROM bms.point_keys ORDER BY (code LIKE '%temp%') DESC, code LIMIT 1",
+      "SELECT code FROM bms.point_keys ORDER BY created_at, code LIMIT 1",
     );
     if (!keyRows[0]) throw new Error("E1.4a: the point-key catalog is empty — run pnpm db:migrate.");
     POINT_KEY = keyRows[0].code;
@@ -219,14 +227,16 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
       id: string;
       code: string;
       name: string;
+      rtu_name: string | null;
       location_id: string;
       location_name: string;
       location_zone: string | null;
       organization_zone: string | null;
     }>(
-      `SELECT a.id, a.code, a.name, l.id AS location_id, l.name AS location_name,
+      `SELECT a.id, a.code, a.name, r.display_name AS rtu_name, l.id AS location_id, l.name AS location_name,
               l.timezone AS location_zone, o.timezone AS organization_zone
          FROM bms.assets a JOIN bms.locations l ON l.id = a.location_id JOIN bms.organizations o ON o.id = a.organization_id
+         LEFT JOIN bms.rtus r ON r.id = a.rtu_id
         WHERE a.id = ANY($1::uuid[])`,
       [assetIds],
     );
@@ -236,6 +246,7 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
       return {
         code: row.code,
         name: row.name,
+        rtuName: row.rtu_name,
         locationId: row.location_id,
         locationName: row.location_name,
         timeZone: zoneOf(row.location_zone, row.organization_zone),
@@ -248,6 +259,7 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
       l3: expectedOf(assets.l3),
     };
     if (expected.p1.timeZone !== P1_ZONE) throw new Error("E1.4a: P1's location zone did not resolve first");
+    if (expected.l1.rtuName === null || expected.p1.rtuName !== null) throw new Error("E1.4a: L1 needs an RTU and P1 none");
     const { rows: orgZone } = await superuser.query<{ timezone: string }>(
       "SELECT timezone FROM bms.organizations WHERE id = $1",
       [organizations.b],
@@ -284,6 +296,7 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
       await superuser.query("DELETE FROM ml.model_runs WHERE id = ANY($1::uuid[])", [runIds]);
       await superuser.query("DELETE FROM bms.asset_points WHERE asset_id = ANY($1::uuid[])", [assetIds]);
       await superuser.query("DELETE FROM bms.assets WHERE id = ANY($1::uuid[])", [assetIds]);
+      await superuser.query("DELETE FROM bms.rtus WHERE id = ANY($1::uuid[])", [rtuIds]);
       await superuser.query("DELETE FROM bms.locations WHERE id = ANY($1::uuid[])", [locationIds]);
     }
     await Promise.all([fleet?.end(), superuser?.end(), tenant?.end(), auth?.end()]);

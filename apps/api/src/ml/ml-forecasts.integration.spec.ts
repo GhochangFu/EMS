@@ -45,7 +45,7 @@ export type MlForecastFixtures = {
   /** What each fixture asset's row should carry (read on the superuser connection). */
   expected: Record<
     "l1" | "l2" | "p1" | "l3",
-    { code: string; name: string; locationId: string; locationName: string; timeZone: string }
+    { code: string; name: string; rtuName: string | null; locationId: string; locationName: string; timeZone: string }
   >;
   /** Organization A's own zone, which L3's zone-less site must fall back to. */
   organizationAZone: string;
@@ -147,8 +147,9 @@ export async function assertTheListFields(ctx: MlForecastFixtures): Promise<void
     p50PeakAt: new Date(ctx.currentHourMs + 45 * HOUR_MS).toISOString(),
     assetCode: ctx.expected.l1.code,
     assetName: ctx.expected.l1.name,
+    assetRtuName: ctx.expected.l1.rtuName,
     locationId: ctx.expected.l1.locationId,
-    locationName: ctx.expected.l1.locationName,
+    assetLocationName: ctx.expected.l1.locationName,
     timeZone: ctx.expected.l1.timeZone,
   });
   // B1: P1's location zone differs from its organization's, and its asset name from its location's.
@@ -157,7 +158,8 @@ export async function assertTheListFields(ctx: MlForecastFixtures): Promise<void
     unit: null,
     stale: true,
     assetName: ctx.expected.p1.name,
-    locationName: ctx.expected.p1.locationName,
+    assetRtuName: ctx.expected.p1.rtuName,
+    assetLocationName: ctx.expected.p1.locationName,
     timeZone: ctx.expected.p1.timeZone,
   });
   for (const row of [l1, p1]) {
@@ -174,7 +176,8 @@ export async function assertTheTenantBranchResolvesTheZone(ctx: MlForecastFixtur
   const scoped = await ctx.svc.list(ctx.readable.locationAdmin, ctx.now);
   const l1 = scoped.items.find((item) => item.assetId === ctx.assets.l1);
   expect(l1?.timeZone).toBe(ctx.expected.l1.timeZone);
-  expect(l1?.locationName).toBe(ctx.expected.l1.locationName);
+  expect(l1?.assetLocationName).toBe(ctx.expected.l1.locationName);
+  expect(l1?.assetRtuName, "bms_tenant reads the asset's RTU under its GUC (ADR 0111)").toBe(ctx.expected.l1.rtuName);
 
   expect(ctx.organizationAZone, "the fallback must differ from the chain's own default").not.toBe("UTC");
   expect(ctx.expected.l3.timeZone).toBe(ctx.organizationAZone);

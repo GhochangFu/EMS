@@ -83,6 +83,7 @@ export type ForecastListDbRow = {
   p50_peak_ms: number;
   asset_code: string;
   asset_name: string;
+  asset_rtu_name: string | null;
   location_id: string;
   location_name: string;
   location_time_zone: string | null;
@@ -100,8 +101,9 @@ export function toForecastListRow(row: ForecastListDbRow, currentHourMs: number)
     assetId: row.asset_id,
     assetCode: row.asset_code,
     assetName: row.asset_name,
+    assetRtuName: row.asset_rtu_name,
     locationId: row.location_id,
-    locationName: row.location_name,
+    assetLocationName: row.location_name,
     timeZone: resolveSiteTimeZone(row.location_time_zone, row.organization_time_zone).timeZone,
     pointKey: row.point_key,
     unit: row.unit,

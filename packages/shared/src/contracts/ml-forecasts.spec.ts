@@ -33,8 +33,9 @@ const row = {
   assetId: ASSET,
   assetCode: "WBLDC-CR1",
   assetName: "Cold room 1",
+  assetRtuName: "WBLDC RTU 1",
   locationId: LOCATION,
-  locationName: "Kolkata DC",
+  assetLocationName: "Kolkata DC",
   timeZone: "Asia/Kolkata",
   pointKey: "temp_c",
   unit: "°C",
@@ -78,6 +79,7 @@ export function runNotStrictTest(): void {
 export function runListRowTest(): void {
   expect(forecastListResponseSchema.parse({ items: [row] }).items).toEqual([row]);
   expect(forecastListRowSchema.safeParse({ ...row, unit: null }).success).toBe(true);
+  expect(forecastListRowSchema.safeParse({ ...row, assetRtuName: null }).success).toBe(true);
   expect(forecastListRowSchema.safeParse({ ...row, pointKey: "k".repeat(128) }).success).toBe(true);
   expect(forecastListRowSchema.safeParse({ ...row, pointKey: "k".repeat(129) }).success).toBe(false);
   expect(forecastListRowSchema.safeParse({ ...row, unit: "u".repeat(33) }).success).toBe(false);

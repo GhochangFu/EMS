@@ -71,8 +71,11 @@ export const forecastListRowSchema = z.object({
   assetId: z.string().uuid(),
   assetCode: z.string(),
   assetName: z.string(),
+  /** ADR 0111: the asset's RTU display name, so a screen prints `assetLabelOf(row)`; null with no RTU. */
+  assetRtuName: z.string().nullable(),
   locationId: z.string().uuid(),
-  locationName: z.string(),
+  /** ADR 0111: the asset's location (the list's *Site*), by the name every asset row uses. */
+  assetLocationName: z.string(),
   /** The site's IANA zone: the location's, else the organization's, else `UTC` (C7). */
   timeZone: z.string(),
   pointKey: z.string().max(128),
