@@ -987,3 +987,13 @@ precision figure; the owed `bms_ml` role; a change to the demo host's
 **Consequences.** After the build, AGENTS.md §3 *Layout* (`src/ml/` routes)
 and §5 (the *Anomalies* item) are caught up through a `chore(agents):` PR
 (§9.10), queued in BACKLOG §5. This is not a §6 promotion.
+
+**Correction after acceptance — ties (owner, 2026-11-16).** Ruling 3 says a
+score is the share of the window's hours whose statistic is "at or below"
+this hour's. With those words a point that does not move (an on/off point,
+`controller_power_status`) has every statistic equal, so every hour would
+score 1.0 and show as unusual. The owner ruled, while approving the `E1.2`
+plan ([`docs/plans/e1.2-anomaly-detection.md`](../plans/e1.2-anomaly-detection.md)
+§17 Q1): **count only the hours strictly below**. A flat hour then scores 0, a
+new maximum scores 1.0, and for a point that moves the result does not change.
+This replaces "at or below" in ruling 3; nothing else changes.
