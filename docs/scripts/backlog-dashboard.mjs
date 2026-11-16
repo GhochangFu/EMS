@@ -12,6 +12,7 @@
 // six small figures. All times are IST — the parser formats them, this file
 // only prints them.
 
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1059,6 +1060,17 @@ writeFileSync(OUT, internal);
 writeFileSync(OUT_FILE, standalone(internal));
 writeFileSync(OUT_CLIENT, standalone(forClient));
 
+// The repository owner from `origin` (`https://host/<owner>/<repo>` or `git@host:<owner>/<repo>`),
+// or null when there is no remote; the leak check below then relies on its patterns alone.
+const REPO_OWNER = (() => {
+  try {
+    const url = execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" }).trim();
+    return /[/:]([^/:]+)\/[^/]+?(?:\.git)?\/?$/.exec(url)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+})();
+
 // Fail loudly rather than shipping a client file that names the repository.
 // This is the whole point of the variant, so it is checked, not assumed.
 const LEAKS = [
@@ -1073,6 +1085,10 @@ const LEAKS = [
   // GitHub's short form names the repository with no link, so the `github.com`
   // check above never sees it. Shared with the redaction like BARE_SECTION.
   [new RegExp(BARE_REPO_REF, "i"), "repository reference (owner/repo#N)"],
+  // The owner itself, in any form (no `#N`, a space, a hard-cut title), read from
+  // `origin` so no literal goes stale. Check-only, so it can never redact client
+  // text; the repository name is left out because "EMS" is ordinary product prose.
+  ...(REPO_OWNER ? [[new RegExp(REPO_OWNER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), "repository owner"]] : []),
 ];
 const found = LEAKS.filter(([re]) => re.test(forClient)).map(([, what]) => what);
 if (found.length) {
