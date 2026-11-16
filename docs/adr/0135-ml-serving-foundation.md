@@ -549,10 +549,64 @@ R-b and R-c stricter. They change no ruling.
   `ml`, that `bms_auth` holds nothing, and that the marker reads
   `bms-ml-schema-version=2`.
 
+**Review corrections (2026-11-16, PR #1356 code review).** Each one replaces
+the line it names. Where a correction and an earlier line disagree, the
+correction wins. They fix defects in the text; no owner ruling changes.
+
+- **C1 (replaces R-f's config).** The `forecast` widget binds its one point
+  through `bms.dashboard_widget_points`, the way `chart` does. Its point
+  cardinality is `{ min: 1, max: 1 }` and its source cardinality is
+  `{ min: 0, max: 0 }` (`WIDGET_POINT_CARDINALITY` /
+  `WIDGET_SOURCE_CARDINALITY`). `config` holds renderer options only. This
+  is ADR 0047 decision 3 ("point references are rows and foreign keys;
+  options are JSON"). The `config { assetId, pointKey }` line is withdrawn.
+- **C2 (adds to R-d).** The chart's x axis today ends at the request's `to`
+  in two places: `asset-history-chart-option.ts` and `trend-chart.tsx`. When
+  a forecast is drawn, both extend `max` to the last forecast bucket, or the
+  forecast is clipped off the chart. The option and the chart have no legend
+  today, so `E1.4a` adds one. On short presets (under 24 h) the axis extends
+  by at most the preset's own length, so the actual line stays readable. The
+  plan states the exact rule.
+- **C3 (replaces R-c's "newest `issued_at`").** A run started with
+  `run-once --as-of <past hour>` has the newest `issued_at` but only past
+  buckets. So "current" is **the newest succeeded run that still has a
+  bucket at or after the current hour** for that `(asset_id, point_key)`.
+  "Stale" means that run's **first bucket** (the hour it scored) is more than
+  3 h before the current hour, not its `issued_at`.
+- **C4 (replaces R-c's bucket rule).** Bucket 0 is the hour in progress. The
+  read returns buckets `>= date_trunc('hour', now(), 'UTC')`, so the p50
+  line joins the actual line with no gap.
+- **C5 (corrects R-b's test list).** The marker bump and the grant change
+  these tests in `E1.4a`:
+  - `tests/e1.1-ml-schema.integration.test.ts`: the marker and the
+    `bms_tenant` refusal;
+  - `tests/e1.1-ml-schema.test.ts`: it forbids `"ml"` in `drizzle.config.ts`,
+    which R-a adds;
+  - `apps/ml/tests/integration/test_scorer_postgres.py`: it asserts marker 1.
+
+  The `ml` CI job runs on any `packages/db/` change, so that last edit is
+  required. *Not in this amendment* is narrowed to "any change to
+  `apps/ml/src`": the one test edit is allowed, and the scorer's code does not
+  change.
+- **C6 (corrects R-c's index sentence).** `forecasts_pkey` serves the
+  one-point read (two equalities, then a range on `horizon_bucket`). The list
+  is served by `model_runs_org_started_idx`, then `forecasts_model_run_idx`
+  (both in 0157), not by `forecasts_pkey`. `EXPLAIN` in the plan proves both.
+- **C7 (adds to R-c's list).** Each list row carries the IANA `timeZone` of
+  its site, resolved the same way the history page resolves it, so the list
+  shows times in each row's site zone.
+- **C8 (replaces R-e's empty-state copy).** "No forecasts yet. Forecasts are
+  made for a few point types with enough recent real data." The page does
+  not promise a forecast to a point type the scorer does not target.
+- **C9 (corrects R-a's reason).** `packages/db/drizzle/meta` holds only
+  `_journal.json`, and nothing here runs `drizzle-kit` introspection, so there
+  is no drift check to trip. All three tables are still mirrored, so the
+  mirror is complete and `E1.2` reads `ml.anomaly_scores` through it.
+
 **Not in this amendment:** the anomaly read path (`E1.2`), forecasts in
 exports, reports or the copilot, an accuracy view, the owed `bms_ml` role, a
-per-organization switch for forecasts, and any change to `apps/ml`
-(`E1.4d`'s).
+per-organization switch for forecasts, and any change to `apps/ml/src`
+(`E1.4d`'s; C5 allows the one test edit).
 
 **Consequences.** `E1.4a` waits for `E1.1` to be ✅ on `main`. After the build,
 AGENTS.md §3 *Layout* gains `apps/api/src/ml/` and the `ml` Drizzle mirror
