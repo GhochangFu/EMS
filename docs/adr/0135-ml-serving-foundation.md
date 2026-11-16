@@ -655,3 +655,29 @@ left open (PR 2 code review). A failed forecast refetch drops the last forecast
 rather than drawing it on with its old `stale: false`, and a 403 stops that
 point's re-poll. The "now" line sits on the first actual series, so hiding the
 p50 in the legend keeps it.
+
+**Build record — the list row (`E1.4a` PR 1, recorded 2026-11-16).** The plan's
+`forecastListRowSchema` named the asset's place `locationName`. The row carries
+`assetRtuName` (nullable) and `assetLocationName` instead, so the page names the
+asset through `assetLabelOf` like every other asset-naming row (ADR 0111's gate
+fails a DTO that names an asset without them).
+
+**Build record — `E1.4b` PR 3 (2026-11-16), the page.** `/forecasts` lives in a
+new `pages/extra-routes.tsx` that `app.tsx` renders inside `<Routes>` (R13, N7),
+because `app.tsx` sits at the AGENTS.md §4.5 cap. To make room, the legacy
+`/assets/:assetId/history` redirect's element moved to its own file; its route
+line stays in `app.tsx` (B5), and the moved redirect now encodes the id. Each
+row's times are drawn in that row's own site zone (C7); a zone the browser does
+not know falls back to UTC instead of throwing.
+
+**Build record — `E1.4c` PR 4 (2026-11-16), the widget.** Migration
+`0159_forecast_widget_type` rewrites `dashboard_widgets_widget_type_check` to
+fourteen types, `forecast` last. The renderer's `hourlyMeans` seeds every UTC
+hour of the 24 h window as empty before it averages, so an hour with no
+samples is a gap in the line, not a join across it (R10). R12 is held twice: both
+template surfaces refuse the kind, and the stock catalog spec fails a stock
+template that carries it. `dashboard-builder.ts` made room under the §4.5 cap by
+moving its binding messages to `dashboard-binding-messages.ts`, and the
+builder's tab helpers moved out move-only (R14). Step 6's browser layer for the
+widget (palette → add → bind → save → hard reload) was not run in the build
+session; it is owed on the demo host with the other demo-host checks.
