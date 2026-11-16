@@ -115,3 +115,29 @@ export async function aForbiddenReadDrawsTheAccessSentenceAndStops(): Promise<vo
   expect(interval({ state: { error: new Error("ml asset anomalies 403") } })).toBe(false);
   expect(onFocus({ state: { error: new Error("ml asset anomalies 403") } })).toBe(false);
 }
+
+/**
+ * When the hour turns the query key moves; until the new window answers the widget keeps the last
+ * chart (`keepPreviousData`), not "Loading…" (the `use-prior-point-values.ts` precedent).
+ */
+export async function theHourTurningKeepsTheLastChart(): Promise<void> {
+  mocks.fetchAssetAnomalies.mockResolvedValueOnce({
+    asOf: "2026-11-16T10:20:00.000Z",
+    scores: [{ t: "2026-11-16T09:00:00.000Z", detector: "baseline_mad", score: 0.5, contributingPoints: [] }],
+  });
+  mocks.fetchAssetAnomalies.mockReturnValueOnce(new Promise(() => undefined));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = (now: number) => (
+    <QueryClientProvider client={client}>
+      <AnomalyWidgetLive widget={WIDGET} now={now} />
+    </QueryClientProvider>
+  );
+  const { rerender } = render(view(NOW));
+  await waitFor(() => expect(mocks.recorded.length).toBeGreaterThan(0));
+  rerender(view(NOW + 3_600_000));
+  await waitFor(() => expect(mocks.fetchAssetAnomalies).toHaveBeenCalledTimes(2));
+  expect(mocks.fetchAssetAnomalies.mock.calls[1]?.[2]).toBe("2026-11-16T12:00:00.000Z");
+  expect(screen.queryByText("Loading…")).toBeNull();
+  const line = mocks.recorded.at(-1)?.option.series[0];
+  expect(line?.data.find(([t]) => t === "2026-11-16T09:00:00.000Z")?.[1]).toBe(0.5);
+}

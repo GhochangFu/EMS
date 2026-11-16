@@ -17,6 +17,7 @@ import {
   anAnomalyWidgetReadsItsAssetOnce,
   aHiddenWidgetIsNotRead,
   aKwOnlyWidgetIsNotDrawnWithoutEnergy,
+  anAnomalyWidgetOnKwIsDrawnWithoutEnergy,
   aTabOfHiddenWidgetsSaysWhy,
   anUntabbedDashboardOfHiddenWidgetsSaysWhy,
   everyWidgetIsDrawnWithEnergy,
@@ -87,6 +88,10 @@ describe("F3.69 U1 DashboardLiveCanvas", () => {
 
   it("EK1 does not draw a kW-only widget when energy is not shown; mixed and unbound stay (F4.375)", async () => {
     await aKwOnlyWidgetIsNotDrawnWithoutEnergy();
+  });
+
+  it("EK1b draws an anomaly widget bound to kw when energy is not shown; a kw chart stays hidden (E1.2d)", async () => {
+    await anAnomalyWidgetOnKwIsDrawnWithoutEnergy();
   });
 
   it("EK2 draws every widget by default (F4.375)", async () => {

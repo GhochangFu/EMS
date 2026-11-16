@@ -6,6 +6,7 @@ import {
   aForbiddenReadDrawsTheAccessSentenceAndStops,
   noScoresDrawsTheEmptySentence,
   resetLiveMocks,
+  theHourTurningKeepsTheLastChart,
   theReadNamesTheAssetAndSevenDays,
 } from "./anomaly-widget-live.spec";
 
@@ -24,6 +25,10 @@ describe("E1.2d — the live anomaly widget", () => {
 
   it("says the asset has no scores yet", async () => {
     await noScoresDrawsTheEmptySentence();
+  });
+
+  it("keeps the last chart, not Loading…, when the hour turns", async () => {
+    await theHourTurningKeepsTheLastChart();
   });
 
   it("draws the access sentence on a 403 and stops re-polling", async () => {

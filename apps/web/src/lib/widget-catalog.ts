@@ -263,7 +263,7 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
   anomaly: {
     label: "Anomaly score",
     // A low line with one spike crossing a dashed threshold (`E1.2d`).
-    iconPath: "M3 19h18v2H3v-2Zm0-3 4-2 3 1 3-10 2 9 2-1 4 2v2l-4-2-2 1-2-1-1 4-2-8-2 6-3-1-4 2v-2ZM3 7h3v1H3V7Zm5 0h3v1H8V7Zm8 0h3v1h-3V7Z",
+    iconPath: "M3 19h18v2H3v-2Zm0-3 4-2 3 1 3-10 2 9 2-1 4 2v2l-4-2-2 1-2-8-3 9-3-1-4 2v-2ZM3 7h3v1H3V7Zm5 0h3v1H8V7Zm8 0h3v1h-3V7Z",
     // Half the canvas: seven days of hourly score need width more than height.
     defaultSize: { w: 6, h: 4 },
     points: WIDGET_POINT_CARDINALITY.anomaly,

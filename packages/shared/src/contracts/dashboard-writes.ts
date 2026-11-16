@@ -470,6 +470,8 @@ const mimicConfigWriteSchema = z.discriminatedUnion("source", [
 /**
  * One write arm of a site widget that binds nothing (`F3.73`, plan D13): `points` and `sources` are
  * capped at zero by the shared cardinality records, and the config is the shared one, `.strict()`.
+ * The limits are never this helper's own: `pointsFieldFor`/`sourcesFieldFor` read them from
+ * `WIDGET_POINT_CARDINALITY`/`WIDGET_SOURCE_CARDINALITY`, so its `onePointArm` alias takes one point.
  * Still a plain `.strict()` `ZodObject`, so `z.discriminatedUnion` accepts it.
  */
 const bindsNothingArm = <T extends z.infer<typeof widgetTypeSchema>, C extends z.AnyZodObject>(

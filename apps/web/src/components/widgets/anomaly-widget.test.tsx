@@ -9,6 +9,7 @@ import {
   resetRecorded,
   scoresDrawTheLineTheThresholdAndTheMarks,
   theStaticDrawReadsNothing,
+  theTooltipAndTheAxisShareTheZoneAndTheCaptionNamesIt,
 } from "./anomaly-widget.spec";
 
 /** Vitest entry point (ADR 0014, ADR 0042 decision 2). */
@@ -34,6 +35,10 @@ describe("E1.2d — the anomaly widget", () => {
 
   it("draws the score line, the 0.99 line, the unusual-hour marks and the advisory caption", () => {
     scoresDrawTheLineTheThresholdAndTheMarks();
+  });
+
+  it("formats the tooltip header in the axis's zone under a non-UTC TZ, and names the zone", () => {
+    theTooltipAndTheAxisShareTheZoneAndTheCaptionNamesIt();
   });
 
   it("draws a static sentence when nothing is read", () => {

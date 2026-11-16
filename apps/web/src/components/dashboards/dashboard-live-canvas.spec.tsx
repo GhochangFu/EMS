@@ -419,6 +419,28 @@ export async function aKwOnlyWidgetIsNotDrawnWithoutEnergy(): Promise<void> {
   expect(screen.queryByText("Total load")).toBeNull();
 }
 
+/**
+ * EK1b — `E1.2d`: an `anomaly` widget bound to `kw` stays drawn with energy not shown. Its point
+ * only names the asset (R16); it draws a unitless ML score, not kW. A `chart` bound to `kw` is
+ * still hidden.
+ */
+export async function anAnomalyWidgetOnKwIsDrawnWithoutEnergy(): Promise<void> {
+  mocks.fetchAssetAnomalies.mockResolvedValue({ asOf: "2026-11-16T10:20:00.000Z", scores: [] });
+  const anomaly = { ...widget(true), id: "anomaly-kw", title: "Load anomaly", widgetType: "anomaly", config: {} } as DashboardWidgetDto;
+  const chart = {
+    ...widget(true),
+    id: "chart-kw",
+    title: "Load chart",
+    gridX: 4,
+    widgetType: "chart",
+    config: { series: "line" },
+  } as DashboardWidgetDto;
+  const { container } = renderCanvas(dashboard([anomaly, chart]), undefined, false);
+  expect(await screen.findByText("Load anomaly")).toBeInTheDocument();
+  expect(drawnTiles(container)).toEqual(["anomaly-kw"]);
+  expect(screen.queryByText("Load chart")).toBeNull();
+}
+
 /** EK2 — the default and `energyShown={true}` draw every widget. */
 export async function everyWidgetIsDrawnWithEnergy(energyShown: boolean | undefined): Promise<void> {
   const { container } = renderCanvas(dashboard(energyWidgets()), undefined, energyShown);

@@ -9,8 +9,8 @@ import { ACCESS_SENTENCE } from "../asset-history/history-format";
 import {
   ANOMALY_SCORE_SERIES_NAME,
   ANOMALY_STATIC_SENTENCE,
-  ANOMALY_WIDGET_CAPTION,
   AnomalyWidget,
+  anomalyWidgetCaption,
   NO_ANOMALY_POINT_SENTENCE,
   NO_ANOMALY_SCORES_SENTENCE,
   type AnomalyWidgetRead,
@@ -28,7 +28,16 @@ type RecordedSeries = {
   markLine?: { data: { yAxis: number }[] };
   tooltip?: { valueFormatter: (value: unknown, dataIndex: number) => string };
 };
-type Recorded = { option: { yAxis: { min: number; max: number }; series: RecordedSeries[] } };
+type Recorded = {
+  option: {
+    xAxis: {
+      axisLabel: { formatter: (value: number) => string };
+      axisPointer?: { label?: { formatter?: (params: { value: unknown }) => string } };
+    };
+    yAxis: { min: number; max: number };
+    series: RecordedSeries[];
+  };
+};
 
 const recorded = vi.hoisted(() => [] as Recorded[]);
 
@@ -76,7 +85,7 @@ export function noScoresYetSaysSo(): void {
   render(<AnomalyWidget title="Chiller" status="ready" pointKey="kw" read={read([])} />);
   expect(screen.getByTestId("anomaly-widget-none").textContent).toBe(NO_ANOMALY_SCORES_SENTENCE);
   expect(recorded).toHaveLength(0);
-  expect(screen.getByTestId("anomaly-widget-caption").textContent).toBe(ANOMALY_WIDGET_CAPTION);
+  expect(screen.getByTestId("anomaly-widget-caption").textContent).toBe(anomalyWidgetCaption("Asia/Kolkata"));
 }
 
 /** A 403: the access sentence, and nothing drawn. */
@@ -104,7 +113,7 @@ export function scoresDrawTheLineTheThresholdAndTheMarks(): void {
   const marks = series()[1]!;
   expect(marks.data).toEqual([[iso(TO - HOUR), 0.995]]);
   expect(marks.tooltip?.valueFormatter(0.995, 0)).toContain("kw, pf");
-  expect(screen.getByTestId("anomaly-widget-caption").textContent).toBe("Anomaly score · last 7 days · advisory");
+  expect(screen.getByTestId("anomaly-widget-caption").textContent).toBe("Anomaly score · last 7 days · Asia/Kolkata · advisory");
   expect(screen.queryByTestId("anomaly-widget-none")).toBeNull();
 }
 
@@ -113,4 +122,24 @@ export function theStaticDrawReadsNothing(): void {
   render(<AnomalyWidget title="Chiller" status="ready" pointKey="kw" read={null} />);
   expect(screen.getByText(ANOMALY_STATIC_SENTENCE)).toBeTruthy();
   expect(recorded).toHaveLength(0);
+}
+
+/**
+ * The axis and the tooltip's header name one hour the same way, in the read's zone, whatever the
+ * browser's zone (ECharts' own default would format the header in the browser's), and the caption
+ * names that zone: `Etc/UTC` reads "UTC".
+ */
+export function theTooltipAndTheAxisShareTheZoneAndTheCaptionNamesIt(): void {
+  vi.stubEnv("TZ", "America/New_York");
+  try {
+    render(<AnomalyWidget title="Chiller" status="ready" pointKey="kw" read={{ ...read(SCORES), zone: "Etc/UTC" }} />);
+    const xAxis = recorded.at(-1)?.option.xAxis;
+    expect(xAxis?.axisLabel.formatter(TO - HOUR)).toBe("09:00\n16 Nov");
+    expect(xAxis?.axisPointer?.label?.formatter?.({ value: TO - HOUR })).toBe("09:00 16 Nov UTC");
+    expect(screen.getByTestId("anomaly-widget-caption").textContent).toBe(
+      "Anomaly score · last 7 days · UTC · advisory",
+    );
+  } finally {
+    vi.unstubAllEnvs();
+  }
 }

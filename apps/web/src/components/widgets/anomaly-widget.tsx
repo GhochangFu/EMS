@@ -9,15 +9,23 @@ import { anomalyScoreLine } from "../../lib/anomaly-hourly";
 import { anomalyMarkSeries, unusualHours } from "../../lib/anomaly-series";
 import { anomalyMarkColour, seriesPalette, useChartTheme } from "../../lib/chart-theme";
 import { CHART_SERIES, type WidgetStatus } from "../../lib/widget-catalog";
-import { ACCESS_SENTENCE, timeAxisLabel } from "../asset-history/history-format";
+import { ACCESS_SENTENCE, FALLBACK_ZONE, axisLabelInZone, timeAxisLabel } from "../asset-history/history-format";
 import { WidgetFrame } from "./widget-frame";
 
 export const NO_ANOMALY_POINT_SENTENCE = "No point bound.";
 export const NO_ANOMALY_SCORES_SENTENCE = "No anomaly scores for this asset yet.";
 /** The static draw (no live binding): the widget reads only on a live dashboard. */
 export const ANOMALY_STATIC_SENTENCE = "The last 7 days draw on the live dashboard.";
-/** The caption under the chart: what is drawn, over what window, and that it is advisory. */
-export const ANOMALY_WIDGET_CAPTION = "Anomaly score · last 7 days · advisory";
+/** The zone's printed name: {@link FALLBACK_ZONE} reads "UTC". */
+const zoneName = (zone: string): string => (zone === FALLBACK_ZONE ? "UTC" : zone);
+
+/**
+ * The caption under the chart: what is drawn, over what window, the zone its times are in (the
+ * house rule: a fallback to UTC says so), and that it is advisory.
+ */
+export function anomalyWidgetCaption(zone: string): string {
+  return `Anomaly score · last 7 days · ${zoneName(zone)} · advisory`;
+}
 /** The builder inspector's one line for an anomaly widget, in place of unit and decimals. */
 export const ANOMALY_INSPECTOR_NOTE =
   "Advisory. The asset's anomaly score for the last 7 days. The bound point names the asset.";
@@ -68,7 +76,20 @@ export function AnomalyWidget({ title, status, pointKey, forbidden = false, read
     return {
       grid: { left: 40, right: 16, top: 24, bottom: 24 },
       tooltip: { trigger: "axis" },
-      xAxis: { type: "time", min: read.from, max: read.to, axisLabel: timeAxisLabel(read.zone) },
+      xAxis: {
+        type: "time",
+        min: read.from,
+        max: read.to,
+        axisLabel: timeAxisLabel(read.zone),
+        // The tooltip's header is the axis pointer's label; ECharts would format it in the
+        // browser's zone (`useUTC: false`), so it takes the axis's zone and names it.
+        axisPointer: {
+          label: {
+            formatter: ({ value }: { value: unknown }) =>
+              `${axisLabelInZone(Number(value), read.zone).replace("\n", " ")} ${zoneName(read.zone)}`,
+          },
+        },
+      },
       yAxis: { type: "value", min: 0, max: 1 },
       series: [
         {
@@ -93,7 +114,7 @@ export function AnomalyWidget({ title, status, pointKey, forbidden = false, read
           yAxisIndex: 0,
         }),
       ],
-    } as EChartsOption;
+    };
   }, [read, pointKey, roles]);
 
   if (pointKey === null || forbidden || read === null) {
@@ -120,7 +141,7 @@ export function AnomalyWidget({ title, status, pointKey, forbidden = false, read
         </div>
       )}
       <p className="mt-1 text-xs text-ink-muted" data-testid="anomaly-widget-caption">
-        {ANOMALY_WIDGET_CAPTION}
+        {anomalyWidgetCaption(read.zone)}
       </p>
     </WidgetFrame>
   );

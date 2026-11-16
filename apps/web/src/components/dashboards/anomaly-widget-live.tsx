@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { ANOMALY_WIDGET_HOURS } from "@bms/shared";
@@ -33,8 +33,8 @@ type AnomalyWidgetLiveProps = {
  * `E1.2d` / ADR 0135 Amendment 5 ruling 4(c) — one `anomaly` widget's live binding. The bound
  * point names the asset (R16); the widget reads `GET /ml/assets/:assetId/anomalies` for the last
  * 168 hours, refetched every 15 minutes (the forecast's pace; the scorer writes hourly). A 403
- * stops the re-poll and the focus refetch and draws the access sentence. The axis is in UTC: the
- * read names no site zone, and the scores are UTC hours.
+ * stops the re-poll and the focus refetch and draws the access sentence. The axis and its tooltip are
+ * in UTC, and the caption says so: the read names no site zone, and the scores are UTC hours.
  */
 export function AnomalyWidgetLive({ widget, now }: AnomalyWidgetLiveProps) {
   const title = widgetTitle(widget.title, widget.widgetType);
@@ -51,6 +51,10 @@ export function AnomalyWidgetLive({ widget, now }: AnomalyWidgetLiveProps) {
     refetchInterval: (query: { state: { error: unknown } }) => forecastRefetchMs(query.state.error),
     refetchOnWindowFocus: (query: { state: { error: unknown } }) => !isForbidden(query.state.error),
     retry: retryUnlessForbidden,
+    // The key moves when the hour turns; without this the widget would show "Loading…" (or an
+    // error) for the length of that fetch once an hour. The last window's scores are a subset of
+    // the new one, and the line filters to [from, to) (the `use-prior-point-values.ts` precedent).
+    placeholderData: keepPreviousData,
   });
 
   const scores = result.data?.scores ?? null;
