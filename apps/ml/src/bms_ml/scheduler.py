@@ -1,4 +1,4 @@
-"""The `serve` loop: sleep to the next tick, run one cycle as a child process, repeat (plan R11).
+"""The `serve` loop: sleep to the next tick, run each job as a child process, repeat (plan R11).
 
 A sleep-loop, never a timer thread per tick. The tick is the next multiple of
 the interval since the epoch plus five minutes (hourly: HH:05, when the
@@ -8,9 +8,12 @@ the loop, and `serve` exits 78 too. A start after this hour's tick scores the
 hour at once (`catch_up_on_start`): a restart at 10:06 used to wait for 11:05,
 and the 10:00 hour went unscored.
 
-Each cycle is `python -m bms_ml run-once` in a child process, so a hard
-timeout really kills a hung inference and the model's memory returns to the
-host between cycles. The parent never imports torch. Only the child's JSON
+Each job is a child process (`python -m bms_ml run-once`, then, since E1.2,
+`python -m bms_ml run-anomaly --as-of <the tick's hour>`), so a hard timeout
+really kills a hung inference and the memory returns to the host between
+cycles; the two peaks never add. The parent never imports torch or sklearn.
+A failed job is retried alone (E1.2 plan R7): a failing anomaly job must not
+reload Chronos every 300 s. Only the child's JSON
 lines are relayed: anything else (a traceback, which carries an exception
 message) is counted and dropped (AGENTS.md §9.6).
 """
@@ -87,39 +90,65 @@ def catch_up_on_start(now: datetime, interval_seconds: int) -> bool:
     return last_tick >= hour and now + timedelta(seconds=RETRY_SECONDS) < hour + timedelta(hours=1)
 
 
+@dataclass(frozen=True)
+class Job:
+    """One child-process job of a tick. `run` gets the tick's hour (R6); `health` records it."""
+
+    name: str
+    run: Callable[[datetime], CycleResult]
+    health: Recorder
+
+
+def _hour_of(instant: datetime) -> datetime:
+    return instant.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+
+
 def run_scheduler(
     *,
     clock: Clock,
     wait: Callable[[float], bool],
-    run_cycle_process: Callable[[], CycleResult],
-    health: Recorder,
+    jobs: Sequence[Job],
     interval_seconds: int,
 ) -> int:
-    """Loop until `wait` reports a stop (returns True) or a cycle exits 78."""
-    retry = False
+    """Loop until `wait` reports a stop (returns True) or a job exits 78.
+
+    A tick or a catch-up runs every job in order, each given the tick's hour,
+    computed once before the first job starts (R6). A retry runs only the jobs
+    that failed (R7), unless it lands at a tick or in a later hour than the one
+    that failed: that is a new tick, and every job runs.
+    """
+    failed: list[Job] = []
+    failed_hour: datetime | None = None
     first = True
     while True:
         now = clock.now()
+        to_run: Sequence[Job] = jobs
         if first and catch_up_on_start(now, interval_seconds):
-            hour = now.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
-            log.event("cycle_catch_up", as_of_hour=hour.isoformat())
+            log.event("cycle_catch_up", as_of_hour=_hour_of(now).isoformat())
             target = now
-        elif retry:
+        elif failed:
             target = retry_at(now, interval_seconds)
+            if target != next_tick(now, interval_seconds) and _hour_of(target) == failed_hour:
+                to_run = failed
         else:
             target = next_tick(now, interval_seconds)
         first = False
         if wait(max(0.0, (target - now).total_seconds())):
             return EXIT_OK
-        result = run_cycle_process()
-        if result.stopped:
-            return EXIT_OK
-        health.record(result, clock.now())
-        if result.exit_code == EXIT_CONFIG:
-            log.event("scheduler_stopped", "error", reason="the cycle exited 78")
-            return EXIT_CONFIG
-        retry = result.exit_code != EXIT_OK
-        log.event("cycle_finished", exit_code=result.exit_code, timed_out=result.timed_out)
+        hour = _hour_of(target)
+        failed = []
+        for job in to_run:
+            result = job.run(hour)
+            if result.stopped:
+                return EXIT_OK
+            job.health.record(result, clock.now())
+            if result.exit_code == EXIT_CONFIG:
+                log.event("scheduler_stopped", "error", job=job.name, reason="the cycle exited 78")
+                return EXIT_CONFIG
+            if result.exit_code != EXIT_OK:
+                failed.append(job)
+            log.event("cycle_finished", job=job.name, exit_code=result.exit_code, timed_out=result.timed_out)
+        failed_hour = hour
 
 
 def _relay(stream: TextIO, out: TextIO, found: dict[str, Any]) -> None:

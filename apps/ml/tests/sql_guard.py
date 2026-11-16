@@ -48,13 +48,23 @@ READ_SOURCES = frozenset(
         "bms.rtus",  # Amendment 2 ruling 3: the real-data rule needs ingest_enabled
         "ml.model_runs",  # Amendment 2 ruling 3: the already-scored check (plan R12)
         "ml.forecasts",  # the ledger reads a run's first horizon bucket (0157 grants SELECT)
+        "ml.anomaly_scores",  # E1.2 plan R10: the anomaly ledger reads a run's scored bucket
         "pg_namespace",  # preflight: the schema-version marker
         "pg_roles",  # preflight: refuse a superuser
     }
 )
 WRITE_TARGETS = frozenset({"ml.model_runs", "ml.forecasts", "ml.anomaly_scores"})
 ALLOWED_FUNCTIONS = frozenset(
-    {"obj_description", "has_table_privilege", "unnest", "min", "max", "count", "date_trunc"}
+    {
+        "obj_description",
+        "has_table_privilege",
+        "unnest",
+        "min",
+        "max",
+        "count",
+        "date_trunc",
+        "string_to_array",  # E1.2 plan R10: contributing points into a varchar(128)[] column
+    }
 )
 FORBIDDEN_WORDS = frozenset(
     {

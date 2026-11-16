@@ -36,6 +36,14 @@ THRESHOLDS = {
 }
 
 
+ANOMALY_THRESHOLDS = {
+    "anomaly_min_days": ANOMALY_MIN_DAYS,
+    "min_coverage": MIN_COVERAGE,
+    "freshness_hours": FRESHNESS_HOURS,
+    "lookback_days": LOOKBACK_DAYS,
+}
+
+
 @dataclass(frozen=True)
 class PointStats:
     """One target point's `_1h` history inside the lookback, as the eligibility read returns it."""
@@ -64,14 +72,24 @@ def coverage(first: datetime | None, last: datetime | None, hours_with_data: int
     return min(1.0, hours_with_data / max(1.0, span_hours + 1))
 
 
-def forecast_verdict(stats: PointStats, as_of_hour: datetime) -> str:
-    """The R8 verdict for one point at `as_of_hour`."""
+def verdict(stats: PointStats, as_of_hour: datetime, min_days: int) -> str:
+    """The verdict for one point at `as_of_hour`, the first failure winning."""
     if stats.hours_with_data <= 0 or stats.first_bucket is None or stats.last_bucket is None:
         return "no_data"
-    if stats.days_with_data < FORECASTING_GOOD_DAYS:
+    if stats.days_with_data < min_days:
         return "too_few_days"
     if coverage(stats.first_bucket, stats.last_bucket, stats.hours_with_data) < MIN_COVERAGE:
         return "low_coverage"
     if _aware(stats.last_bucket) < _aware(as_of_hour) - timedelta(hours=FRESHNESS_HOURS):
         return "stale"
     return "ready"
+
+
+def forecast_verdict(stats: PointStats, as_of_hour: datetime) -> str:
+    """The R8 verdict for one point at `as_of_hour`."""
+    return verdict(stats, as_of_hour, FORECASTING_GOOD_DAYS)
+
+
+def anomaly_verdict(stats: PointStats, as_of_hour: datetime) -> str:
+    """The same checks with the anomaly job's 28-day floor (plan 4.2)."""
+    return verdict(stats, as_of_hour, ANOMALY_MIN_DAYS)

@@ -16,7 +16,7 @@ import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields
 
-from bms_ml.targets import Target, TargetError, parse_targets
+from bms_ml.targets import DEFAULT_ANOMALY_TARGETS, DEFAULT_TARGETS, Target, TargetError, parse_targets
 
 LOG_LEVELS = ("debug", "info", "warning", "error")
 
@@ -33,6 +33,8 @@ class Config:
     forecast_horizon_hours: int
     context_hours: int
     forecast_targets: tuple[Target, ...]
+    anomaly_targets: tuple[Target, ...]
+    anomaly_enabled: bool
     model_dir: str
     torch_threads: int | None
     health_port: int
@@ -62,6 +64,18 @@ def _integer(environ: Mapping[str, str], name: str, default: int, low: int, high
     return value
 
 
+def _boolean(environ: Mapping[str, str], name: str, default: bool) -> bool:
+    raw = environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    word = raw.strip().lower()
+    if word in ("true", "1"):
+        return True
+    if word in ("false", "0"):
+        return False
+    raise ConfigError(f"{name} must be true, false, 1 or 0")
+
+
 def load_config(environ: Mapping[str, str] | None = None) -> Config:
     """Read and check every variable. `environ` defaults to `os.environ`."""
     source = os.environ if environ is None else environ
@@ -86,9 +100,15 @@ def load_config(environ: Mapping[str, str] | None = None) -> Config:
         threads = _integer(source, "ML_TORCH_THREADS", 1, 1, 64)
 
     try:
-        targets = parse_targets(source.get("ML_FORECAST_TARGETS"))
+        targets = parse_targets(
+            source.get("ML_FORECAST_TARGETS"), variable="ML_FORECAST_TARGETS", default=DEFAULT_TARGETS
+        )
+        anomaly_targets = parse_targets(
+            source.get("ML_ANOMALY_TARGETS"), variable="ML_ANOMALY_TARGETS", default=DEFAULT_ANOMALY_TARGETS
+        )
     except TargetError as err:
         raise ConfigError(str(err)) from None
+    anomaly_enabled = _boolean(source, "ML_ANOMALY_ENABLED", True)
 
     log_level = source.get("LOG_LEVEL", "info").strip().lower() or "info"
     if log_level not in LOG_LEVELS:
@@ -101,6 +121,8 @@ def load_config(environ: Mapping[str, str] | None = None) -> Config:
         forecast_horizon_hours=horizon,
         context_hours=context,
         forecast_targets=targets,
+        anomaly_targets=anomaly_targets,
+        anomaly_enabled=anomaly_enabled,
         model_dir=source.get("ML_MODEL_DIR", "").strip() or "/opt/bms-ml/model",
         torch_threads=threads,
         health_port=health_port,
@@ -131,5 +153,34 @@ def config_hash(
         "model": {"name": model_name, "version": model_version},
         "packages": dict(package_versions),
     }
+    return _sha256_canonical(payload)
+
+
+def anomaly_config_hash(
+    *,
+    job: str,
+    targets: Sequence[Target],
+    thresholds: Mapping[str, float | int],
+    constants: Mapping[str, object],
+    forest_kwargs: Mapping[str, object],
+    package_versions: Mapping[str, str],
+) -> str:
+    """sha256 of the canonical JSON of everything that shapes an anomaly score.
+
+    A pure function: the scorer passes its own constants. `ML_ANOMALY_ENABLED` is
+    left out, since switching the job off scores nothing differently.
+    """
+    payload = {
+        "job": job,
+        "targets": [str(target) for target in targets],
+        "thresholds": dict(thresholds),
+        "constants": dict(constants),
+        "forest": dict(forest_kwargs),
+        "packages": dict(package_versions),
+    }
+    return _sha256_canonical(payload)
+
+
+def _sha256_canonical(payload: Mapping[str, object]) -> str:
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

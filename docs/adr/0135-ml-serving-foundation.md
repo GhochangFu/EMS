@@ -1030,3 +1030,29 @@ plan ([`docs/plans/e1.2-anomaly-detection.md`](../plans/e1.2-anomaly-detection.m
 §17 Q1): **count only the hours strictly below**. A flat hour then scores 0, a
 new maximum scores 1.0, and for a point that moves the result does not change.
 This replaces "at or below" in ruling 3; nothing else changes.
+
+**Build record — `E1.2a` PR 1, package pins (2026-11-16).** Written by
+`uv 0.8.13` (the CI and Dockerfile version), `uv add --no-sync
+"scikit-learn==1.9.1"` from Bash, Python 3.12. The lock's `revision = 3` is
+unchanged, and **no existing pin moved** (the lock diff only adds lines).
+Every new package comes from PyPI (`registry = "https://pypi.org/simple"`)
+with its hash in `apps/ml/uv.lock`. The owner allowed `download.pytorch.org`
+and `download-r2.pytorch.org` for this session's environment, because `uv`
+re-reads the CPU torch index when it re-locks (Amendment 5 A-g, plan §17 Q2).
+- `scikit-learn==1.9.1` (BSD-3-Clause), the one direct addition.
+- Transitive: `scipy 1.18.1` (BSD-3-Clause; its wheels bundle OpenBLAS,
+  BSD-3-Clause, with LAPACK, BSD-3-Clause-Open-MPI; the GCC runtime,
+  GPL-3.0-or-later WITH GCC-exception-3.1, which permits use in any
+  program; and `libquadmath`, LGPL-2.1-or-later, a shared library used
+  unmodified), `joblib 1.6.0` (BSD-3-Clause), `threadpoolctl 3.8.0`
+  (BSD-3-Clause), `cloudpickle 3.1.2` (BSD-3-Clause, a `joblib` dependency)
+  and `narwhals 2.28.0` (MIT, a `scikit-learn` dependency). The plan named
+  the first three; `cloudpickle` and `narwhals` are new to this list.
+
+**Owner ruling — the budget step runs once in CI (2026-11-16).** The `E1.2a`
+builder estimated three runs of the ruling-5 measurement at 8–10 Actions
+minutes for each PR that runs the `ml` job (the forecast child alone takes
+80–149 s at one CPU), not the plan's "about 3". The owner ruled **one run in
+CI** (`measure_cycle --runs 1`). The step still fails above 900 MiB for the
+anomaly child or 300 s for forecast + anomaly. The demo host's first cycles
+after the deploy are the second sample.

@@ -372,6 +372,8 @@ services:
     environment:
       DATABASE_URL_FLEET: postgres://bms_fleet:${BMS_FLEET_PASSWORD:?}@postgres:5432/bms
       ML_TORCH_THREADS: "1"
+      # ADR 0135 Amendment 5 A-c: false stops the anomaly job, forecasts go on.
+      ML_ANOMALY_ENABLED: ${ML_ANOMALY_ENABLED:-true}
       LOG_LEVEL: info
     networks:
       - ml

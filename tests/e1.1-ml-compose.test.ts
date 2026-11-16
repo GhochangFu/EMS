@@ -15,6 +15,9 @@ import { describe, expect, it } from "vitest";
  *   and it publishes no port (its health listener binds loopback inside).
  * - It connects as `bms_fleet` and is given no other database URL, and never a
  *   Hugging Face token.
+ * - E1.2 (ADR 0135 Amendment 5 A-c, plan T1.9): `ML_ANOMALY_ENABLED` reaches the
+ *   container, default `true`, so an operator stops the anomaly job from `.env`
+ *   without stopping forecasts; no other variable is added.
  *
  * Both compose files carry the service (the AWS one since plan PR 5, pulled
  * from GHCR instead of built), and `bms-ctl` and the two AWS workflows agree on
@@ -185,6 +188,14 @@ describe.each(FILES)("E1.1 the `ml` compose service ($file)", ({ file, fleetUrl 
     expect(ml).toMatch(/^ {4}read_only: true\s*$/m);
     expect(ml).toMatch(/^ {4}cap_drop:\s*\n {6}- ALL\s*$/m);
     expect(ml).toMatch(/^ {4}security_opt:\s*\n {6}- no-new-privileges:true\s*$/m);
+  });
+
+  it("passes the anomaly switch through, on by default, and no other new variable (E1.2 plan T1.9)", () => {
+    // ADR 0135 Amendment 5 A-c: ML_ANOMALY_ENABLED=false in the host's .env stops the anomaly
+    // job and keeps forecasts. ML_ANOMALY_TARGETS stays at the scorer's default (ruling 1).
+    const env = environmentOf(ml);
+    expect(env.ML_ANOMALY_ENABLED).toBe("${ML_ANOMALY_ENABLED:-true}");
+    expect(Object.keys(env).sort()).toEqual(["DATABASE_URL_FLEET", "LOG_LEVEL", "ML_ANOMALY_ENABLED", "ML_TORCH_THREADS"]);
   });
 
   it("gives torch exactly the CPU limit as its thread count", () => {

@@ -58,3 +58,57 @@ def test_error_never_echoes_the_value():
     with pytest.raises(TargetError) as err:
         parse_targets("SECRET_LOOKING/value")
     assert "SECRET_LOOKING" not in str(err.value)
+
+
+ANOMALY_EXPECTED = (
+    *(
+        f"electrical/energy_meter/{key}"
+        for key in (
+            "kw",
+            "kva",
+            "kvar",
+            "pf",
+            "frequency_hz",
+            "voltage_l1_v",
+            "voltage_vry",
+            "voltage_vyb",
+            "voltage_vbr",
+            "voltage_vrn",
+            "voltage_vyn",
+            "voltage_vbn",
+            "current_ir",
+            "current_iy",
+            "current_ib",
+        )
+    ),
+    "electrical/pump_breaker/breaker_main",
+    "electrical/chlorine_pump/chlorine_pump_on",
+    "environment/rtu_health/battery_charge_pct",
+    "environment/rtu_health/network_strength",
+    "environment/rtu_health/controller_power_status",
+    "facility/cold_room/cold_room_temp_c",
+)
+
+
+def test_default_anomaly_targets_by_value_and_no_counter():
+    from bms_ml.targets import DEFAULT_ANOMALY_TARGETS
+
+    assert tuple(str(t) for t in DEFAULT_ANOMALY_TARGETS) == ANOMALY_EXPECTED
+    assert len(DEFAULT_ANOMALY_TARGETS) == 21
+    assert Target("electrical", "energy_meter", "kwh_total") not in DEFAULT_ANOMALY_TARGETS
+
+
+def test_parse_targets_names_the_given_variable_and_never_the_value():
+    from bms_ml.targets import DEFAULT_ANOMALY_TARGETS
+
+    assert parse_targets(None, variable="ML_ANOMALY_TARGETS", default=DEFAULT_ANOMALY_TARGETS) == (
+        DEFAULT_ANOMALY_TARGETS
+    )
+    for raw in ("SECRET_LOOKING/value", "water/pump/p,water/pump/p"):
+        with pytest.raises(TargetError) as err:
+            parse_targets(raw, variable="ML_ANOMALY_TARGETS", default=DEFAULT_ANOMALY_TARGETS)
+        assert "ML_ANOMALY_TARGETS" in str(err.value)
+        assert "ML_FORECAST_TARGETS" not in str(err.value)
+        assert "SECRET_LOOKING" not in str(err.value)
+    with pytest.raises(TargetError, match="ML_FORECAST_TARGETS"):
+        parse_targets("bad", variable="ML_FORECAST_TARGETS", default=DEFAULT_TARGETS)

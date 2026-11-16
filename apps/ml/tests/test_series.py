@@ -97,3 +97,52 @@ def test_floor_to_hour_returns_utc():
     floored = floor_to_hour(datetime(2026, 11, 15, 17, 59, 59, tzinfo=IST))
     assert floored == datetime(2026, 11, 15, 12, tzinfo=UTC)
     assert floored.tzinfo is UTC
+
+
+def test_hourly_grid_of_2185_hours_ends_at_the_scored_hour():
+    from bms_ml.series import hourly_grid
+
+    scored = datetime(2026, 11, 15, 11, tzinfo=UTC)  # S = H - 1 h
+    start = scored - timedelta(hours=2184)
+    grid = hourly_grid(hourly(start, 2185), start, 2185)
+    assert grid.shape == (2185,)
+    assert grid[0] == 4.0 and grid[-1] == 4.0
+    assert not np.isnan(grid).any()
+    # one hour past S is outside the grid
+    grid = hourly_grid(hourly(start, 2186), start, 2185)
+    assert grid.shape == (2185,)
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        HourRow(datetime(2026, 11, 15, 1, tzinfo=UTC), 5.0, 0),
+        HourRow(datetime(2026, 11, 15, 1, tzinfo=UTC), 5.0, None),
+        HourRow(datetime(2026, 11, 15, 1, tzinfo=UTC), None, 3),
+        HourRow(datetime(2026, 11, 15, 1, tzinfo=UTC), float("inf"), 3),
+        HourRow(datetime(2026, 11, 15, 1, tzinfo=UTC), float("nan"), 3),
+    ],
+)
+def test_hourly_grid_missing_hour_is_nan(row):
+    from bms_ml.series import hourly_grid
+
+    start = datetime(2026, 11, 15, 0, tzinfo=UTC)
+    grid = hourly_grid([row], start, 3)
+    assert np.isnan(grid).all()
+
+
+def test_hourly_grid_keeps_gaps_and_values():
+    from bms_ml.series import hourly_grid
+
+    start = datetime(2026, 11, 15, 0, tzinfo=UTC)
+    rows = [HourRow(start, 6.0, 3), HourRow(start + timedelta(hours=2), 9.0, 3)]
+    grid = hourly_grid(rows, start, 4)
+    assert grid[0] == 2.0 and np.isnan(grid[1]) and grid[2] == 3.0 and np.isnan(grid[3])
+
+
+def test_hourly_grid_refuses_an_off_hour_bucket():
+    from bms_ml.series import hourly_grid
+
+    start = datetime(2026, 11, 15, 0, tzinfo=UTC)
+    with pytest.raises(ValueError):
+        hourly_grid([HourRow(start + timedelta(minutes=30), 1.0, 1)], start, 3)

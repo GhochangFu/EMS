@@ -45,3 +45,16 @@ class ForecastRow:
     p10: float
     p50: float
     p90: float
+
+
+@dataclass(frozen=True)
+class AnomalyRow:
+    """One `ml.anomaly_scores` row (ADR 0135 Amendment 5). No organization_id, for the
+    reason ForecastRow has none. `model_run_id` comes from the run it is written under;
+    every row of one run has the run's scored hour as `bucket`."""
+
+    asset_id: UUID
+    bucket: datetime
+    detector: str
+    score: float
+    contributing_points: tuple[str, ...]
