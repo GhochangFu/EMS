@@ -62,8 +62,15 @@ def with_daily_hole(days: int, as_of: datetime) -> list[int]:
     return [h for h in full(days) if not (h <= 15 * 24 and 1 <= (as_of - timedelta(hours=h)).hour <= 5)]
 
 
-def four_hours_a_day(days: int) -> list[int]:
-    return [day * 24 + offset for day in range(days) for offset in (1, 2, 3, 4)]
+def four_hours_a_day(days: int, as_of: datetime) -> list[int]:
+    """Four hours on each of `days` UTC days, never across a UTC midnight.
+
+    `eligibility` counts UTC days, so the four hours of one day must share a
+    date: at an `as_of` hour of 1-3 the four hours before it cross midnight, so
+    they start just before it instead (tests/test_fixture_shapes.py).
+    """
+    first = as_of.hour + 1 if 1 <= as_of.hour <= 3 else 1
+    return [first + day * 24 + offset for day in range(days) for offset in range(4)]
 
 
 @dataclass(frozen=True)
@@ -99,7 +106,7 @@ def hours_for(code: str, as_of: datetime) -> list[int]:
     if code == "MLFX-G1":
         return with_daily_hole(60, as_of)
     if code == "MLFX-W1":
-        return four_hours_a_day(17)
+        return four_hours_a_day(17, as_of)
     if code == "MLFX-V1":
         return full(33)
     return full(60)
