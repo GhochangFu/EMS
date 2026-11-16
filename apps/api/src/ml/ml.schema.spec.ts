@@ -1,7 +1,7 @@
-import { PAST_FORECAST_MAX_SPAN_DAYS } from "@bms/shared";
+import { ANOMALY_MAX_SPAN_DAYS, PAST_FORECAST_MAX_SPAN_DAYS } from "@bms/shared";
 import { expect } from "vitest";
 
-import { pastForecastQuerySchema } from "./ml.schema";
+import { anomaliesQuerySchema, assetAnomaliesQuerySchema, pastForecastQuerySchema } from "./ml.schema";
 
 /**
  * `E1.4e` / ADR 0135 Amendment 4 — `pastForecastQuerySchema`, the past forecast's
@@ -56,4 +56,36 @@ export function aReversedEmptyOrOverLongWindowIsRefused(): void {
 
 export function anUnknownKeyIsRefused(): void {
   expect(pastForecastQuerySchema.safeParse({ from: FROM, to: plus(FROM, DAY_MS), window: "24h" }).success).toBe(false);
+}
+
+/** `E1.2b` (ADR 0135 Amendment 5 A-e): the one-asset anomaly window. */
+const anomalyMessageOf = (query: Record<string, unknown>): string | undefined => {
+  const result = assetAnomaliesQuerySchema.safeParse(query);
+  return result.success ? undefined : result.error.issues[0]?.message;
+};
+
+export function theAnomalyWindowParsesUpToItsCap(): void {
+  expect(assetAnomaliesQuerySchema.parse({ from: FROM, to: plus(FROM, DAY_MS) })).toEqual({ from: FROM, to: plus(FROM, DAY_MS) });
+  expect(ANOMALY_MAX_SPAN_DAYS).toBe(31);
+  expect(assetAnomaliesQuerySchema.safeParse({ from: FROM, to: plus(FROM, ANOMALY_MAX_SPAN_DAYS * DAY_MS) }).success).toBe(true);
+}
+
+export function theAnomalyWindowRefusesAnUnknownKeyAMissingToAReversalAndA32DaySpan(): void {
+  expect(assetAnomaliesQuerySchema.safeParse({ from: FROM, to: plus(FROM, DAY_MS), fn: "max" }).success).toBe(false);
+  expect(assetAnomaliesQuerySchema.safeParse({ from: FROM }).success).toBe(false);
+  expect(assetAnomaliesQuerySchema.safeParse({ from: FROM, to: "tomorrow" }).success).toBe(false);
+  expect(anomalyMessageOf({ from: plus(FROM, DAY_MS), to: FROM })).toBe("from must be earlier than to");
+  expect(anomalyMessageOf({ from: FROM, to: plus(FROM, 32 * DAY_MS) })).toBe("the window may span at most 31 days");
+  expect(anomalyMessageOf({ from: FROM, to: plus(FROM, ANOMALY_MAX_SPAN_DAYS * DAY_MS + 1) })).toBe(
+    "the window may span at most 31 days",
+  );
+}
+
+/** `E1.2b`: the list's optional `since`. */
+export function theListQueryTakesAnOptionalSinceOnly(): void {
+  expect(anomaliesQuerySchema.parse({})).toEqual({});
+  expect(anomaliesQuerySchema.parse({ since: FROM })).toEqual({ since: FROM });
+  for (const bad of [{ since: "last-week" }, { since: "2026-11-15T00:00:00" }, { since: FROM, limit: "10" }, { from: FROM }]) {
+    expect(anomaliesQuerySchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+  }
 }

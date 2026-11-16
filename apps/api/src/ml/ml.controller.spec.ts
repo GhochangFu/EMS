@@ -4,6 +4,7 @@ import { expect } from "vitest";
 
 import type { AccessControlService } from "../auth/access-control.service";
 import { MlController } from "./ml.controller";
+import type { MlAnomaliesService } from "./ml-anomalies.service";
 import type { MlForecastsService } from "./ml-forecasts.service";
 
 /**
@@ -24,6 +25,9 @@ type Harness = {
   currentCalls: { point: { assetId: string; pointKey: string }; now: Date }[];
   listCalls: { assetIds: string[] | null; now: Date }[];
   pastCalls: { point: { assetId: string; pointKey: string }; window: { from: Date; to: Date }; now: Date }[];
+  /** `E1.2b`: the anomaly service's calls. */
+  forAssetCalls: { assetId: string; window: { from: Date; to: Date }; now: Date }[];
+  anomalyListCalls: { assetIds: string[] | null; since: Date | undefined; now: Date }[];
 };
 
 function harness(opts: { canRead?: boolean; readable?: string[] | null } = {}): Harness {
@@ -31,6 +35,8 @@ function harness(opts: { canRead?: boolean; readable?: string[] | null } = {}): 
   const currentCalls: Harness["currentCalls"] = [];
   const listCalls: Harness["listCalls"] = [];
   const pastCalls: Harness["pastCalls"] = [];
+  const forAssetCalls: Harness["forAssetCalls"] = [];
+  const anomalyListCalls: Harness["anomalyListCalls"] = [];
   const accessControl = {
     canReadAsset: async (_user: JwtPayload, assetId: string) => {
       canReadCalls.push(assetId);
@@ -52,7 +58,25 @@ function harness(opts: { canRead?: boolean; readable?: string[] | null } = {}): 
       return { asOf: now.toISOString(), buckets: [] };
     },
   } as unknown as MlForecastsService;
-  return { controller: new MlController(service, accessControl), canReadCalls, currentCalls, listCalls, pastCalls };
+  const anomalyService = {
+    forAsset: async (assetId: string, window: { from: Date; to: Date }, now: Date) => {
+      forAssetCalls.push({ assetId, window, now });
+      return { asOf: now.toISOString(), scores: [] };
+    },
+    list: async (assetIds: string[] | null, since: Date | undefined, now: Date) => {
+      anomalyListCalls.push({ assetIds, since, now });
+      return { asOf: now.toISOString(), since: now.toISOString(), truncated: false, items: [] };
+    },
+  } as unknown as MlAnomaliesService;
+  return {
+    controller: new MlController(service, accessControl, anomalyService),
+    canReadCalls,
+    currentCalls,
+    listCalls,
+    pastCalls,
+    forAssetCalls,
+    anomalyListCalls,
+  };
 }
 
 async function settle(run: Promise<unknown>): Promise<unknown> {
@@ -167,4 +191,82 @@ export async function thePastRouteHandsTheDecodedPairAndWindowToTheService(): Pr
   expect(call?.window.to.toISOString()).toBe(TO);
   expect(call?.now.getTime()).toBeGreaterThanOrEqual(before);
   expect(body).toEqual({ asOf: call?.now.toISOString(), buckets: [] });
+}
+
+/** `E1.2b` (ADR 0135 Amendment 5 A-e): a non-UUID asset id is a 400 before the query, canReadAsset or the service. */
+export async function theAnomalyRouteRefusesANonUuidIdFirst(): Promise<void> {
+  for (const bad of ["not-a-uuid", "", `${ASSET}x`, `${ASSET},${ASSET}`]) {
+    const h = harness();
+    // The query is bad too: the id's 400 must be the one raised.
+    const err = await settle(h.controller.assetAnomalies(USER, bad, { window: "24h" }));
+    expect(err, JSON.stringify(bad)).toBeInstanceOf(BadRequestException);
+    expect((err as BadRequestException).message, "the id's refusal, not the query's").toMatch(/asset id/i);
+    expect(h.canReadCalls, "canReadAsset must not run on a 400").toEqual([]);
+    expect(h.forAssetCalls).toEqual([]);
+  }
+}
+
+/** `E1.2b`: a bad window or an unknown key is a 400 before canReadAsset. */
+export async function theAnomalyRouteRefusesABadWindowBeforeTheScopeCheck(): Promise<void> {
+  const bad: Record<string, unknown>[] = [
+    {},
+    { from: FROM },
+    { from: "last-tuesday", to: TO },
+    { from: TO, to: FROM },
+    { from: "2026-10-01T00:00:00.000Z", to: TO },
+    { from: FROM, to: TO, fn: "max" },
+  ];
+  for (const query of bad) {
+    const h = harness();
+    const err = await settle(h.controller.assetAnomalies(USER, ASSET, query));
+    expect(err, JSON.stringify(query)).toBeInstanceOf(BadRequestException);
+    expect(h.canReadCalls, "canReadAsset must not run on a 400").toEqual([]);
+    expect(h.forAssetCalls).toEqual([]);
+  }
+}
+
+/** `E1.2b`: a foreign asset is a 403 before the read. */
+export async function theAnomalyRouteIsA403BeforeTheService(): Promise<void> {
+  const h = harness({ canRead: false });
+  const err = await settle(h.controller.assetAnomalies(USER, ASSET, { from: FROM, to: TO }));
+  expect(err).toBeInstanceOf(ForbiddenException);
+  expect(h.canReadCalls).toEqual([ASSET]);
+  expect(h.forAssetCalls).toEqual([]);
+}
+
+/** `E1.2b`: the checked id, the window as instants and one clock reach the service. */
+export async function theAnomalyRouteHandsTheIdAndWindowToTheService(): Promise<void> {
+  const h = harness();
+  const before = Date.now();
+  const body = await h.controller.assetAnomalies(USER, ASSET, { from: "2026-11-15T05:30:00+05:30", to: TO });
+  expect(h.canReadCalls).toEqual([ASSET]);
+  expect(h.forAssetCalls).toHaveLength(1);
+  const call = h.forAssetCalls[0];
+  expect(call?.assetId).toBe(ASSET);
+  expect(call?.window.from.toISOString()).toBe(FROM);
+  expect(call?.window.to.toISOString()).toBe(TO);
+  expect(call?.now.getTime()).toBeGreaterThanOrEqual(before);
+  expect(body).toEqual({ asOf: call?.now.toISOString(), scores: [] });
+}
+
+/** `E1.2b` (S1): the list hands readableAssetIds' value to the service unchanged, with `since` as an instant. */
+export async function theAnomalyListHandsReadableAssetIdsToTheServiceUnchanged(): Promise<void> {
+  for (const readable of [null, [], [ASSET, "99999999-9999-4999-8999-999999999999"]]) {
+    const h = harness({ readable });
+    await h.controller.anomalies(USER, {});
+    expect(h.anomalyListCalls).toHaveLength(1);
+    expect(h.anomalyListCalls[0]?.assetIds).toBe(readable);
+    expect(h.anomalyListCalls[0]?.since).toBeUndefined();
+    expect(h.anomalyListCalls[0]?.now).toBeInstanceOf(Date);
+  }
+  const h = harness();
+  await h.controller.anomalies(USER, { since: "2026-11-15T05:30:00+05:30" });
+  expect(h.anomalyListCalls[0]?.since?.toISOString()).toBe(FROM);
+  for (const query of [{ since: "yesterday" }, { since: FROM, limit: "1" }]) {
+    const bad = harness();
+    expect(await settle(bad.controller.anomalies(USER, query)), JSON.stringify(query)).toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(bad.anomalyListCalls).toEqual([]);
+  }
 }

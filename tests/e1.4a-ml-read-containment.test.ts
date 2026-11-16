@@ -74,9 +74,18 @@ describe("E1.4a ml read containment (ADR 0135 Amendment 3 S1–S4)", () => {
     expect(moduleSources().length).toBeGreaterThanOrEqual(5);
   });
 
-  it("no source names error_text, config_hash, rows_written or anomaly_scores (S3, E1.2's table)", () => {
+  it("no source names error_text, config_hash or rows_written; only ml-anomalies.* names anomaly_scores (S3, E1.2)", () => {
+    // `E1.2b` (ADR 0135 Amendment 5 A-e, plan T2.4): the anomaly reads live in `ml-anomalies.*`, the one
+    // family of files that may name the scores table. Every other source, the forecast reads included,
+    // still may not; the run fields stay forbidden everywhere.
+    const anomalyFile = (rel: string): boolean => /\/ml-anomalies\.[^/]+$/.test(rel);
+    expect(anomalyFile(`${MODULE_DIR}/ml-anomalies.reads.ts`)).toBe(true);
+    expect(anomalyFile(READS_REL)).toBe(false);
+    expect(anomalyFile(`${MODULE_DIR}/ml-anomalies-extra.ts`)).toBe(false);
     for (const rel of moduleSources()) {
-      const match = FORBIDDEN_NAMES.exec(codeOnly(read(rel)));
+      const code = codeOnly(read(rel));
+      const scan = anomalyFile(rel) ? code.replace(/\banomaly_scores\b/g, "") : code;
+      const match = FORBIDDEN_NAMES.exec(scan);
       expect(match?.[0], `${rel} names ${match?.[0]}`).toBeUndefined();
     }
   });
@@ -92,8 +101,9 @@ describe("E1.4a ml read containment (ADR 0135 Amendment 3 S1–S4)", () => {
     const code = codeOnly(read(CONTROLLER_REL));
     expect(code).toContain("@UseGuards(JwtAuthGuard)");
     const bodies = code.split(ROUTE_DECORATOR).slice(1).filter((_, index) => index % 2 === 1);
-    // `E1.4e` (Amendment 4) added the third, `points/:pointRef/forecast/past`.
-    expect(bodies.length, "the controller declares its three routes").toBe(3);
+    // `E1.4e` (Amendment 4) added the third, `points/:pointRef/forecast/past`; `E1.2b` (Amendment 5
+    // A-e) the fourth and fifth, `assets/:assetId/anomalies` and `anomalies`.
+    expect(bodies.length, "the controller declares its five routes").toBe(5);
     for (const body of bodies) {
       const handler = body.slice(0, body.search(/\n  @|\n}/) + 1 || body.length);
       expect(/canReadAsset\(|readableAssetIds\(/.test(handler), handler.slice(0, 300)).toBe(true);

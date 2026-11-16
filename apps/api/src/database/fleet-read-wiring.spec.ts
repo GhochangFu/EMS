@@ -13,6 +13,7 @@ import { CopilotPurgeService } from "../copilot/copilot-purge.service";
 import { DashboardService } from "../dashboard/dashboard.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { MaintenanceWindowsService } from "../maintenance-windows/maintenance-windows.service";
+import { MlAnomaliesService } from "../ml/ml-anomalies.service";
 import { MlForecastsService } from "../ml/ml-forecasts.service";
 import { QUEUE_CLIENT } from "../queue/queue.tokens";
 import { WorkerHostService } from "../queue/worker-host.service";
@@ -328,4 +329,18 @@ export function assertMlForecastsServiceTenantSlot(): void {
 
 export function assertMlForecastsServiceFleetSlot(): void {
   expect(injectedToken(MlForecastsService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `E1.2b` — `MlAnomaliesService(tenantDb, fleetDb)` (ADR 0135 Amendment 5 A-e, Amendment 3 S4):
+ * both reads pass slot 0 and slot 1 to `withReadScope` in that order, as the forecast service
+ * does. A swap would run a single-organization caller's read on the BYPASSRLS pool. Two claims,
+ * one function each.
+ */
+export function assertMlAnomaliesServiceTenantSlot(): void {
+  expect(injectedToken(MlAnomaliesService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertMlAnomaliesServiceFleetSlot(): void {
+  expect(injectedToken(MlAnomaliesService, 1)).toBe(FLEET_DRIZZLE);
 }

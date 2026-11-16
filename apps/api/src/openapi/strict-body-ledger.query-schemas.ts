@@ -49,7 +49,7 @@ import {
 import {
   listReportFilesQuerySchema,
 } from "../reports/report-files.schema";
-import { pastForecastQuerySchema } from "../ml/ml.schema";
+import { anomaliesQuerySchema, assetAnomaliesQuerySchema, pastForecastQuerySchema } from "../ml/ml.schema";
 import {
   assetHealthQuerySchema,
   healthSummaryQuerySchema,
@@ -206,4 +206,9 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // (`GET /ml/points/:pointRef/forecast/past?from=&to=`): two required offset instants, `from` before
   // `to` and a bounded span, `.strict()`, no body, no ledger entry — the same precedent.
   pastForecastQuerySchema,
+  // 41 -> 43 (2026-11-16): `E1.2b` (ADR 0135 Amendment 5 A-e) registered `assetAnomaliesQuerySchema`
+  // (`GET /ml/assets/:assetId/anomalies?from=&to=`, two required offset instants, at most 31 days) and
+  // `anomaliesQuerySchema` (`GET /ml/anomalies?since=`, one optional instant) — `.strict()`, no body.
+  assetAnomaliesQuerySchema,
+  anomaliesQuerySchema,
 };

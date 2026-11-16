@@ -10,6 +10,7 @@ import { openIntegrationPool, requireIntegrationDb, resolveIntegrationRoleUrl } 
 import { asRole } from "../testing/role-urls";
 import { jwtFor, primeSeededSubjects, SEEDED } from "../testing/seeded-subjects";
 import {
+  assertAnAnomalyRunChangesNoForecastRead,
   assertNeitherReadSeqScansForecasts,
   assertNoForecastIsNull,
   assertTheListFields,
@@ -225,7 +226,24 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
       l2: await plant({ org: organizations.a, asset: assets.l2, startedMs: at(-1, 5), firstBucket: -1, count: 48, p50: () => 20 }),
       p1: await plant({ org: organizations.b, asset: assets.p1, startedMs: at(-4, 5), firstBucket: -4, count: 48, p50: () => 30 }),
       l3: await plant({ org: organizations.a, asset: assets.l3, startedMs: at(-1, 5), firstBucket: -1, count: 48, p50: () => 40 }),
+      anomaly: randomUUID(),
     };
+
+    // `E1.2b` (plan T2.8): a succeeded `bms-anomaly` run, newer than every forecast run of organization
+    // A, with score rows for L1. No forecast read may see it.
+    await fleet.query(
+      `INSERT INTO ml.model_runs (id, organization_id, model_name, model_version, config_hash,
+                                  started_at, finished_at, rows_written, status)
+       VALUES ($1, $2, 'bms-anomaly', '0.1.0', $3, to_timestamp($4::float8 / 1000), to_timestamp($4::float8 / 1000), 2, 'succeeded')`,
+      [runs.anomaly, organizations.a, "d".repeat(64), at(0, 20)],
+    );
+    runIds.push(runs.anomaly);
+    await fleet.query(
+      `INSERT INTO ml.anomaly_scores (organization_id, asset_id, bucket, detector, score, contributing_points, model_run_id)
+       VALUES ($1, $2, to_timestamp($3::float8 / 1000), 'baseline_mad', 0.999, '{}', $4),
+              ($1, $2, to_timestamp($3::float8 / 1000), 'isolation_forest', 0.999, '{}', $4)`,
+      [organizations.a, assets.l1, at(-1), runs.anomaly],
+    );
 
     // `E1.4e`: L4's one-bucket runs, each case of the 1-hour-ahead rule (the spec's
     // `assertThePastForecastPicksTheOneHourAheadRow` lists them by hour).
@@ -322,6 +340,7 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
 
   afterAll(async () => {
     if (superuser) {
+      await superuser.query("DELETE FROM ml.anomaly_scores WHERE model_run_id = ANY($1::uuid[])", [runIds]);
       await superuser.query("DELETE FROM ml.forecasts WHERE model_run_id = ANY($1::uuid[])", [runIds]);
       await superuser.query("DELETE FROM ml.model_runs WHERE id = ANY($1::uuid[])", [runIds]);
       await superuser.query("DELETE FROM bms.asset_points WHERE asset_id = ANY($1::uuid[])", [assetIds]);
@@ -386,6 +405,10 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
 
   it("E1.4e: the past read is scoped by the policy on the tenant branch and by asset on the fleet branch", async () => {
     await assertThePastForecastIsScopedOnBothBranches(ctx);
+  });
+
+  it("E1.2b T2.8: a newer bms-anomaly run with scores changes no forecast read and adds no list row", async () => {
+    await assertAnAnomalyRunChangesNoForecastRead(ctx);
   });
 
   it("R4: neither read plans a scan of ml.forecasts unbound to a run or a point, on about 140,000 rows", async () => {
