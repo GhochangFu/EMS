@@ -27,7 +27,8 @@ export function ShellMain({
           ) : null}
         </div>
       </section>
-      <div className="flex-1 overflow-auto surface-page p-4">{children}</div>
+      {/* F4.378: the content ends clear of the floating copilot launcher, so a page's last action is never under it. */}
+      <div className="copilot-launcher-clearance flex-1 overflow-auto surface-page p-4">{children}</div>
     </main>
   );
 }

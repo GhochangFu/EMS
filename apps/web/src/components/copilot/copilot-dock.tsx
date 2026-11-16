@@ -741,6 +741,7 @@ function DockPanel({
     </>
   );
 
+  // `F4.378`: the launcher's offset and size are `index.css` variables, which the page clearance reads too.
   // `F4.362` leftover 4: the closed dock's launcher drops under an open page dialog; beside the floating window it stays.
   const launcherYields = pageDialogOpen && !(open && mode === "floating" && !sheet);
 
@@ -755,7 +756,7 @@ function DockPanel({
           aria-controls="copilot-panel"
           onClick={toggle}
           data-yields={launcherYields ? "true" : undefined}
-          className={`fixed bottom-[calc(2.5rem+var(--alarm-bar-h))] right-6 ${launcherYields ? YIELDED_LAYER : "z-50"} grid h-14 w-14 place-items-center rounded-full bg-accent text-sm font-bold text-on-accent shadow-lg transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
+          className={`fixed bottom-[calc(var(--copilot-launcher-offset)+var(--alarm-bar-h))] right-6 ${launcherYields ? YIELDED_LAYER : "z-50"} grid h-[var(--copilot-launcher-size)] w-[var(--copilot-launcher-size)] place-items-center rounded-full bg-accent text-sm font-bold text-on-accent shadow-lg transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
         >
           <BotIcon size={22} />
         </button>

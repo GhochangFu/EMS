@@ -3,7 +3,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { fetchPointRawRecords } from "../../api/telemetry";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { SectionCard } from "../section-card";
-import { ACCESS_SENTENCE, formatInZone, isForbidden, retryUnlessForbidden } from "./history-format";
+import { ACCESS_SENTENCE, formatInZone, formatReading, isForbidden, retryUnlessForbidden } from "./history-format";
 
 type RawRecordsTableProps = {
   pointRef: string;
@@ -16,7 +16,8 @@ type RawRecordsTableProps = {
  * `F4.297` U5 — the latest stored samples of one point, newest first, from
  * `GET /telemetry/points/:pointRef/raw` (ADR 0108 decision 1.6). "Load older" pages with the
  * server's `nextBefore` cursor; the last page has none and the button goes. A sample with no
- * device time shows "—".
+ * device time shows "—". `F4.379`: the value prints without its float tail (`formatReading`; the
+ * unit has its own column).
  */
 export function RawRecordsTable({ pointRef, pointKey, zone }: RawRecordsTableProps) {
   const rawQ = useInfiniteQuery({
@@ -56,7 +57,7 @@ export function RawRecordsTable({ pointRef, pointKey, zone }: RawRecordsTablePro
             <tr key={item.time} className="border-b border-well-deep tabular-nums" data-testid="raw-record">
               <td className="px-3 py-1.5 text-xs">{formatInZone(item.time, zone)}</td>
               <td className="px-3 py-1.5 text-xs">{item.deviceTime === null ? "—" : formatInZone(item.deviceTime, zone)}</td>
-              <td className="px-3 py-1.5">{item.value}</td>
+              <td className="px-3 py-1.5">{formatReading(item.value, null)}</td>
               <td className="px-3 py-1.5">{item.unit ?? "—"}</td>
             </tr>
           ))}

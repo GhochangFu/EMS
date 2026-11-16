@@ -2110,6 +2110,23 @@ body {
 }
 
 /*
+ * F4.378 — the floating copilot launcher's offset above the alarm bar and its size, read by the
+ * launcher (`copilot-dock.tsx`), the floating window above it (`copilot-dock-frame.tsx`) and the
+ * page clearance below. The page content (`ShellMain`)
+ * ends with room for the launcher's reach above it plus 1rem, so the last action on a page — the
+ * dashboard builder's "Next" on the AWS demo, 2026-11-16 — scrolls clear of the button.
+ * `tests/f4.378-copilot-launcher-clearance.test.ts` holds the three together.
+ */
+body {
+  --copilot-launcher-offset: 2.5rem;
+  --copilot-launcher-size: 3.5rem;
+}
+
+.copilot-launcher-clearance {
+  padding-bottom: calc(var(--copilot-launcher-offset) + var(--copilot-launcher-size) + 1rem);
+}
+
+/*
  * F4.357 U7 (ADR 0130 decision 9, plan D11) — the alarm bar's one blink: the critical count and the
  * popup's header while an unacknowledged critical alarm is unseen. A 1 Hz opacity step (under the
  * WCAG 2.3.1 limit of three flashes a second); with reduced motion, a static double outline in the

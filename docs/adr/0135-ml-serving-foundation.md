@@ -786,6 +786,23 @@ drawn beside `max`, past colours that wrap into the actual palette) each turned
 cases red. The demo-host check (the line on a real point after deploy) follows
 the deploy.
 
+**Ruling 2 revised, and a colour for the live forecast — `F4.377`
+(owner, 2026-11-16).** This revises Amendment 4 ruling 2's palette and the
+`E1.4` plan's "p50 in the point's own series colour". The owner's demo check found the
+live band and p50 still drawn in the point's own colour (Amendment 3's plan
+drew them so; R-d only asked for role tokens). **Ruling (owner, 2026-11-16, in
+chat): three colours** — the actual line, the past forecast and the live
+forecast each in its own colour. The live band and p50 take `forecastPalette`
+(`series-3`, `series-4`, `series-5`); the past line keeps ruling 2's spare roles,
+now `series-2`, `series-6`, `series-7`, `series-8`, so the two forecast palettes
+share no role with each other or with the actual palette. With one point:
+actual `series-1`, past `series-2`, live `series-3`. Each point's lines are
+traced by the legend's point key (R9). Roles only, no new hex. With more
+points than a palette holds the colours repeat within their own kind (the live
+forecast from the fourth point, the past line from the fifth; the chart takes
+up to 8 points), never across kinds; the legend's point key still tells them
+apart.
+
 
 ## Amendment 5 — `E1.2`: advisory anomaly scores, end to end (2026-11-16)
 

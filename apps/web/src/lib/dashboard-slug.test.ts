@@ -5,6 +5,7 @@ import {
   refusesAName,
   refusesASingleCharacter,
   refusesMoreThanSixtyFourCharacters,
+  thePatternCompilesWithTheVFlagAsChromeDoes,
 } from "./dashboard-slug.spec";
 
 /** Vitest entry point for `dashboard-slug.spec.ts` (ADR 0014). */
@@ -23,5 +24,9 @@ describe("E4.2 sweep — the dashboard slug rule on the client", () => {
 
   it("refuses more than sixty-four characters", () => {
     refusesMoreThanSixtyFourCharacters();
+  });
+
+  it("F4.380 the input pattern compiles with the v flag, as Chrome compiles it", () => {
+    thePatternCompilesWithTheVFlagAsChromeDoes();
   });
 });

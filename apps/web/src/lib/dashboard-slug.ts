@@ -18,8 +18,13 @@
  * a residual to close by exporting the rule from `packages/shared`.
  */
 
-/** The `<input pattern>` body — no anchors: HTML anchors the whole value. */
-export const DASHBOARD_SLUG_PATTERN = "[a-z0-9-]+";
+/**
+ * The `<input pattern>` body — no anchors: HTML anchors the whole value. `F4.380`: the hyphen is
+ * escaped because Chrome compiles a pattern with the `v` flag, where a bare `-` at the end of a
+ * class is invalid and the browser ignores the whole pattern. The same body compiles and means the
+ * same with no flag, so `isDashboardSlug` reads it unchanged.
+ */
+export const DASHBOARD_SLUG_PATTERN = "[a-z0-9\\-]+";
 
 export const DASHBOARD_SLUG_MIN = 2;
 export const DASHBOARD_SLUG_MAX = 64;
