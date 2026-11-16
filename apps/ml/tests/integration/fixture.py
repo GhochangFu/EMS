@@ -19,6 +19,20 @@ watermark mid-test (the F4.28 pattern).
 | T0    | mqtt, 60 d, a point key that is not a target               | nothing                     |
 | O2    | mqtt, 60 d, the SECOND organization                        | forecast, under its own run |
 
+E1.2 (ADR 0135 Amendment 5) adds two synthetic anomaly classes, kept apart from
+the rooms above (`Planted.anomaly_assets`, never `Planted.assets`, so the forecast
+suite's per-asset counts keep their meaning): `ml_fixture_meter` with 4 points
+and `ml_fixture_single` with 1, 60 days each, same `as_of`.
+
+| Asset      | Shape                                                  | Expected (anomaly job)        |
+|------------|--------------------------------------------------------|-------------------------------|
+| MLFX-AM1   | meter, mqtt, 60 d, all 4 points full                   | baseline_mad + isolation_forest |
+| MLFX-AS1   | single, mqtt, 60 d                                     | baseline_mad only             |
+| MLFX-AMST  | meter, mqtt, 60 d, STALE_POINT missing its last 5 h    | nothing, asset_not_ready (R5) |
+| MLFX-AMSIM | meter, not mqtt, no RTU (simulated)                    | nothing, never returned       |
+| MLFX-BM1   | meter, mqtt, 60 d, the SECOND organization             | both, under its own run       |
+| MLFX-BS1   | single, mqtt, 60 d, the SECOND organization            | baseline_mad only             |
+
 Runnable for plan PR 4's step 6: `python -m tests.integration.fixture` plants it
 through ML_TEST_DATABASE_URL_SUPERUSER and prints `as_of` and the target.
 `--extra-ready N` adds N more ready rooms (MLFX-X00..), 90 days each, so plan
@@ -51,6 +65,27 @@ ORGANIZATIONS = {"A": "ESKOM", "B": "PHEWB"}
 FORECAST = ("MLFX-R1", "MLFX-R2", "MLFX-G1", "MLFX-O2")
 NO_FORECAST = ("MLFX-W1", "MLFX-V1", "MLFX-S1", "MLFX-T0")
 G1_MISSING_HOURS = 15 * 5
+
+# --- E1.2: the anomaly classes ---------------------------------------------------------
+METER_TYPE = "ml_fixture_meter"
+SINGLE_TYPE = "ml_fixture_single"
+METER_POINTS = ("ml_fixture_kw", "ml_fixture_kva", "ml_fixture_pf", "ml_fixture_volt")
+SINGLE_POINT = "ml_fixture_level"
+ANOMALY_TEMPLATE_CODES = {METER_TYPE: "ML_FIXTURE_METER", SINGLE_TYPE: "ML_FIXTURE_SINGLE"}
+ANOMALY_TARGETS = ",".join(
+    [f"{DOMAIN}/{METER_TYPE}/{point}" for point in METER_POINTS] + [f"{DOMAIN}/{SINGLE_TYPE}/{SINGLE_POINT}"]
+)
+SINGLE_TARGET = f"{DOMAIN}/{SINGLE_TYPE}/{SINGLE_POINT}"
+STALE_POINT = "ml_fixture_pf"
+STALE_MISSING_HOURS = 5  # last bucket = as_of - 6 h, older than the 3 h staleness line
+ANOMALY_SCORED = ("MLFX-AM1", "MLFX-AS1", "MLFX-BM1", "MLFX-BS1")
+ANOMALY_NOT_SCORED = ("MLFX-AMST", "MLFX-AMSIM")
+# The model name the anomaly job writes (`anomaly_baseline.ANOMALY_MODEL_NAME`, ADR 0135
+# Amendment 5 A-a), and the names the integration tests write runs under directly.
+ANOMALY_MODEL_NAME = "bms-anomaly"
+ANOMALY_FIXTURE_NAME = "ml-fixture-anomaly"
+PROOF_FORECASTER_NAME = "ml-fixture-forecaster-aa"
+FIXTURE_RUN_NAMES = (FORECASTER_NAME, ANOMALY_MODEL_NAME, ANOMALY_FIXTURE_NAME, PROOF_FORECASTER_NAME)
 
 
 def full(days: int) -> list[int]:
@@ -112,6 +147,40 @@ def hours_for(code: str, as_of: datetime) -> list[int]:
     return full(60)
 
 
+@dataclass(frozen=True)
+class AnomalyShape:
+    code: str
+    organization: str
+    asset_type: str
+    points: tuple[str, ...]
+    mqtt: bool
+    stale_point: str | None
+    level: float
+
+
+ANOMALY_SHAPES = (
+    AnomalyShape("MLFX-AM1", "A", METER_TYPE, METER_POINTS, True, None, 20.0),
+    AnomalyShape("MLFX-AS1", "A", SINGLE_TYPE, (SINGLE_POINT,), True, None, 3.0),
+    AnomalyShape("MLFX-AMST", "A", METER_TYPE, METER_POINTS, True, STALE_POINT, 21.0),
+    AnomalyShape("MLFX-AMSIM", "A", METER_TYPE, METER_POINTS, False, None, 22.0),
+    AnomalyShape("MLFX-BM1", "B", METER_TYPE, METER_POINTS, True, None, 23.0),
+    AnomalyShape("MLFX-BS1", "B", SINGLE_TYPE, (SINGLE_POINT,), True, None, 4.0),
+)
+
+
+def anomaly_hours_for(shape: AnomalyShape, point_key: str) -> list[int]:
+    """60 days back from as_of; the stale point stops STALE_MISSING_HOURS before it."""
+    if point_key == shape.stale_point:
+        return [h for h in full(60) if h > STALE_MISSING_HOURS]
+    return full(60)
+
+
+def anomaly_value(shape: AnomalyShape, point_key: str, h: int) -> float:
+    """A daily cycle per point, each point on its own level and phase."""
+    index = shape.points.index(point_key)
+    return shape.level + index + 0.25 * math.sin((h + 3 * index) / 24 * 2 * math.pi)
+
+
 def asset_id(code: str) -> uuid.UUID:
     return uuid.uuid5(NAMESPACE, code)
 
@@ -122,6 +191,9 @@ class Planted:
     organizations: dict[str, uuid.UUID]
     assets: dict[str, uuid.UUID]
     asset_organization: dict[str, uuid.UUID]
+    # E1.2: the anomaly classes, apart from `assets` (see the module docstring).
+    anomaly_assets: dict[str, uuid.UUID]
+    anomaly_asset_organization: dict[str, uuid.UUID]
 
 
 def require_test_database(conn: psycopg.Connection) -> None:
@@ -137,14 +209,28 @@ def clean(conn: psycopg.Connection) -> None:
     require_test_database(conn)
     with conn.transaction():
         rows = conn.execute("SELECT id FROM bms.assets WHERE code LIKE %s", ("MLFX-%",)).fetchall()
-        ids = sorted({asset_id(shape.code) for shape in SHAPES} | {row[0] for row in rows})
-        conn.execute("DELETE FROM ml.forecasts WHERE asset_id = ANY(%s)", (ids,))
-        conn.execute("DELETE FROM ml.model_runs WHERE model_name = %s", (FORECASTER_NAME,))
+        ids = sorted(
+            {asset_id(shape.code) for shape in (*SHAPES, *ANOMALY_SHAPES)} | {row[0] for row in rows}
+        )
+        names = list(FIXTURE_RUN_NAMES)
+        runs = "SELECT id FROM ml.model_runs WHERE model_name = ANY(%s)"
+        # Rows go before their runs: neither child foreign key to ml.model_runs cascades.
+        conn.execute(
+            f"DELETE FROM ml.forecasts WHERE asset_id = ANY(%s) OR model_run_id IN ({runs})", (ids, names)
+        )
+        conn.execute(
+            f"DELETE FROM ml.anomaly_scores WHERE asset_id = ANY(%s) OR model_run_id IN ({runs})",
+            (ids, names),
+        )
+        conn.execute("DELETE FROM ml.model_runs WHERE model_name = ANY(%s)", (names,))
         conn.execute("DELETE FROM telemetry.point_values WHERE asset_id = ANY(%s)", (ids,))
         conn.execute("DELETE FROM bms.asset_points WHERE asset_id = ANY(%s)", (ids,))
         conn.execute("DELETE FROM bms.assets WHERE id = ANY(%s)", (ids,))
         conn.execute("DELETE FROM bms.rtus WHERE code LIKE %s", ("MLFX-%",))
-        conn.execute("DELETE FROM bms.asset_templates WHERE code = %s", (TEMPLATE_CODE,))
+        conn.execute(
+            "DELETE FROM bms.asset_templates WHERE code = ANY(%s)",
+            ([TEMPLATE_CODE, *ANOMALY_TEMPLATE_CODES.values()],),
+        )
 
 
 def plant(conn: psycopg.Connection, now: datetime | None = None, extra_ready: int = 0) -> Planted:
@@ -155,6 +241,7 @@ def plant(conn: psycopg.Connection, now: datetime | None = None, extra_ready: in
     organizations: dict[str, uuid.UUID] = {}
     locations: dict[str, uuid.UUID] = {}
     templates: dict[str, uuid.UUID] = {}
+    anomaly_templates: dict[tuple[str, str], uuid.UUID] = {}
     rtus: dict[str, uuid.UUID] = {}
     with conn.transaction():
         for key, code in ORGANIZATIONS.items():
@@ -170,13 +257,19 @@ def plant(conn: psycopg.Connection, now: datetime | None = None, extra_ready: in
                 "VALUES (%s, %s, 'ML fixture room', %s, %s) RETURNING id",
                 (organizations[key], TEMPLATE_CODE, ASSET_TYPE, DOMAIN),
             ).fetchone()[0]
+            for asset_type, template_code in ANOMALY_TEMPLATE_CODES.items():
+                anomaly_templates[(key, asset_type)] = conn.execute(
+                    "INSERT INTO bms.asset_templates (organization_id, code, name, asset_type, domain) "
+                    "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                    (organizations[key], template_code, f"ML fixture {asset_type}", asset_type, DOMAIN),
+                ).fetchone()[0]
         for rtu_code, enabled in (("MLFX-RTU-ON", True), ("MLFX-RTU-OFF", False)):
             rtus[rtu_code] = conn.execute(
                 "INSERT INTO bms.rtus (organization_id, location_id, code, display_name, ingest_enabled) "
                 "VALUES (%s, %s, %s, %s, %s) RETURNING id",
                 (organizations["A"], locations["A"], rtu_code, rtu_code, enabled),
             ).fetchone()[0]
-        for key in (POINT, OTHER_POINT):
+        for key in (POINT, OTHER_POINT, *METER_POINTS, SINGLE_POINT):
             conn.execute(
                 "INSERT INTO bms.point_keys (code, name) VALUES (%s, %s) ON CONFLICT (code) DO NOTHING",
                 (key, key),
@@ -197,6 +290,22 @@ def plant(conn: psycopg.Connection, now: datetime | None = None, extra_ready: in
                 (org, asset_id(shape.code), shape.point_key, shape.point_key,
                  "measured" if rtu else "unmapped", rtu),
             )  # fmt: skip
+        for anomaly in ANOMALY_SHAPES:
+            org = organizations[anomaly.organization]
+            # Not mqtt and no RTU: the simulated meter, which the real-data rule never returns.
+            meta = {"telemetrySource": "mqtt"} if anomaly.mqtt else {}
+            conn.execute(
+                "INSERT INTO bms.assets (id, organization_id, code, name, site_name, location_id, domain, "
+                "template_id, rtu_id, meta) VALUES (%s, %s, %s, %s, 'ML fixture', %s, %s, %s, NULL, %s)",
+                (asset_id(anomaly.code), org, anomaly.code, anomaly.code, locations[anomaly.organization],
+                 DOMAIN, anomaly_templates[(anomaly.organization, anomaly.asset_type)], Jsonb(meta)),
+            )  # fmt: skip
+            for point_key in anomaly.points:
+                conn.execute(
+                    "INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key, "
+                    "source_kind, rtu_id) VALUES (%s, %s, %s, %s, 'unmapped', NULL)",
+                    (org, asset_id(anomaly.code), point_key, point_key),
+                )
         with conn.cursor().copy(
             "COPY telemetry.point_values (time, asset_id, point_key, value, unit) FROM STDIN"
         ) as copy:
@@ -205,11 +314,21 @@ def plant(conn: psycopg.Connection, now: datetime | None = None, extra_ready: in
                     when = as_of - timedelta(hours=h) + timedelta(minutes=10)
                     value = shape.level + 0.25 * math.sin(h / 24 * 2 * math.pi)
                     copy.write_row((when, asset_id(shape.code), shape.point_key, value, "degC"))
+            for anomaly in ANOMALY_SHAPES:
+                for point_key in anomaly.points:
+                    for h in anomaly_hours_for(anomaly, point_key):
+                        when = as_of - timedelta(hours=h) + timedelta(minutes=10)
+                        value = anomaly_value(anomaly, point_key, h)
+                        copy.write_row((when, asset_id(anomaly.code), point_key, value, "unit"))
     return Planted(
         as_of=as_of,
         organizations=organizations,
         assets={shape.code: asset_id(shape.code) for shape in shapes},
         asset_organization={shape.code: organizations[shape.organization] for shape in shapes},
+        anomaly_assets={anomaly.code: asset_id(anomaly.code) for anomaly in ANOMALY_SHAPES},
+        anomaly_asset_organization={
+            anomaly.code: organizations[anomaly.organization] for anomaly in ANOMALY_SHAPES
+        },
     )
 
 
@@ -221,7 +340,10 @@ def main() -> int:
     extra = int(sys.argv[sys.argv.index("--extra-ready") + 1]) if "--extra-ready" in sys.argv else 0
     with psycopg.connect(url, autocommit=True) as conn:
         planted = plant(conn, extra_ready=extra)
-    sys.stdout.write(json.dumps({"as_of": planted.as_of.isoformat(), "target": TARGET}) + "\n")
+    sys.stdout.write(
+        json.dumps({"as_of": planted.as_of.isoformat(), "target": TARGET, "anomaly_targets": ANOMALY_TARGETS})
+        + "\n"
+    )
     return 0
 
 
