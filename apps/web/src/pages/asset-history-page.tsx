@@ -19,9 +19,11 @@ import { ExportMenu } from "../components/view-actions/export-menu";
 import { historyPinSource, PinButton } from "../components/view-actions/pin-dialog";
 import { ScheduleButton } from "../components/view-actions/schedule-button";
 import { useActiveMaintenance } from "../hooks/use-active-maintenance";
+import { useAssetAnomalies } from "../hooks/use-asset-anomalies";
 import { useAssetHistory } from "../hooks/use-asset-history";
 import { usePastForecasts } from "../hooks/use-past-forecasts";
 import { usePointForecasts } from "../hooks/use-point-forecasts";
+import { anomalyApplies } from "../lib/anomaly-series";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { chartablePoints, rangeFromSearch, rangeToSearch, type HistoryRange } from "../lib/asset-history-range";
 import { forecastApplies, liveWindowRefetchMs, pastForecastApplies } from "../lib/forecast-series";
@@ -50,6 +52,9 @@ type AssetHistoryPageProps = {
  *
  * `E1.4a`: the chart also draws each charted point's current forecast, advisory. A failed forecast
  * read is no forecast — never a banner — so the page never depends on the scorer.
+ *
+ * `E1.2b` (ADR 0135 Amendment 5 ruling 4(b)): beside `avg`, on a window of at most 31 days (R14),
+ * the chart marks the asset's unusual hours, advisory. A failed read is no marks, never a banner.
  */
 export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
   const { assetId = "" } = useParams();
@@ -93,6 +98,9 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
   const served = history.find((h) => h.data !== undefined)?.data;
   const pastWindow = served === undefined ? null : { from: served.from, to: served.to };
   const pasts = usePastForecasts(assetId, selected, pastWindow, pastForecastApplies(range));
+  // `E1.2b` (R14): the asset's anomaly scores over the same served window, beside `avg` on at most 31 days.
+  const servedSpanMs = served === undefined ? Number.NaN : Date.parse(served.to) - Date.parse(served.from);
+  const anomalies = useAssetAnomalies(assetId, pastWindow, anomalyApplies(range, servedSpanMs));
   const series: TrendSeries[] = history.flatMap((h) =>
     h.data === undefined
       ? []
@@ -188,6 +196,7 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
                   compare={range.compare}
                   siteZone={siteZone}
                   forecastAsOf={forecastAsOf}
+                  anomalies={anomalies ?? null}
                 />
                 {firstSeries ? (
                   <BucketTable
