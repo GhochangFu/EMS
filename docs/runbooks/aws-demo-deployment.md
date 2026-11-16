@@ -66,6 +66,41 @@ sudo bms-ctl ingest status
 sudo bms-ctl ml status
 ```
 
+### Stop the anomaly job and keep forecasts
+
+The `ml` service runs two jobs each hour: forecasts, then anomaly scores
+([ADR 0135 Amendment 5](../adr/0135-ml-serving-foundation.md)). The scores are
+advisory and raise nothing. `ML_ANOMALY_ENABLED` in `/var/www/bms/.env`
+switches the anomaly job alone; `bms-ctl ml stop` alone would stop forecasts
+too. `bms-ctl` hands `.env` to Docker Compose with `--env-file`, so the value
+reaches the container only when `ml` is created again.
+
+To stop the anomaly job:
+
+```bash
+sudo sed -i '/^ML_ANOMALY_ENABLED=/d' /var/www/bms/.env
+echo 'ML_ANOMALY_ENABLED=false' | sudo tee -a /var/www/bms/.env >/dev/null
+sudo bms-ctl ml stop
+sudo bms-ctl ml start
+```
+
+Check it: the new `serve_started` line lists `"jobs":["forecast"]`, and the
+next hourly tick logs one `cycle_summary` line, with no `"job":"anomaly"` one.
+
+```bash
+sudo bms-ctl logs ml
+```
+
+The setting survives deploys. Scores already written stay in
+`ml.anomaly_scores`; nothing deletes them. To start the job again, delete the
+line, then stop and start `ml`:
+
+```bash
+sudo sed -i '/^ML_ANOMALY_ENABLED=/d' /var/www/bms/.env
+sudo bms-ctl ml stop
+sudo bms-ctl ml start
+```
+
 ## Logins
 
 The seeded demo logins (`admin@bms.local`, `operator@bms.local`,

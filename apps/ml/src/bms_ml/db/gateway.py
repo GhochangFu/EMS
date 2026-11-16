@@ -2,8 +2,8 @@
 
 The only module that imports `psycopg`, and every `execute` here passes a
 constant from `bms_ml.db.sql` (`tests/test_sql_guard.py`). Reads run in a
-`READ ONLY` transaction; a run row and its forecasts are written in ONE
-transaction, so both exist or neither does (plan R4).
+`READ ONLY` transaction; a run row and its forecasts (or its anomaly scores,
+E1.2) are written in ONE transaction, so both exist or neither does (plan R4).
 
 Errors are raised as fixed messages. A driver message can carry a host, a
 user or row values, so it is never copied into a `PreflightError` (§9.6).
@@ -23,7 +23,7 @@ from psycopg.rows import dict_row
 
 from bms_ml.db import sql
 from bms_ml.readiness import PointStats
-from bms_ml.records import ForecastRow, PointRef, RunRecord
+from bms_ml.records import AnomalyRow, ForecastRow, PointRef, RunRecord
 from bms_ml.series import HourRow
 from bms_ml.targets import Target
 
@@ -36,7 +36,7 @@ class PreflightError(RuntimeError):
 
 
 class WriteMismatchError(RuntimeError):
-    """The forecast INSERT wrote a different number of rows than were built."""
+    """A forecast or anomaly INSERT wrote a different number of rows than were built."""
 
 
 def parse_marker(row: Mapping[str, Any] | None) -> int:
@@ -60,14 +60,39 @@ def check_role(row: Mapping[str, Any] | None) -> str:
         raise PreflightError("the database role could not be read")
     if row["is_superuser"]:
         raise PreflightError("the database role is a superuser: connect as bms_fleet")
-    if not (row["can_insert_runs"] and row["can_insert_forecasts"]):
-        raise PreflightError("the database role cannot insert into ml.model_runs and ml.forecasts")
+    if not (row["can_insert_runs"] and row["can_insert_forecasts"] and row["can_insert_anomaly_scores"]):
+        raise PreflightError(
+            "the database role cannot insert into ml.model_runs, ml.forecasts and ml.anomaly_scores"
+        )
     if row["can_rewrite_ml"]:
         raise PreflightError(
             "the database role can update, delete or truncate an ml table: "
             "it is wider than the scorer's contract"
         )
     return str(row["role_name"])
+
+
+def anomaly_insert_params(run: RunRecord, rows: Sequence[AnomalyRow]) -> dict[str, Any]:
+    """INSERT_ANOMALY_SCORES_SQL's parameters: one array per column, no organization id.
+
+    Refuses (ValueError, before any write) rows that span more than one bucket, and a
+    contributing point key that is empty or holds a comma: `string_to_array` would split
+    the one or drop the other, and the stored list would differ from the list built.
+    """
+    buckets = {row.bucket for row in rows}
+    if len(buckets) > 1:
+        raise ValueError("the anomaly rows of one run must share one bucket")
+    for row in rows:
+        if any(key == "" or "," in key for key in row.contributing_points):
+            raise ValueError("a contributing point key is empty or holds a comma")
+    return {
+        "bucket": next(iter(buckets)) if buckets else None,
+        "model_run_id": run.id,
+        "asset_ids": [row.asset_id for row in rows],
+        "detectors": [row.detector for row in rows],
+        "scores": [row.score for row in rows],
+        "points": [",".join(row.contributing_points) for row in rows],
+    }
 
 
 class Gateway:
@@ -201,7 +226,42 @@ class Gateway:
                 raise WriteMismatchError("forecast rows written differ from the rows built")
         return written
 
+    def anomaly_already_scored(
+        self,
+        organization_id: UUID,
+        model_name: str,
+        model_version: str,
+        config_hash: str,
+        scored_hour: datetime,
+    ) -> bool:
+        """The anomaly ledger (Amendment 5 A-a): keyed on the hour a run scored."""
+        params = {
+            "organization_id": organization_id,
+            "model_name": model_name,
+            "model_version": model_version,
+            "config_hash": config_hash,
+            "scored_hour": scored_hour,
+        }
+        with self._read() as cursor:
+            cursor.execute(sql.ANOMALY_ALREADY_SCORED_SQL, params)
+            return cursor.fetchone() is not None
+
+    def write_succeeded_anomaly_run(self, run: RunRecord, rows: Sequence[AnomalyRow]) -> int:
+        """The run row and its scores in one transaction. Returns the rows written."""
+        params = anomaly_insert_params(run, rows)
+        with self._write() as cursor:
+            cursor.execute(sql.INSERT_MODEL_RUN_SQL, _run_params(run))
+            written = 0
+            if rows:
+                cursor.execute(sql.INSERT_ANOMALY_SCORES_SQL, params)
+                written = cursor.rowcount
+            if written != len(rows) or written != run.rows_written:
+                # Raising inside the transaction rolls the run row back too.
+                raise WriteMismatchError("anomaly rows written differ from the rows built")
+        return written
+
     def write_failed_run(self, run: RunRecord) -> None:
+        """A failed run of either job: the run row alone, no forecast and no score."""
         with self._write() as cursor:
             cursor.execute(sql.INSERT_MODEL_RUN_SQL, _run_params(run))
 

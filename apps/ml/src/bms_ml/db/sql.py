@@ -21,6 +21,7 @@ PREFLIGHT_ROLE_SQL = """
 SELECT current_user AS role_name, r.rolsuper AS is_superuser,
        has_table_privilege(current_user, 'ml.model_runs', 'INSERT') AS can_insert_runs,
        has_table_privilege(current_user, 'ml.forecasts', 'INSERT')  AS can_insert_forecasts,
+       has_table_privilege(current_user, 'ml.anomaly_scores', 'INSERT') AS can_insert_anomaly_scores,
        (has_table_privilege(current_user, 'ml.forecasts', 'UPDATE, DELETE, TRUNCATE')
         OR has_table_privilege(current_user, 'ml.model_runs', 'UPDATE, DELETE, TRUNCATE')
         OR has_table_privilege(current_user, 'ml.anomaly_scores', 'UPDATE, DELETE, TRUNCATE'))
@@ -74,6 +75,19 @@ WHERE r.organization_id = %(organization_id)s AND r.model_name = %(model_name)s
 LIMIT 1
 """
 
+# The anomaly ledger (ADR 0135 Amendment 5 A-a): an organization's hour is scored when a
+# succeeded run of the same name, version and hash holds a row at that bucket. Every row
+# of one run has the run's scored hour, so max = min. It reads ml.anomaly_scores, never
+# ml.forecasts, so neither job's ledger can see the other's runs.
+ANOMALY_ALREADY_SCORED_SQL = """
+SELECT 1 FROM ml.model_runs r
+WHERE r.organization_id = %(organization_id)s AND r.model_name = %(model_name)s
+  AND r.model_version = %(model_version)s AND r.config_hash = %(config_hash)s
+  AND r.status = 'succeeded'
+  AND (SELECT max(s.bucket) FROM ml.anomaly_scores s WHERE s.model_run_id = r.id) = %(scored_hour)s
+LIMIT 1
+"""
+
 INSERT_MODEL_RUN_SQL = """
 INSERT INTO ml.model_runs (id, organization_id, model_name, model_version, config_hash,
                            started_at, finished_at, rows_written, status, error_text)
@@ -90,5 +104,18 @@ SELECT a.organization_id, v.asset_id, v.point_key, v.horizon_bucket, %(issued_at
 FROM unnest(%(asset_ids)s::uuid[], %(point_keys)s::text[], %(horizon_buckets)s::timestamptz[],
             %(p10)s::float8[], %(p50)s::float8[], %(p90)s::float8[])
        AS v(asset_id, point_key, horizon_bucket, p10, p50, p90)
+JOIN bms.assets a ON a.id = v.asset_id
+"""
+
+# organization_id comes from bms.assets, never from Python (E1.1 plan R5). One bucket per
+# run: the scored hour. `points` is each row's contributing point keys joined with ',';
+# a target part is [a-z0-9_]{1,64}, so a key holds no comma, and '' becomes '{}'.
+INSERT_ANOMALY_SCORES_SQL = """
+INSERT INTO ml.anomaly_scores (organization_id, asset_id, bucket, detector, score,
+                               contributing_points, model_run_id)
+SELECT a.organization_id, v.asset_id, %(bucket)s, v.detector, v.score,
+       string_to_array(v.points, ','), %(model_run_id)s
+FROM unnest(%(asset_ids)s::uuid[], %(detectors)s::text[], %(scores)s::float8[], %(points)s::text[])
+       AS v(asset_id, detector, score, points)
 JOIN bms.assets a ON a.id = v.asset_id
 """

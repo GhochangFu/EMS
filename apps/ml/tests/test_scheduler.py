@@ -14,6 +14,7 @@ from bms_ml.scheduler import (
     EXIT_OK,
     RETRY_SECONDS,
     CycleResult,
+    Job,
     catch_up_on_start,
     next_tick,
     retry_at,
@@ -58,6 +59,11 @@ def health(clock: FakeClock) -> HealthState:
     return HealthState(3600, clock.current, 1, "fake", "1")
 
 
+def forecast(run, state) -> list[Job]:
+    """The single forecast job the scheduler ran before E1.2: these cases keep their assertions."""
+    return [Job("forecast", lambda _hour: run(), state)]
+
+
 def test_the_loop_waits_for_the_tick_then_runs_one_cycle_per_tick():
     clock = FakeClock(T0, step=timedelta(0))
     wait = Recorder(clock, limit=2)
@@ -65,8 +71,9 @@ def test_the_loop_waits_for_the_tick_then_runs_one_cycle_per_tick():
     code = run_scheduler(
         clock=clock,
         wait=wait,
-        run_cycle_process=lambda: calls.append(clock.current) or CycleResult(EXIT_OK, {"scored": 1}),
-        health=health(clock),
+        jobs=forecast(
+            lambda: calls.append(clock.current) or CycleResult(EXIT_OK, {"scored": 1}), health(clock)
+        ),
         interval_seconds=3600,
     )
     assert code == EXIT_OK
@@ -79,9 +86,7 @@ def test_a_failed_cycle_is_retried_in_300_seconds():
     wait = Recorder(clock, limit=2)
     results = iter([CycleResult(EXIT_CYCLE_FAILED, None), CycleResult(EXIT_OK, {})])
     state = health(clock)
-    run_scheduler(
-        clock=clock, wait=wait, run_cycle_process=lambda: next(results), health=state, interval_seconds=3600
-    )
+    run_scheduler(clock=clock, wait=wait, jobs=forecast(lambda: next(results), state), interval_seconds=3600)
     assert wait.sleeps[1] == RETRY_SECONDS
     assert state.cycles_failed == 1 and state.cycles_succeeded == 1
 
@@ -92,8 +97,7 @@ def test_exit_78_stops_the_loop():
     code = run_scheduler(
         clock=clock,
         wait=Recorder(clock, limit=10),
-        run_cycle_process=lambda: calls.append(1) or CycleResult(EXIT_CONFIG, None),
-        health=health(clock),
+        jobs=forecast(lambda: calls.append(1) or CycleResult(EXIT_CONFIG, None), health(clock)),
         interval_seconds=3600,
     )
     assert code == EXIT_CONFIG
@@ -108,8 +112,7 @@ def test_a_stop_ends_the_sleep_promptly_and_runs_nothing():
     code = run_scheduler(
         clock=FakeClock(T0, step=timedelta(0)),
         wait=stop.wait,
-        run_cycle_process=lambda: calls.append(1) or CycleResult(EXIT_OK, {}),
-        health=health(FakeClock(T0)),
+        jobs=forecast(lambda: calls.append(1) or CycleResult(EXIT_OK, {}), health(FakeClock(T0))),
         interval_seconds=3600,
     )
     assert code == EXIT_OK
@@ -181,8 +184,7 @@ def test_a_stopped_cycle_ends_the_loop_and_is_not_counted_as_a_failure():
     code = run_scheduler(
         clock=clock,
         wait=Recorder(clock, limit=5),
-        run_cycle_process=lambda: CycleResult(EXIT_CYCLE_FAILED, None, stopped=True),
-        health=state,
+        jobs=forecast(lambda: CycleResult(EXIT_CYCLE_FAILED, None, stopped=True), state),
         interval_seconds=3600,
     )
     assert code == EXIT_OK
@@ -236,8 +238,7 @@ def test_a_start_after_the_tick_scores_the_current_hour_at_once():
     run_scheduler(
         clock=clock,
         wait=wait,
-        run_cycle_process=lambda: calls.append(clock.current) or CycleResult(EXIT_OK, {}),
-        health=health(clock),
+        jobs=forecast(lambda: calls.append(clock.current) or CycleResult(EXIT_OK, {}), health(clock)),
         interval_seconds=3600,
     )
     assert calls == [start, datetime(2026, 11, 16, 11, 5, tzinfo=UTC)]
@@ -250,8 +251,7 @@ def test_a_start_before_the_tick_waits_for_it():
     run_scheduler(
         clock=clock,
         wait=Recorder(clock, limit=1),
-        run_cycle_process=lambda: calls.append(clock.current) or CycleResult(EXIT_OK, {}),
-        health=health(clock),
+        jobs=forecast(lambda: calls.append(clock.current) or CycleResult(EXIT_OK, {}), health(clock)),
         interval_seconds=3600,
     )
     assert calls == [datetime(2026, 11, 16, 10, 5, tzinfo=UTC)]
@@ -265,8 +265,7 @@ def test_only_the_first_wait_catches_up():
     run_scheduler(
         clock=clock,
         wait=Recorder(clock, limit=3),
-        run_cycle_process=lambda: calls.append(clock.current) or CycleResult(EXIT_OK, {}),
-        health=health(clock),
+        jobs=forecast(lambda: calls.append(clock.current) or CycleResult(EXIT_OK, {}), health(clock)),
         interval_seconds=3600,
     )
     assert calls == [
@@ -284,9 +283,192 @@ def test_a_failed_catch_up_is_retried_in_300_seconds_then_waits_for_the_tick():
     run_scheduler(
         clock=clock,
         wait=Recorder(clock, limit=3),
-        run_cycle_process=lambda: calls.append(clock.current) or next(results),
-        health=health(clock),
+        jobs=forecast(lambda: calls.append(clock.current) or next(results), health(clock)),
         interval_seconds=3600,
     )
     retry = start + timedelta(seconds=RETRY_SECONDS)
     assert calls == [start, retry, datetime(2026, 11, 16, 11, 5, tzinfo=UTC)]
+
+
+# --- E1.2: two jobs in one tick (plan T1.7, R6, R7) -------------------------------------------
+
+
+class Calls:
+    """A job's run: records (job, clock instant, tick hour) and returns its scripted results."""
+
+    def __init__(self, clock: FakeClock, log: list, name: str, results=None, takes=timedelta(0)):
+        self.clock, self.log, self.name, self.takes = clock, log, name, takes
+        self.results = iter(results) if results is not None else None
+
+    def __call__(self, hour: datetime) -> CycleResult:
+        self.log.append((self.name, self.clock.current, hour))
+        self.clock.current += self.takes
+        return next(self.results) if self.results is not None else CycleResult(EXIT_OK, {})
+
+
+def two_jobs(
+    clock: FakeClock,
+    state: HealthState,
+    log: list,
+    *,
+    forecast_results=None,
+    anomaly_results=None,
+    forecast_takes=timedelta(0),
+):
+    return [
+        Job("forecast", Calls(clock, log, "forecast", forecast_results, forecast_takes), state),
+        Job("anomaly", Calls(clock, log, "anomaly", anomaly_results), state.recorder("anomaly")),
+    ]
+
+
+def test_one_tick_runs_the_forecast_then_the_anomaly_job_with_the_ticks_hour():
+    clock = FakeClock(T0, step=timedelta(0))
+    calls: list = []
+    state = HealthState(3600, T0, 1, "fake", "1", anomaly_enabled=True)
+    run_scheduler(
+        clock=clock, wait=Recorder(clock, limit=1), jobs=two_jobs(clock, state, calls), interval_seconds=3600
+    )
+    tick = datetime(2026, 11, 15, 13, 5, tzinfo=UTC)
+    hour = datetime(2026, 11, 15, 13, tzinfo=UTC)
+    assert calls == [("forecast", tick, hour), ("anomaly", tick, hour)]
+
+
+def test_a_failed_anomaly_job_is_retried_in_300_seconds_without_a_forecast_run():
+    clock = FakeClock(T0, step=timedelta(0))
+    calls: list = []
+    state = HealthState(3600, T0, 1, "fake", "1", anomaly_enabled=True)
+    failed = CycleResult(EXIT_CYCLE_FAILED, None)
+    wait = Recorder(clock, limit=2)
+    run_scheduler(
+        clock=clock,
+        wait=wait,
+        jobs=two_jobs(clock, state, calls, anomaly_results=[failed, CycleResult(EXIT_OK, {})]),
+        interval_seconds=3600,
+    )
+    tick = datetime(2026, 11, 15, 13, 5, tzinfo=UTC)
+    hour = datetime(2026, 11, 15, 13, tzinfo=UTC)
+    retry = tick + timedelta(seconds=RETRY_SECONDS)
+    assert calls == [("forecast", tick, hour), ("anomaly", tick, hour), ("anomaly", retry, hour)]
+    assert wait.sleeps[1] == RETRY_SECONDS
+    assert (state.cycles_succeeded, state.cycles_failed) == (1, 0)
+    _, body = state.snapshot(retry)
+    assert (body["anomaly"]["cyclesSucceeded"], body["anomaly"]["cyclesFailed"]) == (1, 1)
+
+
+def test_a_failed_forecast_job_is_retried_alone():
+    clock = FakeClock(T0, step=timedelta(0))
+    calls: list = []
+    state = HealthState(3600, T0, 1, "fake", "1", anomaly_enabled=True)
+    results = [CycleResult(EXIT_CYCLE_FAILED, None), CycleResult(EXIT_OK, {})]
+    run_scheduler(
+        clock=clock,
+        wait=Recorder(clock, limit=2),
+        jobs=two_jobs(clock, state, calls, forecast_results=results),
+        interval_seconds=3600,
+    )
+    assert [name for name, _, _ in calls] == ["forecast", "anomaly", "forecast"]
+
+
+def test_retries_of_the_anomaly_job_stay_inside_the_ticks_hour():
+    start = datetime(2026, 11, 16, 10, 56, tzinfo=UTC)
+    clock = FakeClock(start, step=timedelta(0))
+    calls: list = []
+    state = HealthState(3600, start, 1, "fake", "1", anomaly_enabled=True)
+    failed = CycleResult(EXIT_CYCLE_FAILED, None)
+    run_scheduler(
+        clock=clock,
+        wait=Recorder(clock, limit=3),
+        jobs=two_jobs(clock, state, calls, anomaly_results=[failed, failed, CycleResult(EXIT_OK, {})]),
+        interval_seconds=3600,
+    )
+    eleven = datetime(2026, 11, 16, 11, tzinfo=UTC)
+    assert calls == [
+        ("forecast", datetime(2026, 11, 16, 11, 5, tzinfo=UTC), eleven),
+        ("anomaly", datetime(2026, 11, 16, 11, 5, tzinfo=UTC), eleven),
+        ("anomaly", datetime(2026, 11, 16, 11, 10, tzinfo=UTC), eleven),
+        ("anomaly", datetime(2026, 11, 16, 11, 15, tzinfo=UTC), eleven),
+    ]
+
+
+def test_a_slow_forecast_does_not_move_the_anomaly_jobs_hour_and_a_late_failure_waits_for_the_tick():
+    # R6: the forecast child takes 50 minutes; the anomaly child still scores the tick's hour.
+    # Its failure at 13:55 cannot retry before 14:00, so the 14:05 tick runs every job.
+    clock = FakeClock(datetime(2026, 11, 16, 12, 56, tzinfo=UTC), step=timedelta(0))
+    calls: list = []
+    state = HealthState(3600, clock.current, 1, "fake", "1", anomaly_enabled=True)
+    results = [CycleResult(EXIT_CYCLE_FAILED, None), CycleResult(EXIT_OK, {})]
+    run_scheduler(
+        clock=clock,
+        wait=Recorder(clock, limit=2),
+        jobs=two_jobs(clock, state, calls, anomaly_results=results, forecast_takes=timedelta(minutes=50)),
+        interval_seconds=3600,
+    )
+    thirteen, fourteen = datetime(2026, 11, 16, 13, tzinfo=UTC), datetime(2026, 11, 16, 14, tzinfo=UTC)
+    assert [(name, at.strftime("%H:%M"), hour) for name, at, hour in calls] == [
+        ("forecast", "13:05", thirteen),
+        ("anomaly", "13:55", thirteen),
+        ("forecast", "14:05", fourteen),
+        ("anomaly", "14:55", fourteen),
+    ]
+
+
+def test_a_retry_that_lands_in_a_later_hour_runs_every_job_for_that_hour():
+    # The forecast takes an hour: the anomaly child fails at 14:05 for the 13:00 tick. Its
+    # retry at 14:10 is in hour 14, whose forecast has not run: every job runs, for 14:00.
+    clock = FakeClock(datetime(2026, 11, 16, 12, 56, tzinfo=UTC), step=timedelta(0))
+    calls: list = []
+    state = HealthState(3600, clock.current, 1, "fake", "1", anomaly_enabled=True)
+    results = [CycleResult(EXIT_CYCLE_FAILED, None), CycleResult(EXIT_OK, {})]
+    run_scheduler(
+        clock=clock,
+        wait=Recorder(clock, limit=2),
+        jobs=two_jobs(clock, state, calls, anomaly_results=results, forecast_takes=timedelta(hours=1)),
+        interval_seconds=3600,
+    )
+    thirteen, fourteen = datetime(2026, 11, 16, 13, tzinfo=UTC), datetime(2026, 11, 16, 14, tzinfo=UTC)
+    assert [(name, at.strftime("%H:%M"), hour) for name, at, hour in calls] == [
+        ("forecast", "13:05", thirteen),
+        ("anomaly", "14:05", thirteen),
+        ("forecast", "14:10", fourteen),
+        ("anomaly", "15:10", fourteen),
+    ]
+
+
+def test_exit_78_from_the_anomaly_job_stops_the_loop():
+    clock = FakeClock(T0, step=timedelta(0))
+    calls: list = []
+    state = HealthState(3600, T0, 1, "fake", "1", anomaly_enabled=True)
+    code = run_scheduler(
+        clock=clock,
+        wait=Recorder(clock, limit=10),
+        jobs=two_jobs(clock, state, calls, anomaly_results=[CycleResult(EXIT_CONFIG, None)]),
+        interval_seconds=3600,
+    )
+    assert code == EXIT_CONFIG
+    assert [name for name, _, _ in calls] == ["forecast", "anomaly"]
+
+
+def test_exit_78_from_the_forecast_job_runs_no_anomaly_job():
+    clock = FakeClock(T0, step=timedelta(0))
+    calls: list = []
+    state = HealthState(3600, T0, 1, "fake", "1", anomaly_enabled=True)
+    code = run_scheduler(
+        clock=clock,
+        wait=Recorder(clock, limit=10),
+        jobs=two_jobs(clock, state, calls, forecast_results=[CycleResult(EXIT_CONFIG, None)]),
+        interval_seconds=3600,
+    )
+    assert code == EXIT_CONFIG
+    assert [name for name, _, _ in calls] == ["forecast"]
+
+
+def test_a_catch_up_passes_the_current_hour_to_every_job():
+    start = datetime(2026, 11, 16, 10, 6, tzinfo=UTC)
+    clock = FakeClock(start, step=timedelta(0))
+    calls: list = []
+    state = HealthState(3600, start, 1, "fake", "1", anomaly_enabled=True)
+    run_scheduler(
+        clock=clock, wait=Recorder(clock, limit=1), jobs=two_jobs(clock, state, calls), interval_seconds=3600
+    )
+    ten = datetime(2026, 11, 16, 10, tzinfo=UTC)
+    assert calls == [("forecast", start, ten), ("anomaly", start, ten)]

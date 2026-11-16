@@ -8,6 +8,7 @@ dependencies = [
     "chronos-forecasting==2.3.2",
     "numpy>=2.5.4",
     "psycopg[binary]==3.3.9",
+    "scikit-learn==1.9.1",
     "torch==2.15.0",
 ]
 

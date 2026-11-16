@@ -577,6 +577,22 @@ jobs:
       - name: Model tests inside the image, with no network
         run: docker run --rm --network none bms-ml:ci-model-test
 
+      # ADR 0135 Amendment 5 ruling 5 (E1.2 plan T1.10; the owner ruled it a CI
+      # step, kept as the budget's gate). The fixture is planted at the real
+      # shape into this job's database, then each child of one cycle (run-once,
+      # run-anomaly) runs in a container of its own from bms-ml:ci at the demo
+      # host's limits (--cpus 1 --memory 1g, read-only, no capabilities), once
+      # (--runs 1: the owner ruled one run to save Actions minutes, 2026-11-16).
+      # --network host reaches the postgres service on localhost:5432,
+      # the URL in ML_TEST_DATABASE_URL_FLEET. The table goes to the log and to
+      # the step summary; the step fails when the anomaly child peaks above
+      # 900 MiB, forecast + anomaly take above 300 s, or a cycle scored less
+      # than the planted shape. Over the line, the owner rules again: do not
+      # tune the detectors to pass it.
+      - name: Ruling 5 budget, one cycle at the demo host's limits
+        working-directory: apps/ml
+        run: uv run python -m tests.integration.measure_cycle --image bms-ml:ci --network host --runs 1
+
   client-dashboard-leak-check:
     name: Client dashboard leak check
     runs-on: ubuntu-latest

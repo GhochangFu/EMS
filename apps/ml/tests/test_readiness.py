@@ -76,3 +76,46 @@ def test_naive_times_are_refused():
     naive = PointStats(ORG, ASSET, "R", "k", datetime(2026, 1, 1), datetime(2026, 3, 1), 100, 60)
     with pytest.raises(ValueError):
         forecast_verdict(naive, AS_OF)
+
+
+def test_anomaly_thresholds_and_the_forecast_ones_are_untouched():
+    assert readiness.ANOMALY_THRESHOLDS == {
+        "anomaly_min_days": 28,
+        "min_coverage": 0.8,
+        "freshness_hours": 3,
+        "lookback_days": 400,
+    }
+    assert readiness.THRESHOLDS == {
+        "forecasting_min_days": 14,
+        "forecasting_good_days": 56,
+        "min_coverage": 0.8,
+        "freshness_hours": 3,
+        "lookback_days": 400,
+    }
+
+
+def test_anomaly_27_days_is_too_few_28_goes_on():
+    from bms_ml.readiness import anomaly_verdict
+
+    assert anomaly_verdict(stats(27, 1.0), AS_OF) == "too_few_days"
+    assert anomaly_verdict(stats(28, 1.0), AS_OF) == "ready"
+    assert anomaly_verdict(stats(28, 0.79), AS_OF) == "low_coverage"
+    assert anomaly_verdict(stats(28, 1.0, newest_age_hours=4), AS_OF) == "stale"
+    assert anomaly_verdict(stats(28, 1.0, newest_age_hours=3), AS_OF) == "ready"
+
+
+def test_anomaly_order_is_no_data_then_days_then_coverage_then_stale():
+    from bms_ml.readiness import anomaly_verdict
+
+    empty = PointStats(ORG, ASSET, "R", "p", None, None, 0, 0)
+    assert anomaly_verdict(empty, AS_OF) == "no_data"
+    assert anomaly_verdict(stats(10, 0.5, newest_age_hours=9), AS_OF) == "too_few_days"
+    assert anomaly_verdict(stats(30, 0.5, newest_age_hours=9), AS_OF) == "low_coverage"
+
+
+def test_shared_verdict_takes_min_days_and_forecast_still_wants_56():
+    from bms_ml.readiness import verdict
+
+    assert verdict(stats(14, 1.0), AS_OF, 14) == "ready"
+    assert verdict(stats(13, 1.0), AS_OF, 14) == "too_few_days"
+    assert forecast_verdict(stats(28, 1.0), AS_OF) == "too_few_days"

@@ -22,10 +22,12 @@ def test_the_allowlists_by_value():
     assert READ_SOURCES == {
         "telemetry.point_values_1h", "telemetry.point_values_1d", "bms.assets", "bms.asset_points",
         "bms.asset_templates", "bms.rtus", "ml.model_runs", "ml.forecasts", "pg_namespace", "pg_roles",
+        "ml.anomaly_scores",  # E1.2 plan R10: the anomaly ledger reads a run's scored bucket
     }  # fmt: skip
     assert WRITE_TARGETS == {"ml.model_runs", "ml.forecasts", "ml.anomaly_scores"}
     assert ALLOWED_FUNCTIONS == {
         "obj_description", "has_table_privilege", "unnest", "min", "max", "count", "date_trunc",
+        "string_to_array",  # E1.2 plan R10: contributing points into a varchar(128)[] column
     }  # fmt: skip
     assert "bms.alarms" not in READ_SOURCES | WRITE_TARGETS
     assert "bms.work_orders" not in READ_SOURCES | WRITE_TARGETS
@@ -40,8 +42,10 @@ def test_the_real_tree_passes_and_the_guard_saw_every_statement():
         "ELIGIBILITY_SQL": "read",
         "HISTORY_SQL": "read",
         "ALREADY_SCORED_SQL": "read",
+        "ANOMALY_ALREADY_SCORED_SQL": "read",
         "INSERT_MODEL_RUN_SQL": "write",
         "INSERT_FORECASTS_SQL": "write",
+        "INSERT_ANOMALY_SCORES_SQL": "write",
     }
     assert check_calls(files, set(kinds)) >= len(kinds)
 
@@ -118,6 +122,22 @@ BAD_STATEMENTS = {
     ),
     "a pg_ CTE": ("WITH pg_authid AS (SELECT 1) SELECT 1 FROM pg_authid", "may not be named 'pg_authid'"),
     "an unknown function": ("SELECT pg_sleep(1)", "function 'pg_sleep'"),
+    # E1.2a: the anomaly write is insert-only, and the two new allowlist names open nothing else.
+    "update an anomaly score": ("UPDATE ml.anomaly_scores SET score = 0", "forbidden word"),
+    "delete an anomaly score": ("DELETE FROM ml.anomaly_scores", "forbidden word"),
+    "an anomaly-shaped insert into alarms": (
+        "INSERT INTO bms.alarms (organization_id, asset_id) SELECT a.organization_id, v.asset_id "
+        "FROM unnest(%(asset_ids)s::uuid[]) AS v(asset_id) JOIN bms.assets a ON a.id = v.asset_id",
+        "outside the ml write allowlist",
+    ),
+    "a ledger joined to work orders": (
+        "SELECT 1 FROM ml.anomaly_scores s JOIN bms.work_orders w ON w.asset_id = s.asset_id",
+        "cannot classify the source 'bms.work_orders'",
+    ),
+    "string_to_array over a relation name": (
+        "SELECT string_to_array(x, ',') FROM bms.work_orders",
+        "cannot classify the source 'bms.work_orders'",
+    ),
 }
 
 
@@ -195,6 +215,18 @@ BAD_TREES = {
         "INSERT INTO ml.model_runs",
         "INSERT INTO bms.alarms",
         "outside the ml write allowlist",
+    ),
+    "the anomaly insert retargeted to alarms": (
+        "db/sql.py",
+        "INSERT INTO ml.anomaly_scores",
+        "INSERT INTO bms.alarms",
+        "outside the ml write allowlist",
+    ),
+    "the anomaly ledger reading work orders": (
+        "db/sql.py",
+        "FROM ml.anomaly_scores s",
+        "FROM bms.work_orders s",
+        "cannot classify the source 'bms.work_orders'",
     ),
     "raw telemetry in sql.py": (
         "db/sql.py",
