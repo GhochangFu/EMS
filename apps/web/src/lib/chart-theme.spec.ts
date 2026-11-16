@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 
 import { ROLE_TOKENS, fromTokenMap } from "../test-role-tokens";
-import { echartsTheme, seriesPalette } from "./chart-theme";
+import { echartsTheme, forecastPalette, pastForecastPalette, seriesPalette } from "./chart-theme";
 import { NEXUS_SOFT_CHART_TYPE, resolveTypeTokens, type ChartType } from "./design";
 import { resolveRoles, type Roles } from "./theme";
 
@@ -109,4 +109,25 @@ export function c10TheTypeTokensResolve(): void {
   expect(resolveTypeTokens(read, 16, "x").fontFamily).toBe('"Archivo", sans-serif');
   tokens["--text-xs"] = "";
   expect(() => resolveTypeTokens(read, 16, "x")).toThrow(/--text-xs/);
+}
+
+/**
+ * `F4.377` (the owner's ruling, 2026-11-16: three colours) — the actual palette, the past-forecast
+ * palette and the live-forecast palette share no colour, so a forecast never takes an actual
+ * line's colour and the past line never takes the live forecast's. Each forecast palette starts
+ * with its ruled colour: `series-2` for the past line, `series-3` for the live band and p50.
+ */
+export function c6TheActualPastAndForecastPalettesShareNoColour(name: ThemeName): void {
+  const roles = rolesOf(name);
+  const actual = seriesPalette(roles);
+  const past = pastForecastPalette(roles);
+  const future = forecastPalette(roles);
+  expect(past[0]).toBe(roles["series-2"]);
+  expect(future[0]).toBe(roles["series-3"]);
+  expect(future.length).toBeGreaterThanOrEqual(3);
+  expect(past.filter((c) => actual.includes(c)), "past vs actual").toEqual([]);
+  expect(future.filter((c) => actual.includes(c)), "forecast vs actual").toEqual([]);
+  expect(future.filter((c) => past.includes(c)), "forecast vs past").toEqual([]);
+  expect(new Set(future).size, "no forecast colour twice").toBe(future.length);
+  expect(new Set(past).size, "no past colour twice").toBe(past.length);
 }

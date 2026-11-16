@@ -18,6 +18,10 @@ import {
   noPastForecastAddsNothing,
   pastColoursNeverMatchAnActualColour,
   twoPastForecastsAreNamedByPointInTheirOwnColours,
+  eachForecastIsTracedToItsPointInTheLegend,
+  forecastColoursNeverMatchActualOrPastWithSeveralPoints,
+  onePointDrawsActualPastAndFutureInThreeColours,
+  theTooltipDropsFloatNoiseAndKeepsRealDigits,
 } from "./asset-history-chart-option.spec";
 
 /** Vitest entry point (ADR 0014). */
@@ -72,5 +76,17 @@ describe("F4.297 asset history chart option", () => {
   });
   it("E1.4e past colours never match an actual colour", () => {
     pastColoursNeverMatchAnActualColour();
+  });
+  it("F4.377 one point draws actual, past forecast and live forecast in three colours", () => {
+    onePointDrawsActualPastAndFutureInThreeColours();
+  });
+  it("F4.377 with several points no forecast colour matches an actual or a past colour", () => {
+    forecastColoursNeverMatchActualOrPastWithSeveralPoints();
+  });
+  it("F4.377 each forecast is traced to its point in the legend", () => {
+    eachForecastIsTracedToItsPointInTheLegend();
+  });
+  it("F4.379 the tooltip drops float noise and keeps real digits", () => {
+    theTooltipDropsFloatNoiseAndKeepsRealDigits();
   });
 });

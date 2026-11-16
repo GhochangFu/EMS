@@ -6,8 +6,9 @@ import { CHART_SERIES } from "./widget-catalog";
 
 /**
  * `E1.4a` / ADR 0135 Amendment 3 ruling 4, R-d, C2 (plan R7, R8, R9, R15) — how a forecast is
- * drawn on a time chart, pure: a shaded p10–p90 band and a dashed p50, in the point's own series
- * colour. Shared by the history chart (PR 2) and the `forecast` widget (`E1.4c`).
+ * drawn on a time chart, pure: a shaded p10–p90 band and a dashed p50, in the colour the caller
+ * passes — since `F4.377` a forecast colour that no actual or past line uses
+ * (`forecastPalette`). Shared by the history chart (PR 2) and the `forecast` widget (`E1.4c`).
  *
  * **The band is two stacked line series.** The lower one carries `p10` and draws nothing; the
  * upper one carries `p90 − p10` with an area fill, so ECharts fills between them. Both use

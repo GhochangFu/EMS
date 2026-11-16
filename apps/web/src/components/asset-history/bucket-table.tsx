@@ -2,7 +2,7 @@ import type { PointAggregateResponse } from "@bms/shared";
 
 import { previousByBucket } from "../../lib/asset-history-range";
 import { SectionCard } from "../section-card";
-import { formatInZone } from "./history-format";
+import { formatInZone, formatReading } from "./history-format";
 
 type BucketTableProps = {
   pointKey: string;
@@ -13,6 +13,7 @@ type BucketTableProps = {
   zone: string;
 };
 
+/** A computed mean (Average, Previous period): three decimals. */
 function cell(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : String(Number(value.toFixed(3)));
 }
@@ -24,6 +25,9 @@ function cell(value: number | null | undefined): string {
  * The previous value is matched by time, not by index (ADR 0108 decision 1.3 alignment): each
  * compare bucket moves forward by the span and snaps to the bucket grid (`previousByBucket`),
  * so a custom span that is not a whole number of buckets still lands on a current bucket.
+ *
+ * `F4.379`: Min and Max are stored readings, so they print as the Latest cell does
+ * (`formatReading`: no float tail, no real digit rounded away); the means keep three decimals.
  */
 export function BucketTable({ pointKey, unit, data, compare, zone }: BucketTableProps) {
   const buckets = data.buckets ?? [];
@@ -58,9 +62,9 @@ export function BucketTable({ pointKey, unit, data, compare, zone }: BucketTable
           {buckets.map((bucket) => (
             <tr key={bucket.t} className="border-b border-well-deep tabular-nums">
               <td className="px-3 py-1.5 text-xs">{formatInZone(bucket.t, zone)}</td>
-              <td className="px-3 py-1.5">{cell(bucket.min)}</td>
+              <td className="px-3 py-1.5">{formatReading(bucket.min, null)}</td>
               <td className="px-3 py-1.5">{cell(bucket.average)}</td>
-              <td className="px-3 py-1.5">{cell(bucket.max)}</td>
+              <td className="px-3 py-1.5">{formatReading(bucket.max, null)}</td>
               <td className="px-3 py-1.5">{bucket.sampleCount ?? "—"}</td>
               {showCompare ? <td className="px-3 py-1.5">{cell(previous.get(Date.parse(bucket.t)))}</td> : null}
             </tr>

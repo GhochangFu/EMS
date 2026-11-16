@@ -8,6 +8,7 @@ import {
   c4TheThemePaletteIsTheSeriesPalette,
   c5EveryLeafIsARoleOrARoleWithAlpha,
   c5TheThemeHasStringLeavesToCheck,
+  c6TheActualPastAndForecastPalettesShareNoColour,
   c9TheTextIsInTheTypeTokens,
   c10TheTypeTokensResolve,
   type ThemeName,
@@ -33,6 +34,10 @@ describe.each<ThemeName>(["light", "dark"])("F3.65c ECharts theme (%s)", (name) 
 
   it("C4 the theme palette is seriesPalette(roles)", () => {
     c4TheThemePaletteIsTheSeriesPalette(name);
+  });
+
+  it("C6 F4.377 the actual, past-forecast and forecast palettes share no colour", () => {
+    c6TheActualPastAndForecastPalettesShareNoColour(name);
   });
 
   it("C5 every string leaf is a role or a role with alpha", () => {

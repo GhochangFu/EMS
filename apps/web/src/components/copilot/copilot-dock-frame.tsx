@@ -62,7 +62,7 @@ const MODE_BUTTONS: readonly { mode: CopilotWindowMode; label: string; icon: Rea
 const SHAPE: Record<CopilotWindowMode | "sheet", string> = {
   sheet: "fixed inset-0 z-50 rounded-none",
   // F4.357 (ADR 0130 decisions 14, 19): the floating window and the docked panel clear the alarm bar.
-  floating: "fixed bottom-[calc(7rem+var(--alarm-bar-h))] right-6 z-50 rounded-lg",
+  floating: "fixed bottom-[calc(var(--copilot-launcher-offset)+var(--copilot-launcher-size)+1rem+var(--alarm-bar-h))] right-6 z-50 rounded-lg",
   maximized: "fixed left-[5vw] top-[5vh] z-50 h-[90vh] w-[90vw] rounded-lg",
   docked: "fixed right-0 top-0 z-40 h-[calc(100vh-var(--alarm-bar-h))] rounded-none",
 };

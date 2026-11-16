@@ -1,5 +1,7 @@
 import { resolveSiteTimeZone } from "@bms/shared/contracts";
 
+import { withoutFloatNoise } from "../../lib/telemetry-number";
+
 /**
  * `F4.297` U5 (ADR 0108 decision 1.9) — the asset history page's time and access helpers.
  *
@@ -75,18 +77,15 @@ export function timeAxisLabel(zone: string): {
 }
 
 /**
- * A reading for the point list's Latest cell, with its unit: the dash when there is none.
- *
- * Twelve significant digits drop a float's binary tail (`1.2000000000000002` → `1.2`, the AWS
- * demo's E1.4 checks) and keep every digit a sensor sends. It does not round to a display
- * precision as a dashboard tile does: this is where an operator reads the raw value, and
- * 49.96 Hz is not 50 Hz (PR #1364 code review).
+ * A stored reading with its unit, the dash when there is none: the point list's Latest cell
+ * (PR #1364), and since `F4.379` the Latest records Value cell and the bucket table's Min and Max.
+ * The float's binary tail is dropped and every real digit kept (`withoutFloatNoise`).
  */
 export function formatReading(value: number | null | undefined, unit: string | null): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "—";
   }
-  const body = String(Number(value.toPrecision(12)));
+  const body = withoutFloatNoise(value);
   return unit ? `${body} ${unit}` : body;
 }
 
