@@ -23,12 +23,14 @@ type Harness = {
   canReadCalls: string[];
   currentCalls: { point: { assetId: string; pointKey: string }; now: Date }[];
   listCalls: { assetIds: string[] | null; now: Date }[];
+  pastCalls: { point: { assetId: string; pointKey: string }; window: { from: Date; to: Date }; now: Date }[];
 };
 
 function harness(opts: { canRead?: boolean; readable?: string[] | null } = {}): Harness {
   const canReadCalls: string[] = [];
   const currentCalls: Harness["currentCalls"] = [];
   const listCalls: Harness["listCalls"] = [];
+  const pastCalls: Harness["pastCalls"] = [];
   const accessControl = {
     canReadAsset: async (_user: JwtPayload, assetId: string) => {
       canReadCalls.push(assetId);
@@ -45,8 +47,12 @@ function harness(opts: { canRead?: boolean; readable?: string[] | null } = {}): 
       listCalls.push({ assetIds, now });
       return { items: [] };
     },
+    past: async (point: { assetId: string; pointKey: string }, window: { from: Date; to: Date }, now: Date) => {
+      pastCalls.push({ point, window, now });
+      return { asOf: now.toISOString(), buckets: [] };
+    },
   } as unknown as MlForecastsService;
-  return { controller: new MlController(service, accessControl), canReadCalls, currentCalls, listCalls };
+  return { controller: new MlController(service, accessControl), canReadCalls, currentCalls, listCalls, pastCalls };
 }
 
 async function settle(run: Promise<unknown>): Promise<unknown> {
@@ -96,4 +102,69 @@ export async function theListHandsReadableAssetIdsToTheServiceUnchanged(): Promi
     expect(h.listCalls[0]?.assetIds).toBe(readable);
     expect(h.listCalls[0]?.now).toBeInstanceOf(Date);
   }
+}
+
+const FROM = "2026-11-15T00:00:00.000Z";
+const TO = "2026-11-16T00:00:00.000Z";
+
+/** `E1.4e`: a bad ref is a 400 before the query is even looked at, the scope check or the service. */
+export async function thePastRouteRefusesABadRefFirst(): Promise<void> {
+  for (const bad of ["no-separator", param("not-a-uuid", "kw"), param(ASSET, ""), param(ASSET, "k".repeat(129))]) {
+    const h = harness();
+    // The query is bad too: the ref's 400 must be the one raised (decode first).
+    const err = await settle(h.controller.pastForecast(USER, bad, { window: "24h" }));
+    expect(err, bad.slice(0, 40)).toBeInstanceOf(BadRequestException);
+    expect((err as BadRequestException).message, "the ref's refusal, not the query's").toMatch(/point/i);
+    expect(h.canReadCalls).toEqual([]);
+    expect(h.pastCalls).toEqual([]);
+  }
+}
+
+/** `E1.4e`: a missing, garbled, reversed or over-long window, or an extra key, is a 400 before canReadAsset. */
+export async function thePastRouteRefusesABadWindowBeforeTheScopeCheck(): Promise<void> {
+  const bad: Record<string, unknown>[] = [
+    {},
+    { from: FROM },
+    { to: TO },
+    { from: "last-tuesday", to: TO },
+    { from: TO, to: FROM },
+    { from: "2024-01-01T00:00:00.000Z", to: TO },
+    { from: FROM, to: TO, extra: "1" },
+  ];
+  for (const query of bad) {
+    const h = harness();
+    const err = await settle(h.controller.pastForecast(USER, param(ASSET, "temp_c"), query));
+    expect(err, JSON.stringify(query)).toBeInstanceOf(BadRequestException);
+    expect(h.canReadCalls, "canReadAsset must not run on a 400").toEqual([]);
+    expect(h.pastCalls).toEqual([]);
+  }
+  const reversed = await settle(harness().controller.pastForecast(USER, param(ASSET, "temp_c"), { from: TO, to: FROM }));
+  expect((reversed as BadRequestException).message).toBe("from must be earlier than to");
+}
+
+/** `E1.4e`: a foreign asset is a 403 before the read. */
+export async function thePastRouteIsA403BeforeTheService(): Promise<void> {
+  const h = harness({ canRead: false });
+  const err = await settle(h.controller.pastForecast(USER, param(ASSET, "temp_c"), { from: FROM, to: TO }));
+  expect(err).toBeInstanceOf(ForbiddenException);
+  expect(h.canReadCalls).toEqual([ASSET]);
+  expect(h.pastCalls).toEqual([]);
+}
+
+/** `E1.4e`: the decoded pair, the parsed window as instants and one clock reach the service. */
+export async function thePastRouteHandsTheDecodedPairAndWindowToTheService(): Promise<void> {
+  const h = harness();
+  const before = Date.now();
+  const body = await h.controller.pastForecast(USER, param(ASSET, "temp c/1"), {
+    from: "2026-11-15T05:30:00+05:30",
+    to: TO,
+  });
+  expect(h.canReadCalls).toEqual([ASSET]);
+  expect(h.pastCalls).toHaveLength(1);
+  const call = h.pastCalls[0];
+  expect(call?.point).toEqual({ assetId: ASSET, pointKey: "temp c/1" });
+  expect(call?.window.from.toISOString()).toBe(FROM);
+  expect(call?.window.to.toISOString()).toBe(TO);
+  expect(call?.now.getTime()).toBeGreaterThanOrEqual(before);
+  expect(body).toEqual({ asOf: call?.now.toISOString(), buckets: [] });
 }

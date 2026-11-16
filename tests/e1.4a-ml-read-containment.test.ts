@@ -92,7 +92,8 @@ describe("E1.4a ml read containment (ADR 0135 Amendment 3 S1–S4)", () => {
     const code = codeOnly(read(CONTROLLER_REL));
     expect(code).toContain("@UseGuards(JwtAuthGuard)");
     const bodies = code.split(ROUTE_DECORATOR).slice(1).filter((_, index) => index % 2 === 1);
-    expect(bodies.length, "the controller declares its two routes").toBe(2);
+    // `E1.4e` (Amendment 4) added the third, `points/:pointRef/forecast/past`.
+    expect(bodies.length, "the controller declares its three routes").toBe(3);
     for (const body of bodies) {
       const handler = body.slice(0, body.search(/\n  @|\n}/) + 1 || body.length);
       expect(/canReadAsset\(|readableAssetIds\(/.test(handler), handler.slice(0, 300)).toBe(true);
@@ -115,6 +116,18 @@ describe("E1.4a ml read containment (ADR 0135 Amendment 3 S1–S4)", () => {
     }
   });
 
+  it("E1.4e: the past handler decodes, then parses its query, then checks access, then calls the service", () => {
+    const handler = methodBody(codeOnly(read(CONTROLLER_REL)), "pastForecast");
+    const decode = handler.indexOf("decodeBoundedPointRef(");
+    const query = handler.indexOf("pastForecastQuerySchema.safeParse(");
+    const guard = handler.indexOf("canReadAsset(");
+    const service = handler.indexOf("this.forecasts.past(");
+    expect(decode, "decodeBoundedPointRef( in the handler").toBeGreaterThanOrEqual(0);
+    expect(query, "the query parse after the decode").toBeGreaterThan(decode);
+    expect(guard, "canReadAsset( after the query parse").toBeGreaterThan(query);
+    expect(service, "the service call after canReadAsset(").toBeGreaterThan(guard);
+  });
+
   it("the list handler hands readableAssetIds to the service", () => {
     const handler = methodBody(codeOnly(read(CONTROLLER_REL)), "list");
     const scope = handler.indexOf("readableAssetIds(");
@@ -126,7 +139,7 @@ describe("E1.4a ml read containment (ADR 0135 Amendment 3 S1–S4)", () => {
   it("the service reaches each pool only as withReadScope's own argument (S4)", () => {
     const service = codeOnly(read(SERVICE_REL));
     const scoped = service.match(/withReadScope\(\s*this\.tenantDb,\s*this\.fleetDb,/g) ?? [];
-    expect(scoped.length, "both reads run through withReadScope(this.tenantDb, this.fleetDb, …)").toBe(2);
+    expect(scoped.length, "all three reads run through withReadScope(this.tenantDb, this.fleetDb, …)").toBe(3);
     expect((service.match(/this\.tenantDb\b/g) ?? []).length).toBe(scoped.length);
     expect((service.match(/this\.fleetDb\b/g) ?? []).length).toBe(scoped.length);
     expect(service, "destructuring a pool off `this` hides it from the count").not.toMatch(

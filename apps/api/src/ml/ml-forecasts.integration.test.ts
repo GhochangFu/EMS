@@ -16,6 +16,10 @@ import {
   assertTheListPicksTheSameRun,
   assertTheNewestSucceededCurrentRunWins,
   assertTheOnePointReadMarksAStaleRun,
+  assertThePastForecastIgnoresRowsIssuedAfterTheirHour,
+  assertThePastForecastIsScopedOnBothBranches,
+  assertThePastForecastPicksTheOneHourAheadRow,
+  assertThePastForecastWindowBoundsHold,
   assertThePolicyScopesTheTenantBranch,
   assertTheReadFiltersOnTheFleetBranch,
   assertTheServiceAppliesTheCallersScope,
@@ -223,6 +227,31 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
       l3: await plant({ org: organizations.a, asset: assets.l3, startedMs: at(-1, 5), firstBucket: -1, count: 48, p50: () => 40 }),
     };
 
+    // `E1.4e`: L4's one-bucket runs, each case of the 1-hour-ahead rule (the spec's
+    // `assertThePastForecastPicksTheOneHourAheadRow` lists them by hour).
+    const pastAsset = await asset("l4", organizations.a, siblingRows[0].id);
+    const pastRun = (startedMs: number, firstBucket: number, p50: number, opts: { failed?: boolean; count?: number } = {}) =>
+      plant({
+        org: organizations.a,
+        asset: pastAsset,
+        startedMs,
+        firstBucket,
+        count: opts.count ?? 1,
+        failed: opts.failed,
+        p50: () => p50,
+      });
+    await pastRun(at(-7, -30), -7, 9);
+    await pastRun(at(-6, -180), -6, 8);
+    await pastRun(at(-5, -240), -5, 7);
+    await pastRun(at(-4, 10), -4, 6);
+    await pastRun(at(-3, -30), -3, 1);
+    await pastRun(at(-3, -150), -3, 2);
+    await pastRun(at(-3, -240), -3, 3);
+    await pastRun(at(-3, 10), -3, 4);
+    await pastRun(at(-3, -10), -3, 5, { failed: true });
+    await pastRun(at(-1, -55), -1, 10);
+    await pastRun(at(0, -55), 0, 11, { count: 2 });
+
     const { rows: facts } = await superuser.query<{
       id: string;
       code: string;
@@ -287,6 +316,7 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
       expected,
       organizationAZone: orgAZone[0]?.timezone ?? "",
       superuserDb: createDb(superuser),
+      pastAsset,
     };
   }, 120_000);
 
@@ -340,6 +370,22 @@ describe.skipIf(!connectionString)("E1.4a — the forecast reads", () => {
 
   it("a point with no forecast, and an asset that no longer exists, are forecast: null", async () => {
     await assertNoForecastIsNull(ctx, randomUUID());
+  });
+
+  it("E1.4e: each past hour takes the newest succeeded forecast issued before it and at most 3 h ahead", async () => {
+    await assertThePastForecastPicksTheOneHourAheadRow(ctx);
+  });
+
+  it("E1.4e: the past window is from's UTC hour inclusive to `to` exclusive, never the current hour on", async () => {
+    await assertThePastForecastWindowBoundsHold(ctx);
+  });
+
+  it("E1.4e: a row issued after its hour began (an --as-of run, a failed run) is never the past forecast", async () => {
+    await assertThePastForecastIgnoresRowsIssuedAfterTheirHour(ctx);
+  });
+
+  it("E1.4e: the past read is scoped by the policy on the tenant branch and by asset on the fleet branch", async () => {
+    await assertThePastForecastIsScopedOnBothBranches(ctx);
   });
 
   it("R4: neither read plans a scan of ml.forecasts unbound to a run or a point, on about 140,000 rows", async () => {

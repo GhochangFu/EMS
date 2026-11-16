@@ -3,6 +3,7 @@ import {
   FORECAST_STALE_AFTER_HOURS,
   resolveSiteTimeZone,
   type ForecastListRow,
+  type PastForecastBucket,
   type PointForecast,
 } from "@bms/shared";
 
@@ -115,4 +116,30 @@ export function toForecastListRow(row: ForecastListDbRow, currentHourMs: number)
     p50Max: row.p50_max,
     p50PeakAt: iso(row.p50_peak_ms),
   };
+}
+
+/**
+ * `E1.4e` / ADR 0135 Amendment 4 — the hours the past-forecast read covers:
+ * from the UTC hour `from` falls in, up to (excluding) `to` or the current hour,
+ * whichever is earlier. The current hour onward belongs to the live forecast.
+ * `null` when nothing is left, so the service skips the read.
+ */
+export function pastForecastWindowOf(
+  window: { from: Date; to: Date },
+  currentHourMs: number,
+): { fromHourMs: number; endMs: number } | null {
+  const fromHourMs = currentHourOf(window.from);
+  const endMs = Math.min(window.to.getTime(), currentHourMs);
+  return fromHourMs < endMs ? { fromHourMs, endMs } : null;
+}
+
+/** One row of the past-forecast read: a past bucket and the p50 forecast for it 1 hour ahead. */
+export type PastForecastDbRow = {
+  bucket_ms: number;
+  p50: number;
+};
+
+/** The past-forecast rows (ascending, one per bucket) → the wire's buckets. */
+export function toPastForecast(rows: readonly PastForecastDbRow[]): PastForecastBucket[] {
+  return rows.map((row) => ({ t: iso(row.bucket_ms), p50: row.p50 }));
 }

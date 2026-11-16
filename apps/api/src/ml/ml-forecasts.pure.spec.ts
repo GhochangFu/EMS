@@ -1,4 +1,4 @@
-import { forecastListRowSchema, pointForecastSchema } from "@bms/shared";
+import { forecastListRowSchema, pastForecastBucketSchema, pointForecastSchema } from "@bms/shared";
 import { expect } from "vitest";
 
 import {
@@ -6,7 +6,9 @@ import {
   currentHourOf,
   isStale,
   lookBackStartOf,
+  pastForecastWindowOf,
   toForecastListRow,
+  toPastForecast,
   toPointForecast,
   type ForecastListDbRow,
   type PointForecastDbRow,
@@ -122,4 +124,56 @@ export function theListRowMapsEveryFieldAndResolvesTheZoneLocationFirst(): void 
   expect(toForecastListRow(listRow({ asset_rtu_name: null }), CURRENT).assetRtuName).toBeNull();
   expect(toForecastListRow(listRow({ first_bucket_ms: CURRENT - 4 * HOUR_MS }), CURRENT).stale).toBe(true);
   expect(toForecastListRow(listRow({ first_bucket_ms: CURRENT - 3 * HOUR_MS }), CURRENT).stale).toBe(false);
+}
+
+/** `E1.4e`: the window starts at the UTC hour `from` falls in and ends at `to` or the current hour, whichever is earlier. */
+export function thePastWindowIsFlooredAndClippedToTheCurrentHour(): void {
+  const d = (s: string): Date => new Date(s);
+  // `from` floored to its UTC hour (also from another offset); `to` in the future clipped to the current hour.
+  expect(pastForecastWindowOf({ from: d("2026-11-15T08:20:00.000Z"), to: d("2026-11-17T00:00:00.000Z") }, CURRENT)).toEqual({
+    fromHourMs: Date.parse("2026-11-15T08:00:00.000Z"),
+    endMs: CURRENT,
+  });
+  expect(pastForecastWindowOf({ from: d("2026-11-15T13:50:00.000+05:30"), to: d("2026-11-16T09:30:00.000Z") }, CURRENT)).toEqual({
+    fromHourMs: Date.parse("2026-11-15T08:00:00.000Z"),
+    // A `to` before the current hour is kept as given: the read is `horizon_bucket < to`.
+    endMs: Date.parse("2026-11-16T09:30:00.000Z"),
+  });
+  // `to` exactly the current hour: the current hour is still excluded.
+  expect(pastForecastWindowOf({ from: d("2026-11-16T09:00:00.000Z"), to: new Date(CURRENT) }, CURRENT)).toEqual({
+    fromHourMs: CURRENT - HOUR_MS,
+    endMs: CURRENT,
+  });
+}
+
+/** `E1.4e`: a window with no past hour is `null`, so the service reads nothing. */
+export function aWindowWithNoPastHourIsNull(): void {
+  const d = (ms: number): Date => new Date(ms);
+  // Wholly in the current hour or later.
+  expect(pastForecastWindowOf({ from: d(CURRENT + 60_000), to: d(CURRENT + 5 * HOUR_MS) }, CURRENT)).toBeNull();
+  expect(pastForecastWindowOf({ from: d(CURRENT), to: d(CURRENT + HOUR_MS) }, CURRENT)).toBeNull();
+  // `from` and `to` inside one past hour, `to` at its very start: floor(from) = to.
+  expect(pastForecastWindowOf({ from: d(CURRENT - HOUR_MS), to: d(CURRENT - HOUR_MS) }, CURRENT)).toBeNull();
+  // But a sliver of a past hour reads that hour.
+  expect(pastForecastWindowOf({ from: d(CURRENT - 30 * 60_000), to: d(CURRENT - 29 * 60_000) }, CURRENT)).toEqual({
+    fromHourMs: CURRENT - HOUR_MS,
+    endMs: CURRENT - 29 * 60_000,
+  });
+}
+
+/** `E1.4e`: rows map to `{ t, p50 }` in order, with exactly the contract's keys. */
+export function thePastRowsMapToTheContractsBuckets(): void {
+  const buckets = toPastForecast([
+    { bucket_ms: CURRENT - 3 * HOUR_MS, p50: 1.5 },
+    { bucket_ms: CURRENT - HOUR_MS, p50: -2 },
+  ]);
+  expect(buckets).toEqual([
+    { t: iso(CURRENT - 3 * HOUR_MS), p50: 1.5 },
+    { t: iso(CURRENT - HOUR_MS), p50: -2 },
+  ]);
+  for (const bucket of buckets) {
+    expect(Object.keys(bucket).sort()).toEqual(Object.keys(pastForecastBucketSchema.shape).sort());
+    expect(pastForecastBucketSchema.parse(bucket)).toEqual(bucket);
+  }
+  expect(toPastForecast([])).toEqual([]);
 }

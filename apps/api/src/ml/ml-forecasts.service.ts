@@ -1,17 +1,24 @@
 import { Inject, Injectable } from "@nestjs/common";
 
 import type { BmsDb } from "@bms/db";
-import type { ForecastListResponse, PointForecastResponse } from "@bms/shared";
+import type { ForecastListResponse, PastForecastResponse, PointForecastResponse } from "@bms/shared";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withReadScope } from "../database/tenant-read-scope";
-import { currentHourOf, toForecastListRow, toPointForecast } from "./ml-forecasts.pure";
-import { readForecastList, readPointForecast } from "./ml-forecasts.reads";
+import {
+  currentHourOf,
+  pastForecastWindowOf,
+  toForecastListRow,
+  toPastForecast,
+  toPointForecast,
+} from "./ml-forecasts.pure";
+import { readForecastList, readPastForecast, readPointForecast } from "./ml-forecasts.reads";
 
 /**
- * `E1.4a` / ADR 0135 Amendment 3 R-c, S1, S4 — the two forecast reads.
+ * `E1.4a` / ADR 0135 Amendment 3 R-c, S1, S4 — the forecast reads; `E1.4e`
+ * (Amendment 4) adds the third, the past hours' 1-hour-ahead forecast.
  *
- * **Both run through `withReadScope`, and nothing here touches a pool
+ * **All run through `withReadScope`, and nothing here touches a pool
  * otherwise** (`tests/e1.4a-ml-read-containment.test.ts`). A single-organization
  * caller reads inside `withTenant` on `bms_tenant`, which `0158` granted `SELECT`
  * on `ml.forecasts` and `ml.model_runs`, so `0157`'s FORCE policy scopes the
@@ -51,5 +58,25 @@ export class MlForecastsService {
       readForecastList(tx, assetIds, currentHourMs),
     );
     return { items: rows.map((row) => toForecastListRow(row, currentHourMs)) };
+  }
+
+  /**
+   * `E1.4e`: for each past hour of `window` (from the UTC hour `from` falls in, up
+   * to `to` or the current hour, whichever is earlier), the p50 forecast for it
+   * made 1 hour ahead. A window with no past hour reads nothing.
+   */
+  async past(
+    point: { assetId: string; pointKey: string },
+    window: { from: Date; to: Date },
+    now: Date,
+  ): Promise<PastForecastResponse> {
+    const bounds = pastForecastWindowOf(window, currentHourOf(now));
+    const rows =
+      bounds === null
+        ? []
+        : await withReadScope(this.tenantDb, this.fleetDb, [point.assetId], () => [], (tx) =>
+            readPastForecast(tx, point, bounds.fromHourMs, bounds.endMs),
+          );
+    return { asOf: now.toISOString(), buckets: toPastForecast(rows) };
   }
 }
