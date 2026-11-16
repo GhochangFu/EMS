@@ -356,7 +356,8 @@ export function configRowFromDto(widget: DashboardWidgetSpec): WidgetConfigRow {
     case "asset_class_strip":
     case "critical_systems_list":
     case "breaker_table":
-      // `F3.73` / `F3.74` — configure nothing (`{}`); named so the `never` below still proves no arm is forgotten.
+    case "forecast":
+      // `F3.73` / `F3.74` / `E1.4c` — configure nothing (`{}`); named so the `never` below still proves no arm is forgotten.
       break;
     default: {
       // No arm may be forgotten: this switch has no compile-time exhaustiveness otherwise, and a
@@ -841,6 +842,9 @@ export function buildPutWidgetsPayload(
           return { ...identity, widgetType: "breaker_table", config: {} };
         case "trend_strip":
           return { ...identity, widgetType: "trend_strip", config: buildTrendStripConfig(row.config) };
+        case "forecast":
+          // `E1.4c` (plan R11) — its one point is a `points` row; the config holds nothing.
+          return { ...identity, widgetType: "forecast", config: {} };
         default: {
           const unreachable: never = row.widgetType;
           throw new Error(`Unhandled widget type ${JSON.stringify(unreachable)}`);

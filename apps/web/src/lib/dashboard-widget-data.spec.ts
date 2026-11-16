@@ -98,6 +98,19 @@ export function runPointRefsForTests(): void {
 
   const empty = pointRefsFor({ ...dashboard, widgets: [] });
   assert(empty.length === 0, "a dashboard with no widgets has no point refs");
+
+  // `E1.4c` — a forecast widget makes its own reads, so its point opens no `recent` read or socket.
+  const forecast: DashboardWidgetDto = {
+    ...IDENTITY,
+    widgetType: "forecast",
+    config: {},
+    points: [point({ assetId: "asset-c", pointKey: "chw_kw" })],
+  };
+  const withForecast = pointRefsFor({ ...dashboard, widgets: [...dashboard.widgets, forecast] });
+  assert(
+    withForecast.length === 2 && !withForecast.includes(encodePointRef("asset-c", "chw_kw")),
+    `a forecast widget's point is not a recent-read ref — got ${JSON.stringify(withForecast)}`,
+  );
 }
 
 /**

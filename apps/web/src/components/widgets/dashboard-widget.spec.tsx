@@ -125,6 +125,9 @@ function sampleWidget(widgetType: WidgetType, title: string | null = "Feed pump 
     // `F4.305` — the trend strip binds nothing; `defaultRange` is its one required key.
     case "trend_strip":
       return { ...IDENTITY, title, widgetType, config: { defaultRange: "24h" } };
+    // `E1.4c` — the forecast's config is `{}`; with no point it draws its title and "No point bound.".
+    case "forecast":
+      return { ...IDENTITY, title, widgetType, config: {} };
     default: {
       const unreachable: never = widgetType;
       return unreachable;
@@ -145,11 +148,11 @@ const WIDGET_TYPES = Object.keys(WIDGET_CATALOG) as WidgetType[];
 export function everyCatalogTypeDrawsItsTitle(): void {
   expect(
     WIDGET_TYPES.length,
-    "the catalog holds thirteen widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
+    "the catalog holds fourteen widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
       "decision 5, `F3.35` Stage B; `mimic` by ADR 0079 decision 1, `F3.32`; the five site " +
-      "widgets by `F3.73`; `breaker_table` by `F3.74`; `trend_strip` by `F4.305`). A zero means the walk is broken and the loop " +
-      "below asserts nothing; a fourteen means a type was added — widen this number and say so.",
-  ).toBe(13);
+      "widgets by `F3.73`; `breaker_table` by `F3.74`; `trend_strip` by `F4.305`; `forecast` by `E1.4c`). A zero means the walk " +
+      "is broken and the loop below asserts nothing; a fifteen means a type was added — widen this number and say so.",
+  ).toBe(14);
 
   for (const widgetType of WIDGET_TYPES) {
     const { unmount } = render(

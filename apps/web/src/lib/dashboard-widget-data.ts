@@ -52,10 +52,15 @@ export type HistoryByRef = ReadonlyMap<string, readonly WidgetSeriesPoint[]>;
  * `GET /telemetry/points/:pointRef/recent` and the `/ws/telemetry` socket both key on.
  * Distinct because two widgets — or two roles on one widget — may bind the same point, and
  * `use-dashboard-telemetry.ts` must not open one REST read or one socket subscription per
- * *binding* when it only needs one per *point*. */
+ * *binding* when it only needs one per *point*.
+ * `E1.4c` — a `forecast` widget is skipped: it makes its own two reads (`ForecastWidgetLive`), so its
+ * point would cost a wasted `recent` read and a socket subscription nothing draws. */
 export function pointRefsFor(dashboard: DashboardDto): string[] {
   const refs = new Set<string>();
   for (const widget of dashboard.widgets) {
+    if (widget.widgetType === "forecast") {
+      continue;
+    }
     for (const point of widget.points) {
       refs.add(encodePointRef(point.assetId, point.pointKey));
     }
