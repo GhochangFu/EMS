@@ -1074,3 +1074,15 @@ Both are inside ruling 5 (anomaly ≤ 900 MiB, forecast + anomaly ≤ 300 s), so
 the build goes on. `E1.2a` merged as `947f0d0`. The demo host (arm64) is the
 second sample: its first anomaly `cycle_summary` lines and the `docker stats`
 peak are recorded here after the deploy.
+
+**Build record — `E1.2` closed (2026-11-16).** `E1.2a`–`d` merged in #1370,
+#1372, #1373 and #1374 (plan build record §20). Two calls made in the build,
+recorded so a reader does not take them for drift:
+- **The `anomaly` widget is exempt from ADR 0133 Amendment 2's kW-only hiding**
+  on the site page *(drafter, E1.2d code review; open to the owner's veto)*.
+  Its one point only names the asset (plan R16) and it draws a unitless score,
+  so "never had fresh data to show" does not apply to it.
+- **The widget's time axis is UTC and says so**: the anomaly read carries no
+  site zone, so the axis, its tooltip and its caption all name UTC.
+The arm64 demo-host sample of ruling 5 is still owed here.
+
