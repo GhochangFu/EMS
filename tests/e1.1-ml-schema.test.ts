@@ -188,9 +188,4 @@ describe("E1.1 — ml schema (migration 0157)", () => {
     expect(tail).not.toMatch(/\b(CREATE|ALTER) (TABLE|INDEX|POLICY|UNIQUE INDEX|SCHEMA)\b/);
     expect(tail).not.toMatch(/\bGRANT\b/);
   });
-
-  it("leaves drizzle.config.ts schemaFilter alone (the E1.4 mirror is added deliberately)", () => {
-    const config = read("packages/db/drizzle.config.ts");
-    expect(config).not.toMatch(/["']ml["']/);
-  });
 });

@@ -74,7 +74,7 @@ export const pointValues = telemetrySchema.table(
  * with a live aggregate over the un-materialized tail.
  *
  * `drizzle.config.ts` points `drizzle-kit` at this file with
- * `schemaFilter: ["bms", "telemetry"]`, so anything declared here with
+ * `schemaFilter: ["bms", "telemetry", "ml"]`, so anything declared here with
  * `.table()` becomes `CREATE TABLE` DDL the next time someone runs
  * `pnpm db:generate` — which would collide with the real aggregates. `.view()`
  * plus `.existing()` tells drizzle-kit this object is not its to manage, so

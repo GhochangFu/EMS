@@ -23,6 +23,7 @@ import { MaintenanceWindowsModule } from "./maintenance-windows/maintenance-wind
 import { MapModule } from "./map/map.module";
 import { MimicLayoutsModule } from "./mimic-layouts/mimic-layouts.module";
 import { MimicSymbolLibrariesModule } from "./mimic-symbol-libraries/mimic-symbol-libraries.module";
+import { MlModule } from "./ml/ml.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { ObservabilityModule } from "./observability/observability.module";
 import { RateLimitModule } from "./rate-limit/rate-limit.module";
@@ -84,6 +85,8 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     CopilotModule,
     // `F4.365` / ADR 0134 — tariff lines, location mappings and the monthly bill.
     TariffsModule,
+    // `E1.4a` / ADR 0135 Amendment 3 — the forecast reads (`GET /ml/...`). API only.
+    MlModule,
   ],
 })
 export class AppModule {}

@@ -14,7 +14,7 @@ import pytest
 
 from bms_ml.config import load_config
 from bms_ml.db import sql
-from bms_ml.db.gateway import Gateway, PreflightError, parse_marker
+from bms_ml.db.gateway import EXPECTED_ML_SCHEMA_VERSION, Gateway, PreflightError, parse_marker
 from bms_ml.readiness import LOOKBACK_DAYS
 from bms_ml.scorer import run_cycle
 from tests.fakes import FakeClock, FakeForecaster
@@ -35,8 +35,11 @@ def config(fleet_url: str):
 
 
 def test_preflight_passes_as_bms_fleet(fleet_url):
+    # A later migration may bump the marker (E1.4a set 2); the scorer accepts stored >= expected.
     with Gateway.connect(fleet_url) as db:
-        assert db.preflight() == (1, "bms_fleet")
+        version, role = db.preflight()
+    assert version >= EXPECTED_ML_SCHEMA_VERSION
+    assert role == "bms_fleet"
 
 
 def test_preflight_refuses_the_superuser(database_urls):
@@ -50,9 +53,8 @@ def test_the_marker_sql_refuses_a_schema_without_its_marker(superuser):
         row = superuser.cursor(row_factory=psycopg.rows.dict_row).execute(sql.PREFLIGHT_MARKER_SQL).fetchone()
         with pytest.raises(PreflightError, match="no bms-ml-schema-version marker"):
             parse_marker(row)
-    assert superuser.execute("SELECT obj_description('ml'::regnamespace, 'pg_namespace')").fetchone()[0] == (
-        "bms-ml-schema-version=1"
-    )
+    restored = superuser.execute("SELECT obj_description('ml'::regnamespace, 'pg_namespace')").fetchone()[0]
+    assert parse_marker({"marker": restored}) >= EXPECTED_ML_SCHEMA_VERSION
 
 
 def test_the_marker_sql_refuses_an_absent_schema(superuser):

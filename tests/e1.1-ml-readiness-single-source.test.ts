@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { THRESHOLDS } from "../packages/db/src/ml-data-readiness.js";
+import { FORECAST_MAX_HORIZON_HOURS } from "../packages/shared/src/contracts/ml-forecasts.js";
 
 /**
  * E1.1 (ADR 0135, plan T3.2): the scorer's readiness gate and step 0's report
@@ -92,5 +93,33 @@ describe("E1.1 real-data predicate: one source", () => {
 
   it("the scorer's ELIGIBILITY_SQL carries the same predicate", () => {
     expect(normalise(eligibilitySql ?? "")).toContain(REAL_PREDICATE);
+  });
+});
+
+/**
+ * E1.4a (ADR 0135 Amendment 3, plan R3): the API's look-back is the scorer's
+ * largest horizon. If `ML_FORECAST_HORIZON_HOURS` may grow past the contract's
+ * constant, a run with a longer horizon would still hold the current hour after
+ * the API stops looking for it, and its forecast would vanish from every screen.
+ */
+const configPy = readFileSync(join(repoRoot, "apps/ml/src/bms_ml/config.py"), "utf8");
+
+/** The upper bound of `_integer(source, "<NAME>", default, lower, upper)`, or undefined. */
+function integerUpperBound(source: string, name: string): number | undefined {
+  const match = new RegExp(`_integer\\(source, "${name}", [0-9]+, [0-9]+, ([0-9]+)\\)`).exec(source);
+  return match ? Number(match[1]) : undefined;
+}
+
+describe("E1.4a forecast look-back: one source", () => {
+  it("the bound reader works on a known line (positive and negative control)", () => {
+    expect(integerUpperBound('x = _integer(source, "FOO", 48, 1, 64)\n', "FOO")).toBe(64);
+    expect(integerUpperBound('x = _integer(source, "FOO", 48, 1, upper)\n', "FOO")).toBeUndefined();
+    expect(integerUpperBound(configPy, "ML_CONTEXT_HOURS")).toBe(2048);
+  });
+
+  it("FORECAST_MAX_HORIZON_HOURS equals config.py's ML_FORECAST_HORIZON_HOURS upper bound", () => {
+    const upper = integerUpperBound(configPy, "ML_FORECAST_HORIZON_HOURS");
+    expect(upper, "ML_FORECAST_HORIZON_HOURS is missing from config.py or its bound is not a literal").toBeDefined();
+    expect(FORECAST_MAX_HORIZON_HOURS).toBe(upper);
   });
 });

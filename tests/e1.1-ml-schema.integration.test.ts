@@ -169,10 +169,15 @@ describe.skipIf(!has)("E1.1 — ml schema against a live database", () => {
     ]);
   });
 
-  it("the schema-version marker reads back as bms_fleet", async () => {
+  it("the schema-version marker reads back as bms_fleet, at version 1 or later", async () => {
+    // E1.4a (ADR 0135 Amendment 3 R-b, plan R18): later migrations bump the
+    // marker, so this asserts the pattern and a floor; the migration that set
+    // the current version asserts its exact value.
     await inTx("bms_fleet", null, async (run) => {
       const r = await run(`SELECT obj_description('ml'::regnamespace, 'pg_namespace') AS marker`);
-      expect(r.rows[0]?.marker).toBe("bms-ml-schema-version=1");
+      const marker = String(r.rows[0]?.marker);
+      expect(marker).toMatch(/^bms-ml-schema-version=[1-9][0-9]*$/);
+      expect(Number(marker.split("=")[1])).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -212,10 +217,15 @@ describe.skipIf(!has)("E1.1 — ml schema against a live database", () => {
     });
   });
 
-  it("bms_tenant and bms_auth cannot read any ml table (42501: no schema usage)", async () => {
-    for (const role of ["bms_tenant", "bms_auth"]) {
+  it("bms_auth cannot read any ml table, and bms_tenant cannot read anomaly_scores (42501)", async () => {
+    // E1.4a (Amendment 3 ruling 2) grants bms_tenant SELECT on model_runs and
+    // forecasts; tests/e1.4a-ml-read-grant.integration.test.ts holds that half.
+    for (const [role, tables] of [
+      ["bms_auth", ["model_runs", "forecasts", "anomaly_scores"]],
+      ["bms_tenant", ["anomaly_scores"]],
+    ] as const) {
       await inTx(role, eskom, async (run) => {
-        for (const table of ["model_runs", "forecasts", "anomaly_scores"]) {
+        for (const table of tables) {
           expect((await probe(run, `SELECT 1 FROM ml.${table} LIMIT 1`)).code, `${role} ${table}`).toBe("42501");
         }
       });

@@ -25,6 +25,7 @@ import { z } from "zod";
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { decodeGuardedPointRef } from "../common/guarded-point-ref";
 import { AssetHistoryExportService } from "./asset-history-export.service";
 import {
   assetWindowsQuerySchema,
@@ -36,27 +37,6 @@ import { TelemetryService } from "./telemetry.service";
 import { RateLimitClassOf } from "../rate-limit/rate-limit-class.decorator";
 
 const assetIdSchema = z.string().uuid();
-
-/**
- * One path-param ref, decoded and checked: a malformed ref (no separator, or a
- * `%` sequence `decodeURIComponent` cannot read) and a non-UUID asset id are
- * each a 400 — the same two sentences `atInstant` answers per ref. Runs before
- * the scope check, so neither reaches a query.
- */
-function decodeGuardedPointRef(pointRef: string): { assetId: string; pointKey: string } {
-  let point: { assetId: string; pointKey: string };
-  try {
-    point = decodePointRefParam(pointRef);
-  } catch {
-    // A 400, not a 500. A malformed reference is a caller error, and letting
-    // the decode throw raw would answer it with a stack trace.
-    throw new BadRequestException("Invalid point reference");
-  }
-  if (!assetIdSchema.safeParse(point.assetId).success) {
-    throw new BadRequestException("Invalid point reference: the asset id is not a UUID");
-  }
-  return point;
-}
 
 @Controller("telemetry")
 @UseGuards(JwtAuthGuard)

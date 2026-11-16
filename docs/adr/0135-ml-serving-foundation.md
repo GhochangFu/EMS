@@ -611,3 +611,34 @@ per-organization switch for forecasts, and any change to `apps/ml/src`
 **Consequences.** `E1.4a` waits for `E1.1` to be ✅ on `main`. After the build,
 AGENTS.md §3 *Layout* gains `apps/api/src/ml/` and the `ml` Drizzle mirror
 through a `chore(agents):` PR (§9.10). This is not a §6 promotion.
+
+**Build record — `E1.4a` PR 1 (2026-11-16).** Migration `0158_ml_tenant_read_grant`
+grants exactly ruling 2 and moves the marker to 2; its proof block also checks
+column-level grants, refuses a grant option, and reads each `tenant_isolation`
+predicate (the GUC, no `IS NULL`, no `OR`), not only the policy's name (PR 1
+security review). **No index was added** (R-c, C6): the two `0157` indexes
+serve both reads. Measured on a scratch TimescaleDB 2.29.1 / Postgres 16 with
+the seeded organizations and 60 days of hourly runs (2 organizations × 13
+points, **1,797,216 forecast rows**, 357 MB), `ANALYZE`d, warm, `EXPLAIN
+(ANALYZE)` as `bms_fleet` and as `bms_tenant` under its GUC: the one-point read
+is `forecasts_pkey` (three equalities) → `model_runs` by key → the run's rows,
+**1.3–1.6 ms**; the list is `model_runs_org_started_idx` (tenant) or a scan of
+`ml.model_runs` (fleet) → per run `forecasts_model_run_idx`, **82–136 ms**,
+bounded by the runs in the 64 h window × rows per run, whatever the table's age.
+Without `OFFSET 0` the list plans `Seq Scan on forecasts` for an admin (66–95 ms
+at this size, growing with the table), and at about 140,000 rows a full walk of
+`forecasts_pkey` on `horizon_bucket` alone. The integration case
+(`apps/api/src/ml/ml-forecasts.integration.spec.ts`) therefore fails any scan
+of `ml.forecasts` not bound to a run id or an asset id, not only a sequential
+scan, on runs planted up to the current hour. **Plan N3: it is a smoke check,
+not the mutation gate.** Removing `OFFSET 0` turned it red in only 3–5 runs of
+6, even with full-size statistics, because at that size the flattened join and
+the per-run path cost about the same. The deterministic gate is a text check
+in `tests/e1.4a-ml-read-containment.test.ts` that the lateral subquery keeps
+`OFFSET 0`. Limits: an x86 cloud VM, synthetic rows; the demo host's real rows
+are a step-6 check after deploy. One correction to the plan's one-point SQL:
+its second step read the run's rows from the current hour, so the first row
+was always the current hour and `stale` (C3, the run's *first* bucket) could
+never be true; it reads from the 64 h look-back start instead, the pure step
+drops the earlier buckets (C4) as plan §5 T1.8 describes, and an integration
+case holds it (a run that scored 4 h ago reads `stale`).
