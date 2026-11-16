@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { useEffect } from "react";
 
 import { fetchCurrentUser } from "./api/login";
@@ -59,6 +59,8 @@ import { PointKeysAdminPage } from "./pages/admin/point-keys-page";
 import { PayloadFormatsAdminPage } from "./pages/admin/payload-formats-page";
 import { EdgeGatewaysAdminPage } from "./pages/admin/edge-gateways-page";
 import { EXTRA_ADMIN_ROUTES } from "./pages/admin/extra-admin-routes";
+import { EXTRA_ROUTES } from "./pages/extra-routes";
+import { LegacyAssetHistoryRedirect } from "./pages/legacy-asset-history-redirect";
 import { PointKeyStatesAdminPage } from "./pages/admin/point-key-states-page";
 import { TrendPointsAdminPage } from "./pages/admin/trend-points-page";
 import { RtusAdminPage } from "./pages/admin/rtus-page";
@@ -66,13 +68,6 @@ import { TelemetryImportPage } from "./pages/admin/telemetry-import-page";
 import { AuthCallbackPage } from "./pages/auth-callback-page";
 import { LoginPage } from "./pages/login-page";
 import { useAuthStore } from "./stores/auth-store";
-
-/** `/assets/:assetId/history` (F4.297 first path) → `/asset-history/:assetId`, query kept. */
-function LegacyAssetHistoryRedirect() {
-  const { assetId = "" } = useParams();
-  const { search } = useLocation();
-  return <Navigate to={`/asset-history/${assetId}${search}`} replace />;
-}
 
 function isJwtExpired(token: string): boolean {
   const [, payload] = token.split(".");
@@ -857,6 +852,7 @@ export function App() {
         }
       />
       {EXTRA_ADMIN_ROUTES}
+      {EXTRA_ROUTES}
       {/* E7.2 (ADR 0123 decision 12): the site edge gateways; the page fails closed for a non-global admin. */}
       <Route
         path="/admin/edge-gateways"

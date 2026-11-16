@@ -24,6 +24,7 @@ export const NAV_ICONS = {
   "Electrical SLD": "plug-zap",
   "HVAC · CRAC": "fan",
   "Energy Analytics": "chart-line",
+  Forecasts: "target",
   Maintenance: "wrench",
   "Schedule Centre": "clock",
   "Rule Engine": "cpu",
