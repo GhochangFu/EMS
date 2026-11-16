@@ -789,12 +789,14 @@ the deploy.
 
 ## Amendment 5 — `E1.2`: advisory anomaly scores, end to end (2026-11-16)
 
-**Status: Proposed — 2026-11-16.** Drafted by an agent for backlog row `E1.2`.
+**Status: Accepted — 2026-11-16** (owner, in chat: "accepted, mark
+Amendment 5 accepted and merge"). Drafted by an agent for backlog row `E1.2`.
 Lines marked *(owner, 2026-11-16)* are the owner's answers to five questions
 asked in chat that day; three were the option the agent recommended, and
-questions 1 and 4 took the wider option. Lines marked *(drafter)* are
-the agent's calls inside those answers; each is open to veto when the owner
-accepts.
+questions 1 and 4 took the wider option. Lines marked *(drafter)* are the
+agent's calls inside those answers; the owner accepted the amendment with them
+as written, so **every *(drafter)* line and every A-a to A-h call is now a
+ruling**.
 
 **What stays.** Decision 5 stays as written: a robust baseline (median/MAD per
 point) plus an Isolation Forest (scikit-learn) over an asset's points
@@ -916,7 +918,7 @@ npm package. It needs two migrations: a grant and a widget kind.
    rules again. No new compose service, so `DISCOVERY_BLOCKED_HOSTNAMES` does
    not change.
 
-**Recommended calls** *(drafter; veto at acceptance)*:
+**Recommended calls** *(drafter; accepted with the amendment)*:
 
 - **A-a. One run row per organization per job.** An anomaly run is its own
   `ml.model_runs` row, `model_name = 'bms-anomaly'`, `model_version` = the
