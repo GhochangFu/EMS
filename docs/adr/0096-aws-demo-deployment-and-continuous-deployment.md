@@ -184,3 +184,41 @@ does not generalise to any other host or broker.
 - `ingest` uses 256 MiB at most (`mem_limit`).
 - An edit to `bms-ctl.sh` reaches the host only through `setup-server.sh`
   (decision 7 above); this amendment needs that re-run once after it merges.
+
+## Amendment 2 — a CI-started deploy ships only main's newest commit (2026-11-16)
+
+**Status:** Accepted 2026-11-16 (the owner asked for the fix after the `E1.4`
+demo checks).
+
+**Context.** CI runs on `main` finish out of order. A code commit runs the full
+CI, a later docs-only commit runs the short one, and the later commit's run can
+finish first. Each finishing run started a deploy of its own commit, and the
+workflow's concurrency group only queues them, so the last run to finish won.
+On 2026-11-16 that was the run for `6e26cb27`: its deploy put that commit back
+on the host in place of the newer `61af5280`, with a short 502 while the stack
+restarted. The two differed only in docs, but the same order of events rolls
+back code.
+
+**Decision.** A new first job, `gate`, runs before the build. For a run that CI
+started (`workflow_run`), it reads the tip of `main` and lets the build and the
+deploy run only when the commit is that tip; otherwise it skips both with a
+notice, and the newer commit's own run deploys it. The workflow-wide
+concurrency group (`deploy-aws-demo`, never cancelling) keeps any other deploy
+from landing between the check and this run's deploy, so a deploy that passes
+the gate never replaces a newer commit. "Run workflow" by hand is exempt: it is
+the rollback route, and its SHA is the owner's choice. An unreadable tip fails
+the run rather than deploying blind.
+
+**Consequences.**
+
+- A commit whose CI finishes after a newer commit's is built and deployed only
+  through that newer commit's run (which contains it). When the newest
+  commit's CI fails, nothing deploys until a fix lands on `main`.
+- `tests/adr-0096-deploy-newest-only.test.ts` holds the gate, the build's
+  dependency on it and the concurrency group it relies on.
+- **Not changed:** a docs-only commit still deploys on its short CI even when
+  it sits on top of a code commit whose full CI is still running. Closing that
+  needs the deploy to wait for every commit since the last deploy; it is
+  recorded here, not built.
+- `bms-ctl.sh` is unchanged, so the host needs no `setup-server.sh` re-run.
+
