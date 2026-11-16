@@ -76,6 +76,12 @@ export const anomaliesQuerySchema = z
   .object({
     since: instant.optional(),
   })
-  .strict();
+  .strict()
+  // Zod accepts an offset such as +99:99 that `Date.parse` reads as NaN; without this the
+  // clamp sees NaN and the read fails with a 500 instead of a 400 (E1.2b security review L1).
+  .refine((query) => query.since === undefined || Number.isFinite(Date.parse(query.since)), {
+    message: "since must be a valid instant",
+  })
+  .describe("`since`, when given, must be a valid instant.");
 
 export type AnomaliesQuery = z.infer<typeof anomaliesQuerySchema>;

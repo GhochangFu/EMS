@@ -85,7 +85,7 @@ export function theAnomalyWindowRefusesAnUnknownKeyAMissingToAReversalAndA32DayS
 export function theListQueryTakesAnOptionalSinceOnly(): void {
   expect(anomaliesQuerySchema.parse({})).toEqual({});
   expect(anomaliesQuerySchema.parse({ since: FROM })).toEqual({ since: FROM });
-  for (const bad of [{ since: "last-week" }, { since: "2026-11-15T00:00:00" }, { since: FROM, limit: "10" }, { from: FROM }]) {
+  for (const bad of [{ since: "last-week" }, { since: "2026-11-15T00:00:00" }, { since: "2026-01-01T00:00:00+99:99" }, { since: FROM, limit: "10" }, { from: FROM }]) {
     expect(anomaliesQuerySchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
   }
 }

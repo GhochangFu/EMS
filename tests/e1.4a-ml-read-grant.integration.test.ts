@@ -27,7 +27,7 @@ requireIntegrationDb({
   item: "E1.4a",
   label: "ml read grant tests",
   because:
-    "the schema marker, the bms_tenant grant, the refusals on anomaly_scores and on every write, " +
+    "the schema marker, the bms_tenant grant, the refusals on every write, " +
     "and the row level security that scopes the new reader are all things Postgres enforces, so a " +
     "green run without a database asserts nothing about any of them.",
 });

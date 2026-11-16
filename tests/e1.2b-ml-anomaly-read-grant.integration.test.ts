@@ -124,11 +124,15 @@ describe.skipIf(!has)("E1.2b — the ml anomaly read grant against a live databa
     return id;
   };
 
-  it("the schema-version marker reads bms-ml-schema-version=3 as bms_tenant", async () => {
+  it("the schema-version marker reads bms-ml-schema-version=N, N >= 3, as bms_tenant", async () => {
     await inTx(async (run) => {
       await as(run, "bms_tenant", eskom);
       const r = await run(`SELECT obj_description('ml'::regnamespace, 'pg_namespace') AS marker`);
-      expect(r.rows[0]?.marker).toBe("bms-ml-schema-version=3");
+      // >= rather than = so a later marker bump does not turn this red; the exact value is
+      // held by 0160's own proof block and the static test (E1.2b migration review L2).
+      const marker = String(r.rows[0]?.marker ?? "");
+      expect(marker).toMatch(/^bms-ml-schema-version=\d+$/);
+      expect(Number(marker.split("=")[1])).toBeGreaterThanOrEqual(3);
     });
   });
 
