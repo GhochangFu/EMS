@@ -249,3 +249,33 @@ def test_the_measured_values_move_and_repeat():
     values = [fixture.measure_value(shape, shape.points[3], h) for h in range(1, 169)]
     assert len(set(values)) > 100
     assert values == [fixture.measure_value(shape, shape.points[3], h) for h in range(1, 169)]
+
+
+def test_only_json_lines_and_the_peak_marker_are_relayed():
+    output = "\n".join(
+        [
+            '{"event": "cycle_summary", "rows_written": 3}',
+            "Traceback (most recent call last):",
+            "psycopg.OperationalError: password authentication failed for user x",
+            f"{m.PEAK_MARKER}123",
+            "",
+        ]
+    )
+    assert m.relayable_lines(output) == [
+        '{"event": "cycle_summary", "rows_written": 3}',
+        f"{m.PEAK_MARKER}123",
+    ]
+
+
+def test_the_childrens_database_name_is_read_from_the_url_without_connecting():
+    assert m.container_database_name("postgres://u:p@host.docker.internal:5432/bms_ml_test") == (
+        "bms_ml_test"
+    )
+    assert m.container_database_name("postgres://u:p@db:5432/bms") == "bms"
+
+
+def test_main_refuses_a_childrens_database_that_is_not_the_throwaway_one(monkeypatch):
+    monkeypatch.setenv("ML_TEST_DATABASE_URL_SUPERUSER", "postgres://s:p@localhost:5432/bms_ml_test")
+    monkeypatch.setenv("ML_TEST_DATABASE_URL_FLEET", "postgres://f:p@localhost:5432/bms")
+    monkeypatch.delenv(m.CONTAINER_URL_VAR, raising=False)
+    assert m.main(["--image", "bms-ml:ci", "--runs", "1"]) == 78

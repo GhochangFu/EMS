@@ -224,6 +224,23 @@ def report(results: Sequence[ChildResult]) -> tuple[str, int]:
     return text, 1 if found else 0
 
 
+def relayable_lines(output: str) -> list[str]:
+    """The lines that may reach the CI log: JSON objects and the peak marker, nothing else."""
+    kept = []
+    for raw in output.splitlines():
+        line = raw.strip()
+        if line.startswith(PEAK_MARKER) or (line.startswith("{") and line.endswith("}")):
+            kept.append(line)
+    return kept
+
+
+def container_database_name(url: str) -> str:
+    """The database a container URL names, read without connecting (it may not resolve here)."""
+    from psycopg.conninfo import conninfo_to_dict
+
+    return str(conninfo_to_dict(url).get("dbname", ""))
+
+
 def run_child(
     image: str,
     child: str,
@@ -246,11 +263,11 @@ def run_child(
         exit_code, output = 124, ""
     wall = time.monotonic() - started
     summary = parse_summary(output)
-    # The child's own log lines are counts and fixed reasons only (bms_ml.log), so they
-    # may reach the CI log; the table carries the numbers either way.
-    for line in output.splitlines():
-        if line.strip():
-            sys.stdout.write(f"  [{run} {child}] {line}\n")
+    # Only the child's JSON log lines (counts and fixed reasons, bms_ml.log) and the
+    # peak marker reach the CI log, as `scheduler._relay` keeps only JSON: a raw
+    # traceback would carry an exception message (AGENTS.md 9.6).
+    for line in relayable_lines(output):
+        sys.stdout.write(f"  [{run} {child}] {line}\n")
     return ChildResult(run, child, exit_code, wall, parse_memory_peak(output), summary)
 
 
@@ -276,7 +293,19 @@ def main(argv: list[str] | None = None) -> int:
 
     import psycopg  # here, so the unit tests of the pure parts need no driver call
 
-    from tests.integration.fixture import MEASURE_AHEAD_DAYS, MEASURE_TARGETS, TARGET, plant
+    from tests.integration.fixture import (
+        MEASURE_AHEAD_DAYS,
+        MEASURE_TARGETS,
+        REQUIRED_DATABASE,
+        TARGET,
+        plant,
+    )
+
+    # The children run with --force, so their database must be the throwaway one too,
+    # not only the one the fixture plants into.
+    if container_database_name(fleet) != REQUIRED_DATABASE:
+        sys.stderr.write(f"refusing to measure: the children's database is not {REQUIRED_DATABASE!r}\n")
+        return 78
 
     with psycopg.connect(superuser, autocommit=True) as conn:
         planted = plant(conn, extra_ready=EXTRA_READY, ahead_days=MEASURE_AHEAD_DAYS, anomaly_shape=True)
