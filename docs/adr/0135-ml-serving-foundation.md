@@ -521,6 +521,34 @@ package. It needs two migrations: a grant (`E1.4a`) and a widget kind
   alarm, notification, report, export or copilot answer carries a forecast,
   and no accuracy figure is shown.
 
+**Review additions (2026-11-16, PR #1356 security review).** These make
+R-b and R-c stricter. They change no ruling.
+
+- **S1. The asset filter is always applied.** RLS on `ml.*` isolates by
+  organization only. So every `ml.forecasts` read applies
+  `asset_id = ANY(readableAssetIds)` when that list is not null, on **both**
+  branches of `withReadScope`. On the `fleetDb` branch it is the only control.
+  The `E1.4a` integration tests prove three cases: a location-scoped user sees
+  only that location's forecasts; a multi-organization user who is not an
+  admin sees no other organization's rows; a global admin sees all rows.
+- **S2. The one-point route uses the guarded decoder.** It decodes
+  `pointRef`, then checks that the asset id is a UUID (400), then runs
+  `canReadAsset` (403), then reads. It uses the same guard as the telemetry
+  routes (`decodeGuardedPointRef`, moved to a shared helper), never the bare
+  decoder. `pointKey` is capped at 128 characters, the column width.
+- **S3. Only named run fields go on the wire.** The contracts carry only the
+  model name, the model version and the issue time from `ml.model_runs`.
+  `error_text`, `config_hash` and `rows_written` are never selected.
+- **S4. The pool is named.** The one-point read runs through
+  `withReadScope(…, [assetId], …)` after `canReadAsset`, so a user who is not
+  an admin also gets the RLS check.
+- **S5. The grant migration proves itself**, with a `DO $$` block in the 0157
+  style. It checks that `bms_tenant` holds `USAGE` on `ml` and `SELECT` on
+  exactly `ml.forecasts` and `ml.model_runs`. It also checks that `bms_tenant`
+  holds nothing on `ml.anomaly_scores` and no write privilege anywhere in
+  `ml`, that `bms_auth` holds nothing, and that the marker reads
+  `bms-ml-schema-version=2`.
+
 **Not in this amendment:** the anomaly read path (`E1.2`), forecasts in
 exports, reports or the copilot, an accuracy view, the owed `bms_ml` role, a
 per-organization switch for forecasts, and any change to `apps/ml`
