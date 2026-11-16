@@ -105,3 +105,11 @@ def test_the_version_is_scikit_learns():
     import sklearn
 
     assert af.SKLEARN_VERSION == sklearn.__version__
+
+
+def test_the_detector_the_cycle_is_given_is_this_module():
+    detector = af.IsolationForestDetector()
+    assert detector.kwargs is af.FOREST_KWARGS
+    assert detector.min_training_rows == af.MIN_TRAINING_ROWS == 336
+    data = cloud()
+    assert detector.score_hour(data, np.full(3, 50.0)) == af.score_hour(data, np.full(3, 50.0))

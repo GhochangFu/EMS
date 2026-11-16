@@ -1,9 +1,16 @@
-"""python -m bms_ml serve | run-once [--force] [--as-of ISO] | eligibility [--as-of ISO] | preflight | health
+"""python -m bms_ml serve | run-once [--force] [--as-of ISO] | run-anomaly [--force] [--as-of ISO]
+| eligibility [--job forecast|anomaly] [--as-of ISO] | preflight | health
 
 Exit codes: 0 ok (a partial failure is counted, not retried); 1 the cycle
 failed for every organization it tried (the scheduler retries); 78 the
 configuration, the database's ml schema, the role or the model is not one the
 scorer may run with (the scheduler stops, and `serve` exits 78 too).
+`run-anomaly` needs no Chronos model, and with `ML_ANOMALY_ENABLED=false` it
+logs `anomaly_disabled` and exits 0 without connecting.
+
+scikit-learn is imported only inside `run-anomaly` (`load_forest`), so the
+`serve` parent and the forecast child never load it (ADR 0135 Amendment 5,
+ruling 5); torch only inside the forecast child.
 
 Every failure is logged as a fixed reason or `<stage>:<ExceptionClass>`, never
 as an exception's message (AGENTS.md §9.6).
@@ -15,18 +22,27 @@ import argparse
 import signal
 import sys
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime, timedelta
-from functools import partial
 from typing import Any
 
 from bms_ml import log
+from bms_ml.anomaly_scorer import JOB_NAME as ANOMALY_JOB
+from bms_ml.anomaly_scorer import run_anomaly_cycle
 from bms_ml.config import Config, ConfigError, load_config
 from bms_ml.forecasting import NoModelError, installed_model, load_forecaster
 from bms_ml.health import HealthState, health_client, make_server
-from bms_ml.readiness import LOOKBACK_DAYS, coverage, forecast_verdict
-from bms_ml.scheduler import EXIT_CONFIG, EXIT_CYCLE_FAILED, EXIT_OK, run_cycle_process, run_scheduler
+from bms_ml.readiness import LOOKBACK_DAYS, anomaly_verdict, coverage, forecast_verdict
+from bms_ml.scheduler import (
+    EXIT_CONFIG,
+    EXIT_CYCLE_FAILED,
+    EXIT_OK,
+    CycleResult,
+    Job,
+    run_cycle_process,
+    run_scheduler,
+)
 from bms_ml.scorer import run_cycle
 from bms_ml.series import floor_to_hour
 
@@ -45,6 +61,13 @@ def connect(config: Config) -> AbstractContextManager[Any]:
     from bms_ml.db.gateway import Gateway
 
     return Gateway.connect(config.database_url_fleet)
+
+
+def load_forest() -> Any:
+    """The Isolation Forest detector. Imported here, so only the anomaly child loads sklearn."""
+    from bms_ml.anomaly_forest import IsolationForestDetector
+
+    return IsolationForestDetector()
 
 
 def _preflight(db: Any) -> tuple[int, str]:
@@ -73,7 +96,15 @@ def build_parser() -> argparse.ArgumentParser:
     run_once = commands.add_parser("run-once", help="one cycle, then exit")
     run_once.add_argument("--force", action="store_true", help="score even when the hour is already scored")
     run_once.add_argument("--as-of", type=_instant, help="score as of this instant (verification, backfill)")
+    run_anomaly = commands.add_parser(
+        "run-anomaly", help="one anomaly cycle (scores the hour before), then exit"
+    )
+    run_anomaly.add_argument(
+        "--force", action="store_true", help="score even when the hour is already scored"
+    )
+    run_anomaly.add_argument("--as-of", type=_instant, help="as of this instant: scores the hour before it")
     eligibility = commands.add_parser("eligibility", help="print the readiness verdict of every target point")
+    eligibility.add_argument("--job", choices=("forecast", ANOMALY_JOB), default="forecast")
     eligibility.add_argument("--as-of", type=_instant)
     commands.add_parser("preflight", help="check the schema version and the role, then exit")
     commands.add_parser("health", help="GET the local /health (the Docker HEALTHCHECK client)")
@@ -121,14 +152,39 @@ def cmd_run_once(config: Config, *, force: bool, as_of: datetime | None) -> int:
     return EXIT_CYCLE_FAILED if complete_failure else EXIT_OK
 
 
-def cmd_eligibility(config: Config, *, as_of: datetime | None) -> int:
+def cmd_run_anomaly(config: Config, *, force: bool, as_of: datetime | None) -> int:
+    """One anomaly cycle in this process: `serve` runs it as its own child, after the forecast."""
+    if not config.anomaly_enabled:
+        log.event("anomaly_disabled", job=ANOMALY_JOB, reason="ML_ANOMALY_ENABLED is false")
+        return EXIT_OK
+    stage = "connect"
+    try:
+        with connect(config) as db:
+            stage = "preflight"
+            _preflight(db)
+            stage = "detector"
+            forest = load_forest()
+            stage = "cycle"
+            summary = run_anomaly_cycle(db, forest, SystemClock(), config, force=force, as_of=as_of)
+    except PreflightRefused as err:
+        log.event("preflight_failed", "error", job=ANOMALY_JOB, reason=str(err))
+        return EXIT_CONFIG
+    except Exception as exc:  # noqa: BLE001
+        log.event("cycle_failed", "error", job=ANOMALY_JOB, error=f"{stage}:{type(exc).__name__}")
+        return EXIT_CYCLE_FAILED
+    log.event("cycle_summary", **summary.counts())
+    complete_failure = summary.runs_failed > 0 and summary.runs_succeeded == 0
+    return EXIT_CYCLE_FAILED if complete_failure else EXIT_OK
+
+
+def cmd_eligibility(config: Config, *, as_of: datetime | None, job: str = "forecast") -> int:
     as_of_hour = floor_to_hour(as_of if as_of is not None else SystemClock().now())
+    targets = config.anomaly_targets if job == ANOMALY_JOB else config.forecast_targets
+    verdict_of = anomaly_verdict if job == ANOMALY_JOB else forecast_verdict
     try:
         with connect(config) as db:
             _preflight(db)  # the same role contract as run-once: never read as a superuser
-            stats = db.eligibility(
-                config.forecast_targets, as_of_hour - timedelta(days=LOOKBACK_DAYS), as_of_hour
-            )
+            stats = db.eligibility(targets, as_of_hour - timedelta(days=LOOKBACK_DAYS), as_of_hour)
     except PreflightRefused as err:
         log.event("preflight_failed", "error", reason=str(err))
         return EXIT_CONFIG
@@ -148,11 +204,35 @@ def cmd_eligibility(config: Config, *, as_of: datetime | None) -> int:
     for point in stats:
         newest = point.last_bucket.astimezone(UTC).isoformat() if point.last_bucket else "-"
         cover = 100 * coverage(point.first_bucket, point.last_bucket, point.hours_with_data)
-        verdict = forecast_verdict(point, as_of_hour)
+        verdict = verdict_of(point, as_of_hour)
         row = (str(point.organization_id), point.asset_code, point.point_key, str(point.days_with_data))
         lines.append("\t".join((*row, f"{cover:.1f}", newest, verdict)))
     sys.stdout.write("\n".join(lines) + "\n")
     return EXIT_OK
+
+
+Runner = Callable[..., CycleResult]
+
+
+def build_jobs(
+    config: Config, state: HealthState, stop: threading.Event, *, runner: Runner = run_cycle_process
+) -> list[Job]:
+    """The forecast child, then (switch on) the anomaly child given the tick's hour (R6)."""
+    python = [sys.executable, "-m", "bms_ml"]
+    timeout = config.cycle_timeout_seconds
+
+    def forecast(_hour: datetime) -> CycleResult:
+        # The forecast child is unchanged: it floors its own clock.
+        return runner([*python, "run-once"], timeout, stop=stop)
+
+    jobs = [Job("forecast", forecast, state)]
+    if config.anomaly_enabled:
+
+        def anomaly(hour: datetime) -> CycleResult:
+            return runner([*python, "run-anomaly", "--as-of", hour.isoformat()], timeout, stop=stop)
+
+        jobs.append(Job(ANOMALY_JOB, anomaly, state.recorder(ANOMALY_JOB)))
+    return jobs
 
 
 def cmd_serve(config: Config) -> int:
@@ -174,23 +254,27 @@ def cmd_serve(config: Config) -> int:
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, lambda *_: stop.set())
     clock = SystemClock()
-    state = HealthState(config.interval_seconds, clock.now(), version, name, model_version)
+    state = HealthState(
+        config.interval_seconds,
+        clock.now(),
+        version,
+        name,
+        model_version,
+        anomaly_enabled=config.anomaly_enabled,
+    )
     server = make_server(state, clock.now, config.health_port)
     threading.Thread(target=server.serve_forever, name="health", daemon=True).start()
-    log.event("serve_started", schema_version=version, role=role, model=name, health_port=config.health_port)
+    jobs = build_jobs(config, state, stop)
+    log.event(
+        "serve_started",
+        schema_version=version,
+        role=role,
+        model=name,
+        health_port=config.health_port,
+        jobs=[job.name for job in jobs],
+    )
     try:
-        return run_scheduler(
-            clock=clock,
-            wait=stop.wait,
-            run_cycle_process=partial(
-                run_cycle_process,
-                [sys.executable, "-m", "bms_ml", "run-once"],
-                config.cycle_timeout_seconds,
-                stop=stop,
-            ),
-            health=state,
-            interval_seconds=config.interval_seconds,
-        )
+        return run_scheduler(clock=clock, wait=stop.wait, jobs=jobs, interval_seconds=config.interval_seconds)
     finally:
         server.shutdown()
         server.server_close()
@@ -211,9 +295,11 @@ def main(argv: list[str] | None = None, environ: Mapping[str, str] | None = None
     if args.command == "preflight":
         return cmd_preflight(config)
     if args.command == "eligibility":
-        return cmd_eligibility(config, as_of=args.as_of)
+        return cmd_eligibility(config, as_of=args.as_of, job=args.job)
     if args.command == "run-once":
         return cmd_run_once(config, force=args.force, as_of=args.as_of)
+    if args.command == "run-anomaly":
+        return cmd_run_anomaly(config, force=args.force, as_of=args.as_of)
     return cmd_serve(config)
 
 

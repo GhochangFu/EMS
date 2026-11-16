@@ -1,8 +1,8 @@
 """The anomaly write contract against a real TimescaleDB, as bms_fleet (E1.2 plan T1.8).
 
 CI's `ml` job runs this; locally it skips without the two URLs (`conftest.py`). The
-cases here need only the gateway (unit 1-E). The end-to-end cycle cases need
-`run_anomaly_cycle` (unit 1-F) and are placeholders below, skipped with that reason.
+write and ledger cases need only the gateway (unit 1-E); the end-to-end cycle cases
+at the end run `run_anomaly_cycle` with the real Isolation Forest (unit 1-F).
 
 Isolation from `test_scorer_postgres.py`, which runs after this file in the same
 session against the same planted rows: nothing here writes a run under
@@ -21,6 +21,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+from bms_ml.anomaly_scorer import run_anomaly_cycle
 from bms_ml.config import config_hash, load_config
 from bms_ml.db import sql
 from bms_ml.db.gateway import Gateway, WriteMismatchError
@@ -32,6 +33,7 @@ from bms_ml.targets import parse_targets
 from tests.fakes import FakeClock, FakeForecaster
 from tests.integration.fixture import (
     ANOMALY_FIXTURE_NAME,
+    ANOMALY_MODEL_NAME,
     ANOMALY_NOT_SCORED,
     ANOMALY_SCORED,
     ANOMALY_SHAPES,
@@ -343,38 +345,129 @@ def test_an_anomaly_run_does_not_mark_the_forecast_ledger_and_a_forecast_cycle_s
     assert per_asset == {"MLFX-AS1": 48, "MLFX-BS1": 48}
 
 
-# --- the end-to-end cycle: unit 1-F fills these in ---------------------------------------
-# TODO(unit 1-F): replace each skip with the case when `run_anomaly_cycle` exists. Run the
-# cycle with load_config({"DATABASE_URL_FLEET": fleet_url, "ML_ANOMALY_TARGETS": ANOMALY_TARGETS})
-# and FakeClock(planted.as_of + timedelta(minutes=5)); the scored hour is planted.as_of - 1 h.
-# Count rows by `model_name = ANOMALY_MODEL_NAME`: this file's direct writes are under other
-# names (ANOMALY_FIXTURE_NAME, PROOF_FORECASTER_NAME) and on other hours. A forecast cycle
-# here must NOT use FORECASTER_NAME or the forecast rooms: test_scorer_postgres.py runs after
-# this file on the same planted rows and counts exactly two FORECASTER_NAME runs.
+# --- the end-to-end cycle (unit 1-F) ---------------------------------------------------------
+# The cycle runs with the real Isolation Forest, as of planted.as_of + 5 min: the scored hour is
+# planted.as_of - 1 h. Rows are counted by `model_name = ANOMALY_MODEL_NAME`: this file's direct
+# writes are under other names (ANOMALY_FIXTURE_NAME, PROOF_FORECASTER_NAME) and on other hours.
+# No forecast cycle here uses FORECASTER_NAME or a forecast room: test_scorer_postgres.py runs
+# after this file on the same planted rows and counts exactly two FORECASTER_NAME runs.
 
-NEEDS_THE_CYCLE = pytest.mark.skip(reason="TODO(unit 1-F): needs run_anomaly_cycle (anomaly_scorer.py)")
-
-
-@NEEDS_THE_CYCLE
-def test_one_anomaly_cycle_end_to_end():
-    # Rows only for ANOMALY_SCORED (not the stale or the simulated meter); organization_id
-    # equals the asset's; both detectors on each meter, baseline_mad only on each single;
-    # every bucket is as_of - 1 h; one run per organization, model_name ANOMALY_MODEL_NAME,
-    # status succeeded, rows_written = its rows (A: 3, B: 3); the summary skips MLFX-AMST
-    # as asset_not_ready with STALE_POINT counted under `stale`.
-    raise AssertionError("unreachable: skipped until unit 1-F")
+METER_TARGETS = ",".join(target for target in ANOMALY_TARGETS.split(",") if target != SINGLE_TARGET)
+ANOMALY_ROWS_SQL = (
+    "SELECT a.code, s.detector, s.bucket, s.score, s.contributing_points, s.organization_id, "
+    "a.organization_id, s.model_run_id FROM ml.anomaly_scores s JOIN bms.assets a ON a.id = s.asset_id "
+    "JOIN ml.model_runs r ON r.id = s.model_run_id WHERE r.model_name = %s ORDER BY a.code, s.detector"
+)
+ANOMALY_RUNS_SQL = (
+    "SELECT id, organization_id, status, rows_written, model_version, error_text FROM ml.model_runs "
+    "WHERE model_name = %s ORDER BY started_at, organization_id"
+)
 
 
-@NEEDS_THE_CYCLE
-def test_a_second_anomaly_cycle_writes_nothing_and_force_writes_a_new_run():
-    # A second cycle in the hour: organizations_already_scored == 2, no new run, no new row.
-    # --force: two new runs, new rows, and the first run's rows unchanged.
-    raise AssertionError("unreachable: skipped until unit 1-F")
+def _anomaly_cycle(planted: Planted, fleet_url: str, *, targets: str = ANOMALY_TARGETS, force: bool = False):
+    from bms_ml.anomaly_forest import IsolationForestDetector
+
+    cfg = load_config({"DATABASE_URL_FLEET": fleet_url, "ML_ANOMALY_TARGETS": targets})
+    clock = FakeClock(planted.as_of + timedelta(minutes=5))
+    with Gateway.connect(fleet_url) as db:
+        return run_anomaly_cycle(db, IsolationForestDetector(), clock, cfg, force=force)
 
 
-@NEEDS_THE_CYCLE
-def test_an_anomaly_cycle_then_a_forecast_cycle_in_one_tick_both_write():
-    # A-a through the real jobs: run_anomaly_cycle, then run_cycle in the same hour; the
-    # forecast cycle is not skipped by the anomaly run, and an anomaly cycle after a
-    # forecast cycle is not skipped by the forecast run.
-    raise AssertionError("unreachable: skipped until unit 1-F")
+def test_one_anomaly_cycle_end_to_end(planted: Planted, superuser: psycopg.Connection, fleet_url):
+    summary = _anomaly_cycle(planted, fleet_url)
+    scored_hour = planted.as_of - timedelta(hours=1)
+
+    stored = superuser.execute(ANOMALY_ROWS_SQL, (ANOMALY_MODEL_NAME,)).fetchall()
+    assert [(row[0], row[1]) for row in stored] == [
+        ("MLFX-AM1", BASELINE),
+        ("MLFX-AM1", FOREST),
+        ("MLFX-AS1", BASELINE),
+        ("MLFX-BM1", BASELINE),
+        ("MLFX-BM1", FOREST),
+        ("MLFX-BS1", BASELINE),
+    ]
+    for code, _, bucket, score, points, stored_org, asset_org, _ in stored:
+        assert bucket == scored_hour
+        assert 0.0 <= score <= 1.0
+        assert stored_org == asset_org == planted.anomaly_asset_organization[code]
+        assert set(points) <= set(METER_POINTS) | {SINGLE_POINT} and len(points) <= 3
+
+    runs = superuser.execute(ANOMALY_RUNS_SQL, (ANOMALY_MODEL_NAME,)).fetchall()
+    assert sorted((run[1], run[2], run[3], run[5]) for run in runs) == sorted(
+        [
+            (planted.organizations["A"], "succeeded", 3, None),
+            (planted.organizations["B"], "succeeded", 3, None),
+        ]
+    )
+    for run in runs:
+        assert run[4].startswith("bms-ml=") and ";scikit-learn=" in run[4]
+        assert sum(1 for row in stored if row[7] == run[0]) == run[3]
+
+    counts = summary.counts()
+    assert counts["job"] == "anomaly"
+    assert (counts["runs_succeeded"], counts["runs_failed"], counts["rows_written"]) == (2, 0, 6)
+    assert (counts["baseline_rows"], counts["isolation_forest_rows"], counts["scored"]) == (4, 2, 4)
+    # MLFX-AMST: one stale point stops the whole meter (R5); MLFX-AMSIM is never returned.
+    assert counts["skipped"] == {"asset_not_ready": 1, "stale": 1}
+    assert counts["eligible"] == 4 + 1 + 4 + 4 + 1
+
+
+def test_a_second_anomaly_cycle_writes_nothing_and_force_writes_a_new_run(
+    planted: Planted, superuser: psycopg.Connection, fleet_url
+):
+    before_rows = superuser.execute(ANOMALY_ROWS_SQL, (ANOMALY_MODEL_NAME,)).fetchall()
+    before_runs = superuser.execute(ANOMALY_RUNS_SQL, (ANOMALY_MODEL_NAME,)).fetchall()
+    assert len(before_runs) == 2 and len(before_rows) == 6  # the end-to-end case's cycle
+
+    again = _anomaly_cycle(planted, fleet_url)
+    assert (again.organizations_already_scored, again.runs_succeeded, again.rows_written) == (2, 0, 0)
+    assert superuser.execute(ANOMALY_RUNS_SQL, (ANOMALY_MODEL_NAME,)).fetchall() == before_runs
+
+    forced = _anomaly_cycle(planted, fleet_url, force=True)
+    assert (forced.organizations_already_scored, forced.runs_succeeded, forced.rows_written) == (0, 2, 6)
+    runs = superuser.execute(ANOMALY_RUNS_SQL, (ANOMALY_MODEL_NAME,)).fetchall()
+    assert len(runs) == 4
+    assert {run[0] for run in before_runs} < {run[0] for run in runs}
+    rows = superuser.execute(ANOMALY_ROWS_SQL, (ANOMALY_MODEL_NAME,)).fetchall()
+    assert len(rows) == 12
+    first_ids = {run[0] for run in before_runs}
+    assert sorted(row for row in rows if row[7] in first_ids) == sorted(before_rows)
+
+
+def test_an_anomaly_cycle_then_a_forecast_cycle_in_one_tick_both_write(
+    planted: Planted, superuser: psycopg.Connection, fleet_url
+):
+    # A-a through the real jobs, in the hour of the other cycles. Each anomaly cycle here uses
+    # its own target list, so its config hash is new and only the other job's runs could
+    # skip it; the forecaster is a version no other test writes under.
+    org_count = len(planted.organizations)
+    first = _anomaly_cycle(planted, fleet_url, targets=SINGLE_TARGET)
+    assert (first.organizations_already_scored, first.runs_succeeded, first.rows_written) == (0, org_count, 2)
+
+    cfg = load_config({"DATABASE_URL_FLEET": fleet_url, "ML_FORECAST_TARGETS": SINGLE_TARGET})
+    forecaster = FakeForecaster(name=PROOF_FORECASTER_NAME, version="fixture-1f")
+    clock = FakeClock(planted.as_of + timedelta(minutes=5))
+    with Gateway.connect(fleet_url) as db:
+        forecast = run_cycle(db, forecaster, clock, cfg)
+    assert (forecast.organizations_already_scored, forecast.runs_succeeded, forecast.runs_failed) == (
+        0,
+        org_count,
+        0,
+    )
+    per_asset = dict(
+        superuser.execute(
+            "SELECT a.code, count(*) FROM ml.forecasts f JOIN bms.assets a ON a.id = f.asset_id "
+            "JOIN ml.model_runs r ON r.id = f.model_run_id "
+            "WHERE r.model_name = %s AND r.model_version = %s GROUP BY a.code",
+            (forecaster.name, forecaster.version),
+        ).fetchall()
+    )
+    assert per_asset == {"MLFX-AS1": 48, "MLFX-BS1": 48}
+
+    after = _anomaly_cycle(planted, fleet_url, targets=METER_TARGETS)
+    assert (after.organizations_already_scored, after.runs_succeeded, after.rows_written) == (0, org_count, 4)
+
+    # Each job's ledger still sees its own runs in this hour.
+    assert _anomaly_cycle(planted, fleet_url, targets=SINGLE_TARGET).organizations_already_scored == org_count
+    with Gateway.connect(fleet_url) as db:
+        assert run_cycle(db, forecaster, clock, cfg).organizations_already_scored == org_count

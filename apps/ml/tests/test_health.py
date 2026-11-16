@@ -126,3 +126,99 @@ def test_any_other_path_is_404(server, path):
 @pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 def test_any_other_method_is_405(server, method):
     assert _request(server, "/health", method)[0] == 405
+
+
+# --- E1.2: the anomaly job (plan R8) ---------------------------------------------------------
+
+ANOMALY_SUMMARY = {
+    "job": "anomaly",
+    "as_of_hour": "2026-11-15T12:00:00+00:00",
+    "scored_hour": "2026-11-15T11:00:00+00:00",
+    "organizations": 2,
+    "eligible": 40,
+    "assets": 6,
+    "scored": 5,
+    "baseline_rows": 5,
+    "isolation_forest_rows": 3,
+    "rows_written": 8,
+    "runs_succeeded": 2,
+    "runs_failed": 0,
+    "organizations_already_scored": 0,
+    "duration_seconds": 7.5,
+    "skipped": {"asset_not_ready": 1, "stale": 1, "if_incomplete_hour": 1},
+}
+
+
+def both(enabled: bool = True) -> HealthState:
+    return HealthState(3600, T0, 1, "fake-forecaster", "test-1", anomaly_enabled=enabled)
+
+
+def test_the_body_gains_an_anomaly_object_and_keeps_the_forecasts_last_cycle():
+    health = both()
+    health.record(CycleResult(EXIT_OK, SUMMARY), T0)
+    health.recorder("anomaly").record(CycleResult(EXIT_OK, ANOMALY_SUMMARY), T0)
+    code, body = health.snapshot(T0 + timedelta(minutes=1))
+    assert (code, body["status"]) == (200, "ok")
+    assert body["lastCycle"]["rows_written"] == 768
+    expected = {k: v for k, v in ANOMALY_SUMMARY.items() if k != "job"}
+    assert body["anomaly"] == {
+        "enabled": True,
+        "cyclesSucceeded": 1,
+        "cyclesFailed": 0,
+        "lastCycle": expected,
+    }
+
+
+def test_status_is_the_worst_of_the_enabled_jobs():
+    health = both()
+    health.record(CycleResult(EXIT_OK, SUMMARY), T0)
+    # The forecast is ok; the anomaly job has not run yet: starting.
+    assert health.snapshot(T0 + timedelta(minutes=1))[:1] == (200,)
+    assert health.snapshot(T0 + timedelta(minutes=1))[1]["status"] == "starting"
+    health.recorder("anomaly").record(CycleResult(EXIT_CYCLE_FAILED, None), T0 + timedelta(minutes=2))
+    code, body = health.snapshot(T0 + timedelta(minutes=3))
+    assert (code, body["status"]) == (503, "degraded")
+    assert (body["cyclesFailed"], body["anomaly"]["cyclesFailed"]) == (0, 1)
+    health.recorder("anomaly").record(CycleResult(EXIT_OK, ANOMALY_SUMMARY), T0 + timedelta(minutes=8))
+    code, body = health.snapshot(T0 + timedelta(minutes=9))
+    assert (code, body["status"]) == (200, "ok")
+
+
+def test_a_disabled_anomaly_job_does_not_count_toward_status():
+    health = both(enabled=False)
+    health.record(CycleResult(EXIT_OK, SUMMARY), T0)
+    code, body = health.snapshot(T0 + timedelta(hours=1, minutes=59))
+    assert (code, body["status"]) == (200, "ok")
+    assert body["anomaly"] == {"enabled": False, "cyclesSucceeded": 0, "cyclesFailed": 0, "lastCycle": None}
+
+
+def test_a_failed_forecast_degrades_even_when_the_anomaly_job_is_ok():
+    health = both()
+    health.record(CycleResult(EXIT_CYCLE_FAILED, None), T0)
+    health.recorder("anomaly").record(CycleResult(EXIT_OK, ANOMALY_SUMMARY), T0)
+    assert health.snapshot(T0 + timedelta(minutes=1))[1]["status"] == "degraded"
+
+
+def test_the_anomaly_body_carries_counts_only_whatever_the_child_printed():
+    health = both()
+    leaky = {
+        **ANOMALY_SUMMARY,
+        "asset_code": "MTR-1",
+        "organization_id": "00000000-0000-0000-0000-00000000000a",
+        "scored_hour": "MTR-1 at PHEWB",
+        "skipped": {"stale": 1, "MTR-9": 2, "context_too_sparse": 4},
+        "rows_written": "MTR-2",
+    }
+    health.recorder("anomaly").record(CycleResult(EXIT_OK, leaky), T0)
+    _, body = health.snapshot(T0)
+    text = json.dumps(body)
+    for leak in ("MTR-", "PHEWB", "organization_id", "00000000-0000"):
+        assert leak not in text
+    last = body["anomaly"]["lastCycle"]
+    assert last["skipped"] == {"stale": 1}
+    assert "scored_hour" not in last and "rows_written" not in last and "job" not in last
+
+
+def test_an_unknown_job_has_no_recorder():
+    with pytest.raises(KeyError):
+        both().recorder("export")

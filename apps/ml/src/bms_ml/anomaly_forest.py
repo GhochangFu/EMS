@@ -19,6 +19,8 @@ import numpy as np
 import sklearn
 from sklearn.ensemble import IsolationForest
 
+from bms_ml.anomaly_baseline import percentile_strictly_below
+
 MIN_TRAINING_ROWS = 336
 # The scorer feeds these to the run's config hash.
 FOREST_KWARGS: dict[str, Any] = {
@@ -45,10 +47,6 @@ class ForestResult:
     skip_reason: str | None = None
 
 
-def _share_strictly_below(reference: np.ndarray, value: float) -> float:
-    return float(np.count_nonzero(reference < value)) / float(reference.size)
-
-
 def score_hour(reference: np.ndarray, current: np.ndarray) -> ForestResult:
     """Score the hour `current` (shape (P,)) against `reference` (shape (rows, P))."""
     matrix = np.asarray(reference, dtype=np.float64)
@@ -62,4 +60,14 @@ def score_hour(reference: np.ndarray, current: np.ndarray) -> ForestResult:
     forest.fit(training)
     reference_stat = -forest.score_samples(training)
     current_stat = float(-forest.score_samples(row.reshape(1, -1))[0])
-    return ForestResult(score=_share_strictly_below(reference_stat, current_stat))
+    return ForestResult(score=percentile_strictly_below(reference_stat, current_stat))
+
+
+class IsolationForestDetector:
+    """The forest `run_anomaly_cycle` is given in the anomaly child (`anomaly_scorer.Forest`)."""
+
+    kwargs: dict[str, Any] = FOREST_KWARGS
+    min_training_rows: int = MIN_TRAINING_ROWS
+
+    def score_hour(self, reference: np.ndarray, current: np.ndarray) -> ForestResult:
+        return score_hour(reference, current)
