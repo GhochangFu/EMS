@@ -803,6 +803,22 @@ forecast from the fourth point, the past line from the fifth; the chart takes
 up to 8 points), never across kinds; the legend's point key still tells them
 apart.
 
+**The three colours distinct in every profile — `F4.381` (owner, 2026-11-16).**
+The owner's demo check of `6bec61f6` found the past line nearly the actual
+line's colour under the `sand` profile (`#155E75` and `#0F766E`, ΔE2000 16.6).
+Measured over all 13 profiles in both themes, 14 of 26 blocks had two of the
+three first colours under ΔE2000 20, and no fixed role pair held 20 everywhere.
+**Ruling (owner, 2026-11-16, in chat): pick the roles in code, no token
+change.** The rule: the first actual, past and live colours are each at least
+ΔE2000 20 apart, in every profile and theme. `forecastRoles`
+(`apps/web/src/lib/forecast-colours.ts`) keeps `series-2` for the past line and
+`series-3` for the live forecast wherever they hold, and else takes the next role
+of the same palette that holds; the palettes keep their own roles, so the three
+kinds still share none. So "with one point: `series-2`, `series-3`" above is
+true only where the rule holds (for example the default light theme's live
+forecast is `series-4`, and `sand` light's past line is `series-6`).
+`tests/f4.381-forecast-colours-distinct.test.ts` holds every profile.
+
 
 ## Amendment 5 — `E1.2`: advisory anomaly scores, end to end (2026-11-16)
 

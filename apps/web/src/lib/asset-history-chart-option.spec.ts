@@ -260,20 +260,24 @@ function coloursOf(option: Shape): { actual: string[]; past: string[]; bandBase:
 
 /**
  * The owner's ruling (2026-11-16, three colours): with one point the actual line is `series-1`, the
- * past forecast `series-2` and the live forecast — its dashed p50 and its p10–p90 band — `series-3`.
+ * past forecast `series-2` and the live forecast — its dashed p50 and its p10–p90 band — its own
+ * colour. `F4.381` (the owner's ruling, 2026-11-16): the three are each ΔE2000 ≥ 20 apart, so in
+ * this (default light) theme the live forecast is `series-4`: `series-3` (`#6B21A8`) is only 16.1
+ * from `series-1` (`#1D4ED8`).
  */
 export function onePointDrawsActualPastAndFutureInThreeColours(): void {
   const option = build([kwAll], null, AS_OF);
   const c = coloursOf(option);
+  const live = roles["series-4"];
   expect(c.actual).toEqual([roles["series-1"]]);
   expect(c.past).toEqual([roles["series-2"]]);
-  expect(c.p50).toEqual([roles["series-3"]]);
-  expect(c.bandBase).toEqual([roles["series-3"]]);
+  expect(c.p50).toEqual([live]);
+  expect(c.bandBase).toEqual([live]);
   // The band's shaded half and its legend swatch are the forecast colour with alpha, never the actual's.
   const upper = option.series.filter((s) => s.name === "Forecast p10–p90")[1];
-  expect(upper?.itemStyle?.color?.startsWith(roles["series-3"].replace(/^rgb\((.*)\)$/, "rgba($1"))).toBe(true);
+  expect(upper?.itemStyle?.color?.startsWith(live.replace(/^rgb\((.*)\)$/, "rgba($1"))).toBe(true);
   const swatch = option.legend?.data?.find((entry) => typeof entry !== "string" && entry.name === "Forecast p10–p90");
-  expect(JSON.stringify(swatch)).toContain(roles["series-3"].replace(/^rgb\((.*)\)$/, "rgba($1"));
+  expect(JSON.stringify(swatch)).toContain(live.replace(/^rgb\((.*)\)$/, "rgba($1"));
 }
 
 /**
@@ -335,4 +339,14 @@ export function theTooltipDropsFloatNoiseAndKeepsRealDigits(): void {
   expect(format?.(125000, 0), "grouped as ECharts' default was").toBe("125,000");
   expect(format?.(null, 0)).toBe("-");
   expect(format?.(["2026-10-31T00:00:00.000Z", 0.1 + 0.2], 0), "a [t, v] pair formats its value").toBe("0.3");
+}
+
+/** `F4.382` — the tooltip prints float noise around zero as `0`, and keeps a real small reading. */
+export function theTooltipPrintsNoiseAroundZeroAsZero(): void {
+  const option = buildHistoryChartOption({ from: FROM, to: TO, series: [kw], compare: null, roles }) as unknown as TooltipShape;
+  const format = option.tooltip?.valueFormatter;
+  expect(format?.(8.881784197001252e-16, 0)).toBe("0");
+  expect(format?.(-8.881784197001252e-16, 0)).toBe("0");
+  expect(format?.(["2026-10-31T00:00:00.000Z", 8.881784197001252e-16], 0)).toBe("0");
+  expect(format?.(0.0001, 0)).toBe("0.0001");
 }

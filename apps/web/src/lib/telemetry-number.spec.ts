@@ -27,3 +27,27 @@ export function realDigitsStay(): void {
   expect(withoutFloatNoise(16777217)).toBe("16777217");
   expect(withoutFloatNoise(21.366666666666667)).toBe("21.3666666667");
 }
+
+/**
+ * `F4.382` (the owner's AWS check of `6bec61f6`, 2026-11-16) — float noise around zero prints `0`.
+ * A WBLDC cold room's Min and Max printed `8.881784e-16` (2^-50, a leftover of int16 × 0.1
+ * arithmetic, and exactly a float32, so the float32 rule kept it) where the Average printed `0`.
+ */
+export function noiseAroundZeroPrintsZero(): void {
+  expect(withoutFloatNoise(8.881784197001252e-16), "2^-50, the AWS demo's value").toBe("0");
+  expect(withoutFloatNoise(-8.881784197001252e-16)).toBe("0");
+  expect(withoutFloatNoise(0.1 + 0.2 - 0.3), "a double's leftover").toBe("0");
+  expect(withoutFloatNoise(-6.4 + 6.3999999999999995)).toBe("0");
+  expect(withoutFloatNoise(1e-10)).toBe("0");
+  expect(withoutFloatNoise(-0)).toBe("0");
+  expect(withoutFloatNoise(0)).toBe("0");
+}
+
+/** A real small reading still prints: the cut is far below any digit a sensor sends. */
+export function aRealSmallReadingStays(): void {
+  expect(withoutFloatNoise(0.0001)).toBe("0.0001");
+  expect(withoutFloatNoise(-0.0001)).toBe("-0.0001");
+  expect(withoutFloatNoise(Math.fround(0.0001)), "a float32 register").toBe("0.0001");
+  expect(withoutFloatNoise(0.000001)).toBe("0.000001");
+  expect(withoutFloatNoise(1e-9), "the cut itself prints").toBe("1e-9");
+}

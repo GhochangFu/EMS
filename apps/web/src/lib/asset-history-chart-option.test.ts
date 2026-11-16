@@ -22,6 +22,7 @@ import {
   forecastColoursNeverMatchActualOrPastWithSeveralPoints,
   onePointDrawsActualPastAndFutureInThreeColours,
   theTooltipDropsFloatNoiseAndKeepsRealDigits,
+  theTooltipPrintsNoiseAroundZeroAsZero,
 } from "./asset-history-chart-option.spec";
 
 /** Vitest entry point (ADR 0014). */
@@ -88,5 +89,8 @@ describe("F4.297 asset history chart option", () => {
   });
   it("F4.379 the tooltip drops float noise and keeps real digits", () => {
     theTooltipDropsFloatNoiseAndKeepsRealDigits();
+  });
+  it("F4.382 the tooltip prints float noise around zero as 0", () => {
+    theTooltipPrintsNoiseAroundZeroAsZero();
   });
 });
