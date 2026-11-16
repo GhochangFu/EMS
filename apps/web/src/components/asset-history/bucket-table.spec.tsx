@@ -40,3 +40,18 @@ export function minAndMaxKeepRealDigits(): void {
   const [, min, average, max] = cells({ min: 0.0125, average: 0.01875, max: 49.9625 });
   expect([min, average, max]).toEqual(["0.0125", "0.019", "49.9625"]);
 }
+
+/**
+ * `F4.382` (the owner's AWS check of `6bec61f6`, 2026-11-16) — on a WBLDC cold room 236 Min/Max
+ * cells printed `8.881784e-16` where the Average printed `0`. Noise around zero is `0` in all three.
+ */
+export function minAndMaxPrintNoiseAroundZeroAsZero(): void {
+  const [, min, average, max] = cells({ min: -8.881784197001252e-16, average: 8.881784197001252e-16, max: 8.881784197001252e-16 });
+  expect([min, average, max]).toEqual(["0", "0", "0"]);
+}
+
+/** A real small reading in Min and Max still prints. */
+export function minAndMaxKeepARealSmallReading(): void {
+  const [, min, , max] = cells({ min: -0.0001, average: 0, max: 0.0001 });
+  expect([min, max]).toEqual(["-0.0001", "0.0001"]);
+}

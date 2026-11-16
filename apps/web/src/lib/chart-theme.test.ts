@@ -37,7 +37,7 @@ describe.each<ThemeName>(["light", "dark"])("F3.65c ECharts theme (%s)", (name) 
     c4TheThemePaletteIsTheSeriesPalette(name);
   });
 
-  it("C6 F4.377 the actual, past-forecast and forecast palettes share no colour", () => {
+  it("C6 F4.377/F4.381 the three palettes share no colour, and their first colours are ΔE2000 ≥ 20 apart", () => {
     c6TheActualPastAndForecastPalettesShareNoColour(name);
   });
 

@@ -355,6 +355,7 @@
     "tests/f4.364-organization-energy-features-schema.integration.test.ts",
     "tests/f4.378-copilot-launcher-clearance.test.ts",
     "tests/f4.380-input-pattern-v-flag.test.ts",
+    "tests/f4.381-forecast-colours-distinct.test.ts",
     "tests/e3.1-work-order-reference-sla-schema.test.ts",
     "tests/e3.1-work-order-write-gates.test.ts",
     "tests/e3.1-work-order-admin-reachable.test.ts",

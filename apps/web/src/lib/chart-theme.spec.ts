@@ -2,6 +2,7 @@ import { expect } from "vitest";
 
 import { ROLE_TOKENS, fromTokenMap } from "../test-role-tokens";
 import { anomalyMarkColour, echartsTheme, forecastPalette, pastForecastPalette, seriesPalette } from "./chart-theme";
+import { deltaE2000, forecastRoles, MIN_FORECAST_DELTA_E } from "./forecast-colours";
 import { NEXUS_SOFT_CHART_TYPE, resolveTypeTokens, type ChartType } from "./design";
 import { resolveRoles, type Roles } from "./theme";
 
@@ -114,22 +115,28 @@ export function c10TheTypeTokensResolve(): void {
 /**
  * `F4.377` (the owner's ruling, 2026-11-16: three colours) — the actual palette, the past-forecast
  * palette and the live-forecast palette share no colour, so a forecast never takes an actual
- * line's colour and the past line never takes the live forecast's. Each forecast palette starts
- * with its ruled colour: `series-2` for the past line, `series-3` for the live band and p50.
+ * line's colour and the past line never takes the live forecast's. `F4.381` (the owner's ruling,
+ * 2026-11-16: pick the roles in code) — each forecast palette starts with the role `forecastRoles`
+ * picks (`series-2` and `series-3` where they hold), and the three first colours are each at least
+ * ΔE2000 20 apart. Every profile is `tests/f4.381-forecast-colours-distinct.test.ts`.
  */
 export function c6TheActualPastAndForecastPalettesShareNoColour(name: ThemeName): void {
   const roles = rolesOf(name);
   const actual = seriesPalette(roles);
   const past = pastForecastPalette(roles);
   const future = forecastPalette(roles);
-  expect(past[0]).toBe(roles["series-2"]);
-  expect(future[0]).toBe(roles["series-3"]);
+  const picked = forecastRoles(roles);
+  expect(past).toEqual(picked.past.map((role) => roles[role]));
+  expect(future).toEqual(picked.live.map((role) => roles[role]));
   expect(future.length).toBeGreaterThanOrEqual(3);
   expect(past.filter((c) => actual.includes(c)), "past vs actual").toEqual([]);
   expect(future.filter((c) => actual.includes(c)), "forecast vs actual").toEqual([]);
   expect(future.filter((c) => past.includes(c)), "forecast vs past").toEqual([]);
   expect(new Set(future).size, "no forecast colour twice").toBe(future.length);
   expect(new Set(past).size, "no past colour twice").toBe(past.length);
+  expect(deltaE2000(actual[0], past[0]), "actual vs past").toBeGreaterThanOrEqual(MIN_FORECAST_DELTA_E);
+  expect(deltaE2000(actual[0], future[0]), "actual vs forecast").toBeGreaterThanOrEqual(MIN_FORECAST_DELTA_E);
+  expect(deltaE2000(past[0], future[0]), "past vs forecast").toBeGreaterThanOrEqual(MIN_FORECAST_DELTA_E);
 }
 
 /**

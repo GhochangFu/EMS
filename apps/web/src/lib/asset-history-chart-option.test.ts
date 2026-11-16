@@ -22,6 +22,7 @@ import {
   forecastColoursNeverMatchActualOrPastWithSeveralPoints,
   onePointDrawsActualPastAndFutureInThreeColours,
   theTooltipDropsFloatNoiseAndKeepsRealDigits,
+  theTooltipPrintsNoiseAroundZeroAsZero,
   anUnusualHourAddsOneMarkSeriesAndALegendEntry,
   marksBesideAForecastLeaveItUntouched,
   noUnusualHourAddsNothing,
@@ -93,6 +94,9 @@ describe("F4.297 asset history chart option", () => {
   });
   it("F4.379 the tooltip drops float noise and keeps real digits", () => {
     theTooltipDropsFloatNoiseAndKeepsRealDigits();
+  });
+  it("F4.382 the tooltip prints float noise around zero as 0", () => {
+    theTooltipPrintsNoiseAroundZeroAsZero();
   });
   it("E1.2b an unusual hour adds one mark series on a hidden third axis and a legend entry", () => {
     anUnusualHourAddsOneMarkSeriesAndALegendEntry();
