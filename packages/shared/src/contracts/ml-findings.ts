@@ -89,6 +89,12 @@ export const mlFindingsParagraphCardSchema = z.object({
   organizationId: z.string().uuid(),
   state: z.enum(ML_FINDINGS_PARAGRAPH_STATES),
   segments: z.array(mlFindingSegmentSchema),
+  /**
+   * `E1.9c` review L1: the assets the paragraph's `[A<n>]` were written from, filled on the
+   * server from the same facts; `[]` for `none` and `pending`. The web resolves a paragraph
+   * reference against these, never against a summary card fetched at another moment.
+   */
+  assets: z.array(mlFindingAssetSchema),
 });
 
 /** `GET /ml/findings/paragraph` (`E1.9c`). */

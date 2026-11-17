@@ -6,6 +6,7 @@ import type {
 
 import {
   LlmProviderError,
+  type LlmCompleteInput,
   type LlmContentPart,
   type LlmMessage,
   type LlmReply,
@@ -28,6 +29,13 @@ export const OPENAI_BASE_URL = "https://api.openai.com/v1";
  * variable — the key and the model arrive in the constructor from the resolver.
  * SDK rejections are rethrown as they are; the loop classifies them by whether
  * the turn's deadline fired.
+ *
+ * `E1.9c` (ADR 0135 Amendment 8, plan R-d): an empty tool list sends no `tools`
+ * and no `tool_choice`; a call with tools is as before. `maxOutputTokens`
+ * (owner ruling Q2 (b)), when given, is `max_completion_tokens` on OpenAI (its
+ * current name; its reasoning models refuse the older `max_tokens`) and
+ * `max_tokens` on OpenRouter (the name its API documents); absent, no limit is
+ * sent, as before.
  */
 export class OpenAiCompatibleProvider implements LlmProvider {
   constructor(
@@ -35,11 +43,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     private readonly options: { readonly apiKey: string; readonly model: string; readonly baseURL?: string },
   ) {}
 
-  async complete(input: {
-    readonly messages: readonly LlmMessage[];
-    readonly tools: readonly LlmToolDefinition[];
-    readonly signal: AbortSignal;
-  }): Promise<LlmReply> {
+  async complete(input: LlmCompleteInput): Promise<LlmReply> {
     // Imported on use, so the SDK loads only in a process that has a provider
     // configured for the turn.
     const { default: OpenAI } = await import("openai");
@@ -57,14 +61,19 @@ export class OpenAiCompatibleProvider implements LlmProvider {
       {
         model: this.options.model,
         messages: input.messages.map(toOpenAiMessage),
-        tools: input.tools.map(toOpenAiTool),
-        tool_choice: "auto",
+        ...(input.tools.length > 0 ? { tools: input.tools.map(toOpenAiTool), tool_choice: "auto" as const } : {}),
+        ...(input.maxOutputTokens === undefined ? {} : outputLimit(this.name, input.maxOutputTokens)),
       },
       { signal: input.signal },
     );
     const message = completion.choices?.[0]?.message;
     if (!message) {
       throw new LlmProviderError("the provider returned no choice");
+    }
+    // Owner ruling Q2 (b): a reply cut at this call's own limit is not a paragraph. Calls
+    // without a limit (the copilot, the onboarding agent) are unchanged.
+    if (input.maxOutputTokens !== undefined && completion.choices?.[0]?.finish_reason === "length") {
+      throw new LlmProviderError("the reply was cut at the output limit");
     }
     const calls = (message.tool_calls ?? []).flatMap((call) =>
       call.type === "function"
@@ -76,6 +85,14 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     }
     return { kind: "final", text: message.content ?? "" };
   }
+}
+
+/** The per-call output limit under the name each host reads. */
+function outputLimit(
+  name: "openai" | "openrouter",
+  tokens: number,
+): { readonly max_completion_tokens: number } | { readonly max_tokens: number } {
+  return name === "openai" ? { max_completion_tokens: tokens } : { max_tokens: tokens };
 }
 
 function toOpenAiTool(tool: LlmToolDefinition): ChatCompletionFunctionTool {

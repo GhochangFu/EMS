@@ -228,3 +228,128 @@ describe("E1.9a ml findings containment (ADR 0135 Amendment 8)", () => {
     }
   });
 });
+
+/**
+ * `E1.9c` (plan T3.5) — the paragraph module under `apps/api/src/ml-findings/`.
+ * The behaviour (every fail-closed case, one prompt per organization, the log
+ * line) is `findings-paragraph.service.spec.ts`'s; the cache isolation is the
+ * integration suite's. This holds what only a scan can: no raw SQL, one file
+ * names the table, every store call inside `withTenant(this.tenantDb,`, no
+ * fleet pool, the controller's handler order (narrow's value reaches the service
+ * unchanged — `MlFindingsService` trusts the ids it is given, the E1.9a security
+ * review), which files reach the LLM core and the copilot, nothing in the
+ * copilot or the queue reaching back, and no logger call carrying text.
+ */
+const PARAGRAPH_DIR = "apps/api/src/ml-findings";
+const PARAGRAPH_CONTROLLER_REL = `${PARAGRAPH_DIR}/findings-paragraph.controller.ts`;
+const PARAGRAPH_SERVICE_REL = `${PARAGRAPH_DIR}/findings-paragraph.service.ts`;
+const PARAGRAPH_STORE_REL = `${PARAGRAPH_DIR}/findings-paragraph.store.ts`;
+const PARAGRAPH_MODULE_REL = `${PARAGRAPH_DIR}/ml-findings-paragraph.module.ts`;
+
+const RAW_SQL = /\bsql\s*`|import\s*\{[^}]*\bsql\b[^}]*\}\s*from\s*["']drizzle-orm["']/;
+const TABLE_NAME = /\bmlFindingParagraphs\b|\bml_finding_paragraphs\b/;
+const FLEET = /\b(fleetDb|FLEET_DRIZZLE|FLEET_POOL)\b/;
+const LLM_OR_COPILOT_IMPORT = /from\s+["']\.\.\/(llm|copilot)(\/[^"']*)?["']/;
+const PARAGRAPH_IMPORT = /from\s+["'](?:\.\.\/)+ml-findings(\/[^"']*)?["']/;
+const STORE_CALL = /this\.store\.\w+\(/g;
+const STORE_IN_TENANT = /withTenant\(this\.tenantDb, organizationId, \(tx\) =>\s*this\.store\.\w+\(tx,/g;
+const LOGGER_CALL = /this\.logger\.\w+\(([\s\S]*?)\);/g;
+const TEXT_NAMES = /\b(text|paragraph|facts|lines|messages)\b/;
+/** String literals blanked, so a log message's own words are not read as variables. */
+const withoutStrings = (code: string): string => code.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g, '""');
+
+describe("E1.9c ml findings paragraph containment (ADR 0135 Amendment 8)", () => {
+  it("the patterns match what they are meant to (positive controls)", () => {
+    expect(RAW_SQL.test("tx.execute(sql`select 1`)")).toBe(true);
+    expect(RAW_SQL.test('import { and, sql } from "drizzle-orm";')).toBe(true);
+    expect(RAW_SQL.test('import { and, eq, sum } from "drizzle-orm";')).toBe(false);
+    expect(TABLE_NAME.test("tx.select().from(mlFindingParagraphs)")).toBe(true);
+    expect(FLEET.test("@Inject(FLEET_DRIZZLE)")).toBe(true);
+    expect(LLM_OR_COPILOT_IMPORT.test('import { LlmResolver } from "../llm/llm-resolver";')).toBe(true);
+    expect(LLM_OR_COPILOT_IMPORT.test('import { X } from "../copilot/copilot-availability.service";')).toBe(true);
+    expect(LLM_OR_COPILOT_IMPORT.test('import { X } from "./findings-prompt";')).toBe(false);
+    expect(PARAGRAPH_IMPORT.test('import { X } from "../ml-findings/findings-paragraph.service";')).toBe(true);
+    expect(PARAGRAPH_IMPORT.test('import { X } from "../../ml-findings";')).toBe(true);
+    expect(PARAGRAPH_IMPORT.test('import { X } from "../ml/ml-findings.service";')).toBe(false);
+    const good = "withTenant(this.tenantDb, organizationId, (tx) =>\n      this.store.readParagraph(tx, organizationId)";
+    expect(good.match(STORE_IN_TENANT)?.length).toBe(1);
+    expect("withTenant(this.otherDb, organizationId, (tx) => this.store.readParagraph(tx,".match(STORE_IN_TENANT)).toBeNull();
+    expect(TEXT_NAMES.test(withoutStrings('{ organizationId, kind }, "ml findings paragraph outcome"'))).toBe(false);
+    expect(TEXT_NAMES.test(withoutStrings('{ organizationId, text }, "outcome"'))).toBe(true);
+  });
+
+  it("the paragraph files exist and the scan sees them", () => {
+    const sources = sourcesUnder(PARAGRAPH_DIR);
+    for (const rel of [PARAGRAPH_CONTROLLER_REL, PARAGRAPH_SERVICE_REL, PARAGRAPH_STORE_REL, PARAGRAPH_MODULE_REL]) {
+      expect(sources, rel).toContain(rel);
+    }
+    expect(sources.length).toBeGreaterThanOrEqual(8);
+    expect(sourcesUnder("apps/api/src/queue").length).toBeGreaterThan(0);
+  });
+
+  it("no source under apps/api/src/ml-findings/ writes raw SQL or names a fleet pool; only the store names the table", () => {
+    for (const rel of sourcesUnder(PARAGRAPH_DIR)) {
+      const code = codeOnly(read(rel));
+      expect(RAW_SQL.exec(code)?.[0], `${rel}: raw sql`).toBeUndefined();
+      expect(FLEET.exec(code)?.[0], `${rel}: fleet pool`).toBeUndefined();
+      expect(TABLE_NAME.test(code), `${rel}: names the table`).toBe(rel === PARAGRAPH_STORE_REL);
+    }
+  });
+
+  it("every store call in the service sits inside withTenant(this.tenantDb, organizationId, (tx) =>", () => {
+    const service = codeOnly(read(PARAGRAPH_SERVICE_REL));
+    const calls = service.match(STORE_CALL) ?? [];
+    expect(calls.length, "read, cap and write").toBe(3);
+    expect((service.match(STORE_IN_TENANT) ?? []).length).toBe(calls.length);
+    expect((service.match(/this\.tenantDb\b/g) ?? []).length, "the tenant pool is used only as withTenant's argument").toBe(calls.length);
+    expect(service).not.toMatch(/\.resolveForOrganization\(/);
+    expect(service).toContain("this.llm.resolveForFindings(organizationId)");
+  });
+
+  it("the controller is under JwtAuthGuard, declares one route, parses, then narrows, and hands narrow's value on unchanged", () => {
+    const code = codeOnly(read(PARAGRAPH_CONTROLLER_REL));
+    expect(code).toContain("@UseGuards(JwtAuthGuard)");
+    expect(code).toContain('@Controller("ml")');
+    expect(code).toContain('@Get("findings/paragraph")');
+    const bodies = code.split(ROUTE_DECORATOR).slice(1).filter((_, index) => index % 2 === 1);
+    expect(bodies.length, "the controller declares its one route").toBe(1);
+    const handler = methodBody(code, "get");
+    const query = handler.indexOf("findingsParagraphQuerySchema.safeParse(query)");
+    const scope = handler.indexOf("this.assetFilterScope.narrow(user, filter)");
+    const call = handler.indexOf("this.paragraphs.get(");
+    expect(query).toBeGreaterThanOrEqual(0);
+    expect(scope, "narrow after the parse").toBeGreaterThan(query);
+    expect(call, "the service after narrow").toBeGreaterThan(scope);
+    expect(handler).toMatch(
+      /const assetIds = await this\.assetFilterScope\.narrow\(user, filter\);[\s\S]*this\.paragraphs\.get\(kind, assetIds,/,
+    );
+    expect(handler.match(/\bassetIds\s*=/g) ?? [], "assetIds is assigned once, from narrow").toHaveLength(1);
+    expect(handler, "never readableAssetIds itself").not.toMatch(/readableAssetIds\(/);
+  });
+
+  it("only the service imports the LLM core and the copilot (the module file wires them)", () => {
+    const importers = sourcesUnder(PARAGRAPH_DIR).filter((rel) => LLM_OR_COPILOT_IMPORT.test(read(rel)));
+    expect(importers.sort()).toEqual([PARAGRAPH_SERVICE_REL, PARAGRAPH_MODULE_REL].sort());
+    const moduleImports = read(PARAGRAPH_MODULE_REL).match(new RegExp(LLM_OR_COPILOT_IMPORT.source, "g")) ?? [];
+    expect(moduleImports.map((m) => m.replace(/\s+/g, " ")).sort()).toEqual([
+      'from "../copilot/copilot-availability.service"',
+      'from "../llm/llm.module"',
+    ]);
+  });
+
+  it("nothing under the copilot, its shared contracts or the queue imports the paragraph module", () => {
+    for (const dir of ["apps/api/src/copilot", "packages/shared/src/copilot", "apps/api/src/queue"]) {
+      for (const rel of sourcesUnder(dir)) {
+        const match = PARAGRAPH_IMPORT.exec(read(rel));
+        expect(match?.[0], `${rel} imports ${match?.[0]}`).toBeUndefined();
+      }
+    }
+  });
+
+  it("no logger call in the service passes text, paragraph, facts, lines or messages", () => {
+    const service = codeOnly(read(PARAGRAPH_SERVICE_REL));
+    const calls = [...service.matchAll(LOGGER_CALL)].map((m) => m[1] ?? "");
+    expect(calls.length, "the outcome line and the store-failure line").toBe(2);
+    for (const args of calls) expect(withoutStrings(args), args).not.toMatch(TEXT_NAMES);
+  });
+});

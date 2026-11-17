@@ -16,6 +16,7 @@ import { MaintenanceService } from "../maintenance/maintenance.service";
 import { MaintenanceWindowsService } from "../maintenance-windows/maintenance-windows.service";
 import { MlAnomaliesService } from "../ml/ml-anomalies.service";
 import { MlFindingsService } from "../ml/ml-findings.service";
+import { FindingsParagraphService } from "../ml-findings/findings-paragraph.service";
 import { MlForecastsService } from "../ml/ml-forecasts.service";
 import { QUEUE_CLIENT } from "../queue/queue.tokens";
 import { WorkerHostService } from "../queue/worker-host.service";
@@ -359,6 +360,17 @@ export function assertMlFindingsServiceTenantSlot(): void {
 
 export function assertMlFindingsServiceFleetSlot(): void {
   expect(injectedToken(MlFindingsService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `E1.9c` — `FindingsParagraphService(tenantDb, findings, llm, availability)` (ADR 0135
+ * Amendment 8 decision 7): every cache read and write runs in `withTenant` of the card's
+ * organization on slot 0, and the service holds **no fleet token at all**. A fleet pool in
+ * slot 0 would let a write land outside the card's organization with row security bypassed.
+ */
+export function assertFindingsParagraphServiceTenantSlot(): void {
+  expect(injectedToken(FindingsParagraphService, 0)).toBe(TENANT_DRIZZLE);
+  for (const slot of [1, 2, 3]) expect(injectedToken(FindingsParagraphService, slot)).toBeUndefined();
 }
 
 /**

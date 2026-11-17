@@ -169,6 +169,7 @@ import {
   mlFindingsSummaryQuerySchema,
   pastForecastQuerySchema,
 } from "../ml/ml.schema";
+import { findingsParagraphQuerySchema } from "../ml-findings/findings-paragraph.schema";
 // `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`;
 // `F4.284`: the alarm, work-order and convert bodies too.
 import {
@@ -516,6 +517,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   MlController_list: forecastListQuerySchema,
   MlFindingsController_forecastSummary: mlFindingsSummaryQuerySchema,
   MlFindingsController_anomalySummary: mlFindingsSummaryQuerySchema,
+  // `E1.9c` (ADR 0135 Amendment 8 decision 10, plan R-c): the paragraph's required `kind` and the
+  // summaries' four scope keys, `.strict()`, no body.
+  FindingsParagraphController_get: findingsParagraphQuerySchema,
   // `F4.365` U6 (ADR 0134 Amendment 1): the organization version bodies; DELETE carries `?reason=`.
   AdminTariffVersionsController_create: createTariffVersionBodySchema,
   AdminTariffVersionsController_update: updateTariffVersionBodySchema,
