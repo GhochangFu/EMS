@@ -29,6 +29,7 @@ const ASSET_ID = "dddddddd-1111-4111-8111-000000000001";
 const ASSET: MlFindingAsset = {
   ref: "A1",
   assetId: ASSET_ID,
+  code: "PX-7",
   label: "PX-7 · Harbour Lane RTU",
   href: `/asset-history/${ASSET_ID}?points=temp_c`,
 };
@@ -84,7 +85,7 @@ export function safeAssetHrefAllowsOnlyTheHistoryPage(): void {
 
 /** A reference resolves to its asset's label and safe link; an unknown one is the text "an asset". */
 export function resolveSegmentsPutsTheAssetsBack(): void {
-  const unsafe: MlFindingAsset = { ...ASSET, ref: "A2", label: "PX-9 · Harbour Lane RTU", href: "javascript:alert(1)" };
+  const unsafe: MlFindingAsset = { ...ASSET, ref: "A2", code: "PX-9", label: "PX-9 · Harbour Lane RTU", href: "javascript:alert(1)" };
   expect(
     resolveSegments(
       [{ text: "Strongest signal: " }, { assetRef: "A1" }, { text: " and " }, { assetRef: "A2" }, { text: ", " }, { assetRef: "A7" }],

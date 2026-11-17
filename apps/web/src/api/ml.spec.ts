@@ -231,7 +231,7 @@ const PARAGRAPH = {
       organizationId: ORG,
       state: "ok",
       segments: [{ text: "Most unusual hours were on " }, { assetRef: "A1" }, { text: "." }],
-      assets: [{ ref: "A1", assetId: ASSET, label: "CR-1 · Quill RTU", href: `/asset-history/${ASSET}?points=kw` }],
+      assets: [{ ref: "A1", assetId: ASSET, code: "CR-1", label: "CR-1 · Quill RTU", href: `/asset-history/${ASSET}?points=kw` }],
     },
     { organizationId: SITE, state: "pending", segments: [], assets: [] },
   ],

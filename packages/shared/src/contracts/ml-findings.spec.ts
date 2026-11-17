@@ -8,6 +8,7 @@ import {
   ML_FINDINGS_PARAGRAPH_STATES,
   anomalyFindingHref,
   forecastFindingHref,
+  mlFindingAssetSchema,
   mlFindingsCardSchema,
   mlFindingsParagraphResponseSchema,
   mlFindingsSummaryResponseSchema,
@@ -39,6 +40,7 @@ const card = {
     {
       ref: "A1",
       assetId: ASSET,
+      code: "CR-01",
       label: "CR-01 · RTU-N1",
       href: forecastFindingHref(ASSET, ["cold_room_temp_c"]),
     },
@@ -124,6 +126,26 @@ export function runParagraphAssetsTest(): void {
   expect(mlFindingsParagraphResponseSchema.safeParse(without).success, "a card without assets").toBe(false);
   const badRef = { cards: [{ ...withAssets.cards[0], assets: [{ ...card.assets[0], ref: "B1" }] }] };
   expect(mlFindingsParagraphResponseSchema.safeParse(badRef).success, "an asset ref that is not A<n>").toBe(false);
+}
+
+/**
+ * `E1.9g` (ADR 0135 Amendment 10, Q3; plan R-a) — every asset entry carries its code, required,
+ * 1 to 64 characters (`bms.assets.code` is `varchar(64) NOT NULL`), on the summary card and on
+ * the paragraph card alike. The web draws the chip from `code` and never parses `label`.
+ */
+export function runAssetCodeTest(): void {
+  const { code: _dropped, ...noCode } = card.assets[0]!;
+  expect(mlFindingsCardSchema.safeParse({ ...card, assets: [noCode] }).success, "summary card, no code").toBe(false);
+  const paragraph = (asset: unknown) => ({
+    cards: [{ organizationId: ORG, state: "ok", segments: [{ assetRef: "A1" }], assets: [asset] }],
+  });
+  expect(mlFindingsParagraphResponseSchema.safeParse(paragraph(noCode)).success, "paragraph card, no code").toBe(false);
+  expect(mlFindingsParagraphResponseSchema.safeParse(paragraph(card.assets[0])).success, "paragraph card, code").toBe(true);
+  const withCode = (code: string) => mlFindingsCardSchema.safeParse({ ...card, assets: [{ ...card.assets[0], code }] }).success;
+  expect(withCode(""), "an empty code").toBe(false);
+  expect(withCode("C".repeat(64)), "64 characters").toBe(true);
+  expect(withCode("C".repeat(65)), "65 characters").toBe(false);
+  expect(Object.keys(mlFindingAssetSchema.shape).sort()).toEqual(["assetId", "code", "href", "label", "ref"]);
 }
 
 export function runNotStrictTest(): void {

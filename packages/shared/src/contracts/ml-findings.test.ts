@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runAnomalyHrefTest,
+  runAssetCodeTest,
   runAssetRefBoundsTest,
   runCardKeysTest,
   runConstantsTest,
@@ -24,6 +25,8 @@ describe("E1.9a — the ML findings contracts (ADR 0135 Amendment 8)", () => {
   it("the longest asset label (322 characters) parses; 331 is refused", () => runLongLabelTest());
   it("a paragraph state error and a segment over 600 characters are refused", () => runParagraphStateTest());
   it("E1.9d a paragraph card carries its own assets, and one without is refused", () => runParagraphAssetsTest());
+  it("E1.9g an asset entry carries a code of 1 to 64 characters, on the summary and the paragraph card", () =>
+    runAssetCodeTest());
   it("an unknown extra key parses (responses are not strict)", () => runNotStrictTest());
   it("the card's key set is exactly the five keys: no facts hash", () => runCardKeysTest());
   it("forecastFindingHref: one key is the Forecasts table's link; two keys join with a comma", () =>

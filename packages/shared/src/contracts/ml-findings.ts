@@ -66,6 +66,8 @@ export const mlFindingFactSchema = z.object({
 export const mlFindingAssetSchema = z.object({
   ref: assetRef,
   assetId: z.string().uuid(),
+  /** `E1.9g`: the asset code alone (`bms.assets.code`, at most 64), for the short chip. */
+  code: z.string().min(1).max(64),
   /** `assetLabelOf`: code (64) + " · " + RTU or location name (255) = at most 322 characters. */
   label: z.string().max(330),
   href: z.string().max(2000),
