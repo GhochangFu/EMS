@@ -4,6 +4,8 @@ import { AuthModule } from "../auth/auth.module";
 
 import { AssetHealthController } from "./asset-health.controller";
 import { AssetHealthService } from "./asset-health.service";
+import { HealthInputsController } from "./health-inputs.controller";
+import { HealthInputsService } from "./health-inputs.service";
 import { HealthRollupService } from "./health-rollup.service";
 
 /**
@@ -41,11 +43,16 @@ import { HealthRollupService } from "./health-rollup.service";
  * SCHEDULE is not. `HealthRollupService` owns a loop with no request to
  * authorize, and a second module able to trigger it could refresh another
  * tenant's counters on a whim. Export a reader; never export the writer.
+ *
+ * **`E1.8a` (ADR 0050 Amendment 5): `HealthInputsController` and
+ * `HealthInputsService`, not exported.** The advisory figure and the bad-actors
+ * list reach no other module (no report, export, metric or copilot tool;
+ * `tests/e1.8-health-inputs-containment.test.ts`), so nothing needs the service.
  */
 @Module({
   imports: [AuthModule],
-  controllers: [AssetHealthController],
-  providers: [AssetHealthService, HealthRollupService],
+  controllers: [AssetHealthController, HealthInputsController],
+  providers: [AssetHealthService, HealthRollupService, HealthInputsService],
   exports: [AssetHealthService],
 })
 export class AssetHealthModule {}
