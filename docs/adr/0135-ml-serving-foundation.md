@@ -1117,12 +1117,14 @@ detector rates (due about 2026-11-23) is untouched.
 
 ## Amendment 7 — `E1.9`: plain-English findings and an organization + site filter on the ML pages (2026-11-17)
 
-**Status: Proposed — 2026-11-17.** Drafted by an agent for backlog row
-`E1.9` at the step 2 gate (AGENTS.md §10). Lines marked *(owner,
-2026-11-17)* are the owner's answers given in chat that day; they are
-rulings. Lines marked *(recommended)* are the drafter's calls, and the
-numbered questions at the end are still open unless marked ruled. **Only the
-owner marks this amendment Accepted.**
+**Status: Accepted — 2026-11-17** (owner, in chat: "accept as
+recommended"; proposed the same day in PR #1380). Drafted by an agent for
+backlog row `E1.9` at the step 2 gate (AGENTS.md §10). Lines marked *(owner,
+2026-11-17)* are the owner's answers given in chat that day. Lines marked
+*(recommended)* were the drafter's calls; the owner accepted the amendment
+with them as written, so **every *(recommended)* line is now a ruling**, and
+Q1–Q4 are ruled as recommended (Q5 was ruled earlier the same day; see
+§Rulings below).
 
 **Owner answers on the draft (2026-11-17, in chat, after the first draft):**
 - the daily cap (Q4) is a cap on the **AI paragraph** only;
@@ -1622,6 +1624,16 @@ the AI paragraph (decision 5), not a choice the model makes.
      3); it needs a sixteenth widget-kind migration and a binding rule. The
      existing `forecast` and `anomaly` widgets already cover one point.
    - If (a) is no, the summary lives on the two pages only.
+
+### Rulings
+
+| # | Question | Ruling (owner, 2026-11-17) |
+|---|----------|----------------------------|
+| **Q1** | Who sees the AI paragraph | **As recommended:** everyone who can open the page, operators and viewers included; recorded beside AGENTS.md §6's copilot line at closure |
+| **Q2** | Which switch | **As recommended:** the organization's existing copilot switch |
+| **Q3** | Pseudonymise names before sending | **As recommended:** yes (decision 6) |
+| **Q4** | Daily cap on the AI paragraph | **As recommended:** 200 attempts per organization per UTC day; facts never capped |
+| **Q5** | Control room and dashboards | **Both in** (decision 13), ruled before acceptance |
 
 ### PR split *(recommended; the plan confirms)*
 
