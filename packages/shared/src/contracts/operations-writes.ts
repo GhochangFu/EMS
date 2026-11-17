@@ -31,7 +31,10 @@ export const alarmAckBodySchema = z
   })
   .strict();
 
-const enrichmentText = z.string().max(2000).nullable().optional();
+/** The limit on each enrichment text field (`rootCause`, `impact`, …); the web form and its fill cut to it. */
+export const ALARM_ENRICHMENT_TEXT_MAX = 2000;
+
+const enrichmentText = z.string().max(ALARM_ENRICHMENT_TEXT_MAX).nullable().optional();
 /** No future-only refinement — revising a passed ETR is legitimate. */
 const enrichmentEtr = z.string().datetime({ offset: true }).nullable().optional();
 const enrichmentAffected = z.array(z.string().uuid()).max(50).optional();
