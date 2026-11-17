@@ -137,6 +137,7 @@
     "tests/e2.4-template-alarm-provenance.test.ts",
     "tests/f4.102-file-interceptor-limits.test.ts",
     "tests/e2.2-alarm-kb-route-gate.test.ts",
+    "tests/e2.3-root-cause-containment.test.ts",
     "tests/f4.103-draft-count-caps.test.ts",
     "tests/f4.104-draft-string-bounds.test.ts",
     "tests/f4.115-iterative-draft-walkers.test.ts",

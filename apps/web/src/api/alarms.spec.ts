@@ -1,6 +1,14 @@
 import { expect, vi } from "vitest";
 
-import { fetchActiveAlarms, fetchAlarmsPage, fetchAlarmSummary, fetchUnacknowledgedAlarms } from "./alarms";
+import type { AlarmRootCauseSuggestionsResponse } from "@bms/shared/contracts";
+
+import {
+  fetchActiveAlarms,
+  fetchAlarmsPage,
+  fetchAlarmSummary,
+  fetchRootCauseSuggestions,
+  fetchUnacknowledgedAlarms,
+} from "./alarms";
 
 /**
  * `F3.28` (ADR 0074 decision 4) — what the `/cr-overview` alarms rail's two
@@ -222,4 +230,41 @@ export async function alarmsPageSendsEveryFilterKey(): Promise<void> {
   });
   await fetchAlarmsPage(undefined, 25, {});
   expect([...seen().searchParams.keys()]).toEqual(["limit"]);
+}
+
+/* `E2.3` (ADR 0136, plan §7 T2.1) — the root-cause suggestions read. */
+
+const ROOT_CAUSE_BODY: AlarmRootCauseSuggestionsResponse = {
+  computedAt: "2026-11-17T10:00:00.000Z",
+  candidates: [
+    {
+      rule: "recorded_before",
+      strength: "moderate",
+      title: "Recorded before",
+      quote: "Grease line cracked",
+      occurrences: 2,
+      evidence: [],
+    },
+  ],
+  context: [],
+};
+
+/** A valid body goes to `/alarms/:id/root-cause-suggestions` and comes back as it was sent. */
+export async function rootCauseSuggestionsReturnsAValidBody(): Promise<void> {
+  const seen = captureUrl(ROOT_CAUSE_BODY);
+  const got = await fetchRootCauseSuggestions(ID_A);
+  expect(`${seen().origin}${seen().pathname}`).toBe(`${BASE}/api/v1/alarms/${ID_A}/root-cause-suggestions`);
+  expect(got).toEqual(ROOT_CAUSE_BODY);
+}
+
+/** A strength given as a number is not the contract, and the client throws in test (ADR 0030 decision 5). */
+export async function rootCauseSuggestionsRefusesAWrongShape(): Promise<void> {
+  captureUrl({ ...ROOT_CAUSE_BODY, candidates: [{ ...ROOT_CAUSE_BODY.candidates[0], strength: 0.8 }] });
+  await expect(fetchRootCauseSuggestions(ID_A)).rejects.toThrow();
+}
+
+/** A 404 (an alarm the caller cannot open) throws, naming the route. */
+export async function rootCauseSuggestionsThrowsOnA404(): Promise<void> {
+  vi.stubGlobal("fetch", async () => new Response("{}", { status: 404 }));
+  await expect(fetchRootCauseSuggestions(ID_A)).rejects.toThrow("alarms/:id/root-cause-suggestions 404");
 }

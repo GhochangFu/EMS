@@ -99,3 +99,10 @@ describe("fetchAlarmsPage (F4.359 U12)", () => {
   it("sends state only when given", () => spec.alarmsPageSendsTheStateOnlyWhenGiven());
   it("F4.361 sends every filter key, the asset as one assetIds", () => spec.alarmsPageSendsEveryFilterKey());
 });
+
+describe("fetchRootCauseSuggestions (E2.3, ADR 0136)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("returns a valid body from the route", () => spec.rootCauseSuggestionsReturnsAValidBody());
+  it("throws in test on a wrong shape", () => spec.rootCauseSuggestionsRefusesAWrongShape());
+  it("throws on a 404", () => spec.rootCauseSuggestionsThrowsOnA404());
+});

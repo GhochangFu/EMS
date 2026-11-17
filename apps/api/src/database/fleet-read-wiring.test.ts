@@ -5,6 +5,7 @@ import {
   assertAssetFilterScopeServiceFleetSlot,
   assertFilterOptionsServiceFleetSlot,
   assertAlarmRaiserTenantSlot,
+  assertAlarmRootCauseServiceTenantSlot,
   assertAssetImagesServiceFleetSlot,
   assertAssetImagesServiceTenantSlot,
   assertAssetImagesWriteServiceFleetSlot,
@@ -166,5 +167,9 @@ describe("E7.1b — services inject the right pool token in the right constructo
 
   it("E1.9a MlFindingsService injects the fleet pool in slot 1", () => {
     assertMlFindingsServiceFleetSlot();
+  });
+
+  it("E2.3 AlarmRootCauseService injects the tenant pool in slot 1 and no fleet token", () => {
+    assertAlarmRootCauseServiceTenantSlot();
   });
 });

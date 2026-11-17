@@ -154,3 +154,5 @@ export * from "../tariffs/compute-bill";
 export * from "./ml-forecasts";
 export * from "./ml-anomalies";
 export * from "./ml-findings";
+// `E2.3` (ADR 0136): the root-cause suggestions response and its types.
+export * from "./alarm-root-cause";
