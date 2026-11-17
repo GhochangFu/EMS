@@ -1896,3 +1896,20 @@ scope kind (organization, location, asset group), saved, and drawn after a
 hard reload; a widget with `paragraph: false` makes no paragraph request; and
 with `LLM_PROVIDER` unset (or the switch off), every surface shows facts and
 no banner.
+
+## Amendment 9 — pointer: anomaly history beside the asset health score (2026-11-17)
+
+**Status: Proposed — 2026-11-17**, with [ADR 0050 Amendment 5](./0050-asset-health-score.md)
+(`E1.8`). This is a pointer, so a reader of Amendment 5 here finds the
+exception. The decision itself lives in ADR 0050 Amendment 5.
+
+If accepted, it adds a **third** exception to Amendment 5 ruling 4, after
+Amendment 6 (the alarm-panel context line) and Amendment 8 (the findings):
+an asset's health read may show an **advisory figure** equal to its rule-based
+health score minus a capped anomaly penalty, and a **"Bad actors — advisory"**
+list ranked by unusual hours. Until the owner's one-week detector read (about
+2026-11-23) only hours **both** detectors mark count, and the penalty is
+capped at 0.05. `E1.3`'s score, bands, donut and the `assets.health.score`
+metric do not change. A score still raises no alarm, sends no notification,
+opens no work order, and appears in no report, export or copilot answer. No
+threshold or detector constant changes, and `apps/ml` does not change.
