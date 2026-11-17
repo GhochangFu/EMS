@@ -70,7 +70,7 @@ type MlFindingsCardProps = {
  * never splits or searches `label`.
  */
 function AssetChip({ part }: { part: Extract<FindingPart, { code: string }> }) {
-  const chip = "rounded-sm border border-line bg-surface px-1 font-semibold";
+  const chip = "surface-pressed-sm px-1 font-semibold";
   return part.href === null ? (
     <span className={chip} title={part.label}>
       {part.code}
