@@ -10,6 +10,7 @@ import { AlarmDetailsService } from "./alarm-details.service";
 import {
   pastRootCausesStatement,
   readCoveringWindows,
+  readLocationAncestorIds,
   readPastRootCauses,
   readRelatedAlarms,
   readSubjectAsset,
@@ -37,14 +38,14 @@ export type OrgFixture = {
   readonly locations: Readonly<Record<"site" | "building" | "room" | "roomB" | "roomC" | "roomD" | "roomE", string>>;
   readonly rtuId: string;
   readonly rtuName: string;
-  readonly assets: Readonly<Record<"a1" | "a2" | "a3" | "a4" | "a5" | "a6" | "a7", string>>;
-  readonly rules: Readonly<Record<"s1" | "other" | "s2", string>>;
-  readonly windows: Readonly<Record<"w1" | "w2" | "w3" | "w4" | "w5" | "w6" | "w7", string>>;
+  readonly assets: Readonly<Record<"a1" | "a2" | "a3" | "a4" | "a5" | "a6" | "a7" | "a8", string>>;
+  readonly rules: Readonly<Record<"s1" | "other" | "s2" | "s5", string>>;
+  readonly windows: Readonly<Record<"w1" | "w2" | "w3" | "w4" | "w5" | "w6" | "w7" | "w8", string>>;
   readonly alarms: Readonly<
     Record<
       | "s1" | "c40" | "c60" | "c61" | "la2" | "la1Other" | "na3" | "na4" | "n31" | "b30" | "b30s" | "same" | "reraise"
       | "s2" | "p1" | "p2" | "p179" | "p3" | "p181" | "pSame" | "pBlank"
-      | "s3" | "s4" | "onA4" | "onA6",
+      | "s3" | "s4" | "onA4" | "onA6" | "s5" | "s5Rtu",
       string
     >
   >;
@@ -85,9 +86,11 @@ const s1Args = (org: OrgFixture, raisedMs: number) => ({
   organizationId: org.organizationId,
   alarmId: org.alarms.s1,
   assetId: org.assets.a1,
+  ruleId: org.rules.s1,
   rtuId: org.rtuId,
   locationId: org.locations.room,
   raisedMs,
+  assetIds: null,
 });
 const s2Args = (org: OrgFixture, raisedMs: number) => ({
   organizationId: org.organizationId,
@@ -167,15 +170,19 @@ export async function assertBoundariesThroughTheReads(ctx: RootCauseFixtures): P
     expect(subject).toMatchObject({ rtuId: a.rtuId, rtuName: a.rtuName, locationId: a.locations.room });
 
     const related = (await readRelatedAlarms(tx, s1Args(a, subject!.raisedMs))).map((r) => r.id);
-    // In: R2 at 40 and at exactly 60 min; R3 at exactly 30 min and at T itself. The re-raise is the
-    // pure step's to drop. Out: 30 min + 1 s, 31 min, R2 at 61 min, other locations, S1 itself.
+    // In: R2 at 40 and at exactly 60 min; R3 at exactly 30 min and at T itself. Out: the re-raise of
+    // S1's rule on a1 (R4's population, dropped before the cap), 30 min + 1 s, 31 min, R2 at 61 min,
+    // other locations, S1 itself.
     expect(sorted(related)).toEqual(
-      sorted([a.alarms.c40, a.alarms.c60, a.alarms.la2, a.alarms.la1Other, a.alarms.b30, a.alarms.same, a.alarms.reraise]),
+      sorted([a.alarms.c40, a.alarms.c60, a.alarms.la2, a.alarms.la1Other, a.alarms.b30, a.alarms.same]),
     );
 
-    // R1: an asset or any location target overlapping [T − 60 min, T]; ending exactly at T − 60 min is out.
-    const windows = (await readCoveringWindows(tx, a.organizationId, a.assets.a1, subject!.raisedMs)).map((w) => w.id);
-    expect(sorted(windows)).toEqual(sorted([a.windows.w1, a.windows.w2, a.windows.w7]));
+    // R1: an asset target or one on an ancestor-or-self location, overlapping [T − 60 min, T]. Out:
+    // ending exactly at T − 60 min, the sibling room's window (w7), and the one cancelled before it began (w8).
+    const ancestors = await readLocationAncestorIds(tx, a.organizationId, a.locations.room);
+    expect(sorted(ancestors)).toEqual(sorted([a.locations.room, a.locations.building, a.locations.site]));
+    const windows = (await readCoveringWindows(tx, a.organizationId, a.assets.a1, ancestors, subject!.raisedMs)).map((w) => w.id);
+    expect(sorted(windows)).toEqual(sorted([a.windows.w1, a.windows.w2]));
 
     const s2 = await readSubjectAsset(tx, a.organizationId, a.alarms.s2, a.assets.a5);
     const past = await readPastRootCauses(tx, s2Args(a, s2!.raisedMs));
@@ -236,7 +243,7 @@ export async function assertTheFleetReadsKeepBothPoisonRowsOut(ctx: RootCauseFix
     const related = await readRelatedAlarms(tx, s1Args(a, s1!.raisedMs));
     expect(related.map((r) => r.id)).not.toContain(ctx.poison.alarmId);
     expect(related.map((r) => r.message)).not.toContain("POISON-ALARM");
-    expect(related).toHaveLength(7);
+    expect(related).toHaveLength(6);
 
     const s2 = await readSubjectAsset(tx, a.organizationId, a.alarms.s2, a.assets.a5);
     const past = await readPastRootCauses(tx, s2Args(a, s2!.raisedMs));
@@ -387,11 +394,90 @@ export async function assertAnomaliesHaveZeroWeight(ctx: RootCauseFixtures): Pro
 
 export async function assertEveryAnswerParses(ctx: RootCauseFixtures): Promise<void> {
   for (const org of [ctx.a, ctx.b]) {
-    for (const id of [org.alarms.s1, org.alarms.s2, org.alarms.s3, org.alarms.s4, org.alarms.c40]) {
+    for (const id of [org.alarms.s1, org.alarms.s2, org.alarms.s3, org.alarms.s4, org.alarms.s5, org.alarms.c40]) {
       const answer = await ctx.svc.get(id, null, ctx.now);
       expect(alarmRootCauseSuggestionsResponseSchema.parse(answer)).toEqual(answer);
     }
   }
+}
+
+/**
+ * Review finding 1: a scoped caller (`assetIds`, what `readableAssetIds` hands an asset-group or
+ * location admin) never sees a related `rule` alarm on an asset outside its scope — `/details` would
+ * 404 on it — while the `rtu_comms` rows on the subject asset's RTU stay (`alarmVisibleTo`).
+ */
+export async function assertTheRelatedAlarmsKeepTheCallersScope(ctx: RootCauseFixtures): Promise<void> {
+  const { a } = ctx;
+  // Same RTU, outside [a1]: la2, same and b30 are on a2.
+  const sameRtuOutside = [a.alarms.la2, a.alarms.same, a.alarms.b30];
+  const sameRtuTexts = ["E23-A neighbour on a2", "E23-A a2 at the same instant", "E23-A a2 at exactly 30"];
+  const open = await ctx.svc.get(a.alarms.s1, null, ctx.now);
+  for (const id of sameRtuOutside) expect(JSON.stringify(open), "control: the admin sees it").toContain(id);
+  for (const id of sameRtuOutside) await expect(ctx.details.get(id, [a.assets.a1])).rejects.toBeInstanceOf(NotFoundException);
+
+  const scoped = await ctx.svc.get(a.alarms.s1, [a.assets.a1], ctx.now);
+  expect(shape(scoped)).toEqual([
+    ["maintenance", "strong"],
+    ["rtu_comms", "strong"],
+    ["linked_alarm", "moderate"],
+  ]);
+  expect(evidenceAlarmIds(scoped, 1)).toEqual([a.alarms.c40, a.alarms.c60]);
+  expect(evidenceAlarmIds(scoped, 2)).toEqual([a.alarms.la1Other]);
+  const scopedText = JSON.stringify(scoped);
+  for (const id of [...sameRtuOutside, a.assets.a2]) expect(scopedText).not.toContain(id);
+  for (const text of sameRtuTexts) expect(scopedText).not.toContain(text);
+  // Control: a scope that holds a2 gets them back.
+  expect(evidenceAlarmIds(await ctx.svc.get(a.alarms.s1, [a.assets.a1, a.assets.a2], ctx.now), 2)).toEqual(
+    evidenceAlarmIds(open, 2),
+  );
+
+  // Same location only, outside [a3]: onA6 is on a6, a3's room.
+  await expect(ctx.details.get(a.alarms.onA6, [a.assets.a3])).rejects.toBeInstanceOf(NotFoundException);
+  const s4Scoped = await ctx.svc.get(a.alarms.s4, [a.assets.a3], ctx.now);
+  expect(s4Scoped.candidates).toEqual([]);
+  expect(JSON.stringify(s4Scoped)).not.toContain(a.alarms.onA6);
+  expect(JSON.stringify(s4Scoped)).not.toContain("E23-A same room");
+  const s4Both = await ctx.svc.get(a.alarms.s4, [a.assets.a3, a.assets.a6], ctx.now);
+  expect(shape(s4Both)).toEqual([["linked_alarm_location", "weak"]]);
+  expect(evidenceAlarmIds(s4Both, 0)).toEqual([a.alarms.onA6]);
+
+  // The read itself, so the absence is SQL's and not the ranking's.
+  await withTenant(ctx.tenantDb, a.organizationId, async (tx) => {
+    const s1 = await readSubjectAsset(tx, a.organizationId, a.alarms.s1, a.assets.a1);
+    const rows = await readRelatedAlarms(tx, { ...s1Args(a, s1!.raisedMs), assetIds: [a.assets.a1] });
+    expect(sorted(rows.map((r) => r.id))).toEqual(sorted([a.alarms.c40, a.alarms.c60, a.alarms.la1Other]));
+  });
+}
+
+/**
+ * Review finding 3: S5 on a2 has 20 re-raises of its own rule and 21 location-only alarms on a8, all
+ * newer than its one same-RTU alarm (a1, 25 min before). R3's 20 rows are its own, so it still appears.
+ */
+export async function assertR3KeepsItsOwnCap(ctx: RootCauseFixtures): Promise<void> {
+  const { a } = ctx;
+  const answer = await ctx.svc.get(a.alarms.s5, null, ctx.now);
+  expect(shape(answer)).toEqual([
+    ["linked_alarm", "moderate"],
+    ["linked_alarm_location", "weak"],
+  ]);
+  expect(evidenceAlarmIds(answer, 0)).toEqual([a.alarms.s5Rtu]);
+  await withTenant(ctx.tenantDb, a.organizationId, async (tx) => {
+    const s5 = await readSubjectAsset(tx, a.organizationId, a.alarms.s5, a.assets.a2);
+    const rows = await readRelatedAlarms(tx, {
+      organizationId: a.organizationId,
+      alarmId: a.alarms.s5,
+      assetId: a.assets.a2,
+      ruleId: a.rules.s5,
+      rtuId: a.rtuId,
+      locationId: a.locations.room,
+      raisedMs: s5!.raisedMs,
+      assetIds: null,
+    });
+    expect(rows.filter((r) => r.ruleId === a.rules.s5)).toEqual([]);
+    expect(rows.filter((r) => r.assetId === a.assets.a8)).toHaveLength(20);
+    expect(rows.map((r) => r.id)).toContain(a.alarms.s5Rtu);
+    expect(rows).toHaveLength(21);
+  });
 }
 
 type PlanNode = { "Node Type"?: string; "Relation Name"?: string; "Index Name"?: string; Plans?: PlanNode[] };

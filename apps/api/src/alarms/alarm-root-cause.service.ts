@@ -33,7 +33,10 @@ import {
  *    also keeps its hand-written organization predicate
  *    (`alarm-root-cause.reads.ts`). The anomaly read shares the transaction: it
  *    is the organization `withReadScope([assetId])` would resolve to.
- * 4. The ranking never sees the anomaly rows (R-h, decision 3).
+ * 4. **The related-alarm read takes the caller's `assetIds`**: a `rule` alarm
+ *    on an asset outside them is dropped in SQL, before the caps, as
+ *    `alarmVisibleTo` hides it from `/details`.
+ * 5. The ranking never sees the anomaly rows (R-h, decision 3).
  */
 @Injectable()
 export class AlarmRootCauseService {
@@ -55,17 +58,19 @@ export class AlarmRootCauseService {
       if (asset === null) return empty;
       const raisedMs = asset.raisedMs;
 
-      const windows = await readCoveringWindows(tx, organizationId, assetId, raisedMs);
-      const locationAncestorIds = windows.some((w) => w.locationIds.length > 0)
-        ? await readLocationAncestorIds(tx, organizationId, asset.locationId)
-        : [];
+      // R1's statement filters location targets by these ids, so its cap counts covering targets only.
+      const locationAncestorIds = await readLocationAncestorIds(tx, organizationId, asset.locationId);
+      const windows = await readCoveringWindows(tx, organizationId, assetId, locationAncestorIds, raisedMs);
+      // The caller's scope reaches R3/R3b: a `rule` alarm outside it is one `/details` would hide.
       const related = await readRelatedAlarms(tx, {
         organizationId,
         alarmId,
         assetId,
+        ruleId,
         rtuId: asset.rtuId,
         locationId: asset.locationId,
         raisedMs,
+        assetIds,
       });
       const pastRootCauses =
         ruleId === null ? [] : await readPastRootCauses(tx, { organizationId, alarmId, assetId, ruleId, raisedMs });

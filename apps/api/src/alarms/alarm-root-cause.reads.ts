@@ -50,6 +50,7 @@ export type RootCauseSubjectAssetRow = {
   readonly locationId: string;
 };
 
+/** The subject's raise instant and its asset's RTU and location, by alarm primary key, asset and organization. */
 export function subjectAssetStatement(organizationId: string, alarmId: string, assetId: string): SQL {
   return sql`
     SELECT (extract(epoch FROM al.raised_at) * 1000)::float8 AS raised_ms,
@@ -83,11 +84,18 @@ export async function readLocationAncestorIds(tx: BmsTx, organizationId: string,
 }
 
 /**
- * R1: windows that started by `T` and had not ended 60 min before it, with the
- * subject's asset target or any location target. The cover test is the pure
- * step's (`windowCovers`, R-d), so a location target here is a candidate only.
+ * R1: windows that started by `T`, had not ended 60 min before it and did run
+ * (a window cancelled before it started has `ended_at < starts_at`), with the
+ * subject's asset target or a target on an ancestor-or-self of its location —
+ * so the row cap counts only targets that can cover the asset. The cover test
+ * is still the pure step's (`windowCovers`, R-d).
  */
-export function coveringWindowsStatement(organizationId: string, assetId: string, raisedMs: number): SQL {
+export function coveringWindowsStatement(
+  organizationId: string,
+  assetId: string,
+  locationAncestorIds: readonly string[],
+  raisedMs: number,
+): SQL {
   return sql`
     SELECT w.id AS id, (extract(epoch FROM w.starts_at) * 1000)::float8 AS starts_ms,
            (extract(epoch FROM COALESCE(w.ended_at, w.ends_at)) * 1000)::float8 AS end_ms,
@@ -97,7 +105,8 @@ export function coveringWindowsStatement(organizationId: string, assetId: string
      WHERE w.organization_id = ${organizationId}::uuid
        AND w.starts_at <= ${at(raisedMs)}
        AND COALESCE(w.ended_at, w.ends_at) > ${at(raisedMs)} - interval '60 minutes'
-       AND (t.asset_id = ${assetId}::uuid OR t.location_id IS NOT NULL)
+       AND COALESCE(w.ended_at, w.ends_at) > w.starts_at
+       AND (t.asset_id = ${assetId}::uuid OR t.location_id = ANY(${sql.param([...locationAncestorIds])}::uuid[]))
      ORDER BY w.starts_at DESC, w.id
      LIMIT ${ROOT_CAUSE_WINDOW_ROW_CAP}`;
 }
@@ -107,6 +116,7 @@ export async function readCoveringWindows(
   tx: BmsTx,
   organizationId: string,
   assetId: string,
+  locationAncestorIds: readonly string[],
   raisedMs: number,
 ): Promise<RootCauseWindowRow[]> {
   const result = await tx.execute<{
@@ -115,7 +125,7 @@ export async function readCoveringWindows(
     end_ms: number;
     asset_id: string | null;
     location_id: string | null;
-  }>(coveringWindowsStatement(organizationId, assetId, raisedMs));
+  }>(coveringWindowsStatement(organizationId, assetId, locationAncestorIds, raisedMs));
   const byId = new Map<string, { id: string; organizationId: string; startsMs: number; endMs: number; assetIds: string[]; locationIds: string[]; ruleIds: string[] }>();
   for (const row of result.rows) {
     let window = byId.get(row.id);
@@ -139,18 +149,34 @@ export async function readCoveringWindows(
 }
 
 /**
- * R2 and R3 in **one scan** of `bms.alarms`, each source capped by itself:
- * `rtu_comms` alarms on the asset's RTU in `[T − 60 min, T]`, and `rule` alarms
- * in `[T − 30 min, T]` on the asset, its RTU or its location. `$rtu` may be
- * null: `= NULL` is never true, so an RTU-less asset links to no RTU-less asset.
+ * The caller's read scope over the related `rule` alarms — `alarmVisibleTo`'s
+ * `rule` arm (`alarm-scope.ts`). `null` is the global admin: no predicate. An
+ * `rtu_comms` row passes: it is on the subject asset's RTU, and the subject's
+ * asset is in the scope (the details gate held), which is that arm's rule.
+ */
+const readableRuleAlarms = (assetIds: readonly string[] | null): SQL =>
+  assetIds === null ? sql`` : sql`AND (al.source <> 'rule' OR al.asset_id = ANY(${sql.param([...assetIds])}::uuid[]))`;
+
+/**
+ * R2 and R3 in **one scan** of `bms.alarms`, each class capped by itself:
+ * `rtu_comms` alarms on the asset's RTU in `[T − 60 min, T]` (class 0), and
+ * `rule` alarms in `[T − 30 min, T]` on the asset or its RTU (class 1, R3) or
+ * on its location only (class 2, R3b). Re-raises of the subject's rule on its
+ * asset are R4's population and are left out before the cap, as are `rule`
+ * alarms outside the caller's scope, so neither takes a capped row. `$rtu` and
+ * `$rule` may be null: `= NULL` is never true, so an RTU-less asset links to no
+ * RTU-less asset, and a rule-less subject has no re-raise.
  */
 export function relatedAlarmsStatement(args: {
   readonly organizationId: string;
   readonly alarmId: string;
   readonly assetId: string;
+  readonly ruleId: string | null;
   readonly rtuId: string | null;
   readonly locationId: string;
   readonly raisedMs: number;
+  /** The caller's readable asset ids; `null` is the global admin. */
+  readonly assetIds: readonly string[] | null;
 }): SQL {
   const { organizationId: org, raisedMs } = args;
   return sql`
@@ -165,7 +191,11 @@ export function relatedAlarmsStatement(args: {
                (extract(epoch FROM al.cleared_at) * 1000)::float8 AS cleared_ms,
                x.code AS asset_code, x.rtu_id AS asset_rtu_id, x.location_id AS asset_location_id,
                r.display_name AS asset_rtu_name, l.name AS asset_location_name,
-               row_number() OVER (PARTITION BY al.source ORDER BY al.raised_at DESC, al.id DESC) AS rn
+               row_number() OVER (
+                 PARTITION BY CASE WHEN al.source = 'rtu_comms' THEN 0
+                                   WHEN al.asset_id = ${args.assetId}::uuid OR x.rtu_id = ${args.rtuId}::uuid THEN 1
+                                   ELSE 2 END
+                 ORDER BY al.raised_at DESC, al.id DESC) AS rn
           FROM bms.alarms al
           LEFT JOIN bms.assets x ON x.id = al.asset_id AND x.organization_id = ${org}::uuid
           LEFT JOIN bms.rtus r ON r.id = x.rtu_id AND r.organization_id = ${org}::uuid
@@ -177,6 +207,8 @@ export function relatedAlarmsStatement(args: {
                 OR (al.source = 'rule' AND al.raised_at >= ${at(raisedMs)} - interval '30 minutes'
                     AND (al.asset_id = ${args.assetId}::uuid OR x.rtu_id = ${args.rtuId}::uuid
                          OR x.location_id = ${args.locationId}::uuid)))
+           AND NOT COALESCE(al.asset_id = ${args.assetId}::uuid AND al.rule_id = ${args.ruleId}::uuid, false)
+           ${readableRuleAlarms(args.assetIds)}
       ) q
      WHERE (q.source = 'rtu_comms' AND q.rn <= ${ROOT_CAUSE_RTU_COMMS_ROW_CAP})
         OR (q.source = 'rule' AND q.rn <= ${ROOT_CAUSE_LINKED_ROW_CAP})

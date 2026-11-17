@@ -175,6 +175,8 @@ function maintenanceCandidate(subject: RootCauseSubject, windows: readonly RootC
     (w) =>
       w.startsMs <= T &&
       w.endMs > T - ROOT_CAUSE_MAINTENANCE_LOOKBACK_MS &&
+      // A window cancelled before it started (`ended_at < starts_at`) never ran.
+      w.endMs > w.startsMs &&
       windowCovers(
         { ...w, startsAt: new Date(w.startsMs) },
         {

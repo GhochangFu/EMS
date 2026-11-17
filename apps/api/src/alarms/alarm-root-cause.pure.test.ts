@@ -6,6 +6,7 @@ import {
   contextKeepsScoresAtOrAboveTheLine,
   noEvidenceGivesNoCandidate,
   orderIsStrengthThenRecencyThenTable,
+  r1ACancelledWindowNeverCounts,
   r1ACoveringWindowIsStrong,
   r1CountsAssetAndLocationTargetsOnly,
   r1SixWindowsGiveFiveNewestFirst,
@@ -37,6 +38,8 @@ describe("E2.3 — rankRootCauseCandidates and the anomaly context step (ADR 013
   it("R1: a covering window is strong and carries its start and effective end", () => r1ACoveringWindowIsStrong());
   it("R1 (R-d): asset and location targets only; a rule-only window or another org's does not count", () =>
     r1CountsAssetAndLocationTargetsOnly());
+  it("R1: a window cancelled before it started (ended_at <= starts_at) never counts", () =>
+    r1ACancelledWindowNeverCounts());
   it("R1: a window ending exactly 60 min before is out; one starting at T is in", () => r1TimeBounds());
   it("R1: six windows give 5 evidence items, newest first", () => r1SixWindowsGiveFiveNewestFirst());
   it("R2: an rtu_comms alarm on the asset's RTU is strong and the title names the RTU", () =>

@@ -17,6 +17,8 @@ import {
   assertBoundariesThroughTheReads,
   assertBTenantSeesNothingOfA,
   assertEveryAnswerParses,
+  assertR3KeepsItsOwnCap,
+  assertTheRelatedAlarmsKeepTheCallersScope,
   assertTheFleetReadsKeepBothPoisonRowsOut,
   assertTheNotFoundIsDetails,
   assertThePlansScanAlarmsOnceAndProbeThePkey,
@@ -108,6 +110,7 @@ describe.skipIf(!connectionString)("E2.3 — root-cause suggestions against a re
     const t2 = t1 - 2 * DAY;
     const t3 = t1 - DAY;
     const t4 = t1 - 12 * 60 * MIN;
+    const t5 = t1 - 6 * 60 * MIN;
 
     const buildOrg = async (tag: "A" | "B"): Promise<OrgFixture> => {
       const code = `e23-${stamp}-${tag}`;
@@ -158,6 +161,8 @@ describe.skipIf(!connectionString)("E2.3 — root-cause suggestions against a re
         a5: await asset("a5", locations.roomD, null),
         a6: await asset("a6", locations.roomB, null),
         a7: await asset("a7", locations.roomE, null),
+        // S5's location-only neighbour: a1 and a2's room, no RTU.
+        a8: await asset("a8", locations.room, null),
       };
       const plainRule = (suffix: string, assetId: string): Promise<string> =>
         one(
@@ -200,7 +205,12 @@ describe.skipIf(!connectionString)("E2.3 — root-cause suggestions against a re
         )
         .returning({ id: automationRules.id });
       if (!seeded) throw new Error("E2.3: the seeded rule was not inserted");
-      const rules = { s1: await plainRule("r-s1", assets.a1), other: await plainRule("r-other", assets.a1), s2: seeded.id };
+      const rules = {
+        s1: await plainRule("r-s1", assets.a1),
+        other: await plainRule("r-other", assets.a1),
+        s2: seeded.id,
+        s5: await plainRule("r-s5", assets.a2),
+      };
 
       const window = async (opts: {
         startsMs: number;
@@ -231,6 +241,9 @@ describe.skipIf(!connectionString)("E2.3 — root-cause suggestions against a re
         w5: await window({ startsMs: t1 - 200 * MIN, endsMs: t1 - 61 * MIN, target: ["asset_id", assets.a1] }),
         w6: await window({ startsMs: t1 + MIN, endsMs: t1 + 60 * MIN, target: ["asset_id", assets.a1] }),
         w7: await window({ startsMs: t1 - 60 * MIN, endsMs: t1 + 60 * MIN, target: ["location_id", locations.roomB] }),
+        // Out: planned for [T1 − 30 min, T1 + 60 min] on a1 and cancelled at T1 − 50 min, before it started
+        // (`MaintenanceWindowsService.close(…, "cancel")` stamps `ended_at = now()` on a future window).
+        w8: await window({ startsMs: t1 - 30 * MIN, endsMs: t1 + 60 * MIN, endedMs: t1 - 50 * MIN, target: ["asset_id", assets.a1] }),
       };
 
       const alarm = (opts: {
@@ -299,6 +312,16 @@ describe.skipIf(!connectionString)("E2.3 — root-cause suggestions against a re
         onA4: await alarm({ message: text("RTU-less elsewhere"), raisedMs: t4 - 5 * MIN, assetId: assets.a4 }),
         onA6: await alarm({ message: text("same room"), raisedMs: t4 - 5 * MIN, assetId: assets.a6 }),
       };
+      // S5 on a2 (review finding 3): 20 re-raises of S5's rule and 21 location-only alarms on a8, all
+      // newer than the one same-RTU alarm on a1 at 25 min. Neither population may take R3's 20 rows.
+      const s5 = await alarm({ message: text("subject S5"), raisedMs: t5, assetId: assets.a2, ruleId: rules.s5 });
+      const s5Rtu = await alarm({ message: text("S5 same RTU on a1"), raisedMs: t5 - 25 * MIN, assetId: assets.a1 });
+      for (let k = 1; k <= 20; k += 1) {
+        await alarm({ message: text(`S5 re-raise ${k}`), raisedMs: t5 - k * 30_000 - 15_000, assetId: assets.a2, ruleId: rules.s5 });
+      }
+      for (let k = 1; k <= 21; k += 1) {
+        await alarm({ message: text(`S5 room neighbour ${k}`), raisedMs: t5 - k * 30_000, assetId: assets.a8 });
+      }
       return {
         tag,
         organizationId,
@@ -308,7 +331,7 @@ describe.skipIf(!connectionString)("E2.3 — root-cause suggestions against a re
         assets,
         rules,
         windows,
-        alarms: { ...s1Alarms, ...s2Alarms, s3, ...s4Alarms },
+        alarms: { ...s1Alarms, ...s2Alarms, s3, ...s4Alarms, s5, s5Rtu },
         classCause,
         templateName,
         texts: { dryBearing: text("Dry bearing"), looseCoupling: text("Loose coupling") },
@@ -459,7 +482,15 @@ describe.skipIf(!connectionString)("E2.3 — root-cause suggestions against a re
     await assertEveryAnswerParses(ctx);
   });
 
+  it("a scoped caller: R3/R3b leave out the same-RTU and same-location alarms outside its asset ids", async () => {
+    await assertTheRelatedAlarmsKeepTheCallersScope(ctx);
+  });
+
+  it("R3 keeps its own 20-row cap: 20 re-raises and 21 location-only alarms do not push out the same-RTU one", async () => {
+    await assertR3KeepsItsOwnCap(ctx);
+  });
+
   it("EXPLAIN: R4 probes alarms by key, never a Seq Scan; R2 + R3 scans bms.alarms once", async () => {
     await assertThePlansScanAlarmsOnceAndProbeThePkey(ctx);
-  });
+  }, 120_000);
 });

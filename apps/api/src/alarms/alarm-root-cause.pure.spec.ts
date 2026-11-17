@@ -164,6 +164,18 @@ export function r1CountsAssetAndLocationTargetsOnly(): void {
   expect(rankRootCauseCandidates(evidenceOf({ windows: [ruleOnly, elsewhere, otherOrg] }))).toEqual([]);
 }
 
+/** A window cancelled before it started (`ended_at < starts_at`, `MaintenanceWindowsService.close(…, "cancel")`) never ran. */
+export function r1ACancelledWindowNeverCounts(): void {
+  // Planned for [T − 30 min, T + 60 min], cancelled at T − 50 min: its effective end precedes its start.
+  const cancelled = windowRow(T - 30 * MIN, T - 50 * MIN);
+  expect(rankRootCauseCandidates(evidenceOf({ windows: [cancelled] }))).toEqual([]);
+  // Control: the same window, ended once it had run a minute, is strong.
+  const ranAMinute = windowRow(T - 30 * MIN, T - 29 * MIN);
+  expect(one(evidenceOf({ windows: [ranAMinute] })).rule).toBe("maintenance");
+  // A window whose effective end equals its start ran for no time either.
+  expect(rankRootCauseCandidates(evidenceOf({ windows: [windowRow(T - 30 * MIN, T - 30 * MIN)] }))).toEqual([]);
+}
+
 export function r1TimeBounds(): void {
   const in60 = windowRow(T - 3 * HOUR, T - 60 * MIN + 1);
   const at60 = windowRow(T - 3 * HOUR, T - 60 * MIN);

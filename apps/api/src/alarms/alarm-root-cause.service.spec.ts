@@ -97,7 +97,7 @@ function fullRows(text: string): unknown[] {
       { id: PARENT, organization_id: ORG, depth: 1 },
     ];
   }
-  if (text.includes("PARTITION BY al.source")) {
+  if (text.includes("row_number() OVER")) {
     const base = {
       cleared_ms: null,
       asset_code: null,
@@ -193,7 +193,7 @@ export async function everyEvidenceReadRunsInOneTenantTransaction(): Promise<voi
         ? "windows"
         : s.text.includes("WITH RECURSIVE")
           ? "ancestors"
-          : s.text.includes("PARTITION BY al.source")
+          : s.text.includes("row_number() OVER")
             ? "related"
             : s.text.includes("bms.alarm_enrichments e")
               ? "past"
@@ -201,11 +201,14 @@ export async function everyEvidenceReadRunsInOneTenantTransaction(): Promise<voi
                 ? "anomalies"
                 : "other",
   );
-  expect(kinds).toEqual(["subject", "windows", "ancestors", "related", "past", "anomalies"]);
+  expect(kinds).toEqual(["subject", "ancestors", "windows", "related", "past", "anomalies"]);
 }
 
-/** No rule (deleted), no R4 statement; no location target, no ancestor walk. */
-export async function r4AndTheAncestorWalkRunOnlyWhenNeeded(): Promise<void> {
+/**
+ * No rule (deleted), no R4 statement. The ancestor walk runs every time, before
+ * R1's statement, even when no window comes back: R1 filters by its ids.
+ */
+export async function r4RunsOnlyWithARuleAndTheAncestorWalkAlways(): Promise<void> {
   const { svc, tenant } = serviceWith(
     async () => detailsOf({ ruleId: null }),
     (text) => (text.includes("bms.maintenance_windows w") ? [] : fullRows(text)),
@@ -213,7 +216,87 @@ export async function r4AndTheAncestorWalkRunOnlyWhenNeeded(): Promise<void> {
   await svc.get(ALARM, null, NOW);
   const texts = tenant.statements.map((s) => s.text);
   expect(texts.some((t) => t.includes("bms.alarm_enrichments e"))).toBe(false);
-  expect(texts.some((t) => t.includes("WITH RECURSIVE"))).toBe(false);
+  const walk = texts.findIndex((t) => t.includes("WITH RECURSIVE"));
+  const windows = texts.findIndex((t) => t.includes("bms.maintenance_windows w"));
+  expect(walk).toBeGreaterThan(0);
+  expect(windows).toBeGreaterThan(walk);
+}
+
+const flat = (text: string): string => text.replace(/\s+/g, " ");
+/** The bound value behind `$n` of a recorded statement. */
+const param = (statement: Recorded, placeholder: string | undefined): unknown => statement.params[Number(placeholder) - 1];
+const statementWith = (tenant: { statements: Recorded[] }, marker: string): Recorded => {
+  const found = tenant.statements.find((s) => s.text.includes(marker));
+  if (found === undefined) throw new Error(`no statement holds ${marker}`);
+  return found;
+};
+
+const SCOPE_GUARD = /AND \(al\.source <> 'rule' OR al\.asset_id = ANY\(\$(\d+)::uuid\[\]\)\)/;
+
+/**
+ * Review finding 1: a scoped caller's ids reach the related read, bound, inside
+ * the subquery the caps are counted over; the global admin's read has no guard.
+ */
+export async function theRelatedReadCarriesTheCallersScope(): Promise<void> {
+  const ids = [uuid(70), uuid(71)];
+  for (const scope of [ids, []]) {
+    const { svc, tenant } = serviceWith(async () => detailsOf());
+    await svc.get(ALARM, scope, NOW);
+    const related = statementWith(tenant, "row_number() OVER");
+    const text = flat(related.text);
+    const guard = text.match(SCOPE_GUARD);
+    expect(guard, "the related read must carry the caller's scope").not.toBeNull();
+    expect(param(related, guard![1])).toEqual(scope);
+    // Inside the subquery (before the caps are applied), not on the outer rows.
+    expect(text.indexOf(guard![0])).toBeLessThan(text.indexOf(") q"));
+    expect(text.indexOf(guard![0])).toBeGreaterThan(text.indexOf("FROM bms.alarms al"));
+  }
+  const { svc, tenant } = serviceWith(async () => detailsOf());
+  await svc.get(ALARM, null, NOW);
+  expect(flat(statementWith(tenant, "row_number() OVER").text)).not.toMatch(/al\.source <> 'rule'/);
+}
+
+/**
+ * Review findings 2 and 4: R1 drops a window whose effective end is not after
+ * its start (cancelled before it started), and its location targets are only
+ * the subject's ancestors-or-self, bound — the cap never counts another room.
+ */
+export async function theWindowsReadDropsCancelledWindowsAndForeignLocations(): Promise<void> {
+  const { svc, tenant } = serviceWith(async () => detailsOf());
+  await svc.get(ALARM, null, NOW);
+  const windows = statementWith(tenant, "bms.maintenance_windows w");
+  const text = flat(windows.text);
+  expect(text).toContain("AND COALESCE(w.ended_at, w.ends_at) > w.starts_at");
+  expect(text).not.toContain("t.location_id IS NOT NULL");
+  const targets = text.match(/AND \(t\.asset_id = \$(\d+)::uuid OR t\.location_id = ANY\(\$(\d+)::uuid\[\]\)\)/);
+  expect(targets, "R1's target filter").not.toBeNull();
+  expect(param(windows, targets![1])).toBe(ASSET);
+  expect(param(windows, targets![2])).toEqual([LOCATION, PARENT]);
+}
+
+/**
+ * Review finding 3: R3's cap is its own — the window partitions by class
+ * (comms, same asset or RTU, location only) — and the subject's re-raises are
+ * dropped before it, null-safe for a rule-less subject.
+ */
+export async function theRelatedReadCapsByClassAndDropsReRaises(): Promise<void> {
+  for (const ruleId of [RULE, null]) {
+    const { svc, tenant } = serviceWith(async () => detailsOf({ ruleId }));
+    await svc.get(ALARM, null, NOW);
+    const related = statementWith(tenant, "row_number() OVER");
+    const text = flat(related.text);
+    const partition = text.match(
+      /PARTITION BY CASE WHEN al\.source = 'rtu_comms' THEN 0 WHEN al\.asset_id = \$(\d+)::uuid OR x\.rtu_id = \$(\d+)::uuid THEN 1 ELSE 2 END ORDER BY al\.raised_at DESC, al\.id DESC/,
+    );
+    expect(partition, "the cap must partition by class").not.toBeNull();
+    expect(param(related, partition![1])).toBe(ASSET);
+    expect(param(related, partition![2])).toBe(RTU);
+    const reRaise = text.match(/AND NOT COALESCE\(al\.asset_id = \$(\d+)::uuid AND al\.rule_id = \$(\d+)::uuid, false\)/);
+    expect(reRaise, "re-raises must be dropped before the cap").not.toBeNull();
+    expect(text.indexOf(reRaise![0])).toBeLessThan(text.indexOf(") q"));
+    expect(param(related, reRaise![1])).toBe(ASSET);
+    expect(param(related, reRaise![2])).toBe(ruleId);
+  }
 }
 
 /** An alarm whose asset is not in its organization reads as no asset: the empty answer. */
