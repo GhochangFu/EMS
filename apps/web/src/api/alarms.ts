@@ -1,8 +1,10 @@
 import {
   alarmDetailsResponseSchema,
   alarmListItemSchema,
+  alarmRootCauseSuggestionsResponseSchema,
   alarmsListResponseSchema,
   alarmSummaryResponseSchema,
+  type AlarmRootCauseSuggestionsResponse,
 } from "@bms/shared/contracts";
 import type {
   AlarmDetailsResponse,
@@ -178,6 +180,20 @@ export async function fetchAlarmDetails(id: string): Promise<AlarmDetailsRespons
     throw new Error(`alarms/:id/details ${res.status}`);
   }
   return checkResponse(alarmDetailsResponseSchema, await res.json(), "alarms/:id/details");
+}
+
+/**
+ * `E2.3` (ADR 0136) — `GET /api/v1/alarms/:id/root-cause-suggestions`: at most three advisory
+ * candidate causes and the zero-weight anomaly context. The `/details` shape; the same 404.
+ */
+export async function fetchRootCauseSuggestions(id: string): Promise<AlarmRootCauseSuggestionsResponse> {
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/alarms/${id}/root-cause-suggestions`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new Error(`alarms/:id/root-cause-suggestions ${res.status}`);
+  }
+  return checkResponse(alarmRootCauseSuggestionsResponseSchema, await res.json(), "alarms/:id/root-cause-suggestions");
 }
 
 /**
