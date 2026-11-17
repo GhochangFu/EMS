@@ -43,6 +43,8 @@
     "tests/e1.2d-anomaly-widget-type.test.ts",
     "tests/e1.2b-ml-anomaly-containment.test.ts",
     "tests/e1.9-ml-findings-containment.test.ts",
+    "tests/e1.9c-ml-finding-paragraphs-schema.test.ts",
+    "tests/e1.9c-ml-finding-paragraphs-schema.integration.test.ts",
     "tests/f3.16-device-alarms-schema.test.ts",
     "tests/f3.16-device-alarms-schema.integration.test.ts",
     "tests/f4.359-maintenance-windows-schema.test.ts",

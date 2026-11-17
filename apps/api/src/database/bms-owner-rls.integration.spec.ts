@@ -113,6 +113,12 @@ export const FORCED_TABLES = [
   // same reason; `tests/f4.373-location-tariff-meters-schema.integration.test.ts`
   // holds the non-vacuous half as bms_tenant.
   "location_tariff_meters",
+  // `E1.9c` (ADR 0135 Amendment 8 decision 7, migration `0162`). A strict tenant
+  // table. The count-0 check below is VACUOUS for it (the seed writes no
+  // paragraph); `tests/e1.9c-ml-finding-paragraphs-schema.integration.test.ts`
+  // holds the non-vacuous half (A reads none of B's rows, an insert for B under
+  // A's setting fails WITH CHECK, bms_owner with no setting cannot insert).
+  "ml_finding_paragraphs",
 ] as const;
 
 function assert(condition: boolean, message: string): void {
