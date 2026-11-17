@@ -94,16 +94,21 @@ export function runLongLabelTest(): void {
 }
 
 export function runParagraphStateTest(): void {
-  const ok = { cards: [{ organizationId: ORG, state: "ok", segments: [{ text: "Advisory." }, { assetRef: "A1" }] }] };
+  // `E1.9c` review L1: a paragraph card carries its own assets, the ones its `[A<n>]` were written from.
+  const ok = {
+    cards: [{ organizationId: ORG, state: "ok", segments: [{ text: "Advisory." }, { assetRef: "A1" }], assets: card.assets }],
+  };
   expect(mlFindingsParagraphResponseSchema.parse(ok)).toEqual(ok);
   for (const state of ["none", "pending"]) {
-    expect(mlFindingsParagraphResponseSchema.safeParse({ cards: [{ organizationId: ORG, state, segments: [] }] }).success).toBe(
-      true,
-    );
+    expect(
+      mlFindingsParagraphResponseSchema.safeParse({ cards: [{ organizationId: ORG, state, segments: [], assets: [] }] }).success,
+    ).toBe(true);
   }
-  const error = { cards: [{ organizationId: ORG, state: "error", segments: [] }] };
+  const noAssets = { cards: [{ organizationId: ORG, state: "none", segments: [] }] };
+  expect(mlFindingsParagraphResponseSchema.safeParse(noAssets).success, "a card without assets").toBe(false);
+  const error = { cards: [{ organizationId: ORG, state: "error", segments: [], assets: [] }] };
   expect(mlFindingsParagraphResponseSchema.safeParse(error).success).toBe(false);
-  const long = { cards: [{ organizationId: ORG, state: "ok", segments: [{ text: "x".repeat(601) }] }] };
+  const long = { cards: [{ organizationId: ORG, state: "ok", segments: [{ text: "x".repeat(601) }], assets: [] }] };
   expect(mlFindingsParagraphResponseSchema.safeParse(long).success, "a 601-character segment").toBe(false);
 }
 

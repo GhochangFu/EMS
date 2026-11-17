@@ -170,16 +170,17 @@ type HarnessOptions = {
 function harness(options: HarnessOptions = {}) {
   const provider = options.provider ?? new ScriptedProvider();
   const memory = new MemoryStore();
-  const cards = options.cards ?? [fxbAnomalyCard()];
+  // Mutable, so a case can change the facts or the switch between reads.
+  const state = { cards: options.cards ?? [fxbAnomalyCard()], switchOn: options.switchOn ?? (() => true) };
   const factsCalls: Array<{ kind: MlFindingsKind; assetIds: string[] | null }> = [];
   const findings = {
     forecastFacts: async (assetIds: string[] | null) => {
       factsCalls.push({ kind: "forecasts", assetIds });
-      return { asOf: NOW.toISOString(), cards };
+      return { asOf: NOW.toISOString(), cards: state.cards };
     },
     anomalyFacts: async (assetIds: string[] | null) => {
       factsCalls.push({ kind: "anomalies", assetIds });
-      return { asOf: NOW.toISOString(), cards };
+      return { asOf: NOW.toISOString(), cards: state.cards };
     },
   } as unknown as MlFindingsService;
   const resolvedFor: string[] = [];
@@ -195,13 +196,13 @@ function harness(options: HarnessOptions = {}) {
   const availability = {
     organizationSwitchOn: async (organizationId: string) => {
       switchCalls.push(organizationId);
-      return options.switchOn?.(organizationId) ?? true;
+      return state.switchOn(organizationId);
     },
   } as unknown as CopilotAvailabilityService;
   const service = new FindingsParagraphService(fakeTenantDb(), findings, llm, availability);
   service.store = memory.store;
   const get = (assetIds: string[] | null = ["asset-1"]) => service.get(options.kind ?? "anomalies", assetIds, false, NOW);
-  return { service, provider, memory, get, factsCalls, resolvedFor, switchCalls };
+  return { service, provider, memory, get, factsCalls, resolvedFor, switchCalls, state };
 }
 
 const states = (r: MlFindingsParagraphResponse): string[] => r.cards.map((c) => c.state);
@@ -212,7 +213,17 @@ const hashOf = (kind: MlFindingsKind, card: FindingsCardFacts): string => {
 };
 
 /** A card of the `FXB` shape under another organization id: a distinct cache key per organization. */
-const cardFor = (organizationId: string): FindingsCardFacts => ({ ...fxbAnomalyCard(), organizationId });
+const cardFor = (organizationId: string, from?: string, to?: string): FindingsCardFacts => {
+  const card = { ...fxbAnomalyCard(), organizationId };
+  if (from === undefined || to === undefined) return card;
+  return {
+    ...card,
+    facts: card.facts.map((line) => ({
+      ...line,
+      parts: line.parts.map((part) => (part.kind === "text" ? { ...part, text: part.text.replace(from, to) } : part)),
+    })),
+  };
+};
 
 const GOOD =
   "[A1] carries the strongest signal, with 1 hour marked by both methods and 2 unusual hours in all, last at [T1]. " +
@@ -245,6 +256,10 @@ export async function aGoodReplyIsStoredOkAndServedWithItsAssetReference(): Prom
   const second = await h.get();
   expect(states(second)).toEqual(["ok"]);
   expect(second.cards[0]!.segments[0]).toEqual({ assetRef: "A1" });
+  // Review L1: the paragraph carries the assets its references name, from the same facts.
+  const fxb = fxbAnomalyCard();
+  expect(second.cards[0]!.assets).toEqual(fxb.assets.filter((a) => a.ref === "A1"));
+  expect(first.cards[0]!.assets, "pending carries no assets").toEqual([]);
   expect(JSON.stringify(second.cards[0]!.segments)).toContain("17 Nov");
   expect(mlFindingsParagraphResponseSchema.safeParse(second).success).toBe(true);
   expect(h.provider.calls, "a cached row makes no second call").toBe(1);
@@ -399,7 +414,7 @@ export async function oneKeyMakesOneCallWhileItHangs(): Promise<void> {
 
 export async function aFifthKeyWithFourInFlightIsPendingWithNoCall(): Promise<void> {
   const ids = [1, 2, 3, 4, 5].map((n) => `0f0f0f0f-0000-4000-8000-${n.toString(16).padStart(12, "0")}`);
-  const h = harness({ cards: ids.map(cardFor) });
+  const h = harness({ cards: ids.map((id) => cardFor(id)) });
   expect(states(await h.get())).toEqual(["pending", "pending", "pending", "pending", "pending"]);
   expect(h.provider.calls, "four calls in flight, the fifth waits").toBe(4);
   h.provider.release();
@@ -483,4 +498,59 @@ export async function aStoreFailureNeverReachesTheRequest(): Promise<void> {
   });
   expect(JSON.stringify(lines)).not.toContain("sk-live-do-not-log");
   expect(lines).toHaveLength(1);
+}
+
+/** Review item 7: a cached `ok` paragraph is not served once the organization's copilot switch is off. */
+export async function aCachedParagraphIsNotServedWithTheSwitchOff(): Promise<void> {
+  const h = harness({ provider: new ScriptedProvider([{ kind: "final", text: GOOD }]) });
+  await h.get();
+  await h.service.settled();
+  expect(states(await h.get())).toEqual(["ok"]);
+  h.state.switchOn = () => false;
+  const off = await h.get();
+  expect(states(off)).toEqual(["none"]);
+  expect(off.cards[0]!.segments).toEqual([]);
+  expect(off.cards[0]!.assets).toEqual([]);
+  expect(h.provider.calls).toBe(1);
+}
+
+/** Review item 10: no `pending` when no call will be made — the key is not reserved before the gates. */
+export async function noPendingWhenNoCallWillBeMade(): Promise<void> {
+  for (const options of [{ switchOn: () => false }, { resolved: "guided" as const }]) {
+    const h = harness(options);
+    const both = await Promise.all([h.get(), h.get()]);
+    expect(both.flatMap(states), JSON.stringify(options)).toEqual(["none", "none"]);
+    expect(h.provider.calls).toBe(0);
+  }
+}
+
+/** Review item 1(b): a write that keeps failing never becomes a retry loop, and the attempt still counts against the cap. */
+export async function aLostWriteBacksOffAndStillCounts(): Promise<void> {
+  const h = harness({ provider: new ScriptedProvider([{ kind: "final", text: GOOD }, { kind: "final", text: GOOD }]) });
+  h.service.store = {
+    ...h.memory.store,
+    writeOutcome: async () => {
+      throw new Error("the database is away");
+    },
+  };
+  await logsOf(async () => {
+    expect(states(await h.get())).toEqual(["pending"]);
+    await h.service.settled();
+    expect(states(await h.get()), "within 30 minutes of a lost write: none, no call").toEqual(["none"]);
+    await h.service.settled();
+  });
+  expect(h.provider.calls).toBe(1);
+
+  // The cap: 199 stored attempts today + 1 lost write = 200, so another key of that organization is refused.
+  const c = harness({ provider: new ScriptedProvider([{ kind: "final", text: GOOD }, { kind: "final", text: GOOD }]) });
+  const card = fxbAnomalyCard();
+  c.memory.plant({ organizationId: card.organizationId, kind: "forecasts", factsHash: "f".repeat(64), status: "failed", reason: "timeout", attempts: FINDINGS_DAILY_ATTEMPT_CAP - 1 });
+  c.service.store = { ...c.memory.store, writeOutcome: async () => { throw new Error("the database is away"); } };
+  await logsOf(async () => {
+    expect(states(await c.get())).toEqual(["pending"]);
+    await c.service.settled();
+    c.state.cards = [cardFor(card.organizationId, "6 unusual hours", "6 unusual hours, again")];
+    expect(states(await c.get()), "the lost write counted: the cap bites").toEqual(["none"]);
+  });
+  expect(c.provider.calls).toBe(1);
 }

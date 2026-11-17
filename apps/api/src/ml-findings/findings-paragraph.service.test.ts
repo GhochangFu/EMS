@@ -2,6 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   aCardWithNothingToSayIsNoneWithNoCall,
+  aCachedParagraphIsNotServedWithTheSwitchOff,
+  aLostWriteBacksOffAndStillCounts,
+  noPendingWhenNoCallWillBeMade,
   aFailedRowIsRetriedOnlyAfter30Minutes,
   aFifthKeyWithFourInFlightIsPendingWithNoCall,
   aGoodReplyIsStoredOkAndServedWithItsAssetReference,
@@ -32,4 +35,7 @@ describe("E1.9c — the findings paragraph service (ADR 0135 Amendment 8)", () =
   it("the log line holds the reason, the kind and the organization id only", () =>
     theLogLineHoldsTheReasonKindAndOrganizationOnly());
   it("a store failure never reaches the request and logs no message", () => aStoreFailureNeverReachesTheRequest());
+  it("a cached paragraph is not served with the switch off", () => aCachedParagraphIsNotServedWithTheSwitchOff());
+  it("no pending when no call will be made (no reservation before the gates)", () => noPendingWhenNoCallWillBeMade());
+  it("a lost write backs off for 30 minutes and still counts against the cap", () => aLostWriteBacksOffAndStillCounts());
 });
