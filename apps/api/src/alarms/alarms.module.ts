@@ -13,6 +13,8 @@ import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmLifecycleService } from "./alarm-lifecycle.service";
 import { AlarmNotifyService } from "./alarm-notify.service";
 import { AlarmRaiseModule } from "./alarm-raise.module";
+import { AlarmRootCauseController } from "./alarm-root-cause.controller";
+import { AlarmRootCauseService } from "./alarm-root-cause.service";
 import { AlarmStatsService } from "./alarm-stats.service";
 import { AlarmsController } from "./alarms.controller";
 import { AlarmsGateway } from "./alarms.gateway";
@@ -30,7 +32,8 @@ import { AlarmsService } from "./alarms.service";
   // `F4.361` U4 (ADR 0132): `FilterOptionsModule` exports `AssetFilterScopeService`
   // (the list's `assetGroupId`). It imports nothing, so this edge is acyclic.
   imports: [TelemetryModule, VocabulariesModule, NotificationsModule, AlarmRaiseModule, FilterOptionsModule],
-  controllers: [AlarmsController],
+  // `E2.3` (ADR 0136, plan R-b): the root-cause suggestions route has its own controller.
+  controllers: [AlarmsController, AlarmRootCauseController],
   providers: [
     AlarmsService,
     AlarmsGateway,
@@ -51,6 +54,9 @@ import { AlarmsService } from "./alarms.service";
     AlarmNotifyService,
     // `F4.284` (ADR 0106 decision 7): the acknowledge and the enrichment audit through the funnel.
     MasterDataAuditService,
+    // `E2.3` (ADR 0136): the read-time root-cause suggestions. Deliberately NOT
+    // exported below — the copilot must not reach it (decision 11).
+    AlarmRootCauseService,
     JwtAuthGuard,
   ],
   // `RulesModule` (F3.6 task 5) needs `AlarmRaiser` so the on-demand evaluator
