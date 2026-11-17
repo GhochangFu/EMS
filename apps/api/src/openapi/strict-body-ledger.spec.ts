@@ -954,6 +954,9 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // 41 -> 43 (2026-11-16): `E1.2b` (ADR 0135 Amendment 5 A-e) registered the anomaly reads' two GET
   // queries, `assetAnomaliesQuerySchema` and `anomaliesQuerySchema`: `.strict()`, no body.
   //
+  // 43 -> 45 (2026-11-17): `E1.9a` (ADR 0135 Amendment 8) registered `forecastListQuerySchema` and
+  // `mlFindingsSummaryQuerySchema`: optional lower-cased scope uuids that only narrow, `.strict()`.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -963,7 +966,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(43);
+  ).toBe(45);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

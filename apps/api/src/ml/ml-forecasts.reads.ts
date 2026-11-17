@@ -100,13 +100,13 @@ export async function readPointForecast(
 }
 
 /**
- * The list read: one row per `(asset, point)` with a current run, the p50
- * summary over that run's buckets at or after the current hour, and the site's
- * names and zones. `ids` `null` is the unrestricted admin (`readableAssetIds`).
- * Every output column is aliased (§16 B1): a raw read keys the row by column
- * name, and two unaliased `timezone` columns would collide.
+ * The list's run chain, exported so `E1.9a`'s findings read (`ml-findings.reads.ts`) uses the
+ * same text: `recent_runs` (the succeeded runs of the look-back), `covering` (per run, through
+ * the `LATERAL … OFFSET 0` of R4, the rows at the current hour among `ids`) and `current_runs`
+ * (the newest covering run per point). `ids` `null` is the unrestricted admin; the
+ * `asset_id = ANY(ids)` line is chosen by `ids === null`, never by the branch (S1).
  */
-export function forecastListStatement(ids: readonly string[] | null, currentHourMs: number): SQL {
+export function currentForecastRunsCte(ids: readonly string[] | null, currentHourMs: number): SQL {
   const since = lookBackStartOf(currentHourMs);
   const assetFilter = ids === null ? sql`` : sql`AND f0.asset_id = ANY(${uuidArray(ids)}::uuid[])`;
   return sql`
@@ -129,7 +129,20 @@ export function forecastListStatement(ids: readonly string[] | null, currentHour
       SELECT DISTINCT ON (asset_id, point_key) asset_id, point_key, model_run_id, issued_at, model_name, model_version
         FROM covering
        ORDER BY asset_id, point_key, issued_at DESC
-    )
+    )`;
+}
+
+/**
+ * The list read: one row per `(asset, point)` with a current run, the p50
+ * summary over that run's buckets at or after the current hour, and the site's
+ * names and zones. `ids` `null` is the unrestricted admin (`readableAssetIds`).
+ * Every output column is aliased (§16 B1): a raw read keys the row by column
+ * name, and two unaliased `timezone` columns would collide.
+ */
+export function forecastListStatement(ids: readonly string[] | null, currentHourMs: number): SQL {
+  const since = lookBackStartOf(currentHourMs);
+  return sql`
+    ${currentForecastRunsCte(ids, currentHourMs)}
     SELECT c.asset_id AS asset_id, c.point_key AS point_key,
            (extract(epoch FROM c.issued_at) * 1000)::float8 AS issued_ms,
            c.model_name AS model_name, c.model_version AS model_version,

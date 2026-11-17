@@ -14,6 +14,8 @@ import {
   assertMaintenanceWindowsServiceTenantSlot,
   assertMlAnomaliesServiceFleetSlot,
   assertMlAnomaliesServiceTenantSlot,
+  assertMlFindingsServiceFleetSlot,
+  assertMlFindingsServiceTenantSlot,
   assertMlForecastsServiceFleetSlot,
   assertMlForecastsServiceTenantSlot,
   assertCopilotPurgeServiceFleetSlot,
@@ -156,5 +158,13 @@ describe("E7.1b — services inject the right pool token in the right constructo
 
   it("E1.2b MlAnomaliesService injects the fleet pool in slot 1", () => {
     assertMlAnomaliesServiceFleetSlot();
+  });
+
+  it("E1.9a MlFindingsService injects the tenant pool in slot 0", () => {
+    assertMlFindingsServiceTenantSlot();
+  });
+
+  it("E1.9a MlFindingsService injects the fleet pool in slot 1", () => {
+    assertMlFindingsServiceFleetSlot();
   });
 });

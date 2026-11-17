@@ -14,6 +14,7 @@ import { DashboardService } from "../dashboard/dashboard.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { MaintenanceWindowsService } from "../maintenance-windows/maintenance-windows.service";
 import { MlAnomaliesService } from "../ml/ml-anomalies.service";
+import { MlFindingsService } from "../ml/ml-findings.service";
 import { MlForecastsService } from "../ml/ml-forecasts.service";
 import { QUEUE_CLIENT } from "../queue/queue.tokens";
 import { WorkerHostService } from "../queue/worker-host.service";
@@ -343,4 +344,18 @@ export function assertMlAnomaliesServiceTenantSlot(): void {
 
 export function assertMlAnomaliesServiceFleetSlot(): void {
   expect(injectedToken(MlAnomaliesService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `E1.9a` — `MlFindingsService(tenantDb, fleetDb)` (ADR 0135 Amendment 8 decision 10): both
+ * summaries pass slot 0 and slot 1 to `withReadScope` in that order, as the forecast and anomaly
+ * services do. A swap would run a single-organization caller's findings reads on the BYPASSRLS
+ * pool. Two claims, one function each.
+ */
+export function assertMlFindingsServiceTenantSlot(): void {
+  expect(injectedToken(MlFindingsService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertMlFindingsServiceFleetSlot(): void {
+  expect(injectedToken(MlFindingsService, 1)).toBe(FLEET_DRIZZLE);
 }
