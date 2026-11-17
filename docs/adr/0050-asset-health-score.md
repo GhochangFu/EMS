@@ -659,3 +659,241 @@ Critical 0, the values the ESKOM baseline seed already uses).
 stands: a template with no `health.bands` stays unbanded, nothing fills the
 table without a click, and no read path invents bands. The five values are
 declared once in `@bms/shared` and the seed reads them from there.
+
+## Amendment 5 — `E1.8`: the SOW §4.3 five inputs, and anomaly history beside the score (2026-11-17)
+
+**Status: Accepted — 2026-11-17** (owner, in chat: "accept as recommended";
+proposed the same day in PR #1393, which was closed unmerged after a backlog conflict; the text merged with the step-3 plan). Drafted by an agent for backlog row `E1.8`
+at the step 2 gate (AGENTS.md §10). The owner accepted every question at the
+end as recommended, so **every *(recommended)* decision below is now a
+ruling**, Q1–Q12 included (see *Rulings*). [ADR 0135 Amendment 9](./0135-ml-serving-foundation.md)
+is a pointer to this amendment, because it makes a second exception to
+ADR 0135's "advisory, zero weight" rule.
+
+### Why an amendment here, not a new ADR
+
+`E1.8` changes nothing about how `E1.3`'s score is computed. It adds facts
+**beside** that score, and one advisory figure built on top of it. The
+score's record is this file; the `E1.8` row was created by this ADR's own
+*Not in this ADR* list, and Amendment 1 says `E1.8` "starts by reading this
+file". The ML side is one more exception to ADR 0135's advisory rule, and
+ADR 0135 Amendment 6 already set the pattern for that: a short pointer in
+ADR 0135, the decision in the ADR that owns the feature. No new app, no new
+package and no migration is proposed, so nothing here needs a fresh number —
+and `E1.6` is drafting its own gate in a parallel session at the same time,
+so a new number would race it.
+
+### Context
+
+**SOW §4.3** (the PDF in `docs/`, p. 3) says: *"The solution shall
+continuously compute an Asset Health Score by evaluating operational
+conditions, historical performance, maintenance records, environmental factors
+and equipment utilisation. Health scores shall be available at asset, plant
+and enterprise levels."*
+
+The client's 2026-08-22 answer (B15 superseded, sheet row 12) made the go-live
+score **telemetry-only**. `E1.3` built that score (this ADR, Amendments 1–4).
+This row is the later phase.
+
+**What has data today** (measured from the repository and the ADR 0135 build
+records; this session cannot reach the demo host, so the per-asset overlap in
+the last line is **not** measured yet):
+
+| SOW §4.3 input | Source that exists | Data today |
+|---|---|---|
+| Operational conditions | `E1.3`'s in-range score: samples where no published threshold rule fires (decision 2) | **Yes**, wherever an asset has both telemetry and a published threshold rule |
+| Historical performance | `ml.anomaly_scores` (ADR 0135 Amendment 5): hourly scores from two detectors | **Yes, for 38 real target assets** (PHEWB energy meters, pump breakers, chlorine pumps, RTU health; WBLDC cold rooms; 37 scored in the 2026-11-17 demo-host sample). Isolation Forest only on the 10 assets with 2+ points (meters, RTU health) |
+| Maintenance records | `bms.work_orders` (`E3.1`, ADR 0122) | **Table yes, history no.** The 2026-11-15 readiness run found **0 closed work orders** on every real class |
+| Environmental factors | Nothing. No real asset carries an ambient or outdoor point, and no weather source exists | **No** |
+| Equipment utilisation | On/off points (`breaker_main`, `chlorine_pump_on`), whose `_1h` mean is the fraction of the hour on | **Partly.** Run time can be measured; there is **no rated duty** anywhere to say what "too much" is |
+| *(overlap)* | Real ML-scored assets that **also** have a published threshold rule | **Unknown** — see Q12 |
+
+**The detector caveat.** On the demo host the Baseline detector
+(`baseline_mad`) marks about **7 %** of asset-hours at ≥ 0.99, against a
+design of about 1 %; the Isolation Forest about **1.4 %** (ADR 0135
+Amendment 8). The owner's one-week read of those rates is due about
+**2026-11-23**, and no threshold may change before it. Anything here that uses
+anomaly history must be safe at today's 7 %.
+
+**What ADR 0135 allows today.** A score never raises an alarm, sends a
+notification, opens a work order, or appears in a report, an export, the
+copilot chat or a copilot tool (Amendment 5 ruling 4). Two exceptions exist:
+the zero-weight context line on the alarm panel (Amendment 6, ADR 0136) and
+the plain-English findings (Amendment 8, `E1.9`). Neither touches the health
+score.
+
+**What `E1.3` did not ship.** `E1.3`'s row says ranking assets by the score is
+`E1.3`'s half of "bad-actor identification". No ranking surface exists in
+`apps/web` or `apps/api` today (searched: no list sorted by score, no
+"bad actor" anywhere outside this ADR). That is a gap in a closed row, raised
+here as Q6 rather than filled quietly.
+
+### Decisions *(all recommended; each maps to a question below)*
+
+1. **The five-input frame (Q2).** Every asset's health read gains a
+   **breakdown of the five SOW inputs**, each with a status, so the score
+   says what it is made of and what it is not:
+
+   | Input | Status in `E1.8` | Shown as |
+   |---|---|---|
+   | Operational conditions | **Scored** — `E1.3`'s score, unchanged | the score and band, as today |
+   | Historical performance | **Advisory** — anomaly history (decisions 2–3) | unusual hours in 7 days, and the advisory figure |
+   | Maintenance records | **Fact only, zero weight** | open corrective work orders on the asset, and how many are past SLA |
+   | Environmental factors | **No source yet** | the words "No source yet" |
+   | Equipment utilisation | **No reference yet** | the words "No rated duty set" |
+
+   An input with no data is **shown as absent, never scored 1.0** — this
+   ADR's decision 3 applied one level up. Maintenance is not scored because
+   zero work orders on an asset means "nobody uses work orders here" as often
+   as "nothing is wrong", and there is no closed history to tell the two
+   apart. Environmental factors and utilisation each get a parked backlog row
+   (`E1.8d`, `E1.8e`) whose start condition is a source: an ambient point or a
+   weather ADR for one, a template-authored rated duty for the other.
+
+2. **Anomaly history may change one number, and it is not the score (Q3).**
+   `E1.3`'s score stays exactly as it is: the same number, the same band, the
+   same donut. Beside it, an asset may show a second, **advisory** figure —
+   *"With anomaly history · advisory"* — equal to the rule score minus a
+   capped anomaly penalty:
+
+   ```
+   strongShare = strongHours / scoredHours          (last 7 days, 168 h)
+   penalty     = min(HEALTH_ANOMALY_CAP, strongShare)
+   advisory    = max(0, ruleScore − penalty)
+   ```
+
+   - `scoredHours` = hours in the window with at least one current
+     `ml.anomaly_scores` row for the asset (newest run wins, as `E1.9a`
+     reads it). An asset with no scored hours has no advisory figure.
+   - **No rule score, no advisory figure.** Anomaly history alone never makes
+     a health score: a quiet asset with no rules would otherwise read as
+     perfect, which is decision 3's defect again.
+   - The figure has **no band** and appears in **no** donut, summary score,
+     band count, metric (`assets.health.score` stays rule-only), report,
+     export, alarm, notification, work order, copilot answer or copilot tool,
+     and it is not sent to `E1.9`'s AI paragraph.
+
+3. **Until the owner's detector read, only hours both detectors mark count
+   (Q4).** `strongHours` = hours where **both** `baseline_mad` and
+   `isolation_forest` are ≥ `ANOMALY_UNUSUAL_SCORE` (read from
+   `@bms/shared`, never restated). Baseline-only hours count **zero**. The cap
+   is **`HEALTH_ANOMALY_CAP = 0.05`** — at most 5 points off a 0..1 score.
+   Both are shared constants beside `ANOMALY_UNUSUAL_SCORE`.
+
+   What this means today: the 28 assets without an Isolation Forest (the
+   18 WBLDC cold rooms, 5 pump breakers and 5 chlorine pumps) can **never**
+   lose a point, and the 10 that have one lose at most 0.05. So the
+   Baseline detector's 7 % reaches no figure at all before the read.
+
+   **After the read** the owner may rule, in a one-paragraph addition to this
+   amendment, to (a) let baseline-only hours count, at full or reduced
+   weight, and/or (b) raise the cap, up to **0.15** at most without a new
+   amendment. If the read changes `ANOMALY_UNUSUAL_SCORE` itself, this figure
+   follows with no code change, because it reads the shared constant.
+
+4. **Bad actors — advisory (Q5).** A ranked list of the assets with the most
+   anomaly evidence in the last 7 days, from the caller's readable assets in
+   the chosen organization / site:
+   - **Order:** strong hours (both detectors) descending, then baseline-only
+     hours, then asset code. An asset with no unusual hour is not listed.
+   - **Each row:** asset (a link to `/asset-history/:assetId` at its last
+     unusual hour, as `E1.9`'s links do), site, strong hours, baseline-only
+     hours, the top points of its last unusual hour, its rule score and
+     advisory figure when they exist, and an *Advisory* pill.
+   - **Where:** a compact card **"Bad actors — advisory"**, top 5, on the
+     control-room organization page and site page, directly after *Asset
+     health*. A baseline-only row reads as a **weak signal**, in the same fixed
+     words `E1.9` uses. Not on the wall, not in a stock template, and no new
+     widget kind (a later row may add one).
+
+5. **The score-based ranking `E1.3` owed (Q6).** The same card carries a
+   second tab, **"Lowest health score"**: the 5 assets with the lowest rule
+   score in the same scope, with band and scored-tag count. It is **not**
+   advisory (it is the rule score) and is labelled as such. This closes the
+   gap the *Context* records rather than leaving it to be found later.
+
+6. **Labelling (Q7).** Every ML-derived number carries the word *advisory*
+   and an `info` `StatusPill`; never a band colour, never an alarm or severity
+   colour. The advisory figure is always shown **after** the rule score, in a
+   smaller line, never instead of it. Until the read, the card's caption
+   says: *"Only hours both detection methods mark are counted."*
+
+7. **The roll-up ladder (Q8).** Asset → plant → enterprise stays **rule-only**:
+   the donut, `bandCounts`, the summary `score`, and the `assets.health.score`
+   metric do not change. At plant and enterprise level the advisory part is a
+   **count**, not an average: *"3 of 20 scored assets lose points to anomaly
+   history · advisory"*. An average of advisory figures over a mix of covered
+   and uncovered assets (38 of hundreds today) would look like a fleet figure
+   and is not one.
+
+8. **Compute at read time, in `apps/api` (Q9).** No new table, no migration,
+   no grant, no `apps/ml` change, and no extra work in the hourly ML cycle
+   (which keeps its 1 GiB, ≤ 300 s budget untouched). The anomaly half is one
+   bounded read of `ml.anomaly_scores` over 7 days per request, the same
+   shape `E1.9a` already measured (`anomalyFindingsStatement`, served by the
+   run and asset indexes), plus `scored_hours` per asset. It lives in
+   `E1.8`'s **own** reads file, so `E1.9`'s files are not edited while `E1.9c`–`f`
+   are in flight. `readableAssetIds` is applied on **both** `withReadScope`
+   branches (ADR 0135 Amendment 3 S1). The plan carries `EXPLAIN (ANALYZE)`
+   for each statement and a p95 target.
+
+   Rejected: writing a health table after each ML cycle. It needs a migration,
+   a grant, new `INSERT` rights for `bms_fleet` and more memory inside the
+   shared 1 GiB `ml` container on a 2 vCPU host that is already under load —
+   all to save a read that costs milliseconds. It would also freeze the
+   figure to the ML cycle, while the rule score moves every 60 s.
+
+9. **Failure is quiet.** If the anomaly read fails or returns nothing, the
+   rule score and band are shown as today and the advisory line is absent —
+   no error banner, no zero. The same for the maintenance fact.
+
+### Not in this amendment
+
+Any change to `E1.3`'s score, bands, donut or the `assets.health.score`
+metric; any threshold or detector constant; an alarm, notification, work
+order, report, export or copilot answer from the advisory figure or the bad
+actor list; scoring maintenance, environment or utilisation; a weather
+source; a rated-duty field on templates; a new widget kind; a new table,
+migration, npm or Python package; any `apps/ml` change; the owed `bms_ml`
+role.
+
+### Consequences
+
+- The SOW §4.3 sentence becomes **visible** on every asset — five inputs,
+  each with an honest status — while only one of them (operational
+  conditions) moves the official score. That is the honest state of the data.
+- **Before the read, the advisory figure changes for at most 10 assets, by at
+  most 0.05.** That is deliberate. The bad-actor list still shows every
+  asset with unusual hours, with baseline-only rows marked weak.
+- If Q12 shows that no real ML-scored asset has a published threshold rule,
+  the advisory figure shows **nowhere** on the demo host until rules exist;
+  the bad-actor list and the five-input facts still work.
+- `E1.8c` edits the control-room organization and site pages, which `E1.9e`
+  also edits. `E1.8c` is built after `E1.9e` merges, or rebased on it.
+- After the build, AGENTS.md §3 *Layout* (the new routes and contract) and
+  §5 (the new card) are caught up in a separate `chore(agents):` PR. This is
+  not a §6 promotion.
+
+### Open questions for the owner
+
+| # | Question | Recommended answer |
+|---|---|---|
+| **Q1** | Record this as an amendment to ADR 0050 plus a pointer in ADR 0135, or as a new ADR? | **Amendment + pointer** (see *Why an amendment here*). |
+| **Q2** | Which of the five inputs does `E1.8` score? | **Decision 1:** operational conditions scored (as today); historical performance advisory; maintenance fact only; environment and utilisation shown as absent, with parked rows `E1.8d` / `E1.8e`. |
+| **Q3** | May anomaly history change the health score? (a) No — show it beside the score only, change no number; (b) yes, as a **separate advisory figure** beside an unchanged rule score; (c) yes, folded into the headline score with a cap. | **(b)** (decision 2). (a) is the safe fallback if you want no ML number at all before the read. |
+| **Q4** | Weight and cap, and behaviour until the 2026-11-23 read? | **Decision 3:** both-detector hours only, baseline-only hours count 0, cap 0.05; after the read you may admit baseline-only hours and raise the cap to at most 0.15 with a one-paragraph ruling. |
+| **Q5** | Anomaly-based bad actors: what and where? | **Decision 4:** top 5 by strong hours, then baseline-only hours, 7 days; a compact *"Bad actors — advisory"* card after *Asset health* on the control-room organization and site pages; no widget kind. |
+| **Q6** | `E1.3` closed without its score-based ranking. Add it here? | **Yes**, as a second tab, *Lowest health score*, not advisory (decision 5). Otherwise it needs its own row. |
+| **Q7** | How is the ML part labelled? | **Decision 6:** "advisory" + `info` pill on every ML number, shown after the rule score, no band or severity colour, the both-methods caption until the read. |
+| **Q8** | How does the roll-up ladder treat it? | **Decision 7:** donut, bands, summary score and `assets.health.score` stay rule-only; plant / enterprise show a count of assets losing points, never an average. |
+| **Q9** | Compute at read time or after the hourly ML cycle? | **Read time in `apps/api`** (decision 8): no table, no migration, no `ml` load. |
+| **Q10** | PR split? | **Three build PRs**, serial: **`E1.8a`** API — contracts, pure functions (penalty, cap, five-input status, ranking), reads, `GET /asset-health/assets/:assetId/inputs` and `GET /asset-health/bad-actors` (reviews: code, compliance, security). **`E1.8b`** web — the five-input breakdown and advisory line on the asset health card, and the plant / enterprise count line (code, compliance). **`E1.8c`** web — the *Bad actors* card on the two control-room pages, after `E1.9e` (code, compliance). Then the closure docs PR and the `chore(agents):` PR. |
+| **Q11** | Merge before or after the read? | **Merge on your word as each PR is ready.** Decision 3 keeps the 7 % out of every figure, so nothing waits on the read; the read only decides whether to widen it. |
+| **Q12** | Can you run one read-only query on the demo host before the plan? It counts, per class, the real ML-scored assets that also have an enabled, published threshold rule, and the both-detector hours per asset over 7 days. The plan needs it to say what the demo host will show. | **Yes** — the query is in the PR description; it only reads. |
+
+### Rulings
+
+**All twelve questions ruled as recommended** (owner, 2026-11-17, in chat:
+"accept as recommended"). Q12's ruling is that the owner runs the read-only
+query from PR #1393 on the demo host; its result is recorded in the plan's
+demo-host section when it comes back, and the plan does not wait on it.
