@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 
 import {
   aFailedReadIsOneMutedSentence,
+  aMalformedParagraphDrawsTheFactsOnly,
+  aNewScopeStartsItsCountAtZero,
+  anErrorAfterPendingStopsTheQuickAsks,
+  aSummaryWithNothingHidesTheOldParagraph,
   aPendingReadSaysLoading,
   assetReferencesLinkOnlyToSafeHrefs,
   compactPrefersTheParagraph,
@@ -63,4 +67,14 @@ describe("E1.9d MlFindingsCard paragraph", () => {
   it("compact shows F5 and A2 lines and the two page links", () => compactShowsTheTopLinesAndThePageLinks());
   it("compact prefers the paragraph to the top lines", () => compactPrefersTheParagraph());
   it("uses no alarm colour with the paragraph or in compact", () => noAlarmColourWithTheParagraph());
+});
+
+/** `E1.9d` review fixes. */
+describe("E1.9d MlFindingsCard review fixes", () => {
+  beforeEach(() => stubNoParagraph());
+  afterEach(() => reset());
+  it("stops the quick asks once the read fails after a pending answer", () => anErrorAfterPendingStopsTheQuickAsks());
+  it("starts a new scope's count at zero", () => aNewScopeStartsItsCountAtZero());
+  it("hides an old paragraph when the summary now has nothing", () => aSummaryWithNothingHidesTheOldParagraph());
+  it("draws the facts only for a malformed paragraph card", () => aMalformedParagraphDrawsTheFactsOnly());
 });

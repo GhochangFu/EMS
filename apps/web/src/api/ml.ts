@@ -148,7 +148,8 @@ export async function fetchMlFindingsSummary(
  * `E1.9d` (ADR 0135 Amendment 8 decisions 5 and 10; plan T4.1, R-c, R-n) —
  * `GET /api/v1/ml/findings/paragraph?kind=` with each of the four scope keys `scope` sets: the
  * AI-written paragraph of each organization card, `ok`, `none` or `pending`. The route never waits
- * for the provider, so a miss answers `pending` and the card asks again (`paragraphPollMs`).
+ * for the provider, so a miss answers `pending` and the card asks again (`paragraphPollMs`). A
+ * non-2xx still throws, so the read's error state (and its slow refetch) applies.
  */
 export async function fetchMlFindingsParagraph(
   kind: MlFindingsKind,
@@ -164,5 +165,9 @@ export async function fetchMlFindingsParagraph(
     clearSessionOnAuthFailure(res, sent);
     throw new ApiError(`ml findings paragraph ${res.status}`, res.status);
   }
-  return checkResponse(mlFindingsParagraphResponseSchema, await res.json(), "ml/findings/paragraph");
+  // Fail closed (decision 5; security review L1): the paragraph is optional, so a malformed answer
+  // is "no paragraph" in every build, never a throw that could blank the page. Only the parsed
+  // value is returned, so nothing the schema does not name reaches the render.
+  const parsed = mlFindingsParagraphResponseSchema.safeParse(await res.json());
+  return parsed.success ? parsed.data : { cards: [] };
 }

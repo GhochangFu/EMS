@@ -239,7 +239,8 @@ const PARAGRAPH = {
 
 /**
  * `E1.9d` (plan T4.1, R-c) — the paragraph read goes to `/ml/findings/paragraph` with its kind first
- * and every scope key it is given, and parses; a wrong state throws in test and a 500 names its status.
+ * and every scope key it is given, and parses; a malformed answer is no cards, and a 500 still throws
+ * with its status (the read's error state applies).
  */
 export async function theParagraphReadSendsItsKindAndScopeAndParses(): Promise<void> {
   const seen = answer(PARAGRAPH);
@@ -249,10 +250,18 @@ export async function theParagraphReadSendsItsKindAndScopeAndParses(): Promise<v
   expect(seen()).toBe(`${BASE}/api/v1/ml/findings/paragraph?kind=forecasts&organizationId=${ORG}&locationId=${SITE}`);
   await fetchMlFindingsParagraph("forecasts", { assetGroupId: GROUP, assetId: ASSET });
   expect(seen()).toBe(`${BASE}/api/v1/ml/findings/paragraph?kind=forecasts&assetGroupId=${GROUP}&assetId=${ASSET}`);
-  answer({ cards: [{ organizationId: ORG, state: "failed", segments: [], assets: [] }] });
-  await expect(fetchMlFindingsParagraph("forecasts", {})).rejects.toThrow();
-  answer({ cards: [{ organizationId: ORG, state: "ok", segments: [{ assetRef: "A1" }] }] });
-  await expect(fetchMlFindingsParagraph("forecasts", {}), "a card without its own assets").rejects.toThrow();
+  // Fail closed (security review L1): a malformed 2xx answer is "no paragraph", never a throw that
+  // could blank the page, and never a half-parsed card.
+  for (const [why, body] of [
+    ["an unknown state", { cards: [{ organizationId: ORG, state: "failed", segments: [], assets: [] }] }],
+    ["a card without its own assets", { cards: [{ organizationId: ORG, state: "ok", segments: [{ assetRef: "A1" }] }] }],
+    ["a null segment", { cards: [{ organizationId: ORG, state: "ok", segments: [null], assets: [] }] }],
+    ["an object as text", { cards: [{ organizationId: ORG, state: "ok", segments: [{ text: { a: 1 } }], assets: [] }] }],
+    ["no cards array", { cards: null }],
+  ] as const) {
+    answer(body);
+    expect(await fetchMlFindingsParagraph("forecasts", {}), why).toEqual({ cards: [] });
+  }
   answer({ message: "boom" }, 500);
   await expect(fetchMlFindingsParagraph("forecasts", {})).rejects.toThrow(/^ml findings paragraph 500$/);
 }

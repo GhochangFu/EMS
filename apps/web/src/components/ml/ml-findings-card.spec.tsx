@@ -11,6 +11,7 @@ import type {
 } from "@bms/shared/contracts";
 
 import * as mlApi from "../../api/ml";
+import { ApiError } from "../../lib/api-error";
 import { F5_TOOLTIP } from "../../lib/ml-findings";
 import type { ScopeFilter } from "../../lib/scope-filter";
 import { ML_FINDINGS_HEADING, ML_PARAGRAPH_LABEL, MlFindingsCard } from "./ml-findings-card";
@@ -594,6 +595,122 @@ export async function noAlarmColourWithTheParagraph(): Promise<void> {
     for (const cls of classes) {
       expect(cls).not.toMatch(/critical|warning|severity|ok-|alarm|danger/);
     }
+    cleanup();
+    vi.restoreAllMocks();
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// `E1.9d` review fixes: a bounded poll after an error, no stale paragraph, a malformed answer.
+// ---------------------------------------------------------------------------------------------
+
+const PENDING_C: MlFindingsParagraphResponse = {
+  cards: [{ organizationId: ORG_C, state: "pending", segments: [], assets: [] }],
+};
+
+/**
+ * Review fix 1: one `pending` answer, then the route fails (a 5xx, then a 403). The read must
+ * not keep asking every 4 s: an error falls back to the 15-minute refetch, and a 4xx is not retried.
+ */
+export async function anErrorAfterPendingStopsTheQuickAsks(): Promise<void> {
+  const cases = [
+    { error: new ApiError("ml findings paragraph 500", 500), atMost: 5 },
+    { error: new ApiError("ml findings paragraph 403", 403), atMost: 2 },
+  ];
+  for (const { error, atMost } of cases) {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue(SUMMARY);
+    const spy = vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockResolvedValueOnce(PENDING_C).mockRejectedValue(error);
+    renderCard();
+    await screen.findByText("ORGC · Cedar Point Mills");
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    for (let step = 0; step < 20; step += 1) {
+      await act(() => vi.advanceTimersByTimeAsync(4_000));
+    }
+    const settled = spy.mock.calls.length;
+    expect(settled, error.message).toBeLessThanOrEqual(atMost);
+    expect(settled, error.message).toBeGreaterThanOrEqual(2);
+    for (let step = 0; step < 20; step += 1) {
+      await act(() => vi.advanceTimersByTimeAsync(4_000));
+    }
+    expect(spy.mock.calls.length, error.message).toBe(settled);
+    expect(screen.queryByText(ML_PARAGRAPH_LABEL)).toBeNull();
+    cleanup();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  }
+}
+
+/** Review fix 1: a new scope is a new count — its first `pending` is asked again at 4 s. */
+export async function aNewScopeStartsItsCountAtZero(): Promise<void> {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue(SUMMARY);
+  const spy = vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockResolvedValue(PENDING_C);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = (scope: ScopeFilter) => (
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <MlFindingsCard kinds={["forecasts"]} scope={scope} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  const { rerender } = render(view({ organizationId: ORG_C }));
+  await screen.findByText("ORGC · Cedar Point Mills");
+  await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+  for (let step = 0; step < 10; step += 1) {
+    await act(() => vi.advanceTimersByTimeAsync(4_000));
+  }
+  expect(spy).toHaveBeenCalledTimes(7);
+
+  rerender(view({ organizationId: ORG_C, locationId: SITE_D }));
+  const askedForSite = () => spy.mock.calls.filter((call) => call[1].locationId === SITE_D).length;
+  await waitFor(() => expect(askedForSite()).toBe(1));
+  await act(() => vi.advanceTimersByTimeAsync(4_000));
+  await waitFor(() => expect(askedForSite()).toBe(2));
+}
+
+/**
+ * Review fix 2: a later summary with only the "none" line for the organization hides the old
+ * paragraph — in the full card and in compact (where the "none" line shows instead).
+ */
+export async function aSummaryWithNothingHidesTheOldParagraph(): Promise<void> {
+  const emptied: MlFindingsCardData = { ...CARD_C, facts: [{ id: "F_NONE", segments: [{ text: "No forecast points in this selection." }] }] };
+  for (const compact of [false, true]) {
+    const summary = vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue({ ...SUMMARY, cards: [CARD_C] });
+    vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockResolvedValue(OK_C);
+    const client = renderCard({ compact });
+    await screen.findByText(ML_PARAGRAPH_LABEL);
+    summary.mockResolvedValue({ ...SUMMARY, cards: [emptied] });
+    await act(() => client.invalidateQueries({ queryKey: ["ml-findings", "summary"] }));
+    await screen.findByText("No forecast points in this selection.");
+    await settle();
+    expect(screen.queryByText(ML_PARAGRAPH_LABEL), `compact: ${compact}`).toBeNull();
+    expect(section().textContent).not.toContain("coldest point");
+    cleanup();
+    vi.restoreAllMocks();
+  }
+}
+
+/**
+ * Review fix 3: a malformed paragraph card (no `assets`, a `null` segment, an object as text)
+ * draws the facts and no paragraph, and throws nothing.
+ */
+export async function aMalformedParagraphDrawsTheFactsOnly(): Promise<void> {
+  const malformed = [
+    { organizationId: ORG_C, state: "ok", segments: [{ text: "No assets list." }] },
+    { organizationId: ORG_C, state: "ok", segments: [null], assets: [] },
+    { organizationId: ORG_C, state: "ok", segments: [{ text: { a: 1 } }], assets: [] },
+  ];
+  for (const card of malformed) {
+    vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue(SUMMARY);
+    const spy = vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockResolvedValue({ cards: [card] } as never);
+    renderCard();
+    await screen.findByText("ORGC · Cedar Point Mills");
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    await settle();
+    expect(within(section()).getAllByRole("listitem")).toHaveLength(5);
+    expect(screen.queryByText(ML_PARAGRAPH_LABEL)).toBeNull();
+    expect(section().textContent).not.toContain("No assets list.");
     cleanup();
     vi.restoreAllMocks();
   }

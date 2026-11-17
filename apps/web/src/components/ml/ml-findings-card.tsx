@@ -10,9 +10,17 @@ import type {
   MlFindingsParagraphCard,
   MlFindingsParagraphResponse,
 } from "@bms/shared/contracts";
+import { mlFindingsParagraphCardSchema } from "@bms/shared/contracts";
 
 import { useMlFindings, useMlFindingsParagraphs } from "../../hooks/use-ml-findings";
-import { compactLines, F5_TOOLTIP, hasParagraphWorthyCard, mlPageHref, resolveSegments } from "../../lib/ml-findings";
+import {
+  compactLines,
+  F5_TOOLTIP,
+  hasParagraphWorthyCard,
+  isParagraphWorthy,
+  mlPageHref,
+  resolveSegments,
+} from "../../lib/ml-findings";
 import type { ScopeFilter } from "../../lib/scope-filter";
 import { SectionCard } from "../section-card";
 import { StatusPill } from "../status-pill";
@@ -77,8 +85,17 @@ function FactLines({ facts, assets }: { facts: readonly MlFindingFact[]; assets:
  * failed or unanswered read, and a missing entry all give `null`: decision 5 fails closed, silently.
  */
 function okParagraph(data: MlFindingsParagraphResponse | undefined, organizationId: string): MlFindingsParagraphCard | null {
-  const card = data?.cards.find((c) => c.organizationId === organizationId);
-  return card !== undefined && card.state === "ok" && card.segments.length > 0 ? card : null;
+  const cards: readonly unknown[] = Array.isArray(data?.cards) ? data.cards : [];
+  const card = cards.find(
+    (c): c is MlFindingsParagraphCard =>
+      typeof c === "object" && c !== null && (c as { organizationId?: unknown }).organizationId === organizationId,
+  );
+  if (card === undefined || card.state !== "ok" || !Array.isArray(card.segments) || card.segments.length === 0) {
+    return null;
+  }
+  // Fail closed on shape too (security review L1): no assets list, a null segment or non-string
+  // text would throw in render, and there is no error boundary to catch it.
+  return Array.isArray(card.assets) && mlFindingsParagraphCardSchema.safeParse(card).success ? card : null;
 }
 
 /**
@@ -172,18 +189,17 @@ function CompactOrganization({ parts, scope, showKind }: { parts: readonly Compa
 export function MlFindingsCard({ kinds, scope, enabled = true, paragraph = true, compact = false }: MlFindingsCardProps) {
   const headingId = useId();
   const results = useMlFindings(kinds, scope, enabled);
-  const paragraphs = useMlFindingsParagraphs(
-    kinds,
-    scope,
-    results.map((q) => enabled && paragraph && hasParagraphWorthyCard(q.data)),
-  );
+  const asking = results.map((q) => enabled && paragraph && hasParagraphWorthyCard(q.data));
+  const paragraphs = useMlFindingsParagraphs(kinds, scope, asking);
   const nothing = results.every((q) => q.data !== undefined && q.data.cards.length === 0);
   if (nothing) {
     return null;
   }
   const showKind = kinds.length > 1;
-  const paragraphOf = (index: number, organizationId: string) =>
-    paragraph ? okParagraph(paragraphs[index]?.data, organizationId) : null;
+  // Only while the read is live and this organization's current card still has findings: a
+  // disabled query keeps its cached answer, which must not outlive the facts it was written from.
+  const paragraphOf = (index: number, card: MlFindingsCardData) =>
+    asking[index] === true && isParagraphWorthy(card) ? okParagraph(paragraphs[index]?.data, card.organizationId) : null;
 
   const statusLines = kinds.map((kind, index) => {
     const q = results[index];
@@ -205,7 +221,7 @@ export function MlFindingsCard({ kinds, scope, enabled = true, paragraph = true,
     kinds.forEach((kind, index) => {
       for (const card of results[index]?.data?.cards ?? []) {
         const parts = byOrganization.get(card.organizationId) ?? [];
-        parts.push({ kind, card, paragraph: paragraphOf(index, card.organizationId) });
+        parts.push({ kind, card, paragraph: paragraphOf(index, card) });
         byOrganization.set(card.organizationId, parts);
       }
     });
@@ -220,7 +236,7 @@ export function MlFindingsCard({ kinds, scope, enabled = true, paragraph = true,
           card={card}
           kind={kind}
           showKind={showKind}
-          paragraph={paragraphOf(index, card.organizationId)}
+          paragraph={paragraphOf(index, card)}
         />
       )),
     );

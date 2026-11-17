@@ -10,6 +10,7 @@ import { fetchMlFindingsParagraph, fetchMlFindingsSummary } from "../api/ml";
 import { retryUnlessForbidden } from "../components/asset-history/history-format";
 import { FORECAST_REFETCH_MS } from "../lib/forecast-series";
 import { paragraphPollMs, scopeKey } from "../lib/ml-findings";
+import { shouldRetryQuery } from "../lib/query-retry";
 import type { ScopeFilter } from "../lib/scope-filter";
 
 /**
@@ -61,12 +62,18 @@ export function useMlFindingsParagraphs(
         return { response, pendingAnswers: waiting ? before + 1 : 0 };
       },
       select: (read: ParagraphRead) => read.response,
-      refetchInterval: (query: { state: { data: ParagraphRead | undefined } }) => {
+      refetchInterval: (query: { state: { data: ParagraphRead | undefined; status: string } }) => {
+        // A failed read keeps its last data, which may hold a `pending` card: it must not keep the
+        // 4 s pace (the review's probe measured 258 requests in 10 minutes). Back to 15 minutes.
+        if (query.state.status === "error") {
+          return FORECAST_REFETCH_MS;
+        }
         const read = query.state.data;
         // The first `pending` answer is the first ask, not an ask again.
         return paragraphPollMs(read?.response, Math.max(0, (read?.pendingAnswers ?? 0) - 1));
       },
-      retry: retryUnlessForbidden,
+      // The app default: no retry of a 4xx refusal; the 15-minute refetch asks again anyway.
+      retry: shouldRetryQuery,
       enabled: enabled[index] ?? false,
     })),
   });
