@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   aRowBecomesACandidateOnlyWithItsOwnZoneAndEnergyNotOff,
   theAssetFilterIsChosenByIdsBeingNull,
+  theBaselineHourReadIsTheHourlyAggregateInUtc,
   theCandidateStatementHoldsTheRealLineAndAnActiveKwPoint,
   thePairReadBindsTheIdsAndPivotsByHour,
   theRankingReadBindsTheIdsAndTheLimit,
@@ -17,6 +18,8 @@ describe("E1.6a — the advisory reads (ADR 0137)", () => {
   it("the ranking read binds = ANY($1::uuid[]), the since and the limit; no ids, no read", () =>
     theRankingReadBindsTheIdsAndTheLimit());
   it("the pair read binds = ANY($1::uuid[]) and pivots kw, kva and pf by hour", () => thePairReadBindsTheIdsAndPivotsByHour());
+  it("F4.384: the baseline hour read is _1h in UTC buckets: ids bound, kw only, no zone", () =>
+    theBaselineHourReadIsTheHourlyAggregateInUtc());
   it("a row is a candidate only with its own valid zone and energy features not off", () =>
     aRowBecomesACandidateOnlyWithItsOwnZoneAndEnergyNotOff());
 });

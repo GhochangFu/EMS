@@ -14,6 +14,7 @@ import {
   fixtureCandidate,
   fixtureInput,
   pairHours,
+  windowHours,
   seriesRow,
 } from "./advisories.fixture";
 import type { AdvisoryAssetInput } from "./advisory-engine.types";
@@ -239,4 +240,23 @@ export function confidenceFollowsTheEvidence(): void {
 /** Only an electrical asset gets a power-factor advisory. */
 export function onlyElectricalAssetsQualify(): void {
   expect(run(fixtureInput({ candidate: fixtureCandidate({ domain: "water" }) }))).toBeNull();
+}
+
+/**
+ * `F4.384`: a small meter's correction keeps a decimal in the `kvar` field and the line alike.
+ * PF 0.87 from the registers; mean kW 1 gives ≈ 0.42 kVAr, mean kW 0.1 ≈ 0.04 (shown 0.1),
+ * mean kW 3.3 ≈ 1.4 (shown 1).
+ */
+export function aSmallCorrectionKeepsADecimalInTheFieldAndTheLine(): void {
+  const cases: [number, number, string][] = [
+    [1, 0.4, "0.4"],
+    [0.1, 0.1, "0.1"],
+    [3.3, 1, "1"],
+  ];
+  for (const [kw, shown, text] of cases) {
+    const advisory = fired(fixtureInput({ hours: windowHours(kw) }));
+    expect(kvarFor(kw, 0.87), `kW ${kw}`).toBeGreaterThan(0);
+    expect(advisory.kvar, `kW ${kw}`).toBe(shown);
+    expect(advisory.lines[2], `kW ${kw}`).toBe(`About ${text} kVAr of correction would bring it to 0.99.`);
+  }
 }

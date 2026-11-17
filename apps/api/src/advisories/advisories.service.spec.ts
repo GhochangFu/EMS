@@ -26,9 +26,16 @@ import {
   fixtureInput,
 } from "./advisories.fixture";
 import type { AdvisoryCandidateDbRow } from "./advisories.reads";
-import { AdvisoriesService, advisoryReadsOf, computeAdvisories, type AdvisoryReads } from "./advisories.service";
+import {
+  AdvisoriesService,
+  advisoryReadsOf,
+  computeAdvisories,
+  mergeAdvisoryHours,
+  type AdvisoryReads,
+} from "./advisories.service";
 import { ADVISORY_PARAMETER_KEYS, type AdvisoryPairHour } from "./advisory-engine.types";
 import { advisoriesForAsset, rankAdvisories } from "./advisory-rank";
+import { advisoryWindows } from "./advisory-window";
 
 /**
  * `E1.6a` / ADR 0137 (plan T1.6, T1.7, Q3, R-c, R-d, R-e) — the service's one
@@ -88,6 +95,7 @@ interface Harness {
     candidates: (string[] | null)[];
     topEnergy: { ids: string[]; sinceMs: number; limit: number }[];
     hours: { ids: string[]; from: Date; to: Date }[];
+    baselineHours: { ids: string[]; fromMs: number; toMs: number }[];
     series: { pairs: { assetId: string; key: string }[]; from: Date; to: Date }[];
     registers: { assetId: string; pointKey: string; from: Date; to: Date }[][];
     pairHours: { ids: string[]; fromMs: number; toMs: number }[];
@@ -103,7 +111,7 @@ function harness(
   overrides: Partial<AdvisoryReads> = {},
 ): Harness {
   const calls: Harness["calls"] = {
-    candidates: [], topEnergy: [], hours: [], series: [], registers: [], pairHours: [], mappings: [], versions: [], anomalies: [],
+    candidates: [], topEnergy: [], hours: [], baselineHours: [], series: [], registers: [], pairHours: [], mappings: [], versions: [], anomalies: [],
   };
   const reads: AdvisoryReads = {
     candidates: async (ids) => {
@@ -114,9 +122,18 @@ function harness(
       calls.topEnergy.push({ ids: [...ids], sinceMs, limit });
       return ids.slice(0, limit);
     },
+    // F4.384: each fake answers only the range it is asked for, as the SQL does.
     hours: async (assets, from, to) => {
       calls.hours.push({ ids: assets.map((a) => a.assetId), from, to });
-      return assets.flatMap((a) => hoursOf(a.assetId, profiles(a.assetId).kw, profiles(a.assetId).history));
+      return assets
+        .flatMap((a) => hoursOf(a.assetId, profiles(a.assetId).kw, profiles(a.assetId).history))
+        .filter((h) => h.bucketMs >= from.getTime() && h.bucketMs <= to.getTime());
+    },
+    baselineHours: async (ids, fromMs, toMs) => {
+      calls.baselineHours.push({ ids: [...ids], fromMs, toMs });
+      return ids
+        .flatMap((id) => hoursOf(id, profiles(id).kw, profiles(id).history))
+        .filter((h) => h.bucketMs >= fromMs && h.bucketMs < toMs);
     },
     series: async (pairs, from, to) => {
       calls.series.push({ pairs: pairs.map((p) => ({ ...p })), from, to });
@@ -188,6 +205,7 @@ const version = (): TariffVersion => ({
 const parsed = (body: AdvisoriesResponse): AdvisoriesResponse => advisoriesResponseSchema.parse(body);
 const laterIds = (h: Harness): string[] => [
   ...h.calls.hours.flatMap((c) => c.ids),
+  ...h.calls.baselineHours.flatMap((c) => c.ids),
   ...h.calls.series.flatMap((c) => c.pairs.map((p) => p.assetId)),
   ...h.calls.registers.flatMap((c) => c.map((r) => r.assetId)),
   ...h.calls.pairHours.flatMap((c) => c.ids),
@@ -247,15 +265,19 @@ export async function everyLaterReadGetsTheCandidateIdsOnly(): Promise<void> {
   await computeAdvisories(h.reads, null, NOW);
   expect(h.calls.candidates).toEqual([null]);
   for (const c of h.calls.hours) expect(c.ids.sort()).toEqual([FIXTURE_ASSET_ID, other].sort());
+  for (const c of h.calls.baselineHours) expect(c.ids.sort()).toEqual([FIXTURE_ASSET_ID, other].sort());
   for (const c of h.calls.series) expect([...new Set(c.pairs.map((p) => p.assetId))].sort()).toEqual([FIXTURE_ASSET_ID, other].sort());
   for (const c of h.calls.mappings) expect(c.sort()).toEqual([FIXTURE_ASSET_ID, other].sort());
   // Registers only where both register points are active; the pair read only where no usable register pair is.
   expect(h.calls.registers.flat().map((r) => r.assetId)).toEqual([FIXTURE_ASSET_ID, FIXTURE_ASSET_ID]);
   expect(h.calls.pairHours.map((c) => c.ids)).toEqual([[other]]);
   for (const id of laterIds(h)) expect(typeof id).toBe("string");
-  // The read ranges: 35 days of hours, the window for rates and registers.
-  expect(h.calls.hours[0]?.from.getTime()).toBe(FIXTURE_WINDOWS.readFromMs);
-  expect(h.calls.hours[0]?.to.getTime()).toBeLessThan(FIXTURE_WINDOWS.readToMs);
+  // The read ranges (F4.384): the window's local hours, the 28 baseline days' UTC hours, the window for rates and registers.
+  expect(h.calls.hours[0]?.from.getTime()).toBe(FIXTURE_WINDOWS.fromMs);
+  expect(h.calls.hours[0]?.to.getTime()).toBe(FIXTURE_WINDOWS.readToMs - 1);
+  expect(h.calls.baselineHours).toEqual([
+    { ids: expect.any(Array), fromMs: FIXTURE_WINDOWS.readFromMs, toMs: FIXTURE_WINDOWS.fromMs },
+  ]);
   expect(h.calls.series[0]?.from.getTime()).toBe(FIXTURE_WINDOWS.fromMs);
   expect(h.calls.series[0]?.to.getTime()).toBeLessThan(FIXTURE_WINDOWS.toMs);
   expect(new Set(h.calls.series[0]?.pairs.map((p) => p.key))).toEqual(new Set(Object.values(ADVISORY_PARAMETER_KEYS)));
@@ -387,14 +409,158 @@ export async function theServiceWiresTheReads(): Promise<void> {
   const to = new Date(FIXTURE_WINDOWS.toMs);
   expect(await reads.candidates([])).toEqual([]);
   expect(await reads.hours([{ assetId: FIXTURE_ASSET_ID, zone: "Asia/Kolkata" }], from, to)).toEqual([]);
+  expect(await reads.baselineHours([FIXTURE_ASSET_ID], from.getTime(), to.getTime())).toEqual([]);
   expect(await reads.topEnergy([FIXTURE_ASSET_ID], 0, 200)).toEqual([]);
   expect((await reads.pairHours([FIXTURE_ASSET_ID], 0, 1)).size).toBe(0);
   expect(await reads.registers([{ assetId: FIXTURE_ASSET_ID, pointKey: "kwh_total", from, to }])).toEqual([{ first: null, last: null }]);
   expect((await reads.mappings([FIXTURE_ASSET_ID])).size).toBe(0);
   expect((await reads.versions([{ organizationId: FIXTURE_ORGANIZATION_ID, key: "k" }])).size).toBe(0);
-  expect(queries).toHaveLength(6);
+  expect(queries).toHaveLength(7);
+  expect(queries.some((q) => q.includes("telemetry.point_values_1h") && q.includes("p.point_key = 'kw'"))).toBe(true);
   await reads.series([{ assetId: FIXTURE_ASSET_ID, key: RATE_KEY }], from, to);
   expect(seriesCalls).toEqual([[[{ assetId: FIXTURE_ASSET_ID, key: RATE_KEY }], from, to]]);
   await reads.anomalies(FIXTURE_ASSET_ID, { from, to }, NOW);
   expect(anomalyCalls).toEqual([[FIXTURE_ASSET_ID, { from, to }, NOW]]);
+}
+
+// --- F4.384: the window from `_5m` local hours, the baselines from `_1h` UTC hours ---------
+
+const TOKYO = "Asia/Tokyo";
+const TOKYO_ID = idOf(701);
+const POISON = 100_000;
+
+/** Every hour from `fromMs` (on its own grid) up to `toMs`, at `value(t)`. */
+function grid(assetId: string, fromMs: number, toMs: number, value: (t: number) => number): HourlyEnergy[] {
+  const out: HourlyEnergy[] = [];
+  for (let t = fromMs; t < toMs; t += HOUR_MS) out.push({ assetId, bucketMs: t, kwh: value(t) });
+  return out;
+}
+
+/**
+ * Two meters in two zones (Kolkata +05:30, Tokyo +09:00): the window read runs from the earlier
+ * zone's window start to the later read end less 1 ms; the baseline read from the earlier read
+ * start to the later window start. Each is one read for both meters.
+ */
+export async function theWindowAndBaselineReadsSplitAtTheZoneWindowStarts(): Promise<void> {
+  const kolkata = FIXTURE_WINDOWS;
+  const tokyo = advisoryWindows(FIXTURE_NOW_MS, TOKYO);
+  expect(tokyo.fromMs).toBeLessThan(kolkata.fromMs);
+  const h = harness([candidateRow(FIXTURE_ASSET_ID), candidateRow(TOKYO_ID, { location_zone: TOKYO })]);
+  await computeAdvisories(h.reads, null, NOW);
+  expect(h.calls.hours).toHaveLength(1);
+  expect(h.calls.hours[0]!.from.getTime()).toBe(Math.min(kolkata.fromMs, tokyo.fromMs));
+  expect(h.calls.hours[0]!.to.getTime()).toBe(Math.max(kolkata.readToMs, tokyo.readToMs) - 1);
+  expect(h.calls.baselineHours).toHaveLength(1);
+  expect(h.calls.baselineHours[0]!.fromMs).toBe(Math.min(kolkata.readFromMs, tokyo.readFromMs));
+  expect(h.calls.baselineHours[0]!.toMs).toBe(Math.max(kolkata.fromMs, tokyo.fromMs));
+  expect(h.calls.baselineHours[0]!.ids.sort()).toEqual([FIXTURE_ASSET_ID, TOKYO_ID].sort());
+}
+
+/**
+ * The merge, pure: per asset, `_5m` hours from that asset's own window start, `_1h` hours before
+ * it — never one hour from both. Each read here returns its whole range for both meters, and
+ * every hour on the wrong side of a meter's own start carries a poison value.
+ */
+export function theMergeKeepsNoHourTwice(): void {
+  const kolkata = FIXTURE_WINDOWS;
+  const tokyo = advisoryWindows(FIXTURE_NOW_MS, TOKYO);
+  const fromMsOf = new Map([
+    [FIXTURE_ASSET_ID, kolkata.fromMs],
+    [TOKYO_ID, tokyo.fromMs],
+  ]);
+  const minFrom = Math.min(kolkata.fromMs, tokyo.fromMs);
+  const maxFrom = Math.max(kolkata.fromMs, tokyo.fromMs);
+  const minRead = Math.min(kolkata.readFromMs, tokyo.readFromMs);
+  const readTo = Math.max(kolkata.readToMs, tokyo.readToMs);
+  // `_5m` local hours on each zone's own grid; `_1h` on the UTC grid.
+  const fiveMinute = [FIXTURE_ASSET_ID, TOKYO_ID].flatMap((id) => {
+    const own = fromMsOf.get(id)!;
+    const start = own - Math.ceil((own - minFrom) / HOUR_MS) * HOUR_MS;
+    return grid(id, start, readTo, (t) => (t >= own ? 80 : POISON));
+  });
+  const hourly = [FIXTURE_ASSET_ID, TOKYO_ID].flatMap((id) =>
+    grid(id, Math.ceil(minRead / HOUR_MS) * HOUR_MS, maxFrom, (t) => (t < fromMsOf.get(id)! ? 50 : POISON)),
+  );
+  const merged = mergeAdvisoryHours(fiveMinute, hourly, fromMsOf);
+  for (const id of [FIXTURE_ASSET_ID, TOKYO_ID]) {
+    const list = merged.get(id) ?? [];
+    expect(list.some((hour) => hour.kwh === POISON), id).toBe(false);
+    expect(new Set(list.map((hour) => hour.bucketMs)).size, id).toBe(list.length);
+    expect(list.map((hour) => hour.bucketMs), id).toEqual([...list.map((hour) => hour.bucketMs)].sort((a, b) => a - b));
+    // The window: the zone's 168 local hours from `_5m`, none from `_1h`.
+    const own = fromMsOf.get(id)!;
+    expect(list.filter((hour) => hour.bucketMs >= own).every((hour) => hour.kwh === 80), id).toBe(true);
+    expect(list.filter((hour) => hour.bucketMs >= own && hour.bucketMs < own + 7 * DAY_MS), id).toHaveLength(168);
+  }
+  // Kolkata's window starts at a half hour (18:30Z): the UTC bucket that straddles it (18:00Z,
+  // its 18:10 sample before the window) is a baseline hour and is kept — the 30 minutes Q2 (b)
+  // accepts. Dropping it would leave the last baseline window one hour short (code review).
+  const straddle = Math.floor(kolkata.fromMs / HOUR_MS) * HOUR_MS;
+  expect(straddle).toBeLessThan(kolkata.fromMs);
+  expect(merged.get(FIXTURE_ASSET_ID)?.find((hour) => hour.bucketMs === straddle)?.kwh).toBe(50);
+  // An asset no zone window names is not carried.
+  expect(mergeAdvisoryHours([{ assetId: idOf(999), bucketMs: minFrom, kwh: 1 }], [], fromMsOf).has(idOf(999))).toBe(false);
+}
+
+/**
+ * The service end to end on the same poisoned reads, two zones: each meter's excess is its own
+ * 30 kW over 168 hours — a poisoned or a doubled hour would move it.
+ */
+export async function twoZonesGiveEachMeterItsOwnExcess(): Promise<void> {
+  const fromOf = new Map([
+    [FIXTURE_ASSET_ID, FIXTURE_WINDOWS.fromMs],
+    [TOKYO_ID, advisoryWindows(FIXTURE_NOW_MS, TOKYO).fromMs],
+  ]);
+  const h = harness(
+    [candidateRow(FIXTURE_ASSET_ID, { has_kwh_total: false }), candidateRow(TOKYO_ID, { location_zone: TOKYO, has_kwh_total: false })],
+    excessProfile,
+    {
+      // Each read ignores its range: the whole 35 days, on its own grid, poisoned on the wrong side.
+      hours: async (assets, _from, to) =>
+        assets.flatMap((a) => {
+          const own = fromOf.get(a.assetId)!;
+          return grid(a.assetId, own - 35 * DAY_MS, to.getTime() + 1, (t) => (t >= own ? 80 : POISON));
+        }),
+      baselineHours: async (ids) =>
+        ids.flatMap((id) => {
+          const own = fromOf.get(id)!;
+          const utc = Math.floor(own / HOUR_MS) * HOUR_MS;
+          return grid(id, utc - 35 * DAY_MS, utc + 8 * DAY_MS, (t) => (t < own ? 50 : POISON));
+        }),
+    },
+  );
+  const body = parsed(await computeAdvisories(h.reads, null, NOW));
+  const excess = body.advisories.filter((a) => a.kind === "excess_consumption");
+  expect(excess.map((a) => a.assetId).sort()).toEqual([FIXTURE_ASSET_ID, TOKYO_ID].sort());
+  for (const advisory of excess) {
+    expect(advisory.kwh, advisory.assetId).toEqual({ window: 30 * 168, projected: Math.round((30 * 168 * 30) / 7) });
+    expect(advisory.headline, advisory.assetId).toContain("1.6 times its usual");
+  }
+}
+
+/**
+ * Where `_5m` and `_1h` agree hour for hour, the figures are the engine's on the 35 days of one
+ * read: both reads here return the same 35 days, ignoring their ranges, and the merge keeps each
+ * hour once.
+ */
+export async function agreeingReadsGiveTheSameFigures(): Promise<void> {
+  const profile = (): Profile => ({ kw: 80, history: 50, registers: { kwh: 8700, kvah: 10000 } });
+  const all = hoursOf(FIXTURE_ASSET_ID, 80, 50);
+  const h = harness([candidateRow(FIXTURE_ASSET_ID)], profile, {
+    hours: async () => all,
+    baselineHours: async () => all,
+  });
+  const body = parsed(await computeAdvisories(h.reads, [FIXTURE_ASSET_ID], NOW));
+  const expected = rankAdvisories(
+    advisoriesForAsset(
+      fixtureInput({
+        hours: [...all].sort((a, b) => a.bucketMs - b.bucketMs),
+        registers: { kwh: 8700, kvah: 10000, spanMs: FIXTURE_WINDOWS.toMs - FIXTURE_WINDOWS.fromMs - HOUR_MS },
+      }),
+      FIXTURE_WINDOWS,
+    ),
+  );
+  expect(expected.map((a) => a.kind).sort()).toEqual(["excess_consumption", "low_power_factor"]);
+  const strip = (list: Advisory[]) => list.map(({ context: _context, ...rest }) => rest);
+  expect(strip(body.advisories)).toEqual(strip(expected));
 }

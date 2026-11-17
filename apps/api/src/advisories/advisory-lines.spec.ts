@@ -22,6 +22,7 @@ import {
   PROJECTION_ASSUMPTION,
   rateAssumption,
   scopeWord,
+  shownKvar,
   TARGET_PF_ASSUMPTION,
   thresholdAssumption,
   windowAssumption,
@@ -218,4 +219,32 @@ export function noSentenceHoldsAPercentOrASaving(): void {
   }
   // Positive control: the disclaimer is the one place the word lives.
   expect(ADVISORY_DISCLAIMER.toLowerCase()).toContain("saving");
+}
+
+/**
+ * `F4.384` (owner ruling 2026-11-17): under 1 kVAr one decimal, rounded half up
+ * (0.45 is "0.5", not a float-error "0.4"); a positive value under 0.05 shows 0.1,
+ * never "0"; from 1 up a whole number. The demo host's 0.45 read "About 0 kVAr".
+ */
+export function aCorrectionUnderOneKvarKeepsADecimal(): void {
+  const line = (n: string): string => `About ${n} kVAr of correction would bring it to 0.99.`;
+  expect(kvarLine(0.45, "INR")).toBe(line("0.5"));
+  expect(kvarLine(0.04, "INR")).toBe(line("0.1"));
+  expect(kvarLine(1.4, "INR")).toBe(line("1"));
+  expect(kvarLine(0.81, "INR")).toBe(line("0.8"));
+  expect(kvarLine(0.96, "INR")).toBe(line("1"));
+  expect(kvarLine(1234.5, "INR")).toBe(line("1,235"));
+  expect(shownKvar(0.45)).toBe(0.5);
+  expect(shownKvar(0.04)).toBe(0.1);
+  expect(shownKvar(0.05)).toBe(0.1);
+  expect(shownKvar(1.4)).toBe(1);
+  expect(shownKvar(0.81)).toBe(0.8);
+  expect(shownKvar(0.96)).toBe(1);
+  expect(shownKvar(21.2)).toBe(21);
+  expect(shownKvar(0.15)).toBe(0.2);
+  expect(shownKvar(0.35)).toBe(0.4);
+  // The float trap: a computed value one step under a half. Plain Math.round(x * 10) / 10 gives
+  // 0.4 here; `toPrecision(12)` first gives 0.5 (code review: the literals above do not need it).
+  expect(shownKvar(0.4499999999999999)).toBe(0.5);
+  expect(Math.round(0.4499999999999999 * 10) / 10).toBe(0.4);
 }
