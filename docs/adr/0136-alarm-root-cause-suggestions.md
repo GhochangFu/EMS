@@ -2,11 +2,15 @@
 
 ## Status
 
-**Proposed — 2026-11-17.** Drafted by an agent for backlog row `E2.3` at the
-step 2 gate (AGENTS.md §10, `docs/build-operating-model.md`). Nothing here is
-in scope until the owner accepts it. Lines marked *(recommended)* are the
-drafter's calls; §Open questions asks the owner to rule each numbered one. No
-code is written before acceptance.
+**Accepted — 2026-11-17** (owner, in chat: *"Apart from question 6, it
+should be yes. Other than that, all others are accepted."*). Drafted by an
+agent for backlog row `E2.3` at the step 2 gate (AGENTS.md §10,
+`docs/build-operating-model.md`) and proposed the same day in PR #1379.
+**Q1–Q5, Q7 and Q8 are ruled as recommended. Q6 is ruled the other way:
+yes**, so an operator can fill the enrichment form's root cause from a
+suggestion; decision 6 now says how. Every *(recommended)* line in
+the other decisions is therefore a ruling. One line marked *(drafter, after
+the ruling)* is the agent's call inside the Q6 answer; see §Rulings.
 
 Builds on [ADR 0034](./0034-alarm-enrichment-schema.md) (`E2.1`, the instance
 enrichment), [ADR 0059](./0059-alarm-philosophy-operator-surface.md) (`E2.2`,
@@ -163,11 +167,25 @@ measured 39.4 s and 674.7 MiB on 2026-11-17 (ADR 0135 Amendment 5).
      AGENTS.md §5).
    - **Everyone who can open the alarm sees it, `viewer` included**, as
      ADR 0059 Q0b did for the class philosophy. It is read-only.
-   - **No fill or copy into the enrichment form** in this ADR, for the reason
-     ADR 0059 Q1 gave: a read row stays a read row, and the operator's text
-     stays the operator's. This narrows ADR 0034 decision 6's "proposes
-     values into this same surface" to "proposes values **beside** this
-     surface".
+   - **A "Use as root cause" button fills the form, and the operator still
+     saves** *(owner, 2026-11-17, Q6: yes)*. This is ADR 0034 decision 6's
+     "proposes values into this same surface", done by the operator's click:
+     - It fills **only the `root_cause` field** of the enrichment form in the
+       browser. It sends no request. Nothing is written until the operator
+       presses the form's existing **Save**: `PUT /alarms/:id/enrichment`,
+       with its `assertOperationsWriteRole` gate and its audit row
+       (`updated_by` = the operator). The text stays editable before saving.
+     - If the field already holds text, the button asks before it replaces it.
+       It never appends, and it never fills a field silently.
+     - It is shown only where the form is shown, so a `viewer` (who has no
+       form) sees the suggestions and no button.
+     - It does not fill skill, impact, corrective actions, ETR or affected
+       assets. Nothing records that a suggestion was used (Q7: no storage).
+     - **R5 (the class cause) has no button** *(drafter, after the ruling)*.
+       Filling an instance root cause from class text is exactly what
+       ADR 0059 Q1 refused, and Q6 did not name ADR 0059. So that ruling
+       stands for R5, and R1–R4 carry the button. The owner may widen this
+       by a one-line amendment.
    - **Not shown anywhere else:** not on the Active Alarms rail or list rows,
      not in a notification, work order, report, export, or copilot answer.
 
@@ -226,6 +244,9 @@ measured 39.4 s and 674.7 MiB on 2026-11-17 (ADR 0135 Amendment 5).
     - **Web (jsdom):** the section renders the advisory pill, the
       disclaimer, the strength words, the "no likely cause" state, a failed
       load that leaves the rest of the panel working, and no alarm colour.
+      The Q6 button: a click fills `root_cause` and sends no request until
+      Save; existing text asks before it is replaced; a `viewer` sees no
+      button; an R5 candidate has no button.
     - **Browser and demo host:** sent to `browser-verifier` and to the
       owner's demo-host checklist; see §Consequences.
 
@@ -234,8 +255,9 @@ measured 39.4 s and 674.7 MiB on 2026-11-17 (ADR 0135 Amendment 5).
     accuracy figure; anomaly scores with weight (decision 3); a new
     threshold; suggestions in notifications, the alarm list or rail, work
     orders, reports, exports or the copilot; a copilot read tool for them;
-    auto-filling the enrichment; cross-organization learning; a new
-    Python job.
+    filling the enrichment **without** the operator's click and Save, or
+    filling any field other than `root_cause` (decision 6); cross-organization
+    learning; a new Python job.
 
 ## Dependencies
 
@@ -246,7 +268,7 @@ None. No npm or Python package, no new app or module (the route sits in
 
 - **Smaller than the row's estimate.** 4–6 assumed an ML or LLM build. This
   design is about **2–3**: one API PR (contract, pure ranking, route, tests)
-  and one web PR (the panel section), plus the closure. The plan confirms the
+  and one web PR (the panel section and the Q6 button), plus the closure. The plan confirms the
   split.
 - **Coverage depends on data, honestly.** R4 needs earlier operator-written
   root causes; the demo database has few, so R4 is often empty at first and
@@ -261,17 +283,18 @@ None. No npm or Python package, no new app or module (the route sits in
 - **Demo-host checks the owner runs after deploy** (this session cannot reach
   the host): open three alarms (one with an RTU drop, one under a recent
   window, one with neither) and check the section, its pill and its
-  "no likely cause" state; time the route (p95 < 150 ms); confirm the `ml`
-  container's `docker stats` is unchanged.
+  "no likely cause" state; as an operator, press "Use as root cause", check
+  the form fills and nothing saves until Save; time the route (p95 < 150 ms);
+  confirm the `ml` container's `docker stats` is unchanged.
 - **Follow-ups owed after the build** (separate `chore(agents):` PR,
   §9.10/§10.1): AGENTS.md §3 *Layout* (the new route and contract) and §4.8
   (the contract). Queued in `docs/BACKLOG.md` §5 at closure. **Not a §6
   promotion**: no LLM reaches operators or viewers.
 
-## Open questions for the owner
+## Open questions for the owner (all ruled 2026-11-17)
 
-Each has a recommended answer. Accepting the ADR as written accepts every
-recommendation.
+Each had a recommended answer. The owner accepted every recommendation except
+**Q6**, which was ruled **yes** (see §Rulings and decision 6).
 
 1. **Q1 — Where does the suggestion come from?** Options: (a) rules over
    existing evidence (maintenance, RTU health, related alarms, past
@@ -297,8 +320,7 @@ recommendation.
 5. **Q5 — Who sees the suggestions?** **Recommended: everyone who can open
    the alarm, `viewer` included**, read-only (as ADR 0059 Q0b).
 6. **Q6 — A "use this" button that fills the enrichment form?**
-   **Recommended: no**, as ADR 0059 Q1. It can be a follow-up row if
-   operators ask.
+   Recommended: no, as ADR 0059 Q1. **Ruled: yes** (decision 6).
 7. **Q7 — Store suggestions or feedback?** **Recommended: no** — computed at
    read time, no table, no migration. A feedback table is a follow-up with
    its own migration if you want accuracy data later.
@@ -306,3 +328,20 @@ recommendation.
    ADR 0136**, plus a short pointer paragraph in ADR 0135 for decision 7.
    E2.3 is an alarm feature that reads ML output, not a change to the ML
    service.
+
+## Rulings
+
+| # | Question | Ruling (owner, 2026-11-17) |
+|---|----------|----------------------------|
+| **Q1** | Where suggestions come from | **As recommended:** rules over existing evidence; anomaly scores as context |
+| **Q2** | LLM narrative now or later | **As recommended:** later, by an amendment under decision 9 |
+| **Q3** | Anomaly weight | **As recommended:** context only, zero weight |
+| **Q4** | Anomaly context line on the alarm panel | **As recommended:** yes, that panel only (ADR 0135 Amendment 6 pointer) |
+| **Q5** | Who sees suggestions | **As recommended:** everyone who can open the alarm, `viewer` included |
+| **Q6** | A button that fills the enrichment form | **Yes**, against the recommendation. Decision 6 says how: `root_cause` only, the operator saves, no button for a `viewer` |
+| **Q7** | Store suggestions or feedback | **As recommended:** no |
+| **Q8** | New ADR or ADR 0135 amendment | **As recommended:** this ADR, plus the pointer in ADR 0135 |
+
+**Drafter call inside Q6, flagged for the owner:** R5 (class cause) has no
+fill button, so ADR 0059 Q1 still stands for class text. Say so if the
+button should reach R5 too.
