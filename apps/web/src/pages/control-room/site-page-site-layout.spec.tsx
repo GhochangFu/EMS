@@ -29,6 +29,11 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
   MlFindingsCard: () => null,
 }));
 
+/** `E1.8c` — the Bad actors card on the site body has its own suite (`site-page-bad-actors.spec.tsx`). */
+vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
+  HealthBadActorsCard: () => null,
+}));
+
 /**
  * `F3.73` plan Task 5.1 (D10, ruling Q5) — the **Make site layout** action on the site page's
  * `no_site_layout` and `dashboard_removed` notices: who sees it, what it POSTs, the resolve read

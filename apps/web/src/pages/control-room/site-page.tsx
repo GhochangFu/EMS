@@ -5,6 +5,7 @@ import { Link, Navigate, useLocation, useParams } from "react-router-dom";
 import { fetchResolvedSiteControlRoomView } from "../../api/control-room";
 import { fetchDashboard } from "../../api/dashboards";
 import { fetchLocationKpis } from "../../api/locations";
+import { HealthBadActorsCard } from "../../components/asset-health/health-bad-actors-card";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
 import { GeneratedSiteView } from "../../components/control-room/generated-site-view";
 import { ReplaceSiteLayoutWizard } from "../../components/control-room/replace-site-layout-wizard";
@@ -115,6 +116,11 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * `E1.9e` (ADR 0135 Amendment 8 decision 13) — the Site view body carries the compact findings
  * card (`MlFindingsCard`, both kinds, scoped to the site and its organization) between the body
  * and the site's dashboards. The wall, the assets tab, the trends tab and a pending read draw none.
+ *
+ * `E1.8c` (ADR 0050 Amendment 5, owner ruling Q2 (a)) — after that card and before the dashboards:
+ * the *Bad actors — advisory* card (`HealthBadActorsCard`), scoped to the site and its organization
+ * and with the site's count line inside it (`showCount`; the site page has no donut). Same places
+ * as the findings card: never the wall, the assets tab, the trends tab or a pending read.
  */
 export function ControlRoomSitePage({ user, locationId: locationIdProp }: ControlRoomSitePageProps) {
   const params = useParams();
@@ -250,6 +256,8 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                     scope={{ organizationId: site.organization.id, locationId: site.id }}
                     compact
                   />
+                  {/* `E1.8c` (Q2 (a)) — the body only, with the site's count line inside the card. */}
+                  <HealthBadActorsCard organizationId={site.organization.id} locationId={site.id} showCount />
                   <ScopedDashboardsList locationId={site.id} organizationId={site.organization.id} />
                 </>
               )}

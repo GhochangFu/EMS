@@ -27,6 +27,11 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
   MlFindingsCard: () => null,
 }));
 
+/** `E1.8c` — the Bad actors card on the site body has its own suite (`site-page-bad-actors.spec.tsx`). */
+vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
+  HealthBadActorsCard: () => null,
+}));
+
 /**
  * `F3.77` (ADR 0087 Amendment 3 ruling 7, plan D8, owner rulings OQ2 and OQ3) — the site page's
  * wall branch: `?wall=1` on a `dashboard` view renders `WallFrame` instead of `AppShell`, any other
