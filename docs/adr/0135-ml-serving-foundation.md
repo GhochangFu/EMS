@@ -1115,7 +1115,193 @@ notification, opens no work order, and appears in no report, export or
 copilot answer. No threshold changes, and the owner's one-week read of the
 detector rates (due about 2026-11-23) is untouched.
 
-## Amendment 7 — `E1.9`: plain-English findings and an organization + site filter on the ML pages (2026-11-17)
+## Amendment 7 — `E1.2e`: water flow meters join the anomaly targets (2026-11-17)
+
+**Status: Accepted — 2026-11-17** (owner, in chat: "accept all
+recommended, mark Amendment 7 accepted"; proposed the same day). Drafted by
+an agent from an owner request in chat ("why does BCPL get no ML results?").
+Lines marked *(recommended)* were the agent's calls; the owner accepted the
+amendment with them as written, so **every *(recommended)* line is now a
+ruling**, and each question at the end took its recommended answer.
+
+**Why BCPL gets nothing today.** The BCPL organization has 21
+`water/flow_meter` assets with two real points each:
+`treated_water_flow_klh` (a flow rate) and `outlet_flow_totalizer_kl` (a
+counter that only climbs). Neither point is in `DEFAULT_TARGETS` or
+`DEFAULT_ANOMALY_TARGETS` (`apps/ml/src/bms_ml/targets.py`), and Amendment 5
+ruling 1 says a new class needs its own amendment. So the scorer never asks
+whether a flow meter is ready. Even with a target, BCPL is not ready yet:
+data starts on 2026-11-08 (step 0, decision 8: 8 days, 89 % coverage on
+2026-11-15), and only 17 of the 21 RTUs report.
+
+| Job | Days needed | BCPL ready about |
+|---|---|---|
+| Anomaly (`ANOMALY_MIN_DAYS`) | 28 | **2026-12-06** |
+| Forecast (`FORECASTING_GOOD_DAYS`) | 56 | **2027-01-03** |
+
+These dates assume each meter keeps at least 80 % hourly coverage
+(`MIN_COVERAGE`). A meter below that waits by itself (`low_coverage`), and
+the 4 meters that do not report stay `no_data`. Amendment 1 decision 2's
+per-asset rule applies, as Amendment 5 ruling 1 says.
+
+**What stays.** Every Amendment 5 ruling: the two detectors, the 28-day
+reference window, the strict-below percentile (the ties correction), the
+0.99 "unusual" line, advisory only, and ruling 5's budget. **No threshold or
+detector constant changes** (the owner's one-week read of the detector rates
+is due about 2026-11-23 and is untouched). No npm or Python package, no
+migration, no API route, no screen change: the routes, the *Anomalies* page,
+the chart marks and the `anomaly` widget already read every class.
+
+**What changes (proposed):**
+
+1. **One anomaly target** *(recommended)*:
+   `water/flow_meter/treated_water_flow_klh` joins `DEFAULT_ANOMALY_TARGETS`
+   (21 → 22 targets; `MAX_TARGETS` is 32). The list stays class-keyed, so a
+   meter joins by itself when its own history passes. A flow meter has one
+   scored point, so it gets the **baseline only** (Amendment 5 ruling 2: the
+   Isolation Forest needs two or more points).
+
+2. **Never the totalizer** *(recommended)*. `outlet_flow_totalizer_kl` is not
+   a target in either job, for the same reason as `kwh_total` (Amendment 5
+   ruling 1): a counter that only climbs has no normal level, so every new
+   hour would be a new maximum, and every hour would read as unusual. A
+   derived hourly increment (the `_1h` `max − min`) is **not** built here: it
+   repeats what the flow rate already says, a counter reset or rollover would
+   read as an anomaly, and the scorer has no derived-feature step today. A
+   derived feature needs its own amendment.
+
+3. **Flow forecasts: split out, still parked** *(recommended; question 3)*.
+   The water-flow piece of `E1.4d` becomes its own row, **`E1.4f`**, parked
+   ⬜. `E1.4d` keeps chemical dosing, utility demand and covariates. This
+   amendment decides `E1.4f`'s target
+   (`water/flow_meter/treated_water_flow_klh` in `DEFAULT_TARGETS`, never the
+   totalizer), so `E1.4f` needs no further amendment. It starts only after
+   the measurement below shows it fits ruling 5.
+
+   **Why not now.** No BCPL meter can be forecast before about 2027-01-03,
+   and the budget is not known at the new size:
+   - **Series.** Forecasts today: 24 targeted series (19 cold rooms and 5
+     PHEWB `kw`), 16 of them eligible on 2026-11-17; `kw` joins about
+     2026-12-02. Flow would add 21 more (17
+     reporting): **up to 45 series**, more than twice the 21 that were
+     measured.
+   - **Time.** The demo host ran 16 series in 27.3 s (Amendment 5 build
+     record), about 1.7 s a series, so 45 series would take about 77 s. The
+     laptop's one-CPU runs (80–149 s for 21 series, Amendment 2 build record)
+     scale to about 170–320 s for 45. The worst end is above ruling 5's
+     300 s for a whole cycle.
+   - **Memory.** Every context goes to Chronos-2 in one `predict_quantiles`
+     call. The forecast child peaked at 532–548 MiB for 16–21 series, under
+     the 1 GiB container limit on a shared t4g.large. Its peak at 45 series
+     has not been measured.
+
+   **Start condition for `E1.4f`.** (a) The demo host's first cycle after
+   PHEWB `kw` joins (about 2026-12-02) is recorded in this ADR's build record
+   (series, `duration_seconds`, `docker stats` peak). (b) `E1.4f`'s PR widens
+   the CI fixture to the 45-series shape, and ruling 5's gate passes on it.
+   If either is over the line, the build stops and the owner rules again
+   (Chronos-Bolt-small, ruling 5's fallback, or a smaller batch). The aim is
+   to merge before 2027-01-03, so the meters join on the day they qualify.
+
+4. **Zero flow (pump off)** *(recommended; question 4)*: **no special rule.**
+   The current baseline already treats a stop at a fixed clock time as normal:
+   - Median and MAD are taken per **hour of day (UTC)**. If the pump stops at
+     the same time each day, that hour's median is about 0, so a stop there
+     has a small z. IST has no daylight saving, so the UTC hour stays the
+     same local hour all year.
+   - A meter that is always 0 is flat; the strict-below rule scores it 0.
+   - The MAD floor (1 % of the 5th–95th percentile spread) stops a
+     divide-by-zero in a slot where the pump is always off.
+   - A stop in an hour where the pump is normally on gives a large z, so it
+     **is** marked unusual. So is a run in an hour where it is normally off.
+     That is what an advisory detector should show.
+
+   **Known gap.** A stop that falls on one weekday (for example, a weekly
+   shutdown) or moves from day to day looks unusual in hour-of-day mode. A
+   point moves to hour-of-week only when each of its 168 slots holds 8
+   samples, which needs about 56 days of data (about 2027-01-03 for BCPL).
+   From about 2026-12-06 to about 2027-01-03, a weekly stop would show as
+   unusual on its stop day each week. A start or stop inside an hour gives an
+   in-between hourly mean; if the time drifts by some minutes, the slot's
+   MAD absorbs it.
+
+   **Rejected alternatives:**
+   - *Wait for hour-of-week* (a 56-day floor for this class only): four more
+     weeks with no scores, and a per-class threshold the scorer does not have.
+   - *An "off" mask* (hours below a cut-off are neither scored nor used in
+     the baseline): it hides unplanned stops, the most useful thing a flow
+     meter can show, and needs a new cut-off constant per class.
+
+   The build proves the behaviour with fixture tests (made-up names only):
+   a daily stop at a fixed hour gives no stop hour ≥ 0.99 after the 28-day
+   reference fills; a stop in an hour that is normally on gives ≥ 0.99; a
+   meter that is always 0 scores 0. The owner reads the first week of BCPL
+   scores (about 2026-12-13) and rules again if stops fill the list.
+
+5. **Budget for the anomaly job** *(recommended)*. Flow meters add up to 21
+   baseline-only assets: 37 → up to 58 assets on the demo host (38 → 59 in
+   the CI fixture). The anomaly child took 12.1 s for 37 assets on the demo
+   host and 39.7 s for 38 assets (10 with a forest) in CI, at 159 MiB.
+   Baseline-only assets are the cheap case, so the expected cost is a few
+   seconds and a few MiB, far under 900 MiB and 300 s. `E1.2e` widens the
+   ruling-5 fixture by 21 one-point flow-meter assets, so the CI gate
+   measures the new shape. The `ml` job then takes about the same time as
+   now (one run, as the owner ruled).
+
+6. **Volume** *(recommended)*. One detector row per meter-hour: 21 × 24 ×
+   365 ≈ **0.18 M rows a year**, so about 0.9 M in all for `ml.anomaly_scores`
+   (Amendment 5 A-f). If `E1.4f` lands: 21 × 48 × 24 × 365 ≈ 8.8 M more
+   `ml.forecasts` rows a year, about 19 M a year for 45 series, under
+   Amendment 2 item 7's 50 M line.
+
+7. **When to merge** *(recommended; question 5)*. The anomaly target list is
+   part of the anomaly run's `config_hash` (`anomaly_config_hash`), so merging
+   changes the hash of every anomaly run from that cycle, even though no
+   existing asset's score changes (each asset is fitted alone). So `E1.2e`
+   is built now but **merged after the owner's one-week read** (about
+   2026-11-23). BCPL is not ready before about 2026-12-06 either way.
+
+**Backlog.** `E1.2e` (⬜, P2) is added under the closed `E1.2` umbrella, as
+`E1.4e` was added under `E1.4`; the umbrella stays ✅. `E1.4f` (⬜, parked)
+is added because question 3 was ruled "split", and `E1.4d`'s row drops water
+flow.
+
+**Consequences.** After `E1.2e`, from about 2026-12-06, BCPL meters appear on
+the *Anomalies* page, as chart marks and in the `anomaly` widget, all
+advisory. With the detector's current measured rate (about 7 % of
+asset-hours ≥ 0.99, against a design of about 1 %), 17 meters could add
+about 29 unusual hours a day to the list until the owner rules on that rate.
+AGENTS.md §2 *ML scoring* says "21 targets"; a `chore(agents):` catch-up
+(§9.10, the owner's yes) changes it to 22 and names the flow-meter class.
+This is not a §6 promotion.
+
+**Not in this amendment:** any threshold or detector constant; the
+totalizer, raw or derived; an Isolation Forest on flow meters; chemical
+dosing, utility demand or covariates (`E1.4d`); the owed `bms_ml` role; a
+change to the demo host's 1 vCPU / 1 GiB limit.
+
+**Open questions for the owner (all ruled 2026-11-17, the recommended answer each time):**
+
+1. **Anomaly target.** Add `water/flow_meter/treated_water_flow_klh` to the
+   anomaly targets, baseline only? *Recommended: yes.* **Ruled: yes.**
+2. **Totalizer.** Never use `outlet_flow_totalizer_kl` as a raw target in
+   either job, and leave a derived increment for a later amendment?
+   *Recommended: yes.* **Ruled: yes.**
+3. **Flow forecasts.** (a) Keep them inside parked `E1.4d`; (b) split them
+   out as `E1.4f`, parked until the start condition in item 3; or (c) build
+   them now with `E1.2e`, with the CI fixture at 45 series.
+   *Recommended: (b).* Nothing can be forecast before about 2027-01-03, and
+   the time and memory at 45 series are not measured yet. **Ruled: (b),
+   split out as `E1.4f`, parked.**
+4. **Zero flow.** (a) No special rule, with the tests in item 4 and a
+   review of the first week of BCPL scores; (b) a 56-day floor for this
+   class; or (c) an "off" mask. *Recommended: (a).* If you know BCPL's pumps
+   stop one day a week, (b) is the safer choice; please say so. **Ruled:
+   (a), no special rule.**
+5. **Merge timing.** Build `E1.2e` now and merge it after the one-week read
+   (about 2026-11-23)? *Recommended: yes.* **Ruled: yes.**
+
+## Amendment 8 — `E1.9`: plain-English findings and an organization + site filter on the ML pages (2026-11-17)
 
 **Status: Accepted — 2026-11-17** (owner, in chat: "accept as
 recommended"; proposed the same day in PR #1380). Drafted by an agent for
