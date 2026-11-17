@@ -46,6 +46,11 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
   ),
 }));
 
+/** `E1.8c` — the Bad actors card on the site body has its own suite (`site-page-bad-actors.spec.tsx`). */
+vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
+  HealthBadActorsCard: () => null,
+}));
+
 vi.mock("../../components/control-room/site-dashboard-view", () => ({
   SiteDashboardView: ({ wall }: { wall?: boolean }) => (
     <div data-testid="site-dashboard-view" data-wall={String(wall ?? false)} />

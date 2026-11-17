@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
 
 import { fetchLocationKpis } from "../../api/locations";
+import { HealthBadActorsCard } from "../../components/asset-health/health-bad-actors-card";
 import { HealthSummarySection } from "../../components/asset-health/health-summary-section";
 import { ActiveAlarmsRail } from "../../components/control-room/active-alarms-rail";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
@@ -63,6 +64,10 @@ type ControlRoomOrganizationPageProps = {
  * `E1.9e` (ADR 0135 Amendment 8 decision 13) — after Asset health: the compact findings card
  * (`MlFindingsCard`), both kinds, scoped to the organization. Like the other panels it renders only
  * with the overview.
+ *
+ * `E1.8c` (ADR 0050 Amendment 5) — directly after Asset health and before the findings card: the
+ * *Bad actors — advisory* card (`HealthBadActorsCard`), scoped to the organization, without its
+ * count line (the organization's sits under the donut).
  */
 export function ControlRoomOrganizationPage({
   user,
@@ -175,6 +180,8 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
       {/* `F4.337` — the strip's daily cost chart, between the alarms and Asset health. */}
       <OrganizationStripCharts key={`strip-charts-${organizationId}`} organizationId={organizationId} />
       <HealthSummarySection organizationId={organizationId} />
+      {/* `E1.8c` (ADR 0050 Amendment 5) — directly after Asset health; no count line, the donut has it. */}
+      <HealthBadActorsCard organizationId={organizationId} />
       {/* `E1.9e` (ADR 0135 Amendment 8 decision 13) — the compact findings card, after Asset health. */}
       <MlFindingsCard kinds={ORGANIZATION_FINDINGS_KINDS} scope={{ organizationId }} compact />
       {energyShown ? <OrganizationLoadTrend organizationId={organizationId} /> : null}

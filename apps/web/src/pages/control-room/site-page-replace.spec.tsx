@@ -22,6 +22,11 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
   MlFindingsCard: () => null,
 }));
 
+/** `E1.8c` — the Bad actors card on the site body has its own suite (`site-page-bad-actors.spec.tsx`). */
+vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
+  HealthBadActorsCard: () => null,
+}));
+
 /**
  * `F4.320` PR 2 (ADR 0087 Amendment 4 decision 8) — where the site page offers **Replace with this
  * version**: a master-data admin on a `dashboard` view that renders, when the preview says the view

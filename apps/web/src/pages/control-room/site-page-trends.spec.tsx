@@ -20,6 +20,11 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
   MlFindingsCard: () => null,
 }));
 
+/** `E1.8c` — the Bad actors card on the site body has its own suite (`site-page-bad-actors.spec.tsx`). */
+vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
+  HealthBadActorsCard: () => null,
+}));
+
 /**
  * `F4.302` U4 (ADR 0108 Amendment 4 items 1, 8) — the site page's third section, **Trends &
  * Energy** at `/trends`: rendered for every view kind once the resolve read has answered, exempt

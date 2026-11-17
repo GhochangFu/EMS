@@ -122,6 +122,29 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
 }));
 
 /*
+ * `E1.8c` (ADR 0050 Amendment 5) — the *Bad actors* card is a stand-in that prints the props the
+ * page passes (its read, tabs and states are gated by `health-bad-actors-card.spec.tsx`).
+ */
+vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
+  HealthBadActorsCard: ({
+    organizationId,
+    locationId,
+    showCount,
+  }: {
+    organizationId?: string;
+    locationId?: string;
+    showCount?: boolean;
+  }) => (
+    <div
+      data-testid="bad-actors-panel"
+      data-organization-id={organizationId}
+      data-location-id={locationId}
+      data-show-count={String(showCount ?? "(absent)")}
+    />
+  ),
+}));
+
+/*
  * `F3.79` — the site map is a stand-in too: it prints the organization id it is handed and
  * counts its mounts, so a case can tell a fresh map (keyed by organization) from a reused one.
  * Its own read is gated by `organization-site-map.spec.tsx`.
@@ -146,7 +169,14 @@ vi.mock("../../components/control-room/organization-site-map", () => ({
   },
 }));
 
-const PANELS = ["site-map-panel", "health-panel", "ml-findings-panel", "trend-panel", "dashboards-panel"] as const;
+const PANELS = [
+  "site-map-panel",
+  "health-panel",
+  "bad-actors-panel",
+  "ml-findings-panel",
+  "trend-panel",
+  "dashboards-panel",
+] as const;
 
 const ORG_ESKOM = { id: "org-eskom", code: "ESKOM", name: "Eskom" };
 const ORG_PHE = { id: "org-phe", code: "PHEWB", name: "PHE West Bengal" };
@@ -580,6 +610,27 @@ export async function theFindingsCardSitsAfterAssetHealth(): Promise<void> {
     card.compareDocumentPosition(trend) & Node.DOCUMENT_POSITION_FOLLOWING,
     "the load trend must follow the findings card",
   ).toBeTruthy();
+}
+
+/**
+ * P12 — `E1.8c` (ADR 0050 Amendment 5, plan T3.2): one *Bad actors* card for the organization,
+ * directly after Asset health and before the findings card, with no `showCount` (the
+ * organization's count line is under its donut).
+ */
+export async function theBadActorsCardSitsDirectlyAfterAssetHealth(): Promise<void> {
+  stubReads(TWO_ORGS);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  const cards = screen.getAllByTestId("bad-actors-panel");
+  expect(cards).toHaveLength(1);
+  const card = cards[0];
+  expect(card.dataset.organizationId).toBe(ORG_A.id);
+  expect(card.hasAttribute("data-location-id")).toBe(false);
+  expect(card.dataset.showCount).toBe("(absent)");
+  const health = screen.getByTestId("health-panel");
+  expect(health.nextElementSibling, "directly after Asset health").toBe(card);
+  expect(card.nextElementSibling, "the findings card follows it").toBe(screen.getByTestId("ml-findings-panel"));
 }
 
 /** Two organizations, each with two sites, so neither skips to a site. */
