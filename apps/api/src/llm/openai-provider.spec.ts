@@ -221,6 +221,31 @@ export async function assertAnEmptyToolListSendsNoToolsAndNoToolChoice(capture: 
 }
 
 /**
+ * Owner ruling Q2 (b) (`E1.9c`): a reply cut at the call's own limit
+ * (`finish_reason: "length"`) is a provider error, so the findings row is
+ * `failed` and retried later. Without a limit the reply is returned as before.
+ */
+export async function assertALengthCutIsAnErrorOnlyWithALimit(capture: OpenAiCapture): Promise<void> {
+  const cut = { choices: [{ message: { content: "half a para" }, finish_reason: "length" }] };
+  reset(capture, cut);
+  let thrown: unknown = null;
+  try {
+    await provider("openrouter").complete({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+      signal: new AbortController().signal,
+      maxOutputTokens: 4_000,
+    });
+  } catch (err) {
+    thrown = err;
+  }
+  assert(thrown instanceof LlmProviderError, "with a limit, a length cut is a provider error");
+  reset(capture, cut);
+  const reply = await provider("openrouter").complete({ messages: [{ role: "user", content: "hi" }], tools: [], signal: new AbortController().signal });
+  assert(reply.kind === "final" && reply.text === "half a para", "without a limit, the reply is as before");
+}
+
+/**
  * Owner ruling Q2 (b) (`E1.9c`): absent, no output limit is sent (as before);
  * present, OpenAI gets `max_completion_tokens` and OpenRouter `max_tokens`.
  */

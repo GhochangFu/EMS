@@ -27,6 +27,7 @@ import {
   assertAStringUserContentIsSentAsAString,
   assertAnEmptyToolListSendsNoToolsAndNoToolChoice,
   assertMaxOutputTokensIsSentOnlyWhenGiven,
+  assertALengthCutIsAnErrorOnlyWithALimit,
   assertFunctionToolCallsBecomeToolCalls,
   assertImageAndPdfPartsAreNativeParts,
   assertNoToolCallsIsFinalText,
@@ -50,6 +51,10 @@ describe("OpenAI-compatible provider (F3.21, ADR 0090 Amendment 1 A1)", () => {
 
   it("sends an output limit only when the call gives one (owner ruling Q2 (b))", async () => {
     await assertMaxOutputTokensIsSentOnlyWhenGiven(capture);
+  });
+
+  it("treats a length cut as a provider error only when the call set a limit (owner ruling Q2 (b))", async () => {
+    await assertALengthCutIsAnErrorOnlyWithALimit(capture);
   });
 
   it("sends a tool result with its call id", async () => {

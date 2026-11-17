@@ -70,6 +70,11 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     if (!message) {
       throw new LlmProviderError("the provider returned no choice");
     }
+    // Owner ruling Q2 (b): a reply cut at this call's own limit is not a paragraph. Calls
+    // without a limit (the copilot, the onboarding agent) are unchanged.
+    if (input.maxOutputTokens !== undefined && completion.choices?.[0]?.finish_reason === "length") {
+      throw new LlmProviderError("the reply was cut at the output limit");
+    }
     const calls = (message.tool_calls ?? []).flatMap((call) =>
       call.type === "function"
         ? [{ id: call.id, name: call.function.name, arguments: call.function.arguments }]
