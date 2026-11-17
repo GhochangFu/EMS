@@ -2,9 +2,11 @@ import {
   anomalyListResponseSchema,
   assetAnomaliesResponseSchema,
   forecastListResponseSchema,
+  mlFindingsSummaryResponseSchema,
   pastForecastResponseSchema,
   pointForecastResponseSchema,
 } from "@bms/shared/contracts";
+import type { MlFindingsKind, MlFindingsSummaryResponse } from "@bms/shared/contracts";
 import type {
   AnomalyListResponse,
   AssetAnomaliesResponse,
@@ -14,10 +16,26 @@ import type {
 } from "@bms/shared";
 
 import { ApiError } from "../lib/api-error";
+import { SCOPE_FILTER_KEYS, type ScopeFilter } from "../lib/scope-filter";
 import { clearSessionOnAuthFailure, withAuth } from "./http";
 import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+
+/** `E1.9b` (ADR 0135 Amendment 8 decision 8) — the two keys the ML list routes take. */
+const LIST_FILTER_KEYS = ["organizationId", "locationId"] as const;
+
+/** The query of `filter`'s `keys` that are set, in `keys` order; empty when none is. */
+function scopeParams(filter: ScopeFilter | undefined, keys: readonly (keyof ScopeFilter)[]): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const key of keys) {
+    const value = filter?.[key];
+    if (value) {
+      params.set(key, value);
+    }
+  }
+  return params;
+}
 
 /**
  * `E1.4a` / ADR 0135 Amendment 3 R-c — the forecast reads. Both parse through the shared contract
@@ -37,10 +55,14 @@ export async function fetchPointForecast(pointRefEncoded: string): Promise<Point
   return checkResponse(pointForecastResponseSchema, await res.json(), "ml/points/:pointRef/forecast");
 }
 
-/** `GET /api/v1/ml/forecasts` — one row per forecast point the caller can read. */
-export async function fetchForecastList(): Promise<ForecastListResponse> {
+/**
+ * `GET /api/v1/ml/forecasts[?organizationId=&locationId=]` — one row per forecast point the caller
+ * can read. Only the two list keys are sent (`E1.9b`); with none set the URL is the bare path.
+ */
+export async function fetchForecastList(filter?: ScopeFilter): Promise<ForecastListResponse> {
   const sent = withAuth();
-  const res = await fetch(`${base}/api/v1/ml/forecasts`, sent);
+  const query = scopeParams(filter, LIST_FILTER_KEYS).toString();
+  const res = await fetch(`${base}/api/v1/ml/forecasts${query ? `?${query}` : ""}`, sent);
   if (!res.ok) {
     clearSessionOnAuthFailure(res, sent);
     throw new ApiError(`ml forecasts ${res.status}`, res.status);
@@ -81,16 +103,40 @@ export async function fetchAssetAnomalies(assetId: string, from: string, to: str
 }
 
 /**
- * `E1.2b` — `GET /api/v1/ml/anomalies[?since=]`: the unusual hours of every asset the caller can
- * read, newest first, at most the last 7 days (the server clamps `since`). For the Anomalies list.
+ * `E1.2b` — `GET /api/v1/ml/anomalies[?organizationId=&locationId=&since=]`: the unusual hours of
+ * every asset the caller can read, newest first, at most the last 7 days (the server clamps
+ * `since`). For the Anomalies list. Only the two list keys are sent (`E1.9b`).
  */
-export async function fetchAnomalyList(since?: string): Promise<AnomalyListResponse> {
+export async function fetchAnomalyList(filter?: ScopeFilter, since?: string): Promise<AnomalyListResponse> {
   const sent = withAuth();
-  const query = since === undefined ? "" : `?since=${encodeURIComponent(since)}`;
-  const res = await fetch(`${base}/api/v1/ml/anomalies${query}`, sent);
+  const params = scopeParams(filter, LIST_FILTER_KEYS);
+  if (since !== undefined) {
+    params.set("since", since);
+  }
+  const query = params.toString();
+  const res = await fetch(`${base}/api/v1/ml/anomalies${query ? `?${query}` : ""}`, sent);
   if (!res.ok) {
     clearSessionOnAuthFailure(res, sent);
     throw new ApiError(`ml anomalies ${res.status}`, res.status);
   }
   return checkResponse(anomalyListResponseSchema, await res.json(), "ml/anomalies");
+}
+
+/**
+ * `E1.9b` (ADR 0135 Amendment 8 decisions 1, 2, 8) — `GET /api/v1/ml/forecasts/summary` or
+ * `GET /api/v1/ml/anomalies/summary`, with each of the four scope keys `scope` sets: the fixed fact
+ * sentences, one card per organization in scope that has any ML row.
+ */
+export async function fetchMlFindingsSummary(
+  kind: MlFindingsKind,
+  scope: ScopeFilter,
+): Promise<MlFindingsSummaryResponse> {
+  const sent = withAuth();
+  const query = scopeParams(scope, SCOPE_FILTER_KEYS).toString();
+  const res = await fetch(`${base}/api/v1/ml/${kind}/summary${query ? `?${query}` : ""}`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new ApiError(`ml findings summary ${res.status}`, res.status);
+  }
+  return checkResponse(mlFindingsSummaryResponseSchema, await res.json(), `ml/${kind}/summary`);
 }

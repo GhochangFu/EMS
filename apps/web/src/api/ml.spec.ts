@@ -2,7 +2,14 @@ import { expect, vi } from "vitest";
 
 import { encodePointRef } from "@bms/shared";
 
-import { fetchAnomalyList, fetchAssetAnomalies, fetchForecastList, fetchPastForecast, fetchPointForecast } from "./ml";
+import {
+  fetchAnomalyList,
+  fetchAssetAnomalies,
+  fetchForecastList,
+  fetchMlFindingsSummary,
+  fetchPastForecast,
+  fetchPointForecast,
+} from "./ml";
 
 /**
  * `E1.4a` — the forecast reads' wire shape and contract parse. `node` environment, like
@@ -150,10 +157,69 @@ export async function theAnomalyListReadHitsItsPathAndParses(): Promise<void> {
   const seen = answer(body);
   expect(await fetchAnomalyList()).toEqual(body);
   expect(seen()).toBe(`${BASE}/api/v1/ml/anomalies`);
-  await fetchAnomalyList("2026-11-10T00:00:00.000Z");
+  await fetchAnomalyList(undefined, "2026-11-10T00:00:00.000Z");
   expect(seen()).toBe(`${BASE}/api/v1/ml/anomalies?since=${encodeURIComponent("2026-11-10T00:00:00.000Z")}`);
   answer({ ...body, truncated: "no" });
   await expect(fetchAnomalyList()).rejects.toThrow();
   answer({ message: "boom" }, 500);
   await expect(fetchAnomalyList()).rejects.toThrow(/ml anomalies 500$/);
+}
+
+const ORG = "44444444-4444-4444-8444-444444444444";
+const SITE = "55555555-5555-4555-8555-555555555555";
+const GROUP = "66666666-6666-4666-8666-666666666666";
+
+/**
+ * `E1.9b` (ADR 0135 Amendment 8 decision 8, plan T2.1) — both list reads send `organizationId` and
+ * `locationId` only. No filter is today's URL; a key outside the two is never sent to a list route.
+ */
+export async function theListReadsSendOnlyOrganizationAndLocation(): Promise<void> {
+  const seen = answer(LIST);
+  await fetchForecastList({});
+  expect(seen()).toBe(`${BASE}/api/v1/ml/forecasts`);
+  await fetchForecastList({ organizationId: ORG });
+  expect(seen()).toBe(`${BASE}/api/v1/ml/forecasts?organizationId=${ORG}`);
+  await fetchForecastList({ organizationId: ORG, locationId: SITE, assetGroupId: GROUP, assetId: ASSET });
+  expect(seen()).toBe(`${BASE}/api/v1/ml/forecasts?organizationId=${ORG}&locationId=${SITE}`);
+
+  const anomalies = answer({ asOf: AS_OF, since: AS_OF, truncated: false, items: [] });
+  await fetchAnomalyList({});
+  expect(anomalies()).toBe(`${BASE}/api/v1/ml/anomalies`);
+  await fetchAnomalyList({ locationId: SITE, assetGroupId: GROUP });
+  expect(anomalies()).toBe(`${BASE}/api/v1/ml/anomalies?locationId=${SITE}`);
+  await fetchAnomalyList({ organizationId: ORG, assetId: ASSET }, "2026-11-10T00:00:00.000Z");
+  expect(anomalies()).toBe(
+    `${BASE}/api/v1/ml/anomalies?organizationId=${ORG}&since=${encodeURIComponent("2026-11-10T00:00:00.000Z")}`,
+  );
+}
+
+const SUMMARY = {
+  asOf: AS_OF,
+  cards: [
+    {
+      organizationId: ORG,
+      organizationCode: "ORGQ",
+      organizationName: "Quill Works",
+      facts: [{ id: "F1", segments: [{ text: "2 forecast points, issued at 16 Nov 15:35; 0 stale." }] }],
+      assets: [],
+    },
+  ],
+};
+
+/**
+ * `E1.9b` (plan T2.1) — the summary read goes to its kind's path with every scope key it is given,
+ * and parses; a wrong shape throws in test and a 500 names its status.
+ */
+export async function theSummaryReadSendsItsScopeAndParses(): Promise<void> {
+  const seen = answer(SUMMARY);
+  expect(await fetchMlFindingsSummary("forecasts", {})).toEqual(SUMMARY);
+  expect(seen()).toBe(`${BASE}/api/v1/ml/forecasts/summary`);
+  await fetchMlFindingsSummary("anomalies", { organizationId: ORG, locationId: SITE });
+  expect(seen()).toBe(`${BASE}/api/v1/ml/anomalies/summary?organizationId=${ORG}&locationId=${SITE}`);
+  await fetchMlFindingsSummary("anomalies", { assetGroupId: GROUP, assetId: ASSET });
+  expect(seen()).toBe(`${BASE}/api/v1/ml/anomalies/summary?assetGroupId=${GROUP}&assetId=${ASSET}`);
+  answer({ asOf: AS_OF, cards: [{ ...SUMMARY.cards[0], facts: [] }] });
+  await expect(fetchMlFindingsSummary("forecasts", {})).rejects.toThrow();
+  answer({ message: "boom" }, 500);
+  await expect(fetchMlFindingsSummary("forecasts", {})).rejects.toThrow(/^ml findings summary 500$/);
 }

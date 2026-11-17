@@ -45,7 +45,7 @@ type ForecastsPageProps = {
 export function ForecastsPage({ user }: ForecastsPageProps) {
   const listQ = useQuery({
     queryKey: ["ml-forecasts"],
-    queryFn: fetchForecastList,
+    queryFn: () => fetchForecastList(),
     refetchInterval: FORECAST_REFETCH_MS,
     retry: retryUnlessForbidden,
   });
