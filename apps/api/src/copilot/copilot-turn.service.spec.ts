@@ -175,8 +175,8 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
   };
   const ready = (image: boolean): ResolvedLlm =>
     image && options.visionLlm !== undefined
-      ? { kind: "ready", provider: options.visionLlm as LlmProvider, source: "organization", vision: true }
-      : { kind: "ready", provider: llm as LlmProvider, source: "organization", vision: false };
+      ? { kind: "ready", provider: options.visionLlm as LlmProvider, source: "organization", vision: true, model: "fake-vision-model" }
+      : { kind: "ready", provider: llm as LlmProvider, source: "organization", vision: false, model: "fake-model" };
   const resolver = {
     resolveForOrganization: async (id: string, resolveOptions: { readonly image?: boolean } = {}): Promise<ResolvedLlm> => {
       counts.resolveForOrganization.push(id);

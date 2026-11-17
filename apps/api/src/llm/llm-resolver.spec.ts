@@ -168,6 +168,7 @@ export async function assertNoRowUsesThePlatformDefault(): Promise<void> {
     const resolved = await r.resolveForOrganization("org-1");
     assert(resolved.kind === "ready" && resolved.source === "platform", "no row resolves to the platform");
     assert(JSON.stringify(built) === JSON.stringify([{ name: "openrouter", apiKey: "plat-key", model: "z-ai/glm-5.3-flash" }]), "with the platform key and model");
+    assert(resolved.kind === "ready" && resolved.model === "z-ai/glm-5.3-flash", "E1.9c R-e: the ready answer carries the platform model");
   });
 }
 
@@ -186,6 +187,7 @@ export async function assertACompleteRowBuildsThatProvider(): Promise<void> {
     const resolved = await r.resolveForOrganization("org-1");
     assert(resolved.kind === "ready" && resolved.source === "organization", "a complete row resolves to the organization");
     assert(JSON.stringify(built) === JSON.stringify([{ name: "anthropic", apiKey: "org-key", model: "claude-sonnet-5-5" }]), "with its own key and model");
+    assert(resolved.kind === "ready" && resolved.model === "claude-sonnet-5-5", "E1.9c R-e: the ready answer carries the row's model");
   });
 }
 
@@ -319,6 +321,7 @@ export async function assertAnImageTurnBuildsTheRowsVisionModel(): Promise<void>
       JSON.stringify(built) === JSON.stringify([{ name: "openrouter", apiKey: "org-key", model: "qwen/qwen3-vl" }]),
       `the vision model on the same key, got ${JSON.stringify(built)}`,
     );
+    assert(resolved.kind === "ready" && resolved.model === "qwen/qwen3-vl", "E1.9c R-e: the model is the one built");
   });
 }
 

@@ -53,6 +53,8 @@ export type ResolvedLlm =
       readonly source: "organization" | "platform";
       /** F4.267 / ADR 0090 Amendment 3 C3: true when an image turn was given the vision model rather than the main one. */
       readonly vision: boolean;
+      /** `E1.9c` (ADR 0135 Amendment 8, plan R-e): the model the provider was built with; the findings cache records it. */
+      readonly model: string;
     }
   | {
       readonly kind: "guided";
@@ -209,6 +211,7 @@ export class LlmResolver implements OnModuleInit {
         provider: this.buildProvider(row.provider, { apiKey, model }),
         source: "organization",
         vision,
+        model,
       };
     }
     const platform = this.platformDefault();
@@ -225,6 +228,7 @@ export class LlmResolver implements OnModuleInit {
       provider: this.buildProvider(platform.provider, { apiKey: platform.apiKey, model }),
       source: "platform",
       vision,
+      model,
     };
   }
 
