@@ -14,6 +14,7 @@ import {
   TEMPLATE_FORECAST_MESSAGE,
   TEMPLATE_MIMIC_LAYOUT_MESSAGE,
   TEMPLATE_MIMIC_TAB_MESSAGE,
+  TEMPLATE_ML_FINDINGS_MESSAGE,
   TEMPLATE_TARGET_BODY_MESSAGE,
   TEMPLATE_TREND_STRIP_SELECTION_MESSAGE,
   templateTargetBodyMessage,
@@ -660,6 +661,59 @@ export function rejectsAnAnomalyWidgetInEitherTemplateContract(): void {
     config: {},
   });
   assert(asAssetTemplate.success === false, "an asset template's dashboard widget must refuse anomaly");
+}
+
+// ---------------------------------------------------------------- E1.9f
+
+function mlFindings(): unknown {
+  return widget({
+    key: "mf",
+    widgetType: "ml_findings",
+    gridW: 6,
+    gridH: 4,
+    config: { show: "both", paragraph: true },
+  });
+}
+
+/**
+ * `E1.9f` / ADR 0135 Amendment 8 decision 13 — no template surface holds an `ml_findings` widget.
+ * The site widgets are allowed in templates, so a dashboard template refuses this kind **by name**
+ * at its `widgetType`, on the Overview (`POST` and `PATCH`) and in a tab; an asset template has no
+ * arm for it (it binds no point).
+ */
+export function rejectsAnMlFindingsWidgetInEitherTemplateContract(): void {
+  expectRejectsAt(
+    updateDashboardTemplateBodySchema,
+    { content: { widgets: [mlFindings()] } },
+    ["content", "widgets", 0, "widgetType"],
+    new RegExp(TEMPLATE_ML_FINDINGS_MESSAGE),
+    "a PATCH body whose Overview widget is an ml_findings widget",
+  );
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    createBody({ target: "asset_group", content: { widgets: [mlFindings()] } }),
+    ["content", "widgets", 0, "widgetType"],
+    new RegExp(TEMPLATE_ML_FINDINGS_MESSAGE),
+    "an asset-group POST body whose canvas holds an ml_findings widget",
+  );
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    createBody({ target: "site", content: { widgets: [], tabs: [siteTab({ widgets: [mlFindings()] })] } }),
+    ["content", "tabs", 0, "widgets", 0, "widgetType"],
+    new RegExp(TEMPLATE_ML_FINDINGS_MESSAGE),
+    "a site POST body whose tab holds an ml_findings widget",
+  );
+  const asAssetTemplate = templateDashboardWidgetSchema.safeParse({
+    title: "Findings",
+    gridX: 0,
+    gridY: 0,
+    gridW: 6,
+    gridH: 4,
+    widgetType: "ml_findings",
+    pointKeys: [],
+    config: {},
+  });
+  assert(asAssetTemplate.success === false, "an asset template's dashboard widget must refuse ml_findings");
 }
 
 // ---------------------------------------------------------------- F4.317

@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 
-import type { MimicLayoutsListResponse } from "@bms/shared";
+import { widgetTypeSchema, type MimicLayoutsListResponse } from "@bms/shared";
 
 import { blankDashboardWidgetRow, type DashboardBuilderProblem, type DashboardWidgetRow } from "../../lib/dashboard-builder-form";
 import { WidgetInspector } from "./widget-inspector";
@@ -341,6 +341,49 @@ export function anAnomalyShowsBoundPointsAndTheAdvisoryLineOnly(): void {
   expect(screen.getByTestId("anomaly-inspector-note").textContent).toBe(
     "Advisory. The asset's anomaly score for the last 7 days. The bound point names the asset.",
   );
+}
+
+/**
+ * `E1.9f` (ADR 0135 Amendment 8 decision 13) — an ml_findings widget binds nothing: its advisory
+ * line, a Show select and an AI paragraph checkbox, and no Unit, Decimals or point picker. A
+ * change of either control patches its own config key.
+ */
+export async function anMlFindingsShowsTheNoteShowAndParagraphOnly(): Promise<void> {
+  const onChange = vi.fn();
+  renderInspector(blankDashboardWidgetRow("ml_findings"), { onChange });
+  expect(screen.getByTestId("ml-findings-inspector-note").textContent).toBe(
+    "Advisory. Forecast and anomaly findings for this dashboard's scope.",
+  );
+  const show = screen.getByRole("combobox", { name: "Show" }) as HTMLSelectElement;
+  expect(show.value).toBe("both");
+  expect([...show.options].map((option) => [option.value, option.text])).toEqual([
+    ["both", "Both"],
+    ["forecasts", "Forecasts"],
+    ["anomalies", "Anomalies"],
+  ]);
+  const paragraph = screen.getByRole("checkbox", { name: "AI paragraph" }) as HTMLInputElement;
+  expect(paragraph.checked).toBe(true);
+  expect(screen.queryByText("Unit", { exact: true })).toBeNull();
+  expect(screen.queryByText("Decimals", { exact: true })).toBeNull();
+  expect(screen.queryByText("Bound points", { exact: true })).toBeNull();
+  expect(screen.queryByText("Named metric", { exact: true })).toBeNull();
+
+  await userEvent.selectOptions(show, "anomalies");
+  expect(onChange).toHaveBeenLastCalledWith({ config: expect.objectContaining({ mlFindingsShow: "anomalies" }) });
+  await userEvent.click(paragraph);
+  expect(onChange).toHaveBeenLastCalledWith({ config: expect.objectContaining({ mlFindingsParagraph: false }) });
+}
+
+/** `E1.9f` — the note and both controls show for no other widget type. */
+export function noOtherTypeShowsTheMlFindingsFields(): void {
+  for (const widgetType of widgetTypeSchema.options.filter((type) => type !== "ml_findings")) {
+    renderInspector(blankDashboardWidgetRow(widgetType));
+    expect(screen.queryByTestId("ml-findings-inspector-note"), widgetType).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "AI paragraph" }), widgetType).toBeNull();
+    // A value tile has its own "Show" select (the reading), so the findings select is told by its option.
+    expect(screen.queryByRole("option", { name: "Anomalies" }), widgetType).toBeNull();
+    cleanup();
+  }
 }
 
 export function aRailShowsItsRowsAtTheDefault(): void {

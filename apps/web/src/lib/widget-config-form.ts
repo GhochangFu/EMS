@@ -29,6 +29,7 @@ import type {
   ChartSeriesKind,
   DashboardWidgetSpec,
   MimicPreset,
+  MlFindingsWidgetShow,
   PointAggregateFunction,
   SeriesRole,
   TemplateAuthorableWidgetType,
@@ -353,6 +354,11 @@ export type WidgetConfigRow = {
   stripColors?: TrendStripConfig["colors"];
   // trend_strip — `F4.323` PR 3 (ADR 0108 Amendment 8). `config.styles`, carried like `stripColors`.
   stripStyles?: TrendStripConfig["styles"];
+  // ml_findings — `E1.9f` (ADR 0135 Amendment 8 decision 13). `config.show` and `config.paragraph`.
+  // Optional, the mimic idiom, because a template can never hold this widget. Absent reads as the
+  // renderer's defaults ("both", true); `blankDashboardWidgetRow` and `configRowFromDto` set both.
+  mlFindingsShow?: MlFindingsWidgetShow;
+  mlFindingsParagraph?: boolean;
 };
 
 export function blankConfigRow(): WidgetConfigRow {

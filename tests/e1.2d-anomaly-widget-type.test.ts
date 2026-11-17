@@ -78,9 +78,11 @@ describe("E1.2d — the anomaly widget type migration", () => {
     for (const type of previous) expect(now, `${type} must stay accepted`).toContain(type);
   });
 
-  it("lists exactly the contract's widgetTypeSchema, in order, anomaly last", () => {
-    expect(checkList(sqlOnly(read(migrationRel())))).toEqual(widgetTypes());
-    expect(widgetTypes().at(-1)).toBe("anomaly");
+  // E1.9f: 0161 is frozen at fifteen; the effective CHECK is `*_ml_findings_widget_type.sql`'s.
+  it("is frozen at fifteen and equals the enum less ml_findings, anomaly last of those", () => {
+    const before = widgetTypes().filter((value) => value !== "ml_findings");
+    expect(checkList(sqlOnly(read(migrationRel())))).toEqual(before);
+    expect(before.at(-1)).toBe("anomaly");
   });
 
   it("drops the constraint before adding it, with no IF NOT EXISTS guard on the ADD", () => {

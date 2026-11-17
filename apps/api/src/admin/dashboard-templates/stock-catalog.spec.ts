@@ -651,3 +651,21 @@ export function runNoStockTemplateHoldsAnAnomalyTest(): void {
   assert(types.length > 10, `the walk found only ${types.length} widgets; it is not reading the catalog`);
   assert(!types.includes("anomaly"), "a stock dashboard template holds an anomaly widget (R15 forbids it)");
 }
+
+/**
+ * `E1.9f` / ADR 0135 Amendment 8 decision 13 — no stock template holds an `ml_findings` widget
+ * (builder palette only), for the reason the forecast test above gives. Canvas and every tab.
+ */
+export function runNoStockTemplateHoldsAnMlFindingsTest(): void {
+  const types = STOCK_DASHBOARD_TEMPLATE_CATALOG.flatMap((entry) => {
+    const content = entry.content as {
+      readonly widgets?: readonly { readonly widgetType: string }[];
+      readonly tabs?: readonly { readonly widgets?: readonly { readonly widgetType: string }[] }[];
+    };
+    return [...(content.widgets ?? []), ...(content.tabs ?? []).flatMap((tab) => tab.widgets ?? [])].map(
+      (widget) => widget.widgetType,
+    );
+  });
+  assert(types.length > 10, `the walk found only ${types.length} widgets; it is not reading the catalog`);
+  assert(!types.includes("ml_findings"), "a stock dashboard template holds an ml_findings widget (palette only)");
+}

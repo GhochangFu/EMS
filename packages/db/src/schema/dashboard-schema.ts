@@ -315,8 +315,9 @@ export const dashboardTabs = bmsSchema.table(
  * `0086` added `mimic`, and `0096` (F3.73) added the five site widgets — `active_alarms_rail`,
  * `state_legend`, `asset_class_strip`, `module_summary_card`, `critical_systems_list` — for
  * eleven, `0099` (F3.74) added `breaker_table` for twelve, `0118` (F4.305) added `trend_strip`
- * for thirteen, `0159` (E1.4c) added `forecast` for fourteen, and `0161` (E1.2d) added `anomaly`
- * for fifteen — the effective CHECK; `tests/e1.2d-anomaly-widget-type.test.ts`,
+ * for thirteen, `0159` (E1.4c) added `forecast` for fourteen, `0161` (E1.2d) added `anomaly`
+ * for fifteen, and `0163` (E1.9f) added `ml_findings` for sixteen — the effective CHECK;
+ * `tests/e1.9f-ml-findings-widget-type.test.ts`,
  * `tests/f3.73-site-widget-types.test.ts` and
  * `tests/f3.32-mimic-widget.test.ts` compare the list to `widgetTypeSchema`.
  *

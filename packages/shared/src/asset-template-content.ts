@@ -216,6 +216,8 @@ export type TemplateMaintenancePlan = {
  * clause**: they read the site-widgets endpoint and bind no point. **`E1.4c`'s `forecast` passes
  * both clauses and is excluded by name** (ADR 0135 Amendment 3 R-f, plan R12): builder palette only.
  * **`E1.2d`'s `anomaly` likewise** (ADR 0135 Amendment 5 ruling 4(c), plan R15).
+ * **`E1.9f`'s `ml_findings` fails the second clause** (it binds nothing) and is also refused by name
+ * in the dashboard-template walk (ADR 0135 Amendment 8 decision 13).
  */
 export type TemplateDashboardWidget = {
   pointKeys: string[];
@@ -238,7 +240,8 @@ export type TemplateDashboardWidget = {
       | "breaker_table"
       | "trend_strip"
       | "forecast"
-      | "anomaly";
+      | "anomaly"
+      | "ml_findings";
   }
 >;
 

@@ -15,6 +15,7 @@ import {
   wallOnTheTrendsSectionRendersTheNormalPage,
   theWallLinkOmitsTheTrendsSegment,
   thePageHandsTheSitesEnergyShown,
+  aSiteDashboardDrawsMlFindingsOffTheWallOnly,
 } from "./site-page-wall.spec";
 
 /**
@@ -90,5 +91,19 @@ describe("F4.375 — the site page hands energyShown to the site layout (ADR 013
 
   it("P10 the page body hands energyShown true", async () => {
     await thePageHandsTheSitesEnergyShown(false, true);
+  });
+});
+
+describe("E1.9f — the ml_findings widget is not on the wall (ADR 0135 Amendment 8 decision 13, Q4)", () => {
+  afterEach(() => {
+    cleanupWall();
+  });
+
+  it("P12 a site dashboard does not draw its ml_findings widget on the wall", async () => {
+    await aSiteDashboardDrawsMlFindingsOffTheWallOnly(true);
+  });
+
+  it("P12 a site dashboard draws its ml_findings widget off the wall", async () => {
+    await aSiteDashboardDrawsMlFindingsOffTheWallOnly(false);
   });
 });

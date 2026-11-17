@@ -131,6 +131,9 @@ function sampleWidget(widgetType: WidgetType, title: string | null = "Feed pump 
     // `E1.2d` — the anomaly widget's config is `{}`; with no point it draws its title and "No point bound.".
     case "anomaly":
       return { ...IDENTITY, title, widgetType, config: {} };
+    // `E1.9f` — the ml_findings widget binds nothing; the builder draws its title and advisory line.
+    case "ml_findings":
+      return { ...IDENTITY, title, widgetType, config: { show: "both", paragraph: true } };
     default: {
       const unreachable: never = widgetType;
       return unreachable;
@@ -151,12 +154,12 @@ const WIDGET_TYPES = Object.keys(WIDGET_CATALOG) as WidgetType[];
 export function everyCatalogTypeDrawsItsTitle(): void {
   expect(
     WIDGET_TYPES.length,
-    "the catalog holds fifteen widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
+    "the catalog holds sixteen widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
       "decision 5, `F3.35` Stage B; `mimic` by ADR 0079 decision 1, `F3.32`; the five site " +
       "widgets by `F3.73`; `breaker_table` by `F3.74`; `trend_strip` by `F4.305`; `forecast` by `E1.4c`; " +
-      "`anomaly` by `E1.2d`). A zero means the walk is broken and the loop below asserts nothing; " +
-      "a sixteen means a type was added — widen this number and say so.",
-  ).toBe(15);
+      "`anomaly` by `E1.2d`; `ml_findings` by `E1.9f`). A zero means the walk is broken and the loop " +
+      "below asserts nothing; a seventeen means a type was added — widen this number and say so.",
+  ).toBe(16);
 
   for (const widgetType of WIDGET_TYPES) {
     const { unmount } = render(

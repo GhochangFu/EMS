@@ -12,6 +12,7 @@ import { DashboardWidget } from "../widgets/dashboard-widget";
 import { AnomalyWidgetLive } from "./anomaly-widget-live";
 import { ForecastWidgetLive } from "./forecast-widget-live";
 import { MimicWidgetLive } from "./mimic-widget-live";
+import { MlFindingsWidgetLive, type MlFindingsWidgetScope } from "./ml-findings-widget-live";
 import { isSiteWidget, SiteWidgetLive } from "./site-widget-live";
 import { TrendStripWidgetLive, type TrendStripTabScope } from "./trend-strip-widget-live";
 
@@ -31,6 +32,9 @@ type DashboardWidgetLiveProps = {
   /** `F4.305` — the dashboard's tabs, so a `trend_strip`'s `config.tabKey` resolves to its group.
    * Required for the same reason. */
   tabs: readonly TrendStripTabScope[];
+  /** `E1.9f` — the dashboard's own scope, the one an `ml_findings` widget reads. Required, like
+   * `locationId`, so a second host cannot forget it and read every organization's findings. */
+  scope: MlFindingsWidgetScope;
   latestByRef: LatestByRef;
   historyByRef: HistoryByRef;
   /** `F3.35` — the aggregate reads this dashboard needed. Empty for a dashboard that uses none. */
@@ -57,6 +61,8 @@ type DashboardWidgetLiveProps = {
  * `pointRefsFor` skips it, so nothing in the two maps is its).
  * **`E1.2d` — and for the `anomaly`** (`AnomalyWidgetLive`: its asset's anomaly read; skipped by
  * `pointRefsFor` too).
+ * **`E1.9f` — and for the `ml_findings`** (`MlFindingsWidgetLive`: the findings of `scope`; it binds
+ * nothing, so nothing in the two maps is its).
  */
 export function DashboardWidgetLive({
   widget,
@@ -64,6 +70,7 @@ export function DashboardWidgetLive({
   tabKey,
   locationId,
   tabs,
+  scope,
   latestByRef,
   historyByRef,
   aggregateByKey,
@@ -85,6 +92,9 @@ export function DashboardWidgetLive({
   }
   if (widget.widgetType === "anomaly") {
     return <AnomalyWidgetLive widget={widget} />;
+  }
+  if (widget.widgetType === "ml_findings") {
+    return <MlFindingsWidgetLive widget={widget} scope={scope} />;
   }
   // Resolved ONCE and reused for both the staleness gate and the chart's rolling window — two
   // clock reads in one render pass could otherwise disagree by the render's own duration.

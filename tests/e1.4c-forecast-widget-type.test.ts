@@ -78,9 +78,9 @@ describe("E1.4c — the forecast widget type migration", () => {
     for (const type of previous) expect(now, `${type} must stay accepted`).toContain(type);
   });
 
-  // E1.2d: 0159 is frozen at fourteen; the effective CHECK is `*_anomaly_widget_type.sql`'s.
-  it("is frozen at fourteen and equals the enum less anomaly, forecast last of those", () => {
-    const before = widgetTypes().filter((value) => value !== "anomaly");
+  // E1.2d / E1.9f: 0159 is frozen at fourteen; the effective CHECK is `*_ml_findings_widget_type.sql`'s.
+  it("is frozen at fourteen and equals the enum less anomaly and ml_findings, forecast last of those", () => {
+    const before = widgetTypes().filter((value) => value !== "anomaly" && value !== "ml_findings");
     expect(checkList(sqlOnly(read(migrationRel())))).toEqual(before);
     expect(before.at(-1)).toBe("forecast");
   });

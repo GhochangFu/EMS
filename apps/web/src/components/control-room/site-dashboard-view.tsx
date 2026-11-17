@@ -154,7 +154,7 @@ export function SiteDashboardView({
             })}
           </nav>
         ) : null}
-        <DashboardLiveCanvas dashboard={dashboardQ.data} tabKey={selected?.key} energyShown={energyShown} />
+        <DashboardLiveCanvas dashboard={dashboardQ.data} tabKey={selected?.key} energyShown={energyShown} wall={wall} />
       </>
     ) : dashboardQ.isError ? (
       <div role="alert" className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">

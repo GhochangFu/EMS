@@ -41,6 +41,7 @@
     "tests/e1.2b-ml-anomaly-read-grant.integration.test.ts",
     "tests/e1.4c-forecast-widget-type.test.ts",
     "tests/e1.2d-anomaly-widget-type.test.ts",
+    "tests/e1.9f-ml-findings-widget-type.test.ts",
     "tests/e1.2b-ml-anomaly-containment.test.ts",
     "tests/e1.9-ml-findings-containment.test.ts",
     "tests/e1.9c-ml-finding-paragraphs-schema.test.ts",

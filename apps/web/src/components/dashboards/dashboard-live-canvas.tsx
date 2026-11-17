@@ -30,7 +30,16 @@ type DashboardLiveCanvasProps = {
    * nothing, so it draws every stored widget (ruling Q3). Nothing stored changes.
    */
   energyShown?: boolean;
+  /**
+   * `E1.9f` (ADR 0135 Amendment 8 decision 13; plan Q4 (a)) — `true` on the control-room wall: an
+   * `ml_findings` widget is not drawn there (neither ML findings surface is on the wall). The
+   * `forecast` and `anomaly` widgets still draw. Default `false`.
+   */
+  wall?: boolean;
 };
+
+/** `E1.9f` (Q4 (a)) — the one widget kind the wall does not draw. */
+const isWallHidden = (widget: DashboardWidgetDto): boolean => widget.widgetType === "ml_findings";
 
 /**
  * `E1.2d` — an `anomaly` widget is never kW-only: its one point only names the asset (plan R16)
@@ -65,22 +74,33 @@ function SiteWidgetsAlarmRefresh() {
  * selected tab) and `DashboardCanvas` + `DashboardWidgetLive`. The caller owns the query,
  * loading and error states.
  */
-export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey, energyShown = true }: DashboardLiveCanvasProps) {
+export function DashboardLiveCanvas({
+  dashboard: fullDashboard,
+  tabKey,
+  energyShown = true,
+  wall = false,
+}: DashboardLiveCanvasProps) {
   // `F3.73` — the selected tab's slice. The telemetry hook keys its reads on the slice's point refs,
   // not on this object, so a tab switch re-tracks only the refs the new tab shows.
   // `F4.375` (D9) — the kW-only filter runs here too, before `useDashboardTelemetry`, so a hidden
   // widget's point refs and asset windows are never read (its catalog source still rides the
   // dashboard's one catalog read, which the server resolves whole).
-  const { dashboard, hiddenCount } = useMemo(() => {
+  // `E1.9f` (Q4 (a)) — on the wall the `ml_findings` tiles are dropped in the same pass; they are
+  // not counted as energy-hidden (`wallHidden` counts them), and their gap is left as stored.
+  const { dashboard, hiddenCount, wallHidden } = useMemo(() => {
     const tabId = tabKey === undefined ? undefined : fullDashboard.tabs.find((tab) => tab.key === tabKey)?.id;
     const slice =
       tabKey === undefined ? fullDashboard.widgets : fullDashboard.widgets.filter((widget) => widget.tabId === tabId);
     const visible = visibleTiles(slice, energyShown, isKwOnlyWidget);
+    // The same array back when nothing is dropped, so an unchanged canvas keeps its DTO.
+    const drawn =
+      wall && visible.tiles.some(isWallHidden) ? visible.tiles.filter((widget) => !isWallHidden(widget)) : visible.tiles;
     return {
-      dashboard: visible.tiles === fullDashboard.widgets ? fullDashboard : { ...fullDashboard, widgets: [...visible.tiles] },
+      dashboard: drawn === fullDashboard.widgets ? fullDashboard : { ...fullDashboard, widgets: [...drawn] },
       hiddenCount: visible.hidden,
+      wallHidden: visible.tiles.length - drawn.length,
     };
-  }, [fullDashboard, tabKey, energyShown]);
+  }, [fullDashboard, tabKey, energyShown, wall]);
   const { latestByRef, historyByRef, aggregateByKey, catalog } = useDashboardTelemetry(dashboard);
   const now = Date.now();
   // `F4.350` (ADR 0075 Amendment 3): each bound asset is aged on its own RTU's window. Until the
@@ -118,6 +138,13 @@ export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey, energySh
   }, [reportNewestRead, newestMs, widestWindowMs]);
   // `F3.73` — a widget's tab key, read through the dashboard's own tabs (`dashboardRowsFromDto`'s rule).
   const tabKeyById = new Map(dashboard.tabs.map((tab) => [tab.id, tab.key]));
+  // `E1.9f` — the dashboard's own scope, the one an `ml_findings` widget reads.
+  const dashboardScope = {
+    organizationId: fullDashboard.organizationId,
+    locationId: fullDashboard.locationId,
+    assetGroupId: fullDashboard.assetGroupId,
+    assetId: fullDashboard.assetId,
+  };
 
   const tiles: WidgetTile[] = dashboard.widgets.map((widget) => ({
     key: widget.id,
@@ -137,6 +164,20 @@ export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey, energySh
         className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted"
       >
         {`No widget on this ${tabKey === undefined ? "dashboard" : "tab"} is shown while energy is not shown for this site.`}
+      </p>
+    );
+  }
+
+  if (tiles.length === 0 && wallHidden > 0) {
+    // `E1.9f` (Q4 (a)) — the wall leaves out this tab's findings widgets; "no widgets yet" would be
+    // false. A neutral muted line, as the energy branch above.
+    return (
+      <p
+        role="status"
+        data-testid="wall-hidden-canvas"
+        className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted"
+      >
+        {`Nothing on this ${tabKey === undefined ? "dashboard" : "tab"} is shown on the wall.`}
       </p>
     );
   }
@@ -165,6 +206,7 @@ export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey, energySh
             tabKey={tile.widget.tabId === null ? null : (tabKeyById.get(tile.widget.tabId) ?? null)}
             locationId={fullDashboard.locationId}
             tabs={fullDashboard.tabs}
+            scope={dashboardScope}
             latestByRef={latestByRef}
             historyByRef={historyByRef}
             aggregateByKey={aggregateByKey}
