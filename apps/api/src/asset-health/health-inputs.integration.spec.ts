@@ -208,7 +208,14 @@ export async function assertTheRuleScoreDoesNotMove(ctx: HealthInputsFixtures): 
   expect(forAsset).toEqual(ctx.before.forAsset);
 }
 
-type PlanNode = { "Node Type"?: string; "Relation Name"?: string; "Index Name"?: string; "Index Cond"?: string; Plans?: PlanNode[] };
+type PlanNode = {
+  "Node Type"?: string;
+  "Relation Name"?: string;
+  "Index Name"?: string;
+  "Index Cond"?: string;
+  "Recheck Cond"?: string;
+  Plans?: PlanNode[];
+};
 type Scan = { relation: string; type: string; index: string | undefined; cond: string };
 
 const RELATIONS = ["anomaly_scores", "work_orders"];
@@ -218,7 +225,7 @@ const scansOf = (node: PlanNode): Scan[] => {
     node["Relation Name"] ?? RELATIONS.find((r) => index !== undefined && index.startsWith(`${r}_`)) ?? undefined;
   const here =
     relation !== undefined && RELATIONS.includes(relation)
-      ? [{ relation, type: node["Node Type"] ?? "", index, cond: node["Index Cond"] ?? "" }]
+      ? [{ relation, type: node["Node Type"] ?? "", index, cond: node["Index Cond"] ?? node["Recheck Cond"] ?? "" }]
       : [];
   return [...here, ...(node.Plans ?? []).flatMap(scansOf)];
 };

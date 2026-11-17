@@ -110,6 +110,19 @@ export async function theInputsRouteChecksTheIdThenTheAsset(): Promise<void> {
   expect(allowed.forAssetCalls[0]?.now).toBeInstanceOf(Date);
 }
 
+/**
+ * `inputs`: an upper-case UUID is lower-cased before `canReadAsset` and the service (code and
+ * security review, E1.8a). The reads return the lower-case `asset_id`, and the service matches its
+ * row by plain string equality, so an upper-case id would drop the anomaly history silently.
+ */
+export async function anUpperCaseAssetIdIsLowerCased(): Promise<void> {
+  const lower = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+  const h = harness();
+  await h.controller.forAsset(USER, lower.toUpperCase());
+  expect(h.access).toEqual([`canReadAsset:${lower}`]);
+  expect(h.forAssetCalls[0]?.assetId).toBe(lower);
+}
+
 /** `badActors`: a bad query is a 400 before any access call. */
 export async function aBadQueryIsRefusedBeforeAccessControl(): Promise<void> {
   for (const query of [{ organizationId: "nope" }, { windowMinutes: "60" }, { assetGroupId: ORGANIZATION_ID }]) {

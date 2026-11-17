@@ -38,7 +38,8 @@ export class HealthInputsController {
     @CurrentUser() user: JwtPayload,
     @Param("assetId") assetIdParam: string,
   ): Promise<AssetHealthInputsResponse> {
-    const assetId = assertAssetIdParam(assetIdParam);
+    // Lower-cased: the reads return the lower-case `asset_id`, matched by plain string equality.
+    const assetId = assertAssetIdParam(assetIdParam).toLowerCase();
     if (!(await this.accessControl.canReadAsset(user, assetId))) {
       throw new ForbiddenException("Asset is outside your access scope");
     }

@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   aBadQueryIsRefusedBeforeAccessControl,
+  anUpperCaseAssetIdIsLowerCased,
   theInputsRouteChecksTheIdThenTheAsset,
   theLocationCarriesTheCallersReadableSets,
   theOrganizationNarrowsThroughTheIntersection,
@@ -12,6 +13,8 @@ import {
 describe("E1.8a — HealthInputsController (ADR 0050 Amendment 5)", () => {
   it("inputs: a non-UUID id is 400 before canReadAsset; a denied asset is 403 before the service", () =>
     theInputsRouteChecksTheIdThenTheAsset());
+  it("inputs: an upper-case UUID is lower-cased before canReadAsset and the service", () =>
+    anUpperCaseAssetIdIsLowerCased());
   it("bad-actors: a bad query is 400 before any access-control read", () => aBadQueryIsRefusedBeforeAccessControl());
   it("bad-actors: readableAssetIds' value (an array, [], null) reaches the service unchanged", () =>
     theReadableSetReachesTheServiceUnchanged());
