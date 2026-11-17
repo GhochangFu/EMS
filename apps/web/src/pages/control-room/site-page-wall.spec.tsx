@@ -17,6 +17,11 @@ import { ORG_A, site, USER } from "./organizations-page.spec";
 import { ControlRoomSitePage } from "./site-page";
 import * as copilotApi from "../../api/copilot";
 
+/** `E1.9e` — the findings card on the site body has its own suite (`site-page-ml-findings.spec.tsx`). */
+vi.mock("../../components/ml/ml-findings-card", () => ({
+  MlFindingsCard: () => null,
+}));
+
 /**
  * `F3.77` (ADR 0087 Amendment 3 ruling 7, plan D8, owner rulings OQ2 and OQ3) — the site page's
  * wall branch: `?wall=1` on a `dashboard` view renders `WallFrame` instead of `AppShell`, any other

@@ -8,6 +8,7 @@ import {
   thePointReadHitsItsPathAndParses,
   theListReadHitsItsPathAndParses,
   theListReadsSendOnlyOrganizationAndLocation,
+  theParagraphReadSendsItsKindAndScopeAndParses,
   theSummaryReadSendsItsScopeAndParses,
 } from "./ml.spec";
 
@@ -24,4 +25,5 @@ describe("E1.4a — the forecast web client", () => {
   it("E1.2b the anomaly list read hits its path and parses", () => theAnomalyListReadHitsItsPathAndParses());
   it("E1.9b the list reads send organization and location only", () => theListReadsSendOnlyOrganizationAndLocation());
   it("E1.9b the summary read sends its scope and parses", () => theSummaryReadSendsItsScopeAndParses());
+  it("E1.9d the paragraph read sends its kind and scope and parses", () => theParagraphReadSendsItsKindAndScopeAndParses());
 });

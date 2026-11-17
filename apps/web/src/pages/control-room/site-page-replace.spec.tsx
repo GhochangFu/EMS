@@ -17,6 +17,11 @@ import { resetWizardStore } from "../../stores/wizard-store";
 import { ORG_A, site, USER } from "./organizations-page.spec";
 import { ControlRoomSitePage } from "./site-page";
 
+/** `E1.9e` — the findings card on the site body has its own suite (`site-page-ml-findings.spec.tsx`). */
+vi.mock("../../components/ml/ml-findings-card", () => ({
+  MlFindingsCard: () => null,
+}));
+
 /**
  * `F4.320` PR 2 (ADR 0087 Amendment 4 decision 8) — where the site page offers **Replace with this
  * version**: a master-data admin on a `dashboard` view that renders, when the preview says the view

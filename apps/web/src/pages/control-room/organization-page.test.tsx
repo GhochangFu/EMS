@@ -30,6 +30,7 @@ import {
   theSiteMapReadsByTheOrganizationId,
   theSiteMapSitsAboveTheSiteCards,
   theCostChartSitsBetweenTheAlarmsAndAssetHealth,
+  theFindingsCardSitsAfterAssetHealth,
   theLoadCardAndKwTileFollowTheSites,
 } from "./organization-page.spec";
 
@@ -132,6 +133,10 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
 
   it("P10 draws the cost chart between the alarms and Asset health (F4.337)", async () => {
     await theCostChartSitsBetweenTheAlarmsAndAssetHealth();
+  });
+
+  it("P11 draws one compact findings card for the organization after Asset health (E1.9e)", async () => {
+    await theFindingsCardSitsAfterAssetHealth();
   });
 
   it("L2 shows the live sites first, in their own group (F4.259)", async () => {

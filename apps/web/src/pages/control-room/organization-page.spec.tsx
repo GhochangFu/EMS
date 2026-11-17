@@ -96,6 +96,32 @@ vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
 }));
 
 /*
+ * `E1.9e` (ADR 0135 Amendment 8 decision 13) — the findings card is a stand-in that prints the
+ * props the page passes (its reads and its compact body are gated by `ml-findings-card.spec.tsx`).
+ */
+vi.mock("../../components/ml/ml-findings-card", () => ({
+  MlFindingsCard: ({
+    kinds,
+    scope,
+    compact,
+    paragraph,
+  }: {
+    kinds: readonly string[];
+    scope: Record<string, string | undefined>;
+    compact?: boolean;
+    paragraph?: boolean;
+  }) => (
+    <div
+      data-testid="ml-findings-panel"
+      data-kinds={kinds.join(",")}
+      data-scope={JSON.stringify(scope)}
+      data-compact={String(compact ?? false)}
+      data-paragraph={String(paragraph ?? "(default)")}
+    />
+  ),
+}));
+
+/*
  * `F3.79` — the site map is a stand-in too: it prints the organization id it is handed and
  * counts its mounts, so a case can tell a fresh map (keyed by organization) from a reused one.
  * Its own read is gated by `organization-site-map.spec.tsx`.
@@ -120,7 +146,7 @@ vi.mock("../../components/control-room/organization-site-map", () => ({
   },
 }));
 
-const PANELS = ["site-map-panel", "health-panel", "trend-panel", "dashboards-panel"] as const;
+const PANELS = ["site-map-panel", "health-panel", "ml-findings-panel", "trend-panel", "dashboards-panel"] as const;
 
 const ORG_ESKOM = { id: "org-eskom", code: "ESKOM", name: "Eskom" };
 const ORG_PHE = { id: "org-phe", code: "PHEWB", name: "PHE West Bengal" };
@@ -526,6 +552,33 @@ export async function theCostChartSitsBetweenTheAlarmsAndAssetHealth(): Promise<
   expect(
     charts.compareDocumentPosition(health) & Node.DOCUMENT_POSITION_FOLLOWING,
     "the Asset health panel must follow the cost chart",
+  ).toBeTruthy();
+}
+
+/**
+ * P11 — `E1.9e` (ADR 0135 Amendment 8 decision 13): one compact findings card, both kinds, scoped
+ * to the organization and to no site, after Asset health and before the load trend.
+ */
+export async function theFindingsCardSitsAfterAssetHealth(): Promise<void> {
+  stubReads(TWO_ORGS);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  const cards = screen.getAllByTestId("ml-findings-panel");
+  expect(cards).toHaveLength(1);
+  const card = cards[0];
+  expect(card.dataset.kinds).toBe("anomalies,forecasts");
+  expect(card.dataset.compact).toBe("true");
+  expect(JSON.parse(card.dataset.scope ?? "null")).toEqual({ organizationId: ORG_A.id });
+  const health = screen.getByTestId("health-panel");
+  const trend = screen.getByTestId("trend-panel");
+  expect(
+    health.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
+    "the findings card must follow Asset health",
+  ).toBeTruthy();
+  expect(
+    card.compareDocumentPosition(trend) & Node.DOCUMENT_POSITION_FOLLOWING,
+    "the load trend must follow the findings card",
   ).toBeTruthy();
 }
 
