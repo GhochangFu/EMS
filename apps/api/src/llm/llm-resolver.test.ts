@@ -24,7 +24,34 @@ import {
   assertPlatformScopeIsGuidedWithoutThePlatformKey,
   assertTheBootWarningNamesTheVariableAndNoValue,
   assertTheKeyIsNotCached,
+  assertFindingsAnOwnRowIgnoresTheFindingsVariables,
+  assertFindingsEmptyUsesThePlatformDefault,
+  assertFindingsSetAndCompleteBuildsTheFindingsModel,
+  assertFindingsSetWithoutAKeyIsNoParagraph,
+  assertFindingsSetWithoutAModelIsNoParagraph,
 } from "./llm-resolver.spec";
+
+describe("LLM resolver — the findings paragraph's model (E1.9c, ADR 0135 Amendment 8 decision 4)", () => {
+  it("an organization's own row decides; the findings variables never apply to it", async () => {
+    await assertFindingsAnOwnRowIgnoresTheFindingsVariables();
+  });
+
+  it("no row and the findings variables complete: that provider, model and existing key", async () => {
+    await assertFindingsSetAndCompleteBuildsTheFindingsModel();
+  });
+
+  it("set without a model: no paragraph and one boot warning naming the variable", async () => {
+    await assertFindingsSetWithoutAModelIsNoParagraph();
+  });
+
+  it("set without a key: no paragraph and one boot warning naming the key variable", async () => {
+    await assertFindingsSetWithoutAKeyIsNoParagraph();
+  });
+
+  it("the findings variables empty: the platform default", async () => {
+    await assertFindingsEmptyUsesThePlatformDefault();
+  });
+});
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
 describe("LLM resolver (F3.21, ADR 0090 Amendment 1 A2/A4)", () => {

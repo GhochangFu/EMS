@@ -333,6 +333,10 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       LLM_VISION_MODEL: ${LLM_VISION_MODEL:-}
+      # `E1.9c` / ADR 0135 Amendment 8 decision 4 — the findings paragraph's own
+      # model (optional; empty = LLM_PROVIDER above). See .env.example.
+      ML_FINDINGS_LLM_PROVIDER: ${ML_FINDINGS_LLM_PROVIDER:-}
+      ML_FINDINGS_LLM_MODEL: ${ML_FINDINGS_LLM_MODEL:-}
       # `F3.85` / ADR 0099 decision 11 — the copilot's daily turn limits (per user,
       # per organization). Empty = the default (150, 1500); see .env.example.
       COPILOT_USER_DAILY_TURNS: ${COPILOT_USER_DAILY_TURNS:-}
@@ -474,6 +478,9 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       LLM_VISION_MODEL: ${LLM_VISION_MODEL:-}
+      # `E1.9c` — identical to `api` above: a replica serves the findings paragraph route too.
+      ML_FINDINGS_LLM_PROVIDER: ${ML_FINDINGS_LLM_PROVIDER:-}
+      ML_FINDINGS_LLM_MODEL: ${ML_FINDINGS_LLM_MODEL:-}
       # `F3.85` — identical to `api` above: the counters are shared, so the limits must be too.
       COPILOT_USER_DAILY_TURNS: ${COPILOT_USER_DAILY_TURNS:-}
       COPILOT_ORG_DAILY_TURNS: ${COPILOT_ORG_DAILY_TURNS:-}

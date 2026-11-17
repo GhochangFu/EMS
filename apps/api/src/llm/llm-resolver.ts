@@ -81,6 +81,16 @@ function env(name: string): string {
 }
 
 /**
+ * `E1.9c` / ADR 0135 Amendment 8 decision 4 — the findings paragraph's own
+ * model, when the operator sets one. Unset, the findings use the platform
+ * default as the copilot does.
+ */
+export type FindingsLlmDefault =
+  | { readonly state: "unset" }
+  | { readonly state: "incomplete"; readonly missing: string }
+  | { readonly state: "ready"; readonly provider: LlmProviderName; readonly model: string; readonly apiKey: string };
+
+/**
  * Chooses the provider for one chat turn (ADR 0090 Amendment 1 A2 and A4).
  *
  * An organization's own row wins: `off` means the guided mode, a complete row
@@ -88,7 +98,8 @@ function env(name: string): string {
  * mode and one warning — **never the platform key** (A4). With no row, the
  * `.env` platform default applies.
  *
- * This class is the only reader of the seven A2 variables; the adapters read
+ * This class is the only reader of the seven A2 variables, and of `E1.9c`'s
+ * `ML_FINDINGS_LLM_PROVIDER` and `ML_FINDINGS_LLM_MODEL`; the adapters read
  * none. They are read on every call, so a spec can change them per case. The
  * decrypted key lives in the provider instance for one turn and is not cached.
  */
@@ -104,7 +115,11 @@ export class LlmResolver implements OnModuleInit {
     private readonly crypto: CredentialCryptoService,
   ) {}
 
-  /** One boot warning when the platform default names a provider it cannot build. Names a variable, never a value. */
+  /**
+   * One boot warning when the platform default names a provider it cannot
+   * build, and one when the findings model (`E1.9c`) does. Each names a
+   * variable, never a value.
+   */
   onModuleInit(): void {
     const platform = this.platformDefault();
     if (platform.state === "incomplete") {
@@ -113,6 +128,38 @@ export class LlmResolver implements OnModuleInit {
         "LLM platform default is incomplete; the onboarding agent is off unless an organization sets its own provider",
       );
     }
+    const findings = this.findingsDefault();
+    if (findings.state === "incomplete") {
+      this.logger.warn(
+        { variable: findings.missing },
+        "ML findings LLM setting is incomplete; organizations without their own provider get no AI-written findings paragraph",
+      );
+    }
+  }
+
+  /**
+   * `E1.9c` / ADR 0135 Amendment 8 decision 4: `ML_FINDINGS_LLM_PROVIDER` and
+   * `ML_FINDINGS_LLM_MODEL`, with that provider's **existing** key variable.
+   * Set but missing a model or a key is `incomplete` — never a fallback to the
+   * copilot's model or to a provider default model.
+   */
+  findingsDefault(): FindingsLlmDefault {
+    const selected = env("ML_FINDINGS_LLM_PROVIDER");
+    if (!selected) {
+      return { state: "unset" };
+    }
+    if (!isProviderName(selected)) {
+      return { state: "incomplete", missing: "ML_FINDINGS_LLM_PROVIDER" };
+    }
+    const model = env("ML_FINDINGS_LLM_MODEL");
+    if (!model) {
+      return { state: "incomplete", missing: "ML_FINDINGS_LLM_MODEL" };
+    }
+    const apiKey = env(KEY_VARIABLE[selected]);
+    if (!apiKey) {
+      return { state: "incomplete", missing: KEY_VARIABLE[selected] };
+    }
+    return { state: "ready", provider: selected, model, apiKey };
   }
 
   platformDefault(): PlatformLlmDefault {
@@ -191,7 +238,15 @@ export class LlmResolver implements OnModuleInit {
     organizationId: string,
     options: { readonly image?: boolean } = {},
   ): Promise<ResolvedLlm> {
-    const row = await this.readSetting(organizationId);
+    return this.resolveFrom(await this.readSetting(organizationId), organizationId, options);
+  }
+
+  /** `resolveForOrganization`'s decision on a row already read (`E1.9c`: `resolveForFindings` reads it once). */
+  private resolveFrom(
+    row: typeof organizationLlmSettings.$inferSelect | null,
+    organizationId: string,
+    options: { readonly image?: boolean },
+  ): ResolvedLlm {
     if (row) {
       if (row.provider === "off") {
         return { kind: "guided", reason: "organization_off" };
@@ -230,6 +285,42 @@ export class LlmResolver implements OnModuleInit {
       vision,
       model,
     };
+  }
+
+  /**
+   * `E1.9c` / ADR 0135 Amendment 8 decision 4 — the provider for one
+   * organization's findings paragraph, in this order:
+   *
+   * 1. The organization has its own `organization_llm_settings` row → exactly
+   *    `resolveForOrganization` (its own key and model, or the guided mode). The
+   *    findings variables never apply, so its data never reaches the platform key.
+   * 2. No row and `ML_FINDINGS_LLM_PROVIDER` set → that provider, with
+   *    `ML_FINDINGS_LLM_MODEL` and that provider's key; a missing model or key is
+   *    the guided mode (no paragraph), never the copilot's model.
+   * 3. No row and the findings variables empty → the platform default, as
+   *    `resolveForOrganization`.
+   *
+   * The paragraph service calls this and never `resolveForOrganization`.
+   */
+  async resolveForFindings(organizationId: string): Promise<ResolvedLlm> {
+    const row = await this.readSetting(organizationId);
+    if (row !== null) {
+      return this.resolveFrom(row, organizationId, {});
+    }
+    const findings = this.findingsDefault();
+    if (findings.state === "incomplete") {
+      return { kind: "guided", reason: "platform_incomplete" };
+    }
+    if (findings.state === "ready") {
+      return {
+        kind: "ready",
+        provider: this.buildProvider(findings.provider, { apiKey: findings.apiKey, model: findings.model }),
+        source: "platform",
+        vision: false,
+        model: findings.model,
+      };
+    }
+    return this.resolveFrom(null, organizationId, {});
   }
 
   /** Every organization's id, in a fixed order. `bms.organizations` carries no row-level security. */

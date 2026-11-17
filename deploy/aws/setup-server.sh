@@ -107,6 +107,10 @@ OPENROUTER_MODEL=
 ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=
 LLM_VISION_MODEL=
+# Optional: a separate model for the AI-written ML findings paragraph (ADR 0135
+# Amendment 8). Uses the provider's key above. Empty = LLM_PROVIDER.
+ML_FINDINGS_LLM_PROVIDER=
+ML_FINDINGS_LLM_MODEL=
 EOF
   echo ".env: generated $BMS_HOME/.env"
 fi
