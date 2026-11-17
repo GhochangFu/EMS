@@ -1,0 +1,138 @@
+import { expect } from "vitest";
+
+import {
+  ML_FINDING_FACT_IDS,
+  ML_FINDINGS_KINDS,
+  ML_FINDINGS_MAX_FACTS,
+  ML_FINDINGS_PARAGRAPH_MAX_CHARS,
+  ML_FINDINGS_PARAGRAPH_STATES,
+  anomalyFindingHref,
+  forecastFindingHref,
+  mlFindingsCardSchema,
+  mlFindingsParagraphResponseSchema,
+  mlFindingsSummaryResponseSchema,
+} from "./ml-findings";
+
+/**
+ * `E1.9a` / ADR 0135 Amendment 8 (plan §4.6, R-g, T1.1) — the findings
+ * contracts and the two link builders. Assertions live here; `ml-findings.test.ts`
+ * is the vitest entry point (ADR 0014). Fixture names are made up.
+ */
+const ORG = "11111111-1111-4111-8111-111111111111";
+const ASSET = "22222222-2222-4222-8222-222222222222";
+const HOUR_MS = 3_600_000;
+
+const fact = (id: string, text = "16 forecast points, issued at 17 Nov 14:05; 0 stale.") => ({
+  id,
+  segments: [{ text }],
+});
+
+const card = {
+  organizationId: ORG,
+  organizationCode: "FXA",
+  organizationName: "Fixture Cold Stores",
+  facts: [
+    fact("F1"),
+    { id: "F2", segments: [{ text: "cold_room_temp_c: coldest expected -18.46 °C at " }, { assetRef: "A1" }, { text: "." }] },
+  ],
+  assets: [
+    {
+      ref: "A1",
+      assetId: ASSET,
+      label: "CR-01 · RTU-N1",
+      href: forecastFindingHref(ASSET, ["cold_room_temp_c"]),
+    },
+  ],
+};
+
+const summary = { asOf: "2026-11-17T08:35:00.000Z", cards: [card] };
+
+export function runConstantsTest(): void {
+  expect(ML_FINDINGS_KINDS).toEqual(["forecasts", "anomalies"]);
+  expect(ML_FINDING_FACT_IDS).toEqual(["F1", "F2", "F3", "F4", "F5", "F_MORE", "F_NONE", "A1", "A2", "A3", "A4", "A_NONE"]);
+  expect(ML_FINDINGS_MAX_FACTS).toBe(8);
+  expect(ML_FINDINGS_PARAGRAPH_MAX_CHARS).toBe(600);
+  expect(ML_FINDINGS_PARAGRAPH_STATES).toEqual(["ok", "none", "pending"]);
+}
+
+export function runFullSummaryParsesTest(): void {
+  expect(mlFindingsSummaryResponseSchema.parse(summary)).toEqual(summary);
+  const eight = { ...card, facts: Array.from({ length: 8 }, () => fact("F2")) };
+  expect(mlFindingsCardSchema.safeParse(eight).success).toBe(true);
+}
+
+export function runFactBoundsTest(): void {
+  const nine = { ...card, facts: Array.from({ length: 9 }, () => fact("F2")) };
+  expect(mlFindingsCardSchema.safeParse(nine).success, "9 facts").toBe(false);
+  expect(mlFindingsCardSchema.safeParse({ ...card, facts: [] }).success, "no facts").toBe(false);
+  expect(mlFindingsCardSchema.safeParse({ ...card, facts: [fact("F9")] }).success, "F9").toBe(false);
+  expect(mlFindingsCardSchema.safeParse({ ...card, facts: [{ id: "F1", segments: [] }] }).success, "no segments").toBe(
+    false,
+  );
+}
+
+export function runAssetRefBoundsTest(): void {
+  for (const ref of ["B1", "A0", "A", "A1000", "a1"]) {
+    const asset = { ...card.assets[0], ref };
+    expect(mlFindingsCardSchema.safeParse({ ...card, assets: [asset] }).success, ref).toBe(false);
+    const segmentRef = { ...card, facts: [{ id: "F2", segments: [{ assetRef: ref }] }] };
+    expect(mlFindingsCardSchema.safeParse(segmentRef).success, `segment ${ref}`).toBe(false);
+  }
+  for (const ref of ["A1", "A9", "A10", "A999"]) {
+    expect(mlFindingsCardSchema.safeParse({ ...card, assets: [{ ...card.assets[0], ref }] }).success, ref).toBe(true);
+  }
+}
+
+export function runParagraphStateTest(): void {
+  const ok = { cards: [{ organizationId: ORG, state: "ok", segments: [{ text: "Advisory." }, { assetRef: "A1" }] }] };
+  expect(mlFindingsParagraphResponseSchema.parse(ok)).toEqual(ok);
+  for (const state of ["none", "pending"]) {
+    expect(mlFindingsParagraphResponseSchema.safeParse({ cards: [{ organizationId: ORG, state, segments: [] }] }).success).toBe(
+      true,
+    );
+  }
+  const error = { cards: [{ organizationId: ORG, state: "error", segments: [] }] };
+  expect(mlFindingsParagraphResponseSchema.safeParse(error).success).toBe(false);
+  const long = { cards: [{ organizationId: ORG, state: "ok", segments: [{ text: "x".repeat(601) }] }] };
+  expect(mlFindingsParagraphResponseSchema.safeParse(long).success, "a 601-character segment").toBe(false);
+}
+
+export function runNotStrictTest(): void {
+  expect(mlFindingsSummaryResponseSchema.safeParse({ ...summary, extra: 1, cards: [{ ...card, extra: true }] }).success).toBe(
+    true,
+  );
+}
+
+/** The facts hash stays on the server: the card's keys are exactly these five. */
+export function runCardKeysTest(): void {
+  expect(Object.keys(mlFindingsCardSchema.shape).sort()).toEqual(
+    ["assets", "facts", "organizationCode", "organizationId", "organizationName"].sort(),
+  );
+}
+
+export function runForecastHrefTest(): void {
+  expect(forecastFindingHref(ASSET, ["cold_room_temp_c"])).toBe(`/asset-history/${ASSET}?points=cold_room_temp_c`);
+  const two = forecastFindingHref(ASSET, ["cold_room_temp_c", "kw"]);
+  expect(two).toBe(`/asset-history/${ASSET}?${new URLSearchParams({ points: "cold_room_temp_c,kw" }).toString()}`);
+  expect(new URL(two, "http://x").searchParams.get("points")).toBe("cold_room_temp_c,kw");
+  expect(forecastFindingHref(ASSET, [])).toBe(`/asset-history/${ASSET}`);
+}
+
+export function runAnomalyHrefTest(): void {
+  const t = Date.parse("2026-11-17T06:00:00.000Z");
+  const asOfLate = t + 30 * HOUR_MS;
+  const late = new URL(anomalyFindingHref(ASSET, t, asOfLate, ["kw", "pf"]), "http://x");
+  expect(late.pathname).toBe(`/asset-history/${ASSET}`);
+  expect(late.searchParams.get("from")).toBe(new Date(t - 24 * HOUR_MS).toISOString());
+  expect(late.searchParams.get("to")).toBe(new Date(t + 24 * HOUR_MS).toISOString());
+  expect(late.searchParams.get("points")).toBe("kw,pf");
+  expect(late.searchParams.has("range"), "a custom window, never a preset").toBe(false);
+  // `fn=avg` is the history page's default, and its `rangeToSearch` leaves the default out.
+  expect(late.searchParams.has("fn")).toBe(false);
+  expect([...late.searchParams.keys()]).toEqual(["from", "to", "points"]);
+  const asOfSoon = t + 2 * HOUR_MS;
+  const soon = new URL(anomalyFindingHref(ASSET, t, asOfSoon, []), "http://x");
+  expect(soon.searchParams.get("to"), "never past asOf").toBe(new Date(asOfSoon).toISOString());
+  expect(soon.searchParams.has("points")).toBe(false);
+  expect(anomalyFindingHref(ASSET, Number.NaN, asOfSoon, ["kw"])).toBe(`/asset-history/${ASSET}`);
+}
