@@ -5,6 +5,7 @@ import {
   aRowHasEndedAtItsOwnEnd,
   anUncoveredInstantIsUndefined,
   theNearestScopeWinsInsideItsWindow,
+  theRowAtIsTheRowWhoseValueIsServed,
   theNextScopeServesBeforeTheNearestStarts,
 } from "./calc-parameter-series.spec";
 
@@ -15,4 +16,5 @@ describe("F4.311 — parameterValueAt", () => {
   it("treats a row as ended at its own end (half-open)", aRowHasEndedAtItsOwnEnd);
   it("treats a row as begun at its own start", aRowHasBegunAtItsOwnStart);
   it("answers undefined for an instant no row covers", anUncoveredInstantIsUndefined);
+  it("parameterRowAt returns the row whose value parameterValueAt serves (E1.6a R-p)", theRowAtIsTheRowWhoseValueIsServed);
 });

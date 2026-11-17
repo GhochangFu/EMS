@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAdvisoriesServiceSlots,
   assertAlarmNotifyServiceFleetSlot,
   assertAssetFilterScopeServiceFleetSlot,
   assertFilterOptionsServiceFleetSlot,
@@ -186,5 +187,9 @@ describe("E7.1b — services inject the right pool token in the right constructo
 
   it("E1.8a HealthInputsService injects the fleet pool in slot 1", () => {
     assertHealthInputsServiceFleetSlot();
+  });
+
+  it("E1.6a AdvisoriesService injects the tenant pool in slot 0, the fleet pool in slot 1 and the fleet pg pool in slot 2", () => {
+    assertAdvisoriesServiceSlots();
   });
 });

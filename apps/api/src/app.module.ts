@@ -25,6 +25,7 @@ import { MimicLayoutsModule } from "./mimic-layouts/mimic-layouts.module";
 import { MimicSymbolLibrariesModule } from "./mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { MlModule } from "./ml/ml.module";
 import { MlFindingsParagraphModule } from "./ml-findings/ml-findings-paragraph.module";
+import { AdvisoriesModule } from "./advisories/advisories.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { ObservabilityModule } from "./observability/observability.module";
 import { RateLimitModule } from "./rate-limit/rate-limit.module";
@@ -90,6 +91,8 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     MlModule,
     // `E1.9c` / ADR 0135 Amendment 8 — the AI-written findings paragraph (`GET /ml/findings/paragraph`). API only.
     MlFindingsParagraphModule,
+    // `E1.6a` / ADR 0137 — the optimisation advisories (`GET /advisories`). API only.
+    AdvisoriesModule,
   ],
 })
 export class AppModule {}

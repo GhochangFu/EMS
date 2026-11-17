@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { expect } from "vitest";
 
+import { AdvisoriesService } from "../advisories/advisories.service";
 import { AlarmNotifyService } from "../alarms/alarm-notify.service";
 import { AlarmRaiser } from "../alarms/alarm-raise.service";
 import { AlarmRootCauseService } from "../alarms/alarm-root-cause.service";
@@ -398,4 +399,16 @@ export function assertHealthInputsServiceTenantSlot(): void {
 
 export function assertHealthInputsServiceFleetSlot(): void {
   expect(injectedToken(HealthInputsService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `E1.6a` — `AdvisoriesService(tenantDb, fleetDb, fleetPool, …)` (ADR 0137 decision 6, plan Q3):
+ * the candidate read runs through `withReadScope(tenantDb, fleetDb, …)` on slots 0 and 1, and
+ * the reused energy, register, pair and tariff reads run on the fleet pool in slot 2 with the
+ * candidate ids only. Swapping slots 0 and 1 sends every single-organization read to `onEmpty`.
+ */
+export function assertAdvisoriesServiceSlots(): void {
+  expect(injectedToken(AdvisoriesService, 0)).toBe(TENANT_DRIZZLE);
+  expect(injectedToken(AdvisoriesService, 1)).toBe(FLEET_DRIZZLE);
+  expect(injectedToken(AdvisoriesService, 2)).toBe(FLEET_POOL);
 }
