@@ -360,6 +360,18 @@ export async function aFailedRowIsRetriedOnlyAfter30Minutes(): Promise<void> {
       attempts: 3,
       createdAt: new Date(NOW.getTime() - ageMinutes * MINUTE_MS),
     });
+  // A rejected row is never tried again for that hash, however old.
+  const rejected = harness({ provider: new ScriptedProvider([{ kind: "final", text: GOOD }]) });
+  rejected.memory.plant({
+    organizationId: card.organizationId,
+    kind: "anomalies",
+    factsHash: hashOf("anomalies", card),
+    status: "rejected",
+    reason: "tone",
+    createdAt: new Date(NOW.getTime() - 6 * 60 * MINUTE_MS),
+  });
+  expect(states(await rejected.get())).toEqual(["none"]);
+  expect(rejected.provider.calls).toBe(0);
   const young = harness({ provider: new ScriptedProvider([{ kind: "final", text: GOOD }]) });
   plantFailed(young, 29);
   expect(states(await young.get())).toEqual(["none"]);
