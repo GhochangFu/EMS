@@ -59,6 +59,7 @@ const LITERAL_LINE = /\b0\.99\b/;
 const LITERAL_CAP = /\b0\.05\b/;
 const INPUTS_IMPORT = /from\s+["']\.\/health-inputs[^"']*["']/;
 const ML_IMPORT = /from\s+["']\.\.\/ml(\/[^"']*)?["']/;
+const ADVISORY_FIELDS = /\b(losingAssetCount|advisoryScore|advisoryHealthScore|penalty|HEALTH_ANOMALY_\w+|anomalyHistory|unusualHours|strongHours)\b/;
 const INPUTS_NAMES = /health-inputs|asset-health-inputs|HealthInputsService|advisoryHealthScore|healthAnomalyPenalty|bad-actors/;
 
 /** The body of the method named `name`, from its signature to the next member or the class end. */
@@ -104,6 +105,8 @@ describe("E1.8a health inputs containment (ADR 0050 Amendment 5)", () => {
     expect(INPUTS_NAMES.test('@Get("bad-actors")')).toBe(true);
     expect(INPUTS_NAMES.test("advisoryHealthScore(score, penalty)")).toBe(true);
     expect(INPUTS_NAMES.test("healthSummaryResponseSchema")).toBe(false);
+    expect(ADVISORY_FIELDS.test("    losingAssetCount: z.number().int().nonnegative(),")).toBe(true);
+    expect(ADVISORY_FIELDS.test("    scoredAssetCount: z.number().int().nonnegative(),")).toBe(false);
     expect(isSource("health-inputs.fixture.ts")).toBe(false);
     expect(isSource("health-inputs.reads.ts")).toBe(true);
     expect(codeOnly("// 0.99\n/* ../ml */\nx")).toBe("\n\nx");
@@ -220,7 +223,12 @@ describe("E1.8a health inputs containment (ADR 0050 Amendment 5)", () => {
       expect(INPUTS_IMPORT.exec(code)?.[0], `${rel} imports the inputs`).toBeUndefined();
       expect(ML_IMPORT.exec(code)?.[0], `${rel} imports ml`).toBeUndefined();
     }
-    expect(read("packages/shared/src/contracts/health.ts")).not.toMatch(/asset-health-inputs/);
+    const healthContract = codeOnly(read("packages/shared/src/contracts/health.ts"));
+    expect(healthContract).not.toMatch(/asset-health-inputs/);
+    // R-e: the count rides on the bad-actors response; the summary (which feeds the copilot tool and
+    // the metric) carries no advisory field.
+    expect(healthContract).toContain("healthSummaryResponseSchema");
+    expect(ADVISORY_FIELDS.exec(healthContract)?.[0], "contracts/health.ts names an advisory field").toBeUndefined();
   });
 
   it("nothing in reports, notifications, work orders, alarms, the copilot, dashboards, maintenance, ml or the queue reaches it", () => {
