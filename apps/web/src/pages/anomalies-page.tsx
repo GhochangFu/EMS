@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 
 import { ANOMALY_LIST_MAX_ROWS, assetLabelOf } from "@bms/shared";
@@ -6,12 +7,16 @@ import type { AnomalyListRow } from "@bms/shared";
 
 import { fetchAnomalyList } from "../api/ml";
 import { formatShortInZone, retryUnlessForbidden } from "../components/asset-history/history-format";
+import { MlFindingsCard } from "../components/ml/ml-findings-card";
 import { PageHeader } from "../components/page-header";
+import { ScopeFilterBar } from "../components/scope-filter-bar";
 import { SectionCard } from "../components/section-card";
 import { StatusPill } from "../components/status-pill";
+import { useScopeFilter } from "../hooks/use-scope-filter";
 import { AppShell } from "../layouts/app-shell";
 import { detectorLabel } from "../lib/anomaly-series";
 import { assetHistoryPath, rangeToSearch } from "../lib/asset-history-range";
+import { ML_PAGE_FILTER_KEYS, pickScope } from "../lib/ml-findings";
 import type { AuthUser } from "../stores/auth-store";
 
 export const ANOMALIES_SUBTITLE =
@@ -85,14 +90,21 @@ type AnomaliesPageProps = {
  * `assetLabelOf` (ADR 0111). Each row opens that asset's history around the hour with its
  * contributing points charted, where the unusual-hour marks draw. Every surface says advisory: a
  * score is a notice, never an alarm. A failed read is one fixed sentence (the `F4.204` rule).
+ *
+ * `E1.9b` (ADR 0135 Amendment 8 decisions 1 and 8): under the header, the Organization and Location
+ * pickers (`useScopeFilter`, the URL state of `/alarms`), then the "Findings — advisory" cards, then
+ * the table. Both reads send only those two keys, and wait for `scope.ready`.
  */
 export function AnomaliesPage({ user }: AnomaliesPageProps) {
+  const scope = useScopeFilter();
+  const shown = useMemo(() => pickScope(scope.filter, ML_PAGE_FILTER_KEYS), [scope.filter]);
   const listQ = useQuery({
-    queryKey: ["ml-anomalies"],
-    // A thunk: React Query's context must never reach `since`.
-    queryFn: () => fetchAnomalyList(),
+    queryKey: ["ml-anomalies", shown.organizationId ?? null, shown.locationId ?? null],
+    // A thunk: React Query's context must never reach the filter or `since`.
+    queryFn: () => fetchAnomalyList(shown),
     refetchInterval: ANOMALIES_REFETCH_MS,
     retry: retryUnlessForbidden,
+    enabled: scope.ready,
   });
   const data = listQ.data;
   const items = data?.items ?? [];
@@ -101,6 +113,15 @@ export function AnomaliesPage({ user }: AnomaliesPageProps) {
     <AppShell user={user} kpiRibbon={<span className="text-ink">Anomalies · advisory</span>}>
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <PageHeader eyebrow="Operations · Anomalies" title="Anomalies" subtitle={ANOMALIES_SUBTITLE} />
+
+        <ScopeFilterBar
+          filter={scope.filter}
+          options={scope.options}
+          unavailable={scope.unavailable}
+          onChange={scope.setScope}
+          pickers={ML_PAGE_FILTER_KEYS}
+        />
+        <MlFindingsCard kinds={["anomalies"]} scope={shown} enabled={scope.ready} />
 
         {listQ.isPending ? (
           // `isPending`, not `isLoading`: opened offline the read is pending but paused, and a waiting

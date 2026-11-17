@@ -9,6 +9,9 @@ import { SCOPE_FILTER_KEYS, type ScopeFilter, type ScopeFilterKey } from "./scop
  * only when it is the asset history page (R-g). The browser never builds a link from text.
  */
 
+/** Decision 8: the pickers of `/forecasts` and `/anomalies`, and the only keys their reads send. */
+export const ML_PAGE_FILTER_KEYS: readonly ScopeFilterKey[] = ["organizationId", "locationId"];
+
 /** The keys of `filter` named in `keys` that are set; every other key is dropped. */
 export function pickScope(filter: ScopeFilter, keys: readonly ScopeFilterKey[]): ScopeFilter {
   const out: { -readonly [K in ScopeFilterKey]?: string } = {};
