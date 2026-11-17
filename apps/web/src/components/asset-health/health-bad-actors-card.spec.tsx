@@ -268,11 +268,10 @@ export async function theLowestTabIsNotAdvisory(): Promise<void> {
   expect(rows[0].textContent).toContain("42%");
   expect(rows[0].textContent).toContain("Poor · ≥ 40%");
   expect(rows[0].textContent).toContain("4 scored tags");
-  for (const el of Array.from(panel.querySelectorAll("*"))) {
-    if (el.children.length === 0 && /advisory/i.test(el.textContent ?? "")) {
-      expect(el.textContent).toBe("Rule score only. Not advisory.");
-    }
-  }
+  // The whole panel, not leaf nodes: a `StatusPill` is a span with a dot child, so a leaf-only
+  // walk skipped it and an Advisory pill on the Lowest tab passed (code review, E1.8c).
+  expect(within(panel).queryAllByText("Advisory")).toEqual([]);
+  expect((panel.textContent ?? "").replace("Rule score only. Not advisory.", "")).not.toMatch(/advisory/i);
   expect(screen.queryByText(HEALTH_ANOMALY_CAPTION)).toBeNull();
 }
 
@@ -330,6 +329,11 @@ export async function anomalyNullShowsOnlyTheLowestContent(): Promise<void> {
   expect(screen.queryByText(/No unusual hours/)).toBeNull();
   expect(screen.queryByText(HEALTH_ANOMALY_CAPTION)).toBeNull();
   expect(screen.queryByText(/lose points/)).toBeNull();
+  // Rule scores only: no Advisory pill and no advisory word beyond the "Not advisory" line.
+  expect(screen.queryAllByText("Advisory")).toEqual([]);
+  for (const row of screen.getAllByTestId("lowest-score-row")) {
+    expect(row.textContent ?? "").not.toMatch(/advisory/i);
+  }
 }
 
 /** `anomaly: null` and no lowest row: the card is not drawn at all. */
@@ -378,4 +382,39 @@ export async function theReadCarriesTheCardsScope(): Promise<void> {
 
   await waitFor(() => expect(anomalyRows()).toHaveLength(5));
   expect(spy.mock.calls).toEqual([[{ organizationId: ORG_ID, locationId: LOCATION_ID }]]);
+}
+
+
+/**
+ * The tabs follow the WAI-ARIA tabs pattern, as `dashboard-tab-strip.tsx` does (code review,
+ * E1.8c): only the selected tab is in the Tab order; ArrowRight/ArrowLeft wrap, Home and End jump,
+ * and each selects and focuses.
+ */
+export async function theTabsMoveWithArrowKeys(): Promise<void> {
+  answer(response());
+  renderCard();
+
+  const anomalyTab = await screen.findByRole("tab", { name: "Anomaly history" });
+  const lowestTab = screen.getByRole("tab", { name: "Lowest health score" });
+  expect(anomalyTab).toHaveAttribute("tabindex", "0");
+  expect(lowestTab).toHaveAttribute("tabindex", "-1");
+
+  anomalyTab.focus();
+  fireEvent.keyDown(anomalyTab, { key: "ArrowRight" });
+  expect(lowestTab).toHaveAttribute("aria-selected", "true");
+  expect(lowestTab).toHaveFocus();
+  expect(lowestTab).toHaveAttribute("tabindex", "0");
+
+  fireEvent.keyDown(lowestTab, { key: "ArrowRight" });
+  expect(anomalyTab).toHaveAttribute("aria-selected", "true");
+  expect(anomalyTab).toHaveFocus();
+
+  fireEvent.keyDown(anomalyTab, { key: "ArrowLeft" });
+  expect(lowestTab).toHaveAttribute("aria-selected", "true");
+
+  fireEvent.keyDown(lowestTab, { key: "Home" });
+  expect(anomalyTab).toHaveAttribute("aria-selected", "true");
+  fireEvent.keyDown(anomalyTab, { key: "End" });
+  expect(lowestTab).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", lowestTab.id);
 }

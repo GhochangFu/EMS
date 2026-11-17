@@ -181,7 +181,7 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
       <OrganizationStripCharts key={`strip-charts-${organizationId}`} organizationId={organizationId} />
       <HealthSummarySection organizationId={organizationId} />
       {/* `E1.8c` (ADR 0050 Amendment 5) — directly after Asset health; no count line, the donut has it. */}
-      <HealthBadActorsCard organizationId={organizationId} />
+      <HealthBadActorsCard key={`bad-actors-${organizationId}`} organizationId={organizationId} />
       {/* `E1.9e` (ADR 0135 Amendment 8 decision 13) — the compact findings card, after Asset health. */}
       <MlFindingsCard kinds={ORGANIZATION_FINDINGS_KINDS} scope={{ organizationId }} compact />
       {energyShown ? <OrganizationLoadTrend organizationId={organizationId} /> : null}

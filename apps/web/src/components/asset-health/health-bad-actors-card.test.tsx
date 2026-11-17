@@ -18,6 +18,7 @@ import {
   theCaveatAndTheCaption,
   theLowestTabIsNotAdvisory,
   theReadCarriesTheCardsScope,
+  theTabsMoveWithArrowKeys,
   theScoreLineOnlyWithBothScores,
   theTitleAndTheDefaultTab,
 } from "./health-bad-actors-card.spec";
@@ -99,5 +100,9 @@ describe("E1.8c the Bad actors — advisory card", () => {
 
   it("sends the card's own scope with the read", async () => {
     await theReadCarriesTheCardsScope();
+  });
+
+  it("moves between tabs with the arrow keys, Home and End", async () => {
+    await theTabsMoveWithArrowKeys();
   });
 });

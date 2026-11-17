@@ -1,4 +1,5 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 
 import { assetLabelOf } from "@bms/shared";
@@ -145,9 +146,33 @@ function LowestContent({ rows }: { rows: readonly HealthLowestScore[] }) {
  */
 export function HealthBadActorsCard({ organizationId, locationId, showCount = false }: HealthBadActorsCardProps) {
   const [tab, setTab] = useState<Tab>("anomaly");
+  const tabButtons = useRef<(HTMLButtonElement | null)[]>([]);
   const baseId = useId();
   const query = useHealthBadActors({ organizationId, locationId }, true);
   const data = query.data;
+
+  // WAI-ARIA tabs, as `dashboard-tab-strip.tsx`: arrows wrap, Home and End jump; each selects and
+  // focuses. Only the selected tab is in the Tab order (code review, E1.8c).
+  function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number): void {
+    const last = TABS.length - 1;
+    const target =
+      event.key === "ArrowRight"
+        ? (index + 1) % TABS.length
+        : event.key === "ArrowLeft"
+          ? (index - 1 + TABS.length) % TABS.length
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? last
+              : null;
+    const next = target === null ? undefined : TABS[target];
+    if (target === null || next === undefined) {
+      return;
+    }
+    event.preventDefault();
+    setTab(next.key);
+    tabButtons.current[target]?.focus();
+  }
 
   if (data !== undefined && data.anomaly === null && data.lowestScores.length === 0) {
     return null;
@@ -162,15 +187,20 @@ export function HealthBadActorsCard({ organizationId, locationId, showCount = fa
     body = (
       <div className="space-y-3">
         <div role="tablist" aria-label="Bad actors lists" className="flex flex-wrap gap-1 border-b border-line pb-2">
-          {TABS.map((entry) => (
+          {TABS.map((entry, index) => (
             <button
               key={entry.key}
+              ref={(el) => {
+                tabButtons.current[index] = el;
+              }}
               type="button"
               role="tab"
               id={`${baseId}-tab-${entry.key}`}
               aria-selected={entry.key === tab}
               aria-controls={`${baseId}-panel`}
+              tabIndex={entry.key === tab ? 0 : -1}
               onClick={() => setTab(entry.key)}
+              onKeyDown={(event) => onTabKeyDown(event, index)}
               className={`surface-tab px-3 py-1.5 text-sm ${entry.key === tab ? "surface-tab-selected" : ""}`}
             >
               {entry.label}

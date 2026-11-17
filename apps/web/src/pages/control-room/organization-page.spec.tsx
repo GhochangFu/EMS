@@ -125,6 +125,8 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
  * `E1.8c` (ADR 0050 Amendment 5) — the *Bad actors* card is a stand-in that prints the props the
  * page passes (its read, tabs and states are gated by `health-bad-actors-card.spec.tsx`).
  */
+const badActorsMounts = vi.hoisted(() => ({ count: 0 }));
+
 vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
   HealthBadActorsCard: ({
     organizationId,
@@ -134,14 +136,21 @@ vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
     organizationId?: string;
     locationId?: string;
     showCount?: boolean;
-  }) => (
-    <div
-      data-testid="bad-actors-panel"
-      data-organization-id={organizationId}
-      data-location-id={locationId}
-      data-show-count={String(showCount ?? "(absent)")}
-    />
-  ),
+  }) => {
+    // Counts mounts, so P8 can tell a fresh card (keyed by organization, back on its default
+    // tab) from one reused across organizations (code review, E1.8c).
+    useEffect(() => {
+      badActorsMounts.count += 1;
+    }, []);
+    return (
+      <div
+        data-testid="bad-actors-panel"
+        data-organization-id={organizationId}
+        data-location-id={locationId}
+        data-show-count={String(showCount ?? "(absent)")}
+      />
+    );
+  },
 }));
 
 /*
@@ -647,6 +656,7 @@ const TWO_FULL_ORGS: LocationKpiSummary[] = [
 export async function anotherOrganizationMountsANewSiteMap(): Promise<void> {
   stubReads(TWO_FULL_ORGS);
   siteMapMounts.count = 0;
+  badActorsMounts.count = 0;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const tree = (organizationId: string) => (
     <QueryClientProvider client={queryClient}>
@@ -667,6 +677,7 @@ export async function anotherOrganizationMountsANewSiteMap(): Promise<void> {
     expect(screen.getByTestId("site-map-panel").dataset.organizationId).toBe(ORG_B.id),
   );
   expect(siteMapMounts.count, "org B must get a new map, not org A's").toBe(2);
+  expect(badActorsMounts.count, "org B must get a fresh Bad actors card, not org A's").toBe(2);
   // Org B's strip has loaded (no loading line left); org A's must not linger beside it.
   await waitFor(() => expect(screen.queryByTestId("organization-kpi-strip-loading")).toBeNull());
   expect(screen.getAllByTestId("organization-kpi-strip")).toHaveLength(1);
