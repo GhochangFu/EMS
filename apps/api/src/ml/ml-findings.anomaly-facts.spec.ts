@@ -70,6 +70,7 @@ export function fxbNamesTheBothMethodsAssetFirst(): void {
   expect(lines[5]).toBe(MIXED_SENTENCE);
   expect(MIXED_SENTENCE).toBe("Marks from the Baseline method alone are a weak signal; marks from both methods are the strongest.");
   expect(card.assets[0]?.label, "the A2 asset is A1").toBe(labelOf(RTU_H1));
+  expect(card.assets[0]?.code, "E1.9g: the A2 asset's code").toBe(RTU_H1.code);
 }
 
 export function a4IsBaselineOnlyOnlyWhenEveryHourIsBaselineAlone(): void {
@@ -131,6 +132,7 @@ export function pointsShowThreeAndTheLinkChartsAll(): void {
     {
       ref: "A1",
       assetId: COLD_ROOMS[0]!.id,
+      code: COLD_ROOMS[0]!.code,
       label: labelOf(COLD_ROOMS[0]!),
       href: anomalyFindingHref(COLD_ROOMS[0]!.id, lastMs, FX_NOW.getTime(), ["kw", "pf", "temp", "rh"]),
     },

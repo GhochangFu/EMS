@@ -201,11 +201,12 @@ export function anOrganizationWithNoPointsSaysSoByTheFilter(): void {
 export function everyNamedAssetIsListedOnceWithItsLink(): void {
   const card = fxa(input(fxaColdRoomPoints()));
   // CR-03, CR-07 (F2), CR-05 (F3), CR-11 (F4): each once, numbered by first appearance.
-  expect(card.assets.map((a) => [a.ref, a.label])).toEqual([
-    ["A1", labelOf(room("CR-03"))],
-    ["A2", labelOf(room("CR-07"))],
-    ["A3", labelOf(room("CR-05"))],
-    ["A4", labelOf(room("CR-11"))],
+  // E1.9g: each entry carries its asset code beside the full label.
+  expect(card.assets.map((a) => [a.ref, a.code, a.label])).toEqual([
+    ["A1", "CR-03", labelOf(room("CR-03"))],
+    ["A2", "CR-07", labelOf(room("CR-07"))],
+    ["A3", "CR-05", labelOf(room("CR-05"))],
+    ["A4", "CR-11", labelOf(room("CR-11"))],
   ]);
   for (const a of card.assets) {
     expect(a.href).toBe(forecastFindingHref(a.assetId, ["cold_room_temp_c"]));

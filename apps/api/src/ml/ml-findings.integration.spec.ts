@@ -89,6 +89,13 @@ export async function assertTheAdminSeesOneCardPerOrganization(ctx: MlFindingsFi
   expect(lines(anomalies, ctx.organizations.a)[0]).toBe("2 unusual hours in the last 7 days, on 1 of 1 scored asset.");
   expect(lines(anomalies, ctx.organizations.b)[0]).toBe("1 unusual hour in the last 7 days, on 1 of 1 scored asset.");
   expect(lines(anomalies, ctx.organizations.b)[1]).toMatch(/^Strongest signal: .* — 1 hour marked by both methods/);
+  // E1.9g: every entry carries the asset code (the schema parse holds 1..64); the label is
+  // the code alone or starts with it.
+  const named = [...body.cards, ...anomalies.cards].flatMap((c) => c.assets);
+  expect(named.length, "the fixture cards name assets").toBeGreaterThan(0);
+  for (const a of named) {
+    expect(a.label === a.code || a.label.startsWith(`${a.code} · `), `${a.code} / ${a.label}`).toBe(true);
+  }
 }
 
 /** `organizationId` gives that organization's assets only; a location covers its subtree; the child only its own. */

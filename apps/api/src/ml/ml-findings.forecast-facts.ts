@@ -10,6 +10,8 @@ import {
   rule,
   text,
   time,
+  unknownAsset,
+  type AssetName,
   type DraftLine,
   type FindingOrganization,
   type FindingOrganizationDbRow,
@@ -82,6 +84,8 @@ export type ForecastFindingsInput = {
 };
 
 type Point = CrossingPoint & {
+  /** `E1.9g`: the asset code alone, for the card's asset entry (`label` stays the full label). */
+  readonly code: string;
   readonly organization: FindingOrganization;
   readonly zone: string;
   readonly issuedMs: number;
@@ -107,6 +111,7 @@ function pointsOf(input: ForecastFindingsInput, currentHourMs: number): Point[] 
       assetId: first.asset_id,
       pointKey: first.point_key,
       unit: first.unit,
+      code: first.asset_code,
       label: assetLabel({ code: first.asset_code, rtuName: first.asset_rtu_name, locationName: first.location_name }),
       organization: organizationOf(first),
       zone: resolveSiteTimeZone(first.location_time_zone, first.organization_time_zone).arithmeticZone,
@@ -232,9 +237,9 @@ const toCrossingRule = (r: ThresholdRuleDbRow): CrossingRule => ({
 });
 
 function cardFor(organization: FindingOrganization, points: readonly Point[], rules: readonly CrossingRule[], narrowed: boolean): FindingsCardFacts {
-  const labels = new Map(points.map((p) => [p.assetId, p.label]));
+  const names = new Map(points.map((p): [string, AssetName] => [p.assetId, { code: p.code, label: p.label }]));
   const finish = (lines: DraftLine[]) =>
-    finishCard(organization, lines, (id) => labels.get(id) ?? id, (id, keys) => forecastFindingHref(id, keys));
+    finishCard(organization, lines, (id) => names.get(id) ?? unknownAsset(id), (id, keys) => forecastFindingHref(id, keys));
   if (points.length === 0) {
     const sentence = narrowed ? "No forecast points in this selection." : "No forecast points for this organization.";
     return finish([{ id: "F_NONE", parts: [text(sentence)] }]);
