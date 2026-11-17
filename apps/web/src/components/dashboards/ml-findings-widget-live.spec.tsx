@@ -7,6 +7,7 @@ import type { DashboardWidgetDto } from "@bms/shared";
 import type { MlFindingsCard as MlFindingsCardData, MlFindingsSummaryResponse } from "@bms/shared/contracts";
 
 import * as mlApi from "../../api/ml";
+import { ML_PARAGRAPH_LABEL } from "../ml/ml-findings-card";
 import { MlFindingsWidgetLive, type MlFindingsWidgetScope } from "./ml-findings-widget-live";
 
 /**
@@ -166,4 +167,22 @@ export async function theScopeIsTheDashboardsOwn(): Promise<void> {
     // One widget at a time: the next case renders its own.
     cleanup();
   }
+}
+
+/**
+ * `E1.9g` (ADR 0135 Amendment 10 decision 1) — with `paragraph` on and an `ok` answer, the AI
+ * summary box, labelled "AI summary · advisory", is drawn inside the widget frame.
+ */
+export async function anOkParagraphDrawsTheAiSummaryInTheFrame(): Promise<void> {
+  paragraphSpy?.mockResolvedValue({
+    cards: [{ organizationId: ORG, state: "ok", segments: [{ text: "There are 2 forecast points." }], assets: [] }],
+  });
+  renderWidget({ show: "forecasts", paragraph: true });
+  const label = await screen.findByText(ML_PARAGRAPH_LABEL);
+  expect(label.textContent).toBe("AI summary · advisory");
+  const frame = screen.getByText("Plant findings").closest(".surface-raised") as HTMLElement;
+  expect(frame.contains(label)).toBe(true);
+  expect(label.closest("[data-ml-paragraph]")?.querySelector("[data-ml-headline]")?.textContent).toBe(
+    "There are 2 forecast points.",
+  );
 }

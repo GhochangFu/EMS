@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import type {
@@ -18,18 +18,35 @@ import {
   F5_TOOLTIP,
   hasParagraphWorthyCard,
   isParagraphWorthy,
+  ML_SUMMARY_COMPACT_POINTS,
+  ML_SUMMARY_MAX_POINTS,
   mlPageHref,
   resolveSegments,
+  summaryOf,
+  type FindingPart,
 } from "../../lib/ml-findings";
 import type { ScopeFilter } from "../../lib/scope-filter";
+import { BotIcon } from "../bot-icon";
 import { SectionCard } from "../section-card";
 import { StatusPill } from "../status-pill";
 
 /** Decision 1: the section's heading, word for word. */
 export const ML_FINDINGS_HEADING = "Findings — advisory";
 
-/** Decision 5 / plan T4.3: the label of the AI-written block, word for word. */
-export const ML_PARAGRAPH_LABEL = "AI-written · advisory";
+/** ADR 0135 Amendment 10 Q1 (`E1.9g`): the label of the AI summary box, word for word. */
+export const ML_PARAGRAPH_LABEL = "AI summary · advisory";
+
+/** Amendment 10 decision 1: the muted line under the AI text on the full card, word for word. */
+export const ML_SUMMARY_NOTE = "Written by AI from the facts below. Check them before you act.";
+
+/** Amendment 10 decision 1: the same line on the compact control-room card, where no facts follow. */
+export const ML_SUMMARY_COMPACT_NOTE = "Written by AI from the computed facts.";
+
+/** Amendment 10 decision 5: the plain heading over the facts when the AI box shows. */
+export const ML_COMPUTED_FACTS_HEADING = "Computed facts";
+
+/** OQ-2 (a): with the AI box, the first two fact lines show; the rest wait behind "Show N more". */
+const FACTS_SHOWN = 2;
 
 const KIND_LABEL: Record<MlFindingsKind, string> = { forecasts: "Forecasts", anomalies: "Anomalies" };
 
@@ -47,30 +64,41 @@ type MlFindingsCardProps = {
   compact?: boolean;
 };
 
-/** A sentence's segments, each asset put back from `assets`: a link only when its `href` is safe. */
-function Segments({ segments, assets }: { segments: readonly MlFindingSegment[]; assets: readonly MlFindingAsset[] }) {
+/**
+ * `E1.9g` (Amendment 10 Q3): an asset as a short chip — its code, the full label as its `title`.
+ * A safe `href` is a link to the same target as before; an unsafe one is plain text. The web
+ * never splits or searches `label`.
+ */
+function AssetChip({ part }: { part: Extract<FindingPart, { code: string }> }) {
+  const chip = "rounded-sm border border-line bg-surface px-1 font-semibold";
+  return part.href === null ? (
+    <span className={chip} title={part.label}>
+      {part.code}
+    </span>
+  ) : (
+    <Link className={`${chip} text-accent-strong hover:underline`} to={part.href} title={part.label}>
+      {part.code}
+    </Link>
+  );
+}
+
+/** Resolved parts drawn in order: text as is, an asset as its chip. */
+function Parts({ parts }: { parts: readonly FindingPart[] }) {
   return (
     <>
-      {resolveSegments(segments, assets).map((part, at) =>
-        "text" in part ? (
-          <span key={at}>{part.text}</span>
-        ) : part.href === null ? (
-          <span key={at} className="font-semibold">
-            {part.label}
-          </span>
-        ) : (
-          <Link key={at} className="font-semibold text-accent-strong hover:underline" to={part.href}>
-            {part.label}
-          </Link>
-        ),
-      )}
+      {parts.map((part, at) => ("text" in part ? <span key={at}>{part.text}</span> : <AssetChip key={at} part={part} />))}
     </>
   );
 }
 
+/** A sentence's segments, each asset put back from `assets`: a link only when its `href` is safe. */
+function Segments({ segments, assets }: { segments: readonly MlFindingSegment[]; assets: readonly MlFindingAsset[] }) {
+  return <Parts parts={resolveSegments(segments, assets)} />;
+}
+
 function FactLines({ facts, assets }: { facts: readonly MlFindingFact[]; assets: readonly MlFindingAsset[] }) {
   return (
-    <ul className="space-y-1 text-sm text-ink">
+    <ul data-ml-facts="" className="space-y-1 text-sm text-ink">
       {facts.map((fact, index) => (
         <li key={`${fact.id}:${index}`} title={fact.id === "F5" ? F5_TOOLTIP : undefined}>
           <Segments segments={fact.segments} assets={assets} />
@@ -99,16 +127,38 @@ function okParagraph(data: MlFindingsParagraphResponse | undefined, organization
 }
 
 /**
- * The AI-written block. Its references resolve against the paragraph card's own `assets`, which
- * the server built from the very facts the paragraph was written from (decision 14 and the `E1.9c`
+ * `E1.9g` (ADR 0135 Amendment 10 decisions 1 and 2) — the AI summary box: the mark and the label,
+ * the first sentence as a headline, the next ones as points (at most 4, or 2 on the compact card;
+ * OQ-1 (a) keeps a hidden "weak" sentence), and the muted note. Info tokens only: never an alarm
+ * or severity colour. Its references resolve against the paragraph card's own `assets`, which the
+ * server built from the very facts the paragraph was written from (decision 14 and the `E1.9c`
  * security review): never a link from model text, never a summary that may be a cycle newer.
  */
-function AiParagraph({ paragraph }: { paragraph: MlFindingsParagraphCard }) {
+function AiParagraph({ paragraph, compact = false }: { paragraph: MlFindingsParagraphCard; compact?: boolean }) {
+  const { headline, points } = summaryOf(
+    resolveSegments(paragraph.segments, paragraph.assets),
+    compact ? ML_SUMMARY_COMPACT_POINTS : ML_SUMMARY_MAX_POINTS,
+  );
   return (
-    <div data-ml-paragraph="" className="border-l-2 border-info-line pl-3">
-      <p className="text-2xs font-semibold text-info-ink">{ML_PARAGRAPH_LABEL}</p>
-      <p className="text-sm text-ink">
-        <Segments segments={paragraph.segments} assets={paragraph.assets} />
+    <div data-ml-paragraph="" className="space-y-1.5 rounded-md border border-info-line bg-info-wash p-3">
+      <p className="flex items-center gap-1 text-2xs font-semibold text-info-ink">
+        <BotIcon size={12} />
+        {ML_PARAGRAPH_LABEL}
+      </p>
+      <p data-ml-headline="" className="text-sm font-semibold text-ink">
+        <Parts parts={headline} />
+      </p>
+      {points.length > 0 ? (
+        <ul data-ml-points="" className="list-disc space-y-0.5 pl-5 text-sm text-ink">
+          {points.map((point, at) => (
+            <li key={at}>
+              <Parts parts={point} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p data-ml-note="" className="text-2xs text-ink-muted">
+        {compact ? ML_SUMMARY_COMPACT_NOTE : ML_SUMMARY_NOTE}
       </p>
     </div>
   );
@@ -118,7 +168,12 @@ function cardTitle(card: MlFindingsCardData): string {
   return `${card.organizationCode} · ${card.organizationName}`;
 }
 
-/** One organization's fact lines, with its AI paragraph above them when there is one. */
+/**
+ * One organization's fact lines, with its AI summary above them when there is one. With the box,
+ * the facts sit under "Computed facts", the first two shown and the rest behind "Show N more"
+ * (Amendment 10 decision 5, OQ-2 (a)); the open state lives here, so a remount starts closed.
+ * With no box, every line shows with no heading and no button, as before `E1.9g`.
+ */
 function OrganizationFindings({
   card,
   kind,
@@ -130,6 +185,8 @@ function OrganizationFindings({
   showKind: boolean;
   paragraph: MlFindingsParagraphCard | null;
 }) {
+  const [open, setOpen] = useState(false);
+  const hidden = paragraph !== null && !open ? Math.max(0, card.facts.length - FACTS_SHOWN) : 0;
   return (
     <SectionCard
       title={cardTitle(card)}
@@ -138,7 +195,13 @@ function OrganizationFindings({
     >
       <div className="space-y-2">
         {paragraph ? <AiParagraph paragraph={paragraph} /> : null}
-        <FactLines facts={card.facts} assets={card.assets} />
+        {paragraph ? <h3 className="text-xs font-semibold text-ink-muted">{ML_COMPUTED_FACTS_HEADING}</h3> : null}
+        <FactLines facts={hidden > 0 ? card.facts.slice(0, FACTS_SHOWN) : card.facts} assets={card.assets} />
+        {hidden > 0 ? (
+          <button type="button" className="text-sm font-semibold text-accent-strong hover:underline" onClick={() => setOpen(true)}>
+            Show {hidden} more
+          </button>
+        ) : null}
       </div>
     </SectionCard>
   );
@@ -146,7 +209,10 @@ function OrganizationFindings({
 
 type CompactPart = { kind: MlFindingsKind; card: MlFindingsCardData; paragraph: MlFindingsParagraphCard | null };
 
-/** Decision 13: per kind the paragraph when `ok`, else its top lines; then the pages' links. */
+/**
+ * Decision 13: per kind the AI summary box when `ok` (headline, at most 2 points, the compact
+ * note; `E1.9g`), else its top lines; then the pages' links. No "Computed facts" heading here.
+ */
 function CompactOrganization({ parts, scope, showKind }: { parts: readonly CompactPart[]; scope: ScopeFilter; showKind: boolean }) {
   const first = parts[0];
   if (first === undefined) {
@@ -160,7 +226,11 @@ function CompactOrganization({ parts, scope, showKind }: { parts: readonly Compa
         {parts.map(({ kind, card, paragraph }) => (
           <div key={kind} className="space-y-1">
             {showKind ? <p className="text-2xs font-semibold text-ink-muted">{KIND_LABEL[kind]}</p> : null}
-            {paragraph ? <AiParagraph paragraph={paragraph} /> : <FactLines facts={compactLines(card, kind)} assets={card.assets} />}
+            {paragraph ? (
+              <AiParagraph paragraph={paragraph} compact />
+            ) : (
+              <FactLines facts={compactLines(card, kind)} assets={card.assets} />
+            )}
           </div>
         ))}
         <p className="flex gap-4 text-sm">

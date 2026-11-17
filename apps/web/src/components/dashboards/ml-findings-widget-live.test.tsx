@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, it } from "vitest";
 
 import {
   anEmptyConfigAsksForBothKinds,
+  anOkParagraphDrawsTheAiSummaryInTheFrame,
   paragraphOffMakesNoParagraphRequest,
   paragraphOnAsksForTheParagraph,
   restoreMlReads,
@@ -46,6 +47,10 @@ describe("E1.9f — the live ml_findings widget (ADR 0135 Amendment 8 decision 1
 
   it("asks for the paragraph on the dashboard's scope when paragraph is true", async () => {
     await paragraphOnAsksForTheParagraph();
+  });
+
+  it("E1.9g draws the AI summary box inside the frame for an ok paragraph", async () => {
+    await anOkParagraphDrawsTheAiSummaryInTheFrame();
   });
 
   it("reads the dashboard's organization plus its one set location, asset group or asset", async () => {

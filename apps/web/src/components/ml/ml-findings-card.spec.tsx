@@ -14,7 +14,13 @@ import * as mlApi from "../../api/ml";
 import { ApiError } from "../../lib/api-error";
 import { F5_TOOLTIP } from "../../lib/ml-findings";
 import type { ScopeFilter } from "../../lib/scope-filter";
-import { ML_FINDINGS_HEADING, ML_PARAGRAPH_LABEL, MlFindingsCard } from "./ml-findings-card";
+import {
+  ML_FINDINGS_HEADING,
+  ML_PARAGRAPH_LABEL,
+  ML_SUMMARY_COMPACT_NOTE,
+  ML_SUMMARY_NOTE,
+  MlFindingsCard,
+} from "./ml-findings-card";
 
 /**
  * `E1.9b` (ADR 0135 Amendment 8 decisions 1, 2 and 14; plan T2.4) — the "Findings — advisory"
@@ -144,7 +150,7 @@ export async function twoCardsInTheApisOrder(): Promise<void> {
   }
 }
 
-/** Each fact line reads its sentence with every asset reference put back by label. */
+/** Each fact line reads its sentence with every asset reference put back as its code chip (`E1.9g`). */
 export async function eachFactLineReadsItsText(): Promise<void> {
   vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue(SUMMARY);
   renderCard();
@@ -154,34 +160,37 @@ export async function eachFactLineReadsItsText(): Promise<void> {
     .map((li) => li.textContent);
   expect(items).toEqual([
     F1,
-    "temp_c: coldest expected -18.5 °C at FZ-1 · Birch Row RTU (16 Nov 18:00); warmest -17 °C at FZ-2 · Birch Row RTU (17 Nov 02:00).",
-    "Advisory: FZ-1 · Birch Row RTU temp_c is expected to go above the limit of rule Freezer high (-15) at 17 Nov 01:00.",
-    "temp_c: least certain is FZ-3 · Birch Row RTU, band 2 wide at 17 Nov 03:00; also FZ-4 · Birch Row RTU.",
+    "temp_c: coldest expected -18.5 °C at FZ-1 (16 Nov 18:00); warmest -17 °C at FZ-2 (17 Nov 02:00).",
+    "Advisory: FZ-1 temp_c is expected to go above the limit of rule Freezer high (-15) at 17 Nov 01:00.",
+    "temp_c: least certain is FZ-3, band 2 wide at 17 Nov 03:00; also FZ-4.",
     "No forecast points for this organization.",
   ]);
 }
 
 /**
- * A named asset is a link to its card's `href`; an unsafe `href` is plain text; an asset only
- * listed is not drawn; an F5 line carries the tooltip.
+ * A named asset is a link to its card's `href`, drawn as its code with the full label as its title
+ * (`E1.9g`); an unsafe `href` is plain text with the same title; an asset only listed is not drawn;
+ * an F5 line carries the tooltip.
  */
 export async function assetReferencesLinkOnlyToSafeHrefs(): Promise<void> {
   vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue(SUMMARY);
   renderCard();
   await screen.findByText("ORGC · Cedar Point Mills");
   const links = within(section()).getAllByRole("link");
-  expect(links.map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
-    ["FZ-1 · Birch Row RTU", HREF_1],
-    ["FZ-2 · Birch Row RTU", HREF_2],
-    ["FZ-1 · Birch Row RTU", HREF_1],
+  expect(links.map((a) => [a.textContent, a.getAttribute("title"), a.getAttribute("href")])).toEqual([
+    ["FZ-1", "FZ-1 · Birch Row RTU", HREF_1],
+    ["FZ-2", "FZ-2 · Birch Row RTU", HREF_2],
+    ["FZ-1", "FZ-1 · Birch Row RTU", HREF_1],
   ]);
-  for (const unsafe of ["FZ-3 · Birch Row RTU", "FZ-4 · Birch Row RTU"]) {
+  for (const unsafe of ["FZ-3", "FZ-4"]) {
     const node = within(section()).getByText(unsafe);
     expect(node.closest("a")).toBeNull();
+    expect(node.getAttribute("title")).toBe(`${unsafe} · Birch Row RTU`);
   }
   expect(section().innerHTML).not.toContain("javascript:");
   expect(section().innerHTML).not.toContain("example.test");
-  expect(within(section()).queryByText("FZ-5 · Birch Row RTU")).toBeNull();
+  expect(within(section()).queryByText("FZ-5")).toBeNull();
+  expect(section().innerHTML).not.toContain("FZ-5");
   const lines = within(section()).getAllByRole("listitem");
   expect(lines[2]?.getAttribute("title")).toBe(F5_TOOLTIP);
   expect(lines[1]?.getAttribute("title")).toBeNull();
@@ -301,7 +310,7 @@ const OK_C: MlFindingsParagraphResponse = {
 };
 
 const OK_TEXT =
-  "Over the next two days the coldest point is at FZ-1 · Birch Row RTU; the band is widest at FZ-3 · Birch Row RTU, and an asset has 3 stale points.";
+  "Over the next two days the coldest point is at FZ-1; the band is widest at FZ-3, and an asset has 3 stale points.";
 
 function paragraphNode(): HTMLElement | null {
   return screen.queryByText(ML_PARAGRAPH_LABEL)?.closest<HTMLElement>("[data-ml-paragraph]") ?? null;
@@ -320,7 +329,7 @@ async function settle(): Promise<void> {
 }
 
 /**
- * The block shows only for `ok`: labelled "AI-written · advisory", inside its organization's card,
+ * The block shows only for `ok`: labelled "AI summary · advisory" (`E1.9g`), inside its organization's card,
  * above the facts; the `none` card gets nothing. The read sends the card's kind and scope.
  */
 export async function theLabelShowsOnlyForOk(): Promise<void> {
@@ -328,10 +337,11 @@ export async function theLabelShowsOnlyForOk(): Promise<void> {
   const spy = vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockResolvedValue(OK_C);
   renderCard({ scope: { organizationId: ORG_C } });
   const label = await screen.findByText(ML_PARAGRAPH_LABEL);
-  expect(ML_PARAGRAPH_LABEL).toBe("AI-written · advisory");
+  expect(ML_PARAGRAPH_LABEL).toBe("AI summary · advisory");
   expect(spy).toHaveBeenCalledWith("forecasts", { organizationId: ORG_C });
   expect(screen.getAllByText(ML_PARAGRAPH_LABEL)).toHaveLength(1);
-  expect(paragraphNode()?.textContent).toBe(`${ML_PARAGRAPH_LABEL}${OK_TEXT}`);
+  // One sentence: the headline alone, then the note.
+  expect(paragraphNode()?.textContent).toBe(`${ML_PARAGRAPH_LABEL}${OK_TEXT}${ML_SUMMARY_NOTE}`);
   const firstFact = within(section()).getAllByRole("listitem")[0] as HTMLElement;
   expect(label.compareDocumentPosition(firstFact) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   const cardB = screen.getByRole("heading", { name: "ORGB · Birch Valley Water" });
@@ -435,10 +445,12 @@ export async function paragraphReferencesUseTheParagraphsOwnAssets(): Promise<vo
   renderCard();
   await screen.findByText(ML_PARAGRAPH_LABEL);
   const block = paragraphNode() as HTMLElement;
-  expect(block.textContent).toBe(`${ML_PARAGRAPH_LABEL}${OK_TEXT.replace("FZ-1", "FZ-2")}`);
+  expect(block.textContent).toBe(`${ML_PARAGRAPH_LABEL}${OK_TEXT.replace("FZ-1", "FZ-2")}${ML_SUMMARY_NOTE}`);
   const links = within(block).getAllByRole("link");
-  expect(links.map((a) => [a.textContent, a.getAttribute("href")])).toEqual([["FZ-2 · Birch Row RTU", HREF_2]]);
-  expect(within(block).getByText("FZ-3 · Birch Row RTU").closest("a")).toBeNull();
+  expect(links.map((a) => [a.textContent, a.getAttribute("title"), a.getAttribute("href")])).toEqual([
+    ["FZ-2", "FZ-2 · Birch Row RTU", HREF_2],
+  ]);
+  expect(within(block).getByText("FZ-3").closest("a")).toBeNull();
   expect(within(block).getByText("an asset").closest("a")).toBeNull();
   expect(block.innerHTML).not.toContain("evil");
   expect(block.innerHTML).not.toContain("example.test");
@@ -525,7 +537,7 @@ const ANOMALY_C: MlFindingsCardData = {
 };
 
 const F5_LINE =
-  "Advisory: FZ-1 · Birch Row RTU temp_c is expected to go above the limit of rule Freezer high (-15) at 17 Nov 01:00.";
+  "Advisory: FZ-1 temp_c is expected to go above the limit of rule Freezer high (-15) at 17 Nov 01:00.";
 
 function stubBothKinds(paragraph: (kind: MlFindingsKind) => MlFindingsParagraphResponse) {
   vi.spyOn(mlApi, "fetchMlFindingsSummary").mockImplementation((kind) =>
@@ -545,7 +557,7 @@ export async function compactShowsTheTopLinesAndThePageLinks(): Promise<void> {
   expect(screen.getAllByText("ORGC · Cedar Point Mills")).toHaveLength(1);
   expect(within(section()).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
     F5_LINE,
-    "Strongest signal: FZ-2 · Birch Row RTU — 4 hours marked by both methods.",
+    "Strongest signal: FZ-2 — 4 hours marked by both methods.",
   ]);
   expect(within(section()).getAllByRole("listitem")[0]?.getAttribute("title")).toBe(F5_TOOLTIP);
   expect(screen.queryByText(F1)).toBeNull();
@@ -576,7 +588,7 @@ export async function compactPrefersTheParagraph(): Promise<void> {
   renderCard({ kinds: ["forecasts", "anomalies"], scope: { organizationId: ORG_C }, compact: true });
   await screen.findByText(ML_PARAGRAPH_LABEL);
   const block = paragraphNode() as HTMLElement;
-  expect(block.textContent).toBe(`${ML_PARAGRAPH_LABEL}FZ-2 · Birch Row RTU shows 4 hours marked by both methods.`);
+  expect(block.textContent).toBe(`${ML_PARAGRAPH_LABEL}FZ-2 shows 4 hours marked by both methods.${ML_SUMMARY_COMPACT_NOTE}`);
   expect(within(block).getByRole("link").getAttribute("href")).toBe(HREF_2);
   expect(screen.queryByText(/Strongest signal/)).toBeNull();
   expect(within(section()).getAllByRole("listitem").map((li) => li.textContent)).toEqual([F5_LINE]);
