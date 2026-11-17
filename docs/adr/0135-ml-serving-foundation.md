@@ -1965,10 +1965,14 @@ threshold or detector constant changes, and `apps/ml` does not change.
 
 ## Amendment 10 — `E1.9g`: the AI summary set apart from the computed facts (2026-11-17)
 
-**Status: Proposed — 2026-11-17.** Drafted by an agent for backlog row `E1.9g`
-from the owner's review of the live `E1.9` cards on the AWS demo host
-(2026-11-17, in chat). The owner chose the layout ("Option A") from three
-mockups in chat; the open questions below are still the owner's to rule.
+**Status: Accepted — 2026-11-17** (owner, in chat: "Accept"; proposed the
+same day in #1416). Drafted by an agent for backlog row `E1.9g` from the
+owner's review of the live `E1.9` cards on the AWS demo host (2026-11-17, in
+chat). The owner chose the layout ("Option A") from three mockups in chat,
+ruled Q1–Q4 as recommended, and added ruling Q5 below before accepting, so
+**every *(recommended)* line in this amendment is now a ruling**. Plan:
+[`e1.9g-ai-summary-layout.md`](../plans/e1.9g-ai-summary-layout.md)
+(approved 2026-11-17).
 
 ### Context
 
@@ -2052,6 +2056,26 @@ key's parts, the cap, the timeout or the fail-closed rule.
   (c) keep full labels.
 - **Q4 — facts under the AI box.** (a) first two lines plus "Show N more"
   *(recommended)*; (b) all lines always.
+
+### Owner rulings (2026-11-17, in chat)
+
+- **Q1** (a): the label is **"AI summary · advisory"**.
+- **Q2** (a): prompt version 2 plus the on-screen split.
+- **Q3** (a): code-only chips in the AI box and the facts; an additive `code`
+  field on the card's asset entries.
+- **Q4** (a): under the AI box, the first two fact lines and "Show N more".
+- **Q5 — the organization page order** *(owner, added before acceptance)*. On
+  the control-room organization page the *Findings — advisory* card moves
+  **directly above *Asset health***: … daily energy cost → *Findings —
+  advisory* → *Asset health* → *Bad actors — advisory* → load trend …
+  This replaces Amendment 8 decision 13's "after *Asset health*" for the
+  organization page. *Bad actors* stays directly after *Asset health*
+  ([ADR 0050](./0050-asset-health-score.md) Amendment 5). The site page
+  already shows *Findings* above *Bad actors* and has no *Asset health*
+  section; it does not change.
+- Plan rulings OQ-1 (a) (a hidden "weak" sentence takes the last shown
+  point slot) and OQ-2 (a) (the first two fact lines, in order) are recorded
+  in the plan.
 
 ### Consequences
 
