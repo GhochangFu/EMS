@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
@@ -179,10 +179,13 @@ describe.skipIf(!connectionString)("E1.9c — the findings paragraph against Pos
         );
       }
     };
-    await scores(orgA, assets.aMine, [-3, -2]);
-    await scores(orgA, assets.aOther, [-4]);
-    await scores(orgB, assets.bOne, [-3, -2]);
-    await scores(orgB, assets.bTwo, [-5]);
+    // `n` (2–21) comes from the run's stamp, so two runs on one database write different facts and hashes.
+    const n = 2 + (parseInt(stamp.slice(0, 4), 16) % 20);
+    const recent = Array.from({ length: n }, (_, i) => -(i + 2));
+    await scores(orgA, assets.aMine, recent);
+    await scores(orgA, assets.aOther, [-1]);
+    await scores(orgB, assets.bOne, recent);
+    await scores(orgB, assets.bTwo, [-1]);
 
     const resolver = new LlmResolver(tenantDb, new CredentialCryptoService());
     const provider: LlmProvider = {
@@ -213,6 +216,11 @@ describe.skipIf(!connectionString)("E1.9c — the findings paragraph against Pos
         );
       },
       remember: (hash) => hashes.add(hash),
+      runHash: (tag) => {
+        const hash = createHash("sha256").update(`e19c-${stamp}-${tag}`).digest("hex");
+        hashes.add(hash);
+        return hash;
+      },
       users: { locationAdmin },
       now: () => new Date(),
       organizations: { a: orgA, b: orgB },

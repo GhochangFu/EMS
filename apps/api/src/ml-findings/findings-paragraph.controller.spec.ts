@@ -25,7 +25,7 @@ type Call = { kind: MlFindingsKind; assetIds: string[] | null; narrowed: boolean
 function harness(narrowed: string[] | null = null) {
   const narrowCalls: AssetScopeFilter[] = [];
   const calls: Call[] = [];
-  const answer: MlFindingsParagraphResponse = { cards: [{ organizationId: ORG, state: "pending", segments: [] }] };
+  const answer: MlFindingsParagraphResponse = { cards: [{ organizationId: ORG, state: "pending", segments: [], assets: [] }] };
   const paragraphs = {
     get: async (kind: MlFindingsKind, assetIds: string[] | null, isNarrowed: boolean, now: Date) => {
       calls.push({ kind, assetIds, narrowed: isNarrowed, now });
