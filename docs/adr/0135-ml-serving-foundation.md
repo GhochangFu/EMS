@@ -680,7 +680,10 @@ template that carries it. `dashboard-builder.ts` made room under the §4.5 cap b
 moving its binding messages to `dashboard-binding-messages.ts`, and the
 builder's tab helpers moved out move-only (R14). Step 6's browser layer for the
 widget (palette → add → bind → save → hard reload) was not run in the build
-session; it is owed on the demo host with the other demo-host checks.
+session; it is owed on the demo host with the other demo-host checks. *Done
+on the demo host 2026-11-17 (`b4c22dc1`): a widget saved on a temporary WBLDC
+dashboard drew the actual line, the past forecast and the 48 h band on the
+viewer page on a fresh page load.*
 
 **Defect fix — `serve` scores the current hour when it starts after the tick
 (2026-11-16).** The `E1.4` demo checks found the 10:00 hour unscored: a deploy
@@ -1084,5 +1087,15 @@ recorded so a reader does not take them for drift:
   so "never had fresh data to show" does not apply to it.
 - **The widget's time axis is UTC and says so**: the anomaly read carries no
   site zone, so the axis, its tooltip and its caption all name UTC.
-The arm64 demo-host sample of ruling 5 is still owed here.
+**The arm64 demo-host sample of ruling 5 (2026-11-17, `b4c22dc1`, t4g.large):**
+
+| Child | Wall s | Scored | Rows |
+|---|---|---|---|
+| Forecast | 27.3 | 16 series | 768 |
+| Anomaly | 12.1 | 37 assets | 46 (9 forest) |
+| **Cycle** | **39.4** | | |
+
+The `ml` container peaked at 674.7 MiB in `docker stats` (1 s samples over
+02:04–02:09 UTC, scheduler and both children together), so the anomaly child
+is below 900 MiB and the cycle below 300 s. Ruling 5 holds on the demo host.
 
