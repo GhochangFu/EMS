@@ -105,6 +105,7 @@
     "tests/f3.35-tile-icon-vocabulary.test.ts",
     "tests/e1.3-health-in-range-counters.test.ts",
     "tests/e1.3-health-containment.test.ts",
+    "tests/e1.8-health-inputs-containment.test.ts",
     "tests/f3.35-metric-catalog-schema.test.ts",
     "tests/f3.35-metric-catalog-schema.integration.test.ts",
     "tests/f3.35-metric-catalog-containment.test.ts",
