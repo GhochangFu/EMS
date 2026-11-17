@@ -173,6 +173,24 @@ export function theFixturesGoodParagraphsPass(): void {
   ).toBe("ok");
 }
 
+/**
+ * `E1.9g` (ADR 0135 Amendment 10 decision 3, plan T1.4) — a version-2-shaped reply (a count
+ * sentence, then short points, the strongest-signal asset first, the word "weak") passes the
+ * guard unchanged; the same sentences one per line are still `line_break`. The guard is not edited.
+ */
+export function aVersion2ShapedParagraphPasses(): void {
+  const fxb = pseudonymiseFacts("anomalies", fxbAnomalyCard());
+  if (!fxb.sendable) throw new Error("the fixture card must be sendable");
+  const sentences = [
+    "There were 6 unusual hours in the last 7 days, on 4 of 19 scored assets.",
+    "[A1] carries the strongest signal, with 1 hour marked by both methods, last at [T1].",
+    "[A2] had 2 unusual hours, last at [T2].",
+    "Marks from the Baseline method alone are a weak signal.",
+  ];
+  expect(reasonOf(sentences.join(" "), fxb.lines)).toBe("ok");
+  expect(reasonOf(sentences.join("\n"), fxb.lines)).toBe("line_break");
+}
+
 /** Security re-review: the fact-word exemption must not open a scheme, a domain or markup. */
 export function factWordsNeverOpenALinkOrMarkup(): void {
   const dotted: SentLine[] = [

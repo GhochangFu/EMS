@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  aVersion2ShapedParagraphPasses,
   eachReasonHasATextThatFailsForItAlone,
   theHardenedRulesEachRefuseTheirForm,
   factWordsNeverOpenALinkOrMarkup,
@@ -22,4 +23,6 @@ describe("E1.9c — the findings paragraph guard (ADR 0135 Amendment 8 decision 
   it("look-alike characters are refused; the typography allow-list passes (re-review 2)", () => lookAlikeCharactersAreRefused());
   it("more number words, compositions and separators are refused (re-review 3)", () => moreNumberFormsAreRefused());
   it("the fixture's good paragraphs pass", () => theFixturesGoodParagraphsPass());
+  it("E1.9g a version-2-shaped paragraph passes; the same sentences on separate lines are line_break", () =>
+    aVersion2ShapedParagraphPasses());
 });

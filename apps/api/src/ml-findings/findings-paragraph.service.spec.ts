@@ -7,6 +7,7 @@ import { expect, vi } from "vitest";
 import type { CopilotAvailabilityService } from "../copilot/copilot-availability.service";
 import type { LlmCompleteInput, LlmProvider, LlmReply } from "../llm/llm-port";
 import type { LlmResolver, ResolvedLlm } from "../llm/llm-resolver";
+import { RTU_H1 } from "../ml/ml-findings.fixture";
 import type { FindingsCardFacts } from "../ml/ml-findings.lines";
 import type { MlFindingsService } from "../ml/ml-findings.service";
 import {
@@ -260,6 +261,9 @@ export async function aGoodReplyIsStoredOkAndServedWithItsAssetReference(): Prom
   // Review L1: the paragraph carries the assets its references name, from the same facts.
   const fxb = fxbAnomalyCard();
   expect(second.cards[0]!.assets).toEqual(fxb.assets.filter((a) => a.ref === "A1"));
+  // E1.9g: the paragraph card's asset carries the code, apart from the full label.
+  expect(second.cards[0]!.assets[0]!.code).toBe(RTU_H1.code);
+  expect(second.cards[0]!.assets[0]!.code).not.toBe(second.cards[0]!.assets[0]!.label);
   expect(first.cards[0]!.assets, "pending carries no assets").toEqual([]);
   expect(JSON.stringify(second.cards[0]!.segments)).toContain("17 Nov");
   expect(mlFindingsParagraphResponseSchema.safeParse(second).success).toBe(true);
