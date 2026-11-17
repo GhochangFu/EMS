@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { ASSET_LABEL_SEPARATOR, assetLabelOf, assetLabelParts } from "@bms/shared";
 
@@ -41,6 +42,10 @@ type AlarmDetailsPanelProps = {
  */
 export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPanelProps) {
   const qc = useQueryClient();
+  // E2.3 (ADR 0136 decision 6): the last "Use as root cause" click, handed to the wizard. A new
+  // `seq` per click, so the same text clicked twice still reaches it.
+  const [rootCauseFill, setRootCauseFill] = useState<{ text: string; seq: number } | null>(null);
+  const fillFromSuggestion = (text: string) => setRootCauseFill((prev) => ({ text, seq: (prev?.seq ?? 0) + 1 }));
 
   const detailsQ = useQuery({
     queryKey: ["alarms", "details", alarmId],
@@ -244,7 +249,10 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
               (below). Mounted here, so its read starts after the details. A device alarm has no
               asset and gets no section (plan §17 Q4).
             */}
-            {details.assetId !== null ? <AlarmRootCauseSection alarmId={alarmId} assetId={details.assetId} /> : null}
+            {details.assetId !== null ? (
+              // The button only where the form is (`readOnly` is a viewer): no `onUse`, no button.
+              <AlarmRootCauseSection alarmId={alarmId} assetId={details.assetId} onUse={readOnly ? undefined : fillFromSuggestion} />
+            ) : null}
 
             {/* F3.16: an enrichment names affected assets and is written against the alarm's
                 asset scope, so a device alarm (no asset) shows none and offers none. */}
@@ -307,6 +315,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   assets={assets}
                   assetsLoading={assetsQ.isLoading}
                   onCancel={onClose}
+                  rootCauseFill={rootCauseFill}
                   onSaved={(updated) => {
                     qc.setQueryData(["alarms", "details", alarmId], updated);
                     void qc.invalidateQueries({ queryKey: ["alarms", "list"] });
