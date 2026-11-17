@@ -57,6 +57,7 @@ import {
   pastForecastQuerySchema,
 } from "../ml/ml.schema";
 import { findingsParagraphQuerySchema } from "../ml-findings/findings-paragraph.schema";
+import { advisoriesQuerySchema } from "../advisories/advisories.schema";
 import { healthBadActorsQuerySchema } from "../asset-health/health-inputs.schema";
 import {
   assetHealthQuerySchema,
@@ -232,4 +233,7 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // (`GET /asset-health/bad-actors?organizationId=&locationId=`): the summary's two optional
   // lower-cased scope uuids that only narrow — `.strict()`, no body, no ledger entry.
   healthBadActorsQuerySchema,
+  // 47 -> 48 (2026-11-17): `E1.6a` (ADR 0137) registered `advisoriesQuerySchema`
+  // (`GET /advisories?organizationId=&locationId=`): two optional scope uuids, `.strict()`, no body.
+  advisoriesQuerySchema,
 };

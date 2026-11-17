@@ -159,3 +159,5 @@ export * from "./ml-findings";
 export * from "./asset-health-inputs";
 // `E2.3` (ADR 0136): the root-cause suggestions response and its types.
 export * from "./alarm-root-cause";
+// `E1.6a` (ADR 0137): the optimisation advisories response and its types.
+export * from "./advisories";
