@@ -15,6 +15,7 @@ import { SiteDashboardView } from "../../components/control-room/site-dashboard-
 import { SiteTrendsView } from "../../components/control-room/site-trends-view";
 import { SmocSiteView } from "../../components/control-room/smoc-site-view";
 import { WallFrame } from "../../components/control-room/wall-frame";
+import { MlFindingsCard } from "../../components/ml/ml-findings-card";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
@@ -44,6 +45,9 @@ type ControlRoomSitePageProps = {
    */
   locationId?: string;
 };
+
+/** `E1.9e` — the site body's card shows both kinds. */
+const SITE_FINDINGS_KINDS = ["anomalies", "forecasts"] as const;
 
 const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong hover:underline";
 
@@ -107,6 +111,10 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * `/trends` (`SITE_TRENDS_TAB`), the `assets` shape: exempt from the D5 redirect, rendered as
  * `SiteTrendsView` for every view kind once the resolve read has answered, never a wall page,
  * and the **Wall** link omits the segment there.
+ *
+ * `E1.9e` (ADR 0135 Amendment 8 decision 13) — the Site view body carries the compact findings
+ * card (`MlFindingsCard`, both kinds, scoped to the site and its organization) between the body
+ * and the site's dashboards. The wall, the assets tab, the trends tab and a pending read draw none.
  */
 export function ControlRoomSitePage({ user, locationId: locationIdProp }: ControlRoomSitePageProps) {
   const params = useParams();
@@ -235,6 +243,12 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                     tab={tab ?? DEFAULT_SMOC_TAB}
                     tabParam={tabParam}
                     role={user.role}
+                  />
+                  {/* `E1.9e` (ADR 0135 Amendment 8 decision 13) — the body only; the wall returned above. */}
+                  <MlFindingsCard
+                    kinds={SITE_FINDINGS_KINDS}
+                    scope={{ organizationId: site.organization.id, locationId: site.id }}
+                    compact
                   />
                   <ScopedDashboardsList locationId={site.id} organizationId={site.organization.id} />
                 </>

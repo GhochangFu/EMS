@@ -11,6 +11,7 @@ import { OrganizationLoadTrend } from "../../components/control-room/organizatio
 import { OrganizationSiteMap } from "../../components/control-room/organization-site-map";
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
 import { LocationKpiCard } from "../../components/location-kpi-card";
+import { MlFindingsCard } from "../../components/ml/ml-findings-card";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
@@ -58,6 +59,10 @@ type ControlRoomOrganizationPageProps = {
  * `F4.317` (ADR 0112) — under the header: the 14-tile KPI strip from the organization template
  * (`OrganizationKpiStrip`), which replaced `F4.259`'s two-tile live/not-live strip here. The strip
  * is its own read, so a failed one leaves the cards and the rail standing.
+ *
+ * `E1.9e` (ADR 0135 Amendment 8 decision 13) — after Asset health: the compact findings card
+ * (`MlFindingsCard`), both kinds, scoped to the organization. Like the other panels it renders only
+ * with the overview.
  */
 export function ControlRoomOrganizationPage({
   user,
@@ -113,6 +118,9 @@ export function ControlRoomOrganizationPage({
   );
 }
 
+/** `E1.9e` — the control room's card shows both kinds. */
+const ORGANIZATION_FINDINGS_KINDS = ["anomalies", "forecasts"] as const;
+
 type OrganizationOverviewProps = {
   items: readonly LocationKpiSummary[];
   organizationId: string;
@@ -167,6 +175,8 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
       {/* `F4.337` — the strip's daily cost chart, between the alarms and Asset health. */}
       <OrganizationStripCharts key={`strip-charts-${organizationId}`} organizationId={organizationId} />
       <HealthSummarySection organizationId={organizationId} />
+      {/* `E1.9e` (ADR 0135 Amendment 8 decision 13) — the compact findings card, after Asset health. */}
+      <MlFindingsCard kinds={ORGANIZATION_FINDINGS_KINDS} scope={{ organizationId }} compact />
       {energyShown ? <OrganizationLoadTrend organizationId={organizationId} /> : null}
       <ScopedDashboardsList organizationId={organizationId} />
     </>
