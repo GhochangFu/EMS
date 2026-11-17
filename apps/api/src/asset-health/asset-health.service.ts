@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, lt, max, sql, sum } from "drizzle-orm";
 
-import type { AssetHealthResponse, HealthSummaryResponse, TemplateHealth } from "@bms/shared";
+import type { AssetHealthResponse, HealthBand, HealthSummaryResponse, TemplateHealth } from "@bms/shared";
 import {
   type BmsDb,
   assetPoints,
@@ -109,6 +109,17 @@ export type HealthLocationFilter = {
   readonly id: string;
   readonly readableLocationIds: readonly string[] | null;
   readonly readableOrganizationIds: readonly string[] | null;
+};
+
+/**
+ * `E1.8a` (ADR 0050 Amendment 5, plan T1.4) — one in-scope asset's rule score, as `summary`
+ * computes it, for the bad-actors read's *Lowest health score* tab and its count of scored assets.
+ */
+export type HealthScopeScore = {
+  readonly assetId: string;
+  readonly score: number | null;
+  readonly band: HealthBand | null;
+  readonly scoredTagCount: number;
 };
 
 @Injectable()
