@@ -2,11 +2,12 @@
 
 ## Status
 
-**Proposed — 2026-11-17.** Drafted by an agent for backlog row `E1.6` at the
-step 2 gate (AGENTS.md §10, `docs/build-operating-model.md`). Nothing is built
-until the owner rules on the questions in §Open questions. Lines marked
-*(recommended)* are the drafter's calls; each one is also an owner question,
-and becomes a ruling only when the owner accepts it.
+**Accepted — 2026-11-17** (owner, in chat: "accept as recommended";
+proposed the same day in PR #1394). Drafted by an agent for backlog row
+`E1.6` at the step 2 gate (AGENTS.md §10, `docs/build-operating-model.md`).
+Lines marked *(recommended)* were the drafter's calls; the owner accepted the
+ADR with them as written, so **every *(recommended)* line is now a ruling**
+and Q1–Q13 are ruled as recommended (see §Rulings).
 
 Builds on [ADR 0134](./0134-slab-utility-tariffs.md) (slab tariffs, kVAh
 billing), [ADR 0070](./0070-sustainability-metrics-engine.md) (calc
@@ -270,9 +271,9 @@ variable.
   the advisories module; §6's `optimisation` line is unchanged); new backlog
   rows for the deferred kinds.
 
-## Open questions for the owner
+## Open questions for the owner (all ruled 2026-11-17)
 
-Each has a recommended answer. "Accept as recommended" accepts all of them.
+Each had a recommended answer; the owner accepted all of them (§Rulings).
 
 1. **Q1 — Form.** New ADR 0137, not an ADR 0135 amendment. *Recommended:
    yes* (most of it is tariff arithmetic, not ML).
@@ -307,3 +308,9 @@ Each has a recommended answer. "Accept as recommended" accepts all of them.
     yes.*
 13. **Q13 — PR split** `E1.6a` (API) → `E1.6b` (web) → `E1.6c` (forecast
     kind); the rest of the row becomes new rows. *Recommended: yes.*
+
+## Rulings
+
+**2026-11-17, owner, in chat: "accept as recommended".** Q1–Q13 are ruled as
+recommended. The build waits for the step-3 plan
+(`docs/plans/e1.6-optimisation-advisories.md`) and the owner's yes to it.
