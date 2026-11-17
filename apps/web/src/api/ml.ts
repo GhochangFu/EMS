@@ -2,11 +2,16 @@ import {
   anomalyListResponseSchema,
   assetAnomaliesResponseSchema,
   forecastListResponseSchema,
+  mlFindingsParagraphResponseSchema,
   mlFindingsSummaryResponseSchema,
   pastForecastResponseSchema,
   pointForecastResponseSchema,
 } from "@bms/shared/contracts";
-import type { MlFindingsKind, MlFindingsSummaryResponse } from "@bms/shared/contracts";
+import type {
+  MlFindingsKind,
+  MlFindingsParagraphResponse,
+  MlFindingsSummaryResponse,
+} from "@bms/shared/contracts";
 import type {
   AnomalyListResponse,
   AssetAnomaliesResponse,
@@ -137,4 +142,27 @@ export async function fetchMlFindingsSummary(
     throw new ApiError(`ml findings summary ${res.status}`, res.status);
   }
   return checkResponse(mlFindingsSummaryResponseSchema, await res.json(), `ml/${kind}/summary`);
+}
+
+/**
+ * `E1.9d` (ADR 0135 Amendment 8 decisions 5 and 10; plan T4.1, R-c, R-n) —
+ * `GET /api/v1/ml/findings/paragraph?kind=` with each of the four scope keys `scope` sets: the
+ * AI-written paragraph of each organization card, `ok`, `none` or `pending`. The route never waits
+ * for the provider, so a miss answers `pending` and the card asks again (`paragraphPollMs`).
+ */
+export async function fetchMlFindingsParagraph(
+  kind: MlFindingsKind,
+  scope: ScopeFilter,
+): Promise<MlFindingsParagraphResponse> {
+  const sent = withAuth();
+  const params = new URLSearchParams({ kind });
+  for (const [key, value] of scopeParams(scope, SCOPE_FILTER_KEYS)) {
+    params.set(key, value);
+  }
+  const res = await fetch(`${base}/api/v1/ml/findings/paragraph?${params.toString()}`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new ApiError(`ml findings paragraph ${res.status}`, res.status);
+  }
+  return checkResponse(mlFindingsParagraphResponseSchema, await res.json(), "ml/findings/paragraph");
 }

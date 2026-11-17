@@ -85,6 +85,12 @@ export const mlFindingsSummaryResponseSchema = z.object({
   cards: z.array(mlFindingsCardSchema),
 });
 
+/**
+ * One organization's paragraph. `assets` is built on the server from the very facts the paragraph
+ * was written from (`E1.9d`, the `E1.9c` security review): a new ML cycle between the summary
+ * read and this one can renumber `A1`, so the web resolves a reference against this list, never
+ * the summary card's (decision 14 still holds: no link is ever built from model text).
+ */
 export const mlFindingsParagraphCardSchema = z.object({
   organizationId: z.string().uuid(),
   state: z.enum(ML_FINDINGS_PARAGRAPH_STATES),

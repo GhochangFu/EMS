@@ -1,11 +1,15 @@
-import { useQueries, type UseQueryResult } from "@tanstack/react-query";
+import { useQueries, useQueryClient, type QueryKey, type UseQueryResult } from "@tanstack/react-query";
 
-import type { MlFindingsKind, MlFindingsSummaryResponse } from "@bms/shared/contracts";
+import type {
+  MlFindingsKind,
+  MlFindingsParagraphResponse,
+  MlFindingsSummaryResponse,
+} from "@bms/shared/contracts";
 
-import { fetchMlFindingsSummary } from "../api/ml";
+import { fetchMlFindingsParagraph, fetchMlFindingsSummary } from "../api/ml";
 import { retryUnlessForbidden } from "../components/asset-history/history-format";
 import { FORECAST_REFETCH_MS } from "../lib/forecast-series";
-import { scopeKey } from "../lib/ml-findings";
+import { paragraphPollMs, scopeKey } from "../lib/ml-findings";
 import type { ScopeFilter } from "../lib/scope-filter";
 
 /**
@@ -25,6 +29,45 @@ export function useMlFindings(
       refetchInterval: FORECAST_REFETCH_MS,
       retry: retryUnlessForbidden,
       enabled,
+    })),
+  });
+}
+
+/** The cached paragraph read: the answer, and how many answers in a row held a `pending` card. */
+type ParagraphRead = { readonly response: MlFindingsParagraphResponse; readonly pendingAnswers: number };
+
+/**
+ * `E1.9d` (ADR 0135 Amendment 8 decision 5; plan T4.3, R-n, R-q) — one paragraph read per kind,
+ * each only while its `enabled` entry is true (the caller asks only when the summary has a card
+ * with findings). The route never waits for the provider, so while any card is `pending` the read
+ * asks again every 4 s, at most 6 times in a row (`paragraphPollMs`), then every 15 minutes. The
+ * count lives in the cached data, so every observer of one key shares one bound. TanStack's
+ * default stops the interval in a hidden browser tab (R-q).
+ */
+export function useMlFindingsParagraphs(
+  kinds: readonly MlFindingsKind[],
+  scope: ScopeFilter,
+  enabled: readonly boolean[],
+): UseQueryResult<MlFindingsParagraphResponse>[] {
+  const client = useQueryClient();
+  const key = scopeKey(scope);
+  return useQueries({
+    queries: kinds.map((kind, index) => ({
+      queryKey: ["ml-findings", "paragraph", kind, key] as QueryKey,
+      queryFn: async ({ queryKey }: { queryKey: QueryKey }): Promise<ParagraphRead> => {
+        const response = await fetchMlFindingsParagraph(kind, scope);
+        const waiting = response.cards.some((card) => card.state === "pending");
+        const before = client.getQueryData<ParagraphRead>(queryKey)?.pendingAnswers ?? 0;
+        return { response, pendingAnswers: waiting ? before + 1 : 0 };
+      },
+      select: (read: ParagraphRead) => read.response,
+      refetchInterval: (query: { state: { data: ParagraphRead | undefined } }) => {
+        const read = query.state.data;
+        // The first `pending` answer is the first ask, not an ask again.
+        return paragraphPollMs(read?.response, Math.max(0, (read?.pendingAnswers ?? 0) - 1));
+      },
+      retry: retryUnlessForbidden,
+      enabled: enabled[index] ?? false,
     })),
   });
 }

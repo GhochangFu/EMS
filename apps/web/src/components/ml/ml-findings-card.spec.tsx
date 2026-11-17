@@ -1,14 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { MlFindingsCard as MlFindingsCardData, MlFindingsKind, MlFindingsSummaryResponse } from "@bms/shared/contracts";
+import type {
+  MlFindingsCard as MlFindingsCardData,
+  MlFindingsKind,
+  MlFindingsParagraphResponse,
+  MlFindingsSummaryResponse,
+} from "@bms/shared/contracts";
 
 import * as mlApi from "../../api/ml";
 import { F5_TOOLTIP } from "../../lib/ml-findings";
 import type { ScopeFilter } from "../../lib/scope-filter";
-import { ML_FINDINGS_HEADING, MlFindingsCard } from "./ml-findings-card";
+import { ML_FINDINGS_HEADING, ML_PARAGRAPH_LABEL, MlFindingsCard } from "./ml-findings-card";
 
 /**
  * `E1.9b` (ADR 0135 Amendment 8 decisions 1, 2 and 14; plan T2.4) — the "Findings — advisory"
@@ -84,16 +89,33 @@ const CARD_B: MlFindingsCardData = {
 
 const SUMMARY: MlFindingsSummaryResponse = { asOf: "2026-11-16T09:00:00.000Z", cards: [CARD_C, CARD_B] };
 
-function renderCard(props: { kinds?: readonly MlFindingsKind[]; scope?: ScopeFilter; enabled?: boolean } = {}) {
+type CardProps = {
+  kinds?: readonly MlFindingsKind[];
+  scope?: ScopeFilter;
+  enabled?: boolean;
+  paragraph?: boolean;
+};
+
+function renderCard(props: CardProps = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <MlFindingsCard kinds={props.kinds ?? ["forecasts"]} scope={props.scope ?? {}} enabled={props.enabled} />
+        <MlFindingsCard
+          kinds={props.kinds ?? ["forecasts"]}
+          scope={props.scope ?? {}}
+          enabled={props.enabled}
+          paragraph={props.paragraph}
+        />
       </MemoryRouter>
     </QueryClientProvider>,
   );
   return client;
+}
+
+/** Every case starts with a paragraph read that answers no cards; a case that needs more says so. */
+export function stubNoParagraph(): void {
+  vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockResolvedValue({ cards: [] });
 }
 
 function section(): HTMLElement {
@@ -246,4 +268,275 @@ export async function twoKindsPendingNamesTheKind(): Promise<void> {
   await screen.findByText("ORGC · Cedar Point Mills");
   expect(within(section()).getAllByText("Anomalies").length).toBeGreaterThan(0);
   expect(screen.queryByText("Loading findings…")).toBeNull();
+}
+
+// ---------------------------------------------------------------------------------------------
+// `E1.9d` (ADR 0135 Amendment 8 decisions 5, 13 and 14; plan T4.3, R-n) — the AI paragraph slot.
+// ---------------------------------------------------------------------------------------------
+
+/** ORGC's paragraph names A1 (linked like its fact line), A3 (unsafe href) and A9 (not on the card). */
+const OK_C: MlFindingsParagraphResponse = {
+  cards: [
+    {
+      organizationId: ORG_C,
+      state: "ok",
+      segments: [
+        { text: "Over the next two days the coldest point is at " },
+        { assetRef: "A1" },
+        { text: "; the band is widest at " },
+        { assetRef: "A3" },
+        { text: ", and " },
+        { assetRef: "A9" },
+        { text: " has 3 stale points." },
+      ],
+      assets: CARD_C.assets,
+    },
+    { organizationId: ORG_B, state: "none", segments: [], assets: [] },
+  ],
+};
+
+const OK_TEXT =
+  "Over the next two days the coldest point is at FZ-1 · Birch Row RTU; the band is widest at FZ-3 · Birch Row RTU, and an asset has 3 stale points.";
+
+function paragraphNode(): HTMLElement | null {
+  return screen.queryByText(ML_PARAGRAPH_LABEL)?.closest<HTMLElement>("[data-ml-paragraph]") ?? null;
+}
+
+/** The section's markup without React's per-render `useId` values. */
+function sectionMarkup(): string {
+  return section().innerHTML.replace(/ id="[^"]*"/g, "");
+}
+
+/** Lets every settled promise and React update land. */
+async function settle(): Promise<void> {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 20));
+  });
+}
+
+/**
+ * The block shows only for `ok`: labelled "AI-written · advisory", inside its organization's card,
+ * above the facts; the `none` card gets nothing. The read sends the card's kind and scope.
+ */
+export async function theLabelShowsOnlyForOk(): Promise<void> {
+  vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue(SUMMARY);
+  const spy = vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockResolvedValue(OK_C);
+  renderCard({ scope: { organizationId: ORG_C } });
+  const label = await screen.findByText(ML_PARAGRAPH_LABEL);
+  expect(ML_PARAGRAPH_LABEL).toBe("AI-written · advisory");
+  expect(spy).toHaveBeenCalledWith("forecasts", { organizationId: ORG_C });
+  expect(screen.getAllByText(ML_PARAGRAPH_LABEL)).toHaveLength(1);
+  expect(paragraphNode()?.textContent).toBe(`${ML_PARAGRAPH_LABEL}${OK_TEXT}`);
+  const firstFact = within(section()).getAllByRole("listitem")[0] as HTMLElement;
+  expect(label.compareDocumentPosition(firstFact) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const cardB = screen.getByRole("heading", { name: "ORGB · Birch Valley Water" });
+  // ORGC's block comes before ORGB's card: it sits in ORGC's card, not after the last one.
+  expect(label.compareDocumentPosition(cardB) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+/**
+ * Decision 5, fail closed: `none`, `pending`, a failed read and a card with no entry leave the
+ * section exactly as the facts alone draw it — no banner, no spinner, no error text.
+ */
+export async function noneOrPendingOrFailureAddsNothing(): Promise<void> {
+  vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue(SUMMARY);
+  const spy = vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockResolvedValue({ cards: [] });
+  renderCard();
+  await screen.findByText("ORGC · Cedar Point Mills");
+  await waitFor(() => expect(spy).toHaveBeenCalled());
+  await settle();
+  const baseline = sectionMarkup();
+  cleanup();
+
+  const answers: Array<() => Promise<MlFindingsParagraphResponse>> = [
+    () => Promise.resolve({ cards: [{ organizationId: ORG_C, state: "none", segments: [], assets: [] }] }),
+    () => Promise.resolve({ cards: [{ organizationId: ORG_C, state: "pending", segments: [], assets: [] }] }),
+    () => Promise.resolve({ cards: [{ organizationId: ORG_C, state: "ok", segments: [], assets: [] }] }),
+    // An entry for an organization that has no card here: no card gets it.
+    () => Promise.resolve({ cards: [{ organizationId: ASSET_5, state: "ok", segments: [{ text: "Quiet." }], assets: [] }] }),
+    // A 403 is final (no retry), so the read has failed by the time the markup is compared.
+    () => Promise.reject(new Error("ml findings paragraph 403")),
+  ];
+  for (const next of answers) {
+    spy.mockReset();
+    spy.mockImplementation(next);
+    renderCard();
+    await screen.findByText("ORGC · Cedar Point Mills");
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    await settle();
+    expect(sectionMarkup()).toBe(baseline);
+    expect(screen.queryByText(ML_PARAGRAPH_LABEL)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    cleanup();
+  }
+}
+
+/** The facts are on screen while the paragraph read is still unanswered. */
+export async function theFactsDoNotWaitForTheParagraph(): Promise<void> {
+  vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue(SUMMARY);
+  const spy = vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockReturnValue(new Promise(() => undefined));
+  renderCard();
+  await screen.findByText("ORGC · Cedar Point Mills");
+  await waitFor(() => expect(spy).toHaveBeenCalled());
+  expect(within(section()).getAllByRole("listitem")).toHaveLength(5);
+  expect(screen.queryByText(ML_PARAGRAPH_LABEL)).toBeNull();
+  expect(screen.queryByText(/Loading/)).toBeNull();
+}
+
+/**
+ * Decision 14 and the `E1.9c` security review: a reference in the paragraph is put back from the
+ * paragraph card's **own** `assets` (built on the server from the facts it was written from), never
+ * from the summary card's — a new ML cycle can renumber `A1` between the two reads. When the lists
+ * agree it is the same link the fact line carries. An unsafe `href` and a reference the list does
+ * not hold are plain text; an `href` or a label on the paragraph's segment itself is never used.
+ */
+export async function paragraphReferencesUseTheParagraphsOwnAssets(): Promise<void> {
+  vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue(SUMMARY);
+  const spy = vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockResolvedValue(OK_C);
+  renderCard();
+  await screen.findByText(ML_PARAGRAPH_LABEL);
+  const same = within(paragraphNode() as HTMLElement).getAllByRole("link");
+  const factLink = within(within(section()).getAllByRole("listitem")[1] as HTMLElement).getAllByRole("link")[0];
+  expect(same.map((a) => a.getAttribute("href"))).toEqual([factLink?.getAttribute("href")]);
+  cleanup();
+
+  const smuggledA1 = { assetRef: "A1", href: `/asset-history/${ASSET_5}?points=evil` };
+  const smuggledA9 = { assetRef: "A9", href: `/asset-history/${ASSET_5}`, label: "FZ-9 · Smuggled" };
+  // The paragraph's facts are a newer cycle: its A1 is the summary's A2, and its A3 is unsafe.
+  const renumbered: MlFindingsParagraphResponse = {
+    cards: [
+      {
+        organizationId: ORG_C,
+        state: "ok",
+        segments: [
+          { text: "Over the next two days the coldest point is at " },
+          smuggledA1,
+          { text: "; the band is widest at " },
+          { assetRef: "A3" },
+          { text: ", and " },
+          smuggledA9,
+          { text: " has 3 stale points." },
+        ],
+        assets: [
+          { ref: "A1", assetId: ASSET_2, label: "FZ-2 · Birch Row RTU", href: HREF_2 },
+          { ref: "A3", assetId: ASSET_3, label: "FZ-3 · Birch Row RTU", href: "//example.test/x" },
+        ],
+      },
+    ],
+  };
+  spy.mockResolvedValue(renumbered);
+  renderCard();
+  await screen.findByText(ML_PARAGRAPH_LABEL);
+  const block = paragraphNode() as HTMLElement;
+  expect(block.textContent).toBe(`${ML_PARAGRAPH_LABEL}${OK_TEXT.replace("FZ-1", "FZ-2")}`);
+  const links = within(block).getAllByRole("link");
+  expect(links.map((a) => [a.textContent, a.getAttribute("href")])).toEqual([["FZ-2 · Birch Row RTU", HREF_2]]);
+  expect(within(block).getByText("FZ-3 · Birch Row RTU").closest("a")).toBeNull();
+  expect(within(block).getByText("an asset").closest("a")).toBeNull();
+  expect(block.innerHTML).not.toContain("evil");
+  expect(block.innerHTML).not.toContain("example.test");
+  expect(block.innerHTML).not.toContain(ASSET_5);
+  expect(block.textContent).not.toContain("Smuggled");
+  // The summary's own facts are untouched: its A1 is still FZ-1.
+  const summaryLink = within(within(section()).getAllByRole("listitem")[1] as HTMLElement).getAllByRole("link")[0];
+  expect(summaryLink?.getAttribute("href")).toBe(HREF_1);
+}
+
+/** `paragraph={false}` makes no paragraph request; neither does a summary of empty cards only. */
+export async function noParagraphRequestWhenOffOrEmpty(): Promise<void> {
+  vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue(SUMMARY);
+  const spy = vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockResolvedValue(OK_C);
+  renderCard({ paragraph: false });
+  await screen.findByText("ORGC · Cedar Point Mills");
+  await settle();
+  expect(spy).not.toHaveBeenCalled();
+  expect(screen.queryByText(ML_PARAGRAPH_LABEL)).toBeNull();
+  cleanup();
+
+  vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue({ ...SUMMARY, cards: [CARD_B] });
+  renderCard();
+  await screen.findByText("ORGB · Birch Valley Water");
+  await settle();
+  expect(spy).not.toHaveBeenCalled();
+}
+
+/**
+ * R-n: while a card is `pending` the read asks again every 4 s, at most 6 times; then it waits
+ * for the 15-minute refetch. Fake timers.
+ */
+export async function pendingAsksAgainAtMostSixTimes(): Promise<void> {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue(SUMMARY);
+  const spy = vi
+    .spyOn(mlApi, "fetchMlFindingsParagraph")
+    .mockResolvedValue({ cards: [{ organizationId: ORG_C, state: "pending", segments: [], assets: [] }] });
+  renderCard();
+  await screen.findByText("ORGC · Cedar Point Mills");
+  await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+  for (let ask = 1; ask <= 6; ask += 1) {
+    await act(() => vi.advanceTimersByTimeAsync(4_000));
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1 + ask));
+  }
+  await act(() => vi.advanceTimersByTimeAsync(4_000 * 20));
+  expect(spy).toHaveBeenCalledTimes(7);
+  await act(() => vi.advanceTimersByTimeAsync(900_000));
+  await waitFor(() => expect(spy).toHaveBeenCalledTimes(8));
+  expect(screen.queryByText(ML_PARAGRAPH_LABEL)).toBeNull();
+}
+
+/** R-n: once the paragraph is written the block shows and the quick asks stop. */
+export async function pendingThenOkShowsAndStops(): Promise<void> {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.spyOn(mlApi, "fetchMlFindingsSummary").mockResolvedValue(SUMMARY);
+  const spy = vi
+    .spyOn(mlApi, "fetchMlFindingsParagraph")
+    .mockResolvedValueOnce({ cards: [{ organizationId: ORG_C, state: "pending", segments: [], assets: [] }] })
+    .mockResolvedValue(OK_C);
+  renderCard();
+  await screen.findByText("ORGC · Cedar Point Mills");
+  await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+  expect(screen.queryByText(ML_PARAGRAPH_LABEL)).toBeNull();
+  await act(() => vi.advanceTimersByTimeAsync(4_000));
+  expect(await screen.findByText(ML_PARAGRAPH_LABEL)).toBeInTheDocument();
+  await act(() => vi.advanceTimersByTimeAsync(4_000 * 10));
+  expect(spy).toHaveBeenCalledTimes(2);
+}
+
+const ANOMALY_C: MlFindingsCardData = {
+  organizationId: ORG_C,
+  organizationCode: "ORGC",
+  organizationName: "Cedar Point Mills",
+  facts: [
+    { id: "A1", segments: [{ text: "9 unusual hours in the last 7 days, on 2 of 5 scored assets." }] },
+    { id: "A2", segments: [{ text: "Strongest signal: " }, { assetRef: "A1" }, { text: " — 4 hours marked by both methods." }] },
+    { id: "A3", segments: [{ assetRef: "A2" }, { text: ": 3 unusual hours, last 16 Nov 08:00; points kw." }] },
+  ],
+  assets: [
+    { ref: "A1", assetId: ASSET_2, label: "FZ-2 · Birch Row RTU", href: HREF_2 },
+    { ref: "A2", assetId: ASSET_1, label: "FZ-1 · Birch Row RTU", href: HREF_1 },
+  ],
+};
+
+function stubBothKinds(paragraph: (kind: MlFindingsKind) => MlFindingsParagraphResponse) {
+  vi.spyOn(mlApi, "fetchMlFindingsSummary").mockImplementation((kind) =>
+    Promise.resolve(kind === "forecasts" ? { ...SUMMARY, cards: [CARD_C] } : { ...SUMMARY, cards: [ANOMALY_C] }),
+  );
+  return vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockImplementation((kind) => Promise.resolve(paragraph(kind)));
+}
+
+/** Decision 1 / §5: with a paragraph, still no alarm or severity colour. */
+export async function noAlarmColourWithTheParagraph(): Promise<void> {
+  {
+    stubBothKinds(() => OK_C);
+    renderCard({ kinds: ["forecasts", "anomalies"] });
+    await screen.findAllByText(ML_PARAGRAPH_LABEL);
+    const classes = [section(), ...Array.from(section().querySelectorAll("*"))].map((el) => el.getAttribute("class") ?? "");
+    for (const cls of classes) {
+      expect(cls).not.toMatch(/critical|warning|severity|ok-|alarm|danger/);
+    }
+    cleanup();
+    vi.restoreAllMocks();
+  }
 }

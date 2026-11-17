@@ -1,10 +1,18 @@
 import { expect } from "vitest";
 
 import { anomalyFindingHref, forecastFindingHref } from "@bms/shared/contracts";
-import type { MlFindingAsset } from "@bms/shared/contracts";
+import type { MlFindingAsset, MlFindingFact, MlFindingsCard, MlFindingsParagraphResponse } from "@bms/shared/contracts";
 
 import { detectorLabel } from "./anomaly-series";
-import { F5_TOOLTIP, pickScope, resolveSegments, safeAssetHref, scopeKey } from "./ml-findings";
+import {
+  F5_TOOLTIP,
+  hasParagraphWorthyCard,
+  paragraphPollMs,
+  pickScope,
+  resolveSegments,
+  safeAssetHref,
+  scopeKey,
+} from "./ml-findings";
 
 /**
  * `E1.9b` (ADR 0135 Amendment 8 decisions 8 and 14; plan T2.2, R-g) — the pure helpers behind the
@@ -103,4 +111,52 @@ export function theF5TooltipIsFixed(): void {
  */
 export function theBaselineWordMatchesTheWeb(): void {
   expect(detectorLabel("baseline_mad")).toBe("Baseline");
+}
+
+const PENDING: MlFindingsParagraphResponse = {
+  cards: [
+    { organizationId: ORG, state: "ok", segments: [{ text: "Quiet." }], assets: [] },
+    { organizationId: SITE, state: "pending", segments: [], assets: [] },
+  ],
+};
+
+/**
+ * `E1.9d` (plan T4.2, R-n) — 4 s while any card is `pending` and fewer than 6 asks again were
+ * made; otherwise (and with no answer yet) the 15-minute refetch.
+ */
+export function paragraphPollMsIsBounded(): void {
+  for (const polls of [0, 1, 5]) {
+    expect(paragraphPollMs(PENDING, polls)).toBe(4_000);
+  }
+  for (const polls of [6, 7, 60]) {
+    expect(paragraphPollMs(PENDING, polls)).toBe(900_000);
+  }
+  const settled: MlFindingsParagraphResponse = {
+    cards: [
+      { organizationId: ORG, state: "ok", segments: [{ text: "Quiet." }], assets: [] },
+      { organizationId: SITE, state: "none", segments: [], assets: [] },
+    ],
+  };
+  expect(paragraphPollMs(settled, 0)).toBe(900_000);
+  expect(paragraphPollMs({ cards: [] }, 0)).toBe(900_000);
+  expect(paragraphPollMs(undefined, 0)).toBe(900_000);
+}
+
+function fact(id: MlFindingFact["id"], text: string): MlFindingFact {
+  return { id, segments: [{ text }] };
+}
+
+function card(facts: MlFindingFact[]): MlFindingsCard {
+  return { organizationId: ORG, organizationCode: "ORGQ", organizationName: "Quill Works", facts, assets: [] };
+}
+
+/** `E1.9d` (plan T4.3, R-m) — a paragraph is worth asking for only when a card holds more than its "none" line. */
+export function onlyACardWithFindingsIsWorthAParagraph(): void {
+  expect(hasParagraphWorthyCard(undefined)).toBe(false);
+  expect(hasParagraphWorthyCard({ asOf: "2026-11-16T09:00:00.000Z", cards: [] })).toBe(false);
+  const none = card([fact("F_NONE", "No forecast points for this organization.")]);
+  const aNone = card([fact("A_NONE", "No unusual hours in the last 7 days on 4 scored assets.")]);
+  expect(hasParagraphWorthyCard({ asOf: "2026-11-16T09:00:00.000Z", cards: [none, aNone] })).toBe(false);
+  const some = card([fact("F1", "3 forecast points, issued at 16 Nov 14:05; 0 stale.")]);
+  expect(hasParagraphWorthyCard({ asOf: "2026-11-16T09:00:00.000Z", cards: [none, some] })).toBe(true);
 }

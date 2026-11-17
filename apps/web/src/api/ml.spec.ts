@@ -6,6 +6,7 @@ import {
   fetchAnomalyList,
   fetchAssetAnomalies,
   fetchForecastList,
+  fetchMlFindingsParagraph,
   fetchMlFindingsSummary,
   fetchPastForecast,
   fetchPointForecast,
@@ -222,4 +223,36 @@ export async function theSummaryReadSendsItsScopeAndParses(): Promise<void> {
   await expect(fetchMlFindingsSummary("forecasts", {})).rejects.toThrow();
   answer({ message: "boom" }, 500);
   await expect(fetchMlFindingsSummary("forecasts", {})).rejects.toThrow(/^ml findings summary 500$/);
+}
+
+const PARAGRAPH = {
+  cards: [
+    {
+      organizationId: ORG,
+      state: "ok",
+      segments: [{ text: "Most unusual hours were on " }, { assetRef: "A1" }, { text: "." }],
+      assets: [{ ref: "A1", assetId: ASSET, label: "CR-1 · Quill RTU", href: `/asset-history/${ASSET}?points=kw` }],
+    },
+    { organizationId: SITE, state: "pending", segments: [], assets: [] },
+  ],
+};
+
+/**
+ * `E1.9d` (plan T4.1, R-c) — the paragraph read goes to `/ml/findings/paragraph` with its kind first
+ * and every scope key it is given, and parses; a wrong state throws in test and a 500 names its status.
+ */
+export async function theParagraphReadSendsItsKindAndScopeAndParses(): Promise<void> {
+  const seen = answer(PARAGRAPH);
+  expect(await fetchMlFindingsParagraph("anomalies", {})).toEqual(PARAGRAPH);
+  expect(seen()).toBe(`${BASE}/api/v1/ml/findings/paragraph?kind=anomalies`);
+  await fetchMlFindingsParagraph("forecasts", { organizationId: ORG, locationId: SITE });
+  expect(seen()).toBe(`${BASE}/api/v1/ml/findings/paragraph?kind=forecasts&organizationId=${ORG}&locationId=${SITE}`);
+  await fetchMlFindingsParagraph("forecasts", { assetGroupId: GROUP, assetId: ASSET });
+  expect(seen()).toBe(`${BASE}/api/v1/ml/findings/paragraph?kind=forecasts&assetGroupId=${GROUP}&assetId=${ASSET}`);
+  answer({ cards: [{ organizationId: ORG, state: "failed", segments: [], assets: [] }] });
+  await expect(fetchMlFindingsParagraph("forecasts", {})).rejects.toThrow();
+  answer({ cards: [{ organizationId: ORG, state: "ok", segments: [{ assetRef: "A1" }] }] });
+  await expect(fetchMlFindingsParagraph("forecasts", {}), "a card without its own assets").rejects.toThrow();
+  answer({ message: "boom" }, 500);
+  await expect(fetchMlFindingsParagraph("forecasts", {})).rejects.toThrow(/^ml findings paragraph 500$/);
 }
