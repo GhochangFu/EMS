@@ -1,7 +1,14 @@
 import { describe, it } from "vitest";
 
 import {
+  advisoryLineIsTheShownScoreMinusThePenalty,
   anAbsentCoveragePairSaysNothingRatherThanUndefined,
+  countLineOnlyForAtLeastOneLosingAsset,
+  fiveRowsInSowOrderWithTheirWords,
+  noAdvisoryLineWithoutAScoreOrHistory,
+  noInputsReadTheNoDataWords,
+  nullScoreOperationalRowReadsTheDash,
+  oneHourAndOneWorkOrderAreSingular,
   bandNullReadsAsUnconfiguredNotNoData,
   computedAtNullSaysNotYetComputedNeverANow,
   coverageBeyondTheExpectedCountReadsAsComplete,
@@ -58,5 +65,35 @@ describe("asset-health-view", () => {
 
   it("does not claim a score in the partial sentence, which score: null can reach", () => {
     thePartialSentenceDoesNotClaimAScore();
+  });
+});
+
+describe("E1.8b asset-health-view — the five inputs, the advisory line, the count line", () => {
+  it("gives five rows in SOW order with their fixed labels and fact words", () => {
+    fiveRowsInSowOrderWithTheirWords();
+  });
+
+  it("says why each fact row is empty, and keeps the two fixed rows", () => {
+    noInputsReadTheNoDataWords();
+  });
+
+  it("reads a null score as the em dash on the operational row", () => {
+    nullScoreOperationalRowReadsTheDash();
+  });
+
+  it("uses the singular for one hour and one work order", () => {
+    oneHourAndOneWorkOrderAreSingular();
+  });
+
+  it("computes the advisory figure from the score shown, minus the penalty", () => {
+    advisoryLineIsTheShownScoreMinusThePenalty();
+  });
+
+  it("draws no advisory line without a score or anomaly history", () => {
+    noAdvisoryLineWithoutAScoreOrHistory();
+  });
+
+  it("draws the count line only for at least one losing asset", () => {
+    countLineOnlyForAtLeastOneLosingAsset();
   });
 });

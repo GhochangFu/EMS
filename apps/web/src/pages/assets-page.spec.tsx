@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import { assetHealthResponseSchema, assetListRowSchema } from "@bms/shared/contracts";
+import { assetHealthInputsResponseSchema, assetHealthResponseSchema, assetListRowSchema } from "@bms/shared/contracts";
 import type { AssetHealthResponse, AssetKpisResponse, AssetListRow, DashboardsListResponse, UserRole } from "@bms/shared";
 
 import * as assetHealthApi from "../api/asset-health";
@@ -109,6 +109,21 @@ const HEALTH: AssetHealthResponse = assetHealthResponseSchema.parse({
   expectedBuckets: 12,
 });
 
+/** `E1.8b` — the five inputs of the second row, both facts present. */
+const INPUTS = assetHealthInputsResponseSchema.parse({
+  assetId: UNWIRED.id,
+  asOf: "2026-09-17T01:00:00.000Z",
+  inputs: [
+    { key: "operational", status: "scored" },
+    { key: "historical", status: "advisory" },
+    { key: "maintenance", status: "fact_only" },
+    { key: "environmental", status: "no_source" },
+    { key: "utilisation", status: "no_reference" },
+  ],
+  anomalyHistory: { windowDays: 7, scoredHours: 100, unusualHours: 3, strongHours: 2, baselineOnlyHours: 1, penalty: 0.02 },
+  maintenance: { openCorrective: 1, pastSla: 0 },
+});
+
 const DASHBOARDS: DashboardsListResponse = {
   items: [
     {
@@ -167,6 +182,8 @@ function stubApi(dashboards: DashboardsListResponse = DASHBOARDS, coveredAssetId
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([WIRED, UNWIRED]);
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES as never);
   vi.spyOn(assetHealthApi, "fetchAssetHealth").mockResolvedValue(HEALTH);
+  // `E1.8b`: the health card's five inputs, read beside the health score.
+  vi.spyOn(assetHealthApi, "fetchAssetHealthInputs").mockResolvedValue(INPUTS);
   return vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue(dashboards);
 }
 
@@ -324,6 +341,63 @@ export async function panelShowsTheHealthCard(): Promise<void> {
   expect(await screen.findByRole("heading", { name: "Health" })).toBeInTheDocument();
   expect(await screen.findByText("87%")).toBeInTheDocument();
   expect(fetchHealth).toHaveBeenCalledWith(UNWIRED.id);
+}
+
+/** `E1.8b` T2.5 — the inputs hook is wired: the five rows and the advisory line render. */
+export async function panelShowsTheHealthInputs(): Promise<void> {
+  stubApi();
+  const fetchInputs = vi.spyOn(assetHealthApi, "fetchAssetHealthInputs");
+  renderPage();
+
+  await clickRow("FEED-PUMP-2");
+
+  expect(await screen.findByText("Health inputs (SOW §4.3)")).toBeInTheDocument();
+  expect(screen.getByText("Operational conditions — Scored")).toBeInTheDocument();
+  expect(screen.getByText("Equipment utilisation — No rated duty set")).toBeInTheDocument();
+  expect(screen.getByText("1 open corrective work order · 0 past SLA")).toBeInTheDocument();
+  expect(screen.getByText("With anomaly history: 85.0% · advisory")).toBeInTheDocument();
+  expect(fetchInputs).toHaveBeenCalledWith(UNWIRED.id);
+}
+
+/** `E1.8b` T2.5 — a rejected inputs read leaves the card as it was, with no error text. */
+export async function aRejectedInputsReadLeavesTheCardAsToday(): Promise<void> {
+  stubApi();
+  const fetchInputs = vi
+    .spyOn(assetHealthApi, "fetchAssetHealthInputs")
+    .mockRejectedValue(new Error("asset-health/assets/:assetId/inputs 500"));
+  renderPage();
+
+  await clickRow("FEED-PUMP-2");
+  const heading = await screen.findByRole("heading", { name: "Asset · FEED-PUMP-2" });
+  const panel = heading.closest("aside") as HTMLElement;
+  expect(await within(panel).findByText("87%")).toBeInTheDocument();
+  await waitFor(() => expect(fetchInputs).toHaveBeenCalledWith(UNWIRED.id));
+  await screen.findByText("7.5 kW");
+
+  expect(within(panel).queryByText("Health inputs (SOW §4.3)")).toBeNull();
+  expect(panel.textContent).not.toContain("With anomaly history");
+  expect(panel.textContent).not.toMatch(/could not|unavailable|500|inputs/i);
+  expect(panel.querySelector(".bg-critical-wash"), "no error box").toBeNull();
+}
+
+/**
+ * `E1.8b` T2.5 — the two reads do not wait for each other: with the inputs read never answering
+ * the score still draws, and with the health read never answering the inputs read is still sent.
+ */
+export async function theHealthAndInputsReadsDoNotWaitForEachOther(): Promise<void> {
+  stubApi();
+  vi.spyOn(assetHealthApi, "fetchAssetHealthInputs").mockReturnValue(new Promise(() => {}));
+  const first = renderPage();
+  await clickRow("FEED-PUMP-2");
+  expect(await screen.findByText("87%"), "the score does not wait for the inputs").toBeInTheDocument();
+  first.unmount();
+
+  vi.spyOn(assetHealthApi, "fetchAssetHealth").mockReturnValue(new Promise(() => {}));
+  const fetchInputs = vi.spyOn(assetHealthApi, "fetchAssetHealthInputs").mockResolvedValue(INPUTS);
+  renderPage();
+  await clickRow("FEED-PUMP-2");
+  await waitFor(() => expect(fetchInputs, "the inputs do not wait for the score").toHaveBeenCalledWith(UNWIRED.id));
+  expect(screen.getByText("Loading health…")).toBeInTheDocument();
 }
 
 /** P10 (`F2.33`) — the KPI hook is wired: the card heading and the stubbed value render. */

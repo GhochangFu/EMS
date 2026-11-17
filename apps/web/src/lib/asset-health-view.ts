@@ -1,4 +1,12 @@
 import type { HealthBand, HealthBandCount, HealthUnscoredTag } from "@bms/shared";
+import { advisoryHealthScore, HEALTH_ANOMALY_CAPTION, HEALTH_INPUTS } from "@bms/shared/contracts";
+import type {
+  AssetHealthInputsResponse,
+  HealthAnomalyHistory,
+  HealthBadActorsResponse,
+  HealthInputKey,
+  HealthMaintenanceFact,
+} from "@bms/shared/contracts";
 
 /**
  * `E1.3` Unit 8 — the pure rendering rules for the asset health surface (ADR
@@ -169,4 +177,101 @@ export function healthDonutSlices(
     count: band.count,
     percent: assetCount > 0 ? (band.count / assetCount) * 100 : null,
   }));
+}
+
+/** `n` and the word, with an `s` unless `n` is 1. */
+function counted(n: number, singular: string): string {
+  return `${n} ${singular}${n === 1 ? "" : "s"}`;
+}
+
+/** `E1.8b` (plan §4.3) — the label on screen for each of the five inputs, with its fixed status. */
+const HEALTH_INPUT_LABELS: Readonly<Record<HealthInputKey, string>> = {
+  operational: "Operational conditions — Scored",
+  historical: "Historical performance — Advisory",
+  maintenance: "Maintenance records — Fact only, not scored",
+  environmental: "Environmental factors — No source yet",
+  utilisation: "Equipment utilisation — No rated duty set",
+};
+
+/** One of the five rows on the asset card. `detail: null` — the label says all there is. */
+export type HealthInputRow = {
+  readonly key: HealthInputKey;
+  readonly label: string;
+  readonly detail: string | null;
+  /** The input is advisory (historical): it never changes the rule score. */
+  readonly advisory: boolean;
+};
+
+function anomalyHistoryDetail(history: HealthAnomalyHistory | null | undefined): string {
+  if (!history) {
+    return "No anomaly history to show.";
+  }
+  return (
+    `${counted(history.unusualHours, "unusual hour")} in the last ${history.windowDays} days · ` +
+    `${history.strongHours} marked by both methods`
+  );
+}
+
+function maintenanceDetail(fact: HealthMaintenanceFact | null | undefined): string {
+  if (!fact) {
+    return "No open corrective work order to show.";
+  }
+  return `${counted(fact.openCorrective, "open corrective work order")} · ${fact.pastSla} past SLA`;
+}
+
+/**
+ * `E1.8b` (plan §4.3, §4.4, R-l) — the SOW §4.3 five inputs, always five, in the fixed order of
+ * `HEALTH_INPUTS`. The operational row is the score and band the card already shows, in the same
+ * words. **A failed read and an empty read look the same** (decision 9): an absent fact says so in
+ * fixed words, never as a zero.
+ */
+export function healthInputRows(
+  health: { readonly score: number | null; readonly band: HealthBand | null },
+  inputs: AssetHealthInputsResponse | undefined,
+): HealthInputRow[] {
+  return HEALTH_INPUTS.map(({ key, status }) => {
+    let detail: string | null = null;
+    if (key === "operational") {
+      detail = health.score === null ? "—" : `${formatHealthScorePercent(health.score)} · ${healthBandDisplay(health.band)}`;
+    } else if (key === "historical") {
+      detail = anomalyHistoryDetail(inputs?.anomalyHistory);
+    } else if (key === "maintenance") {
+      detail = maintenanceDetail(inputs?.maintenance);
+    }
+    return { key, label: HEALTH_INPUT_LABELS[key], detail, advisory: status === "advisory" };
+  });
+}
+
+/** The smaller line under the score, and its fixed caption. */
+export type HealthAdvisoryLine = { readonly text: string; readonly caption: string };
+
+/**
+ * `E1.8b` (plan §4.4, R-b) — the advisory figure **from the score the card shows**, minus the
+ * penalty, through the shared `advisoryHealthScore`. Never recomputed from anything else, so the
+ * figure on screen is always "the score shown, minus the penalty". No score or no history: no line.
+ */
+export function advisoryLine(
+  score: number | null,
+  anomalyHistory: HealthAnomalyHistory | null | undefined,
+): HealthAdvisoryLine | null {
+  const advisory = advisoryHealthScore(score, anomalyHistory?.penalty ?? null);
+  if (advisory === null) {
+    return null;
+  }
+  return {
+    text: `With anomaly history: ${formatHealthScorePercent(advisory, 1)} · advisory`,
+    caption: HEALTH_ANOMALY_CAPTION,
+  };
+}
+
+/**
+ * `E1.8b` (plan §4.8, R-i) — the line under the donut. Only when the read answered, its anomaly
+ * half is not `null`, and at least one asset loses points: "0 of M" would read as a fleet claim.
+ */
+export function anomalyCountLine(data: HealthBadActorsResponse | undefined): string | null {
+  const anomaly = data?.anomaly;
+  if (!data || !anomaly || anomaly.losingAssetCount < 1) {
+    return null;
+  }
+  return `${anomaly.losingAssetCount} of ${data.scoredAssetCount} scored assets lose points to anomaly history · advisory`;
 }
