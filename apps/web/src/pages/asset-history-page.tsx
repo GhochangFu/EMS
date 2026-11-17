@@ -6,6 +6,7 @@ import { encodePointRef } from "@bms/shared";
 
 import { fetchAssetPoints, fetchAssets } from "../api/assets";
 import { downloadAssetHistoryExport } from "../api/view-exports";
+import { AssetAdvisoriesSection } from "../components/advisories/asset-advisories-section";
 import { BucketTable } from "../components/asset-history/bucket-table";
 import { ACCESS_SENTENCE, isForbidden, retryUnlessForbidden, siteZoneOf } from "../components/asset-history/history-format";
 import { PointList } from "../components/asset-history/point-list";
@@ -218,6 +219,9 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
                 zone={siteZone.zone}
               />
             ) : null}
+
+            {/* `E1.6b` (ADR 0137, plan R-l): the asset's advisories; nothing when none or the read fails. */}
+            <AssetAdvisoriesSection assetId={assetId} />
           </>
         )}
       </div>
