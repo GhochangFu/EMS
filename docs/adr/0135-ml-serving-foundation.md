@@ -1319,6 +1319,9 @@ Q1–Q4 are ruled as recommended (Q5 was ruled earlier the same day; see
 - Q5 is ruled **(a) and (b) both in**: the control-room card *and* a
   dashboard widget (decision 13). The owner wrote "if possible, add the
   dashboard widget also"; the drafter reads "also" as a yes to (a) as well;
+- after acceptance, a separate model may write the findings paragraph
+  (`ML_FINDINGS_LLM_PROVIDER`, `ML_FINDINGS_LLM_MODEL`, e.g. a small model on
+  OpenRouter), decision 4;
 - every asset the summary names (in a fact line or the AI paragraph) is a
   **link to that asset's forecast and anomaly view**; assets that are only
   counted are not listed or linked (decision 14).
@@ -1479,6 +1482,36 @@ the AI paragraph (decision 5), not a choice the model makes.
    organization's data may go to its LLM provider". A multi-organization view
    makes one call per organization, never one call with two organizations'
    facts (ADR 0099 decision 10).
+   - **A separate model for the findings paragraph** *(owner, 2026-11-17,
+     after acceptance: "yes, add the OpenRouter setting as recommended")*.
+     Two new, optional server variables: `ML_FINDINGS_LLM_PROVIDER`
+     (`openai | openrouter | anthropic`) and `ML_FINDINGS_LLM_MODEL` (for
+     example a small open-source model on OpenRouter). The key is that
+     provider's **existing** variable (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`,
+     `ANTHROPIC_API_KEY`); there is no new secret. A new method,
+     `LlmResolver.resolveForFindings(organizationId)`, keeps `LlmResolver` the
+     only reader of these variables, and decides in this order:
+     1. The organization has its own `organization_llm_settings` row → that
+        row decides, exactly as `resolveForOrganization` does today (its own
+        key and model, or no paragraph). The findings variables never apply
+        to it, so its data never goes to the platform key (ADR 0090
+        Amendment 1 A4).
+     2. No row, and `ML_FINDINGS_LLM_PROVIDER` is set → that provider with
+        `ML_FINDINGS_LLM_MODEL` and that provider's key. If the model or the
+        key is missing → **no paragraph** (facts only) and one boot warning
+        naming the missing variable. It never falls back to the copilot's
+        model, so a cheap choice never turns into a dearer one by accident.
+     3. No row, and the findings variables are empty → the platform default
+        (`LLM_PROVIDER`), as `resolveForOrganization` does.
+     The copilot and the onboarding agent are unchanged. The two variables go
+     into `.env.example` and the `api` service of both compose files
+     (`docker-compose.yml`, `deploy/aws/docker-compose.yml`), in `E1.9c`.
+     The organization copilot switch (Q2) is still the consent: with the
+     switch on, the pseudonymised facts may go to whichever provider this
+     order picks. **Data note:** OpenRouter forwards a request to the model's
+     host; only placeholder text leaves the server, and the operator should
+     turn off prompt logging and training in the OpenRouter account. A small
+     model fails the guard more often; each failure shows the facts only.
 
 5. **The guard — what makes a paragraph shown** *(owner ruling 1;
    details recommended)*. A pure function `checkFindingsParagraph(text,
