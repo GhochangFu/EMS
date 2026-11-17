@@ -8,6 +8,7 @@ import {
   organizationOf,
   text,
   time,
+  unknownAsset,
   type DraftLine,
   type DraftPart,
   type FindingOrganization,
@@ -65,6 +66,7 @@ export type AnomalyFindingsInput = {
 type Scored = {
   readonly assetId: string;
   readonly organization: FindingOrganization;
+  readonly code: string;
   readonly label: string;
   readonly zone: string;
   readonly unusual: number;
@@ -82,6 +84,7 @@ function scoredOf(row: AnomalyFindingDbRow): Scored {
   return {
     assetId: row.asset_id,
     organization: organizationOf(row),
+    code: row.asset_code,
     label: assetLabel({ code: row.asset_code, rtuName: row.asset_rtu_name, locationName: row.location_name }),
     zone: resolveSiteTimeZone(row.location_time_zone, row.organization_time_zone).arithmeticZone,
     unusual: Number(row.unusual_hours),
@@ -130,7 +133,7 @@ function cardFor(organization: FindingOrganization, scored: readonly Scored[], a
     finishCard(
       organization,
       lines,
-      (id) => byId.get(id)?.label ?? id,
+      (id) => byId.get(id) ?? unknownAsset(id),
       (id) => {
         const s = byId.get(id);
         return anomalyFindingHref(id, s?.lastMs ?? Number.NaN, asOfMs, s?.points ?? []);

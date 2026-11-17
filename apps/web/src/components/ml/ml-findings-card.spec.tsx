@@ -71,12 +71,12 @@ const CARD_C: MlFindingsCardData = {
     },
   ],
   assets: [
-    { ref: "A1", assetId: ASSET_1, label: "FZ-1 · Birch Row RTU", href: HREF_1 },
-    { ref: "A2", assetId: ASSET_2, label: "FZ-2 · Birch Row RTU", href: HREF_2 },
-    { ref: "A3", assetId: ASSET_3, label: "FZ-3 · Birch Row RTU", href: "javascript:alert(1)" },
-    { ref: "A4", assetId: ASSET_4, label: "FZ-4 · Birch Row RTU", href: "//example.test/x" },
+    { ref: "A1", assetId: ASSET_1, code: "FZ-1", label: "FZ-1 · Birch Row RTU", href: HREF_1 },
+    { ref: "A2", assetId: ASSET_2, code: "FZ-2", label: "FZ-2 · Birch Row RTU", href: HREF_2 },
+    { ref: "A3", assetId: ASSET_3, code: "FZ-3", label: "FZ-3 · Birch Row RTU", href: "javascript:alert(1)" },
+    { ref: "A4", assetId: ASSET_4, code: "FZ-4", label: "FZ-4 · Birch Row RTU", href: "//example.test/x" },
     // Listed but named by no line: it must not be drawn, let alone linked.
-    { ref: "A5", assetId: ASSET_5, label: "FZ-5 · Birch Row RTU", href: `/asset-history/${ASSET_5}` },
+    { ref: "A5", assetId: ASSET_5, code: "FZ-5", label: "FZ-5 · Birch Row RTU", href: `/asset-history/${ASSET_5}` },
   ],
 };
 
@@ -425,8 +425,8 @@ export async function paragraphReferencesUseTheParagraphsOwnAssets(): Promise<vo
           { text: " has 3 stale points." },
         ],
         assets: [
-          { ref: "A1", assetId: ASSET_2, label: "FZ-2 · Birch Row RTU", href: HREF_2 },
-          { ref: "A3", assetId: ASSET_3, label: "FZ-3 · Birch Row RTU", href: "//example.test/x" },
+          { ref: "A1", assetId: ASSET_2, code: "FZ-2", label: "FZ-2 · Birch Row RTU", href: HREF_2 },
+          { ref: "A3", assetId: ASSET_3, code: "FZ-3", label: "FZ-3 · Birch Row RTU", href: "//example.test/x" },
         ],
       },
     ],
@@ -519,8 +519,8 @@ const ANOMALY_C: MlFindingsCardData = {
     { id: "A3", segments: [{ assetRef: "A2" }, { text: ": 3 unusual hours, last 16 Nov 08:00; points kw." }] },
   ],
   assets: [
-    { ref: "A1", assetId: ASSET_2, label: "FZ-2 · Birch Row RTU", href: HREF_2 },
-    { ref: "A2", assetId: ASSET_1, label: "FZ-1 · Birch Row RTU", href: HREF_1 },
+    { ref: "A1", assetId: ASSET_2, code: "FZ-2", label: "FZ-2 · Birch Row RTU", href: HREF_2 },
+    { ref: "A2", assetId: ASSET_1, code: "FZ-1", label: "FZ-1 · Birch Row RTU", href: HREF_1 },
   ],
 };
 

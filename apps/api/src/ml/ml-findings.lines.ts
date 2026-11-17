@@ -67,19 +67,26 @@ export const text = (value: string): DraftPart => ({ kind: "text", text: value }
 export const time = (value: string): DraftPart => ({ kind: "time", text: value });
 /** An alarm rule's name (a `[R…]` placeholder when sent to the LLM). */
 export const rule = (value: string): DraftPart => ({ kind: "rule", text: value });
+/** An asset's code (`bms.assets.code`) and its full label (`assetLabel`). */
+export type AssetName = { readonly code: string; readonly label: string };
+
+/** Names an id no row describes by the id itself, as the label did before `E1.9g`. */
+export const unknownAsset = (assetId: string): AssetName => ({ code: assetId, label: assetId });
+
 /** A named asset, linked by its card reference; `pointKey` is the forecast point it names. */
 export const asset = (assetId: string, pointKey?: string): DraftPart =>
   pointKey === undefined ? { kind: "asset", assetId } : { kind: "asset", assetId, pointKey };
 
 /**
  * Numbers the kept lines' assets by first appearance and lists each named asset
- * once. `labelOf` names an asset; `hrefOf` builds its link from the point keys
- * the card names for it, in order of first appearance.
+ * once. `nameOf` gives an asset's code and full label (`E1.9g`: the code feeds the
+ * short chip; an unknown id is named by itself); `hrefOf` builds its link from the
+ * point keys the card names for it, in order of first appearance.
  */
 export function finishCard(
   organization: FindingOrganization,
   lines: readonly DraftLine[],
-  labelOf: (assetId: string) => string,
+  nameOf: (assetId: string) => AssetName,
   hrefOf: (assetId: string, pointKeys: readonly string[]) => string,
 ): FindingsCardFacts {
   const refs = new Map<string, string>();
@@ -99,12 +106,10 @@ export function finishCard(
       return { kind: "asset", ref };
     }),
   }));
-  const assets = [...refs].map(([assetId, ref]) => ({
-    ref,
-    assetId,
-    label: labelOf(assetId),
-    href: hrefOf(assetId, keys.get(assetId) ?? []),
-  }));
+  const assets = [...refs].map(([assetId, ref]) => {
+    const { code, label } = nameOf(assetId);
+    return { ref, assetId, code, label, href: hrefOf(assetId, keys.get(assetId) ?? []) };
+  });
   return { ...organization, facts, assets };
 }
 
