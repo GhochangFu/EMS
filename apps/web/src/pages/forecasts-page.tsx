@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 
 import { assetLabelOf } from "@bms/shared";
+import { forecastFindingHref } from "@bms/shared/contracts";
 import type { ForecastListRow } from "@bms/shared";
 
 import { fetchForecastList } from "../api/ml";
@@ -14,7 +15,6 @@ import { SectionCard } from "../components/section-card";
 import { StatusPill } from "../components/status-pill";
 import { useScopeFilter } from "../hooks/use-scope-filter";
 import { AppShell } from "../layouts/app-shell";
-import { assetHistoryPath } from "../lib/asset-history-range";
 import { FORECAST_REFETCH_MS, modelLabel } from "../lib/forecast-series";
 import { ML_PAGE_FILTER_KEYS, pickScope } from "../lib/ml-findings";
 import type { AuthUser } from "../stores/auth-store";
@@ -121,7 +121,7 @@ export function ForecastsPage({ user }: ForecastsPageProps) {
                     <td className="px-3 py-1.5">
                       <Link
                         className="font-mono text-xs font-semibold text-accent-strong hover:underline"
-                        to={`${assetHistoryPath(row.assetId)}?${new URLSearchParams({ points: row.pointKey }).toString()}`}
+                        to={forecastFindingHref(row.assetId, [row.pointKey])}
                       >
                         {row.pointKey}
                       </Link>

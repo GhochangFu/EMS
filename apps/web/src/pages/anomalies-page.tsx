@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 
 import { ANOMALY_LIST_MAX_ROWS, assetLabelOf } from "@bms/shared";
+import { anomalyFindingHref } from "@bms/shared/contracts";
 import type { AnomalyListRow } from "@bms/shared";
 
 import { fetchAnomalyList } from "../api/ml";
@@ -15,7 +16,6 @@ import { StatusPill } from "../components/status-pill";
 import { useScopeFilter } from "../hooks/use-scope-filter";
 import { AppShell } from "../layouts/app-shell";
 import { detectorLabel } from "../lib/anomaly-series";
-import { assetHistoryPath, rangeToSearch } from "../lib/asset-history-range";
 import { ML_PAGE_FILTER_KEYS, pickScope } from "../lib/ml-findings";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -51,29 +51,13 @@ export const ANOMALIES_ERROR_SENTENCE = "Could not load the unusual hours.";
 /** Read again every 15 minutes; scores land once an hour. */
 const ANOMALIES_REFETCH_MS = 15 * 60_000;
 
-const DAY_MS = 24 * 60 * 60_000;
-
 /**
  * The row's history link: the asset's history page from `t − 24 h` to `min(t + 24 h, asOf)`, with
- * the contributing points charted. An unreadable instant links to the bare history page.
+ * the contributing points charted. An unreadable instant links to the bare history page. It is the
+ * shared `anomalyFindingHref` (R-g), so a findings line and its table row open the same view.
  */
 function historyHref(row: AnomalyListRow, asOf: string): string {
-  const path = assetHistoryPath(row.assetId);
-  const t = Date.parse(row.t);
-  const asOfMs = Date.parse(asOf);
-  if (!Number.isFinite(t)) {
-    return path;
-  }
-  const to = Number.isFinite(asOfMs) ? Math.min(t + DAY_MS, asOfMs) : t + DAY_MS;
-  const search = rangeToSearch({
-    range: "custom",
-    from: new Date(t - DAY_MS).toISOString(),
-    to: new Date(to).toISOString(),
-    compare: false,
-    points: [...pointsOf(row)],
-    fn: "avg",
-  });
-  return `${path}?${search.toString()}`;
+  return anomalyFindingHref(row.assetId, Date.parse(row.t), Date.parse(asOf), pointsOf(row));
 }
 
 type AnomaliesPageProps = {

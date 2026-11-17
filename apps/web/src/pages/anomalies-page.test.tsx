@@ -11,6 +11,7 @@ import {
   onlyOrganizationAndLocationPickers,
   pendingOptionsWithAScopeReadLoading,
   theCardsSitAboveTheTable,
+  theRowLinkIsTheSharedFindingLink,
   aFailedReadShowsTheError,
   aPendingReadIsLoadingNotEmpty,
   aTruncatedListSaysSo,
@@ -64,4 +65,5 @@ describe("E1.2c — the Anomalies page", () => {
   it("E1.9b: pending options with a scope read loading, not empty", () => pendingOptionsWithAScopeReadLoading());
   it("E1.9b: the findings cards sit above the table", () => theCardsSitAboveTheTable());
   it("E1.9b: a failed summary read leaves the table working", () => aFailedSummaryLeavesTheTableWorking());
+  it("E1.9b R-g: each row link is the shared finding link", () => theRowLinkIsTheSharedFindingLink());
 });

@@ -4,7 +4,6 @@ import { anomalyFindingHref, forecastFindingHref } from "@bms/shared/contracts";
 import type { MlFindingAsset } from "@bms/shared/contracts";
 
 import { detectorLabel } from "./anomaly-series";
-import { assetHistoryPath, rangeToSearch } from "./asset-history-range";
 import { F5_TOOLTIP, pickScope, resolveSegments, safeAssetHref, scopeKey } from "./ml-findings";
 
 /**
@@ -50,11 +49,21 @@ export function scopeKeyIsStable(): void {
 export function safeAssetHrefAllowsOnlyTheHistoryPage(): void {
   expect(safeAssetHref(ASSET.href)).toBe(ASSET.href);
   expect(safeAssetHref(`/asset-history/${ASSET_ID}`)).toBe(`/asset-history/${ASSET_ID}`);
+  // Exactly what the shared builders emit is allowed.
+  const anomaly = anomalyFindingHref(ASSET_ID, Date.parse("2026-11-16T09:00:00.000Z"), Date.now(), ["kw", "pf"]);
+  expect(safeAssetHref(anomaly)).toBe(anomaly);
+  expect(safeAssetHref(forecastFindingHref(ASSET_ID, ["temp_c", "kw"]))).toBe(forecastFindingHref(ASSET_ID, ["temp_c", "kw"]));
   for (const bad of [
     "javascript:alert(1)",
     "//example.test/x",
     "https://example.test/asset-history/x",
     "/asset-history//example.test",
+    "/asset-history/../admin/users",
+    "/asset-history/%2e%2e/admin",
+    "/asset-history/..\\admin",
+    `/asset-history/${ASSET_ID}/../../admin`,
+    `/asset-history/${ASSET_ID}#x`,
+    "/asset-history/not-an-id",
     "/alarms",
     " /asset-history/x",
     "",
@@ -89,27 +98,9 @@ export function theF5TooltipIsFixed(): void {
 }
 
 /**
- * R-g, the drift gate: the shared link builders the API uses equal the web's own links — the
- * Forecasts table's `assetHistoryPath` + `points=`, and the Anomalies row's `historyHref` window.
+ * The A4 sentences name the Baseline detector by the word the web uses for it. (R-g's link drift
+ * gate lives in the two page specs: each row's rendered link equals the shared builder's output.)
  */
-export function theSharedLinksEqualTheWebsOwn(): void {
-  expect(forecastFindingHref(ASSET_ID, ["temp_c"])).toBe(
-    `${assetHistoryPath(ASSET_ID)}?${new URLSearchParams({ points: "temp_c" }).toString()}`,
-  );
-  const t = Date.parse("2026-11-16T09:00:00.000Z");
-  const day = 86_400_000;
-  for (const asOf of [t + 2 * day, t + 3_600_000]) {
-    const points = ["temp_c", "door_open"];
-    const expected = `${assetHistoryPath(ASSET_ID)}?${rangeToSearch({
-      range: "custom",
-      from: new Date(t - day).toISOString(),
-      to: new Date(Math.min(t + day, asOf)).toISOString(),
-      compare: false,
-      points,
-      fn: "avg",
-    }).toString()}`;
-    expect(anomalyFindingHref(ASSET_ID, t, asOf, points)).toBe(expected);
-  }
-  // The A4 sentences name the Baseline detector by the word the web uses for it.
+export function theBaselineWordMatchesTheWeb(): void {
   expect(detectorLabel("baseline_mad")).toBe("Baseline");
 }

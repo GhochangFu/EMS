@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { expect, vi, type MockInstance } from "vitest";
 
+import { anomalyFindingHref } from "@bms/shared/contracts";
 import type { FilterOptionsResponse, MlFindingsCard, MlFindingsSummaryResponse } from "@bms/shared/contracts";
 
 import { ANOMALY_LIST_MAX_ROWS } from "@bms/shared";
@@ -359,16 +360,19 @@ export async function anAssetGroupInTheUrlIsSentToNeither(): Promise<void> {
   }
 }
 
-/** A single-organization user sees the picker locked, and no `organizationId` is sent. */
+/** A single-organization user sees the picker locked, and no `organizationId` is sent, even when the URL names it. */
 export async function aSingleOrganizationIsLockedAndNotSent(): Promise<void> {
   const list = stub(ROWS);
   stubFilter(Promise.resolve(ONE_ORG), Promise.resolve({ asOf: AS_OF, cards: [] }));
   const summary = mlApi.fetchMlFindingsSummary as unknown as MockInstance<typeof mlApi.fetchMlFindingsSummary>;
-  renderAt("/anomalies");
+  // The URL names the one organization: it must still not be sent, and it leaves the URL.
+  renderAt(`/anomalies?organizationId=${IDS.ORG_X}`);
   await bodyRows();
   await vi.waitFor(() => expect(picker("Organization").value).toBe(IDS.ORG_X));
   expect(picker("Organization").disabled).toBe(true);
-  expect(url().has("organizationId")).toBe(false);
+  await vi.waitFor(() => expect(url().has("organizationId")).toBe(false));
+  expect(list).toHaveBeenCalled();
+  expect(summary).toHaveBeenCalled();
   for (const filter of listFilters(list)) {
     expect(filter).toEqual({});
   }
@@ -411,4 +415,26 @@ export async function aFailedSummaryLeavesTheTableWorking(): Promise<void> {
   expect(rows).toHaveLength(2);
   expect(await screen.findByText("Could not load the findings.")).toBeInTheDocument();
   expect(screen.queryByRole("alert")).toBeNull();
+}
+
+/**
+ * R-g, the drift gate: each row's rendered link equals the shared `anomalyFindingHref` the API
+ * builds a finding's link with (the window around the hour, its points charted). An unreadable
+ * hour is the bare history page on both sides.
+ */
+export async function theRowLinkIsTheSharedFindingLink(): Promise<void> {
+  const unreadable = row({ assetId: ASSET_B, t: "not a time", contributingPoints: ["kva"] });
+  const rowsIn = [...ROWS, unreadable];
+  stub(rowsIn);
+  renderPage();
+  const table = await screen.findByRole("table");
+  await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(rowsIn.length + 1));
+  const rendered = within(table)
+    .getAllByRole("row")
+    .slice(1)
+    .map((r) => within(r).getByRole("link").getAttribute("href"));
+  expect(rendered).toEqual(
+    rowsIn.map((r) => anomalyFindingHref(r.assetId, Date.parse(r.t), Date.parse(AS_OF), r.contributingPoints)),
+  );
+  expect(rendered[2]).toBe(`/asset-history/${ASSET_B}`);
 }

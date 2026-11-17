@@ -16,14 +16,12 @@ import type {
 } from "@bms/shared";
 
 import { ApiError } from "../lib/api-error";
+import { ML_PAGE_FILTER_KEYS } from "../lib/ml-findings";
 import { SCOPE_FILTER_KEYS, type ScopeFilter } from "../lib/scope-filter";
 import { clearSessionOnAuthFailure, withAuth } from "./http";
 import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
-
-/** `E1.9b` (ADR 0135 Amendment 8 decision 8) — the two keys the ML list routes take. */
-const LIST_FILTER_KEYS = ["organizationId", "locationId"] as const;
 
 /** The query of `filter`'s `keys` that are set, in `keys` order; empty when none is. */
 function scopeParams(filter: ScopeFilter | undefined, keys: readonly (keyof ScopeFilter)[]): URLSearchParams {
@@ -61,7 +59,7 @@ export async function fetchPointForecast(pointRefEncoded: string): Promise<Point
  */
 export async function fetchForecastList(filter?: ScopeFilter): Promise<ForecastListResponse> {
   const sent = withAuth();
-  const query = scopeParams(filter, LIST_FILTER_KEYS).toString();
+  const query = scopeParams(filter, ML_PAGE_FILTER_KEYS).toString();
   const res = await fetch(`${base}/api/v1/ml/forecasts${query ? `?${query}` : ""}`, sent);
   if (!res.ok) {
     clearSessionOnAuthFailure(res, sent);
@@ -109,7 +107,7 @@ export async function fetchAssetAnomalies(assetId: string, from: string, to: str
  */
 export async function fetchAnomalyList(filter?: ScopeFilter, since?: string): Promise<AnomalyListResponse> {
   const sent = withAuth();
-  const params = scopeParams(filter, LIST_FILTER_KEYS);
+  const params = scopeParams(filter, ML_PAGE_FILTER_KEYS);
   if (since !== undefined) {
     params.set("since", since);
   }

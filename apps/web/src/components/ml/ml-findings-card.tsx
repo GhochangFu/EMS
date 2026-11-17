@@ -14,6 +14,9 @@ export const ML_FINDINGS_HEADING = "Findings — advisory";
 
 const KIND_LABEL: Record<MlFindingsKind, string> = { forecasts: "Forecasts", anomalies: "Anomalies" };
 
+/** The kind's word inside a sentence, used only when more than one kind shows. */
+const KIND_WORD: Record<MlFindingsKind, string> = { forecasts: "forecast", anomalies: "anomaly" };
+
 type MlFindingsCardProps = {
   kinds: readonly MlFindingsKind[];
   scope: ScopeFilter;
@@ -76,6 +79,7 @@ export function MlFindingsCard({ kinds, scope, enabled = true }: MlFindingsCardP
       </h2>
       {kinds.map((kind, index) => {
         const q = results[index];
+        const findings = showKind ? `${KIND_WORD[kind]} findings` : "findings";
         if (q === undefined) {
           return null;
         }
@@ -83,14 +87,14 @@ export function MlFindingsCard({ kinds, scope, enabled = true }: MlFindingsCardP
           // `isPending`, not `isLoading`: a held or paused read must not read as "no findings".
           return (
             <p key={kind} className="text-sm text-ink-muted">
-              Loading findings…
+              Loading {findings}…
             </p>
           );
         }
         if (q.data === undefined) {
           return (
             <p key={kind} className="text-sm text-ink-muted">
-              Could not load the findings.
+              Could not load the {findings}.
             </p>
           );
         }

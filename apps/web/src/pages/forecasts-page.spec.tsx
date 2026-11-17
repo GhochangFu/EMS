@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { expect, vi, type MockInstance } from "vitest";
 
+import { forecastFindingHref } from "@bms/shared/contracts";
 import type { FilterOptionsResponse, MlFindingsCard, MlFindingsSummaryResponse } from "@bms/shared/contracts";
 
 import type { ForecastListRow, UserRole } from "@bms/shared";
@@ -319,16 +320,19 @@ export async function anAssetGroupInTheUrlIsSentToNeither(): Promise<void> {
   }
 }
 
-/** A single-organization user sees the picker locked, and no `organizationId` is sent. */
+/** A single-organization user sees the picker locked, and no `organizationId` is sent, even when the URL names it. */
 export async function aSingleOrganizationIsLockedAndNotSent(): Promise<void> {
   const list = stub(ROWS);
   stubFilter(Promise.resolve(ONE_ORG), Promise.resolve({ asOf: AS_OF, cards: [] }));
   const summary = mlApi.fetchMlFindingsSummary as unknown as MockInstance<typeof mlApi.fetchMlFindingsSummary>;
-  renderAt("/forecasts");
+  // The URL names the one organization: it must still not be sent, and it leaves the URL.
+  renderAt(`/forecasts?organizationId=${IDS.ORG_X}`);
   await bodyRows();
   await vi.waitFor(() => expect(picker("Organization").value).toBe(IDS.ORG_X));
   expect(picker("Organization").disabled).toBe(true);
-  expect(url().has("organizationId")).toBe(false);
+  await vi.waitFor(() => expect(url().has("organizationId")).toBe(false));
+  expect(list).toHaveBeenCalled();
+  expect(summary).toHaveBeenCalled();
   for (const filter of listFilters(list)) {
     expect(filter).toEqual({});
   }
@@ -371,4 +375,17 @@ export async function aFailedSummaryLeavesTheTableWorking(): Promise<void> {
   expect(rows).toHaveLength(2);
   expect(await screen.findByText("Could not load the findings.")).toBeInTheDocument();
   expect(screen.queryByRole("alert")).toBeNull();
+}
+
+/**
+ * R-g, the drift gate: each row's rendered link equals the shared `forecastFindingHref` the API
+ * builds a finding's link with, so a fact line and its table row open the same view.
+ */
+export async function theRowLinkIsTheSharedFindingLink(): Promise<void> {
+  stub(ROWS);
+  renderPage();
+  const rows = await bodyRows();
+  expect(rows.map((r) => within(r).getByRole("link").getAttribute("href"))).toEqual(
+    ROWS.map((r) => forecastFindingHref(r.assetId, [r.pointKey])),
+  );
 }

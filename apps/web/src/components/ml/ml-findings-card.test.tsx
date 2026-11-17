@@ -11,6 +11,8 @@ import {
   noAlarmColourInTheSection,
   noCardsDrawsNothing,
   twoCardsInTheApisOrder,
+  twoKindsNameTheirKind,
+  twoKindsPendingNamesTheKind,
 } from "./ml-findings-card.spec";
 
 /** `E1.9b` — the findings card. Assertions live in the sibling `.spec` (ADR 0014). */
@@ -28,4 +30,6 @@ describe("E1.9b MlFindingsCard", () => {
   it("says one muted sentence when the read fails", () => aFailedReadIsOneMutedSentence());
   it("makes no request when disabled", () => disabledMakesNoRequest());
   it("draws nothing when there are no cards", () => noCardsDrawsNothing());
+  it("names the kind on each card and in a failed line when two kinds show", () => twoKindsNameTheirKind());
+  it("names the kind in a pending line when two kinds show", () => twoKindsPendingNamesTheKind());
 });

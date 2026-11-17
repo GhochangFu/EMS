@@ -6,7 +6,7 @@ import {
   safeAssetHrefAllowsOnlyTheHistoryPage,
   scopeKeyIsStable,
   theF5TooltipIsFixed,
-  theSharedLinksEqualTheWebsOwn,
+  theBaselineWordMatchesTheWeb,
 } from "./ml-findings.spec";
 
 /** `E1.9b` — the findings helpers. Assertions live in the sibling `.spec` (ADR 0014). */
@@ -16,5 +16,5 @@ describe("E1.9b ml findings helpers", () => {
   it("safeAssetHref allows only the asset history page", () => safeAssetHrefAllowsOnlyTheHistoryPage());
   it("resolveSegments puts the assets back, and an unknown one is text", () => resolveSegmentsPutsTheAssetsBack());
   it("the F5 tooltip is fixed", () => theF5TooltipIsFixed());
-  it("R-g: the shared link builders equal the web's own links", () => theSharedLinksEqualTheWebsOwn());
+  it("the A4 sentences' detector word is the web's", () => theBaselineWordMatchesTheWeb());
 });

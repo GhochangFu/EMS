@@ -213,3 +213,37 @@ export async function noCardsDrawsNothing(): Promise<void> {
   const query = client.getQueryCache().findAll({ queryKey: ["ml-findings", "summary", "anomalies"] })[0];
   expect((query?.options as { readonly refetchInterval?: unknown } | undefined)?.refetchInterval).toBe(900_000);
 }
+
+/**
+ * Two kinds (the control-room use): each card names its kind under the title, and a failed read
+ * names the kind it is for; one kind's failure leaves the other's cards drawn.
+ */
+export async function twoKindsNameTheirKind(): Promise<void> {
+  const spy = vi
+    .spyOn(mlApi, "fetchMlFindingsSummary")
+    .mockImplementation((kind) =>
+      kind === "forecasts"
+        ? Promise.resolve({ ...SUMMARY, cards: [CARD_B] })
+        : Promise.reject(new Error("ml findings summary 403")),
+    );
+  renderCard({ kinds: ["forecasts", "anomalies"] });
+  await screen.findByText("ORGB · Birch Valley Water");
+  expect(spy.mock.calls.map((call) => call[0])).toEqual(["forecasts", "anomalies"]);
+  expect(within(section()).getByText("Forecasts")).toBeInTheDocument();
+  const failed = await within(section()).findByText("Could not load the anomaly findings.");
+  expect(failed.className).toContain("text-ink-muted");
+  expect(screen.queryByText("Could not load the findings.")).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+}
+
+/** Two kinds, one still pending: its loading line names its kind. */
+export async function twoKindsPendingNamesTheKind(): Promise<void> {
+  vi.spyOn(mlApi, "fetchMlFindingsSummary").mockImplementation((kind) =>
+    kind === "anomalies" ? Promise.resolve(SUMMARY) : new Promise(() => undefined),
+  );
+  renderCard({ kinds: ["forecasts", "anomalies"] });
+  expect(await screen.findByText("Loading forecast findings…")).toBeInTheDocument();
+  await screen.findByText("ORGC · Cedar Point Mills");
+  expect(within(section()).getAllByText("Anomalies").length).toBeGreaterThan(0);
+  expect(screen.queryByText("Loading findings…")).toBeNull();
+}

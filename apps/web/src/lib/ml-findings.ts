@@ -29,11 +29,15 @@ export function scopeKey(scope: ScopeFilter): string {
   return SCOPE_FILTER_KEYS.map((key) => `${key}=${scope[key] ?? ""}`).join("&");
 }
 
-const HISTORY_PREFIX = "/asset-history/";
+/**
+ * Exactly the shape the shared builders emit: `/asset-history/<uuid>`, optionally a query with no
+ * `#` or `\`. No dot segment, no second path segment, no other host.
+ */
+const SAFE_HISTORY_HREF = /^\/asset-history\/[0-9a-f-]{36}(\?[^#\\]*)?$/i;
 
-/** The `href` when it is an asset history path with no `//` after its first character, else `null`. */
+/** The `href` when it is exactly an asset history link the builders make, else `null`. */
 export function safeAssetHref(href: string): string | null {
-  return href.startsWith(HISTORY_PREFIX) && !href.slice(1).includes("//") ? href : null;
+  return SAFE_HISTORY_HREF.test(href) ? href : null;
 }
 
 /** A piece of a drawn sentence: plain text, or a named asset with its link (`null`: no link). */
