@@ -47,6 +47,8 @@ import {
   aSiteWidgetHidesUnitDecimalsAndBoundPoints,
   aForecastShowsBoundPointsAndTheAdvisoryLineOnly,
   anAnomalyShowsBoundPointsAndTheAdvisoryLineOnly,
+  anMlFindingsShowsTheNoteShowAndParagraphOnly,
+  noOtherTypeShowsTheMlFindingsFields,
   aStoredTabKeyTheDashboardNoLongerHasStaysSelected,
   aWidgetOnADashboardWithoutTabsHasNoTabSelect,
   aWidgetOnATabbedDashboardMovesThroughTheTabSelect,
@@ -202,6 +204,14 @@ describe("F3.73 widget inspector — the site widgets", () => {
 
   it("E1.2d an anomaly widget shows Bound points and the advisory line, no Unit or Decimals", () => {
     anAnomalyShowsBoundPointsAndTheAdvisoryLineOnly();
+  });
+
+  it("E1.9f an ml_findings widget shows its note, Show and AI paragraph, no Unit, Decimals or points", async () => {
+    await anMlFindingsShowsTheNoteShowAndParagraphOnly();
+  });
+
+  it("E1.9f no other widget type shows the ml_findings note or controls", () => {
+    noOtherTypeShowsTheMlFindingsFields();
   });
 
   it("shows the rail's Rows at the default of 8", () => {

@@ -59,6 +59,19 @@ vi.mock("../../api/dashboards", () => ({
   fetchDashboardCatalogValues: mocks.fetchDashboardCatalogValues,
 }));
 
+// `E1.9f` — the findings card has its own suite (`ml-findings-card.spec.tsx`); here a stand-in
+// prints the scope, kinds and paragraph switch the canvas hands it, and reads nothing.
+vi.mock("../ml/ml-findings-card", () => ({
+  MlFindingsCard: ({ kinds, scope, paragraph }: { kinds: readonly string[]; scope: object; paragraph?: boolean }) => (
+    <div
+      data-testid="ml-findings-card"
+      data-kinds={kinds.join(",")}
+      data-scope={JSON.stringify(scope)}
+      data-paragraph={String(paragraph)}
+    />
+  ),
+}));
+
 const ASSET_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const TOKEN = "token-dlc";
 const REF = encodePointRef(ASSET_ID, "kw");
@@ -117,7 +130,12 @@ function dashboard(widgets: DashboardWidgetDto[]): DashboardDto {
 
 let fetchSpy: Mock | null = null;
 
-function renderCanvas(dto: DashboardDto, tabKey?: string, energyShown?: boolean): ReturnType<typeof render> {
+function renderCanvas(
+  dto: DashboardDto,
+  tabKey?: string,
+  energyShown?: boolean,
+  wall?: boolean,
+): ReturnType<typeof render> {
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
   vi.stubGlobal("fetch", fetchSpy);
   mocks.io.mockImplementation(() => ({ on: vi.fn(), disconnect: mocks.disconnect }));
@@ -129,7 +147,7 @@ function renderCanvas(dto: DashboardDto, tabKey?: string, energyShown?: boolean)
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <DashboardLiveCanvas dashboard={dto} tabKey={tabKey} energyShown={energyShown} />
+      <DashboardLiveCanvas dashboard={dto} tabKey={tabKey} energyShown={energyShown} wall={wall} />
     </QueryClientProvider>,
   );
 }
@@ -475,4 +493,63 @@ export async function anUntabbedDashboardOfHiddenWidgetsSaysWhy(): Promise<void>
     "No widget on this dashboard is shown while energy is not shown for this site.",
   );
   expect(screen.queryByText("This dashboard has no widgets yet.")).toBeNull();
+}
+
+/** `E1.9f` — an `ml_findings` widget: no point, no source, its config the renderer's two keys. */
+function mlFindingsWidget(): DashboardWidgetDto {
+  return {
+    ...widget(false),
+    id: "ml-findings",
+    title: "Plant findings",
+    gridX: 8,
+    widgetType: "ml_findings",
+    config: { show: "anomalies", paragraph: false },
+  } as DashboardWidgetDto;
+}
+
+/**
+ * ML1 — `E1.9f` (ADR 0135 Amendment 8 decision 13): the widget is handed its dashboard's own scope
+ * (the organization and the one set id; the dashboard here is a location's) and its config; it binds
+ * no `kw` point, so it is drawn with energy not shown.
+ */
+export async function anMlFindingsWidgetGetsTheDashboardsScope(): Promise<void> {
+  const { container } = renderCanvas(dashboard([mlFindingsWidget()]), undefined, false);
+  const card = await screen.findByTestId("ml-findings-card");
+  expect(screen.getByText("Plant findings")).toBeInTheDocument();
+  expect(JSON.parse(card.dataset.scope ?? "")).toEqual({ organizationId: "org-1", locationId: "loc-1" });
+  expect({ kinds: card.dataset.kinds, paragraph: card.dataset.paragraph }).toEqual({
+    kinds: "anomalies",
+    paragraph: "false",
+  });
+  expect(drawnTiles(container)).toEqual(["ml-findings"]);
+}
+
+/**
+ * ML2 — `E1.9f` (plan Q4 (a)): on the wall the canvas does not draw an `ml_findings` widget; the
+ * `forecast` and `anomaly` widgets still draw there. Off the wall (the control) all three draw.
+ */
+export async function theWallDropsOnlyTheMlFindingsWidget(wall: boolean): Promise<void> {
+  mocks.fetchPointAggregate.mockReturnValue(new Promise(() => undefined));
+  mocks.fetchPointForecast.mockResolvedValue({ asOf: "2026-11-16T10:20:00.000Z", forecast: null });
+  mocks.fetchAssetAnomalies.mockResolvedValue({ asOf: "2026-11-16T10:20:00.000Z", scores: [] });
+  const forecast = {
+    ...widget(true),
+    id: "forecast",
+    title: "Load forecast",
+    widgetType: "forecast",
+    config: {},
+  } as DashboardWidgetDto;
+  const anomaly = {
+    ...widget(true),
+    id: "anomaly",
+    title: "Load anomaly",
+    gridX: 4,
+    widgetType: "anomaly",
+    config: {},
+  } as DashboardWidgetDto;
+  const { container } = renderCanvas(dashboard([forecast, anomaly, mlFindingsWidget()]), undefined, undefined, wall);
+  expect(await screen.findByText("Load anomaly")).toBeInTheDocument();
+  expect(screen.getByText("Load forecast")).toBeInTheDocument();
+  expect(drawnTiles(container)).toEqual(wall ? ["forecast", "anomaly"] : ["forecast", "anomaly", "ml-findings"]);
+  expect(screen.queryByTestId("ml-findings-card") === null).toBe(wall);
 }

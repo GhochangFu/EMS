@@ -3,7 +3,12 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi, type Mock } from "vitest";
 
-import type { DashboardDto, LocationKpiSummary, ResolvedSiteControlRoomViewDto } from "@bms/shared";
+import type {
+  DashboardDto,
+  DashboardWidgetDto,
+  LocationKpiSummary,
+  ResolvedSiteControlRoomViewDto,
+} from "@bms/shared";
 
 import * as assetsApi from "../../api/assets";
 import * as controlRoomApi from "../../api/control-room";
@@ -53,6 +58,15 @@ vi.mock("../../components/control-room/site-dashboard-view", () => ({
       data-energy-shown={String(energyShown)}
     />
   ),
+}));
+
+/**
+ * `E1.9f` — the findings card has its own suite; here a stand-in marks where an `ml_findings`
+ * widget was drawn, and reads nothing. Only `aSiteDashboardDrawsMlFindingsOffTheWallOnly` renders
+ * the real `SiteDashboardView` (through `vi.importActual`), so no other case reaches it.
+ */
+vi.mock("../../components/ml/ml-findings-card", () => ({
+  MlFindingsCard: () => <div data-testid="ml-findings-card" />,
 }));
 
 vi.mock("../../components/control-room/generated-site-view", () => ({
@@ -317,4 +331,57 @@ export async function thePageHandsTheSitesEnergyShown(wall: boolean, energyShown
     wall: String(wall),
     energyShown: String(energyShown),
   });
+}
+
+/**
+ * P12 — `E1.9f` (ADR 0135 Amendment 8 decision 13; plan Q4 (a)): a site dashboard holding an
+ * `ml_findings` widget does not draw it on the wall and does draw it off the wall. The page's own
+ * cases (P8, P9) hold that the wall branch hands the view `wall`; this case renders the real view
+ * (its canvas included) with each value. An unbound tile on the same canvas is the control.
+ */
+export async function aSiteDashboardDrawsMlFindingsOffTheWallOnly(wall: boolean): Promise<void> {
+  stubReads(DASHBOARD_VIEW);
+  const identity = {
+    dashboardId: DASHBOARD_VIEW.dashboardId as string,
+    organizationId: ORG_A.id,
+    gridY: 0,
+    gridW: 4,
+    gridH: 4,
+    points: [],
+    sources: [],
+    tabId: null,
+  };
+  const widgets = [
+    { ...identity, id: "tile", title: "Plant power", gridX: 0, widgetType: "value_tile", config: {} },
+    {
+      ...identity,
+      id: "findings",
+      title: "Plant findings",
+      gridX: 4,
+      widgetType: "ml_findings",
+      config: { show: "both", paragraph: true },
+    },
+  ] as DashboardWidgetDto[];
+  dashboardRead?.mockResolvedValue({ ...tabbedDashboard(), tabs: [], widgets });
+  const { SiteDashboardView } = await vi.importActual<
+    typeof import("../../components/control-room/site-dashboard-view")
+  >("../../components/control-room/site-dashboard-view");
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[wall ? `${SITE_PATH}?wall=1&every=30` : SITE_PATH]}>
+        <SiteDashboardView
+          slug={SLUG}
+          organizationId={ORG_A.id}
+          locationId={LOCATION_ID}
+          tab={undefined}
+          wall={wall}
+          energyShown
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("Plant power"), "the control tile is drawn").toBeInTheDocument();
+  expect(screen.queryByText("Plant findings") === null, "the findings widget's title").toBe(wall);
+  expect(screen.queryByTestId("ml-findings-card") === null, "the findings card").toBe(wall);
 }

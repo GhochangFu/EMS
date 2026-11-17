@@ -21,6 +21,8 @@ import {
   aTabOfHiddenWidgetsSaysWhy,
   anUntabbedDashboardOfHiddenWidgetsSaysWhy,
   everyWidgetIsDrawnWithEnergy,
+  anMlFindingsWidgetGetsTheDashboardsScope,
+  theWallDropsOnlyTheMlFindingsWidget,
 } from "./dashboard-live-canvas.spec";
 
 /**
@@ -112,5 +114,17 @@ describe("F3.69 U1 DashboardLiveCanvas", () => {
 
   it("EK5 names the dashboard when it has no tabs (F4.375 D10)", async () => {
     await anUntabbedDashboardOfHiddenWidgetsSaysWhy();
+  });
+
+  it("ML1 hands an ml_findings widget its dashboard's scope and draws it with energy not shown (E1.9f)", async () => {
+    await anMlFindingsWidgetGetsTheDashboardsScope();
+  });
+
+  it("ML2 does not draw an ml_findings widget on the wall; forecast and anomaly still draw (E1.9f Q4)", async () => {
+    await theWallDropsOnlyTheMlFindingsWidget(true);
+  });
+
+  it("ML2 draws all three off the wall (E1.9f Q4)", async () => {
+    await theWallDropsOnlyTheMlFindingsWidget(false);
   });
 });
