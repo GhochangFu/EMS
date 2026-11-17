@@ -1121,8 +1121,19 @@ detector rates (due about 2026-11-23) is untouched.
 `E1.9` at the step 2 gate (AGENTS.md §10). Lines marked *(owner,
 2026-11-17)* are the owner's answers given in chat that day; they are
 rulings. Lines marked *(recommended)* are the drafter's calls, and the
-numbered questions at the end are still open. **Only the owner marks this
-amendment Accepted.**
+numbered questions at the end are still open unless marked ruled. **Only the
+owner marks this amendment Accepted.**
+
+**Owner answers on the draft (2026-11-17, in chat, after the first draft):**
+- the daily cap (Q4) is a cap on the **AI paragraph** only;
+- with no AI key or no AI balance, only the AI paragraph is missing and the
+  facts stay (decision 5, confirmed);
+- Q5 is ruled **(a) and (b) both in**: the control-room card *and* a
+  dashboard widget (decision 13). The owner wrote "if possible, add the
+  dashboard widget also"; the drafter reads "also" as a yes to (a) as well;
+- every asset the summary names (in a fact line or the AI paragraph) is a
+  **link to that asset's forecast and anomaly view**; assets that are only
+  counted are not listed or linked (decision 14).
 
 **Why.** The owner checked the Forecasts and Anomalies pages on the demo host
 on 2026-11-17 and found them hard to read: a long table of scores and
@@ -1191,7 +1202,9 @@ the AI paragraph (decision 5), not a choice the model makes.
    `/forecasts` and `/anomalies`, under the `PageHeader` and the filter bar,
    above the existing `SectionCard` table. One card per organization in the
    filtered scope, sorted by organization code. The tables stay and obey the
-   same filter. Mockups have no such screen, so it keeps the list language
+   same filter. The same card also appears in the control room and as a
+   dashboard widget (decision 13), and every asset it names is a link
+   (decision 14). Mockups have no such screen, so it keeps the list language
    (AGENTS.md §5): `SectionCard`, `StatusPill tone="info"` for *Advisory*, the
    `ink` roles; never an alarm or severity colour.
 
@@ -1299,7 +1312,23 @@ the AI paragraph (decision 5), not a choice the model makes.
      no markdown, no line break.
    - The provider returned `final` (a `tool_calls` reply is refused), within
      the **15 s** timeout (`AbortSignal`), with no exception.
-   Any failure → **no paragraph, facts only, no banner**. The outcome is
+   Any failure → **no paragraph, facts only, no banner**.
+   - **The facts never depend on the LLM** *(owner, 2026-11-17: "only the AI
+     advisory will not be there … the normal advisory will be there")*. They
+     come from a separate route (decision 10) that makes no LLM call, so they
+     render the same whether or not any AI exists. Each of these shows the
+     facts and no paragraph, with no error text to any reader: no platform
+     key and no organization key (`guided`); the organization's copilot switch
+     off; an organization LLM row that is `off` or incomplete; the provider
+     refusing the key (401/403); **no balance or quota left** (the provider's
+     402, 429 or credit-balance error); a rate limit; a 5xx or network error;
+     the 15 s timeout; a reply the guard refuses; the daily cap (Q4) reached.
+   - An administrator who wants to know why there is no paragraph checks the
+     organization's LLM settings page (ADR 0090 Amendment 1 A5); the page
+     itself never says. A provider error is stored as `failed` and retried for
+     that key after 30 min (decision 7); a refused call is not billed by the
+     provider, so a dead key costs nothing but the retry.
+   The outcome is
    logged with the fixed reason and the organization id only (§9.6: never the
    text, never the facts). The prompt tells the model the same rules, but the
    check is what holds them.
@@ -1396,9 +1425,11 @@ the AI paragraph (decision 5), not a choice the model makes.
     - `GET /ml/forecasts/summary?organizationId=&locationId=` and
       `GET /ml/anomalies/summary?…` →
       `{ asOf, cards: [{ organizationId, organizationCode, organizationName,
-      facts: [{ id, text }], factsHash, paragraphKey }] }`. Facts only; no LLM.
+      facts: [{ id, segments }], assets: [{ ref, assetId, label, href }] }] }`
+      (decision 14). Facts only; no LLM. The facts hash stays on the server.
     - `GET /ml/findings/paragraph?kind=&organizationId=&locationId=` → per
-      card `{ organizationId, state: "ok" | "none" | "pending", text }`. It
+      card `{ organizationId, state: "ok" | "none" | "pending", segments }`,
+      the paragraph as text segments and asset references (decision 14). It
       recomputes the facts for the caller (never trusts a hash from the
       browser), reads the cache, and on a miss starts the single-flight call.
       `none` covers every fail-closed case without saying which.
@@ -1427,10 +1458,11 @@ the AI paragraph (decision 5), not a choice the model makes.
       Worst case with every key viewed every hour: 24 cycles × 2 kinds ×
       (organizations × (1 + sites) × scope variants) — for the two real
       organizations and their sites about 400 calls, **about USD 5 a day**.
-    - **The cap** (**Q4**): at most **48 paragraph attempts per organization
-      per UTC day**, counted from that table's own rows (no new counter).
-      Over the cap → facts only. Not counted against the copilot's daily
-      turns.
+    - **The cap on the AI paragraph** (**Q4**; the facts are never capped):
+      at most **200 AI-paragraph attempts per organization per UTC day**,
+      counted from that table's own rows (no new counter), about **USD 2.60
+      per organization per day** at most. Over the cap → facts only, until
+      00:00 UTC. Not counted against the copilot's daily turns.
     - **Egress**: the API already reaches the provider host for the copilot;
       nothing new is opened. If `LLM_PROVIDER` is not set on the demo host,
       every paragraph is `none` and the pages show facts only.
@@ -1456,9 +1488,91 @@ the AI paragraph (decision 5), not a choice the model makes.
       narrow and never widen; the cap.
     - **Web (jsdom)**: the filter shows two pickers and keeps the URL;
       cards per organization; the "AI-written · advisory" label only with
-      `ok`; `none` and `pending` show no banner; the table obeys the filter.
+      `ok`; `none` and `pending` show no banner; the table obeys the filter;
+      each asset reference renders as a link to the `href` the facts carry
+      (forecast: the point charted; anomaly: the hour window), and a paragraph
+      reference renders the same link; the control-room cards; the widget's
+      config arms and its `paragraph: false` (no paragraph request).
     - **Browser and demo host**: `browser-verifier` locally; the owner's
       demo-host checks at closure.
+
+13. **The control room and a dashboard widget** *(owner, 2026-11-17, Q5:
+    both; details recommended)*. One web component, `MlFindingsCard`,
+    renders a card from the two routes of decision 10 for a given scope. The
+    pages, the control room and the widget all use it, so they read the same
+    words and share the cache (decision 7) when the scope is the same.
+    - **Control room** (no migration): on the organization page
+      (`/control-room/:organizationId`), after *Asset health*, scope = that
+      organization; on the site page, in its body (not the wall), scope =
+      that location. Compact: the AI paragraph when one exists, else the top
+      fact line of each kind (A1, or A2 when present; F1, or F5 when present),
+      and links to `/forecasts` and `/anomalies` with the filter set.
+    - **Dashboard widget `ml_findings`**, the sixteenth widget kind:
+      - **Scope = its dashboard's own scope**, read from `bms.dashboards`:
+        the organization, plus the one of `location_id`, `asset_group_id` or
+        `asset_id` that is set (`dashboards_scope_check`). The widget binds
+        **no point and no source** (`WIDGET_POINT_CARDINALITY` and
+        `WIDGET_SOURCE_CARDINALITY` `{0, 0}`, as the `F3.73` site widgets),
+        so ADR 0047 decision 3 holds: nothing to bind, options only in JSON.
+      - **Config** (renderer options only, `.strict()`): `show`:
+        `"both" | "forecasts" | "anomalies"` (default `"both"`) and
+        `paragraph`: `true | false` (default `true`; `false` shows facts only
+        and never asks for a paragraph, so it adds no LLM cost).
+      - **Access is still the viewer's.** The summary routes also accept
+        `assetGroupId` and `assetId` (`ScopeFilter`'s other two keys, the
+        `/alarms` shape), and each one narrows `readableAssetIds`; none
+        widens. A viewer who can open the dashboard but not every asset in its
+        scope sees only their own facts: a different facts hash, so a
+        different (or no) paragraph.
+      - **Migration**: widens `dashboard_widgets_widget_type_check` to sixteen
+        kinds, `ml_findings` last, as `0159` and `0161` did; the number is
+        taken at build. No other table changes.
+      - **Builder palette only**: refused in both template surfaces and in no
+        stock template (the rule Amendment 3 R12 set for `forecast`). It binds
+        no `kw` point, so ADR 0133 Amendment 2's kW-only hiding leaves it
+        drawn. Default size 6×4; the inspector says "Advisory. Forecast and
+        anomaly findings for this dashboard's scope."
+      - It reads every 15 minutes, the pages' pace; the paragraph route is
+        called only while the widget is on screen.
+    - Neither surface is on the control-room wall, in a report, an export or
+      a notification.
+
+14. **Every asset in a summary is a link** *(owner, 2026-11-17; targets
+    recommended)*. Wherever a fact line or the AI paragraph names an asset,
+    the name is a link that opens that asset's own forecast or anomaly view
+    straight away:
+    - **Which assets**: exactly the assets the summary **names** — in a fact
+      line or in the AI paragraph — and every one of them. An asset that is
+      only counted ("on 7 of 18 scored assets") is not named, so it gets no
+      link and the card does not list it. The same asset named twice is
+      linked both times.
+    - **The target is the asset history page**, `/asset-history/:assetId`,
+      where that asset's forecast band (Amendment 3 R-d) and unusual-hour
+      marks (Amendment 5 4(b)) are drawn. There is no separate per-asset
+      forecast or anomaly page, and this amendment adds none.
+    - **A forecast line** (F2–F5) links with **that point charted** on a live
+      window, so the band, the p50 and the "Forecast issued … · advisory"
+      caption draw (the Forecasts table's own link,
+      `assetHistoryPath` + `points=`).
+    - **An anomaly line** (A2, A3) links to **the window around that asset's
+      last unusual hour, with its contributing points charted** — the
+      Anomalies table row's own `historyHref` (t − 24 h to min(t + 24 h, now),
+      `fn=avg`), so the marks draw.
+    - **In the AI paragraph**, each `[A1]` placeholder (decision 6) is put
+      back on the host as the same link the fact line that named that asset
+      carries. The browser never builds a link from model text: the route
+      returns the paragraph as text segments and asset references, and the web
+      renders the reference from the facts' own asset list. A placeholder the
+      facts do not hold is already a refusal (decision 5).
+    - **"Allowed" is the reader's access, and it already holds.** Facts only
+      name assets the reader can read (decision 8), so every link opens; the
+      history page still runs its own `canReadAsset` (403 for anyone else).
+    - The contract carries it as structured data, not markup: each fact is
+      `{ id, segments: [{ text } | { assetRef }] }` plus a card-level
+      `assets: [{ ref, assetId, label, href }]`, `href` built on the server
+      from the rules above.
+    - Site names in a line link to the page itself filtered to that location
+      (`?locationId=`), the filter's own URL state *(recommended)*.
 
 ### Open questions for the owner
 
@@ -1479,11 +1593,18 @@ the AI paragraph (decision 5), not a choice the model makes.
    (decision 6). Site, asset and rule names never leave the host; the model
    writes placeholders that are put back locally. The cost is a slightly
    stiffer paragraph. If no, the labels as shown on screen are sent.
-4. **Q4 — The daily cap.** **Recommended: 48 attempts per organization per
-   UTC day**, enough for every hourly cycle of both pages at one scope, with
-   facts only above it. Say a different number if you want one.
-5. **Q5 — The control room and dashboards** (raised by the owner while this
-   was drafted: "see whether it can be added in the control room or dashboards
+4. **Q4 — The daily cap on the AI paragraph** (the facts are never capped).
+   **Recommended: 200 attempts per organization per UTC day** (about USD 2.60
+   at most). Why not 48, the first draft's number: the facts change every
+   hourly cycle, and the guard needs the paragraph's numbers to match the
+   current facts, so each scope that is viewed needs a new paragraph each
+   cycle — 24 cycles × 2 kinds = 48 for the organization view alone. The site
+   filter, the control-room site cards and dashboard widgets (each its own
+   scope, decision 13) add keys. Above the cap → facts only. Say a different
+   number if you want one.
+5. ~~**Q5 — The control room and dashboards**~~ **Ruled 2026-11-17: (a) and
+   (b) both in** (decision 13; the text below is kept as drafted). (Raised by
+   the owner while this was drafted: "see whether it can be added in the control room or dashboards
    as well for the relevant organizations and relevant locations").
    - **(a) Control room — recommended yes, in this row.** A compact
      *Findings — advisory* card on the organization page
@@ -1510,7 +1631,8 @@ the AI paragraph (decision 5), not a choice the model makes.
 | `E1.9b` | Web: `ScopeFilterBar` `pickers`, the filter on both pages, the facts cards | code, compliance |
 | `E1.9c` | Migration (`bms.ml_finding_paragraphs`, grants, proof), the guard, pseudonymisation, the paragraph route, cache, single-flight, cap | code, compliance, **security**, **migration** |
 | `E1.9d` | Web: the "AI-written · advisory" paragraph slot | code, compliance |
-| `E1.9e` | The control-room cards, if Q5 (a) is yes | code, compliance |
+| `E1.9e` | `MlFindingsCard` on the control-room organization and site pages (decision 13) | code, compliance |
+| `E1.9f` | The `ml_findings` widget kind: its migration, the write arm and cardinality, the renderer, the builder palette (decision 13) | code, compliance, **migration** |
 
 Then the closure docs PR and the `chore(agents):` PR (§3 *Layout*: the new
 routes, contract and table; §4.2: the `pickers` prop; §6: the Q1 ruling).
@@ -1519,7 +1641,8 @@ reaches operators or viewers.
 
 **Not in this amendment:** an alarm, notification, work order, report or
 export from a finding; the copilot chat or a copilot read tool over findings;
-a dashboard widget (Q5 (b)); any threshold or detector change; an accuracy
+the widget in a stock template or on the control-room wall; a new per-asset
+forecast or anomaly page (decision 14); any threshold or detector change; an accuracy
 figure; a new Python job or any `apps/ml` change; a new asset class; the owed
 `bms_ml` role.
 
@@ -1534,4 +1657,11 @@ that site's facts; a paragraph different from the admin's); whether
 shown with the label, or facts only with no banner); the facts route p95 and
 the paragraph route's first and cached times; a row count in
 `bms.ml_finding_paragraphs` after a day; `docker stats` for `api` unchanged
-in shape and `ml` untouched; the control-room card if built.
+in shape and `ml` untouched; an asset link in a forecast line and in an
+anomaly line (and in the AI paragraph, when shown) opens that asset's history
+with the band or the marks drawn; the control-room cards on one organization
+and one site; an `ml_findings` widget added on a temporary dashboard of each
+scope kind (organization, location, asset group), saved, and drawn after a
+hard reload; a widget with `paragraph: false` makes no paragraph request; and
+with `LLM_PROVIDER` unset (or the switch off), every surface shows facts and
+no banner.
