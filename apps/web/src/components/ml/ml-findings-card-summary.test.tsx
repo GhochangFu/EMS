@@ -28,7 +28,8 @@ describe("E1.9g MlFindingsCard AI summary", () => {
   it("S2 one sentence is the headline alone", () => s2OneSentenceIsTheHeadlineAlone());
   it("S3 six sentences show four points", () => s3SixSentencesShowFourPoints());
   it("S4 a chip shows the code, its title the full label, its link unchanged", () => s4ChipsShowTheCodeWithTheLabelAsTitle());
-  it("S5 under the box the facts fold to two lines behind Show 2 more", () => s5TheFactsFoldToTwoLinesUnderTheBox());
+  it("S5 under the box the facts fold to two lines behind Show 2 more; a click opens them and moves focus", () =>
+    s5TheFactsFoldToTwoLinesUnderTheBox());
   it("S6 two facts show both lines and no button", () => s6TwoFactsShowWithNoButton());
   it("S7 with no box every line shows, with no heading and no button", () => s7NoBoxShowsEveryLine());
   it("S8 compact shows the headline, two points and the compact note", () => s8CompactShowsTheHeadlineAndTwoPoints());

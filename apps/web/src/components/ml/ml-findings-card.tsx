@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import type {
@@ -96,11 +96,24 @@ function Segments({ segments, assets }: { segments: readonly MlFindingSegment[];
   return <Parts parts={resolveSegments(segments, assets)} />;
 }
 
-function FactLines({ facts, assets }: { facts: readonly MlFindingFact[]; assets: readonly MlFindingAsset[] }) {
+/** `focusAt`: the line that may take focus from script (`tabIndex={-1}`), for "Show N more". */
+function FactLines({
+  facts,
+  assets,
+  focusAt,
+}: {
+  facts: readonly MlFindingFact[];
+  assets: readonly MlFindingAsset[];
+  focusAt?: number;
+}) {
   return (
     <ul data-ml-facts="" className="space-y-1 text-sm text-ink">
       {facts.map((fact, index) => (
-        <li key={`${fact.id}:${index}`} title={fact.id === "F5" ? F5_TOOLTIP : undefined}>
+        <li
+          key={`${fact.id}:${index}`}
+          title={fact.id === "F5" ? F5_TOOLTIP : undefined}
+          tabIndex={index === focusAt ? -1 : undefined}
+        >
           <Segments segments={fact.segments} assets={assets} />
         </li>
       ))}
@@ -186,6 +199,15 @@ function OrganizationFindings({
   paragraph: MlFindingsParagraphCard | null;
 }) {
   const [open, setOpen] = useState(false);
+  const factsRef = useRef<HTMLDivElement>(null);
+  const opened = useRef(false);
+  // The button is removed on click; keep the keyboard user's place on the first line it showed.
+  useEffect(() => {
+    if (open && opened.current) {
+      opened.current = false;
+      factsRef.current?.querySelector<HTMLElement>(`[data-ml-facts] > li:nth-child(${FACTS_SHOWN + 1})`)?.focus();
+    }
+  }, [open]);
   const hidden = paragraph !== null && !open ? Math.max(0, card.facts.length - FACTS_SHOWN) : 0;
   return (
     <SectionCard
@@ -193,12 +215,23 @@ function OrganizationFindings({
       subtitle={showKind ? KIND_LABEL[kind] : undefined}
       actions={<StatusPill label="Advisory" tone="info" />}
     >
-      <div className="space-y-2">
+      <div ref={factsRef} className="space-y-2">
         {paragraph ? <AiParagraph paragraph={paragraph} /> : null}
         {paragraph ? <h3 className="text-xs font-semibold text-ink-muted">{ML_COMPUTED_FACTS_HEADING}</h3> : null}
-        <FactLines facts={hidden > 0 ? card.facts.slice(0, FACTS_SHOWN) : card.facts} assets={card.assets} />
+        <FactLines
+          facts={hidden > 0 ? card.facts.slice(0, FACTS_SHOWN) : card.facts}
+          assets={card.assets}
+          focusAt={paragraph && open ? FACTS_SHOWN : undefined}
+        />
         {hidden > 0 ? (
-          <button type="button" className="text-sm font-semibold text-accent-strong hover:underline" onClick={() => setOpen(true)}>
+          <button
+            type="button"
+            className="text-sm font-semibold text-accent-strong hover:underline"
+            onClick={() => {
+              opened.current = true;
+              setOpen(true);
+            }}
+          >
             Show {hidden} more
           </button>
         ) : null}

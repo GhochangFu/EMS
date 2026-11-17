@@ -37,6 +37,6 @@ describe("E1.9b ml findings helpers", () => {
   it("E1.9g splitSentences treats an asset part as one unit, never scanned", () => splitSentencesTreatsAnAssetAsOneUnit());
   it("E1.9g splitSentences keeps every word but the spaces at a cut", () => splitSentencesKeepsEveryWord());
   it("E1.9g summaryOf: a headline, then at most 4 (or 2) points", () => summaryOfTakesAHeadlineAndCappedPoints());
-  it("E1.9g summaryOf: a hidden sentence that alone holds 'weak' takes the last point slot (OQ-1 a)", () =>
+  it("E1.9g summaryOf: with no 'weak' shown, a hidden 'weak' sentence takes the last point slot (OQ-1 a)", () =>
     summaryOfKeepsTheWeakSentence());
 });

@@ -592,6 +592,10 @@ export async function theCostChartSitsBetweenTheAlarmsAndAssetHealth(): Promise<
     charts.compareDocumentPosition(health) & Node.DOCUMENT_POSITION_FOLLOWING,
     "the Asset health panel must follow the cost chart",
   ).toBeTruthy();
+  // E1.9g (ADR 0135 Amendment 10 Q5): the findings card sits between the cost chart and Asset health.
+  expect(charts.nextElementSibling, "the findings card directly after the cost chart").toBe(
+    screen.getByTestId("ml-findings-panel"),
+  );
 }
 
 /**

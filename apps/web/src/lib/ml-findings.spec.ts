@@ -7,18 +7,18 @@ import { detectorLabel } from "./anomaly-series";
 import {
   compactLines,
   F5_TOOLTIP,
+  hasParagraphWorthyCard,
   ML_SUMMARY_COMPACT_POINTS,
   ML_SUMMARY_MAX_POINTS,
-  splitSentences,
-  summaryOf,
-  type FindingPart,
-  hasParagraphWorthyCard,
   mlPageHref,
   paragraphPollMs,
   pickScope,
   resolveSegments,
   safeAssetHref,
   scopeKey,
+  splitSentences,
+  summaryOf,
+  type FindingPart,
 } from "./ml-findings";
 
 /**
@@ -283,7 +283,11 @@ export function summaryOfTakesAHeadlineAndCappedPoints(): void {
   expect(summaryOf([], ML_SUMMARY_MAX_POINTS)).toEqual({ headline: [], points: [] });
 }
 
-/** OQ-1 (a): a hidden sentence that alone holds "weak" takes the last shown point slot, for both caps. */
+/**
+ * OQ-1 (a): when no shown sentence holds "weak" and a hidden one does, the first such hidden
+ * sentence takes the last shown point slot, for both caps. With exactly one "weak" sentence this
+ * is the ruling's words; with two hidden ones it still keeps the word on screen.
+ */
 export function summaryOfKeepsTheWeakSentence(): void {
   expect(summaryOf(sentences(6, 5), ML_SUMMARY_MAX_POINTS).points.map(said)).toEqual([
     "Point 1 is here.",
@@ -303,6 +307,13 @@ export function summaryOfKeepsTheWeakSentence(): void {
   expect(summaryOf(sentences(6, 0), ML_SUMMARY_COMPACT_POINTS).points.map(said)).toEqual([
     "Point 1 is here.",
     "Point 2 is here.",
+  ]);
+  // Two hidden sentences hold "weak": the first one is shown, so the word is never lost.
+  expect(summaryOf([t("H. P1. P2. P3. P4. Weak one. Weak two.")], ML_SUMMARY_MAX_POINTS).points.map(said)).toEqual([
+    "P1.",
+    "P2.",
+    "P3.",
+    "Weak one.",
   ]);
   // A whole word, case-folded: "Weak" counts, "weakly" and "tweak" do not.
   expect(summaryOf([t("A. B. C. Weak marks only.")], 1).points.map(said)).toEqual(["Weak marks only."]);

@@ -187,7 +187,10 @@ export async function s4ChipsShowTheCodeWithTheLabelAsTitle(): Promise<void> {
   }
 }
 
-/** S5: with the box, "Computed facts", two lines and "Show 2 more"; a click shows all four, the button goes. */
+/**
+ * S5: with the box, "Computed facts", two lines and "Show 2 more"; a click shows all four, the
+ * button goes, and focus moves to the first line it showed.
+ */
 export async function s5TheFactsFoldToTwoLinesUnderTheBox(): Promise<void> {
   stub(summary(CARD_P), { cards: [ok(ORG_P, THREE)] });
   renderCard();
@@ -199,9 +202,14 @@ export async function s5TheFactsFoldToTwoLinesUnderTheBox(): Promise<void> {
   const button = showMore(root) as HTMLElement;
   expect(button.textContent).toBe("Show 2 more");
   expect(button.getAttribute("type")).toBe("button");
+  button.focus();
   fireEvent.click(button);
   expect(factsOf(root)).toEqual(FACT_TEXT);
   expect(showMore(root)).toBeNull();
+  // The removed button hands focus to the first line it showed, not to the page body.
+  const third = root.querySelectorAll("[data-ml-facts] li")[2] as HTMLElement;
+  await waitFor(() => expect(document.activeElement).toBe(third));
+  expect(third.getAttribute("tabindex")).toBe("-1");
   expect(heading.isConnected).toBe(true);
 }
 
@@ -232,7 +240,7 @@ export async function s7NoBoxShowsEveryLine(): Promise<void> {
     const root = section();
     expect(screen.queryByText(ML_PARAGRAPH_LABEL)).toBeNull();
     expect(within(root).queryByText(ML_COMPUTED_FACTS_HEADING)).toBeNull();
-    expect(factsOf(root)).toEqual(FACT_TEXT.map((line) => line));
+    expect(factsOf(root)).toEqual(FACT_TEXT);
     expect(showMore(root)).toBeNull();
     cleanup();
     vi.restoreAllMocks();
