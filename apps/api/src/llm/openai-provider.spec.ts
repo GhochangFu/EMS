@@ -219,3 +219,29 @@ export async function assertAnEmptyToolListSendsNoToolsAndNoToolChoice(capture: 
     assert(Array.isArray(body.messages) && typeof body.model === "string", `${name}: the rest is as before`);
   }
 }
+
+/**
+ * Owner ruling Q2 (b) (`E1.9c`): absent, no output limit is sent (as before);
+ * present, OpenAI gets `max_completion_tokens` and OpenRouter `max_tokens`.
+ */
+export async function assertMaxOutputTokensIsSentOnlyWhenGiven(capture: OpenAiCapture): Promise<void> {
+  for (const name of ["openai", "openrouter"] as const) {
+    reset(capture, finalReply);
+    await provider(name).complete({ messages: [{ role: "user", content: "hi" }], tools: [TOOL], signal: new AbortController().signal });
+    const absent = capture.requests[0]?.body ?? {};
+    assert(!("max_tokens" in absent) && !("max_completion_tokens" in absent), `${name}: absent, no limit is sent`);
+    reset(capture, finalReply);
+    await provider(name).complete({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+      signal: new AbortController().signal,
+      maxOutputTokens: 4_000,
+    });
+    const present = capture.requests[0]?.body ?? {};
+    if (name === "openai") {
+      assert(present.max_completion_tokens === 4_000 && !("max_tokens" in present), "openai: max_completion_tokens is 4,000");
+    } else {
+      assert(present.max_tokens === 4_000 && !("max_completion_tokens" in present), "openrouter: max_tokens is 4,000");
+    }
+  }
+}

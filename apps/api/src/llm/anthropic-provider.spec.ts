@@ -284,6 +284,16 @@ export async function assertNoToolSendsNoMark(capture: AnthropicCapture): Promis
   assert(body.max_tokens === 16_000 && JSON.stringify(body.output_config) === JSON.stringify({ effort: "medium" }), "the rest is as before");
 }
 
+/** Owner ruling Q2 (b) (`E1.9c`): absent, `max_tokens` is 16,000 as before; present, it is the call's value. */
+export async function assertMaxOutputTokensReplacesTheDefaultOnlyWhenGiven(capture: AnthropicCapture): Promise<void> {
+  reset(capture, message([{ type: "text", text: "ok" }]));
+  await provider().complete({ messages: [{ role: "user", content: "hi" }], tools: [TOOL], signal: signal() });
+  assert(capture.requests[0]?.body.max_tokens === 16_000, "absent, max_tokens is 16,000");
+  reset(capture, message([{ type: "text", text: "ok" }]));
+  await provider().complete({ messages: [{ role: "user", content: "hi" }], tools: [], signal: signal(), maxOutputTokens: 4_000 });
+  assert(capture.requests[0]?.body.max_tokens === 4_000, "present, max_tokens is the call's 4,000");
+}
+
 const SYSTEM_TEXTS = ["FIXED PROMPT", "scope line", "wizard line", "pdf line"];
 
 /**

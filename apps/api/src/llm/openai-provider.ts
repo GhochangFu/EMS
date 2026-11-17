@@ -31,7 +31,11 @@ export const OPENAI_BASE_URL = "https://api.openai.com/v1";
  * the turn's deadline fired.
  *
  * `E1.9c` (ADR 0135 Amendment 8, plan R-d): an empty tool list sends no `tools`
- * and no `tool_choice`; a call with tools is as before.
+ * and no `tool_choice`; a call with tools is as before. `maxOutputTokens`
+ * (owner ruling Q2 (b)), when given, is `max_completion_tokens` on OpenAI (its
+ * current name; its reasoning models refuse the older `max_tokens`) and
+ * `max_tokens` on OpenRouter (the name its API documents); absent, no limit is
+ * sent, as before.
  */
 export class OpenAiCompatibleProvider implements LlmProvider {
   constructor(
@@ -58,6 +62,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
         model: this.options.model,
         messages: input.messages.map(toOpenAiMessage),
         ...(input.tools.length > 0 ? { tools: input.tools.map(toOpenAiTool), tool_choice: "auto" as const } : {}),
+        ...(input.maxOutputTokens === undefined ? {} : outputLimit(this.name, input.maxOutputTokens)),
       },
       { signal: input.signal },
     );
@@ -75,6 +80,14 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     }
     return { kind: "final", text: message.content ?? "" };
   }
+}
+
+/** The per-call output limit under the name each host reads. */
+function outputLimit(
+  name: "openai" | "openrouter",
+  tokens: number,
+): { readonly max_completion_tokens: number } | { readonly max_tokens: number } {
+  return name === "openai" ? { max_completion_tokens: tokens } : { max_tokens: tokens };
 }
 
 function toOpenAiTool(tool: LlmToolDefinition): ChatCompletionFunctionTool {

@@ -79,11 +79,17 @@ export type LlmReply =
 /**
  * One call's input. `tools: []` sends no tool list and no tool choice at all
  * (`E1.9c`, ADR 0135 Amendment 8, plan R-d); a call with tools is as before.
+ * `maxOutputTokens` (owner ruling Q2 (b)) caps the reply for one call: absent,
+ * each adapter sends exactly what it sent before (Anthropic its
+ * `ANTHROPIC_MAX_TOKENS`, OpenAI-compatible no limit); present, Anthropic sends
+ * it as `max_tokens`, OpenAI as `max_completion_tokens` and OpenRouter as
+ * `max_tokens`. Only the findings paragraph passes it.
  */
 export type LlmCompleteInput = {
   readonly messages: readonly LlmMessage[];
   readonly tools: readonly LlmToolDefinition[];
   readonly signal: AbortSignal;
+  readonly maxOutputTokens?: number;
 };
 
 export interface LlmProvider {

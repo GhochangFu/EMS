@@ -26,6 +26,7 @@ import {
   assertAMissingChoiceIsAProviderError,
   assertAStringUserContentIsSentAsAString,
   assertAnEmptyToolListSendsNoToolsAndNoToolChoice,
+  assertMaxOutputTokensIsSentOnlyWhenGiven,
   assertFunctionToolCallsBecomeToolCalls,
   assertImageAndPdfPartsAreNativeParts,
   assertNoToolCallsIsFinalText,
@@ -45,6 +46,10 @@ describe("OpenAI-compatible provider (F3.21, ADR 0090 Amendment 1 A1)", () => {
 
   it("sends no tools and no tool_choice for an empty tool list (E1.9c, R-d)", async () => {
     await assertAnEmptyToolListSendsNoToolsAndNoToolChoice(capture);
+  });
+
+  it("sends an output limit only when the call gives one (owner ruling Q2 (b))", async () => {
+    await assertMaxOutputTokensIsSentOnlyWhenGiven(capture);
   });
 
   it("sends a tool result with its call id", async () => {

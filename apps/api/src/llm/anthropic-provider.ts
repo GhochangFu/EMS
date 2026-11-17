@@ -56,6 +56,8 @@ export const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
  *
  * - `E1.9c` (ADR 0135 Amendment 8, plan R-d): an empty tool list sends no
  *   `tools` and no `tool_choice`; a call with tools is as before.
+ *   `maxOutputTokens`, when given, is that call's `max_tokens` (owner ruling
+ *   Q2 (b)); absent, `ANTHROPIC_MAX_TOKENS` as before.
  *
  * It reads no environment variable: the key and the model come from the
  * resolver.
@@ -77,7 +79,7 @@ export class AnthropicProvider implements LlmProvider {
       {
         betas: [ANTHROPIC_FALLBACK_BETA],
         model: this.options.model,
-        max_tokens: ANTHROPIC_MAX_TOKENS,
+        max_tokens: input.maxOutputTokens ?? ANTHROPIC_MAX_TOKENS,
         ...(system.length > 0 ? { system } : {}),
         messages: toAnthropicMessages(input.messages),
         ...(input.tools.length > 0 ? { tools: toAnthropicTools(input.tools), tool_choice: { type: "auto" as const } } : {}),
