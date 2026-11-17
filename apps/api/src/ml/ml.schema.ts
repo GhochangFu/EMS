@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { ANOMALY_MAX_SPAN_DAYS, PAST_FORECAST_MAX_SPAN_DAYS } from "@bms/shared";
 
+import { scopeIdQueryField } from "../auth/asset-scope.schema";
+
 /**
  * `E1.4e` / ADR 0135 Amendment 4 — the one query the `ml` routes take:
  * `GET /ml/points/:pointRef/forecast/past?from=&to=`, the window of past hours
@@ -71,10 +73,17 @@ export type AssetAnomaliesQuery = z.infer<typeof assetAnomaliesQuerySchema>;
  * `E1.2b` — `GET /ml/anomalies?since=`: the unusual hours of every readable
  * asset. `since` is optional; the server clamps it to the last 7 days (plan R13),
  * so an older `since` is narrowed, not refused. `.strict()`.
+ *
+ * `E1.9a` (ADR 0135 Amendment 8 decision 8) adds `organizationId` and
+ * `locationId`, which `AssetFilterScopeService.narrow` ANDs onto the caller's
+ * readable assets: they narrow and never widen, and one outside scope answers
+ * an empty list, not 403.
  */
 export const anomaliesQuerySchema = z
   .object({
     since: instant.optional(),
+    organizationId: scopeIdQueryField,
+    locationId: scopeIdQueryField,
   })
   .strict()
   // Zod accepts an offset such as +99:99 that `Date.parse` reads as NaN; without this the
@@ -85,3 +94,33 @@ export const anomaliesQuerySchema = z
   .describe("`since`, when given, must be a valid instant.");
 
 export type AnomaliesQuery = z.infer<typeof anomaliesQuerySchema>;
+
+/**
+ * `E1.9a` / ADR 0135 Amendment 8 decision 8 — `GET /ml/forecasts?organizationId=&locationId=`:
+ * the two scope keys the forecast list takes, each an optional lower-cased uuid that
+ * `AssetFilterScopeService.narrow` ANDs onto the caller's readable assets. `.strict()`.
+ */
+export const forecastListQuerySchema = z
+  .object({
+    organizationId: scopeIdQueryField,
+    locationId: scopeIdQueryField,
+  })
+  .strict();
+
+export type ForecastListQuery = z.infer<typeof forecastListQuerySchema>;
+
+/**
+ * `E1.9a` / ADR 0135 Amendment 8 decision 10 (plan R-c) — `GET /ml/forecasts/summary` and
+ * `GET /ml/anomalies/summary`: the four scope keys of `/alarms` and `/rules`, so a dashboard
+ * on an asset group or one asset can ask for its own scope. `.strict()`.
+ */
+export const mlFindingsSummaryQuerySchema = z
+  .object({
+    organizationId: scopeIdQueryField,
+    locationId: scopeIdQueryField,
+    assetGroupId: scopeIdQueryField,
+    assetId: scopeIdQueryField,
+  })
+  .strict();
+
+export type MlFindingsSummaryQuery = z.infer<typeof mlFindingsSummaryQuerySchema>;

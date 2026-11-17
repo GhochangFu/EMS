@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   aBadRefIsA400BeforeTheScopeCheckOrTheService,
   theAnomalyListHandsReadableAssetIdsToTheServiceUnchanged,
+  theAnomalyListNarrowsByTheParsedFilter,
+  theListNarrowsByTheParsedFilter,
   theAnomalyRouteHandsTheIdAndWindowToTheService,
   theAnomalyRouteIsA403BeforeTheService,
   theAnomalyRouteRefusesABadWindowBeforeTheScopeCheck,
@@ -22,7 +24,7 @@ describe("E1.4a — the ml routes (ADR 0135 Amendment 3 R-c, S2)", () => {
     aBadRefIsA400BeforeTheScopeCheckOrTheService());
   it("a foreign asset is a 403 before the service", () => aForeignAssetIsA403BeforeTheService());
   it("the service receives the decoded pair and one clock", () => theServiceReceivesTheDecodedPairAndOneClock());
-  it("the list hands readableAssetIds' value to the service unchanged", () =>
+  it("the list hands narrow's value to the service unchanged (E1.9a)", () =>
     theListHandsReadableAssetIdsToTheServiceUnchanged());
   it("E1.4e past: a bad ref is a 400 first, before the query, canReadAsset or the service", () =>
     thePastRouteRefusesABadRefFirst());
@@ -41,6 +43,13 @@ describe("E1.2b — the anomaly routes (ADR 0135 Amendment 5 A-e, S1, S2, S4)", 
   it("a foreign asset is a 403 before the service", () => theAnomalyRouteIsA403BeforeTheService());
   it("the checked id, the window as instants and one clock reach the service", () =>
     theAnomalyRouteHandsTheIdAndWindowToTheService());
-  it("the list hands readableAssetIds' value to the service unchanged; a bad since is a 400", () =>
+  it("the list hands narrow's value to the service unchanged; a bad since is a 400", () =>
     theAnomalyListHandsReadableAssetIdsToTheServiceUnchanged());
+});
+
+describe("E1.9a — the organization and location filter on the two lists (ADR 0135 Amendment 8 decision 8)", () => {
+  it("the forecast list: narrow gets exactly the parsed keys; a bad query is a 400 and narrow never runs", () =>
+    theListNarrowsByTheParsedFilter());
+  it("the anomaly list: narrow gets the two keys, not since; a bad query is a 400 and narrow never runs", () =>
+    theAnomalyListNarrowsByTheParsedFilter());
 });

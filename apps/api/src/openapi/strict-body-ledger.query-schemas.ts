@@ -49,7 +49,13 @@ import {
 import {
   listReportFilesQuerySchema,
 } from "../reports/report-files.schema";
-import { anomaliesQuerySchema, assetAnomaliesQuerySchema, pastForecastQuerySchema } from "../ml/ml.schema";
+import {
+  anomaliesQuerySchema,
+  assetAnomaliesQuerySchema,
+  forecastListQuerySchema,
+  mlFindingsSummaryQuerySchema,
+  pastForecastQuerySchema,
+} from "../ml/ml.schema";
 import {
   assetHealthQuerySchema,
   healthSummaryQuerySchema,
@@ -211,4 +217,9 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `anomaliesQuerySchema` (`GET /ml/anomalies?since=`, one optional instant) — `.strict()`, no body.
   assetAnomaliesQuerySchema,
   anomaliesQuerySchema,
+  // 43 -> 45 (2026-11-17): `E1.9a` (ADR 0135 Amendment 8) registered `forecastListQuerySchema`
+  // (`GET /ml/forecasts?organizationId=&locationId=`) and `mlFindingsSummaryQuerySchema` (the two
+  // summaries' four scope uuids, registered twice) — `.strict()`, no body, no ledger entry.
+  forecastListQuerySchema,
+  mlFindingsSummaryQuerySchema,
 };

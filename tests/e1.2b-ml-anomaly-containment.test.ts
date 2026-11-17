@@ -91,17 +91,20 @@ describe("E1.2b ml anomaly read containment (ADR 0135 Amendment 5 A-e)", () => {
     expect(service, "the service call after canReadAsset(").toBeGreaterThan(guard);
   });
 
-  it("the list handler calls readableAssetIds before the service (S1)", () => {
+  it("the list handler narrows the caller's readable assets before the service (S1)", () => {
+    // `E1.9a` (ADR 0135 Amendment 8 decision 8, R-b): `narrow` ANDs `organizationId` and
+    // `locationId` onto `readableAssetIds` (`tests/e1.4a-ml-read-containment.test.ts` holds that).
     const handler = methodBody(codeOnly(read(CONTROLLER_REL)), "anomalies");
     const query = handler.indexOf("anomaliesQuerySchema.safeParse(");
-    const scope = handler.indexOf("readableAssetIds(");
+    const scope = handler.indexOf("this.assetFilterScope.narrow(user,");
     const service = handler.indexOf("this.anomalyReads.list(");
     expect(query).toBeGreaterThanOrEqual(0);
-    expect(scope, "readableAssetIds( after the query parse").toBeGreaterThan(query);
-    expect(service, "the service call after readableAssetIds(").toBeGreaterThan(scope);
-    expect(handler, "readableAssetIds' value reaches the service unchanged").toMatch(
-      /const assetIds = await this\.accessControl\.readableAssetIds\(user\);[\s\S]*this\.anomalyReads\.list\(assetIds,/,
+    expect(scope, "narrow( after the query parse").toBeGreaterThan(query);
+    expect(service, "the service call after narrow(").toBeGreaterThan(scope);
+    expect(handler, "narrow's value reaches the service unchanged").toMatch(
+      /const assetIds = await this\.assetFilterScope\.narrow\(user, \{[^}]*\}\);[\s\S]*this\.anomalyReads\.list\(assetIds,/,
     );
+    expect(handler, "the handler never reads readableAssetIds itself").not.toMatch(/readableAssetIds\(/);
   });
 
   it("the reads file takes a transaction and never names a pool", () => {

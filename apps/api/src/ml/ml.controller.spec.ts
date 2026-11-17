@@ -3,6 +3,7 @@ import { encodePointRef, type JwtPayload } from "@bms/shared";
 import { expect } from "vitest";
 
 import type { AccessControlService } from "../auth/access-control.service";
+import type { AssetFilterScopeService, AssetScopeFilter } from "../filter-options/asset-filter-scope.service";
 import { MlController } from "./ml.controller";
 import type { MlAnomaliesService } from "./ml-anomalies.service";
 import type { MlForecastsService } from "./ml-forecasts.service";
@@ -28,15 +29,18 @@ type Harness = {
   /** `E1.2b`: the anomaly service's calls. */
   forAssetCalls: { assetId: string; window: { from: Date; to: Date }; now: Date }[];
   anomalyListCalls: { assetIds: string[] | null; since: Date | undefined; now: Date }[];
+  /** `E1.9a`: the filter each `narrow` call received. */
+  narrowCalls: AssetScopeFilter[];
 };
 
-function harness(opts: { canRead?: boolean; readable?: string[] | null } = {}): Harness {
+function harness(opts: { canRead?: boolean; readable?: string[] | null; narrowed?: string[] | null } = {}): Harness {
   const canReadCalls: string[] = [];
   const currentCalls: Harness["currentCalls"] = [];
   const listCalls: Harness["listCalls"] = [];
   const pastCalls: Harness["pastCalls"] = [];
   const forAssetCalls: Harness["forAssetCalls"] = [];
   const anomalyListCalls: Harness["anomalyListCalls"] = [];
+  const narrowCalls: AssetScopeFilter[] = [];
   const accessControl = {
     canReadAsset: async (_user: JwtPayload, assetId: string) => {
       canReadCalls.push(assetId);
@@ -68,14 +72,23 @@ function harness(opts: { canRead?: boolean; readable?: string[] | null } = {}): 
       return { asOf: now.toISOString(), since: now.toISOString(), truncated: false, items: [] };
     },
   } as unknown as MlAnomaliesService;
+  // `E1.9a`: the stub hands back `narrowed` (default: the readable ids), so a handler that read
+  // `readableAssetIds` itself instead of `narrow`'s value is told apart.
+  const assetFilterScope = {
+    narrow: async (_user: JwtPayload, filter: AssetScopeFilter) => {
+      narrowCalls.push(filter);
+      return opts.narrowed === undefined ? (opts.readable === undefined ? null : opts.readable) : opts.narrowed;
+    },
+  } as unknown as AssetFilterScopeService;
   return {
-    controller: new MlController(service, accessControl, anomalyService),
+    controller: new MlController(service, accessControl, anomalyService, assetFilterScope),
     canReadCalls,
     currentCalls,
     listCalls,
     pastCalls,
     forAssetCalls,
     anomalyListCalls,
+    narrowCalls,
   };
 }
 
@@ -119,13 +132,43 @@ export async function theServiceReceivesTheDecodedPairAndOneClock(): Promise<voi
 }
 
 export async function theListHandsReadableAssetIdsToTheServiceUnchanged(): Promise<void> {
-  for (const readable of [null, [], [ASSET, "99999999-9999-4999-8999-999999999999"]]) {
-    const h = harness({ readable });
-    await h.controller.list(USER);
+  for (const narrowed of [null, [], [ASSET, "99999999-9999-4999-8999-999999999999"]]) {
+    // `readable` differs from `narrowed`: only `narrow`'s value may reach the service.
+    const h = harness({ readable: ["77777777-7777-4777-8777-777777777777"], narrowed });
+    await h.controller.list(USER, {});
     expect(h.listCalls).toHaveLength(1);
-    expect(h.listCalls[0]?.assetIds).toBe(readable);
+    expect(h.listCalls[0]?.assetIds).toBe(narrowed);
     expect(h.listCalls[0]?.now).toBeInstanceOf(Date);
+    expect(h.narrowCalls).toEqual([{}]);
   }
+}
+
+const ORG = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA";
+const LOC = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+/** `E1.9a` (Amendment 8 decision 8): `narrow` receives exactly the parsed keys; a bad query is a 400 before it. */
+export async function theListNarrowsByTheParsedFilter(): Promise<void> {
+  const h = harness({ narrowed: [ASSET] });
+  await h.controller.list(USER, { organizationId: ORG, locationId: LOC });
+  expect(h.narrowCalls).toEqual([{ organizationId: ORG.toLowerCase(), locationId: LOC }]);
+  expect(h.listCalls[0]?.assetIds).toEqual([ASSET]);
+  for (const query of [{ assetGroupId: LOC }, { organizationId: "x" }, { since: "2026-11-15T00:00:00Z" }]) {
+    const bad = harness();
+    expect(await settle(bad.controller.list(USER, query)), JSON.stringify(query)).toBeInstanceOf(BadRequestException);
+    expect(bad.narrowCalls, "narrow must not run on a 400").toEqual([]);
+    expect(bad.listCalls).toEqual([]);
+  }
+}
+
+/** `E1.9a`: the anomaly list narrows by its two keys, never `since`, and hands `narrow`'s value on. */
+export async function theAnomalyListNarrowsByTheParsedFilter(): Promise<void> {
+  const h = harness({ narrowed: [] });
+  await h.controller.anomalies(USER, { since: "2026-11-15T00:00:00Z", organizationId: ORG, locationId: LOC });
+  expect(h.narrowCalls).toEqual([{ organizationId: ORG.toLowerCase(), locationId: LOC }]);
+  expect(h.anomalyListCalls[0]?.assetIds).toEqual([]);
+  const bad = harness();
+  expect(await settle(bad.controller.anomalies(USER, { assetId: ASSET }))).toBeInstanceOf(BadRequestException);
+  expect(bad.narrowCalls).toEqual([]);
 }
 
 const FROM = "2026-11-15T00:00:00.000Z";
@@ -249,13 +292,14 @@ export async function theAnomalyRouteHandsTheIdAndWindowToTheService(): Promise<
   expect(body).toEqual({ asOf: call?.now.toISOString(), scores: [] });
 }
 
-/** `E1.2b` (S1): the list hands readableAssetIds' value to the service unchanged, with `since` as an instant. */
+/** `E1.2b` (S1), `E1.9a`: the list hands `narrow`'s value (readable ids ANDed with the filter) to the service unchanged. */
 export async function theAnomalyListHandsReadableAssetIdsToTheServiceUnchanged(): Promise<void> {
-  for (const readable of [null, [], [ASSET, "99999999-9999-4999-8999-999999999999"]]) {
-    const h = harness({ readable });
+  for (const narrowed of [null, [], [ASSET, "99999999-9999-4999-8999-999999999999"]]) {
+    const h = harness({ readable: ["77777777-7777-4777-8777-777777777777"], narrowed });
     await h.controller.anomalies(USER, {});
     expect(h.anomalyListCalls).toHaveLength(1);
-    expect(h.anomalyListCalls[0]?.assetIds).toBe(readable);
+    expect(h.anomalyListCalls[0]?.assetIds).toBe(narrowed);
+    expect(h.narrowCalls).toEqual([{}]);
     expect(h.anomalyListCalls[0]?.since).toBeUndefined();
     expect(h.anomalyListCalls[0]?.now).toBeInstanceOf(Date);
   }
