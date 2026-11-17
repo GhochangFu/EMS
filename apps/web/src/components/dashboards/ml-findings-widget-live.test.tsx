@@ -36,7 +36,7 @@ describe("E1.9f — the live ml_findings widget (ADR 0135 Amendment 8 decision 1
     await showAnomaliesAsksForAnomaliesOnly();
   });
 
-  it("asks for both kinds when the config is {}", async () => {
+  it("asks for both kinds and the paragraph when the config is {}", async () => {
     await anEmptyConfigAsksForBothKinds();
   });
 

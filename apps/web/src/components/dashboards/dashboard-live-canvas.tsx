@@ -86,8 +86,8 @@ export function DashboardLiveCanvas({
   // widget's point refs and asset windows are never read (its catalog source still rides the
   // dashboard's one catalog read, which the server resolves whole).
   // `E1.9f` (Q4 (a)) — on the wall the `ml_findings` tiles are dropped in the same pass; they are
-  // not counted as energy-hidden, and their gap is left as stored.
-  const { dashboard, hiddenCount } = useMemo(() => {
+  // not counted as energy-hidden (`wallHidden` counts them), and their gap is left as stored.
+  const { dashboard, hiddenCount, wallHidden } = useMemo(() => {
     const tabId = tabKey === undefined ? undefined : fullDashboard.tabs.find((tab) => tab.key === tabKey)?.id;
     const slice =
       tabKey === undefined ? fullDashboard.widgets : fullDashboard.widgets.filter((widget) => widget.tabId === tabId);
@@ -98,6 +98,7 @@ export function DashboardLiveCanvas({
     return {
       dashboard: drawn === fullDashboard.widgets ? fullDashboard : { ...fullDashboard, widgets: [...drawn] },
       hiddenCount: visible.hidden,
+      wallHidden: visible.tiles.length - drawn.length,
     };
   }, [fullDashboard, tabKey, energyShown, wall]);
   const { latestByRef, historyByRef, aggregateByKey, catalog } = useDashboardTelemetry(dashboard);
@@ -163,6 +164,20 @@ export function DashboardLiveCanvas({
         className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted"
       >
         {`No widget on this ${tabKey === undefined ? "dashboard" : "tab"} is shown while energy is not shown for this site.`}
+      </p>
+    );
+  }
+
+  if (tiles.length === 0 && wallHidden > 0) {
+    // `E1.9f` (Q4 (a)) — the wall leaves out this tab's findings widgets; "no widgets yet" would be
+    // false. A neutral muted line, as the energy branch above.
+    return (
+      <p
+        role="status"
+        data-testid="wall-hidden-canvas"
+        className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted"
+      >
+        {`Nothing on this ${tabKey === undefined ? "dashboard" : "tab"} is shown on the wall.`}
       </p>
     );
   }

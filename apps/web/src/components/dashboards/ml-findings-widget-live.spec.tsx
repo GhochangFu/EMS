@@ -122,6 +122,8 @@ export async function anEmptyConfigAsksForBothKinds(): Promise<void> {
   await screen.findAllByText("ORGM · Maple Ridge Works");
   await settle();
   expect(kindsAsked()).toEqual(["forecasts", "anomalies"]);
+  // R-u: an absent `paragraph` reads as `true`, so the paragraph is asked for each kind.
+  expect((paragraphSpy?.mock.calls ?? []).map((call) => call[0])).toEqual(["forecasts", "anomalies"]);
 }
 
 /** `paragraph: false` makes no paragraph request; `paragraph: true` (the control) makes one per kind. */

@@ -23,6 +23,8 @@ import {
   everyWidgetIsDrawnWithEnergy,
   anMlFindingsWidgetGetsTheDashboardsScope,
   theWallDropsOnlyTheMlFindingsWidget,
+  aWallOfOnlyMlFindingsSaysNoFalseEmptyLine,
+  theScopeKeepsEachSetIdUnderItsOwnKey,
 } from "./dashboard-live-canvas.spec";
 
 /**
@@ -126,5 +128,21 @@ describe("F3.69 U1 DashboardLiveCanvas", () => {
 
   it("ML2 draws all three off the wall (E1.9f Q4)", async () => {
     await theWallDropsOnlyTheMlFindingsWidget(false);
+  });
+
+  it("ML3 a wall of only ml_findings says no false 'no widgets yet' line (E1.9f Q4)", async () => {
+    await aWallOfOnlyMlFindingsSaysNoFalseEmptyLine(true);
+  });
+
+  it("ML3 the same dashboard draws its ml_findings widget off the wall (E1.9f Q4)", async () => {
+    await aWallOfOnlyMlFindingsSaysNoFalseEmptyLine(false);
+  });
+
+  it("ML4 an asset-group dashboard hands the widget its assetGroupId (E1.9f)", async () => {
+    await theScopeKeepsEachSetIdUnderItsOwnKey("assetGroup");
+  });
+
+  it("ML4 an asset dashboard hands the widget its assetId (E1.9f)", async () => {
+    await theScopeKeepsEachSetIdUnderItsOwnKey("asset");
   });
 });

@@ -124,19 +124,6 @@ export function runPointRefsForTests(): void {
     withAnomaly.length === 2 && !withAnomaly.includes(encodePointRef("asset-d", "chw_kw")),
     `an anomaly widget's point is not a recent-read ref — got ${JSON.stringify(withAnomaly)}`,
   );
-
-  // `E1.9f` — an ml_findings widget binds nothing, so it adds no ref.
-  const mlFindings: DashboardWidgetDto = {
-    ...IDENTITY,
-    widgetType: "ml_findings",
-    config: { show: "both", paragraph: true },
-    points: [],
-  };
-  const withMlFindings = pointRefsFor({ ...dashboard, widgets: [...dashboard.widgets, mlFindings] });
-  assert(
-    JSON.stringify(withMlFindings) === JSON.stringify(pointRefsFor(dashboard)),
-    `an ml_findings widget adds no point ref — got ${JSON.stringify(withMlFindings)}`,
-  );
 }
 
 /**

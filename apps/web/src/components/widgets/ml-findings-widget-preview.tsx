@@ -5,9 +5,10 @@ import { WidgetFrame } from "./widget-frame";
 export const ML_FINDINGS_WIDGET_NOTE = "Advisory. Forecast and anomaly findings for this dashboard's scope.";
 
 /**
- * `E1.9f` — the static draw of the `ml_findings` widget, for the dispatcher that has no dashboard
- * scope (`DashboardWidget`, the builder's canvas): the frame, its title and the advisory line. It
- * reads nothing; the live canvas branches to `MlFindingsWidgetLive` before it gets here.
+ * `E1.9f` — the static draw of the `ml_findings` widget: the frame, its title and the advisory
+ * line, reading nothing. It exists so `DashboardWidget`'s switch stays exhaustive over the widget
+ * types; no production path reaches that arm, because the live canvas branches to
+ * `MlFindingsWidgetLive` first (`DashboardWidgetLive`). It is not the builder's canvas.
  */
 export function MlFindingsWidgetPreview({ title, status }: { title: string; status: WidgetStatus }) {
   return (

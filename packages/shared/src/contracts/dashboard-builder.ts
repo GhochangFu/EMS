@@ -637,6 +637,9 @@ export const widgetTypeBindsNothing = (type: z.infer<typeof widgetTypeSchema>): 
  * no template surface holds one. A forecast names one asset's point, which a template has not.
  * **`anomaly` is refused by name for the same reason** (`E1.2d`, plan R15; ADR 0135 Amendment 5
  * ruling 4(c), "builder palette only").
+ * **`ml_findings` is builder palette only too** (`E1.9f`, ADR 0135 Amendment 8 decision 13). It
+ * needs no name here: it binds nothing, so the second clause already refuses it. The dashboard-
+ * template walk refuses it by name, because the binds-nothing site widgets are allowed there.
  */
 export const isTemplateAuthorableWidgetType = (
   type: z.infer<typeof widgetTypeSchema>,

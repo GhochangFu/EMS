@@ -553,3 +553,40 @@ export async function theWallDropsOnlyTheMlFindingsWidget(wall: boolean): Promis
   expect(drawnTiles(container)).toEqual(wall ? ["forecast", "anomaly"] : ["forecast", "anomaly", "ml-findings"]);
   expect(screen.queryByTestId("ml-findings-card") === null).toBe(wall);
 }
+
+/**
+ * ML3 — `E1.9f` (Q4 (a)): a dashboard whose only widget is an `ml_findings` one draws nothing on
+ * the wall, and says nothing false: no "This dashboard has no widgets yet." (it has one). Off the
+ * wall (the control) the widget draws.
+ */
+export async function aWallOfOnlyMlFindingsSaysNoFalseEmptyLine(wall: boolean): Promise<void> {
+  const { container } = renderCanvas(dashboard([mlFindingsWidget()]), undefined, undefined, wall);
+  if (wall) {
+    expect(await screen.findByTestId("wall-hidden-canvas")).toBeInTheDocument();
+    expect(drawnTiles(container)).toEqual([]);
+  } else {
+    expect(await screen.findByTestId("ml-findings-card")).toBeInTheDocument();
+    expect(drawnTiles(container)).toEqual(["ml-findings"]);
+  }
+  expect(screen.queryByText("This dashboard has no widgets yet.")).toBeNull();
+  expect(screen.queryByText("This tab has no widgets yet.")).toBeNull();
+}
+
+/**
+ * ML4 — `E1.9f`: the scope's set id is passed under its own key — an asset-group dashboard sends
+ * `assetGroupId`, an asset dashboard `assetId` (ML1 holds the location's).
+ */
+export async function theScopeKeepsEachSetIdUnderItsOwnKey(kind: "assetGroup" | "asset"): Promise<void> {
+  const id = kind === "assetGroup" ? "group-1" : "asset-1";
+  const dto: DashboardDto = {
+    ...dashboard([mlFindingsWidget()]),
+    locationId: null,
+    assetGroupId: kind === "assetGroup" ? id : null,
+    assetId: kind === "asset" ? id : null,
+  };
+  renderCanvas(dto);
+  const card = await screen.findByTestId("ml-findings-card");
+  expect(JSON.parse(card.dataset.scope ?? "")).toEqual(
+    kind === "assetGroup" ? { organizationId: "org-1", assetGroupId: id } : { organizationId: "org-1", assetId: id },
+  );
+}
