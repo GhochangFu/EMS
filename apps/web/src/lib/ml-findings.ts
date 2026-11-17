@@ -1,5 +1,14 @@
-import type { MlFindingAsset, MlFindingSegment } from "@bms/shared/contracts";
+import type {
+  MlFindingAsset,
+  MlFindingFact,
+  MlFindingsCard,
+  MlFindingSegment,
+  MlFindingsKind,
+  MlFindingsParagraphResponse,
+  MlFindingsSummaryResponse,
+} from "@bms/shared/contracts";
 
+import { FORECAST_REFETCH_MS } from "./forecast-series";
 import { SCOPE_FILTER_KEYS, type ScopeFilter, type ScopeFilterKey } from "./scope-filter";
 
 /**
@@ -64,3 +73,66 @@ export function resolveSegments(
 /** The title of an F5 line (a forecast crossing an alarm-rule limit). */
 export const F5_TOOLTIP =
   "The alarm engine checks every reading. A forecast is an hourly average, so a short spike can raise an alarm the forecast does not show, and the reverse.";
+
+/** R-n: the gap between two asks while a paragraph is still being written. */
+export const PARAGRAPH_POLL_MS = 4_000;
+
+/** R-n: at most this many asks again in a row; then the 15-minute refetch. */
+export const PARAGRAPH_MAX_POLLS = 6;
+
+/**
+ * `E1.9d` (plan T4.2, R-n) — the paragraph read's next refetch. `polls` is how many times it has
+ * already asked again in a row while some card was `pending`. Bounded: never more than
+ * `PARAGRAPH_MAX_POLLS` quick asks, then the ML cycle's own 15 minutes.
+ */
+export function paragraphPollMs(data: MlFindingsParagraphResponse | undefined, polls: number): number {
+  const waiting = data?.cards.some((card) => card.state === "pending") ?? false;
+  return waiting && polls < PARAGRAPH_MAX_POLLS ? PARAGRAPH_POLL_MS : FORECAST_REFETCH_MS;
+}
+
+/** The lines that say there is nothing to report. */
+const NONE_FACTS: ReadonlySet<MlFindingFact["id"]> = new Set(["F_NONE", "A_NONE"]);
+
+/** R-m: a card holds something to write about — any fact other than a "none" sentence. */
+export function isParagraphWorthy(card: MlFindingsCard): boolean {
+  return card.facts.some((fact) => !NONE_FACTS.has(fact.id));
+}
+
+/** Plan T4.3: the paragraph is asked for only when some card of the summary has findings. */
+export function hasParagraphWorthyCard(summary: MlFindingsSummaryResponse | undefined): boolean {
+  return summary?.cards.some(isParagraphWorthy) ?? false;
+}
+
+/** Decision 13: per kind, the strong line first, then the overview line, then the "none" line. */
+const COMPACT_ORDER: Record<MlFindingsKind, readonly MlFindingFact["id"][]> = {
+  anomalies: ["A2", "A1", "A_NONE"],
+  forecasts: ["F5", "F1", "F_NONE"],
+};
+
+/**
+ * `E1.9d` (plan T4.2, decision 13) — the compact card's lines when there is no paragraph: the A2
+ * lines when present, else A1; the F5 lines when present, else F1. A card with neither keeps its
+ * "none" sentence.
+ */
+export function compactLines(card: MlFindingsCard, kind: MlFindingsKind): MlFindingFact[] {
+  for (const id of COMPACT_ORDER[kind]) {
+    const lines = card.facts.filter((fact) => fact.id === id);
+    if (lines.length > 0) {
+      return lines;
+    }
+  }
+  return [];
+}
+
+/** `E1.9d` (plan T4.2, decision 13) — the kind's page with the filter set: organization and location only. */
+export function mlPageHref(kind: MlFindingsKind, scope: ScopeFilter): string {
+  const query = new URLSearchParams();
+  for (const key of ML_PAGE_FILTER_KEYS) {
+    const value = scope[key];
+    if (value) {
+      query.set(key, value);
+    }
+  }
+  const search = query.toString();
+  return `/${kind}${search ? `?${search}` : ""}`;
+}

@@ -112,6 +112,20 @@ export function runParagraphStateTest(): void {
   expect(mlFindingsParagraphResponseSchema.safeParse(long).success, "a 601-character segment").toBe(false);
 }
 
+/**
+ * `E1.9d` (E1.9c security review; decision 14) — a paragraph card carries the assets of the very
+ * facts it was written from, so its references never resolve against a newer summary. A card
+ * without `assets`, or with a malformed asset, is refused.
+ */
+export function runParagraphAssetsTest(): void {
+  const withAssets = { cards: [{ organizationId: ORG, state: "ok", segments: [{ assetRef: "A1" }], assets: card.assets }] };
+  expect(mlFindingsParagraphResponseSchema.parse(withAssets)).toEqual(withAssets);
+  const without = { cards: [{ organizationId: ORG, state: "ok", segments: [{ assetRef: "A1" }] }] };
+  expect(mlFindingsParagraphResponseSchema.safeParse(without).success, "a card without assets").toBe(false);
+  const badRef = { cards: [{ ...withAssets.cards[0], assets: [{ ...card.assets[0], ref: "B1" }] }] };
+  expect(mlFindingsParagraphResponseSchema.safeParse(badRef).success, "an asset ref that is not A<n>").toBe(false);
+}
+
 export function runNotStrictTest(): void {
   expect(mlFindingsSummaryResponseSchema.safeParse({ ...summary, extra: 1, cards: [{ ...card, extra: true }] }).success).toBe(
     true,
