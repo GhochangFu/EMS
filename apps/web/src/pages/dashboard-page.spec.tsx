@@ -99,6 +99,14 @@ function stubDashboard(
   vi.spyOn(assetHealthApi, "fetchHealthSummary").mockResolvedValue({
     assetCount: 0,
   } as unknown as HealthSummaryResponse);
+  // `E1.8b`: the count line's read. The empty summary above never enables it; stubbed so a
+  // change to that summary cannot send a request out of the test process.
+  vi.spyOn(assetHealthApi, "fetchHealthBadActors").mockResolvedValue({
+    asOf: "2026-11-17T10:00:00.000Z",
+    scoredAssetCount: 0,
+    lowestScores: [],
+    anomaly: null,
+  });
 }
 
 function renderPage(): void {
