@@ -204,6 +204,31 @@ export class AssetHealthService {
   }
 
   /**
+   * `E1.8a` (ADR 0050 Amendment 5, plan T1.4) — `summary`'s scope and scoring step, one entry per
+   * active in-scope asset in `assetsInScope`'s id order, so the bad-actors read's *Lowest health
+   * score* tab and its scored-asset count are the donut's. No new SQL: `resolveWindow`,
+   * `assetsInScope` and `scoreAssets`, in that order. `assetIds` is the caller's
+   * already-authorized readable set (`null` only for an unrestricted admin), as for `summary`.
+   */
+  async scoresInScope(
+    assetIds: readonly string[] | null,
+    location: HealthLocationFilter | undefined,
+    windowMinutes: number,
+    now: Date,
+  ): Promise<HealthScopeScore[]> {
+    const { level, from, to } = this.resolveWindow(windowMinutes, now);
+    const inScope = await this.assetsInScope(assetIds, location);
+    if (inScope.length === 0) {
+      return [];
+    }
+    const { scores } = await this.scoreAssets(level, inScope, from, to);
+    return inScope.map((assetId, i) => {
+      const scored = scores[i] as AssetScore;
+      return { assetId, score: scored.score, band: scored.band, scoredTagCount: scored.scoredTags.length };
+    });
+  }
+
+  /**
    * `F4.364` (ADR 0133 decision 4, plan D4) — the location cards' health figure, one score per
    * requested location in one batch: each location's **own** active assets (plan ruling Q3 — not
    * its subtree, unlike `summary`'s `locationId`), intersected with `assetIds`, scored by the same
