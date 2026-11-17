@@ -3,6 +3,7 @@ import { expect } from "vitest";
 
 import { AlarmNotifyService } from "../alarms/alarm-notify.service";
 import { AlarmRaiser } from "../alarms/alarm-raise.service";
+import { AlarmRootCauseService } from "../alarms/alarm-root-cause.service";
 import { AlarmsService } from "../alarms/alarms.service";
 import { LocationsAdminService } from "../admin/locations/locations.service";
 import { TelemetryImportService } from "../admin/telemetry-import/telemetry-import.service";
@@ -343,4 +344,16 @@ export function assertMlAnomaliesServiceTenantSlot(): void {
 
 export function assertMlAnomaliesServiceFleetSlot(): void {
   expect(injectedToken(MlAnomaliesService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `E2.3` — `AlarmRootCauseService(details, tenantDb)` (ADR 0136; plan Q2 as ruled): the
+ * evidence reads run under `withTenant` on slot 1, and the service holds **no fleet token at
+ * all** — its only fleet read is `AlarmDetailsService.get`, the gate. A fleet pool in slot 1
+ * would leave the hand-written organization predicates as the only control, and the
+ * integration suite constructs the service with explicit pools, so only this catches it.
+ */
+export function assertAlarmRootCauseServiceTenantSlot(): void {
+  expect(injectedToken(AlarmRootCauseService, 1)).toBe(TENANT_DRIZZLE);
+  expect(injectedToken(AlarmRootCauseService, 0)).toBeUndefined();
 }

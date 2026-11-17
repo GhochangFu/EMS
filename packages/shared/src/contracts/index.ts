@@ -153,3 +153,5 @@ export * from "../tariffs/compute-bill";
 // `E1.4a` (ADR 0135 Amendment 3): the forecast read contracts and their types.
 export * from "./ml-forecasts";
 export * from "./ml-anomalies";
+// `E2.3` (ADR 0136): the root-cause suggestions response and its types.
+export * from "./alarm-root-cause";
