@@ -24,6 +24,7 @@ import { MapModule } from "./map/map.module";
 import { MimicLayoutsModule } from "./mimic-layouts/mimic-layouts.module";
 import { MimicSymbolLibrariesModule } from "./mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { MlModule } from "./ml/ml.module";
+import { MlFindingsParagraphModule } from "./ml-findings/ml-findings-paragraph.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { ObservabilityModule } from "./observability/observability.module";
 import { RateLimitModule } from "./rate-limit/rate-limit.module";
@@ -87,6 +88,8 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     TariffsModule,
     // `E1.4a` / ADR 0135 Amendment 3 — the forecast reads (`GET /ml/...`). API only.
     MlModule,
+    // `E1.9c` / ADR 0135 Amendment 8 — the AI-written findings paragraph (`GET /ml/findings/paragraph`). API only.
+    MlFindingsParagraphModule,
   ],
 })
 export class AppModule {}

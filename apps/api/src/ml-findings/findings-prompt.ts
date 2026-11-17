@@ -1,6 +1,10 @@
 import type { MlFindingsKind } from "@bms/shared";
 
-import type { LlmMessage } from "../llm/llm-port";
+/**
+ * One message of the prompt. Structurally an `LlmMessage` (`../llm/llm-port`),
+ * declared here so only the service imports the LLM core (plan T3.5).
+ */
+export type FindingsPromptMessage = { readonly role: "system" | "user"; readonly content: string };
 
 /**
  * `E1.9c` / ADR 0135 Amendment 8 decisions 5 and 6 (plan §4.4, R-s, T3.2) — the
@@ -31,7 +35,7 @@ export const FINDINGS_SYSTEM_PROMPT = [
 ].join("\n");
 
 /** The two messages of one call: the fixed rules, then the kind and the lines, one per line. */
-export function buildFindingsPrompt(kind: MlFindingsKind, lines: readonly string[]): LlmMessage[] {
+export function buildFindingsPrompt(kind: MlFindingsKind, lines: readonly string[]): FindingsPromptMessage[] {
   return [
     { role: "system", content: FINDINGS_SYSTEM_PROMPT },
     { role: "user", content: `Kind: ${kind}\nFacts:\n${lines.join("\n")}` },

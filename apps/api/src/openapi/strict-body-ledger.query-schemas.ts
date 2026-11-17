@@ -56,6 +56,7 @@ import {
   mlFindingsSummaryQuerySchema,
   pastForecastQuerySchema,
 } from "../ml/ml.schema";
+import { findingsParagraphQuerySchema } from "../ml-findings/findings-paragraph.schema";
 import {
   assetHealthQuerySchema,
   healthSummaryQuerySchema,
@@ -222,4 +223,8 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // summaries' four scope uuids, registered twice) — `.strict()`, no body, no ledger entry.
   forecastListQuerySchema,
   mlFindingsSummaryQuerySchema,
+  // 45 -> 46 (2026-11-17): `E1.9c` (ADR 0135 Amendment 8 decision 10) registered
+  // `findingsParagraphQuerySchema` (`GET /ml/findings/paragraph?kind=&…`): a required kind enum and
+  // the summaries' four scope uuids — `.strict()`, no body, no ledger entry.
+  findingsParagraphQuerySchema,
 };
