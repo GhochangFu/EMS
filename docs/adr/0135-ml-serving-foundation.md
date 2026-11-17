@@ -1897,6 +1897,55 @@ hard reload; a widget with `paragraph: false` makes no paragraph request; and
 with `LLM_PROVIDER` unset (or the switch off), every surface shows facts and
 no banner.
 
+**Build record — `E1.9` closed (2026-11-17).** `E1.9a`–`f` merged in #1387
+(`dd9c1dba`), #1390 (`25d16244`), #1392 (`a9188808`), #1395 (`0570fcf3`),
+#1399 (`8da114d5`) and #1400 (`93ccc30a`); planned in #1380. Owner rulings
+during the build: the plan's Q1–Q4 "yes, as recommended" (a card for every
+organization with any ML row; 4,000 output tokens per call; an `attempts`
+column summed by the cap; the widget off the wall), and the separate findings
+model of decision 4. Calls made in the build, recorded so a reader does not
+take them for drift:
+- **Migration 0162 was widened in place before it was ever pushed**
+  (`model varchar(200)`, the longest model an organization may save), by
+  rebuilding the unpushed worktree branch; the pre-commit hook that refuses
+  edits to a committed migration was sidestepped this once on the session's
+  instruction. The file never reached `main` or a database in its first form.
+- **The paragraph card carries its own `assets`** (decision 14 kept: links
+  come from a server-built facts list, never from model text). The summary and
+  paragraph reads may see different ML cycles, so `[A1]` resolves against the
+  facts the paragraph was written from.
+- **What leaves the host is narrower than decision 6:** a unit is sent only if
+  it is on an allow-list (`apps/api/src/ml-findings/findings-units.ts`), and
+  each pseudonymised line must match its fact id's sentence shape; otherwise
+  the card is not sendable (facts only).
+- **The guard is wider than decision 5:** it also refuses non-ASCII digits,
+  fractions, Roman numerals, exponents, ordinals, more number words,
+  separated signs, schemes, bare domains, `//`, look-alike and control
+  characters (reasons `unknown_character`, `control_character`); a fact word
+  is exempt from the domain/markup checks only as a whole word apart from
+  `/`, `@` and a glued colon.
+- **Fail closed, beyond decision 5:** a lost row write backs off its key for
+  30 min and counts toward the cap in process; a cached `ok` paragraph is not
+  served when the switch is off or the organization is inactive; an
+  OpenAI-compatible reply cut at the limit is a provider error; a findings
+  model set without a provider, or longer than 200 characters, is no
+  paragraph. **Residual risk, accepted:** single-flight and the 4-in-flight
+  limit are per process, so the cap can overshoot by at most 4 calls per
+  process, and by replicas × cap only if writes fail persistently.
+- **Web:** the paragraph poll falls back to 15 min after an error; the
+  paragraph response is parsed strictly and a malformed one draws nothing; the
+  anomaly link carries no `fn=avg` (the web's own link omits the default);
+  the table rows now use the shared link builders.
+- **Widget:** a wall tab left with only `ml_findings` tiles shows a neutral
+  line, not "no widgets yet". The copilot can propose an `ml_findings` widget
+  (config only, never findings text), as it already can `forecast` and
+  `anomaly`; the owner was told.
+- **Not yet proven live:** that the provider accepts a request with no tools
+  (plan R-d) and the 15 s limit — the first paragraph call on the demo host
+  proves them. **Owed:** the demo-host checks for `E1.9c`–`f` (plan §19;
+  `E1.9a`/`b` passed, #1391) and the `chore(agents):` catch-up (plan §20;
+  owner said yes).
+
 ## Amendment 9 — pointer: anomaly history beside the asset health score (2026-11-17)
 
 **Status: Accepted — 2026-11-17** (owner, in chat: "accept as recommended"),
