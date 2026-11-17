@@ -7,7 +7,10 @@ import {
   aLockedOrganizationIsPreselectedAndDisabled,
   assetGroupsAcrossLocationsNameTheirLocation,
   locationWaitsForAnOrganization,
+  noPickersPropDrawsAllFour,
   theLocationsReadAsATree,
+  twoPickersDrawExactlyTwoLabels,
+  twoPickersKeepTheLockedOrganization,
   unavailableDisablesEveryPicker,
 } from "./scope-filter-bar.spec";
 
@@ -24,4 +27,7 @@ describe("F4.361 ScopeFilterBar", () => {
   it("disables every picker when the options are unavailable", () => unavailableDisablesEveryPicker());
   it("F4.363: names the location of each asset group when they span locations", () =>
     assetGroupsAcrossLocationsNameTheirLocation());
+  it("E1.9b: draws all four pickers with no pickers prop", () => noPickersPropDrawsAllFour());
+  it("E1.9b: draws exactly Organization and Location when asked for two", () => twoPickersDrawExactlyTwoLabels());
+  it("E1.9b: keeps a single organization locked with two pickers", () => twoPickersKeepTheLockedOrganization());
 });

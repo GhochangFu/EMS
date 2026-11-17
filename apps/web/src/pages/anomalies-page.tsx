@@ -1,17 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 
 import { ANOMALY_LIST_MAX_ROWS, assetLabelOf } from "@bms/shared";
+import { anomalyFindingHref } from "@bms/shared/contracts";
 import type { AnomalyListRow } from "@bms/shared";
 
 import { fetchAnomalyList } from "../api/ml";
 import { formatShortInZone, retryUnlessForbidden } from "../components/asset-history/history-format";
+import { MlFindingsCard } from "../components/ml/ml-findings-card";
 import { PageHeader } from "../components/page-header";
+import { ScopeFilterBar } from "../components/scope-filter-bar";
 import { SectionCard } from "../components/section-card";
 import { StatusPill } from "../components/status-pill";
+import { useScopeFilter } from "../hooks/use-scope-filter";
 import { AppShell } from "../layouts/app-shell";
 import { detectorLabel } from "../lib/anomaly-series";
-import { assetHistoryPath, rangeToSearch } from "../lib/asset-history-range";
+import { ML_PAGE_FILTER_KEYS, pickScope } from "../lib/ml-findings";
 import type { AuthUser } from "../stores/auth-store";
 
 export const ANOMALIES_SUBTITLE =
@@ -46,29 +51,13 @@ export const ANOMALIES_ERROR_SENTENCE = "Could not load the unusual hours.";
 /** Read again every 15 minutes; scores land once an hour. */
 const ANOMALIES_REFETCH_MS = 15 * 60_000;
 
-const DAY_MS = 24 * 60 * 60_000;
-
 /**
  * The row's history link: the asset's history page from `t − 24 h` to `min(t + 24 h, asOf)`, with
- * the contributing points charted. An unreadable instant links to the bare history page.
+ * the contributing points charted. An unreadable instant links to the bare history page. It is the
+ * shared `anomalyFindingHref` (R-g), so a findings line and its table row open the same view.
  */
 function historyHref(row: AnomalyListRow, asOf: string): string {
-  const path = assetHistoryPath(row.assetId);
-  const t = Date.parse(row.t);
-  const asOfMs = Date.parse(asOf);
-  if (!Number.isFinite(t)) {
-    return path;
-  }
-  const to = Number.isFinite(asOfMs) ? Math.min(t + DAY_MS, asOfMs) : t + DAY_MS;
-  const search = rangeToSearch({
-    range: "custom",
-    from: new Date(t - DAY_MS).toISOString(),
-    to: new Date(to).toISOString(),
-    compare: false,
-    points: [...pointsOf(row)],
-    fn: "avg",
-  });
-  return `${path}?${search.toString()}`;
+  return anomalyFindingHref(row.assetId, Date.parse(row.t), Date.parse(asOf), pointsOf(row));
 }
 
 type AnomaliesPageProps = {
@@ -85,14 +74,21 @@ type AnomaliesPageProps = {
  * `assetLabelOf` (ADR 0111). Each row opens that asset's history around the hour with its
  * contributing points charted, where the unusual-hour marks draw. Every surface says advisory: a
  * score is a notice, never an alarm. A failed read is one fixed sentence (the `F4.204` rule).
+ *
+ * `E1.9b` (ADR 0135 Amendment 8 decisions 1 and 8): under the header, the Organization and Location
+ * pickers (`useScopeFilter`, the URL state of `/alarms`), then the "Findings — advisory" cards, then
+ * the table. Both reads send only those two keys, and wait for `scope.ready`.
  */
 export function AnomaliesPage({ user }: AnomaliesPageProps) {
+  const scope = useScopeFilter();
+  const shown = useMemo(() => pickScope(scope.filter, ML_PAGE_FILTER_KEYS), [scope.filter]);
   const listQ = useQuery({
-    queryKey: ["ml-anomalies"],
-    // A thunk: React Query's context must never reach `since`.
-    queryFn: () => fetchAnomalyList(),
+    queryKey: ["ml-anomalies", shown.organizationId ?? null, shown.locationId ?? null],
+    // A thunk: React Query's context must never reach the filter or `since`.
+    queryFn: () => fetchAnomalyList(shown),
     refetchInterval: ANOMALIES_REFETCH_MS,
     retry: retryUnlessForbidden,
+    enabled: scope.ready,
   });
   const data = listQ.data;
   const items = data?.items ?? [];
@@ -101,6 +97,15 @@ export function AnomaliesPage({ user }: AnomaliesPageProps) {
     <AppShell user={user} kpiRibbon={<span className="text-ink">Anomalies · advisory</span>}>
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <PageHeader eyebrow="Operations · Anomalies" title="Anomalies" subtitle={ANOMALIES_SUBTITLE} />
+
+        <ScopeFilterBar
+          filter={scope.filter}
+          options={scope.options}
+          unavailable={scope.unavailable}
+          onChange={scope.setScope}
+          pickers={ML_PAGE_FILTER_KEYS}
+        />
+        <MlFindingsCard kinds={["anomalies"]} scope={shown} enabled={scope.ready} />
 
         {listQ.isPending ? (
           // `isPending`, not `isLoading`: opened offline the read is pending but paused, and a waiting

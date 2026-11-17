@@ -95,3 +95,47 @@ export function assetGroupsAcrossLocationsNameTheirLocation(): void {
   );
   expect(optionTexts("Asset group")).toEqual(["All asset groups", "Group B"]);
 }
+
+/** `E1.9b` (ADR 0135 Amendment 8 decision 8) — with no `pickers` prop the bar draws all four pickers. */
+export function noPickersPropDrawsAllFour(): void {
+  render(<ScopeFilterBar filter={{}} options={OPTIONS} unavailable={false} onChange={vi.fn()} />);
+  expect(screen.getAllByRole("combobox")).toHaveLength(4);
+  for (const name of ["Organization", "Location", "Asset group", "Asset"]) {
+    expect(picker(name)).toBeInTheDocument();
+  }
+}
+
+/** `E1.9b` — `["organizationId", "locationId"]` draws exactly Organization and Location. */
+export function twoPickersDrawExactlyTwoLabels(): void {
+  render(
+    <ScopeFilterBar
+      filter={{ organizationId: IDS.ORG_A }}
+      options={OPTIONS}
+      unavailable={false}
+      onChange={vi.fn()}
+      pickers={["organizationId", "locationId"]}
+    />,
+  );
+  const labels = screen
+    .getAllByRole("combobox")
+    .map((select) => (select as HTMLSelectElement).labels?.[0]?.textContent);
+  expect(labels).toEqual(["Organization", "Location"]);
+  expect(screen.queryByRole("combobox", { name: "Asset group" })).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Asset" })).toBeNull();
+}
+
+/** `E1.9b` — with two pickers a single organization is still preselected and locked. */
+export function twoPickersKeepTheLockedOrganization(): void {
+  render(
+    <ScopeFilterBar
+      filter={{}}
+      options={ONE_ORG}
+      unavailable={false}
+      onChange={vi.fn()}
+      pickers={["organizationId", "locationId"]}
+    />,
+  );
+  expect(picker("Organization").disabled).toBe(true);
+  expect(picker("Organization").value).toBe(IDS.ORG_X);
+  expect(optionTexts("Location")).toEqual(["All locations", "Site X"]);
+}
