@@ -960,6 +960,9 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // 45 -> 46 (2026-11-17): `E1.9c` (ADR 0135 Amendment 8) registered `findingsParagraphQuerySchema`:
   // a required kind enum and the same four scope uuids, `.strict()`, no body.
   //
+  // 46 -> 47 (2026-11-17): `E1.8a` (ADR 0050 Amendment 5) registered `healthBadActorsQuerySchema`:
+  // the health summary's two optional scope uuids, `.strict()`, no body, no window.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -969,7 +972,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(46);
+  ).toBe(47);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))
