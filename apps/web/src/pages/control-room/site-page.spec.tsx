@@ -31,6 +31,11 @@ import * as copilotApi from "../../api/copilot";
  */
 const mounts = vi.hoisted(() => ({ generated: [] as string[] }));
 
+/** `E1.9e` — the findings card on the site body has its own suite (`site-page-ml-findings.spec.tsx`). */
+vi.mock("../../components/ml/ml-findings-card", () => ({
+  MlFindingsCard: () => null,
+}));
+
 vi.mock("../../components/control-room/generated-site-view", () => ({
   GeneratedSiteView: ({ locationId }: { locationId: string }) => {
     const { pathname } = useLocation();

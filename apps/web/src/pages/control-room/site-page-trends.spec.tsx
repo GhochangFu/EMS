@@ -15,6 +15,11 @@ import { useAuthStore } from "../../stores/auth-store";
 import { ORG_A, site, USER } from "./organizations-page.spec";
 import { ControlRoomSitePage } from "./site-page";
 
+/** `E1.9e` — the findings card on the site body has its own suite (`site-page-ml-findings.spec.tsx`). */
+vi.mock("../../components/ml/ml-findings-card", () => ({
+  MlFindingsCard: () => null,
+}));
+
 /**
  * `F4.302` U4 (ADR 0108 Amendment 4 items 1, 8) — the site page's third section, **Trends &
  * Energy** at `/trends`: rendered for every view kind once the resolve read has answered, exempt
