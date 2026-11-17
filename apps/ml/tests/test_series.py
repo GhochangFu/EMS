@@ -146,3 +146,12 @@ def test_hourly_grid_refuses_an_off_hour_bucket():
     start = datetime(2026, 11, 15, 0, tzinfo=UTC)
     with pytest.raises(ValueError):
         hourly_grid([HourRow(start + timedelta(minutes=30), 1.0, 1)], start, 3)
+
+
+def test_hourly_grid_keeps_an_hour_of_zeros_as_0_not_a_gap():
+    from bms_ml.series import hourly_grid
+
+    start = datetime(2026, 11, 15, 0, tzinfo=UTC)
+    rows = [HourRow(start, 0.0, 12), HourRow(start + timedelta(hours=1), 6.0, 12)]
+    grid = hourly_grid(rows, start, 3)
+    assert grid[0] == 0.0 and grid[1] == 0.5 and np.isnan(grid[2])
