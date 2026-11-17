@@ -43,8 +43,9 @@ type ReadyLlm = { readonly provider: LlmProvider; readonly model: string };
  *
  * Per card: the facts are computed again for the caller (never a hash from the
  * browser); a card with nothing to say, or with text that may not leave the
- * host, is `none`. With the organization's copilot switch off everything is
- * `none`, a cached paragraph too. A cached `ok` row is served with the assets
+ * host, is `none`. With the organization's copilot switch off, or the
+ * organization inactive, everything is `none` — a cached paragraph and a key
+ * whose call is still running too. A cached `ok` row is served with the assets
  * its references name; a `rejected` row, a `failed` row younger than 30
  * minutes, or a key whose outcome could not be stored in the last 30 minutes,
  * is `none`. Otherwise — and only when `resolveForFindings` is ready and the
@@ -56,6 +57,10 @@ type ReadyLlm = { readonly provider: LlmProvider; readonly model: string };
  * (checked and set with no await between, after the gates, so two concurrent
  * readers cannot both start one) and at most 4 calls in this process. The
  * background call catches everything; nothing it throws reaches a request.
+ * Residual risk, accepted (security re-review L-d): the cap is read before a
+ * call starts, so it can be overshot by at most the 4 calls in flight per API
+ * process, and when writes keep failing each process (api, api-replica) counts
+ * its lost attempts alone, so the bound is the cap per process.
  *
  * **Every table access runs in `withTenant(this.tenantDb, <the card's
  * organization>, …)`**, a global admin's too, so each row lands in and is read
@@ -115,14 +120,16 @@ export class FindingsParagraphService {
     const pending: MlFindingsParagraphCard = { organizationId, state: "pending", segments: [], assets: [] };
     const facts = pseudonymiseFacts(kind, card);
     if (!facts.sendable) return none;
+    // Review items 7, re-review 4 and 5: the switch is the consent and an inactive organization gets
+    // nothing — checked first, before a cached paragraph or a running call can answer.
+    if (!(await this.availability.organizationSwitchOn(organizationId))) return none;
+    if (!(await this.llm.isOrganizationActive(organizationId))) return none;
     const key = `${organizationId}\u0000${kind}\u0000${facts.hash}`;
     if (this.running.has(key)) return pending;
 
     const row = await withTenant(this.tenantDb, organizationId, (tx) =>
       this.store.readParagraph(tx, organizationId, kind, facts.hash),
     );
-    // Review item 7: the switch is the consent, for serving a cached paragraph too.
-    if (!(await this.availability.organizationSwitchOn(organizationId))) return none;
     if (row !== null) {
       if (row.status === "ok" && row.paragraph !== null) {
         const segments = restoreParagraph(row.paragraph, facts);

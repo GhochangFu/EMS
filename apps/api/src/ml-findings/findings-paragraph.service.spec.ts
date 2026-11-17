@@ -171,7 +171,7 @@ function harness(options: HarnessOptions = {}) {
   const provider = options.provider ?? new ScriptedProvider();
   const memory = new MemoryStore();
   // Mutable, so a case can change the facts or the switch between reads.
-  const state = { cards: options.cards ?? [fxbAnomalyCard()], switchOn: options.switchOn ?? (() => true) };
+  const state = { cards: options.cards ?? [fxbAnomalyCard()], switchOn: options.switchOn ?? (() => true), active: true };
   const factsCalls: Array<{ kind: MlFindingsKind; assetIds: string[] | null }> = [];
   const findings = {
     forecastFacts: async (assetIds: string[] | null) => {
@@ -185,6 +185,7 @@ function harness(options: HarnessOptions = {}) {
   } as unknown as MlFindingsService;
   const resolvedFor: string[] = [];
   const llm = {
+    isOrganizationActive: async () => state.active,
     resolveForFindings: async (organizationId: string): Promise<ResolvedLlm> => {
       resolvedFor.push(organizationId);
       return options.resolved === "guided"
@@ -553,4 +554,25 @@ export async function aLostWriteBacksOffAndStillCounts(): Promise<void> {
     expect(states(await c.get()), "the lost write counted: the cap bites").toEqual(["none"]);
   });
   expect(c.provider.calls).toBe(1);
+}
+
+/** Re-review 4: an inactive organization's cached paragraph is not served. */
+export async function anInactiveOrganizationsCachedParagraphIsNotServed(): Promise<void> {
+  const h = harness({ provider: new ScriptedProvider([{ kind: "final", text: GOOD }]) });
+  await h.get();
+  await h.service.settled();
+  expect(states(await h.get())).toEqual(["ok"]);
+  h.state.active = false;
+  expect(states(await h.get())).toEqual(["none"]);
+  expect(h.provider.calls).toBe(1);
+}
+
+/** Re-review 5: with the switch off the answer is none, even while a call for that key is running. */
+export async function theSwitchOffIsNoneWhileACallRuns(): Promise<void> {
+  const h = harness();
+  expect(states(await h.get())).toEqual(["pending"]);
+  h.state.switchOn = () => false;
+  expect(states(await h.get())).toEqual(["none"]);
+  h.provider.release();
+  await h.service.settled();
 }

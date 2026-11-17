@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   aCardWithNothingToSayIsNoneWithNoCall,
   aCachedParagraphIsNotServedWithTheSwitchOff,
+  anInactiveOrganizationsCachedParagraphIsNotServed,
+  theSwitchOffIsNoneWhileACallRuns,
   aLostWriteBacksOffAndStillCounts,
   noPendingWhenNoCallWillBeMade,
   aFailedRowIsRetriedOnlyAfter30Minutes,
@@ -36,6 +38,8 @@ describe("E1.9c — the findings paragraph service (ADR 0135 Amendment 8)", () =
     theLogLineHoldsTheReasonKindAndOrganizationOnly());
   it("a store failure never reaches the request and logs no message", () => aStoreFailureNeverReachesTheRequest());
   it("a cached paragraph is not served with the switch off", () => aCachedParagraphIsNotServedWithTheSwitchOff());
+  it("an inactive organization's cached paragraph is not served", () => anInactiveOrganizationsCachedParagraphIsNotServed());
+  it("the switch off is none while a call for the key runs", () => theSwitchOffIsNoneWhileACallRuns());
   it("no pending when no call will be made (no reservation before the gates)", () => noPendingWhenNoCallWillBeMade());
   it("a lost write backs off for 30 minutes and still counts against the cap", () => aLostWriteBacksOffAndStillCounts());
 });
