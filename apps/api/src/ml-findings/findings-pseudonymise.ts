@@ -5,6 +5,7 @@ import { ML_FINDINGS_PARAGRAPH_MAX_CHARS, type MlFindingFactId, type MlFindingSe
 import { BASELINE_ONLY_SENTENCE, MIXED_SENTENCE } from "../ml/ml-findings.anomaly-facts";
 import type { FindingsCardFacts } from "../ml/ml-findings.lines";
 import { FINDINGS_PROMPT_VERSION } from "./findings-prompt";
+import { FINDINGS_UNIT_ALLOW_LIST } from "./findings-units";
 
 /**
  * `E1.9c` / ADR 0135 Amendment 8 decisions 6 and 7 (plan §4.4, R-s, T3.2) —
@@ -18,8 +19,9 @@ import { FINDINGS_PROMPT_VERSION } from "./findings-prompt";
  * **Free text must not leave the host.** Point keys and units sit inside the
  * fixed sentences, so every pseudonymised line must match its fact id's
  * sentence shape, with a point key matching `^[A-Za-z0-9_.-]{1,128}$` and a unit
- * of at most 32 characters holding no `[`, `]` or line break. A line that does
- * not (an odd point key, a long unit, a sentence this file does not know) makes
+ * that is exactly one of `FINDINGS_UNIT_ALLOW_LIST` (security review M3). A line
+ * that does not (an odd point key, an unknown unit, a sentence this file does
+ * not know) makes
  * the whole card not sendable: no call, no paragraph.
  *
  * `canonical` is `v<FINDINGS_PROMPT_VERSION>\n<kind>\n` + the lines, and
@@ -45,16 +47,18 @@ export type PseudonymisedFacts = {
 
 export type NotSendable = { readonly sendable: false; readonly reason: "nothing_to_say" | "unsafe_text" };
 
+const exact = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const KEY = "[A-Za-z0-9_.-]{1,128}";
 const NUM = "-?\\d+(?:\\.\\d+)?";
+/** Security review M3: a unit is one of the allow-list, exactly; never free text. */
+const UNIT = `(?:${[...FINDINGS_UNIT_ALLOW_LIST].sort((a, b) => b.length - a.length).map(exact).join("|")})`;
 /** A value: the number, then a space and the unit when the point has one. */
-const VALUE = `${NUM}(?: [^\\[\\]\\r\\n]{1,32})?`;
+const VALUE = `${NUM}(?: ${UNIT})?`;
 const N = "\\d+";
 const A = "\\[A\\d+\\]";
 const R = "\\[R\\d+\\]";
 const T = "\\[T\\d+\\]";
 const POINTS = `(?:; points ${KEY}(?:, ${KEY}){0,2})?`;
-const exact = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** The shape of every fact sentence, after the placeholders (`ml-findings.forecast-facts.ts`, `ml-findings.anomaly-facts.ts`). */
 export const SENTENCE_SHAPES: Readonly<Record<MlFindingFactId, RegExp>> = {
