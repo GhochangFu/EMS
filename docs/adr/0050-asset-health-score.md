@@ -897,3 +897,12 @@ role.
 "accept as recommended"). Q12's ruling is that the owner runs the read-only
 query from PR #1393 on the demo host; its result is recorded in the plan's
 demo-host section when it comes back, and the plan does not wait on it.
+
+### Build record (2026-11-17)
+
+Built in three PRs, each merged on green CI: `E1.8a` API [#1405](https://github.com/GhochangFu/EMS/pull/1405) (`6c0ec1f`), `E1.8b` web [#1407](https://github.com/GhochangFu/EMS/pull/1407) (`eb8680d`), `E1.8c` web [#1410](https://github.com/GhochangFu/EMS/pull/1410) (`4621ca0`). Details are in the plan's section 21. Two calls made in the build, recorded so a reader does not take them for drift:
+- **The advisory figure prints in whole percent, like the score above it** (`E1.8b` code review). The plan said one decimal; at different precisions a non-round score read as a loss that does not exist, which decision 2 rules out.
+- **The bad-actors route narrows as `GET /asset-health/summary` does**, not with `AssetFilterScopeService.narrow`, so the count line's M is the donut's scored count (plan R-d).
+
+No threshold or detector constant changed. Decision 3's both-detector rule and the 0.05 cap stand until the owner's detector read.
+
