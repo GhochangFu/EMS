@@ -39,7 +39,7 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
   }) => (
     <div
       data-testid="ml-findings-card"
-      data-kinds={[...kinds].sort().join(",")}
+      data-kinds={kinds.join(",")}
       data-scope={JSON.stringify(scope)}
       data-compact={String(compact ?? false)}
     />
