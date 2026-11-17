@@ -58,6 +58,8 @@ function resolver(row: Row | null): { r: LlmResolver; built: Built[]; decrypts: 
   const decrypts = { n: 0 };
   const r = new LlmResolver({} as never, crypto);
   r.readSetting = async () => row;
+  // `E1.9c`: the findings path reads `organizations.active`; the specs' organization is active unless a case says not.
+  r.isOrganizationActive = async () => true;
   const original = r.decryptKey.bind(r);
   r.decryptKey = (stored) => {
     decrypts.n += 1;
@@ -530,5 +532,49 @@ export async function assertFindingsEmptyUsesThePlatformDefault(): Promise<void>
   await withEnv({}, async () => {
     const resolved = await resolver(null).r.resolveForFindings("org-1");
     assert(resolved.kind === "guided" && resolved.reason === "platform_off", "nothing set: no paragraph");
+  });
+}
+
+/** `E1.9c` review: a findings model with no findings provider is incomplete — never the copilot's model. */
+export async function assertFindingsAModelWithoutAProviderIsNoParagraph(): Promise<void> {
+  await withEnv({ ...PLATFORM_ANTHROPIC, ML_FINDINGS_LLM_MODEL: "small/open-model" }, async () => {
+    const { r, built } = resolver(null);
+    const resolved = await r.resolveForFindings("org-1");
+    assert(resolved.kind === "guided", "a model alone is no paragraph, never the platform default");
+    assert(built.length === 0, "nothing is built");
+    const warned = await warningsOf(async () => r.onModuleInit());
+    assert(warned.length === 1, `one boot warning, got ${warned.length}`);
+    assert((warned[0]?.[0] as { variable?: string }).variable === "ML_FINDINGS_LLM_PROVIDER", "the warning names ML_FINDINGS_LLM_PROVIDER");
+  });
+}
+
+/** `E1.9c` review: the cache's model column is varchar(200), so a longer model is incomplete, wherever it comes from. */
+export async function assertFindingsAModelOver200IsNoParagraph(): Promise<void> {
+  const long = "m".repeat(201);
+  await withEnv({ ...PLATFORM_ANTHROPIC, ...FINDINGS_OPENROUTER, ML_FINDINGS_LLM_MODEL: long }, async () => {
+    const { r, built } = resolver(null);
+    assert((await r.resolveForFindings("org-1")).kind === "guided" && built.length === 0, "a 201-character findings model is no paragraph");
+    const warned = await warningsOf(async () => r.onModuleInit());
+    assert((warned[0]?.[0] as { variable?: string }).variable === "ML_FINDINGS_LLM_MODEL", "the warning names ML_FINDINGS_LLM_MODEL");
+    assert(!JSON.stringify(warned).includes(long), "the warning carries no value");
+  });
+  await withEnv({ ...PLATFORM_ANTHROPIC, ...FINDINGS_OPENROUTER, ML_FINDINGS_LLM_MODEL: "m".repeat(200) }, async () => {
+    assert((await resolver(null).r.resolveForFindings("org-1")).kind === "ready", "200 characters is still ready");
+  });
+  await withEnv({ ...PLATFORM_ANTHROPIC, ANTHROPIC_MODEL: long }, async () => {
+    const { r, built } = resolver(null);
+    assert((await r.resolveForFindings("org-1")).kind === "guided", "a platform model over 200 is no paragraph either");
+    assert(built.length === 0, "nothing is built");
+  });
+}
+
+/** `E1.9c` review: an inactive organization gets no paragraph, as `resolvePlatformScope` leaves it out. */
+export async function assertFindingsAnInactiveOrganizationIsNoParagraph(): Promise<void> {
+  await withEnv({ ...PLATFORM_ANTHROPIC, ...FINDINGS_OPENROUTER }, async () => {
+    const { r, built } = resolver(orgRow({ provider: "openai", model: "gpt-4o", apiKey: "org-key" }));
+    r.isOrganizationActive = async () => false;
+    const resolved = await r.resolveForFindings("org-1");
+    assert(resolved.kind === "guided" && resolved.reason === "organization_inactive", "an inactive organization is no paragraph");
+    assert(built.length === 0, "nothing is built");
   });
 }

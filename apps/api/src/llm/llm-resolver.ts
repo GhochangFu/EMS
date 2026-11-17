@@ -59,8 +59,17 @@ export type ResolvedLlm =
   | {
       readonly kind: "guided";
       /** `organization_incomplete` is the one reason the chat states to the user (plan ruling 13). */
-      readonly reason: "organization_off" | "organization_incomplete" | "platform_off" | "platform_incomplete";
+      readonly reason:
+        | "organization_off"
+        | "organization_incomplete"
+        | "platform_off"
+        | "platform_incomplete"
+        /** `E1.9c`: only `resolveForFindings` answers this. */
+        | "organization_inactive";
     };
+
+/** `E1.9c`: `bms.ml_finding_paragraphs.model` is varchar(200), the organization setting's own width. */
+export const FINDINGS_MODEL_MAX_CHARS = 200;
 
 /**
  * `F3.85` / ADR 0099 decision 10 — a cross-organization turn's key scope: the
@@ -145,14 +154,15 @@ export class LlmResolver implements OnModuleInit {
    */
   findingsDefault(): FindingsLlmDefault {
     const selected = env("ML_FINDINGS_LLM_PROVIDER");
+    const model = env("ML_FINDINGS_LLM_MODEL");
     if (!selected) {
-      return { state: "unset" };
+      // A model with no provider is a half-set variable pair, never "use the copilot's model".
+      return model ? { state: "incomplete", missing: "ML_FINDINGS_LLM_PROVIDER" } : { state: "unset" };
     }
     if (!isProviderName(selected)) {
       return { state: "incomplete", missing: "ML_FINDINGS_LLM_PROVIDER" };
     }
-    const model = env("ML_FINDINGS_LLM_MODEL");
-    if (!model) {
+    if (!model || model.length > FINDINGS_MODEL_MAX_CHARS) {
       return { state: "incomplete", missing: "ML_FINDINGS_LLM_MODEL" };
     }
     const apiKey = env(KEY_VARIABLE[selected]);
@@ -303,8 +313,15 @@ export class LlmResolver implements OnModuleInit {
    * The paragraph service calls this and never `resolveForOrganization`.
    */
   async resolveForFindings(organizationId: string): Promise<ResolvedLlm> {
+    // An inactive organization gets no paragraph, as `resolvePlatformScope` leaves it out.
+    if (!(await this.isOrganizationActive(organizationId))) {
+      return { kind: "guided", reason: "organization_inactive" };
+    }
     const row = await this.readSetting(organizationId);
     if (row !== null) {
+      if ((row.model ?? "").length > FINDINGS_MODEL_MAX_CHARS) {
+        return { kind: "guided", reason: "organization_incomplete" };
+      }
       return this.resolveFrom(row, organizationId, {});
     }
     const findings = this.findingsDefault();
@@ -320,7 +337,21 @@ export class LlmResolver implements OnModuleInit {
         model: findings.model,
       };
     }
+    const platform = this.platformDefault();
+    if (platform.state === "ready" && platform.model.length > FINDINGS_MODEL_MAX_CHARS) {
+      return { kind: "guided", reason: "platform_incomplete" };
+    }
     return this.resolveFrom(null, organizationId, {});
+  }
+
+  /** `E1.9c`: whether the organization is active. `bms.organizations` carries no row-level security. */
+  async isOrganizationActive(organizationId: string): Promise<boolean> {
+    const [row] = await this.tenantDb
+      .select({ active: organizations.active })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+    return row?.active === true;
   }
 
   /** Every organization's id, in a fixed order. `bms.organizations` carries no row-level security. */

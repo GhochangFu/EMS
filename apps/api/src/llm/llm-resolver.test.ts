@@ -25,6 +25,9 @@ import {
   assertTheBootWarningNamesTheVariableAndNoValue,
   assertTheKeyIsNotCached,
   assertFindingsAnOwnRowIgnoresTheFindingsVariables,
+  assertFindingsAModelWithoutAProviderIsNoParagraph,
+  assertFindingsAModelOver200IsNoParagraph,
+  assertFindingsAnInactiveOrganizationIsNoParagraph,
   assertFindingsEmptyUsesThePlatformDefault,
   assertFindingsSetAndCompleteBuildsTheFindingsModel,
   assertFindingsSetWithoutAKeyIsNoParagraph,
@@ -50,6 +53,18 @@ describe("LLM resolver — the findings paragraph's model (E1.9c, ADR 0135 Amend
 
   it("the findings variables empty: the platform default", async () => {
     await assertFindingsEmptyUsesThePlatformDefault();
+  });
+
+  it("a findings model without a findings provider: no paragraph and a boot warning naming the provider variable", async () => {
+    await assertFindingsAModelWithoutAProviderIsNoParagraph();
+  });
+
+  it("a resolved model over 200 characters: no paragraph", async () => {
+    await assertFindingsAModelOver200IsNoParagraph();
+  });
+
+  it("an inactive organization: no paragraph", async () => {
+    await assertFindingsAnInactiveOrganizationIsNoParagraph();
   });
 });
 
