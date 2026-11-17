@@ -1099,3 +1099,18 @@ The `ml` container peaked at 674.7 MiB in `docker stats` (1 s samples over
 02:04–02:09 UTC, scheduler and both children together), so the anomaly child
 is below 900 MiB and the cycle below 300 s. Ruling 5 holds on the demo host.
 
+## Amendment 6 — pointer: one anomaly context line on the alarm panel (2026-11-17)
+
+**Status: Accepted — 2026-11-17**, with [ADR 0136](./0136-alarm-root-cause-suggestions.md)
+(`E2.3`, its question Q4). This is a pointer, so a reader of Amendment 5
+finds the exception. The decision itself lives in ADR 0136 decisions 3 and 7.
+
+Amendment 5 ruling 4 says no anomaly reaches an alarm, a notification, a
+report, an export or a copilot answer. **One exception:** the alarm details
+panel's *Possible causes — advisory* section may show one context line when
+the alarm's asset has an hour ≥ `ANOMALY_UNUSUAL_SCORE` in the 6 h before the
+alarm. That line has **zero weight**: it creates no candidate cause and
+raises no candidate's strength. A score still raises no alarm, sends no
+notification, opens no work order, and appears in no report, export or
+copilot answer. No threshold changes, and the owner's one-week read of the
+detector rates (due about 2026-11-23) is untouched.
