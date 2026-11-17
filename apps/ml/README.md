@@ -130,9 +130,10 @@ parent imports neither it nor torch, and `run-anomaly` needs no Chronos model.
     with two or more points. No model is stored.
 - **A flow meter** has one point, so it gets `baseline_mad` only. A stop at
   the same UTC hour every day is that hour's normal level. A stop in an hour
-  that normally runs, or a run in an hour that is normally off, is unusual. A
-  stop on one weekday reads unusual until the point has 56 days of data (ADR
-  0135 Amendment 7 item 4; `tests/test_anomaly_zero_flow.py`).
+  that normally runs, or a run in an hour that is normally off, is unusual
+  (`tests/test_anomaly_zero_flow.py`). A stop on one weekday reads unusual
+  until the point has 56 days of data (ADR 0135 Amendment 7 item 4; a known
+  gap, not a tested behaviour).
 - **Advisory only.** A score raises no alarm, notification, work order or
   report. The 0.99 "unusual" line is applied when the scores are read, never
   here.
