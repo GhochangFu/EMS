@@ -74,6 +74,9 @@ ORGANIZATIONS = {"A": "ESKOM", "B": "PHEWB"}
 FORECAST = ("MLFX-R1", "MLFX-R2", "MLFX-G1", "MLFX-O2")
 NO_FORECAST = ("MLFX-W1", "MLFX-V1", "MLFX-S1", "MLFX-T0")
 G1_MISSING_HOURS = 15 * 5
+# readiness.FRESHNESS_HOURS, restated so the fixture imports nothing from bms_ml;
+# tests/test_fixture_shapes.py fails if G1 is not fresh under the real constant.
+FRESHNESS_HOURS = 3
 
 # --- E1.2: the anomaly classes ---------------------------------------------------------
 METER_TYPE = "ml_fixture_meter"
@@ -133,7 +136,16 @@ def full(days: int) -> list[int]:
 
 
 def with_daily_hole(days: int, as_of: datetime) -> list[int]:
-    return [h for h in full(days) if not (h <= 15 * 24 and 1 <= (as_of - timedelta(hours=h)).hour <= 5)]
+    """`days` full, less a 5 h hole (UTC hours 1-5) on each of 15 days.
+
+    The 15-day window starts behind the freshness window, so the newest
+    FRESHNESS_HOURS buckets always hold data: with the window at as_of, a run
+    at 04:00-06:59 UTC read G1 as stale (tests/test_fixture_shapes.py). Any
+    360 consecutive hours hold each UTC hour 15 times, so the hole stays
+    G1_MISSING_HOURS.
+    """
+    window = range(FRESHNESS_HOURS + 1, FRESHNESS_HOURS + 15 * 24 + 1)
+    return [h for h in full(days) if not (h in window and 1 <= (as_of - timedelta(hours=h)).hour <= 5)]
 
 
 def four_hours_a_day(days: int, as_of: datetime) -> list[int]:
