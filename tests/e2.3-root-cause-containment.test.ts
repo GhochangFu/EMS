@@ -227,3 +227,55 @@ describe("E2.3 — the copilot boundary and zero weight (decisions 3 and 11)", (
     expect("score >= 0.995").not.toMatch(HOLDS_THE_LINE);
   });
 });
+
+/**
+ * PR 2 (plan §7 T2.4): the web surface stays on the alarm details panel
+ * (ADR 0136 decision 6). Only the panel draws the section, only the section
+ * and its client know the fetch, and the alarm bar's list, work orders and the
+ * copilot never name either. The alarm-bar popup reaches the section through
+ * the panel, which is the one allowed path.
+ */
+const WEB_SRC = "apps/web/src";
+const NAMES_SECTION = /alarm-root-cause-section/;
+const NAMES_FETCH = /fetchRootCauseSuggestions|\}\/root-cause-suggestions/;
+
+const webSources = (): string[] =>
+  walk(WEB_SRC)
+    .filter((rel) => /\.tsx?$/.test(rel))
+    .filter((rel) => !/\.(spec|test)\.tsx?$/.test(rel));
+
+describe("E2.3 — the web surface is the alarm details panel only (plan §7 T2.4)", () => {
+  it("only alarm-details-panel.tsx imports alarm-root-cause-section", () => {
+    const importers = webSources().filter(
+      (rel) => !rel.endsWith("/alarm-root-cause-section.tsx") && NAMES_SECTION.test(codeOnly(read(rel))),
+    );
+    expect(importers).toEqual([`${WEB_SRC}/components/alarm-details-panel.tsx`]);
+  });
+
+  it("only the alarms client and the section name the suggestions fetch or its route", () => {
+    const naming = webSources().filter((rel) => NAMES_FETCH.test(codeOnly(read(rel))));
+    expect(naming.sort()).toEqual([`${WEB_SRC}/api/alarms.ts`, `${WEB_SRC}/components/alarm-root-cause-section.tsx`]);
+  });
+
+  it("the alarm bar, work orders, the copilot and copilot-current name neither", () => {
+    const fenced = [
+      ...walk(`${WEB_SRC}/components/alarm-bar`),
+      ...walk(`${WEB_SRC}/components/work-orders`),
+      ...walk(`${WEB_SRC}/components/copilot`),
+      `${WEB_SRC}/api/copilot-current.ts`,
+    ].filter((rel) => /\.tsx?$/.test(rel) && !/\.(spec|test)\.tsx?$/.test(rel));
+    expect(fenced.length).toBeGreaterThan(10);
+    for (const rel of fenced) {
+      const code = codeOnly(read(rel));
+      expect(code, rel).not.toMatch(NAMES_SECTION);
+      expect(code, rel).not.toMatch(NAMES_FETCH);
+    }
+  });
+
+  it("positive controls: each pattern matches the shape it forbids", () => {
+    expect('import { AlarmRootCauseSection } from "./alarm-root-cause-section";').toMatch(NAMES_SECTION);
+    expect("await fetchRootCauseSuggestions(id)").toMatch(NAMES_FETCH);
+    expect("`/alarms/${id}/root-cause-suggestions`").toMatch(NAMES_FETCH);
+    expect('import { holdsText } from "../lib/root-cause-suggestions";').not.toMatch(NAMES_FETCH);
+  });
+});
