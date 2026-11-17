@@ -83,7 +83,8 @@ describe("E1.9c — bms.ml_finding_paragraphs (static)", () => {
     expect(migration().length).toBeGreaterThan(2000);
   });
 
-  it("is the journal's last entry, one above the entry before it, above its when and not ahead of now", () => {
+  // "Follows 0161" stands in for "is last": a later migration (E1.9f's 0163) will follow this one.
+  it("follows 0161 in the journal, one above it, after its when and not ahead of now", () => {
     const journal = JSON.parse(read(`${DRIZZLE_DIR}/meta/_journal.json`)) as {
       entries: Array<Record<string, unknown>>;
     };
@@ -96,7 +97,7 @@ describe("E1.9c — bms.ml_finding_paragraphs (static)", () => {
     expect(entry.breakpoints).toBe(true);
     expect(entry.idx).toBe((previous.idx as number) + 1);
     expect(entry.when as number).toBeGreaterThan(previous.when as number);
-    expect(entry.when as number).toBeLessThan(Date.now() + 3_600_000);
+    expect(entry.when as number).toBeLessThanOrEqual(Date.now());
     expect(Number(tag.slice(0, 4))).toBe(Number(String(previous.tag).slice(0, 4)) + 1);
     expect(previous.tag).toBe("0161_anomaly_widget_type");
   });
@@ -117,6 +118,8 @@ describe("E1.9c — bms.ml_finding_paragraphs (static)", () => {
     expect(bracket).toContain("organization_id uuid NOT NULL REFERENCES bms.organizations(id) ON DELETE CASCADE");
     expect(bracket).toContain("facts_hash varchar(64) NOT NULL");
     expect(bracket).toContain("attempts smallint NOT NULL DEFAULT 1");
+    // The organization LLM setting's model is varchar(200); the cache must hold any model it resolves.
+    expect(bracket).toContain("model varchar(200),");
     expect(bracket).toContain("ALTER TABLE bms.ml_finding_paragraphs ENABLE ROW LEVEL SECURITY;");
     expect(bracket).toContain("ALTER TABLE bms.ml_finding_paragraphs FORCE ROW LEVEL SECURITY;");
     expect(bracket).toContain("DROP POLICY IF EXISTS tenant_isolation ON bms.ml_finding_paragraphs;");
@@ -212,6 +215,7 @@ describe("E1.9c — bms.ml_finding_paragraphs (static)", () => {
       "created_at",
     ]);
     expect(mirror).toContain('unique("ml_finding_paragraphs_org_kind_hash_key")');
+    expect(mirror).toContain('varchar("model", { length: 200 })');
     expect(read("packages/db/src/schema/index.ts")).toContain('export * from "./ml-findings-schema";');
   });
 
