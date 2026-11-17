@@ -5,8 +5,10 @@ import type { MlFindingAsset, MlFindingFact, MlFindingsCard, MlFindingsParagraph
 
 import { detectorLabel } from "./anomaly-series";
 import {
+  compactLines,
   F5_TOOLTIP,
   hasParagraphWorthyCard,
+  mlPageHref,
   paragraphPollMs,
   pickScope,
   resolveSegments,
@@ -148,6 +150,40 @@ function fact(id: MlFindingFact["id"], text: string): MlFindingFact {
 
 function card(facts: MlFindingFact[]): MlFindingsCard {
   return { organizationId: ORG, organizationCode: "ORGQ", organizationName: "Quill Works", facts, assets: [] };
+}
+
+/**
+ * `E1.9d` (plan T4.2, decision 13) — the compact lines: A2 lines when present, else A1; F5 lines
+ * when present, else F1. A card with neither keeps its one "none" sentence.
+ */
+export function compactLinesPicksTheTopLines(): void {
+  const a1 = fact("A1", "9 unusual hours in the last 7 days, on 2 of 5 scored assets.");
+  const a2a = fact("A2", "Strongest signal: first.");
+  const a2b = fact("A2", "Strongest signal: second.");
+  const a3 = fact("A3", "Third.");
+  const a4 = fact("A4", "Mixed.");
+  expect(compactLines(card([a1, a2a, a2b, a3, a4]), "anomalies")).toEqual([a2a, a2b]);
+  expect(compactLines(card([a1, a3, a4]), "anomalies")).toEqual([a1]);
+  const aNone = fact("A_NONE", "No unusual hours in the last 7 days on 4 scored assets.");
+  expect(compactLines(card([aNone]), "anomalies")).toEqual([aNone]);
+
+  const f1 = fact("F1", "3 forecast points, issued at 16 Nov 14:05; 0 stale.");
+  const f2 = fact("F2", "temp_c: coldest.");
+  const f5a = fact("F5", "Advisory: first.");
+  const f5b = fact("F5", "Advisory: second.");
+  expect(compactLines(card([f1, f2, f5a, f5b]), "forecasts")).toEqual([f5a, f5b]);
+  expect(compactLines(card([f1, f2]), "forecasts")).toEqual([f1]);
+  const fNone = fact("F_NONE", "No forecast points for this organization.");
+  expect(compactLines(card([fNone]), "forecasts")).toEqual([fNone]);
+}
+
+/** `E1.9d` (plan T4.2) — the page link holds the organization and the location only. */
+export function mlPageHrefCarriesOrganizationAndLocation(): void {
+  expect(mlPageHref("forecasts", {})).toBe("/forecasts");
+  expect(mlPageHref("anomalies", { organizationId: ORG })).toBe(`/anomalies?organizationId=${ORG}`);
+  expect(mlPageHref("forecasts", { organizationId: ORG, locationId: SITE, assetGroupId: GROUP, assetId: ASSET_ID })).toBe(
+    `/forecasts?organizationId=${ORG}&locationId=${SITE}`,
+  );
 }
 
 /** `E1.9d` (plan T4.3, R-m) — a paragraph is worth asking for only when a card holds more than its "none" line. */

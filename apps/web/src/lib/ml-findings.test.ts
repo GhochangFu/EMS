@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  compactLinesPicksTheTopLines,
+  mlPageHrefCarriesOrganizationAndLocation,
   onlyACardWithFindingsIsWorthAParagraph,
   paragraphPollMsIsBounded,
   pickScopeKeepsTheKeysAskedFor,
@@ -20,5 +22,7 @@ describe("E1.9b ml findings helpers", () => {
   it("the F5 tooltip is fixed", () => theF5TooltipIsFixed());
   it("the A4 sentences' detector word is the web's", () => theBaselineWordMatchesTheWeb());
   it("E1.9d paragraphPollMs asks every 4 s while pending, at most 6 times", () => paragraphPollMsIsBounded());
+  it("E1.9d compactLines picks A2 over A1 and F5 over F1", () => compactLinesPicksTheTopLines());
+  it("E1.9d mlPageHref carries the organization and the location", () => mlPageHrefCarriesOrganizationAndLocation());
   it("E1.9d only a card with findings is worth a paragraph", () => onlyACardWithFindingsIsWorthAParagraph());
 });

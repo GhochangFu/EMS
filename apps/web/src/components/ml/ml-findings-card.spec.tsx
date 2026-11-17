@@ -94,6 +94,7 @@ type CardProps = {
   scope?: ScopeFilter;
   enabled?: boolean;
   paragraph?: boolean;
+  compact?: boolean;
 };
 
 function renderCard(props: CardProps = {}) {
@@ -106,6 +107,7 @@ function renderCard(props: CardProps = {}) {
           scope={props.scope ?? {}}
           enabled={props.enabled}
           paragraph={props.paragraph}
+          compact={props.compact}
         />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -273,6 +275,8 @@ export async function twoKindsPendingNamesTheKind(): Promise<void> {
 // ---------------------------------------------------------------------------------------------
 // `E1.9d` (ADR 0135 Amendment 8 decisions 5, 13 and 14; plan T4.3, R-n) — the AI paragraph slot.
 // ---------------------------------------------------------------------------------------------
+
+const SITE_D = "bbbbbbbb-2222-4222-8222-000000000001";
 
 /** ORGC's paragraph names A1 (linked like its fact line), A3 (unsafe href) and A9 (not on the card). */
 const OK_C: MlFindingsParagraphResponse = {
@@ -519,6 +523,9 @@ const ANOMALY_C: MlFindingsCardData = {
   ],
 };
 
+const F5_LINE =
+  "Advisory: FZ-1 · Birch Row RTU temp_c is expected to go above the limit of rule Freezer high (-15) at 17 Nov 01:00.";
+
 function stubBothKinds(paragraph: (kind: MlFindingsKind) => MlFindingsParagraphResponse) {
   vi.spyOn(mlApi, "fetchMlFindingsSummary").mockImplementation((kind) =>
     Promise.resolve(kind === "forecasts" ? { ...SUMMARY, cards: [CARD_C] } : { ...SUMMARY, cards: [ANOMALY_C] }),
@@ -526,11 +533,62 @@ function stubBothKinds(paragraph: (kind: MlFindingsKind) => MlFindingsParagraphR
   return vi.spyOn(mlApi, "fetchMlFindingsParagraph").mockImplementation((kind) => Promise.resolve(paragraph(kind)));
 }
 
-/** Decision 1 / §5: with a paragraph, still no alarm or severity colour. */
+/**
+ * Decision 13, compact: one card per organization for both kinds; F5 instead of F1 and A2 instead
+ * of A1 when there is no paragraph; "Open forecasts" and "Open anomalies" carry the scope.
+ */
+export async function compactShowsTheTopLinesAndThePageLinks(): Promise<void> {
+  stubBothKinds(() => ({ cards: [{ organizationId: ORG_C, state: "none", segments: [], assets: [] }] }));
+  renderCard({ kinds: ["forecasts", "anomalies"], scope: { organizationId: ORG_C, locationId: SITE_D }, compact: true });
+  await screen.findByText(/Strongest signal/);
+  expect(screen.getAllByText("ORGC · Cedar Point Mills")).toHaveLength(1);
+  expect(within(section()).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+    F5_LINE,
+    "Strongest signal: FZ-2 · Birch Row RTU — 4 hours marked by both methods.",
+  ]);
+  expect(within(section()).getAllByRole("listitem")[0]?.getAttribute("title")).toBe(F5_TOOLTIP);
+  expect(screen.queryByText(F1)).toBeNull();
+  expect(screen.queryByText(/on 2 of 5 scored assets/)).toBeNull();
+  const forecasts = within(section()).getByRole("link", { name: "Open forecasts" });
+  expect(forecasts.getAttribute("href")).toBe(`/forecasts?organizationId=${ORG_C}&locationId=${SITE_D}`);
+  const anomalies = within(section()).getByRole("link", { name: "Open anomalies" });
+  expect(anomalies.getAttribute("href")).toBe(`/anomalies?organizationId=${ORG_C}&locationId=${SITE_D}`);
+  expect(screen.queryByText(ML_PARAGRAPH_LABEL)).toBeNull();
+}
+
+/** Compact: a kind with an `ok` paragraph shows the paragraph in place of its top lines. */
+export async function compactPrefersTheParagraph(): Promise<void> {
+  stubBothKinds((kind) =>
+    kind === "anomalies"
+      ? {
+          cards: [
+            {
+              organizationId: ORG_C,
+              state: "ok",
+              segments: [{ assetRef: "A1" }, { text: " shows 4 hours marked by both methods." }],
+              assets: ANOMALY_C.assets,
+            },
+          ],
+        }
+      : { cards: [{ organizationId: ORG_C, state: "none", segments: [], assets: [] }] },
+  );
+  renderCard({ kinds: ["forecasts", "anomalies"], scope: { organizationId: ORG_C }, compact: true });
+  await screen.findByText(ML_PARAGRAPH_LABEL);
+  const block = paragraphNode() as HTMLElement;
+  expect(block.textContent).toBe(`${ML_PARAGRAPH_LABEL}FZ-2 · Birch Row RTU shows 4 hours marked by both methods.`);
+  expect(within(block).getByRole("link").getAttribute("href")).toBe(HREF_2);
+  expect(screen.queryByText(/Strongest signal/)).toBeNull();
+  expect(within(section()).getAllByRole("listitem").map((li) => li.textContent)).toEqual([F5_LINE]);
+  expect(within(section()).getByRole("link", { name: "Open anomalies" }).getAttribute("href")).toBe(
+    `/anomalies?organizationId=${ORG_C}`,
+  );
+}
+
+/** Decision 1 / §5: with a paragraph, and in compact, still no alarm or severity colour. */
 export async function noAlarmColourWithTheParagraph(): Promise<void> {
-  {
+  for (const compact of [false, true]) {
     stubBothKinds(() => OK_C);
-    renderCard({ kinds: ["forecasts", "anomalies"] });
+    renderCard({ kinds: ["forecasts", "anomalies"], compact });
     await screen.findAllByText(ML_PARAGRAPH_LABEL);
     const classes = [section(), ...Array.from(section().querySelectorAll("*"))].map((el) => el.getAttribute("class") ?? "");
     for (const cls of classes) {

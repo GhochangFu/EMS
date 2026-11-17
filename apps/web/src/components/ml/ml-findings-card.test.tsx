@@ -6,6 +6,8 @@ import {
   aFailedReadIsOneMutedSentence,
   aPendingReadSaysLoading,
   assetReferencesLinkOnlyToSafeHrefs,
+  compactPrefersTheParagraph,
+  compactShowsTheTopLinesAndThePageLinks,
   disabledMakesNoRequest,
   eachFactLineReadsItsText,
   noAlarmColourInTheSection,
@@ -47,7 +49,7 @@ describe("E1.9b MlFindingsCard", () => {
   it("names the kind in a pending line when two kinds show", () => twoKindsPendingNamesTheKind());
 });
 
-/** `E1.9d` — the AI paragraph slot. */
+/** `E1.9d` — the AI paragraph slot and the compact card. */
 describe("E1.9d MlFindingsCard paragraph", () => {
   beforeEach(() => stubNoParagraph());
   afterEach(() => reset());
@@ -58,5 +60,7 @@ describe("E1.9d MlFindingsCard paragraph", () => {
   it("asks for no paragraph when it is off or every card is empty", () => noParagraphRequestWhenOffOrEmpty());
   it("asks again every 4 s while pending, at most 6 times", () => pendingAsksAgainAtMostSixTimes());
   it("shows the paragraph and stops asking once it is written", () => pendingThenOkShowsAndStops());
-  it("uses no alarm colour with the paragraph", () => noAlarmColourWithTheParagraph());
+  it("compact shows F5 and A2 lines and the two page links", () => compactShowsTheTopLinesAndThePageLinks());
+  it("compact prefers the paragraph to the top lines", () => compactPrefersTheParagraph());
+  it("uses no alarm colour with the paragraph or in compact", () => noAlarmColourWithTheParagraph());
 });

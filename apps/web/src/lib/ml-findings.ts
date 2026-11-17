@@ -3,6 +3,7 @@ import type {
   MlFindingFact,
   MlFindingsCard,
   MlFindingSegment,
+  MlFindingsKind,
   MlFindingsParagraphResponse,
   MlFindingsSummaryResponse,
 } from "@bms/shared/contracts";
@@ -100,4 +101,38 @@ export function isParagraphWorthy(card: MlFindingsCard): boolean {
 /** Plan T4.3: the paragraph is asked for only when some card of the summary has findings. */
 export function hasParagraphWorthyCard(summary: MlFindingsSummaryResponse | undefined): boolean {
   return summary?.cards.some(isParagraphWorthy) ?? false;
+}
+
+/** Decision 13: per kind, the strong line first, then the overview line, then the "none" line. */
+const COMPACT_ORDER: Record<MlFindingsKind, readonly MlFindingFact["id"][]> = {
+  anomalies: ["A2", "A1", "A_NONE"],
+  forecasts: ["F5", "F1", "F_NONE"],
+};
+
+/**
+ * `E1.9d` (plan T4.2, decision 13) — the compact card's lines when there is no paragraph: the A2
+ * lines when present, else A1; the F5 lines when present, else F1. A card with neither keeps its
+ * "none" sentence.
+ */
+export function compactLines(card: MlFindingsCard, kind: MlFindingsKind): MlFindingFact[] {
+  for (const id of COMPACT_ORDER[kind]) {
+    const lines = card.facts.filter((fact) => fact.id === id);
+    if (lines.length > 0) {
+      return lines;
+    }
+  }
+  return [];
+}
+
+/** `E1.9d` (plan T4.2, decision 13) — the kind's page with the filter set: organization and location only. */
+export function mlPageHref(kind: MlFindingsKind, scope: ScopeFilter): string {
+  const query = new URLSearchParams();
+  for (const key of ML_PAGE_FILTER_KEYS) {
+    const value = scope[key];
+    if (value) {
+      query.set(key, value);
+    }
+  }
+  const search = query.toString();
+  return `/${kind}${search ? `?${search}` : ""}`;
 }

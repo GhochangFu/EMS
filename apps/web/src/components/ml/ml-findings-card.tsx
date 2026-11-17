@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import type {
@@ -12,7 +12,7 @@ import type {
 } from "@bms/shared/contracts";
 
 import { useMlFindings, useMlFindingsParagraphs } from "../../hooks/use-ml-findings";
-import { F5_TOOLTIP, hasParagraphWorthyCard, resolveSegments } from "../../lib/ml-findings";
+import { compactLines, F5_TOOLTIP, hasParagraphWorthyCard, mlPageHref, resolveSegments } from "../../lib/ml-findings";
 import type { ScopeFilter } from "../../lib/scope-filter";
 import { SectionCard } from "../section-card";
 import { StatusPill } from "../status-pill";
@@ -35,6 +35,8 @@ type MlFindingsCardProps = {
   enabled?: boolean;
   /** `false` never asks for the AI paragraph: facts only, no LLM cost. Default `true`. */
   paragraph?: boolean;
+  /** Decision 13 (the control room): one card per organization, the paragraph or the top lines. */
+  compact?: boolean;
 };
 
 /** A sentence's segments, each asset put back from `assets`: a link only when its `href` is safe. */
@@ -125,6 +127,37 @@ function OrganizationFindings({
   );
 }
 
+type CompactPart = { kind: MlFindingsKind; card: MlFindingsCardData; paragraph: MlFindingsParagraphCard | null };
+
+/** Decision 13: per kind the paragraph when `ok`, else its top lines; then the pages' links. */
+function CompactOrganization({ parts, scope, showKind }: { parts: readonly CompactPart[]; scope: ScopeFilter; showKind: boolean }) {
+  const first = parts[0];
+  if (first === undefined) {
+    return null;
+  }
+  // The card's own organization: a scope with none still opens the page on this card's.
+  const pageScope: ScopeFilter = { organizationId: first.card.organizationId, locationId: scope.locationId };
+  return (
+    <SectionCard title={cardTitle(first.card)} actions={<StatusPill label="Advisory" tone="info" />}>
+      <div className="space-y-2">
+        {parts.map(({ kind, card, paragraph }) => (
+          <div key={kind} className="space-y-1">
+            {showKind ? <p className="text-2xs font-semibold text-ink-muted">{KIND_LABEL[kind]}</p> : null}
+            {paragraph ? <AiParagraph paragraph={paragraph} /> : <FactLines facts={compactLines(card, kind)} assets={card.assets} />}
+          </div>
+        ))}
+        <p className="flex gap-4 text-sm">
+          {parts.map(({ kind }) => (
+            <Link key={kind} className="font-semibold text-accent-strong hover:underline" to={mlPageHref(kind, pageScope)}>
+              Open {kind}
+            </Link>
+          ))}
+        </p>
+      </div>
+    </SectionCard>
+  );
+}
+
 /**
  * `E1.9b` / `E1.9d` (ADR 0135 Amendment 8 decisions 1, 2, 5, 13 and 14; plan T2.4, T4.3) — the
  * "Findings — advisory" section: one `SectionCard` per organization card the API returns, in its
@@ -136,7 +169,7 @@ function OrganizationFindings({
  * The AI paragraph is asked for only after the summary has a card with findings, and the facts
  * never wait for it. Only an `ok` answer draws anything; every other outcome draws nothing at all.
  */
-export function MlFindingsCard({ kinds, scope, enabled = true, paragraph = true }: MlFindingsCardProps) {
+export function MlFindingsCard({ kinds, scope, enabled = true, paragraph = true, compact = false }: MlFindingsCardProps) {
   const headingId = useId();
   const results = useMlFindings(kinds, scope, enabled);
   const paragraphs = useMlFindingsParagraphs(
@@ -152,36 +185,53 @@ export function MlFindingsCard({ kinds, scope, enabled = true, paragraph = true 
   const paragraphOf = (index: number, organizationId: string) =>
     paragraph ? okParagraph(paragraphs[index]?.data, organizationId) : null;
 
-  const body = kinds.map((kind, index) => {
+  const statusLines = kinds.map((kind, index) => {
     const q = results[index];
     const findings = showKind ? `${KIND_WORD[kind]} findings` : "findings";
-    if (q === undefined) {
+    if (q === undefined || q.data !== undefined) {
       return null;
     }
-    if (q.data === undefined) {
-      // `isPending`, not `isLoading`: a held or paused read must not read as "no findings".
-      return (
-        <p key={kind} className="text-sm text-ink-muted">
-          {q.isPending ? `Loading ${findings}…` : `Could not load the ${findings}.`}
-        </p>
-      );
-    }
-    return q.data.cards.map((card) => (
-      <OrganizationFindings
-        key={`${kind}:${card.organizationId}`}
-        card={card}
-        kind={kind}
-        showKind={showKind}
-        paragraph={paragraphOf(index, card.organizationId)}
-      />
-    ));
+    // `isPending`, not `isLoading`: a held or paused read must not read as "no findings".
+    return (
+      <p key={kind} className="text-sm text-ink-muted">
+        {q.isPending ? `Loading ${findings}…` : `Could not load the ${findings}.`}
+      </p>
+    );
   });
+
+  let body: ReactNode;
+  if (compact) {
+    const byOrganization = new Map<string, CompactPart[]>();
+    kinds.forEach((kind, index) => {
+      for (const card of results[index]?.data?.cards ?? []) {
+        const parts = byOrganization.get(card.organizationId) ?? [];
+        parts.push({ kind, card, paragraph: paragraphOf(index, card.organizationId) });
+        byOrganization.set(card.organizationId, parts);
+      }
+    });
+    body = [...byOrganization].map(([organizationId, parts]) => (
+      <CompactOrganization key={organizationId} parts={parts} scope={scope} showKind={showKind} />
+    ));
+  } else {
+    body = kinds.map((kind, index) =>
+      statusLines[index] ?? (results[index]?.data?.cards ?? []).map((card) => (
+        <OrganizationFindings
+          key={`${kind}:${card.organizationId}`}
+          card={card}
+          kind={kind}
+          showKind={showKind}
+          paragraph={paragraphOf(index, card.organizationId)}
+        />
+      )),
+    );
+  }
 
   return (
     <section aria-labelledby={headingId} className="space-y-2">
       <h2 id={headingId} className="font-condensed text-sm font-bold text-ink">
         {ML_FINDINGS_HEADING}
       </h2>
+      {compact ? statusLines : null}
       {body}
     </section>
   );
