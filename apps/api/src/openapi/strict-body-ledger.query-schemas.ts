@@ -57,6 +57,7 @@ import {
   pastForecastQuerySchema,
 } from "../ml/ml.schema";
 import { findingsParagraphQuerySchema } from "../ml-findings/findings-paragraph.schema";
+import { healthBadActorsQuerySchema } from "../asset-health/health-inputs.schema";
 import {
   assetHealthQuerySchema,
   healthSummaryQuerySchema,
@@ -227,4 +228,8 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `findingsParagraphQuerySchema` (`GET /ml/findings/paragraph?kind=&…`): a required kind enum and
   // the summaries' four scope uuids — `.strict()`, no body, no ledger entry.
   findingsParagraphQuerySchema,
+  // 46 -> 47 (2026-11-17): `E1.8a` (ADR 0050 Amendment 5) registered `healthBadActorsQuerySchema`
+  // (`GET /asset-health/bad-actors?organizationId=&locationId=`): the summary's two optional
+  // lower-cased scope uuids that only narrow — `.strict()`, no body, no ledger entry.
+  healthBadActorsQuerySchema,
 };

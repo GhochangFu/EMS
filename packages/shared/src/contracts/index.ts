@@ -155,5 +155,7 @@ export * from "../tariffs/compute-bill";
 export * from "./ml-forecasts";
 export * from "./ml-anomalies";
 export * from "./ml-findings";
+// `E1.8a` (ADR 0050 Amendment 5): the health inputs and bad-actors contracts, the penalty and the advisory figure.
+export * from "./asset-health-inputs";
 // `E2.3` (ADR 0136): the root-cause suggestions response and its types.
 export * from "./alarm-root-cause";

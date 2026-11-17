@@ -170,6 +170,7 @@ import {
   pastForecastQuerySchema,
 } from "../ml/ml.schema";
 import { findingsParagraphQuerySchema } from "../ml-findings/findings-paragraph.schema";
+import { healthBadActorsQuerySchema } from "../asset-health/health-inputs.schema";
 // `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`;
 // `F4.284`: the alarm, work-order and convert bodies too.
 import {
@@ -296,6 +297,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AssetsController_listKpis: assetKpisQuerySchema,
   AssetHealthController_forAsset: assetHealthQuerySchema,
   AssetHealthController_summary: healthSummaryQuerySchema,
+  // `E1.8a` (ADR 0050 Amendment 5, plan R-d): the summary's two scope keys, `.strict()`, no window.
+  // `HealthInputsController_forAsset` takes no query.
+  HealthInputsController_badActors: healthBadActorsQuerySchema,
   // `F2.10` (ADR 0098 decision 11, B4, B12) — the org map's optional subtree filter.
   MapController_sites: mapSitesQuerySchema,
   AssetsAdminController_create: createAssetBodySchema,

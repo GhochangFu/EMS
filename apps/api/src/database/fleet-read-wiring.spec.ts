@@ -7,6 +7,7 @@ import { AlarmRootCauseService } from "../alarms/alarm-root-cause.service";
 import { AlarmsService } from "../alarms/alarms.service";
 import { LocationsAdminService } from "../admin/locations/locations.service";
 import { TelemetryImportService } from "../admin/telemetry-import/telemetry-import.service";
+import { HealthInputsService } from "../asset-health/health-inputs.service";
 import { AssetImagesService } from "../assets/asset-images.service";
 import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import { CalcDefinitionsService } from "../calc/calc-definitions.service";
@@ -383,4 +384,18 @@ export function assertFindingsParagraphServiceTenantSlot(): void {
 export function assertAlarmRootCauseServiceTenantSlot(): void {
   expect(injectedToken(AlarmRootCauseService, 1)).toBe(TENANT_DRIZZLE);
   expect(injectedToken(AlarmRootCauseService, 0)).toBeUndefined();
+}
+
+/**
+ * `E1.8a` — `HealthInputsService(tenantDb, fleetDb, health)` (ADR 0050 Amendment 5, plan T1.3):
+ * every fact read passes slot 0 and slot 1 to `withReadScope` in that order. A swap would run a
+ * single-organization caller's anomaly and ticket reads on the BYPASSRLS pool, and the
+ * integration pair constructs the service with explicit pools, so only this catches it.
+ */
+export function assertHealthInputsServiceTenantSlot(): void {
+  expect(injectedToken(HealthInputsService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertHealthInputsServiceFleetSlot(): void {
+  expect(injectedToken(HealthInputsService, 1)).toBe(FLEET_DRIZZLE);
 }

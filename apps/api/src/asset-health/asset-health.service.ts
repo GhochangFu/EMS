@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, lt, max, sql, sum } from "drizzle-orm";
 
-import type { AssetHealthResponse, HealthSummaryResponse, TemplateHealth } from "@bms/shared";
+import type { AssetHealthResponse, HealthBand, HealthSummaryResponse, TemplateHealth } from "@bms/shared";
 import {
   type BmsDb,
   assetPoints,
@@ -111,6 +111,17 @@ export type HealthLocationFilter = {
   readonly readableOrganizationIds: readonly string[] | null;
 };
 
+/**
+ * `E1.8a` (ADR 0050 Amendment 5, plan T1.4) — one in-scope asset's rule score, as `summary`
+ * computes it, for the bad-actors read's *Lowest health score* tab and its count of scored assets.
+ */
+export type HealthScopeScore = {
+  readonly assetId: string;
+  readonly score: number | null;
+  readonly band: HealthBand | null;
+  readonly scoredTagCount: number;
+};
+
 @Injectable()
 export class AssetHealthService {
   constructor(@Inject(FLEET_DRIZZLE) private readonly db: BmsDb) {}
@@ -190,6 +201,31 @@ export class AssetHealthService {
       ...summariseAssets(scores),
       ...this.windowFields({ level, from, to, windowMinutes, rows, coveredBuckets }),
     };
+  }
+
+  /**
+   * `E1.8a` (ADR 0050 Amendment 5, plan T1.4) — `summary`'s scope and scoring step, one entry per
+   * active in-scope asset in `assetsInScope`'s id order, so the bad-actors read's *Lowest health
+   * score* tab and its scored-asset count are the donut's. No new SQL: `resolveWindow`,
+   * `assetsInScope` and `scoreAssets`, in that order. `assetIds` is the caller's
+   * already-authorized readable set (`null` only for an unrestricted admin), as for `summary`.
+   */
+  async scoresInScope(
+    assetIds: readonly string[] | null,
+    location: HealthLocationFilter | undefined,
+    windowMinutes: number,
+    now: Date,
+  ): Promise<HealthScopeScore[]> {
+    const { level, from, to } = this.resolveWindow(windowMinutes, now);
+    const inScope = await this.assetsInScope(assetIds, location);
+    if (inScope.length === 0) {
+      return [];
+    }
+    const { scores } = await this.scoreAssets(level, inScope, from, to);
+    return inScope.map((assetId, i) => {
+      const scored = scores[i] as AssetScore;
+      return { assetId, score: scored.score, band: scored.band, scoredTagCount: scored.scoredTags.length };
+    });
   }
 
   /**
