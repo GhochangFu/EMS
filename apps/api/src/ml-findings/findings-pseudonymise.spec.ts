@@ -131,6 +131,25 @@ export function onlyAnAllowListedUnitIsSendable(): void {
   expect(pseudonymiseFacts("forecasts", withText(fxaForecastCard(), "cold_room_temp_c", "cold_room\u2028temp")).sendable).toBe(false);
 }
 
+/**
+ * F4.383 — `degC` / `degF`, the spelled temperature units real asset points and
+ * rules carry (the demo host's cold-room points and their rules use `degC`), are
+ * sendable, matched exactly; a near spelling still is not.
+ */
+export function theSpelledTemperatureUnitsAreSendable(): void {
+  for (const unit of ["degC", "degF"]) {
+    const p = pseudonymiseFacts("forecasts", withText(fxaForecastCard(), "°C", unit));
+    expect(p.sendable, unit).toBe(true);
+    if (p.sendable) expect(p.canonical, unit).toContain(` ${unit}`);
+  }
+  for (const unit of ["deg C", "degc", "DegC", "degC."]) {
+    expect(pseudonymiseFacts("forecasts", withText(fxaForecastCard(), "°C", unit)), unit).toEqual({
+      sendable: false,
+      reason: "unsafe_text",
+    });
+  }
+}
+
 export function aCardWithNothingToSayIsNotSendable(): void {
   expect(pseudonymiseFacts("forecasts", fxbForecastCard())).toEqual({ sendable: false, reason: "nothing_to_say" });
   const quiet = anomalyCards([]);

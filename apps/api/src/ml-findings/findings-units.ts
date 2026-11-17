@@ -10,8 +10,8 @@
  * accept a pattern.
  */
 export const FINDINGS_UNIT_ALLOW_LIST: readonly string[] = [
-  // Temperature
-  "°C", "°F", "C", "K",
+  // Temperature (`degC` / `degF`: the spelled form real points and rules carry, F4.383)
+  "°C", "°F", "C", "K", "degC", "degF",
   // Ratios and states
   "%", "PF", "state",
   // Power and energy
