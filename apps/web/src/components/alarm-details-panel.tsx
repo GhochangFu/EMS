@@ -12,6 +12,7 @@ import { alarmSeverityTone } from "../lib/alarm-severity";
 import { alarmLifecycleState, alarmStateLabel } from "../lib/alarm-state";
 import { AssetHistoryLink } from "./assets/asset-history-link";
 import { AlarmEnrichmentWizard } from "./alarm-enrichment-wizard";
+import { AlarmRootCauseSection } from "./alarm-root-cause-section";
 import { StatusPill } from "./status-pill";
 
 type AlarmDetailsPanelProps = {
@@ -236,6 +237,14 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                 </dl>
               </section>
             ) : null}
+
+            {/*
+              E2.3 / ADR 0136 decision 6: advisory candidate causes, between what engineering
+              decided about the class (above) and what the operator records about this alarm
+              (below). Mounted here, so its read starts after the details. A device alarm has no
+              asset and gets no section (plan §17 Q4).
+            */}
+            {details.assetId !== null ? <AlarmRootCauseSection alarmId={alarmId} assetId={details.assetId} /> : null}
 
             {/* F3.16: an enrichment names affected assets and is written against the alarm's
                 asset scope, so a device alarm (no asset) shows none and offers none. */}
