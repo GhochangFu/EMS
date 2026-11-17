@@ -11,6 +11,7 @@ import type {
 
 import {
   LlmProviderError,
+  type LlmCompleteInput,
   type LlmContentPart,
   type LlmMessage,
   type LlmReply,
@@ -53,6 +54,9 @@ export const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
  *   reads tools, then system, so the two marks cache the tools and the tools
  *   plus the fixed prompt; the scope, wizard and PDF lines after it stay out.
  *
+ * - `E1.9c` (ADR 0135 Amendment 8, plan R-d): an empty tool list sends no
+ *   `tools` and no `tool_choice`; a call with tools is as before.
+ *
  * It reads no environment variable: the key and the model come from the
  * resolver.
  */
@@ -61,11 +65,7 @@ export class AnthropicProvider implements LlmProvider {
 
   constructor(private readonly options: { readonly apiKey: string; readonly model: string }) {}
 
-  async complete(input: {
-    readonly messages: readonly LlmMessage[];
-    readonly tools: readonly LlmToolDefinition[];
-    readonly signal: AbortSignal;
-  }): Promise<LlmReply> {
+  async complete(input: LlmCompleteInput): Promise<LlmReply> {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     // Security review L7: `authToken: null` stops a platform
     // `ANTHROPIC_AUTH_TOKEN` riding along as a Bearer token beside the
@@ -80,8 +80,7 @@ export class AnthropicProvider implements LlmProvider {
         max_tokens: ANTHROPIC_MAX_TOKENS,
         ...(system.length > 0 ? { system } : {}),
         messages: toAnthropicMessages(input.messages),
-        tools: toAnthropicTools(input.tools),
-        tool_choice: { type: "auto" },
+        ...(input.tools.length > 0 ? { tools: toAnthropicTools(input.tools), tool_choice: { type: "auto" as const } } : {}),
         output_config: { effort: "medium" },
         fallbacks: "default",
       },

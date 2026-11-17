@@ -207,3 +207,15 @@ export async function assertTheAdapterReadsNoEnv(capture: OpenAiCapture): Promis
   assert(capture.constructed[0]?.apiKey === "ctor-key", "the constructor's key wins over OPENAI_API_KEY");
   assert(capture.requests[0]?.body.model === "gpt-4o-mini", "the constructor's model wins over OPENAI_MODEL");
 }
+
+/** `E1.9c` (ADR 0135 Amendment 8, plan R-d): an empty tool list sends no `tools` and no `tool_choice`, on both hosts. */
+export async function assertAnEmptyToolListSendsNoToolsAndNoToolChoice(capture: OpenAiCapture): Promise<void> {
+  for (const name of ["openai", "openrouter"] as const) {
+    reset(capture, finalReply);
+    await provider(name).complete({ messages: [{ role: "user", content: "hi" }], tools: [], signal: new AbortController().signal });
+    const body = capture.requests[0]?.body ?? {};
+    assert(!("tools" in body), `${name}: an empty tool list sends no tools field`);
+    assert(!("tool_choice" in body), `${name}: an empty tool list sends no tool_choice`);
+    assert(Array.isArray(body.messages) && typeof body.model === "string", `${name}: the rest is as before`);
+  }
+}

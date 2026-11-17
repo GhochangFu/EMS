@@ -76,13 +76,19 @@ export type LlmReply =
     }
   | { readonly kind: "final"; readonly text: string };
 
+/**
+ * One call's input. `tools: []` sends no tool list and no tool choice at all
+ * (`E1.9c`, ADR 0135 Amendment 8, plan R-d); a call with tools is as before.
+ */
+export type LlmCompleteInput = {
+  readonly messages: readonly LlmMessage[];
+  readonly tools: readonly LlmToolDefinition[];
+  readonly signal: AbortSignal;
+};
+
 export interface LlmProvider {
   readonly name: LlmProviderName;
-  complete(input: {
-    readonly messages: readonly LlmMessage[];
-    readonly tools: readonly LlmToolDefinition[];
-    readonly signal: AbortSignal;
-  }): Promise<LlmReply>;
+  complete(input: LlmCompleteInput): Promise<LlmReply>;
 }
 
 /**

@@ -270,13 +270,18 @@ export async function assertNoSystemMessageSendsNoSystemField(capture: Anthropic
   assert(!("system" in body), "no system message sends no system field");
 }
 
-/** ADR 0099 Amendment 7 C1: no tool sends an empty tool list and no mark anywhere. */
+/**
+ * ADR 0099 Amendment 7 C1: no tool sends no mark anywhere. `E1.9c` (ADR 0135
+ * Amendment 8, plan R-d): and no `tools` and no `tool_choice` at all.
+ */
 export async function assertNoToolSendsNoMark(capture: AnthropicCapture): Promise<void> {
   reset(capture, message([{ type: "text", text: "ok" }]));
   await provider().complete({ messages: [{ role: "user", content: "hi" }], tools: [], signal: signal() });
   const body = capture.requests[0]?.body ?? {};
-  assert(Array.isArray(body.tools) && (body.tools as unknown[]).length === 0, "no tool sends an empty tool list");
+  assert(!("tools" in body), "an empty tool list sends no tools field");
+  assert(!("tool_choice" in body), "an empty tool list sends no tool_choice");
   assert(!JSON.stringify(body).includes("cache_control"), "the request carries no cache_control at all");
+  assert(body.max_tokens === 16_000 && JSON.stringify(body.output_config) === JSON.stringify({ effort: "medium" }), "the rest is as before");
 }
 
 const SYSTEM_TEXTS = ["FIXED PROMPT", "scope line", "wizard line", "pdf line"];

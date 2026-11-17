@@ -6,6 +6,7 @@ import type {
 
 import {
   LlmProviderError,
+  type LlmCompleteInput,
   type LlmContentPart,
   type LlmMessage,
   type LlmReply,
@@ -28,6 +29,9 @@ export const OPENAI_BASE_URL = "https://api.openai.com/v1";
  * variable — the key and the model arrive in the constructor from the resolver.
  * SDK rejections are rethrown as they are; the loop classifies them by whether
  * the turn's deadline fired.
+ *
+ * `E1.9c` (ADR 0135 Amendment 8, plan R-d): an empty tool list sends no `tools`
+ * and no `tool_choice`; a call with tools is as before.
  */
 export class OpenAiCompatibleProvider implements LlmProvider {
   constructor(
@@ -35,11 +39,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
     private readonly options: { readonly apiKey: string; readonly model: string; readonly baseURL?: string },
   ) {}
 
-  async complete(input: {
-    readonly messages: readonly LlmMessage[];
-    readonly tools: readonly LlmToolDefinition[];
-    readonly signal: AbortSignal;
-  }): Promise<LlmReply> {
+  async complete(input: LlmCompleteInput): Promise<LlmReply> {
     // Imported on use, so the SDK loads only in a process that has a provider
     // configured for the turn.
     const { default: OpenAI } = await import("openai");
@@ -57,8 +57,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
       {
         model: this.options.model,
         messages: input.messages.map(toOpenAiMessage),
-        tools: input.tools.map(toOpenAiTool),
-        tool_choice: "auto",
+        ...(input.tools.length > 0 ? { tools: input.tools.map(toOpenAiTool), tool_choice: "auto" as const } : {}),
       },
       { signal: input.signal },
     );

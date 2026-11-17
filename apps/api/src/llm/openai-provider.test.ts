@@ -25,6 +25,7 @@ vi.mock("openai", () => ({
 import {
   assertAMissingChoiceIsAProviderError,
   assertAStringUserContentIsSentAsAString,
+  assertAnEmptyToolListSendsNoToolsAndNoToolChoice,
   assertFunctionToolCallsBecomeToolCalls,
   assertImageAndPdfPartsAreNativeParts,
   assertNoToolCallsIsFinalText,
@@ -40,6 +41,10 @@ import {
 describe("OpenAI-compatible provider (F3.21, ADR 0090 Amendment 1 A1)", () => {
   it("forwards tools as function tools with auto choice", async () => {
     await assertToolsAreForwardedAsFunctionTools(capture);
+  });
+
+  it("sends no tools and no tool_choice for an empty tool list (E1.9c, R-d)", async () => {
+    await assertAnEmptyToolListSendsNoToolsAndNoToolChoice(capture);
   });
 
   it("sends a tool result with its call id", async () => {
