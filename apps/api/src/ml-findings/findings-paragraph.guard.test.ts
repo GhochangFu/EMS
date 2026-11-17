@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   eachReasonHasATextThatFailsForItAlone,
+  theHardenedRulesEachRefuseTheirForm,
   theEdgeCasesThePlanNames,
   theFixturesGoodParagraphsPass,
   theGoodParagraphPasses,
@@ -12,5 +13,7 @@ describe("E1.9c — the findings paragraph guard (ADR 0135 Amendment 8 decision 
   it("a good paragraph passes", () => theGoodParagraphPasses());
   it("each reason has a text that fails for it alone", () => eachReasonHasATextThatFailsForItAlone());
   it("the edge cases the plan names", () => theEdgeCasesThePlanNames());
+  it("the hardened rules (M2) each refuse their form; decimals, dashes and fact words still pass", () =>
+    theHardenedRulesEachRefuseTheirForm());
   it("the fixture's good paragraphs pass", () => theFixturesGoodParagraphsPass());
 });

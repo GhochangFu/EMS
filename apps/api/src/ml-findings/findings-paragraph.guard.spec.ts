@@ -43,6 +43,7 @@ export function theGoodParagraphPasses(): void {
 export function eachReasonHasATextThatFailsForItAlone(): void {
   const cases: Array<[FindingsRejectReason, string, readonly SentLine[]]> = [
     ["empty", "   ", FORECAST],
+    ["control_character", "[A1] is the coldest.\u0007", FORECAST],
     ["line_break", "[A1] is the coldest.\n[A2] is the warmest.", FORECAST],
     ["line_break", "[A1] is the coldest.\r", FORECAST],
     ["too_long", `[A1] is the coldest${".".repeat(590)}`, FORECAST],
@@ -73,6 +74,58 @@ export function eachReasonHasATextThatFailsForItAlone(): void {
   expect(FINDINGS_REJECT_REASONS.filter((r) => !covered.has(r))).toEqual(["tool_calls"]);
 }
 
+/** The security review's M2: every way to smuggle a number, a link, markup or a hidden character past the guard. */
+export function theHardenedRulesEachRefuseTheirForm(): void {
+  const cases: Array<[FindingsRejectReason, string, readonly SentLine[]]> = [
+    // Other line separators are line breaks.
+    ["line_break", "[A1] is the coldest.\u2028[A2] the warmest.", FORECAST],
+    ["line_break", "[A1] is the coldest.\u2029", FORECAST],
+    ["line_break", "[A1] is the coldest.\u0085", FORECAST],
+    // Control and format characters (NUL, zero-width space, bidi override).
+    ["control_character", "[A1] is the coldest.\u0000", FORECAST],
+    ["control_character", "[A1] is the\u200b coldest.", FORECAST],
+    ["control_character", "[A1] is the \u202ecoldest.", FORECAST],
+    // Schemes and bare domains.
+    ["url", "[A1] is the coldest, see javascript:alert.", FORECAST],
+    ["url", "[A1] is the coldest, see mailto:ops.", FORECAST],
+    ["url", "[A1] is the coldest, see example.com for more.", FORECAST],
+    ["url", "[A1] is the coldest, see example.co/x.", FORECAST],
+    // More markup.
+    ["markdown", "[A1] is the _coldest_.", FORECAST],
+    ["markdown", "[A1] is the ~~coldest~~.", FORECAST],
+    ["markdown", "[A1] is the [coldest](x).", FORECAST],
+    // Numbers in any other form than plain ASCII digits.
+    ["spelled_number", "[A1] is expected at -١٨ °C.", FORECAST],
+    ["spelled_number", "[A1] is the coldest by ½ °C.", FORECAST],
+    ["spelled_number", "[A1] is the coldest, ² over.", FORECAST],
+    ["spelled_number", "[A1] is the coldest for Ⅻ hours.", FORECAST],
+    ["spelled_number", "[A1] is the coldest for XII hours.", FORECAST],
+    ["spelled_number", "[A1] is the coldest at 1e3 °C.", FORECAST],
+    ["spelled_number", "[A1] is the coldest for the 16th time.", FORECAST],
+    ["spelled_number", "[A1] is the coldest of zero rooms.", FORECAST],
+    ["spelled_number", "[A1] is the coldest of forty rooms.", FORECAST],
+    ["spelled_number", "[A1] is the coldest of a hundred rooms.", FORECAST],
+    ["spelled_number", "[A1] is the coldest of a thousand rooms.", FORECAST],
+    ["spelled_number", "[A1] is the coldest of a million rooms.", FORECAST],
+    ["spelled_number", "[A1] is the coldest by a quarter.", FORECAST],
+    // A typographic dash next to a digit is a minus, so the number is checked as one.
+    ["number_not_in_facts", "[A1] is expected at –18.5 °C.", FORECAST],
+  ];
+  for (const [reason, text, facts] of cases) {
+    expect(reasonOf(text, facts), `${reason}: ${JSON.stringify(text)}`).toBe(reason);
+  }
+  // What must still pass: decimals, dashes that turn into the facts' minus, point keys with _ and ., the facts' own words.
+  expect(reasonOf("[A1] is expected at –18.46 °C, [A2] at ‑17.2 °C.")).toBe("ok");
+  expect(reasonOf("[A1] is expected at —18.46 °C.")).toBe("ok");
+  expect(reasonOf("For cold_room_temp_c: [A1] is the coldest at -18.46 °C.")).toBe("ok");
+  const dotted: SentLine[] = [{ id: "F4", text: "tank.level_m: least certain is [A1], band 2 m wide at [T1]." }];
+  expect(reasonOf("For tank.level_m, [A1] is least certain, a band 2 m wide.", dotted)).toBe("ok");
+  expect(reasonOf("Strongest signal: [A1], with 1 hour marked by both methods.", ANOMALY_MIXED)).toBe("ok");
+  // Length is counted as the contract counts it (UTF-16 units): an astral character is two.
+  expect(reasonOf(`[A1] is the coldest${"a".repeat(579)}\u{10348}`)).toBe("ok");
+  expect(reasonOf(`[A1] is the coldest${"a".repeat(580)}\u{10348}`)).toBe("too_long");
+}
+
 export function theEdgeCasesThePlanNames(): void {
   // A number inside a sent placeholder is not a number.
   const twelve: SentLine[] = [{ id: "F1", text: "16 forecast points, issued at [T12]; 0 stale." }];
@@ -84,7 +137,7 @@ export function theEdgeCasesThePlanNames(): void {
   // 7% is not 7.
   expect(reasonOf("[A1] had 7% of the hours, a weak signal.", ANOMALY_BASELINE)).toBe("number_not_in_facts");
   expect(reasonOf("[A1] had 7 hours, a weak signal.", ANOMALY_BASELINE)).toBe("ok");
-  // 600 characters pass, 601 do not (code points, as char_length counts them).
+  // 600 characters pass, 601 do not (UTF-16 units, as the contract's max(600) counts them).
   const pad = (n: number): string => `[A1] is the coldest${"a".repeat(n - "[A1] is the coldest".length)}`;
   expect(reasonOf(pad(600))).toBe("ok");
   expect(reasonOf(pad(601))).toBe("too_long");
