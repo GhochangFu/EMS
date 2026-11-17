@@ -5,11 +5,12 @@ import type { Pool } from "pg";
 import { isEnergyShown } from "../dashboard/energy-features";
 import type { BmsTx } from "../database/tenant-context";
 import { aggregateRelation, avgExpr } from "../telemetry/point-aggregates";
+import type { HourlyEnergy } from "../telemetry/energy-cost-by-day";
 import type { AdvisoryCandidate, AdvisoryPairHour } from "./advisory-engine.types";
 
 /**
  * `E1.6a` / ADR 0137 decisions 2, 6 and 9 (plan T1.7, Q3, Q6, R-e) — the advisory
- * module's own SQL: three statements, every value a bound parameter, and nothing
+ * module's own SQL: four statements, every value a bound parameter, and nothing
  * written. Everything else the module reads is an existing read, reused unchanged.
  *
  * - **Candidates** run on the `tx` `withReadScope` hands them (Q3): on the tenant
@@ -20,7 +21,7 @@ import type { AdvisoryCandidate, AdvisoryPairHour } from "./advisory-engine.type
  * - **"Real"** is the ML scorer's own line (Q6), word for word
  *   (`apps/ml/src/bms_ml/db/sql.py`; `tests/e1.6-advisories-containment.test.ts`
  *   holds the text equal), on an active `kw` point.
- * - **The ranking and the pair reads** run on the fleet pool with the candidate
+ * - **The ranking, the baseline-hour and the pair reads** run on the fleet pool with the candidate
  *   ids only, never `null`; `= ANY($1::uuid[])` is their isolation control.
  */
 
@@ -208,4 +209,32 @@ export async function readPairHours(
     );
   }
   return out;
+}
+
+/**
+ * `F4.384` (owner ruling 2026-11-17, plan Q2 option b) — the mean `kw` per asset per **UTC**
+ * hour over `[fromMs, toMs)` from the `_1h` aggregate: kWh for a closed hour (`bucketHours("1h")`
+ * is 1). The four baseline windows' hours; the window's own 7 days stay on
+ * `readLocalHourEnergy`'s `_5m` local hours. In a half-hour zone a UTC hour straddles a local
+ * day's edge, so a baseline day can be up to 30 minutes off — accepted under Q2 (b), for about a
+ * twelfth of the rows. `pool` is the fleet pool; the candidate ids are the isolation control.
+ */
+export async function readUtcHourEnergy(
+  pool: Pick<Pool, "query">,
+  ids: readonly string[],
+  fromMs: number,
+  toMs: number,
+): Promise<HourlyEnergy[]> {
+  if (ids.length === 0 || toMs <= fromMs) return [];
+  const { rows } = await pool.query<{ asset_id: string; bucket_ms: number | string; kwh: number | string }>(
+    `SELECT p.asset_id AS asset_id, (extract(epoch FROM p.bucket) * 1000)::float8 AS bucket_ms,
+            (${avgExpr("p")})::float8 AS kwh
+       FROM ${relationOf("1h")} p
+      WHERE p.asset_id = ANY($1::uuid[])
+        AND p.point_key = 'kw'
+        AND p.bucket >= $2 AND p.bucket < $3
+      GROUP BY p.asset_id, p.bucket`,
+    [[...ids], new Date(fromMs), new Date(toMs)],
+  );
+  return rows.map((row) => ({ assetId: row.asset_id, bucketMs: Number(row.bucket_ms), kwh: Number(row.kwh) }));
 }

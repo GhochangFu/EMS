@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   aKwhTariffShowsNoMoney,
+  aSmallCorrectionKeepsADecimalInTheFieldAndTheLine,
   anUnpricedDayShowsNoMoney,
   aRegisterPfAboveOneFallsThrough,
   confidenceFollowsTheEvidence,
@@ -40,4 +41,6 @@ describe("E1.6a — low power factor (ADR 0137, plan §4.2)", () => {
   it("kW and PF in 135 hours passes; 134 gives no advisory", () => thePfPathNeedsCoverage());
   it("measured needs registers, a band and a billing meter; R-i otherwise", () => confidenceFollowsTheEvidence());
   it("only an electrical asset qualifies", () => onlyElectricalAssetsQualify());
+  it("F4.384: a correction under 1 kVAr keeps a decimal in the kvar field and the line", () =>
+    aSmallCorrectionKeepsADecimalInTheFieldAndTheLine());
 });

@@ -131,9 +131,24 @@ export function pfNoMoneyLine(reason: PfNoMoneyReason, currency: string): string
   }
 }
 
-/** `About <n> kVAr of correction would bring it to <target>.` */
+/**
+ * The kVAr a card shows (`F4.384`, owner ruling 2026-11-17): under 1 kVAr one decimal, rounded
+ * half up (0.45 is 0.5); a positive value under 0.05 shows 0.1, never 0; from 1 up a whole
+ * number. `toPrecision(12)` first, so a computed value one float step under a half (for example
+ * 0.4499999999999999, which is 0.45 to the meter) still rounds up. The `kvar` field and {@link kvarLine} both use it.
+ */
+export function shownKvar(kvar: number): number {
+  const tenths = Math.round(Number((kvar * 10).toPrecision(12))) / 10;
+  if (tenths >= 1) return Math.round(Number(kvar.toPrecision(12)));
+  if (kvar > 0 && tenths < 0.1) return 0.1;
+  return tenths;
+}
+
+/** `About <n> kVAr of correction would bring it to <target>.` — `<n>` is {@link shownKvar}'s. */
 export function kvarLine(kvar: number, currency: string): string {
-  return `About ${formatQuantity(kvar, currency)} kVAr of correction would bring it to ${TARGET}.`;
+  const shown = shownKvar(kvar);
+  const text = shown < 1 ? formatPlain(shown, 1) : formatQuantity(shown, currency);
+  return `About ${text} kVAr of correction would bring it to ${TARGET}.`;
 }
 
 // --- excess_consumption ------------------------------------------------------

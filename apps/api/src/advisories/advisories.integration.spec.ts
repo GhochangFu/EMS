@@ -21,7 +21,7 @@ import { ENERGY_TARIFF_KEY } from "../telemetry/energy-cost";
 import { readLocalHourEnergy } from "../telemetry/energy-cost-by-day";
 import { materializeCompleteBuckets } from "../testing/cagg-materialize";
 import type { AdvisoriesController } from "./advisories.controller";
-import { readAdvisoryCandidates } from "./advisories.reads";
+import { readAdvisoryCandidates, readUtcHourEnergy } from "./advisories.reads";
 import type { AdvisoriesService } from "./advisories.service";
 import { pfHeadline } from "./advisory-lines";
 import { advisoryWindows, windowTotals } from "./advisory-window";
@@ -461,10 +461,38 @@ const relationsOf = (node: PlanNode): string[] => [
   ...(node.Plans ?? []).flatMap(relationsOf),
 ];
 
+/** Whether `relations` reads the storage of `telemetry.<view>`: its materialization hypertable or one of its chunks. */
+async function assertReadsAggregateStorage(ctx: AdvisoriesContext, relations: readonly string[], view: string): Promise<void> {
+  // The aggregate's own storage, by the catalog join `calc-windows.service.ts` uses.
+  const { rows: storage } = await ctx.fleet.query<{ name: string; id: number }>(
+    `SELECT c.materialization_hypertable_name AS name, h.id AS id
+       FROM timescaledb_information.continuous_aggregates c
+       JOIN _timescaledb_catalog.hypertable h
+         ON h.schema_name = c.materialization_hypertable_schema
+        AND h.table_name = c.materialization_hypertable_name
+      WHERE c.view_schema = 'telemetry' AND c.view_name = $1`,
+    [view],
+  );
+  expect(storage).toHaveLength(1);
+  const { name, id } = storage[0]!;
+  const chunk = new RegExp(`^_hyper_${Number(id)}_\\d+_chunk$`);
+  expect(relations.some((r) => r === name || chunk.test(r)), `${view}: ${name} (id ${id}) in: ${relations.join(", ")}`).toBe(true);
+}
+
+/** Captures the statement and values a read sends, without running it. */
+function capturingPool(sink: { text: string; values: unknown[] }[]): Pick<pg.Pool, "query"> {
+  return {
+    query: (async (text: string, values: unknown[]) => {
+      sink.push({ text, values });
+      return { rows: [] };
+    }) as unknown as pg.Pool["query"],
+  };
+}
+
 /**
  * Plan T1.8's EXPLAIN, shape only: the hour read's own statement (captured from
  * `readLocalHourEnergy`, not restated) plans on the fleet role for the fixture's
- * meters over the 35 days, and reads the `_5m` aggregate's storage — its
+ * meters over the window's 7 days (`F4.384`: the baselines read `_1h`, below), and reads the `_5m` aggregate's storage — its
  * materialization hypertable, or a chunk of it (`_hyper_<id>_<n>_chunk`, `<id>`
  * that hypertable's catalog id), not any hypertable's chunk. Whether that
  * storage is read by index at the demo host's size is the owner's `EXPLAIN
@@ -473,37 +501,43 @@ const relationsOf = (node: PlanNode): string[] => [
  */
 export async function assertTheHourReadPlansOnTheAggregate(ctx: AdvisoriesContext): Promise<void> {
   const windows = advisoryWindows(ctx.fx.nowMs, KOLKATA);
-  let captured: { text: string; values: unknown[] } | null = null;
+  const captured: { text: string; values: unknown[] }[] = [];
   await readLocalHourEnergy(
-    {
-      query: (async (text: string, values: unknown[]) => {
-        captured = { text, values };
-        return { rows: [] };
-      }) as unknown as pg.Pool["query"],
-    },
+    capturingPool(captured),
     Object.values(ctx.fx.assets).map((assetId) => ({ assetId, zone: KOLKATA })),
-    new Date(windows.readFromMs),
+    new Date(windows.fromMs),
     new Date(windows.readToMs - 1),
   );
-  expect(captured).not.toBeNull();
-  const { text, values } = captured as unknown as { text: string; values: unknown[] };
+  expect(captured).toHaveLength(1);
+  const { text, values } = captured[0]!;
   expect(text).toContain("telemetry.point_values_5m");
   const result = await ctx.fleet.query<{ "QUERY PLAN": Array<{ Plan: PlanNode }> }>(`EXPLAIN (FORMAT JSON) ${text}`, values);
   const plan = result.rows[0]?.["QUERY PLAN"]?.[0]?.Plan;
   expect(plan).toBeDefined();
-  const relations = relationsOf(plan!);
+  await assertReadsAggregateStorage(ctx, relationsOf(plan!), "point_values_5m");
+}
 
-  // The `_5m` aggregate's own storage, by the catalog join `calc-windows.service.ts` uses.
-  const { rows: storage } = await ctx.fleet.query<{ name: string; id: number }>(
-    `SELECT c.materialization_hypertable_name AS name, h.id AS id
-       FROM timescaledb_information.continuous_aggregates c
-       JOIN _timescaledb_catalog.hypertable h
-         ON h.schema_name = c.materialization_hypertable_schema
-        AND h.table_name = c.materialization_hypertable_name
-      WHERE c.view_schema = 'telemetry' AND c.view_name = 'point_values_5m'`,
-  );
-  expect(storage).toHaveLength(1);
-  const { name, id } = storage[0]!;
-  const chunk = new RegExp(`^_hyper_${Number(id)}_\\d+_chunk$`);
-  expect(relations.some((r) => r === name || chunk.test(r)), `${name} (id ${id}) in: ${relations.join(", ")}`).toBe(true);
+/**
+ * `F4.384`: the same shape check for the baseline hour read — `readUtcHourEnergy`'s own
+ * statement over the 28 baseline days plans on the fleet role and reads the `_1h` aggregate's
+ * storage. Its figures are held by the excess assertion above: in the fixture's half-hour zone
+ * every local baseline day still holds 24 UTC hours at the one sample each, so the baselines
+ * read 50 kW × 168 h per window either way.
+ */
+export async function assertTheBaselineHourReadPlansOnTheHourlyAggregate(ctx: AdvisoriesContext): Promise<void> {
+  const windows = advisoryWindows(ctx.fx.nowMs, KOLKATA);
+  const captured: { text: string; values: unknown[] }[] = [];
+  await readUtcHourEnergy(capturingPool(captured), Object.values(ctx.fx.assets), windows.readFromMs, windows.fromMs);
+  expect(captured).toHaveLength(1);
+  const { text, values } = captured[0]!;
+  expect(text).toContain("telemetry.point_values_1h");
+  const result = await ctx.fleet.query<{ "QUERY PLAN": Array<{ Plan: PlanNode }> }>(`EXPLAIN (FORMAT JSON) ${text}`, values);
+  const plan = result.rows[0]?.["QUERY PLAN"]?.[0]?.Plan;
+  expect(plan).toBeDefined();
+  await assertReadsAggregateStorage(ctx, relationsOf(plan!), "point_values_1h");
+
+  // The rows themselves: X's 28 baseline days, 672 UTC hours at its 50 kW.
+  const hours = await readUtcHourEnergy(ctx.fleet, [ctx.fx.assets.x], windows.readFromMs, windows.fromMs);
+  expect(hours).toHaveLength(28 * 24);
+  for (const hour of hours) expect(hour.kwh).toBeCloseTo(KW, 9);
 }

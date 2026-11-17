@@ -19,6 +19,7 @@ import {
   assertOutsideScopeIsEmptyOr403,
   assertSimulatedNoZoneAndEnergyOffAnswerNone,
   assertTenantIsolationOnBothBranches,
+  assertTheBaselineHourReadPlansOnTheHourlyAggregate,
   assertTheContextChangesNoNumber,
   assertTheHourReadPlansOnTheAggregate,
   assertTheLowPfMeterMatchesTheHandArithmetic,
@@ -125,5 +126,9 @@ describe.skipIf(!connectionString)("E1.6a — the advisories against Postgres (A
 
   it("EXPLAIN: the hour read plans on the 5-minute aggregate for the fixture's meters", async () => {
     await assertTheHourReadPlansOnTheAggregate(ctx);
+  });
+
+  it("F4.384 EXPLAIN: the baseline hour read plans on the hourly aggregate and returns X's 672 hours", async () => {
+    await assertTheBaselineHourReadPlansOnTheHourlyAggregate(ctx);
   });
 });

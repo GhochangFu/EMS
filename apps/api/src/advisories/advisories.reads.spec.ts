@@ -7,6 +7,7 @@ import {
   candidateOf,
   readPairHours,
   readTopEnergyAssets,
+  readUtcHourEnergy,
   type AdvisoryCandidateDbRow,
 } from "./advisories.reads";
 
@@ -151,4 +152,39 @@ export function aRowBecomesACandidateOnlyWithItsOwnZoneAndEnergyNotOff(): void {
   expect(candidateOf(row({ energy_features: "on" }))).not.toBeNull();
   // A char(3) currency is trimmed.
   expect(candidateOf(row({ currency: "USD" }))?.currency).toBe("USD");
+}
+
+/**
+ * `F4.384` (plan Q2 option b): the baseline hours from the `_1h` aggregate in UTC hour buckets —
+ * the candidate ids bound as `= ANY($1::uuid[])`, `kw` only, the half-open range bound, the
+ * sample-weighted mean (kWh for an hour), and no zone anywhere in the statement.
+ */
+export async function theBaselineHourReadIsTheHourlyAggregateInUtc(): Promise<void> {
+  const fromMs = Date.parse("2026-10-12T18:30:00Z");
+  const toMs = Date.parse("2026-11-09T18:30:00Z");
+  const t0 = Date.parse("2026-10-12T19:00:00Z");
+  const { pool, calls } = fakePool([
+    { asset_id: A1, bucket_ms: t0, kwh: 50 },
+    { asset_id: A2, bucket_ms: String(t0 + 3_600_000), kwh: "42.5" },
+  ]);
+  expect(await readUtcHourEnergy(pool, [A1, A2], fromMs, toMs)).toEqual([
+    { assetId: A1, bucketMs: t0, kwh: 50 },
+    { assetId: A2, bucketMs: t0 + 3_600_000, kwh: 42.5 },
+  ]);
+  expect(calls).toHaveLength(1);
+  const text = normalise(calls[0]!.text);
+  expect(text).toContain("FROM telemetry.point_values_1h p");
+  expect(text).not.toContain("point_values_5m");
+  expect(text).toContain("p.asset_id = ANY($1::uuid[])");
+  expect(text).toContain("p.point_key = 'kw'");
+  expect(text).toContain("p.bucket >= $2 AND p.bucket < $3");
+  expect(text).toContain("(sum(p.sum_value) / sum(p.sample_count))");
+  expect(text).toContain("GROUP BY p.asset_id, p.bucket");
+  expect(text).not.toMatch(/time zone|unnest|\$4/i);
+  expect(calls[0]!.values).toEqual([[A1, A2], new Date(fromMs), new Date(toMs)]);
+  // No candidate or an empty range, no read.
+  const empty = fakePool([]);
+  expect(await readUtcHourEnergy(empty.pool, [], fromMs, toMs)).toEqual([]);
+  expect(await readUtcHourEnergy(empty.pool, [A1], toMs, toMs)).toEqual([]);
+  expect(empty.calls).toEqual([]);
 }
