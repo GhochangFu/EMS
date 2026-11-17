@@ -61,11 +61,11 @@ type ControlRoomOrganizationPageProps = {
  * (`OrganizationKpiStrip`), which replaced `F4.259`'s two-tile live/not-live strip here. The strip
  * is its own read, so a failed one leaves the cards and the rail standing.
  *
- * `E1.9e` (ADR 0135 Amendment 8 decision 13) — after Asset health: the compact findings card
- * (`MlFindingsCard`), both kinds, scoped to the organization. Like the other panels it renders only
- * with the overview.
+ * `E1.9e` (ADR 0135 Amendment 8 decision 13) — the compact findings card (`MlFindingsCard`), both
+ * kinds, scoped to the organization. Like the other panels it renders only with the overview.
+ * `E1.9g` (ADR 0135 Amendment 10 Q5) moved it directly above Asset health, after the cost chart.
  *
- * `E1.8c` (ADR 0050 Amendment 5) — directly after Asset health and before the findings card: the
+ * `E1.8c` (ADR 0050 Amendment 5) — directly after Asset health and before the load trend: the
  * *Bad actors — advisory* card (`HealthBadActorsCard`), scoped to the organization, without its
  * count line (the organization's sits under the donut).
  */
@@ -177,13 +177,13 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
           <ActiveAlarmsRail organizationId={organizationId} />
         </div>
       </div>
-      {/* `F4.337` — the strip's daily cost chart, between the alarms and Asset health. */}
+      {/* `F4.337` — the strip's daily cost chart, after the alarms; since `E1.9g` the findings card follows it. */}
       <OrganizationStripCharts key={`strip-charts-${organizationId}`} organizationId={organizationId} />
+      {/* `E1.9e` / `E1.9g` (ADR 0135 Amendment 10 Q5) — the compact findings card, directly above Asset health. */}
+      <MlFindingsCard kinds={ORGANIZATION_FINDINGS_KINDS} scope={{ organizationId }} compact />
       <HealthSummarySection organizationId={organizationId} />
       {/* `E1.8c` (ADR 0050 Amendment 5) — directly after Asset health; no count line, the donut has it. */}
       <HealthBadActorsCard key={`bad-actors-${organizationId}`} organizationId={organizationId} />
-      {/* `E1.9e` (ADR 0135 Amendment 8 decision 13) — the compact findings card, after Asset health. */}
-      <MlFindingsCard kinds={ORGANIZATION_FINDINGS_KINDS} scope={{ organizationId }} compact />
       {energyShown ? <OrganizationLoadTrend organizationId={organizationId} /> : null}
       <ScopedDashboardsList organizationId={organizationId} />
     </>
