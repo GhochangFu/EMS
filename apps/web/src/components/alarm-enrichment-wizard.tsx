@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { AlarmDetailsResponse, AlarmSkillDto } from "@bms/shared";
+import { ALARM_ENRICHMENT_TEXT_MAX } from "@bms/shared/contracts";
 
 import { saveAlarmEnrichment } from "../api/alarms";
 import type { AssetRow } from "../api/assets";
@@ -84,15 +85,21 @@ const TEXT_FIELDS: Readonly<Record<string, readonly (readonly [string, string, s
 export function AlarmEnrichmentWizard({ details, skills, assets, assetsLoading, onCancel, onSaved, rootCauseFill }: AlarmEnrichmentWizardProps) {
   const [values, setValues] = useState<Body>(() => bodyOf(details));
   const [assetQuery, setAssetQuery] = useState("");
-  // E2.3: a suggestion waiting on the replace question, and whether one was filled (R-l: `dirty`).
-  const [pendingFill, setPendingFill] = useState<string | null>(null);
-  const [filled, setFilled] = useState(false);
+  // E2.3: a suggestion waiting on the replace question, and the `seq` of the click that last
+  // filled the field — `null` when none has since the last save (R-l: `dirty`).
+  const [pendingFill, setPendingFill] = useState<{ readonly text: string; readonly seq: number } | null>(null);
+  const [filledSeq, setFilledSeq] = useState<number | null>(null);
+  const filled = filledSeq !== null;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const keepRef = useRef<HTMLButtonElement>(null);
+  const askedRef = useRef(false);
+  const questionId = useId();
 
-  function fillRootCause(fill: string): void {
+  function fillRootCause(fill: { readonly text: string; readonly seq: number }): void {
     // `rootCause` only, and the whole text: never appended to what was there.
-    setValues((prev) => ({ ...prev, rootCause: fill }));
+    setValues((prev) => ({ ...prev, rootCause: fill.text }));
     setPendingFill(null);
-    setFilled(true);
+    setFilledSeq(fill.seq);
   }
 
   // Each click is read once, when it arrives (`seq`), against the field as it stands now — on
@@ -101,14 +108,33 @@ export function AlarmEnrichmentWizard({ details, skills, assets, assetsLoading, 
   useEffect(() => {
     if (!rootCauseFill) return;
     const now = values.rootCause;
-    if (!holdsText(now)) fillRootCause(rootCauseFill.text);
-    else if ((now as string).trim() === rootCauseFill.text.trim()) setPendingFill(null);
-    else setPendingFill(rootCauseFill.text);
+    if (!holdsText(now)) fillRootCause(rootCauseFill);
+    else if (now.trim() === rootCauseFill.text.trim()) setPendingFill(null);
+    else setPendingFill(rootCauseFill);
+    // Keyed on `seq` alone, deliberately: it changes per click, and `values` must not re-run this.
   }, [rootCauseFill?.seq]);
+
+  // The replace question takes focus on its safe answer; when it closes, focus returns to the
+  // Root cause box if this step shows it, else to the wizard — never left on `document.body`.
+  useEffect(() => {
+    if (pendingFill !== null) {
+      askedRef.current = true;
+      keepRef.current?.focus();
+      return;
+    }
+    if (!askedRef.current) return;
+    askedRef.current = false;
+    const box = rootRef.current?.querySelector<HTMLTextAreaElement>("#root-cause");
+    (box ?? rootRef.current)?.focus();
+  }, [pendingFill]);
 
   const save = useMutation({
     mutationFn: (body: Body) => saveAlarmEnrichment(details.id, body),
-    onSuccess: (updated) => onSaved(updated),
+    onSuccess: (updated) => {
+      // Saved now: the status line's "Nothing is saved" would be stale.
+      setFilledSeq(null);
+      onSaved(updated);
+    },
   });
   const set = (key: string, value: unknown) => setValues({ ...values, [key]: value });
   const text = (key: string): string => (typeof values[key] === "string" ? (values[key] as string) : "");
@@ -123,12 +149,17 @@ export function AlarmEnrichmentWizard({ details, skills, assets, assetsLoading, 
   const entry = operationsWizardEntry("alarm.enrichment.set");
 
   return (
-    <div className="flex flex-col gap-3">
+    <div ref={rootRef} tabIndex={-1} className="flex flex-col gap-3 outline-none">
       {pendingFill !== null ? (
-        <div role="alertdialog" aria-label="Replace the root cause" className="surface-raised-sm flex flex-col gap-2 px-3 py-2 text-xs">
-          <p>{ROOT_CAUSE_REPLACE_QUESTION}</p>
+        <div
+          role="alertdialog"
+          aria-label="Replace the root cause"
+          aria-describedby={questionId}
+          className="surface-raised-sm flex flex-col gap-2 px-3 py-2 text-xs"
+        >
+          <p id={questionId}>{ROOT_CAUSE_REPLACE_QUESTION}</p>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setPendingFill(null)} className="surface-button px-3 py-1 text-xs">
+            <button ref={keepRef} type="button" onClick={() => setPendingFill(null)} className="surface-button px-3 py-1 text-xs">
               Keep current text
             </button>
             <button type="button" onClick={() => fillRootCause(pendingFill)} className="surface-button-primary px-3 py-1 text-xs">
@@ -137,11 +168,11 @@ export function AlarmEnrichmentWizard({ details, skills, assets, assetsLoading, 
           </div>
         </div>
       ) : null}
-      {filled ? (
-        <p role="status" className="text-xs text-ink-muted">
-          {ROOT_CAUSE_FILLED_STATUS}
-        </p>
-      ) : null}
+      {/* Always mounted, so a screen reader is already watching it; the text is keyed on the
+          fill's `seq`, so a second fill is new text and is announced again. */}
+      <p role="status" className="text-xs text-ink-muted">
+        {filledSeq !== null ? <span key={filledSeq}>{ROOT_CAUSE_FILLED_STATUS}</span> : null}
+      </p>
       <WizardShell
         entry={operationsWizardEntry("alarm.enrichment.set")}
         params={{ id: details.id }}
@@ -237,7 +268,7 @@ export function AlarmEnrichmentWizard({ details, skills, assets, assetsLoading, 
                 <label className={labelClass} htmlFor={id}>
                   {label}
                 </label>
-                <textarea id={id} className={fieldClass} rows={2} value={text(key)} maxLength={2000} onChange={(e) => set(key, e.target.value || null)} />
+                <textarea id={id} className={fieldClass} rows={2} value={text(key)} maxLength={ALARM_ENRICHMENT_TEXT_MAX} onChange={(e) => set(key, e.target.value || null)} />
               </div>
             ))
           )

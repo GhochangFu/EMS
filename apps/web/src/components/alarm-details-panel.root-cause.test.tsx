@@ -9,11 +9,15 @@ import {
   aFillOnStepThreeShowsTheStatusLine,
   aViewerSeesTheSectionAndNoButton,
   cancelAfterAFillAsks,
+  eachFillIsAnnouncedAgain,
   savedTextAsksBeforeReplacing,
   submitSendsTheFilledRootCauseOnly,
   theFilledTextStaysEditable,
+  theReplaceQuestionMovesFocus,
+  theReplaceQuestionOffStepOneKeepsFocusInTheWizard,
   theSameTextAgainAsksNothing,
   theSectionSitsBetweenTheClassBlockAndTheForm,
+  theStatusLineClearsAfterSubmit,
   typedTextAsksBeforeReplacing,
 } from "./alarm-details-panel.root-cause.spec";
 
@@ -40,4 +44,9 @@ describe("E2.3 — Use as root cause on the Alarm Details panel", () => {
   it("a failed suggestions read leaves the panel working", () => aFailedReadLeavesThePanelWorking());
   it("Cancel after a fill asks before leaving", () => cancelAfterAFillAsks());
   it("a fill on step 3 shows the status line and does not jump", () => aFillOnStepThreeShowsTheStatusLine());
+  it("the status line clears after a successful Submit", () => theStatusLineClearsAfterSubmit());
+  it("the live region is always there and each fill is announced again", () => eachFillIsAnnouncedAgain());
+  it("the replace question takes focus and hands it back to the field", () => theReplaceQuestionMovesFocus());
+  it("off step 1 the replace question hands focus to the wizard, not the body", () =>
+    theReplaceQuestionOffStepOneKeepsFocusInTheWizard());
 });

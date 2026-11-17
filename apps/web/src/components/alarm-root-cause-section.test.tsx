@@ -5,12 +5,15 @@ import { afterEach, describe, it, vi } from "vitest";
 import {
   aClickCallsOnUseOnceAndNoFetch,
   aFailedReadShowsTheFailedSentence,
+  aFailedRefetchKeepsTheCandidates,
+  aWindowFocusDoesNotRefetch,
   noContextNoLine,
   showsTheEmptySentence,
   showsThePillAndTheDisclaimer,
   showsTheStrengthWordsAndNoPercentage,
   theClassCauseHasNoButton,
   theContextLineLinksToTheHistoryWindow,
+  twinEvidenceItemsGetDistinctKeys,
   usesNoAlarmOrSeverityColour,
   withoutOnUseThereIsNoButton,
 } from "./alarm-root-cause-section.spec";
@@ -36,4 +39,7 @@ describe("E2.3 — the Possible causes section", () => {
   it("a click calls onUse once and makes no request", () => aClickCallsOnUseOnceAndNoFetch());
   it("the context line links to the asset history window", () => theContextLineLinksToTheHistoryWindow());
   it("no context item, no context line", () => noContextNoLine());
+  it("a failed refetch keeps the loaded candidates", () => aFailedRefetchKeepsTheCandidates());
+  it("a window focus does not read the suggestions again", () => aWindowFocusDoesNotRefetch());
+  it("twin evidence items get distinct keys", () => twinEvidenceItemsGetDistinctKeys());
 });

@@ -1,6 +1,12 @@
 import { expect } from "vitest";
 
-import type { RootCauseCandidate, RootCauseContext, RootCauseEvidenceItem } from "@bms/shared/contracts";
+import {
+  ALARM_ENRICHMENT_TEXT_MAX,
+  alarmEnrichmentUpsertBodySchema,
+  type RootCauseCandidate,
+  type RootCauseContext,
+  type RootCauseEvidenceItem,
+} from "@bms/shared/contracts";
 
 import {
   anomalyContextLine,
@@ -81,6 +87,9 @@ export function aFillIsTheQuoteOrTheTitle(): void {
 export function aLongQuoteIsCutToTheFieldLimit(): void {
   const filled = rootCauseFillText(candidate({ rule: "recorded_before", quote: "x".repeat(2500), occurrences: 1 }));
   expect(ROOT_CAUSE_FILL_MAX).toBe(2000);
+  // The server's limit, not a restatement of it.
+  expect(ROOT_CAUSE_FILL_MAX).toBe(ALARM_ENRICHMENT_TEXT_MAX);
+  expect(alarmEnrichmentUpsertBodySchema.safeParse({ rootCause: "x".repeat(ALARM_ENRICHMENT_TEXT_MAX + 1) }).success).toBe(false);
   expect(filled).toHaveLength(2000);
 }
 

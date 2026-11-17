@@ -1,5 +1,6 @@
 import { assetLabelOf } from "@bms/shared";
 import {
+  ALARM_ENRICHMENT_TEXT_MAX,
   ROOT_CAUSE_ANOMALY_LOOKBACK_HOURS,
   type RootCauseCandidate,
   type RootCauseContext,
@@ -15,8 +16,8 @@ import { detectorLabel } from "./anomaly-series";
  * every sentence is held by a unit test and not by a screenshot.
  */
 
-/** The enrichment form's `rootCause` limit (`maxLength` on its textarea). */
-export const ROOT_CAUSE_FILL_MAX = 2000;
+/** The enrichment form's `rootCause` limit: the server's own (`alarmEnrichmentUpsertBodySchema`). */
+export const ROOT_CAUSE_FILL_MAX = ALARM_ENRICHMENT_TEXT_MAX;
 
 /** The candidate's heading: R4 and R5 quote what a person wrote; R4 adds its count from 2. */
 export function candidateHeading(c: RootCauseCandidate): string {
@@ -55,7 +56,7 @@ export function rootCauseFillText(c: RootCauseCandidate): string | null {
 }
 
 /** A non-blank string. */
-export function holdsText(value: unknown): boolean {
+export function holdsText(value: unknown): value is string {
   return typeof value === "string" && value.trim() !== "";
 }
 

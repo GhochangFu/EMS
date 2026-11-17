@@ -301,3 +301,56 @@ export async function aFillOnStepThreeShowsTheStatusLine(): Promise<void> {
   for (let step = 0; step < 2; step += 1) await userEvent.click(screen.getByRole("button", { name: "Back" }));
   expect(rootCauseBox().value).toBe(SUGGESTION);
 }
+
+/** After a successful Submit the status line no longer says nothing is saved. */
+export async function theStatusLineClearsAfterSubmit(): Promise<void> {
+  const spies = await renderPanel(details());
+  await userEvent.click(await useButton());
+  expect(screen.getByRole("status")).toHaveTextContent(STATUS);
+  await toReviewAndSubmit();
+  await waitFor(() => expect(spies.save).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.queryByText(STATUS)).toBeNull());
+}
+
+/** The live region is there before any fill, and each fill puts fresh text in it (announced again). */
+export async function eachFillIsAnnouncedAgain(): Promise<void> {
+  await renderPanel(details());
+  const status = screen.getByRole("status");
+  expect(status).toHaveTextContent("");
+  await userEvent.click(await useButton());
+  expect(status).toHaveTextContent(STATUS);
+  const first = status.firstChild;
+  await userEvent.type(rootCauseBox(), " more");
+  await userEvent.click(await useButton());
+  await userEvent.click(screen.getByRole("button", { name: "Replace" }));
+  expect(screen.getByRole("status")).toBe(status);
+  expect(status).toHaveTextContent(STATUS);
+  expect(status.firstChild).not.toBe(first);
+}
+
+/** The replace question takes focus on Keep, is described by its question, and hands focus back to the field. */
+export async function theReplaceQuestionMovesFocus(): Promise<void> {
+  await renderPanel(details({ enrichment: ENRICHMENT }));
+  await userEvent.click(await useButton());
+  const question = screen.getByRole("alertdialog");
+  const keep = within(question).getByRole("button", { name: "Keep current text" });
+  expect(document.activeElement).toBe(keep);
+  const describedBy = question.getAttribute("aria-describedby") ?? "";
+  expect(document.getElementById(describedBy)).toHaveTextContent(QUESTION);
+  await userEvent.click(keep);
+  expect(document.activeElement).toBe(rootCauseBox());
+
+  await userEvent.click(await useButton());
+  await userEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Replace" }));
+  expect(document.activeElement).toBe(rootCauseBox());
+}
+
+/** Off step 1 the Root cause box is not on screen: focus goes to the wizard, never to the body. */
+export async function theReplaceQuestionOffStepOneKeepsFocusInTheWizard(): Promise<void> {
+  await renderPanel(details({ enrichment: ENRICHMENT }));
+  for (let step = 0; step < 2; step += 1) await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(await useButton());
+  await userEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Replace" }));
+  expect(document.activeElement).not.toBe(document.body);
+  expect(document.activeElement?.contains(screen.getByRole("region", { name: "Details" }))).toBe(true);
+}

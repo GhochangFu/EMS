@@ -54,13 +54,13 @@ function CandidateItem({ candidate, onUse }: { candidate: RootCauseCandidate; on
       {candidate.evidence.length > 0 ? (
         <ul className="mt-1 list-disc space-y-0.5 pl-4 text-2xs text-ink-muted">
           {candidate.evidence.map((item, index) => (
-            <li key={`${item.kind}:${item.alarmId ?? item.at ?? index}`}>{evidenceLine(item)}</li>
+            <li key={`${item.kind}:${item.alarmId ?? item.at ?? ""}:${index}`}>{evidenceLine(item)}</li>
           ))}
         </ul>
       ) : null}
       <div className="mt-1 flex flex-wrap items-center gap-3">
         {candidate.rule === "class_cause" ? (
-          <Link to="/alarm-kb" className="text-2xs text-ink underline hover:text-ink-muted">
+          <Link to="/alarm-kb" target="_blank" rel="noopener noreferrer" className="text-2xs text-ink underline hover:text-ink-muted">
             Open the alarm knowledge base
           </Link>
         ) : null}
@@ -83,7 +83,8 @@ function CandidateItem({ candidate, onUse }: { candidate: RootCauseCandidate; on
  * `E2.3` (ADR 0136 decision 6, plan §7 T2.3) — "Possible causes — advisory" on the alarm
  * details panel, between the class philosophy and the enrichment form. It mounts inside the
  * panel's loaded branch, so its read starts after the details; a failed read is one muted
- * sentence and leaves the rest of the panel working (`retry: false`, no alert).
+ * sentence and leaves the rest of the panel working (`retry: false`, no alert). New tabs for its
+ * links: leaving the page would unmount the panel and lose a fill not yet submitted.
  *
  * Advisory throughout: the Anomalies page's `Advisory` pill (R-j), the disclaimer, a strength
  * word and never a number, and the ink and neutral roles only — no alarm or severity colour
@@ -95,6 +96,9 @@ export function AlarmRootCauseSection({ alarmId, assetId, onUse }: AlarmRootCaus
     queryKey: ["alarms", "root-cause", alarmId],
     queryFn: () => fetchRootCauseSuggestions(alarmId),
     retry: false,
+    // Computed when the panel opens (plan §13): no background re-read to fail and hide them.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
   });
   const data = q.data;
 
@@ -107,10 +111,9 @@ export function AlarmRootCauseSection({ alarmId, assetId, onUse }: AlarmRootCaus
         </summary>
         <p className="mt-0.5 text-2xs text-ink-muted">{ROOT_CAUSE_DISCLAIMER}</p>
         <div className="mt-2 space-y-2 text-xs">
-          {q.isPending ? (
-            <p className="text-ink-muted">Looking for likely causes…</p>
-          ) : q.isError || data === undefined ? (
-            <p className="text-ink-muted">{ROOT_CAUSE_FAILED_SENTENCE}</p>
+          {data === undefined ? (
+            // Data first: a later failed read never hides candidates already loaded.
+            <p className="text-ink-muted">{q.isError ? ROOT_CAUSE_FAILED_SENTENCE : "Looking for likely causes…"}</p>
           ) : (
             <>
               {data.candidates.length === 0 ? (
@@ -124,7 +127,7 @@ export function AlarmRootCauseSection({ alarmId, assetId, onUse }: AlarmRootCaus
               )}
               {data.context.map((ctx) => (
                 <p key={`${ctx.kind}:${ctx.from}`} className="text-2xs">
-                  <Link to={contextHref(assetId, ctx)} className="text-ink underline hover:text-ink-muted">
+                  <Link to={contextHref(assetId, ctx)} target="_blank" rel="noopener noreferrer" className="text-ink underline hover:text-ink-muted">
                     {anomalyContextLine(ctx)}
                   </Link>
                 </p>

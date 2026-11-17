@@ -250,7 +250,8 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
               asset and gets no section (plan §17 Q4).
             */}
             {details.assetId !== null ? (
-              // The button only where the form is (`readOnly` is a viewer): no `onUse`, no button.
+              // The button only where the form is (`readOnly` is a viewer, or a non-acknowledger in the
+              // alarm bar): no `onUse`, no button.
               <AlarmRootCauseSection alarmId={alarmId} assetId={details.assetId} onUse={readOnly ? undefined : fillFromSuggestion} />
             ) : null}
 

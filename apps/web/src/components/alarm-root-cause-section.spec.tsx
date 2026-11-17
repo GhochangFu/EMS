@@ -1,5 +1,5 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -74,8 +74,16 @@ async function renderSection(
   answer: AlarmRootCauseSuggestionsResponse | Error,
   onUse?: (text: string) => void,
 ): Promise<HTMLElement> {
-  if (answer instanceof Error) vi.spyOn(alarmsApi, "fetchRootCauseSuggestions").mockRejectedValue(answer);
-  else vi.spyOn(alarmsApi, "fetchRootCauseSuggestions").mockResolvedValue(answer);
+  return (await renderSectionWith(answer, onUse)).region;
+}
+
+async function renderSectionWith(
+  answer: AlarmRootCauseSuggestionsResponse | Error,
+  onUse?: (text: string) => void,
+): Promise<{ region: HTMLElement; qc: QueryClient; fetchSpy: ReturnType<typeof vi.spyOn> }> {
+  const fetchSpy = vi.spyOn(alarmsApi, "fetchRootCauseSuggestions");
+  if (answer instanceof Error) fetchSpy.mockRejectedValue(answer);
+  else fetchSpy.mockResolvedValue(answer);
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
@@ -86,7 +94,7 @@ async function renderSection(
   );
   const region = screen.getByRole("region", { name: SECTION });
   await waitFor(() => expect(within(region).queryByText("Looking for likely causes…")).toBeNull());
-  return region;
+  return { region, qc, fetchSpy };
 }
 
 /** The summary says advisory, the pill is the Anomalies page's, and the disclaimer is there. */
@@ -121,13 +129,66 @@ export async function aFailedReadShowsTheFailedSentence(): Promise<void> {
   expect(within(region).queryByRole("alert")).toBeNull();
 }
 
-/** The ink and neutral roles only: no element carries an alarm or severity colour. */
+/**
+ * The ink and neutral roles only: no element carries an alarm, severity or info colour. The
+ * Advisory pill is the one exception — it is the Anomalies page's own `info` pill (R-j) — so
+ * its subtree is skipped, and `info-` is refused everywhere else.
+ */
 export async function usesNoAlarmOrSeverityColour(): Promise<void> {
-  const region = await renderSection(body({ candidates: [R1, R4, R5] }), () => {});
-  for (const node of [region, ...Array.from(region.querySelectorAll("*"))]) {
+  const region = await renderSection(
+    body({
+      candidates: [R1, R4, R5],
+      context: [
+        {
+          kind: "anomaly",
+          from: "2026-11-17T03:00:00.000Z",
+          to: "2026-11-17T09:00:00.000Z",
+          unusualHours: 2,
+          detectors: ["baseline_mad"],
+          contributingPoints: ["kw"],
+        },
+      ],
+    }),
+    () => {},
+  );
+  const pill = within(region).getByText("Advisory");
+  const checked = [region, ...Array.from(region.querySelectorAll("*"))].filter((node) => !pill.contains(node));
+  expect(checked.length).toBeGreaterThan(10);
+  for (const node of checked) {
     const cls = node.getAttribute("class") ?? "";
-    expect(cls, cls).not.toMatch(/critical|warning|severity|ok-/);
+    expect(cls, cls).not.toMatch(/critical|warning|severity|ok-|info-/);
   }
+}
+
+/** Loaded candidates survive a failed refetch: data is shown before an error is considered. */
+export async function aFailedRefetchKeepsTheCandidates(): Promise<void> {
+  const { region, qc, fetchSpy } = await renderSectionWith(body({ candidates: [R4] }));
+  expect(within(region).getByText(/Recorded before:/)).toBeInTheDocument();
+  fetchSpy.mockRejectedValue(new Error("alarms/:id/root-cause-suggestions 500"));
+  await act(() => qc.refetchQueries({ queryKey: ["alarms", "root-cause", ALARM_ID] }).catch(() => undefined));
+  await waitFor(() => expect(qc.getQueryState(["alarms", "root-cause", ALARM_ID])?.status).toBe("error"));
+  expect(within(region).getByText(/Recorded before:/)).toBeInTheDocument();
+  expect(within(region).queryByText("Suggestions could not be loaded.")).toBeNull();
+}
+
+/** Computed when the panel opens (plan §13): a window focus does not read them again. */
+export async function aWindowFocusDoesNotRefetch(): Promise<void> {
+  const { fetchSpy } = await renderSectionWith(body());
+  expect(fetchSpy).toHaveBeenCalledTimes(1);
+  act(() => focusManager.setFocused(false));
+  act(() => focusManager.setFocused(true));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(fetchSpy).toHaveBeenCalledTimes(1);
+  focusManager.setFocused(undefined);
+}
+
+/** Two evidence items of one kind at one instant still get distinct keys (no React key warning). */
+export async function twinEvidenceItemsGetDistinctKeys(): Promise<void> {
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const twin = R1.evidence[0]!;
+  await renderSection(body({ candidates: [{ ...R1, evidence: [twin, { ...twin }] }] }));
+  const keyWarnings = errors.mock.calls.filter((call) => String(call[0]).includes("same key"));
+  expect(keyWarnings).toEqual([]);
 }
 
 /** With no `onUse` (a viewer, a read-only panel) there is no button. */
@@ -146,7 +207,10 @@ export async function theClassCauseHasNoButton(): Promise<void> {
     "Use as root cause: Maintenance on this asset",
     'Use as root cause: Recorded before: "Grease line cracked at the elbow."',
   ]);
-  expect(within(region).getByRole("link", { name: /knowledge base/i })).toHaveAttribute("href", "/alarm-kb");
+  const kb = within(region).getByRole("link", { name: /knowledge base/i });
+  expect(kb).toHaveAttribute("href", "/alarm-kb");
+  // A new tab: leaving the page would unmount the panel and lose an unsubmitted fill.
+  expect([kb.getAttribute("target"), kb.getAttribute("rel")]).toEqual(["_blank", "noopener noreferrer"]);
 }
 
 /** A click hands the fill text to `onUse` once and makes no request. */
@@ -177,6 +241,7 @@ export async function theContextLineLinksToTheHistoryWindow(): Promise<void> {
     }),
   );
   const link = within(region).getByRole("link", { name: /Readings on this asset were unusual/ });
+  expect([link.getAttribute("target"), link.getAttribute("rel")]).toEqual(["_blank", "noopener noreferrer"]);
   const href = new URL(link.getAttribute("href") ?? "", "http://x");
   expect(href.pathname).toBe(`/asset-history/${ASSET_ID}`);
   expect([href.searchParams.get("from"), href.searchParams.get("to"), href.searchParams.get("points")]).toEqual([
