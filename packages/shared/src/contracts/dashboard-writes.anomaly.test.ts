@@ -8,7 +8,7 @@ import {
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("E1.2d — the anomaly widget write arm (ADR 0135 Amendment 5 ruling 4(c))", () => {
-  it("has a write arm, last, and accepts a anomaly with one point", () => {
+  it("has a write arm, fifteenth, and accepts a anomaly with one point", () => {
     acceptsAAnomalyWithOnePoint();
   });
 

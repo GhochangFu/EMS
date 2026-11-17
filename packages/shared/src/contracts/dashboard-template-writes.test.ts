@@ -4,6 +4,7 @@ import {
   acceptsATemplateTrendStripWithoutASelection,
   rejectsAForecastWidgetInEitherTemplateContract,
   rejectsAnAnomalyWidgetInEitherTemplateContract,
+  rejectsAnMlFindingsWidgetInEitherTemplateContract,
   rejectsATemplateTrendStripCarryingASelection,
   theStockSiteTemplateStillParsesAsACreateBody,
   acceptsAMimicTabKeyNamingADomainTab,
@@ -208,5 +209,12 @@ describe("E1.4c — no template surface holds a forecast widget", () => {
 describe("E1.2d — no template surface holds an anomaly widget", () => {
   it("refuses an anomaly widget in a dashboard template, top-level and in a tab, and in an asset template", () => {
     rejectsAnAnomalyWidgetInEitherTemplateContract();
+  });
+});
+
+/** `E1.9f` / ADR 0135 Amendment 8 decision 13 — the ml_findings widget is builder palette only. */
+describe("E1.9f — no template surface holds an ml_findings widget", () => {
+  it("refuses an ml_findings widget in a dashboard template, on the Overview and in a tab, and in an asset template", () => {
+    rejectsAnMlFindingsWidgetInEitherTemplateContract();
   });
 });

@@ -4,6 +4,7 @@ import {
   runStockCatalogCodesMatchTheParamCharsetTests,
   runNoStockTemplateHoldsAForecastTest,
   runNoStockTemplateHoldsAnAnomalyTest,
+  runNoStockTemplateHoldsAnMlFindingsTest,
   runStockCatalogTests,
   runBenchmarkTableBindingTest,
   runMeteredPumpingRoleSplitTest,
@@ -72,5 +73,9 @@ describe("stock dashboard template catalog (F3.36 Part D, ADR 0049 decision 3)",
 
   it("holds no anomaly widget in any stock template, canvas or tab (E1.2d, R15)", () => {
     runNoStockTemplateHoldsAnAnomalyTest();
+  });
+
+  it("holds no ml_findings widget in any stock template, canvas or tab (E1.9f)", () => {
+    runNoStockTemplateHoldsAnMlFindingsTest();
   });
 });

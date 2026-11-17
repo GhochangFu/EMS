@@ -10,8 +10,8 @@ const exists = (rel: string): boolean => existsSync(join(repoRoot, rel));
 
 const MIGRATION_0086 = "packages/db/drizzle/0086_dashboard_widget_mimic_type.sql";
 const MIGRATION_0096 = "packages/db/drizzle/0096_site_widget_types_and_assets_catalog.sql";
-// `E1.2d`: the effective widget-type CHECK since the fifteenth value, `anomaly`.
-const MIGRATION_0161 = "packages/db/drizzle/0161_anomaly_widget_type.sql";
+// `E1.9f`: the effective widget-type CHECK since the sixteenth value, `ml_findings`.
+const MIGRATION_0163 = "packages/db/drizzle/0163_ml_findings_widget_type.sql";
 const MIGRATION_0087 ="packages/db/drizzle/0087_asset_roles_water_train.sql";
 const MIGRATION_0055 = "packages/db/drizzle/0055_dashboard_widget_table_type.sql";
 const MIGRATION_0050 = "packages/db/drizzle/0050_configurable_dashboard_tables.sql";
@@ -127,15 +127,15 @@ describe("F3.32 v1 — migration 0086 widens the widget-type CHECK", () => {
     expect(listed, "`mimic` is the value this migration exists to admit").toContain("mimic");
   });
 
-  it("the effective CHECK (0161) is exactly the contract's widget vocabulary", () => {
+  it("the effective CHECK (0163) is exactly the contract's widget vocabulary", () => {
     // This file's job is only to state that the migration's CHECK and the shared contract's
     // `widgetTypeSchema` must agree — a drift gate, not a use of either value.
-    const listed = checkedValues(MIGRATION_0161);
+    const listed = checkedValues(MIGRATION_0163);
     const declared = widgetTypes();
 
     expect(listed.length, "the parsed CHECK list must not be empty").toBeGreaterThan(0);
     expect([...listed].sort()).toEqual([...declared].sort());
-    expect(listed, "0161 keeps `mimic`").toContain("mimic");
+    expect(listed, "0163 keeps `mimic`").toContain("mimic");
   });
 
   it("0096's frozen CHECK keeps `mimic` and stays at its eleven values", () => {

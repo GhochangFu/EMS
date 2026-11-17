@@ -156,6 +156,15 @@ describe.skipIf(!has)("F3.73 — site widget types and catalog keys against a li
     });
   });
 
+  // `E1.9f` (ADR 0135 Amendment 8 decision 13) — migration `0163` widened the CHECK by `ml_findings`.
+  it("accepts ml_findings (E1.9f, migration 0163)", async () => {
+    await inTx(async (run) => {
+      const dash = await newDashboard(run);
+      const ok = await run(INSERT_WIDGET, [org, dash, "ml_findings"]);
+      expect(ok.rows.length, "ml_findings must be accepted").toBe(1);
+    });
+  });
+
   it("accepts both new catalog keys and still refuses an unknown one, naming the CHECK", async () => {
     await inTx(async (run) => {
       const dash = await newDashboard(run);

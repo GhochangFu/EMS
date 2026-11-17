@@ -11,6 +11,7 @@ import {
 } from "./site-widgets";
 import { trendStripWidgetConfigSchema } from "./trend-strip-widget";
 import { anomalyWidgetConfigSchema } from "./anomaly-widget";
+import { mlFindingsWidgetConfigSchema } from "./ml-findings-widget";
 import { forecastWidgetConfigSchema } from "./forecast-widget";
 import {
   bindingExclusiveMessage,
@@ -497,7 +498,7 @@ const bindsNothingArm = <T extends z.infer<typeof widgetTypeSchema>, C extends z
 const onePointArm = bindsNothingArm;
 
 /**
- * The arms, one per widget type (fifteen since `E1.2d`). Each stays a plain `.strict()` `ZodObject` — never
+ * The arms, one per widget type (sixteen since `E1.9f`). Each stays a plain `.strict()` `ZodObject` — never
  * wrapped in its own `.refine()`/`.superRefine()` — because `z.discriminatedUnion` accepts only
  * `ZodObject` arms; the cross-widget grid-fit check lives on the ARRAY field in
  * `widgetsWriteFieldSchema` below instead of here, for exactly that reason.
@@ -589,6 +590,9 @@ export const widgetWriteSchema = z.discriminatedUnion("widgetType", [
   // `E1.2d` / ADR 0135 Amendment 5 ruling 4(c) — the anomaly widget, the same shape: one point
   // (it names the scored asset and is not drawn), no source, config `{}` (plan R16).
   onePointArm("anomaly", anomalyWidgetConfigSchema),
+  // `E1.9f` / ADR 0135 Amendment 8 decision 13 — the ml_findings widget binds nothing (its scope is
+  // its dashboard's own); its config holds renderer options only, `.strict()`.
+  bindsNothingArm("ml_findings", mlFindingsWidgetConfigSchema),
 ]);
 
 const eachWidgetFitsTheGrid = (

@@ -339,6 +339,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // `E1.2d` — the anomaly arm, decided as its neighbours (the template walk refuses it by name).
   "createDashboardTemplateBodySchema/content/widgets[]&right|14": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "createDashboardTemplateBodySchema/content/widgets[]&right|14/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  // `E1.9f` — the ml_findings arm, decided as its neighbours (the template walk refuses it by name).
+  "createDashboardTemplateBodySchema/content/widgets[]&right|15": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|15/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   importStockTemplateBodySchema: STRICT(CALLER_ERROR),
   // `F3.73` ruling Q3a — the body became a union of two strict arms: `|0` the asset-group arm
   // (unchanged), `|1` the site arm `{ locationId, tabGroups? }`. Strict on both, so a body naming
@@ -387,6 +390,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // `E1.2d` — the anomaly arm, decided as its neighbours (the template walk refuses it by name).
   "updateDashboardTemplateBodySchema/content/widgets[]&right|14": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "updateDashboardTemplateBodySchema/content/widgets[]&right|14/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  // `E1.9f` — the ml_findings arm, decided as its neighbours (the template walk refuses it by name).
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|15": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|15/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   // `F3.10` (ADR 0057 decision 7, plan D15). One producer — the
   // `/admin/escalation-profiles` page — so Amendment 3's "how many producers
   // share this object?" has one answer, and the nested nodes carry their own
@@ -522,6 +528,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // `E1.2d` — the anomaly arm: `.strict()` like its neighbours, its config `{}` strict.
   "putDashboardWidgetsBodySchema/widgets[]|14": STRICT(DASHBOARD_WIDGET_ARM),
   "putDashboardWidgetsBodySchema/widgets[]|14/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
+  // `E1.9f` — the ml_findings arm: binds nothing, `.strict()` like its neighbours, its config strict.
+  "putDashboardWidgetsBodySchema/widgets[]|15": STRICT(DASHBOARD_WIDGET_ARM),
+  "putDashboardWidgetsBodySchema/widgets[]|15/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
   // `F3.67` U4 (ADR 0076 decision 5, plan D4). `kind` and `builtinKey` are
   // vocabularies with no `z.record` escape hatch, and `dashboardId` is a
   // single id — an unknown key here has nowhere legitimate to land, and

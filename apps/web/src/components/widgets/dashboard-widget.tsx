@@ -14,6 +14,7 @@ import { AssetClassStripWidget } from "./asset-class-strip-widget";
 import { BreakerTableWidget } from "./breaker-table-widget";
 import { CriticalSystemsListWidget } from "./critical-systems-list-widget";
 import { ForecastWidget } from "./forecast-widget";
+import { MlFindingsWidgetPreview } from "./ml-findings-widget-preview";
 import { ModuleSummaryCardWidget } from "./module-summary-card-widget";
 import { StateLegendWidget } from "./state-legend-widget";
 import { TankLevelWidget } from "./tank-level-widget";
@@ -311,6 +312,9 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
       const point = widget.points.find((p) => p.role === "primary") ?? widget.points[0] ?? null;
       return <AnomalyWidget title={title} status="ready" pointKey={point?.pointKey ?? null} read={null} />;
     }
+    // `E1.9f` — the static frame (no read): `MlFindingsWidgetLive` draws it on the live canvas.
+    case "ml_findings":
+      return <MlFindingsWidgetPreview title={title} status={status} />;
     default: {
       const unreachable: never = widget;
       return unreachable;

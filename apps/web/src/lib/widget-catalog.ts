@@ -130,10 +130,10 @@ type WidgetCatalogEntry = {
 };
 
 /**
- * The fifteen widget types, closed (ADR 0047 decision 2; `table` by ADR 0048 decision 5; `mimic` by
+ * The sixteen widget types, closed (ADR 0047 decision 2; `table` by ADR 0048 decision 5; `mimic` by
  * ADR 0079 decision 1; the five site widgets by `F3.73`; `breaker_table` by `F3.74`; `trend_strip`
  * by `F4.305`; `forecast` by `E1.4c`, ADR 0135 Amendment 3 C1; `anomaly` by `E1.2d`, ADR 0135
- * Amendment 5 ruling 4(c)). Label,
+ * Amendment 5 ruling 4(c); `ml_findings` by `E1.9f`, ADR 0135 Amendment 8 decision 13). Label,
  * icon and default size are presentation and belong here; `points` and `sources` are validation
  * rules and are imported rather than restated (Amendment 2 §1).
  */
@@ -268,6 +268,15 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     defaultSize: { w: 6, h: 4 },
     points: WIDGET_POINT_CARDINALITY.anomaly,
     sources: WIDGET_SOURCE_CARDINALITY.anomaly,
+  },
+  ml_findings: {
+    label: "ML findings",
+    // A card with a heading bar and three short text lines (`E1.9f`).
+    iconPath: "M3 4h18v16H3V4Zm2 2v2h14V6H5Zm0 4v2h10v-2H5Zm0 4v2h12v-2H5Z",
+    // Half the canvas: a few sentences of findings need width more than height.
+    defaultSize: { w: 6, h: 4 },
+    points: WIDGET_POINT_CARDINALITY.ml_findings,
+    sources: WIDGET_SOURCE_CARDINALITY.ml_findings,
   },
 };
 

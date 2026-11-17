@@ -26,7 +26,7 @@ const validAnomalyWidget = {
   sources: [],
 };
 
-/** The arm exists, last, and a widget with its one point parses. */
+/** The arm exists, fifteenth, and a widget with its one point parses. */
 export function acceptsAAnomalyWithOnePoint(): void {
   assert(
     widgetWriteSchema.options.length === widgetTypeSchema.options.length,
@@ -34,8 +34,8 @@ export function acceptsAAnomalyWithOnePoint(): void {
       `${widgetWriteSchema.options.length} arms`,
   );
   assert(
-    widgetWriteSchema.options.at(-1)?.shape.widgetType.value === "anomaly",
-    "the anomaly arm is appended last, so no existing arm index moves",
+    widgetWriteSchema.options.at(14)?.shape.widgetType.value === "anomaly",
+    "the anomaly arm is the fifteenth (index 14), so no arm index moved when E1.9f appended ml_findings",
   );
   expectAccepts(putDashboardWidgetsBodySchema, { widgets: [validAnomalyWidget] }, "an anomaly with one point");
 }
