@@ -13,9 +13,15 @@ import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { assertAssetIdParam, decodeBoundedPointRef } from "../common/guarded-point-ref";
+import { AssetFilterScopeService } from "../filter-options/asset-filter-scope.service";
 import { MlAnomaliesService } from "./ml-anomalies.service";
 import { MlForecastsService } from "./ml-forecasts.service";
-import { anomaliesQuerySchema, assetAnomaliesQuerySchema, pastForecastQuerySchema } from "./ml.schema";
+import {
+  anomaliesQuerySchema,
+  assetAnomaliesQuerySchema,
+  forecastListQuerySchema,
+  pastForecastQuerySchema,
+} from "./ml.schema";
 
 /**
  * `E1.4a` / ADR 0135 Amendment 3 R-c — the forecast reads. Access is the same
@@ -28,6 +34,13 @@ import { anomaliesQuerySchema, assetAnomaliesQuerySchema, pastForecastQuerySchem
  *
  * `E1.2b` (Amendment 5 A-e) adds the two anomaly reads under the same guards:
  * `canReadAsset` for one asset, `readableAssetIds` for the list.
+ *
+ * `E1.9a` (Amendment 8 decision 8, plan R-b): both lists take `organizationId`
+ * and `locationId`, and read the ids `AssetFilterScopeService.narrow` returns —
+ * the caller's `readableAssetIds` untouched for no key, else that set ANDed with
+ * the filter, so a key outside scope answers an empty list, never 403. The
+ * fourth slot is appended last, so the three before it do not move. The two
+ * summary routes live in `ml-findings.controller.ts`.
  */
 @Controller("ml")
 @UseGuards(JwtAuthGuard)
@@ -36,6 +49,7 @@ export class MlController {
     private readonly forecasts: MlForecastsService,
     private readonly accessControl: AccessControlService,
     private readonly anomalyReads: MlAnomaliesService,
+    private readonly assetFilterScope: AssetFilterScopeService,
   ) {}
 
   /**
@@ -83,10 +97,18 @@ export class MlController {
     return this.forecasts.past(point, window, new Date());
   }
 
-  /** `GET /ml/forecasts`: one row per forecast point the caller can read. */
+  /**
+   * `GET /ml/forecasts?organizationId=&locationId=`: one row per forecast point the
+   * caller can read, narrowed by the filter (`E1.9a`). The query (400), then `narrow`,
+   * whose value goes to the service unchanged (S1).
+   */
   @Get("forecasts")
-  async list(@CurrentUser() user: JwtPayload): Promise<ForecastListResponse> {
-    const assetIds = await this.accessControl.readableAssetIds(user);
+  async list(@CurrentUser() user: JwtPayload, @Query() query: Record<string, unknown>): Promise<ForecastListResponse> {
+    const parsed = forecastListQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid query");
+    }
+    const assetIds = await this.assetFilterScope.narrow(user, parsed.data);
     return this.forecasts.list(assetIds, new Date());
   }
 
@@ -115,9 +137,10 @@ export class MlController {
   }
 
   /**
-   * `GET /ml/anomalies?since=` (`E1.2b`): the unusual hours of every asset the
-   * caller can read, at most the last 7 days, newest first. The query (400), then
-   * `readableAssetIds`, whose value goes to the service unchanged (S1).
+   * `GET /ml/anomalies?since=&organizationId=&locationId=` (`E1.2b`, `E1.9a`): the
+   * unusual hours of every asset the caller can read, narrowed by the filter, at most
+   * the last 7 days, newest first. The query (400), then `narrow` on the two scope
+   * keys, whose value goes to the service unchanged (S1).
    */
   @Get("anomalies")
   async anomalies(
@@ -128,7 +151,10 @@ export class MlController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid query");
     }
-    const assetIds = await this.accessControl.readableAssetIds(user);
+    const assetIds = await this.assetFilterScope.narrow(user, {
+      organizationId: parsed.data.organizationId,
+      locationId: parsed.data.locationId,
+    });
     const since = parsed.data.since === undefined ? undefined : new Date(parsed.data.since);
     return this.anomalyReads.list(assetIds, since, new Date());
   }
