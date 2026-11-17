@@ -30,7 +30,7 @@ import {
   theSiteMapReadsByTheOrganizationId,
   theSiteMapSitsAboveTheSiteCards,
   theCostChartSitsBetweenTheAlarmsAndAssetHealth,
-  theFindingsCardSitsAfterAssetHealth,
+  theFindingsCardSitsDirectlyAboveAssetHealth,
   theBadActorsCardSitsDirectlyAfterAssetHealth,
   theLoadCardAndKwTileFollowTheSites,
 } from "./organization-page.spec";
@@ -136,11 +136,11 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
     await theCostChartSitsBetweenTheAlarmsAndAssetHealth();
   });
 
-  it("P11 draws one compact findings card for the organization after Asset health (E1.9e)", async () => {
-    await theFindingsCardSitsAfterAssetHealth();
+  it("P11 draws one compact findings card for the organization directly above Asset health (E1.9e, E1.9g)", async () => {
+    await theFindingsCardSitsDirectlyAboveAssetHealth();
   });
 
-  it("P12 draws one Bad actors card for the organization directly after Asset health (E1.8c)", async () => {
+  it("P12 draws one Bad actors card directly after Asset health, the load trend after it (E1.8c, E1.9g)", async () => {
     await theBadActorsCardSitsDirectlyAfterAssetHealth();
   });
 

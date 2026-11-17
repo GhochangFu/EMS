@@ -49,8 +49,13 @@ export function safeAssetHref(href: string): string | null {
   return SAFE_HISTORY_HREF.test(href) ? href : null;
 }
 
-/** A piece of a drawn sentence: plain text, or a named asset with its link (`null`: no link). */
-export type FindingPart = { readonly text: string } | { readonly label: string; readonly href: string | null };
+/**
+ * A piece of a drawn sentence: plain text, or a named asset with its link (`null`: no link).
+ * `E1.9g`: an asset draws its `code` as a chip, with the full `label` as its title.
+ */
+export type FindingPart =
+  | { readonly text: string }
+  | { readonly code: string; readonly label: string; readonly href: string | null };
 
 /** Said in place of a reference the card's asset list does not hold. Never a link. */
 const UNKNOWN_ASSET = "an asset";
@@ -66,8 +71,100 @@ export function resolveSegments(
       return { text: segment.text };
     }
     const asset = byRef.get(segment.assetRef);
-    return asset ? { label: asset.label, href: safeAssetHref(asset.href) } : { text: UNKNOWN_ASSET };
+    return asset ? { code: asset.code, label: asset.label, href: safeAssetHref(asset.href) } : { text: UNKNOWN_ASSET };
   });
+}
+
+/** `E1.9g` (Amendment 10 decision 2): at most this many key points under the headline. */
+export const ML_SUMMARY_MAX_POINTS = 4;
+
+/** `E1.9g` (plan 4.7): the compact control-room card shows the headline and at most this many. */
+export const ML_SUMMARY_COMPACT_POINTS = 2;
+
+/** One unit of the split: a character of a text part (by its part), or a whole asset part. */
+type SplitUnit = { readonly part: number; readonly char: string } | { readonly part: number; readonly asset: FindingPart };
+
+const SENTENCE_END = new Set([".", "!", "?"]);
+
+/** What may start a sentence after a cut: an ASCII capital, a literal `[`, or an asset part. */
+const startsSentence = (unit: SplitUnit | undefined): boolean =>
+  unit !== undefined && ("asset" in unit || /^[A-Z[]$/.test(unit.char));
+
+/** The units of one sentence put back into parts: consecutive characters of a part join again. */
+function partsOf(units: readonly SplitUnit[]): FindingPart[] {
+  const out: FindingPart[] = [];
+  let text = "";
+  let from = -1;
+  const flush = () => {
+    if (text !== "") out.push({ text });
+    text = "";
+  };
+  for (const unit of units) {
+    if ("asset" in unit) {
+      flush();
+      out.push(unit.asset);
+    } else {
+      if (unit.part !== from) flush();
+      text += unit.char;
+    }
+    from = unit.part;
+  }
+  flush();
+  return out;
+}
+
+/**
+ * `E1.9g` (ADR 0135 Amendment 10 decision 2; plan 4.3) — the AI paragraph's sentences, on screen
+ * only (the stored text stays one paragraph). A cut follows a `.`, `!` or `?` in a text part when a
+ * space comes next and, after the run of spaces, an ASCII capital, a `[` or an asset part; the
+ * look-ahead crosses part boundaries. The spaces at a cut are dropped; nothing else is. An asset
+ * part is one unit and is never scanned, so its code or label can never cause a cut.
+ */
+export function splitSentences(parts: readonly FindingPart[]): FindingPart[][] {
+  const units: SplitUnit[] = [];
+  parts.forEach((part, index) => {
+    if ("text" in part) {
+      for (const char of part.text) units.push({ part: index, char });
+    } else {
+      units.push({ part: index, asset: part });
+    }
+  });
+  const sentences: FindingPart[][] = [];
+  let start = 0;
+  for (let at = 0; at < units.length; at += 1) {
+    const unit = units[at] as SplitUnit;
+    if ("asset" in unit || !SENTENCE_END.has(unit.char)) continue;
+    let next = at + 1;
+    while (next < units.length && (units[next] as { char?: string }).char === " ") next += 1;
+    if (next === at + 1 || !startsSentence(units[next])) continue;
+    sentences.push(partsOf(units.slice(start, at + 1)));
+    start = next;
+    at = next - 1;
+  }
+  sentences.push(partsOf(units.slice(start)));
+  return sentences.filter((sentence) => sentence.length > 0);
+}
+
+/** The word "weak", whole and case-folded, in a sentence's text parts (asset parts are not read). */
+const holdsWeak = (sentence: readonly FindingPart[]): boolean =>
+  sentence.some((part) => "text" in part && /\bweak\b/i.test(part.text));
+
+/**
+ * `E1.9g` (plan 4.3) — the headline (sentence 1) and at most `maxPoints` points (the next ones).
+ * OQ-1 (a), owner 2026-11-17: when no shown sentence holds the word "weak" but a hidden one does,
+ * that sentence takes the last shown point slot, so the guard's Baseline-only word stays on screen.
+ */
+export function summaryOf(
+  parts: readonly FindingPart[],
+  maxPoints: number,
+): { headline: FindingPart[]; points: FindingPart[][] } {
+  const [headline = [], ...rest] = splitSentences(parts);
+  let points = rest.slice(0, maxPoints);
+  const hiddenWeak = rest.slice(maxPoints).find(holdsWeak);
+  if (hiddenWeak !== undefined && points.length > 0 && !holdsWeak(headline) && !points.some(holdsWeak)) {
+    points = [...points.slice(0, -1), hiddenWeak];
+  }
+  return { headline, points };
 }
 
 /** The title of an F5 line (a forecast crossing an alarm-rule limit). */

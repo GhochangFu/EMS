@@ -180,9 +180,9 @@ vi.mock("../../components/control-room/organization-site-map", () => ({
 
 const PANELS = [
   "site-map-panel",
+  "ml-findings-panel",
   "health-panel",
   "bad-actors-panel",
-  "ml-findings-panel",
   "trend-panel",
   "dashboards-panel",
 ] as const;
@@ -592,13 +592,18 @@ export async function theCostChartSitsBetweenTheAlarmsAndAssetHealth(): Promise<
     charts.compareDocumentPosition(health) & Node.DOCUMENT_POSITION_FOLLOWING,
     "the Asset health panel must follow the cost chart",
   ).toBeTruthy();
+  // E1.9g (ADR 0135 Amendment 10 Q5): the findings card sits between the cost chart and Asset health.
+  expect(charts.nextElementSibling, "the findings card directly after the cost chart").toBe(
+    screen.getByTestId("ml-findings-panel"),
+  );
 }
 
 /**
  * P11 — `E1.9e` (ADR 0135 Amendment 8 decision 13): one compact findings card, both kinds, scoped
- * to the organization and to no site, after Asset health and before the load trend.
+ * to the organization and to no site. `E1.9g` (ADR 0135 Amendment 10 Q5): it sits directly above
+ * Asset health, after the alarms rail, and before the load trend.
  */
-export async function theFindingsCardSitsAfterAssetHealth(): Promise<void> {
+export async function theFindingsCardSitsDirectlyAboveAssetHealth(): Promise<void> {
   stubReads(TWO_ORGS);
   renderAt(ORG_A.id);
 
@@ -611,9 +616,11 @@ export async function theFindingsCardSitsAfterAssetHealth(): Promise<void> {
   expect(JSON.parse(card.dataset.scope ?? "null")).toEqual({ organizationId: ORG_A.id });
   const health = screen.getByTestId("health-panel");
   const trend = screen.getByTestId("trend-panel");
+  const rail = screen.getByTestId("alarms-rail");
+  expect(card.nextElementSibling, "Asset health directly after the findings card").toBe(health);
   expect(
-    health.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
-    "the findings card must follow Asset health",
+    rail.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
+    "the findings card must follow the alarms rail",
   ).toBeTruthy();
   expect(
     card.compareDocumentPosition(trend) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -623,8 +630,8 @@ export async function theFindingsCardSitsAfterAssetHealth(): Promise<void> {
 
 /**
  * P12 — `E1.8c` (ADR 0050 Amendment 5, plan T3.2): one *Bad actors* card for the organization,
- * directly after Asset health and before the findings card, with no `showCount` (the
- * organization's count line is under its donut).
+ * directly after Asset health, with no `showCount` (the organization's count line is under its
+ * donut). Since `E1.9g` (Amendment 10 Q5) the load trend, not the findings card, follows it.
  */
 export async function theBadActorsCardSitsDirectlyAfterAssetHealth(): Promise<void> {
   stubReads(TWO_ORGS);
@@ -639,7 +646,7 @@ export async function theBadActorsCardSitsDirectlyAfterAssetHealth(): Promise<vo
   expect(card.dataset.showCount).toBe("(absent)");
   const health = screen.getByTestId("health-panel");
   expect(health.nextElementSibling, "directly after Asset health").toBe(card);
-  expect(card.nextElementSibling, "the findings card follows it").toBe(screen.getByTestId("ml-findings-panel"));
+  expect(card.nextElementSibling, "the load trend follows it").toBe(screen.getByTestId("trend-panel"));
 }
 
 /** Two organizations, each with two sites, so neither skips to a site. */
