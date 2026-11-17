@@ -86,9 +86,9 @@ export async function assertTheAdminSeesOneCardPerOrganization(ctx: MlFindingsFi
     for (const a of card.assets) expect(own.get(a.assetId), a.label).toBe(card.organizationId);
   }
   const anomalies = mlFindingsSummaryResponseSchema.parse(await ctx.svc.anomalySummary(fixtureIds(ctx), false, ctx.now));
-  expect(lines(anomalies, ctx.organizations.a)[0]).toBe("2 unusual hours in the last 7 days, on 1 of 1 scored assets.");
-  expect(lines(anomalies, ctx.organizations.b)[0]).toBe("1 unusual hours in the last 7 days, on 1 of 1 scored assets.");
-  expect(lines(anomalies, ctx.organizations.b)[1]).toMatch(/^Strongest signal: .* — 1 hours marked by both methods/);
+  expect(lines(anomalies, ctx.organizations.a)[0]).toBe("2 unusual hours in the last 7 days, on 1 of 1 scored asset.");
+  expect(lines(anomalies, ctx.organizations.b)[0]).toBe("1 unusual hour in the last 7 days, on 1 of 1 scored asset.");
+  expect(lines(anomalies, ctx.organizations.b)[1]).toMatch(/^Strongest signal: .* — 1 hour marked by both methods/);
 }
 
 /** `organizationId` gives that organization's assets only; a location covers its subtree; the child only its own. */

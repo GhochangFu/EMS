@@ -143,6 +143,7 @@ export function thresholdRule(asset: FxAsset, operator: string, threshold: numbe
   };
 }
 
+/** The Q1(a) organization row of a fixture organization. */
 export const organizationRow = (org: FxOrganization): FindingOrganizationDbRow => ({
   organization_id: org.id,
   organization_code: org.code,

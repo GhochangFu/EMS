@@ -62,7 +62,7 @@ export function fxbNamesTheBothMethodsAssetFirst(): void {
   expect(lines[0]).toBe("6 unusual hours in the last 7 days, on 4 of 19 scored assets.");
   expect(ids(card)).toEqual(["A1", "A2", "A3", "A3", "A3", "A4"]);
   expect(lines[1]).toBe(
-    "Strongest signal: RTU-H1 · River Plant — 1 hours marked by both methods, 2 unusual hours in all; last 17 Nov 08:30; points rtu_link_quality, rtu_battery_v.",
+    "Strongest signal: RTU-H1 · River Plant — 1 hour marked by both methods, 2 unusual hours in all; last 17 Nov 08:30; points rtu_link_quality, rtu_battery_v.",
   );
   const a3 = lines.slice(2, 5);
   expect(a3.map((l) => l.split(":")[0])).toEqual(["P-01 · River Plant", "P-02 · River Plant", "P-03 · River Plant"]);
@@ -92,7 +92,7 @@ export function a2HasAtMostTwoLinesAndCountsTheRest(): void {
   expect(ids(card)).toEqual(["A1", "A2", "A2", "A3", "A3", "A4"]);
   expect(lines[1]).toMatch(/^Strongest signal: P-02 · River Plant — 3 hours marked by both methods, 3 unusual hours in all;/);
   expect(lines[2]).toMatch(/^Strongest signal: P-03 · River Plant — 2 hours marked by both methods/);
-  expect(lines[2]).toMatch(/; and 1 more assets with marks from both methods\.$/);
+  expect(lines[2]).toMatch(/; and 1 more asset with marks from both methods\.$/);
   // P-01 is counted in A2's "more", not named there, so A3 may name it; most unusual hours first.
   expect(lines.slice(3, 5).map((l) => l.split(":")[0])).toEqual(["P-04 · River Plant", "P-01 · River Plant"]);
 }
@@ -137,7 +137,7 @@ export function pointsShowThreeAndTheLinkChartsAll(): void {
   ]);
   // No contributing point: the clause is left out.
   const bare = cardOf(build([anomalyRow({ asset: COLD_ROOMS[0]!, unusual: 1, points: [[]] })]), "FXA");
-  expect(texts(bare)[1]).toBe("CR-01 · RTU-N1: 1 unusual hours, last 17 Nov 12:30.");
+  expect(texts(bare)[1]).toBe("CR-01 · RTU-N1: 1 unusual hour, last 17 Nov 12:30.");
 }
 
 export function onlyNamedAssetsAreListedAndCardsAreByCode(): void {

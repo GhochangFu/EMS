@@ -54,15 +54,20 @@ export type FindingOrganizationDbRow = {
   organization_name: string | null;
 };
 
+/** A card's organization from its read row; a missing code or name reads as an empty string. */
 export const organizationOf = (row: FindingOrganizationDbRow): FindingOrganization => ({
   organizationId: row.organization_id,
   organizationCode: row.organization_code ?? "",
   organizationName: row.organization_name ?? "",
 });
 
+/** A fixed piece of sentence text. */
 export const text = (value: string): DraftPart => ({ kind: "text", text: value });
+/** A formatted time (a `[T…]` placeholder when sent to the LLM). */
 export const time = (value: string): DraftPart => ({ kind: "time", text: value });
+/** An alarm rule's name (a `[R…]` placeholder when sent to the LLM). */
 export const rule = (value: string): DraftPart => ({ kind: "rule", text: value });
+/** A named asset, linked by its card reference; `pointKey` is the forecast point it names. */
 export const asset = (assetId: string, pointKey?: string): DraftPart =>
   pointKey === undefined ? { kind: "asset", assetId } : { kind: "asset", assetId, pointKey };
 

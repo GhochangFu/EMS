@@ -66,7 +66,8 @@ export const mlFindingFactSchema = z.object({
 export const mlFindingAssetSchema = z.object({
   ref: assetRef,
   assetId: z.string().uuid(),
-  label: z.string().max(300),
+  /** `assetLabelOf`: code (64) + " · " + RTU or location name (255) = at most 322 characters. */
+  label: z.string().max(330),
   href: z.string().max(2000),
 });
 

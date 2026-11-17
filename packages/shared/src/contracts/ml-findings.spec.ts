@@ -83,6 +83,16 @@ export function runAssetRefBoundsTest(): void {
   }
 }
 
+/** The longest label `assetLabelOf` can build: a 64-character code, " · ", a 255-character RTU or location name. */
+export function runLongLabelTest(): void {
+  const longest = `${"C".repeat(64)} · ${"N".repeat(255)}`;
+  expect(longest.length).toBe(322);
+  expect(mlFindingsCardSchema.safeParse({ ...card, assets: [{ ...card.assets[0], label: longest }] }).success).toBe(true);
+  expect(
+    mlFindingsCardSchema.safeParse({ ...card, assets: [{ ...card.assets[0], label: "x".repeat(331) }] }).success,
+  ).toBe(false);
+}
+
 export function runParagraphStateTest(): void {
   const ok = { cards: [{ organizationId: ORG, state: "ok", segments: [{ text: "Advisory." }, { assetRef: "A1" }] }] };
   expect(mlFindingsParagraphResponseSchema.parse(ok)).toEqual(ok);

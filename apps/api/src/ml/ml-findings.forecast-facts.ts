@@ -1,4 +1,4 @@
-import { assetLabel, forecastFindingHref, resolveSiteTimeZone } from "@bms/shared";
+import { assetLabel, forecastFindingHref, ML_FINDINGS_MAX_FACTS, resolveSiteTimeZone } from "@bms/shared";
 
 import { crossingsOf, type Crossing, type CrossingPoint, type CrossingRule } from "./ml-findings.crossings";
 import { formatFindingTime, formatFindingValue, formatSignedChange, tempWords } from "./ml-findings.format";
@@ -30,7 +30,7 @@ import { currentHourOf, isStale } from "./ml-forecasts.pure";
  * shown in the table's (F1, F2, F3, F4, F5, F_MORE).
  */
 const MAX_KEYS = 3;
-const MAX_LINES = 8;
+const MAX_LINES = ML_FINDINGS_MAX_FACTS;
 /** F3: a point with fewer actual hours than this in the last 24 is left out (decision 2). */
 export const F3_MIN_ACTUAL_HOURS = 12;
 
@@ -260,7 +260,7 @@ function cardFor(organization: FindingOrganization, points: readonly Point[], ru
   const lines4 = per(f4);
   const lines5 = crossingsOf(points, rules).map(f5);
   const more: DraftLine[] =
-    keys.length > MAX_KEYS ? [{ id: "F_MORE", parts: [text(`and ${keys.length - MAX_KEYS} more point types.`)] }] : [];
+    keys.length > MAX_KEYS ? [{ id: "F_MORE", parts: [text(`and ${keys.length - MAX_KEYS} more point ${keys.length - MAX_KEYS === 1 ? "type" : "types"}.`)] }] : [];
 
   // R-h: F1 and F_MORE keep their places; the rest fill in F5, F2, F3, F4 order.
   let room = MAX_LINES - 1 - more.length;

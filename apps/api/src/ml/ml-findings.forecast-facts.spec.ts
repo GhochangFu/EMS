@@ -130,7 +130,7 @@ function fourKeys(): FxPoint[] {
 export function fourPointKeysGiveThreeKeysAndAMoreLine(): void {
   const card = fxa(input(fourKeys()));
   const lines = texts(card);
-  expect(lines[lines.length - 1]).toBe("and 1 more point types.");
+  expect(lines[lines.length - 1]).toBe("and 1 more point type.");
   expect(card.facts[card.facts.length - 1]?.id).toBe("F_MORE");
   expect(lines.filter((l) => l.startsWith("defrost_kw"))).toEqual([]);
   expect(ids(card)).toEqual(["F1", "F2", "F2", "F2", "F3", "F3", "F3", "F_MORE"]);

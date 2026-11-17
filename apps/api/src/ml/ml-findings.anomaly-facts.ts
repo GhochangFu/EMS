@@ -1,4 +1,4 @@
-import { anomalyFindingHref, assetLabel, resolveSiteTimeZone } from "@bms/shared";
+import { anomalyFindingHref, assetLabel, ML_FINDINGS_MAX_FACTS, resolveSiteTimeZone } from "@bms/shared";
 
 import { formatFindingTime } from "./ml-findings.format";
 import {
@@ -27,7 +27,7 @@ import {
  * Baseline method alone is described as weak, and assets marked by both
  * methods are named first (A2), as the strongest signal.
  */
-const MAX_LINES = 8;
+const MAX_LINES = ML_FINDINGS_MAX_FACTS;
 const MAX_A2 = 2;
 const MAX_A3 = 5;
 const SHOWN_POINTS = 3;
@@ -92,6 +92,9 @@ function scoredOf(row: AnomalyFindingDbRow): Scored {
   };
 }
 
+/** `1 hour`, `2 hours`: the count with its noun, singular for exactly one. */
+const count = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
 const newer = (a: Scored, b: Scored): number => (b.lastMs ?? 0) - (a.lastMs ?? 0);
 
 /** `; points a, b, c` with at most 3 shown; nothing when the hour named none. */
@@ -101,13 +104,13 @@ const pointsClause = (s: Scored): string =>
 const last = (s: Scored): DraftPart => time(formatFindingTime(s.lastMs ?? 0, s.zone));
 
 function a2(s: Scored, more: number): DraftLine {
-  const tail = more > 0 ? `; and ${more} more assets with marks from both methods.` : ".";
+  const tail = more > 0 ? `; and ${count(more, "more asset", "more assets")} with marks from both methods.` : ".";
   return {
     id: "A2",
     parts: [
       text("Strongest signal: "),
       asset(s.assetId),
-      text(` — ${s.both} hours marked by both methods, ${s.unusual} unusual hours in all; last `),
+      text(` — ${count(s.both, "hour", "hours")} marked by both methods, ${count(s.unusual, "unusual hour", "unusual hours")} in all; last `),
       last(s),
       text(`${pointsClause(s)}${tail}`),
     ],
@@ -117,7 +120,7 @@ function a2(s: Scored, more: number): DraftLine {
 function a3(s: Scored): DraftLine {
   return {
     id: "A3",
-    parts: [asset(s.assetId), text(`: ${s.unusual} unusual hours, last `), last(s), text(`${pointsClause(s)}.`)],
+    parts: [asset(s.assetId), text(`: ${count(s.unusual, "unusual hour", "unusual hours")}, last `), last(s), text(`${pointsClause(s)}.`)],
   };
 }
 
@@ -136,11 +139,13 @@ function cardFor(organization: FindingOrganization, scored: readonly Scored[], a
   const marked = scored.filter((s) => s.unusual > 0);
   const hours = marked.reduce((sum, s) => sum + s.unusual, 0);
   if (hours === 0) {
-    return finish([{ id: "A_NONE", parts: [text(`No unusual hours in the last 7 days on ${scored.length} scored assets.`)] }]);
+    return finish([{ id: "A_NONE", parts: [text(`No unusual hours in the last 7 days on ${count(scored.length, "scored asset", "scored assets")}.`)] }]);
   }
   const line1: DraftLine = {
     id: "A1",
-    parts: [text(`${hours} unusual hours in the last 7 days, on ${marked.length} of ${scored.length} scored assets.`)],
+    parts: [text(
+      `${count(hours, "unusual hour", "unusual hours")} in the last 7 days, on ${marked.length} of ${count(scored.length, "scored asset", "scored assets")}.`,
+    )],
   };
   const strongest = marked
     .filter((s) => s.both > 0)
