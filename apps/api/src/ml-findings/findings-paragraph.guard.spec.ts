@@ -44,6 +44,7 @@ export function eachReasonHasATextThatFailsForItAlone(): void {
   const cases: Array<[FindingsRejectReason, string, readonly SentLine[]]> = [
     ["empty", "   ", FORECAST],
     ["control_character", "[A1] is the coldest.\u0007", FORECAST],
+    ["unknown_character", "[A1] is the coldest at еvil.", FORECAST],
     ["line_break", "[A1] is the coldest.\n[A2] is the warmest.", FORECAST],
     ["line_break", "[A1] is the coldest.\r", FORECAST],
     ["too_long", `[A1] is the coldest${".".repeat(590)}`, FORECAST],
@@ -95,10 +96,10 @@ export function theHardenedRulesEachRefuseTheirForm(): void {
     ["markdown", "[A1] is the ~~coldest~~.", FORECAST],
     ["markdown", "[A1] is the [coldest](x).", FORECAST],
     // Numbers in any other form than plain ASCII digits.
-    ["spelled_number", "[A1] is expected at -١٨ °C.", FORECAST],
-    ["spelled_number", "[A1] is the coldest by ½ °C.", FORECAST],
+    ["unknown_character", "[A1] is expected at -١٨ °C.", FORECAST],
+    ["unknown_character", "[A1] is the coldest by ½ °C.", FORECAST],
     ["spelled_number", "[A1] is the coldest, ² over.", FORECAST],
-    ["spelled_number", "[A1] is the coldest for Ⅻ hours.", FORECAST],
+    ["unknown_character", "[A1] is the coldest for Ⅻ hours.", FORECAST],
     ["spelled_number", "[A1] is the coldest for XII hours.", FORECAST],
     ["spelled_number", "[A1] is the coldest at 1e3 °C.", FORECAST],
     ["spelled_number", "[A1] is the coldest for the 16th time.", FORECAST],
@@ -121,9 +122,11 @@ export function theHardenedRulesEachRefuseTheirForm(): void {
   const dotted: SentLine[] = [{ id: "F4", text: "tank.level_m: least certain is [A1], band 2 m wide at [T1]." }];
   expect(reasonOf("For tank.level_m, [A1] is least certain, a band 2 m wide.", dotted)).toBe("ok");
   expect(reasonOf("Strongest signal: [A1], with 1 hour marked by both methods.", ANOMALY_MIXED)).toBe("ok");
-  // Length is counted as the contract counts it (UTF-16 units): an astral character is two.
-  expect(reasonOf(`[A1] is the coldest${"a".repeat(579)}\u{10348}`)).toBe("ok");
-  expect(reasonOf(`[A1] is the coldest${"a".repeat(580)}\u{10348}`)).toBe("too_long");
+  // An astral character is outside the allowed set (re-review 2), so length in UTF-16 units and
+  // in code points agree for every text that gets as far as the length check.
+  expect(reasonOf(`[A1] is the coldest\u{10348}`)).toBe("unknown_character");
+  // An em dash before a count is the facts' own punctuation, not a spaced sign.
+  expect(reasonOf("[A1] — 1 hour marked by both methods.", ANOMALY_MIXED)).toBe("ok");
 }
 
 export function theEdgeCasesThePlanNames(): void {
@@ -168,4 +171,93 @@ export function theFixturesGoodParagraphsPass(): void {
       fxa.lines,
     ),
   ).toBe("ok");
+}
+
+/** Security re-review: the fact-word exemption must not open a scheme, a domain or markup. */
+export function factWordsNeverOpenALinkOrMarkup(): void {
+  const dotted: SentLine[] = [
+    { id: "F4", text: "x.io: least certain is [A1], band 2 m wide at [T1]." },
+    { id: "F4", text: "a_b: least certain is [A2], band 2 m wide at [T2]." },
+  ];
+  const anomaly: SentLine[] = [
+    { id: "A1", text: "2 unusual hours in the last 7 days, on 1 of 1 scored asset." },
+    { id: "A3", text: "[A1]: 2 unusual hours, last [T1]; points cold_room_temp_c." },
+    { id: "A4", text: BASELINE_ONLY_SENTENCE },
+  ];
+  const cases: Array<[string, readonly SentLine[]]> = [
+    ["See javascript:at for [A1], a weak signal.", anomaly],
+    ["See mailto:points for [A1], a weak signal.", anomaly],
+    ["See https:issued for [A1].", FORECAST],
+    ["[A1] is least certain, see x.io/path.", dotted],
+    ["[A1] is least certain, see javascript:x.io.", dotted],
+    ["[A1] is least certain, see javascript:a_b.", dotted],
+    ["[A1] is least certain, see ops@x.io.", dotted],
+    ["[A1] is least certain, see //x.io.", dotted],
+    ["[A1] is least certain, see evil dot com.", dotted],
+  ];
+  for (const [text, facts] of cases) {
+    expect(reasonOf(text, facts), JSON.stringify(text)).toBe("url");
+  }
+  // A fact word that is a whole word, not next to / : @, still passes.
+  expect(reasonOf("For x.io, [A1] is least certain, a band 2 m wide.", dotted)).toBe("ok");
+  expect(reasonOf("For a_b, [A2] is least certain, a band 2 m wide; [A1] too.", dotted)).toBe("ok");
+  // Markup next to a fact word is still markup.
+  expect(reasonOf("[A1] is least certain: _a_b_.", dotted)).toBe("markdown");
+}
+
+/** Security re-review: look-alike characters (homoglyph domains, odd dashes, private use, combining marks) are refused. */
+export function lookAlikeCharactersAreRefused(): void {
+  for (const text of [
+    "[A1] is the coldest, see еvil.соm.",
+    "[A1] is the coldest, see evil．com.",
+    "[A1] is the coldest, see evil。com.",
+    "[A1] is expected at ‒18.46 °C.",
+    "[A1] is expected at －18.46 °C.",
+    "[A1] is expected at ﹣18.46 °C.",
+    "[A1] is expected at ˗18.46 °C.",
+    "[A1] is expected at \u279618.46 °C.",
+    "[A1] is the coldest\ue000.",
+    "[A1] is the coldest\ufffd.",
+    "[A1] is the colde\u0301st.",
+    "[A1] is the 16ᵗʰ coldest.",
+  ]) {
+    expect(reasonOf(text), JSON.stringify(text)).toBe("unknown_character");
+  }
+  // The typography allow-list passes.
+  expect(reasonOf("[A1] is the coldest at −18.46 °C — it’s “cold” · fine.")).toBe("ok");
+}
+
+/** Security re-review: more number words, compositions and separators. */
+export function moreNumberFormsAreRefused(): void {
+  const spelled = [
+    "[A1] is the coldest by hundreds.",
+    "[A1] is the coldest of thousands.",
+    "[A1] is the coldest by billions.",
+    "[A1] is the coldest by dozens.",
+    "[A1] is tenfold colder.",
+    "[A1] doubled its band.",
+    "[A1] tripled its band.",
+    "[A1] halved its band.",
+    "[A1] quadrupled its band.",
+    "[A1] is the third coldest.",
+    "[A1] is the twentieth coldest.",
+    "[A1] had a couple of marks.",
+    "[A1] had a few marks.",
+    "[A1] had several marks.",
+    "[A1] was marked once.",
+    "[A1] had a single mark.",
+    "[A1] had a pair of marks.",
+    "[A1] rose 5 per cent.",
+    "[A1] rose 5 pct.",
+    "[A1] is at minus 18.46 °C.",
+    "[A1] is at negative 18.46 °C.",
+    "[A1] is at - 18.46 °C.",
+  ];
+  for (const text of spelled) expect(reasonOf(text), JSON.stringify(text)).toBe("spelled_number");
+  for (const text of ["[A1] is at 18,46 °C.", "[A1] is at 18/46.", "[A1] is at 18:46.", "[A1] is 2x16 rooms."]) {
+    expect(reasonOf(text), JSON.stringify(text)).toBe("number_not_in_facts");
+  }
+  // A separated number that occurs in the facts as written passes.
+  const ratio: SentLine[] = [{ id: "A1", text: "2 unusual hours in the last 7 days, on 1/2 of 2 scored assets." }];
+  expect(reasonOf("On 1/2 of 2 scored assets, a weak signal.", ratio)).toBe("ok");
 }

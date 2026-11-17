@@ -17,7 +17,9 @@ import {
 import { buildForecastCards, type ForecastFindingsInput } from "../ml/ml-findings.forecast-facts";
 import { lineText, type FindingsCardFacts } from "../ml/ml-findings.lines";
 import { fxbAnomalyCard } from "./findings-paragraph.fixture";
+import { checkFindingsParagraph } from "./findings-paragraph.guard";
 import { pseudonymiseFacts } from "./findings-pseudonymise";
+import { FINDINGS_UNIT_ALLOW_LIST } from "./findings-units";
 
 /**
  * `E1.9c` review item 11 — every fact sentence the real builders write is
@@ -96,4 +98,22 @@ export function emptyCardsAreNotSentByDesign(): void {
   expect(aNone.facts.map((l) => l.id)).toEqual(["A_NONE"]);
   expect(pseudonymiseFacts("forecasts", fNone)).toEqual({ sendable: false, reason: "nothing_to_say" });
   expect(pseudonymiseFacts("anomalies", aNone)).toEqual({ sendable: false, reason: "nothing_to_say" });
+}
+
+/** Re-review 2: the guard's character, link, markup and number checks pass every fact sentence and every listed unit. */
+export function theGuardPassesEveryFactSentenceAndUnit(): void {
+  const shapeReasons = ["line_break", "control_character", "unknown_character", "url", "markdown", "spelled_number", "number_not_in_facts"];
+  for (const [kind, card] of cards()) {
+    const p = pseudonymiseFacts(kind, card);
+    if (!p.sendable) throw new Error("not sendable");
+    for (const line of p.lines) {
+      const verdict = checkFindingsParagraph(line.text, p.lines);
+      expect(verdict.ok ? "ok" : verdict.reason, line.text).not.toSatisfy((r: string) => shapeReasons.includes(r));
+    }
+  }
+  for (const unit of FINDINGS_UNIT_ALLOW_LIST) {
+    const facts = [{ id: "F4" as const, text: `k: least certain is [A1], band 2 ${unit} wide at [T1].` }];
+    const verdict = checkFindingsParagraph(`[A1] is least certain, a band 2 ${unit} wide.`, facts);
+    expect(verdict, unit).toEqual({ ok: true });
+  }
 }
