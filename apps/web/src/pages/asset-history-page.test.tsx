@@ -46,6 +46,8 @@ import {
   aRejectedAnomalyReadLeavesTheChartWithoutABanner,
   aWindowOver31DaysAsksForNoAnomalies,
   noUnusualHourMeansNoAnomalyCaption,
+  anAdvisoryShowsItsSection,
+  noAdvisoryOrAFailedReadDrawsNoSection,
 } from "./asset-history-page.spec";
 
 vi.mock("echarts-for-react", () => ({
@@ -238,5 +240,13 @@ describe("F4.297 asset history page", () => {
 
   it("E1.2b a rejected anomaly read leaves the chart without a banner", async () => {
     await aRejectedAnomalyReadLeavesTheChartWithoutABanner();
+  });
+
+  it("E1.6b one advisory shows its section", async () => {
+    await anAdvisoryShowsItsSection();
+  });
+
+  it("E1.6b no advisory, or a failed read, draws no section and no banner", async () => {
+    await noAdvisoryOrAFailedReadDrawsNoSection();
   });
 });
