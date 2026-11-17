@@ -296,19 +296,28 @@ export function oneHourAndOneWorkOrderAreSingular(): void {
   expect(rows[2]?.detail).toBe("1 open corrective work order · 0 past SLA");
 }
 
-/** The advisory figure is the shown score minus the penalty (R-b), one decimal, with the caption. */
+/**
+ * The advisory figure is the shown score minus the penalty (R-b), at the SAME precision as the
+ * score the card shows (code review, E1.8b): at different precisions a non-round score read as a
+ * loss that does not exist (0.876 → "88%" above, "87.6%" below), against R-k.
+ */
 export function advisoryLineIsTheShownScoreMinusThePenalty(): void {
   const history = inputs8b().anomalyHistory;
   expect(advisoryLine(0.93, history)).toEqual({
-    text: "With anomaly history: 88.0% · advisory",
+    text: "With anomaly history: 88% · advisory",
     caption: HEALTH_ANOMALY_CAPTION,
   });
   // Another shown score moves the line with it: the line is never computed from anything else.
-  expect(advisoryLine(0.5, history)?.text).toBe("With anomaly history: 45.0% · advisory");
-  // R-k: no strong hour, a zero penalty — the figure equals the rule score.
-  expect(advisoryLine(0.93, { ...history!, strongHours: 0, penalty: 0 })?.text).toBe(
-    "With anomaly history: 93.0% · advisory",
-  );
+  expect(advisoryLine(0.5, history)?.text).toBe("With anomaly history: 45% · advisory");
+  // R-k: no strong hour, a zero penalty — the figure reads exactly as the rule score reads.
+  const zero = { ...history!, strongHours: 0, penalty: 0 };
+  for (const score of [0.93, 0.876, 0.934, 0.005]) {
+    expect(advisoryLine(score, zero)?.text).toBe(
+      `With anomaly history: ${formatHealthScorePercent(score)} · advisory`,
+    );
+  }
+  // A small real penalty never reads higher than the shown score.
+  expect(advisoryLine(0.934, { ...history!, penalty: 0.002 })?.text).toBe("With anomaly history: 93% · advisory");
 }
 
 /** No score, or no anomaly history: no advisory line at all. */

@@ -259,7 +259,9 @@ export function advisoryLine(
     return null;
   }
   return {
-    text: `With anomaly history: ${formatHealthScorePercent(advisory, 1)} · advisory`,
+    // Same precision as the score the card shows (code review, E1.8b): one decimal here against
+    // the card's whole percent read as a loss that does not exist (0.876 → 88% above, 87.6% below).
+    text: `With anomaly history: ${formatHealthScorePercent(advisory)} · advisory`,
     caption: HEALTH_ANOMALY_CAPTION,
   };
 }

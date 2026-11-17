@@ -35,11 +35,11 @@ export function HealthSummarySection({ locationId, organizationId }: HealthSumma
   // `E1.8b` (ADR 0050 Amendment 5, plan §4.8): the advisory count under the donut. Not read for a
   // scope with no scored asset; the donut never waits for it, and a pending, failed, `anomaly: null`
   // or zero answer draws nothing (R-i).
-  const badActorsQ = useHealthBadActors(
-    { locationId, organizationId },
-    (query.data?.scoredAssetCount ?? 0) > 0,
-  );
-  const countLine = anomalyCountLine(badActorsQ.data);
+  const hasScored = (query.data?.scoredAssetCount ?? 0) > 0;
+  const badActorsQ = useHealthBadActors({ locationId, organizationId }, hasScored);
+  // A disabled query still returns its cached data, so the line is gated on the current summary
+  // too: a refetch that leaves no scored asset drops the line (code review, E1.8b).
+  const countLine = hasScored ? anomalyCountLine(badActorsQ.data) : null;
 
   return (
     <SectionCard

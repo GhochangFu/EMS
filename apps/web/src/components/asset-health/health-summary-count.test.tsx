@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aCachedAnswerDoesNotDrawWithoutAScoredAsset,
   anEmptySummaryMakesNoBadActorsRequest,
   noLineForZeroNullOrARejectedRead,
   theDonutDoesNotWaitForTheCount,
@@ -44,5 +45,9 @@ describe("E1.8b the count of assets losing points under the donut", () => {
 
   it("sends the section's own scope with the request", async () => {
     await theRequestCarriesTheSectionsScope();
+  });
+
+  it("draws no line from a cached answer when the summary has no scored asset", async () => {
+    await aCachedAnswerDoesNotDrawWithoutAScoredAsset();
   });
 });

@@ -90,14 +90,14 @@ export function withInputsTheFiveLabelsShowInOrder(): void {
 
 /**
  * The advisory line comes after the score in document order, never in its place, and its figure
- * is the score shown minus the penalty (R-b): `93%` minus `0.05` is `88.0%`.
+ * is the score shown minus the penalty (R-b): `93%` minus `0.05` is `88%` (the card's own precision).
  */
 export function theAdvisoryLineFollowsTheScoreAndNeverReplacesIt(): void {
   const { container } = render(<AssetHealthCard data={health()} inputs={inputs()} />);
   const score = screen.getByText("93%", { selector: "span" });
   const line = container.querySelector("[data-testid='health-advisory-line']") as HTMLElement;
   expect(line).not.toBeNull();
-  expect(line.textContent).toContain("With anomaly history: 88.0% · advisory");
+  expect(line.textContent).toContain("With anomaly history: 88% · advisory");
   expect(follows(score, line), "the advisory line comes after the score").toBe(true);
   expect(line.className).toContain("text-xs");
   // The score block is still the one big figure.
@@ -106,7 +106,7 @@ export function theAdvisoryLineFollowsTheScoreAndNeverReplacesIt(): void {
 
   // The figure moves with the shown score, not with any other number.
   render(<AssetHealthCard data={health({ score: 0.5 })} inputs={inputs()} />);
-  expect(screen.getByText(/With anomaly history: 45\.0% · advisory/)).toBeTruthy();
+  expect(screen.getByText(/With anomaly history: 45% · advisory/)).toBeTruthy();
 }
 
 /** The pill beside the advisory line is the `info` pill, reading `Advisory`. */

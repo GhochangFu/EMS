@@ -146,3 +146,25 @@ export async function theRequestCarriesTheSectionsScope(): Promise<void> {
   await screen.findByText(SENTENCE);
   expect(spy.mock.calls).toEqual([[{ organizationId: ORG_ID, locationId: LOCATION_ID }]]);
 }
+
+/**
+ * A cached answer never outlives the summary that allowed it (code review, E1.8b): a disabled
+ * query still returns its cached data, so with a summary that holds no scored asset the line
+ * must not draw even when a bad-actors answer for this scope is already in the cache.
+ */
+export async function aCachedAnswerDoesNotDrawWithoutAScoredAsset(): Promise<void> {
+  vi.spyOn(assetHealthApi, "fetchHealthSummary").mockResolvedValue(
+    summary({ scoredAssetCount: 0, unscoredAssetCount: 20, score: null, bandCounts: [] }),
+  );
+  const fetchBad = vi.spyOn(assetHealthApi, "fetchHealthBadActors").mockResolvedValue(badActors(3));
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData(["asset-health", "bad-actors", null, ORG_ID], badActors(3));
+  render(
+    <QueryClientProvider client={queryClient}>
+      <HealthSummarySection organizationId={ORG_ID} />
+    </QueryClientProvider>,
+  );
+  await donutOnScreen();
+  expect(screen.queryByText(SENTENCE)).toBeNull();
+  expect(fetchBad).not.toHaveBeenCalled();
+}

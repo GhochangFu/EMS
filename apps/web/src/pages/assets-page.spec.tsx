@@ -355,7 +355,7 @@ export async function panelShowsTheHealthInputs(): Promise<void> {
   expect(screen.getByText("Operational conditions — Scored")).toBeInTheDocument();
   expect(screen.getByText("Equipment utilisation — No rated duty set")).toBeInTheDocument();
   expect(screen.getByText("1 open corrective work order · 0 past SLA")).toBeInTheDocument();
-  expect(screen.getByText("With anomaly history: 85.0% · advisory")).toBeInTheDocument();
+  expect(screen.getByText("With anomaly history: 85% · advisory")).toBeInTheDocument();
   expect(fetchInputs).toHaveBeenCalledWith(UNWIRED.id);
 }
 
