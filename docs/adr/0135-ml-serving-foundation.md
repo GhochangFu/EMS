@@ -1117,11 +1117,12 @@ detector rates (due about 2026-11-23) is untouched.
 
 ## Amendment 7 — `E1.2e`: water flow meters join the anomaly targets (2026-11-17)
 
-**Status: Proposed — 2026-11-17.** Drafted by an agent from an owner request
-in chat ("why does BCPL get no ML results?"). Nothing here is a ruling until
-the owner accepts it. Lines marked *(recommended)* are the agent's calls.
-Each open decision is a numbered question at the end, with a recommended
-answer.
+**Status: Accepted — 2026-11-17** (owner, in chat: "accept all
+recommended, mark Amendment 7 accepted"; proposed the same day). Drafted by
+an agent from an owner request in chat ("why does BCPL get no ML results?").
+Lines marked *(recommended)* were the agent's calls; the owner accepted the
+amendment with them as written, so **every *(recommended)* line is now a
+ruling**, and each question at the end took its recommended answer.
 
 **Why BCPL gets nothing today.** The BCPL organization has 21
 `water/flow_meter` assets with two real points each:
@@ -1261,8 +1262,9 @@ the chart marks and the `anomaly` widget already read every class.
    2026-11-23). BCPL is not ready before about 2026-12-06 either way.
 
 **Backlog.** `E1.2e` (⬜, P2) is added under the closed `E1.2` umbrella, as
-`E1.4e` was added under `E1.4`; the umbrella stays ✅. `E1.4f` is added only
-if question 3 is answered "split". `E1.4d`'s row then drops water flow.
+`E1.4e` was added under `E1.4`; the umbrella stays ✅. `E1.4f` (⬜, parked)
+is added because question 3 was ruled "split", and `E1.4d`'s row drops water
+flow.
 
 **Consequences.** After `E1.2e`, from about 2026-12-06, BCPL meters appear on
 the *Anomalies* page, as chart marks and in the `anomaly` widget, all
@@ -1278,21 +1280,23 @@ totalizer, raw or derived; an Isolation Forest on flow meters; chemical
 dosing, utility demand or covariates (`E1.4d`); the owed `bms_ml` role; a
 change to the demo host's 1 vCPU / 1 GiB limit.
 
-**Open questions for the owner:**
+**Open questions for the owner (all ruled 2026-11-17, the recommended answer each time):**
 
 1. **Anomaly target.** Add `water/flow_meter/treated_water_flow_klh` to the
-   anomaly targets, baseline only? *Recommended: yes.*
+   anomaly targets, baseline only? *Recommended: yes.* **Ruled: yes.**
 2. **Totalizer.** Never use `outlet_flow_totalizer_kl` as a raw target in
    either job, and leave a derived increment for a later amendment?
-   *Recommended: yes.*
+   *Recommended: yes.* **Ruled: yes.**
 3. **Flow forecasts.** (a) Keep them inside parked `E1.4d`; (b) split them
    out as `E1.4f`, parked until the start condition in item 3; or (c) build
    them now with `E1.2e`, with the CI fixture at 45 series.
    *Recommended: (b).* Nothing can be forecast before about 2027-01-03, and
-   the time and memory at 45 series are not measured yet.
+   the time and memory at 45 series are not measured yet. **Ruled: (b),
+   split out as `E1.4f`, parked.**
 4. **Zero flow.** (a) No special rule, with the tests in item 4 and a
    review of the first week of BCPL scores; (b) a 56-day floor for this
    class; or (c) an "off" mask. *Recommended: (a).* If you know BCPL's pumps
-   stop one day a week, (b) is the safer choice; please say so.
+   stop one day a week, (b) is the safer choice; please say so. **Ruled:
+   (a), no special rule.**
 5. **Merge timing.** Build `E1.2e` now and merge it after the one-week read
-   (about 2026-11-23)? *Recommended: yes.*
+   (about 2026-11-23)? *Recommended: yes.* **Ruled: yes.**
