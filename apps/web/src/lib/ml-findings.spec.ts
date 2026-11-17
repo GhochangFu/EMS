@@ -7,6 +7,11 @@ import { detectorLabel } from "./anomaly-series";
 import {
   compactLines,
   F5_TOOLTIP,
+  ML_SUMMARY_COMPACT_POINTS,
+  ML_SUMMARY_MAX_POINTS,
+  splitSentences,
+  summaryOf,
+  type FindingPart,
   hasParagraphWorthyCard,
   mlPageHref,
   paragraphPollMs,
@@ -83,7 +88,7 @@ export function safeAssetHrefAllowsOnlyTheHistoryPage(): void {
   }
 }
 
-/** A reference resolves to its asset's label and safe link; an unknown one is the text "an asset". */
+/** A reference resolves to its asset's code, label and safe link; an unknown one is the text "an asset". */
 export function resolveSegmentsPutsTheAssetsBack(): void {
   const unsafe: MlFindingAsset = { ...ASSET, ref: "A2", code: "PX-9", label: "PX-9 · Harbour Lane RTU", href: "javascript:alert(1)" };
   expect(
@@ -93,9 +98,9 @@ export function resolveSegmentsPutsTheAssetsBack(): void {
     ),
   ).toEqual([
     { text: "Strongest signal: " },
-    { label: "PX-7 · Harbour Lane RTU", href: ASSET.href },
+    { code: "PX-7", label: "PX-7 · Harbour Lane RTU", href: ASSET.href },
     { text: " and " },
-    { label: "PX-9 · Harbour Lane RTU", href: null },
+    { code: "PX-9", label: "PX-9 · Harbour Lane RTU", href: null },
     { text: ", " },
     { text: "an asset" },
   ]);
@@ -196,4 +201,110 @@ export function onlyACardWithFindingsIsWorthAParagraph(): void {
   expect(hasParagraphWorthyCard({ asOf: "2026-11-16T09:00:00.000Z", cards: [none, aNone] })).toBe(false);
   const some = card([fact("F1", "3 forecast points, issued at 16 Nov 14:05; 0 stale.")]);
   expect(hasParagraphWorthyCard({ asOf: "2026-11-16T09:00:00.000Z", cards: [none, some] })).toBe(true);
+}
+
+/*
+ * `E1.9g` (ADR 0135 Amendment 10 decision 2; plan 4.3, T2.1) — the on-screen sentence split of the
+ * AI summary. The input is `resolveSegments`' output; an asset part is one unit and never scanned.
+ */
+
+const t = (text: string): FindingPart => ({ text });
+const chip = (code: string, label = `${code} · Harbour Lane RTU`): FindingPart => ({ code, label, href: null });
+
+/** A sentence as one string: text as is, an asset part as `<code>`. */
+const said = (sentence: readonly FindingPart[]): string =>
+  sentence.map((part) => ("text" in part ? part.text : `<${part.code}>`)).join("");
+const saidAll = (parts: readonly FindingPart[]): string[] => splitSentences(parts).map(said);
+
+/** Cases 1, 2 and 7: plain sentences, a number and a time, `[`, the end, two spaces. */
+export function splitSentencesCutsAtASentenceEnd(): void {
+  expect(saidAll([t("One sentence only.")])).toEqual(["One sentence only."]);
+  expect(saidAll([t("First one. Second one. Third one.")])).toEqual(["First one.", "Second one.", "Third one."]);
+  expect(saidAll([t("Coldest is -41.25 °C at 17 Nov 14:05. Next comes the rest.")])).toEqual([
+    "Coldest is -41.25 °C at 17 Nov 14:05.",
+    "Next comes the rest.",
+  ]);
+  expect(saidAll([t("Done. [PHE] rule crossed.")])).toEqual(["Done.", "[PHE] rule crossed."]);
+  expect(saidAll([t("Ends here. ")]), "a terminator at the very end leaves no empty sentence").toEqual(["Ends here. "]);
+  expect(saidAll([t("Ends here.")])).toEqual(["Ends here."]);
+  expect(saidAll([t("One.  Two.")]), "both spaces are dropped").toEqual(["One.", "Two."]);
+  expect(saidAll([t("Really! Yes? Done.")]), "! and ? cut too").toEqual(["Really!", "Yes?", "Done."]);
+  expect(splitSentences([])).toEqual([]);
+}
+
+/** Case 3: a lower-case letter, a digit or no space after the dot is never a cut. */
+export function splitSentencesNeverCutsInsideAWordOrANumber(): void {
+  for (const text of ["It is approx. 3 hours.", "The rule. then more.", "See tank.level_m now.", "Value -41.25 here."]) {
+    expect(saidAll([t(text)]), text).toEqual([text]);
+  }
+}
+
+/** Cases 4 to 6: the look-ahead crosses into an asset part, and an asset part is never scanned. */
+export function splitSentencesTreatsAnAssetAsOneUnit(): void {
+  expect(saidAll([t("Six hours in all. "), chip("PX-7"), t(" leads.")])).toEqual(["Six hours in all.", "<PX-7> leads."]);
+  expect(saidAll([t("Six hours in all."), chip("PX-7"), t(" leads.")]), "no space: no cut").toEqual([
+    "Six hours in all.<PX-7> leads.",
+  ]);
+  expect(saidAll([chip("PX-7"), t(". Next one.")])).toEqual(["<PX-7>.", "Next one."]);
+  const dotted = chip("A. B", "A. B · Temp. High Gateway");
+  expect(saidAll([t("See "), dotted, t(" now.")]), "a code or label holding '. X' is never cut").toEqual(["See <A. B> now."]);
+  // The asset part goes through whole: the same object, code, label and href.
+  const sentences = splitSentences([t("Lead. "), dotted, t(" now.")]);
+  expect(sentences[1]?.[0]).toEqual(dotted);
+  // The spaces can run across a part boundary before the upper-case letter.
+  expect(saidAll([t("One. "), t(" Two.")])).toEqual(["One.", "Two."]);
+}
+
+/** Case 8: every character is kept but the spaces dropped at a cut. */
+export function splitSentencesKeepsEveryWord(): void {
+  const parts = [t("There were 6 unusual hours. "), chip("PX-7"), t(" had 2, last 17 Nov 08:30.  Marks are weak. "), chip("PX-9"), t(" had 1.")];
+  const joined = splitSentences(parts).map(said).join("");
+  expect(joined).toBe(said(parts).replace(/\. +(?=<|[A-Z])/g, "."));
+  expect(splitSentences(parts)).toHaveLength(4);
+}
+
+const sentences = (n: number, weakAt?: number): FindingPart[] => [
+  t(
+    Array.from({ length: n }, (_, i) => (i === weakAt ? `Point ${i} is a weak signal.` : `Point ${i} is here.`)).join(" "),
+  ),
+];
+
+/** `summaryOf`: the headline, then at most `maxPoints` points. */
+export function summaryOfTakesAHeadlineAndCappedPoints(): void {
+  expect(ML_SUMMARY_MAX_POINTS).toBe(4);
+  expect(ML_SUMMARY_COMPACT_POINTS).toBe(2);
+  const one = summaryOf(sentences(1), ML_SUMMARY_MAX_POINTS);
+  expect(said(one.headline)).toBe("Point 0 is here.");
+  expect(one.points).toEqual([]);
+  const six = summaryOf(sentences(6), ML_SUMMARY_MAX_POINTS);
+  expect(said(six.headline)).toBe("Point 0 is here.");
+  expect(six.points.map(said)).toEqual(["Point 1 is here.", "Point 2 is here.", "Point 3 is here.", "Point 4 is here."]);
+  expect(summaryOf(sentences(6), ML_SUMMARY_COMPACT_POINTS).points.map(said)).toEqual(["Point 1 is here.", "Point 2 is here."]);
+  expect(summaryOf([], ML_SUMMARY_MAX_POINTS)).toEqual({ headline: [], points: [] });
+}
+
+/** OQ-1 (a): a hidden sentence that alone holds "weak" takes the last shown point slot, for both caps. */
+export function summaryOfKeepsTheWeakSentence(): void {
+  expect(summaryOf(sentences(6, 5), ML_SUMMARY_MAX_POINTS).points.map(said)).toEqual([
+    "Point 1 is here.",
+    "Point 2 is here.",
+    "Point 3 is here.",
+    "Point 5 is a weak signal.",
+  ]);
+  expect(summaryOf(sentences(6, 4), ML_SUMMARY_COMPACT_POINTS).points.map(said)).toEqual([
+    "Point 1 is here.",
+    "Point 4 is a weak signal.",
+  ]);
+  // "Weak" already shown (a point or the headline): nothing moves.
+  expect(summaryOf(sentences(6, 2), ML_SUMMARY_COMPACT_POINTS).points.map(said)).toEqual([
+    "Point 1 is here.",
+    "Point 2 is a weak signal.",
+  ]);
+  expect(summaryOf(sentences(6, 0), ML_SUMMARY_COMPACT_POINTS).points.map(said)).toEqual([
+    "Point 1 is here.",
+    "Point 2 is here.",
+  ]);
+  // A whole word, case-folded: "Weak" counts, "weakly" and "tweak" do not.
+  expect(summaryOf([t("A. B. C. Weak marks only.")], 1).points.map(said)).toEqual(["Weak marks only."]);
+  expect(summaryOf([t("A. B. C. A tweak, weakly.")], 1).points.map(said)).toEqual(["B."]);
 }

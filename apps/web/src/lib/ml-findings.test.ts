@@ -9,6 +9,12 @@ import {
   resolveSegmentsPutsTheAssetsBack,
   safeAssetHrefAllowsOnlyTheHistoryPage,
   scopeKeyIsStable,
+  splitSentencesCutsAtASentenceEnd,
+  splitSentencesKeepsEveryWord,
+  splitSentencesNeverCutsInsideAWordOrANumber,
+  splitSentencesTreatsAnAssetAsOneUnit,
+  summaryOfKeepsTheWeakSentence,
+  summaryOfTakesAHeadlineAndCappedPoints,
   theF5TooltipIsFixed,
   theBaselineWordMatchesTheWeb,
 } from "./ml-findings.spec";
@@ -25,4 +31,12 @@ describe("E1.9b ml findings helpers", () => {
   it("E1.9d compactLines picks A2 over A1 and F5 over F1", () => compactLinesPicksTheTopLines());
   it("E1.9d mlPageHref carries the organization and the location", () => mlPageHrefCarriesOrganizationAndLocation());
   it("E1.9d only a card with findings is worth a paragraph", () => onlyACardWithFindingsIsWorthAParagraph());
+  it("E1.9g splitSentences cuts at . ! ? + space + capital or [", () => splitSentencesCutsAtASentenceEnd());
+  it("E1.9g splitSentences never cuts before a lower-case letter or a digit", () =>
+    splitSentencesNeverCutsInsideAWordOrANumber());
+  it("E1.9g splitSentences treats an asset part as one unit, never scanned", () => splitSentencesTreatsAnAssetAsOneUnit());
+  it("E1.9g splitSentences keeps every word but the spaces at a cut", () => splitSentencesKeepsEveryWord());
+  it("E1.9g summaryOf: a headline, then at most 4 (or 2) points", () => summaryOfTakesAHeadlineAndCappedPoints());
+  it("E1.9g summaryOf: a hidden sentence that alone holds 'weak' takes the last point slot (OQ-1 a)", () =>
+    summaryOfKeepsTheWeakSentence());
 });
