@@ -2,6 +2,10 @@ import { describe, it } from "vitest";
 
 import {
   aContextIsAddedAndChangesNoNumber,
+  agreeingReadsGiveTheSameFigures,
+  theMergeKeepsNoHourTwice,
+  theWindowAndBaselineReadsSplitAtTheZoneWindowStarts,
+  twoZonesGiveEachMeterItsOwnExcess,
   aShortRegisterSpanSendsTheMeterToThePairRead,
   anEmptyScopeMakesNoRead,
   aThrowingAnomalyReadLeavesTheContextOut,
@@ -26,4 +30,9 @@ describe("E1.6a — AdvisoriesService (ADR 0137)", () => {
   it("a context line is added and changes no number", () => aContextIsAddedAndChangesNoNumber());
   it("at most 25 anomaly reads, in the response's order", () => atMost25AnomalyReadsInTheResponseOrder());
   it("the class reads nothing for an empty scope; the adapters pass each read through", () => theServiceWiresTheReads());
+  it("F4.384: the window read is [min fromMs, readToMs − 1], the baseline read [readFromMs, max fromMs)", () =>
+    theWindowAndBaselineReadsSplitAtTheZoneWindowStarts());
+  it("F4.384: the merge keeps no hour twice, two zones", () => theMergeKeepsNoHourTwice());
+  it("F4.384: two zones on overlapping reads give each meter its own excess", () => twoZonesGiveEachMeterItsOwnExcess());
+  it("F4.384: where _5m and _1h agree, excess and PF are the engine's figures", () => agreeingReadsGiveTheSameFigures());
 });

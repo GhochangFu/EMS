@@ -26,6 +26,7 @@ import {
   readAdvisoryCandidates,
   readPairHours,
   readTopEnergyAssets,
+  readUtcHourEnergy,
   type AdvisoryCandidateDbRow,
 } from "./advisories.reads";
 import { anomalyContextOf, withAnomalyContext } from "./advisory-consumption";
@@ -53,9 +54,13 @@ import { advisoryWindows } from "./advisory-window";
  *    single-organization caller; the `ids` filter is the control on the fleet
  *    branch), then the meters with no zone of their own or with energy features
  *    off are dropped, then the 200 cap (R-e);
- * 2. **with the candidate ids only, never `null`** (Q3), the existing reads on
- *    the fleet pool, each holding its own organization equality: 35 days of
- *    local-hour energy (`readLocalHourEnergy`, Q2), the four parameter series
+ * 2. **with the candidate ids only, never `null`** (Q3), the reads on the
+ *    fleet pool, where the candidate ids are each read's isolation control (the
+ *    tariff and parameter reads also hold an organization equality): the window's
+ *    7 days of local-hour energy (`readLocalHourEnergy`, `_5m`) and the 28
+ *    baseline days of UTC-hour energy (`readUtcHourEnergy`, `_1h`; `F4.384`,
+ *    plan Q2 option b), merged per asset at its zone's window start so no hour
+ *    counts twice ({@link mergeAdvisoryHours}), the four parameter series
  *    (`EnergyRateResolver.resolveSeriesForAssets`), the register probes, the
  *    hourly kW/kVA/PF pairs, and the tariff mapping and version in force on the
  *    window's last day (R-h);
@@ -71,7 +76,10 @@ export interface AdvisoryReads {
   /** Through `withReadScope`: `ids` is `narrow`'s value (`null` for the unrestricted admin). */
   candidates(ids: string[] | null): Promise<AdvisoryCandidateDbRow[]>;
   topEnergy(ids: readonly string[], sinceMs: number, limit: number): Promise<string[]>;
+  /** The window's local hours from `_5m` (`readLocalHourEnergy`, inclusive at `to`). */
   hours(assets: readonly { assetId: string; zone: string }[], from: Date, to: Date): Promise<HourlyEnergy[]>;
+  /** The baseline windows' UTC hours from `_1h` over `[fromMs, toMs)` (`F4.384`). */
+  baselineHours(ids: readonly string[], fromMs: number, toMs: number): Promise<HourlyEnergy[]>;
   series(pairs: readonly { assetId: string; key: string }[], from: Date, to: Date): Promise<Map<string, ParameterSeriesRow[]>>;
   registers(requests: readonly RegisterRequest[]): Promise<{ first: Sample | null; last: Sample | null }[]>;
   pairHours(ids: readonly string[], fromMs: number, toMs: number): Promise<Map<string, AdvisoryPairHour[]>>;
@@ -96,6 +104,7 @@ export function advisoryReadsOf(deps: AdvisoryReadDeps): AdvisoryReads {
     candidates: (ids) => withReadScope(tenantDb, fleetDb, ids, () => [], (tx) => readAdvisoryCandidates(tx, ids)),
     topEnergy: (ids, sinceMs, limit) => readTopEnergyAssets(pool, ids, sinceMs, limit),
     hours: (assets, from, to) => readLocalHourEnergy(pool, assets, from, to),
+    baselineHours: (ids, fromMs, toMs) => readUtcHourEnergy(pool, ids, fromMs, toMs),
     series: (pairs, from, to) => rates.resolveSeriesForAssets(pairs, from, to),
     registers: (requests) => readRegisterProbes(pool, requests),
     pairHours: (ids, fromMs, toMs) => readPairHours(pool, ids, fromMs, toMs),
@@ -129,6 +138,35 @@ function tariffOf(
     energyUnit: version.energyUnit,
     billingMeter: mapping.billingMeterAssetIds.includes(candidate.assetId),
   };
+}
+
+/**
+ * `F4.384` — one asset's hours from the two reads, each hour once: the `_5m` local hours from
+ * that asset's own window start (`fromMsOf`), the `_1h` UTC hours before it. Either read spans
+ * every zone's range, so each carries hours of the other's side for some asset; those are
+ * dropped here. Oldest first; an asset `fromMsOf` does not name is not carried.
+ */
+export function mergeAdvisoryHours(
+  window: readonly HourlyEnergy[],
+  baseline: readonly HourlyEnergy[],
+  fromMsOf: ReadonlyMap<string, number>,
+): Map<string, HourlyEnergy[]> {
+  const out = new Map<string, HourlyEnergy[]>();
+  const add = (hour: HourlyEnergy): void => {
+    const list = out.get(hour.assetId);
+    if (list) list.push(hour);
+    else out.set(hour.assetId, [hour]);
+  };
+  for (const hour of window) {
+    const fromMs = fromMsOf.get(hour.assetId);
+    if (fromMs !== undefined && hour.bucketMs >= fromMs) add(hour);
+  }
+  for (const hour of baseline) {
+    const fromMs = fromMsOf.get(hour.assetId);
+    if (fromMs !== undefined && hour.bucketMs < fromMs) add(hour);
+  }
+  for (const list of out.values()) list.sort((a, b) => a.bucketMs - b.bucketMs);
+  return out;
 }
 
 /** The response of `ids` (`narrow`'s value, or one asset) at `now`: one clock for the whole request. */
@@ -168,6 +206,7 @@ export async function computeAdvisories(reads: AdvisoryReads, ids: string[] | nu
   const readFromMs = Math.min(...zones.map((w) => w.readFromMs));
   const readToMs = Math.max(...zones.map((w) => w.readToMs));
   const fromMs = Math.min(...zones.map((w) => w.fromMs));
+  const latestFromMs = Math.max(...zones.map((w) => w.fromMs));
   const toMs = Math.max(...zones.map((w) => w.toMs));
   const consideredIds = considered.map((c) => c.assetId);
 
@@ -182,9 +221,12 @@ export async function computeAdvisories(reads: AdvisoryReads, ids: string[] | nu
     ];
   });
 
-  const [hours, series, probes, mappings] = await Promise.all([
+  const [windowHours, baselineHours, series, probes, mappings] = await Promise.all([
+    // F4.384: the window's local hours from `_5m`, from the earliest zone's window start.
     // `readLocalHourEnergy` is inclusive at its end; one millisecond short leaves today out.
-    reads.hours(considered.map((c) => ({ assetId: c.assetId, zone: c.zone })), new Date(readFromMs), new Date(readToMs - 1)),
+    reads.hours(considered.map((c) => ({ assetId: c.assetId, zone: c.zone })), new Date(fromMs), new Date(readToMs - 1)),
+    // The baseline windows' UTC hours from `_1h`, up to the latest zone's window start.
+    reads.baselineHours(consideredIds, readFromMs, latestFromMs),
     reads.series(
       considered.flatMap((c) => keys.map((key) => ({ assetId: c.assetId, key }))),
       new Date(fromMs),
@@ -228,12 +270,11 @@ export async function computeAdvisories(reads: AdvisoryReads, ids: string[] | nu
   ]);
 
   // 3. The engine, one asset at a time, and the order.
-  const hoursOf = new Map<string, HourlyEnergy[]>();
-  for (const hour of hours) {
-    const list = hoursOf.get(hour.assetId);
-    if (list) list.push(hour);
-    else hoursOf.set(hour.assetId, [hour]);
-  }
+  const hoursOf = mergeAdvisoryHours(
+    windowHours,
+    baselineHours,
+    new Map(considered.map((c) => [c.assetId, windowsOf(c).fromMs])),
+  );
   const seriesOf = (assetId: string): AdvisorySeries => ({
     rate: series.get(inputKey(assetId, ADVISORY_PARAMETER_KEYS.rate)) ?? [],
     pfBand: series.get(inputKey(assetId, ADVISORY_PARAMETER_KEYS.pfBand)) ?? [],

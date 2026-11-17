@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  aCorrectionUnderOneKvarKeepsADecimal,
   aThreeDecimalBandNeverPrintsEqualToThePf,
   anOutOfRangeBandIsNamedAsIgnored,
   anUnpricedTariffMonthSaysNoRate,
@@ -28,4 +29,6 @@ describe("E1.6a — the advisory sentences (ADR 0137, plan §4.4)", () => {
   it("the context uses the imported weak-signal sentences unchanged", () =>
     theContextUsesTheImportedWeakSignalSentences());
   it("no sentence holds `%` or the word saving", () => noSentenceHoldsAPercentOrASaving());
+  it("F4.384: under 1 kVAr one decimal, half up (0.45 → 0.5); under 0.05 → 0.1; from 1 up whole", () =>
+    aCorrectionUnderOneKvarKeepsADecimal());
 });

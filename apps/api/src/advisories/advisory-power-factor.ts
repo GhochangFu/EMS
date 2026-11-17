@@ -11,6 +11,7 @@ import {
   pfSourceAssumption,
   PROJECTION_ASSUMPTION,
   rateAssumption,
+  shownKvar,
   TARGET_PF_ASSUMPTION,
   thresholdAssumption,
   windowAssumption,
@@ -140,7 +141,7 @@ export function lowPowerFactorAdvisory(input: AdvisoryAssetInput, windows: Advis
     kwh: null,
     kvah,
     co2Kg: null,
-    kvar: Math.round(kvar),
+    kvar: shownKvar(kvar),
     powerFactor: shown,
   };
 }
