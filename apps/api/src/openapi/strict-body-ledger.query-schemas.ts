@@ -58,6 +58,7 @@ import {
 } from "../ml/ml.schema";
 import { findingsParagraphQuerySchema } from "../ml-findings/findings-paragraph.schema";
 import { advisoriesQuerySchema } from "../advisories/advisories.schema";
+import { degradationQuerySchema } from "../degradation/degradation.schema";
 import { healthBadActorsQuerySchema } from "../asset-health/health-inputs.schema";
 import {
   assetHealthQuerySchema,
@@ -236,4 +237,8 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // 47 -> 48 (2026-11-17): `E1.6a` (ADR 0137) registered `advisoriesQuerySchema`
   // (`GET /advisories?organizationId=&locationId=`): two optional scope uuids, `.strict()`, no body.
   advisoriesQuerySchema,
+  // 48 -> 49 (2026-11-18): `E1.5a` (ADR 0138) registered `degradationQuerySchema`
+  // (`GET /degradation?organizationId=&locationId=`): the advisories' two optional scope uuids that
+  // only narrow — `.strict()`, no body, no ledger entry. The asset route takes no query.
+  degradationQuerySchema,
 };
