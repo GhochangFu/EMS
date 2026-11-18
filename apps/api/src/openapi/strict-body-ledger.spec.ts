@@ -964,6 +964,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // the health summary's two optional scope uuids, `.strict()`, no body, no window.
   // 47 -> 48 (2026-11-17): `E1.6a` (ADR 0137) registered `advisoriesQuerySchema`: two optional
   // scope uuids that only narrow, `.strict()`, no body.
+  // 48 -> 49 (2026-11-18): `E1.5a` (ADR 0138) `degradationQuerySchema`; see query-schemas.ts.
   //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
@@ -974,7 +975,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(48);
+  ).toBe(49);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

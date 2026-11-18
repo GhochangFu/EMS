@@ -26,6 +26,7 @@ import { MimicSymbolLibrariesModule } from "./mimic-symbol-libraries/mimic-symbo
 import { MlModule } from "./ml/ml.module";
 import { MlFindingsParagraphModule } from "./ml-findings/ml-findings-paragraph.module";
 import { AdvisoriesModule } from "./advisories/advisories.module";
+import { DegradationModule } from "./degradation/degradation.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { ObservabilityModule } from "./observability/observability.module";
 import { RateLimitModule } from "./rate-limit/rate-limit.module";
@@ -93,6 +94,8 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     MlFindingsParagraphModule,
     // `E1.6a` / ADR 0137 — the optimisation advisories (`GET /advisories`). API only.
     AdvisoriesModule,
+    // `E1.5a` / ADR 0138 — degradation trends and time-to-limit estimates (`GET /degradation`). API only.
+    DegradationModule,
   ],
 })
 export class AppModule {}

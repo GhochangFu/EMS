@@ -161,3 +161,5 @@ export * from "./asset-health-inputs";
 export * from "./alarm-root-cause";
 // `E1.6a` (ADR 0137): the optimisation advisories response and its types.
 export * from "./advisories";
+// `E1.5a` (ADR 0138): the degradation-trends response and its types.
+export * from "./degradation";

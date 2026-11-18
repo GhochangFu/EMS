@@ -558,3 +558,29 @@ export async function assertScoresInScopeOnAnEmptyScopeReadsNoCounter(): Promise
     `a scope resolving to no asset must make exactly the scope read, got ${admin.calls.length} call(s)`,
   );
 }
+
+/**
+ * **E1.5a (ADR 0138) — `healthForAssets` is public.** It answers the parsed
+ * `health` block for an asset whose template has one, and `undefined` for an
+ * asset whose template has none.
+ */
+export async function assertHealthForAssetsAnswersParsedBlockOrUndefined(): Promise<void> {
+  const bands = [
+    { code: "fair", label: "Fair", minScore: 0.6 },
+    { code: "poor", label: "Poor", minScore: 0 },
+  ];
+  const { db } = scriptedDb([
+    [
+      { assetId: ASSET_A, content: { health: { bands } } },
+      { assetId: ASSET_B, content: { contentVersion: 1 } },
+    ],
+  ]);
+  const byAsset = await new AssetHealthService(db).healthForAssets([ASSET_A, ASSET_B]);
+
+  assert(
+    JSON.stringify(byAsset.get(ASSET_A)) === JSON.stringify({ bands }),
+    `a template with health must answer its parsed block, got ${JSON.stringify(byAsset.get(ASSET_A))}`,
+  );
+  assert(byAsset.has(ASSET_B), "an asset without health must still be keyed");
+  assert(byAsset.get(ASSET_B) === undefined, "a template without health must answer undefined");
+}

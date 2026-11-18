@@ -224,7 +224,8 @@ function f5(crossing: Crossing): DraftLine {
   };
 }
 
-const toCrossingRule = (r: ThresholdRuleDbRow): CrossingRule => ({
+/** Exported for E1.5a (degradation trends, ADR 0138). */
+export const toCrossingRule = (r: ThresholdRuleDbRow): CrossingRule => ({
   ruleId: r.rule_id,
   assetId: r.asset_id,
   pointKey: r.point_key,

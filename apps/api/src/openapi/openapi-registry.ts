@@ -171,6 +171,7 @@ import {
 } from "../ml/ml.schema";
 import { findingsParagraphQuerySchema } from "../ml-findings/findings-paragraph.schema";
 import { advisoriesQuerySchema } from "../advisories/advisories.schema";
+import { degradationQuerySchema } from "../degradation/degradation.schema";
 import { healthBadActorsQuerySchema } from "../asset-health/health-inputs.schema";
 // `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`;
 // `F4.284`: the alarm, work-order and convert bodies too.
@@ -527,6 +528,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   FindingsParagraphController_get: findingsParagraphQuerySchema,
   // `E1.6a` (ADR 0137): the advisories' `organizationId` and `locationId`, `.strict()`, no body.
   AdvisoriesController_list: advisoriesQuerySchema,
+  // `E1.5a` (ADR 0138): the degradation list's `organizationId` and `locationId`, `.strict()`, no body.
+  DegradationController_list: degradationQuerySchema,
   // `F4.365` U6 (ADR 0134 Amendment 1): the organization version bodies; DELETE carries `?reason=`.
   AdminTariffVersionsController_create: createTariffVersionBodySchema,
   AdminTariffVersionsController_update: updateTariffVersionBodySchema,

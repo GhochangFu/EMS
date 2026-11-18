@@ -14,6 +14,7 @@ import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { CopilotPurgeService } from "../copilot/copilot-purge.service";
 import { DashboardService } from "../dashboard/dashboard.service";
+import { DegradationService } from "../degradation/degradation.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { MaintenanceWindowsService } from "../maintenance-windows/maintenance-windows.service";
 import { MlAnomaliesService } from "../ml/ml-anomalies.service";
@@ -411,4 +412,16 @@ export function assertAdvisoriesServiceSlots(): void {
   expect(injectedToken(AdvisoriesService, 0)).toBe(TENANT_DRIZZLE);
   expect(injectedToken(AdvisoriesService, 1)).toBe(FLEET_DRIZZLE);
   expect(injectedToken(AdvisoriesService, 2)).toBe(FLEET_POOL);
+}
+
+/**
+ * `E1.5a` — `DegradationService(tenantDb, fleetDb, fleetPool, …)` (ADR 0138, plan T1.8, R-o):
+ * the candidate, rule and schedule reads run through `withReadScope(tenantDb, fleetDb, …)` on
+ * slots 0 and 1, and the counter and hourly-mean reads run on the fleet pool in slot 2 with the
+ * considered ids only. Swapping slots 0 and 1 sends every single-organization read to `onEmpty`.
+ */
+export function assertDegradationServiceSlots(): void {
+  expect(injectedToken(DegradationService, 0)).toBe(TENANT_DRIZZLE);
+  expect(injectedToken(DegradationService, 1)).toBe(FLEET_DRIZZLE);
+  expect(injectedToken(DegradationService, 2)).toBe(FLEET_POOL);
 }

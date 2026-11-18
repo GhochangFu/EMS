@@ -9,6 +9,7 @@ import {
   assertEmptyScopeReportsZeroCoverageAndNoInstant,
   assertEveryAssetInScopeIsScoredEvenWithNoCounterRows,
   assertExpectedBucketsFollowsTheLadderAtEveryRung,
+  assertHealthForAssetsAnswersParsedBlockOrUndefined,
   assertMalformedHealthYieldsNullBandNotThrow,
   assertRuleTalliesUseMaxNotSum,
   assertScoresInScopeIsTheSummaryPerAsset,
@@ -68,5 +69,9 @@ describe("asset-health.service", () => {
 
   it("E1.8a — scoresInScope on an empty scope answers [] without a counter read", async () => {
     await assertScoresInScopeOnAnEmptyScopeReadsNoCounter();
+  });
+
+  it("E1.5a — healthForAssets answers a parsed block, or undefined for a template without health", async () => {
+    await assertHealthForAssetsAnswersParsedBlockOrUndefined();
   });
 });

@@ -31,8 +31,11 @@ import type { AdvisoryAssetInput, AdvisoryCandidate, AdvisoryWindows } from "./a
 
 const HOUR_MS = 3_600_000;
 
-/** The local midnight that starts `day` (`YYYY-MM-DD`) in `zone`, epoch ms. */
-function midnightOf(day: string, zone: string): number {
+/**
+ * The local midnight that starts `day` (`YYYY-MM-DD`) in `zone`, epoch ms.
+ * Exported for E1.5a (degradation trends, ADR 0138).
+ */
+export function midnightOf(day: string, zone: string): number {
   const [year, month, date] = day.split("-").map(Number) as [number, number, number];
   return toInstant({ year, month, day: date }, { hour: 0, minute: 0 }, zone).getTime();
 }

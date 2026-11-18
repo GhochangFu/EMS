@@ -6,6 +6,7 @@ import {
   aNonFiniteHourIsLeftOut,
   coverageNeedsEightyPercentOfTheBuckets,
   theBaselineWindowsOverlapNothing,
+  midnightOfIsTheLocalMidnightInstant,
   theWindowEndsAtTheMidnightJustPassed,
 } from "./advisory-window.spec";
 
@@ -18,4 +19,5 @@ describe("E1.6a — the advisory window (ADR 0137, plan R-a, R-b)", () => {
   it("the four baseline windows overlap neither the window nor each other", () => theBaselineWindowsOverlapNothing());
   it("a DST-change week still gives 7 day labels", () => aDstWeekStillHasSevenDays());
   it("a non-finite hour adds nothing", () => aNonFiniteHourIsLeftOut());
+  it("E1.5a — midnightOf is the local midnight instant", () => midnightOfIsTheLocalMidnightInstant());
 });
