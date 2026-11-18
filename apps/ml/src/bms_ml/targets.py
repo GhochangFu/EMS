@@ -39,7 +39,9 @@ def _energy_meter(*keys: str) -> tuple[Target, ...]:
     return tuple(Target("electrical", "energy_meter", key) for key in keys)
 
 
-# ADR 0135 Amendment 5, ruling 1, in the table's order. Never `kwh_total`: a counter that only climbs.
+# ADR 0135 Amendment 5, ruling 1, in the table's order, then Amendment 7 item 1 (water flow
+# meters, baseline only: one point). Never a counter that only climbs: not `kwh_total`
+# (Amendment 5) and not `outlet_flow_totalizer_kl` (Amendment 7 item 2), in either job.
 DEFAULT_ANOMALY_TARGETS: tuple[Target, ...] = (
     *_energy_meter(
         "kw",
@@ -64,6 +66,7 @@ DEFAULT_ANOMALY_TARGETS: tuple[Target, ...] = (
     Target("environment", "rtu_health", "network_strength"),
     Target("environment", "rtu_health", "controller_power_status"),
     Target("facility", "cold_room", "cold_room_temp_c"),
+    Target("water", "flow_meter", "treated_water_flow_klh"),
 )
 
 

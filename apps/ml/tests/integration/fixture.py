@@ -41,7 +41,8 @@ T4.4 can time a cycle at 8 and at 21 series with a full 2,016-hour context.
 E1.2 plan T1.10 (ruling 5's measurement, `measure_cycle.py`) adds two options:
 `--anomaly-shape` plants the anomaly job at the real shape, in organization A
 only, on three more synthetic classes of their own (so no other suite's targets
-see them): 5 assets x 15 points, 5 x 3 and 28 x 1, each point 91 days
+see them): 5 assets x 15 points, 5 x 3 and 28 x 1 and, since E1.2e
+(Amendment 7 item 5), 21 x 1 standing for the flow meters, each point 91 days
 (MEASURE_HOURS). `--ahead-days D` moves `as_of` to this hour + D days (default
 AHEAD_DAYS = 70, unchanged for the suites); 91 days of history stay ahead of
 now only when D > 91, hence MEASURE_AHEAD_DAYS.
@@ -73,6 +74,9 @@ ORGANIZATIONS = {"A": "ESKOM", "B": "PHEWB"}
 FORECAST = ("MLFX-R1", "MLFX-R2", "MLFX-G1", "MLFX-O2")
 NO_FORECAST = ("MLFX-W1", "MLFX-V1", "MLFX-S1", "MLFX-T0")
 G1_MISSING_HOURS = 15 * 5
+# readiness.FRESHNESS_HOURS, restated so the fixture imports nothing from bms_ml;
+# tests/test_fixture_shapes.py fails if G1 is not fresh under the real constant.
+FRESHNESS_HOURS = 3
 
 # --- E1.2: the anomaly classes ---------------------------------------------------------
 METER_TYPE = "ml_fixture_meter"
@@ -117,6 +121,8 @@ MEASURE_CLASSES = (
     ),
     ("ml_fixture_rtu3", "ML_FIXTURE_RTU3", "MLFX-MR", 5, tuple(f"ml_fixture_h{i}" for i in range(3))),
     ("ml_fixture_single91", "ML_FIXTURE_SINGLE91", "MLFX-MS", 28, ("ml_fixture_s",)),
+    # E1.2e (ADR 0135 Amendment 7 item 5): 21 one-point assets standing for the flow meters.
+    ("ml_fixture_flow91", "ML_FIXTURE_FLOW91", "MLFX-MF", 21, ("ml_fixture_flow",)),
 )
 MEASURE_TARGETS = ",".join(
     f"{DOMAIN}/{asset_type}/{point}" for asset_type, _, _, _, points in MEASURE_CLASSES for point in points
@@ -130,7 +136,16 @@ def full(days: int) -> list[int]:
 
 
 def with_daily_hole(days: int, as_of: datetime) -> list[int]:
-    return [h for h in full(days) if not (h <= 15 * 24 and 1 <= (as_of - timedelta(hours=h)).hour <= 5)]
+    """`days` full, less a 5 h hole (UTC hours 1-5) on each of 15 days.
+
+    The 15-day window starts behind the freshness window, so the newest
+    FRESHNESS_HOURS buckets always hold data: with the window at as_of, a run
+    at 04:00-06:59 UTC read G1 as stale (tests/test_fixture_shapes.py). Any
+    360 consecutive hours hold each UTC hour 15 times, so the hole stays
+    G1_MISSING_HOURS.
+    """
+    window = range(FRESHNESS_HOURS + 1, FRESHNESS_HOURS + 15 * 24 + 1)
+    return [h for h in full(days) if not (h in window and 1 <= (as_of - timedelta(hours=h)).hour <= 5)]
 
 
 def four_hours_a_day(days: int, as_of: datetime) -> list[int]:
@@ -218,7 +233,7 @@ def anomaly_value(shape: AnomalyShape, point_key: str, h: int) -> float:
 
 
 def measure_shapes() -> tuple[AnomalyShape, ...]:
-    """The anomaly job's real shape for T1.10: 38 assets in organization A, none stale."""
+    """The anomaly job's real shape for T1.10: 59 assets in organization A, none stale."""
     return tuple(
         AnomalyShape(f"{prefix}{i:02d}", "A", asset_type, points, True, None, 10.0 + i)
         for asset_type, _, prefix, count, points in MEASURE_CLASSES

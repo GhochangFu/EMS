@@ -52,9 +52,9 @@ RUNS = 3
 # 4 fixture rooms + 17 = 21 forecast series, 17 of them with a full 2,016-hour context.
 EXTRA_READY = 17
 EXPECTED_FORECAST_SERIES = 4 + EXTRA_READY
-# measure_shapes(): 5 x 15 points + 5 x 3 + 28 x 1. Every asset gets a baseline
+# measure_shapes(): 5 x 15 points + 5 x 3 + 28 x 1 + 21 x 1 (E1.2e). Every asset gets a baseline
 # row; the 10 with two points or more get a forest row too.
-EXPECTED_ANOMALY_ASSETS = 38
+EXPECTED_ANOMALY_ASSETS = 59
 EXPECTED_FOREST_ROWS = 10
 
 FORECAST = "run-once"

@@ -14,7 +14,8 @@ each ready asset for anomalies and inserts the scores into `ml.anomaly_scores`
 
 Decision record: [`docs/adr/0135-ml-serving-foundation.md`](../../docs/adr/0135-ml-serving-foundation.md).
 Build plans: [`docs/plans/e1.1-ml-serving-foundation.md`](../../docs/plans/e1.1-ml-serving-foundation.md),
-[`docs/plans/e1.2-anomaly-detection.md`](../../docs/plans/e1.2-anomaly-detection.md).
+[`docs/plans/e1.2-anomaly-detection.md`](../../docs/plans/e1.2-anomaly-detection.md),
+[`docs/plans/e1.2e-water-flow-anomaly-target.md`](../../docs/plans/e1.2e-water-flow-anomaly-target.md).
 
 The model is **Chronos-2** (`amazon/chronos-2`, Apache-2.0) at an exact
 revision, baked into the image at build time (ADR 0135 decision 7 and
@@ -104,7 +105,7 @@ configuration, schema, role or model refused (the loop stops).
 | `ML_CONTEXT_HOURS` | 2016 | 336–2048 |
 | `ML_FORECAST_TARGETS` | `facility/cold_room/cold_room_temp_c,electrical/energy_meter/kw` | `domain/asset_type/point_key`, at most 32 |
 | `ML_ANOMALY_ENABLED` | `true` | `true`, `false`, `1` or `0`; `false` stops the anomaly job, forecasts go on (both compose files pass it through) |
-| `ML_ANOMALY_TARGETS` | ruling 1's 21 points (`targets.DEFAULT_ANOMALY_TARGETS`): 15 energy meter points, `breaker_main`, `chlorine_pump_on`, three RTU health keys, `cold_room_temp_c` | `domain/asset_type/point_key`, at most 32 |
+| `ML_ANOMALY_TARGETS` | 22 points (`targets.DEFAULT_ANOMALY_TARGETS`): ruling 1's 21 (15 energy meter points, `breaker_main`, `chlorine_pump_on`, three RTU health keys, `cold_room_temp_c`) and, since Amendment 7, `treated_water_flow_klh` of a water flow meter. Never a counter (`kwh_total`, `outlet_flow_totalizer_kl`) | `domain/asset_type/point_key`, at most 32 |
 | `ML_MODEL_DIR` | `/opt/bms-ml/model` | the baked weights and `MODEL.json` |
 | `ML_TORCH_THREADS` | unset | 1–64; set it to the container's CPU limit |
 | `ML_HEALTH_PORT` | 4200 | 1024–65535 |
@@ -127,6 +128,12 @@ parent imports neither it nor torch, and `run-anomaly` needs no Chronos model.
   - `isolation_forest`: scikit-learn's Isolation Forest over the asset's points
     together, fitted anew each cycle on the last 28 days; only for an asset
     with two or more points. No model is stored.
+- **A flow meter** has one point, so it gets `baseline_mad` only. A stop at
+  the same UTC hour every day is that hour's normal level. A stop in an hour
+  that normally runs, or a run in an hour that is normally off, is unusual
+  (`tests/test_anomaly_zero_flow.py`). A stop on one weekday reads unusual
+  until the point has 56 days of data (ADR 0135 Amendment 7 item 4; a known
+  gap, not a tested behaviour).
 - **Advisory only.** A score raises no alarm, notification, work order or
   report. The 0.99 "unusual" line is applied when the scores are read, never
   here.
