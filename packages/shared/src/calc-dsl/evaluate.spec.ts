@@ -403,3 +403,96 @@ export function runEvaluateWindowV2AndFiniteTests(): void {
   const infinite = evalWindow("hours(today)", {}, { "hours(today)": Infinity });
   assert(infinite.ok === false && infinite.code === "non_finite", "Infinity in windows refuses as non_finite");
 }
+
+// ---- F4.387 — phase unbalance: the exact formula text on the PHE energy-meter template ----
+//
+// NEMA MG-1: the largest deviation from the three-phase mean, over that mean, times 100.
+// The grammar has no variables, so the mean is removed by algebra:
+// |a - m| / m = |2a - b - c| / (a + b + c). These strings are what the template stores;
+// docs/plans/f4.387-phase-unbalance.md section 3 carries the same text.
+
+const VOLTAGE_UNBALANCE =
+  "100 * max(abs(2 * {voltage_vry} - {voltage_vyb} - {voltage_vbr}), abs(2 * {voltage_vyb} - {voltage_vry} - {voltage_vbr}), abs(2 * {voltage_vbr} - {voltage_vry} - {voltage_vyb})) / ({voltage_vry} + {voltage_vyb} + {voltage_vbr})";
+
+const CURRENT_UNBALANCE_NO_GUARD =
+  "100 * max(abs(2 * {current_ir} - {current_iy} - {current_ib}), abs(2 * {current_iy} - {current_ir} - {current_ib}), abs(2 * {current_ib} - {current_ir} - {current_iy})) / ({current_ir} + {current_iy} + {current_ib})";
+
+/** Refused at or below a 0.5 A mean (1.5 = 3 x 0.5): g / g is 1 above the floor and 0 / 0 at or below it. */
+const CURRENT_UNBALANCE =
+  CURRENT_UNBALANCE_NO_GUARD +
+  " * (max({current_ir} + {current_iy} + {current_ib} - 1.5, 0) / max({current_ir} + {current_iy} + {current_ib} - 1.5, 0))";
+
+/** The textbook form with the mean written out, to hold the algebra of each stored form. */
+function textbookUnbalance(x: string, y: string, z: string): string {
+  const sum = `({${x}} + {${y}} + {${z}})`;
+  return `max(abs({${x}} - ${sum} / 3), abs({${y}} - ${sum} / 3), abs({${z}} - ${sum} / 3)) / (${sum} / 3) * 100`;
+}
+const CURRENT_UNBALANCE_TEXTBOOK = textbookUnbalance("current_ir", "current_iy", "current_ib");
+const VOLTAGE_UNBALANCE_TEXTBOOK = textbookUnbalance("voltage_vry", "voltage_vyb", "voltage_vbr");
+
+const amps = (a: number, b: number, c: number) => ({ current_ir: a, current_iy: b, current_ib: c });
+const volts = (a: number, b: number, c: number) => ({ voltage_vry: a, voltage_vyb: b, voltage_vbr: c });
+
+/** F4.387: the stored phase-unbalance formulas compute the NEMA percentage and refuse a zero mean and a light load. */
+export function runEvaluatePhaseUnbalanceTests(): void {
+  expectValue(CURRENT_UNBALANCE, amps(110, 100, 90), 10, "110/100/90 A is 10 % current unbalance");
+  expectValue(CURRENT_UNBALANCE, amps(10, 10, 10), 0, "balanced currents are 0 %");
+  expectValue(CURRENT_UNBALANCE, amps(0, 10, 10), 100, "one lost phase is 100 %");
+  expectValue(VOLTAGE_UNBALANCE, volts(420, 410, 400), 2.4390243902439024, "420/410/400 V is 2.44 % voltage unbalance");
+  expectValue(VOLTAGE_UNBALANCE, volts(415, 415, 415), 0, "balanced voltages are 0 %");
+
+  // A zero mean writes nothing: the refusal is at the division by the sum.
+  const stopped = expectRefusal(CURRENT_UNBALANCE, amps(0, 0, 0), "non_finite", "all-zero currents are refused");
+  assert(
+    !stopped.ok && stopped.position === CURRENT_UNBALANCE.indexOf(" / ") + 1,
+    `the all-zero refusal is reported at the division by the phase sum — got ${JSON.stringify(stopped)}`,
+  );
+  expectRefusal(VOLTAGE_UNBALANCE, volts(0, 0, 0), "non_finite", "all-zero voltages are refused");
+
+  // The light-load floor: at or below a 0.5 A mean nothing is written; just above it the guard is exactly 1.
+  expectRefusal(CURRENT_UNBALANCE, amps(0.5, 0.5, 0.5), "non_finite", "a 0.5 A mean is at the floor and is refused");
+  expectRefusal(CURRENT_UNBALANCE, amps(0.4, 0.5, 0.3), "non_finite", "a light, unbalanced load is refused, not 25 %");
+  expectValue(CURRENT_UNBALANCE, amps(1.4, 1.4, 0), 100, "a lost phase on a 1.4 A meter is still 100 %");
+  const unguarded = evalExpr(CURRENT_UNBALANCE_NO_GUARD, amps(0.6, 0.5, 0.5));
+  const guarded = evalExpr(CURRENT_UNBALANCE, amps(0.6, 0.5, 0.5));
+  assert(
+    unguarded.ok && guarded.ok && Object.is(unguarded.value, guarded.value),
+    `above the floor the guard changes no bit of the value — got ${JSON.stringify({ unguarded, guarded })}`,
+  );
+  // Just above the floor (a 0.503 A mean) a value is written, which pins the literal at 1.5 from above.
+  const nearUnguarded = evalExpr(CURRENT_UNBALANCE_NO_GUARD, amps(0.51, 0.5, 0.5));
+  const nearGuarded = evalExpr(CURRENT_UNBALANCE, amps(0.51, 0.5, 0.5));
+  assert(
+    nearUnguarded.ok && nearGuarded.ok && Object.is(nearUnguarded.value, nearGuarded.value),
+    `a 1.51 A phase sum is above the floor and is written — got ${JSON.stringify({ nearUnguarded, nearGuarded })}`,
+  );
+
+  // One absent phase is a missing input, never a two-phase number.
+  expectRefusal(CURRENT_UNBALANCE, { current_ir: 1, current_iy: 1 }, "missing_input", "a missing phase is refused");
+
+  // The algebra: each stored form equals the textbook form on a grid where each phase is the extreme at least once.
+  for (const a of [1, 7.5, 40, 133.3]) {
+    for (const b of [1, 9, 38.2, 120]) {
+      for (const c of [2, 8, 41, 140.7]) {
+        const stored = evalExpr(CURRENT_UNBALANCE_NO_GUARD, amps(a, b, c));
+        const textbook = evalExpr(CURRENT_UNBALANCE_TEXTBOOK, amps(a, b, c));
+        assert(
+          stored.ok && textbook.ok && Math.abs(stored.value - textbook.value) < 1e-9,
+          `stored and textbook current forms differ at ${a}/${b}/${c} — got ${JSON.stringify({ stored, textbook })}`,
+        );
+      }
+    }
+  }
+  for (const a of [380, 401.5, 415, 440]) {
+    for (const b of [385, 398, 416.2, 445]) {
+      for (const c of [390, 405.7, 412, 450]) {
+        const stored = evalExpr(VOLTAGE_UNBALANCE, volts(a, b, c));
+        const textbook = evalExpr(VOLTAGE_UNBALANCE_TEXTBOOK, volts(a, b, c));
+        assert(
+          stored.ok && textbook.ok && Math.abs(stored.value - textbook.value) < 1e-9,
+          `stored and textbook voltage forms differ at ${a}/${b}/${c} — got ${JSON.stringify({ stored, textbook })}`,
+        );
+      }
+    }
+  }
+}
