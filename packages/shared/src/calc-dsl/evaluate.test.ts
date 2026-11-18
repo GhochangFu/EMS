@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runEvaluatePhaseUnbalanceTests,
   runEvaluateTests,
   runEvaluateV2Tests,
   runEvaluateV3Tests,
@@ -41,5 +42,11 @@ describe("bms-calc-v3 evaluate — windows (E4.1b)", () => {
   });
   it("a v2 AST never reads the windows map; a non-finite window value refuses at the node", () => {
     runEvaluateWindowV2AndFiniteTests();
+  });
+});
+
+describe("F4.387 phase-unbalance formulas", () => {
+  it("compute the NEMA percentage and refuse a zero mean and a light load", () => {
+    runEvaluatePhaseUnbalanceTests();
   });
 });
