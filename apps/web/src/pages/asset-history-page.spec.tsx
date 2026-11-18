@@ -4,9 +4,15 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi, type MockInstance } from "vitest";
 
-import { ADVISORY_EMPTY_SENTENCE, assetListRowSchema, pointAggregateResponseSchema } from "@bms/shared/contracts";
+import {
+  ADVISORY_EMPTY_SENTENCE,
+  assetListRowSchema,
+  DEGRADATION_DISCLAIMER,
+  DEGRADATION_SECTION_TITLE,
+  pointAggregateResponseSchema,
+} from "@bms/shared/contracts";
 import { encodePointRef } from "@bms/shared";
-import type { AdvisoriesResponse } from "@bms/shared/contracts";
+import type { AdvisoriesResponse, DegradationResponse } from "@bms/shared/contracts";
 import type {
   AppendChartWidgetResponse,
   AssetAnomaliesResponse,
@@ -24,6 +30,7 @@ import * as advisoriesApi from "../api/advisories";
 import * as assetsApi from "../api/assets";
 import * as copilotApi from "../api/copilot";
 import * as dashboardsApi from "../api/dashboards";
+import * as degradationApi from "../api/degradation";
 import * as maintenanceApi from "../api/maintenance-windows";
 import * as mlApi from "../api/ml";
 import { APPEND_ANSWER } from "../api/dashboards.spec";
@@ -31,6 +38,7 @@ import * as systemStatusApi from "../api/system-status";
 import * as telemetryApi from "../api/telemetry";
 import * as exportsApi from "../api/view-exports";
 import { anAdvisory } from "../components/advisories/advisory-card.spec";
+import { HEALTH_SENTENCE, healthIndicator, oneAssetAnswer } from "../components/degradation/asset-degradation-section.spec";
 import { stubScheduleWizardApis } from "../components/view-actions/schedule-button.spec";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import { ANOMALY_CAPTION } from "../lib/anomaly-series";
@@ -44,6 +52,11 @@ import { AssetHistoryPage } from "./asset-history-page";
 vi.mock("../api/advisories", () => ({
   fetchAdvisories: vi.fn(),
   fetchAssetAdvisories: vi.fn(async () => ({ asOf: "2026-10-31T06:20:00.000Z", candidates: 0, considered: 0, advisories: [] })),
+}));
+// `E1.5b` (ADR 0138, plan T2.2): likewise the degradation read, default no asset.
+vi.mock("../api/degradation", () => ({
+  fetchDegradation: vi.fn(),
+  fetchAssetDegradation: vi.fn(async () => ({ asOf: "2026-10-31T06:20:00.000Z", candidates: 0, considered: 0, assets: [] })),
 }));
 
 /**
@@ -154,8 +167,18 @@ export function stubApis(
     /** `E1.6b`: the asset's advisories (default: none), or the read's failure. */
     advisories?: AdvisoriesResponse;
     advisoriesError?: Error;
+    /** `E1.5b`: the asset's degradation (default: no asset), or the read's failure. */
+    degradation?: DegradationResponse;
+    degradationError?: Error;
   } = {},
 ): Stubs {
+  const degradationRead = vi.mocked(degradationApi.fetchAssetDegradation);
+  degradationRead.mockReset();
+  if (options.degradationError) {
+    degradationRead.mockRejectedValue(options.degradationError);
+  } else {
+    degradationRead.mockResolvedValue(options.degradation ?? { asOf: FORECAST_AS_OF, candidates: 0, considered: 0, assets: [] });
+  }
   const advisoriesRead = vi.mocked(advisoriesApi.fetchAssetAdvisories);
   advisoriesRead.mockReset();
   if (options.advisoriesError) {
@@ -821,6 +844,33 @@ export async function noAdvisoryOrAFailedReadDrawsNoSection(): Promise<void> {
     expect(screen.queryByRole("heading", { name: "Advisories" })).toBeNull();
     expect(screen.queryByText(ADVISORY_EMPTY_SENTENCE)).toBeNull();
     expect(screen.queryByText(/asset advisories/)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    cleanup();
+  }
+}
+
+/** `E1.5b` (plan T2.2): one indicator shows the "Degradation — advisory" heading and its sentence. */
+export async function oneIndicatorShowsTheDegradationSection(): Promise<void> {
+  stubApis({ degradation: oneAssetAnswer([healthIndicator()]) });
+  renderHistoryPage();
+  const section = await screen.findByRole("region", { name: DEGRADATION_SECTION_TITLE });
+  expect(within(section).getByTestId("degradation-sentence").textContent).toBe(HEALTH_SENTENCE);
+  expect(vi.mocked(degradationApi.fetchAssetDegradation).mock.calls[0]).toEqual([ASSET_ID]);
+}
+
+/** `E1.5b` R-p: no indicator, or a failed read (a 403, not retried), draws no heading and no banner. */
+export async function noIndicatorOrAFailedReadDrawsNoDegradationSection(): Promise<void> {
+  for (const options of [{}, { degradationError: new Error("asset degradation 403") }]) {
+    stubApis(options);
+    renderHistoryPage();
+    expect(await screen.findByTestId("history-level")).toBeInTheDocument();
+    await waitFor(() => expect(degradationApi.fetchAssetDegradation).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(screen.queryByRole("heading", { name: DEGRADATION_SECTION_TITLE })).toBeNull();
+    expect(screen.queryByText(DEGRADATION_DISCLAIMER)).toBeNull();
+    expect(screen.queryByText(/asset degradation/)).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     cleanup();
   }

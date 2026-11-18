@@ -28,6 +28,8 @@ import {
   noPointsMeansNoExport,
   aForbiddenAssetRendersTheAccessSentence,
   aNinthPointIsRefused,
+  noIndicatorOrAFailedReadDrawsNoDegradationSection,
+  oneIndicatorShowsTheDegradationSection,
   aPresetAndCompareInTheUrlReachTheRead,
   anEmptyPreviousPeriodSaysSo,
   eachPointShowsItsLatestValueAndPollTime,
@@ -248,5 +250,13 @@ describe("F4.297 asset history page", () => {
 
   it("E1.6b no advisory, or a failed read, draws no section and no banner", async () => {
     await noAdvisoryOrAFailedReadDrawsNoSection();
+  });
+
+  it("E1.5b one indicator shows the degradation section", async () => {
+    await oneIndicatorShowsTheDegradationSection();
+  });
+
+  it("E1.5b no indicator, or a failed read, draws no degradation section and no banner", async () => {
+    await noIndicatorOrAFailedReadDrawsNoDegradationSection();
   });
 });
