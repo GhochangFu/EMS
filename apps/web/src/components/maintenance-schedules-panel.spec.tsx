@@ -1,13 +1,20 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 
 import type { MaintenanceScheduleItem } from "@bms/shared";
+import type { DegradationResponse } from "@bms/shared/contracts";
 
 import type { AssetRow } from "../api/assets";
+import * as degradationApi from "../api/degradation";
 import * as maintenanceApi from "../api/maintenance";
+import { anAsset, anIndicator } from "../lib/degradation.spec";
 import { MaintenanceSchedulesPanel, priorityStyle } from "./maintenance-schedules-panel";
+
+// `E1.5b` (ADR 0138, plan T2.5): the degradation read is a module mock; `renderPanel` sets each
+// case's answer (default: no asset), so no case reaches a local API.
+vi.mock("../api/degradation", () => ({ fetchDegradation: vi.fn(), fetchAssetDegradation: vi.fn() }));
 
 /**
  * `F3.65b` owner ruling R-f (2026-09-28) — the schedule template's priority
@@ -85,14 +92,27 @@ function envelope(sentence: string): Error {
   return new Error(`{"statusCode":409,"message":"${sentence}","error":"Conflict"}`);
 }
 
-async function renderPanel(row: MaintenanceScheduleItem = SCHEDULE): Promise<void> {
+const NO_DEGRADATION: DegradationResponse = { asOf: "2026-11-16T10:20:00.000Z", candidates: 0, considered: 0, assets: [] };
+
+async function renderPanel(
+  row: MaintenanceScheduleItem = SCHEDULE,
+  degradation: DegradationResponse | Error = NO_DEGRADATION,
+  more: MaintenanceScheduleItem[] = [],
+): Promise<void> {
+  const degradationRead = vi.mocked(degradationApi.fetchDegradation);
+  degradationRead.mockReset();
+  if (degradation instanceof Error) {
+    degradationRead.mockRejectedValue(degradation);
+  } else {
+    degradationRead.mockResolvedValue(degradation);
+  }
   vi.stubGlobal(
     "fetch",
     vi.fn(() => Promise.reject(new Error("maintenance-schedules-panel.spec: no fetch expected"))),
   );
   // `F4.281`: the inactive row comes back only when the panel asks for it ("Show inactive").
   vi.spyOn(maintenanceApi, "fetchMaintenanceSchedules").mockImplementation(async (input) => ({
-    items: input.includeInactive === true ? [row, INACTIVE] : [row],
+    items: input.includeInactive === true ? [row, ...more, INACTIVE] : [row, ...more],
   }));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -187,4 +207,77 @@ export async function theRowsWherePartWraps(): Promise<void> {
   const where = screen.getByText("· RTU 3");
   expect(where).not.toHaveClass("truncate");
   expect(where).toHaveClass("whitespace-normal");
+}
+
+/**
+ * `E1.5b` (ADR 0138 decision 4, plan T2.5, §4.7, R-t, Q4 (a)) — a display-only trend note beside a
+ * schedule: the server's sentence and the *Advisory* pill, after the *Trigger* line, on the card
+ * of the schedule the note names and no other. No button, no link, no state.
+ */
+const NOTE = "Trend reaches its limit in about 13–17 days; next service due in 60 days.";
+
+/** A second schedule of the same asset, with no note of its own. */
+const SAME_ASSET: MaintenanceScheduleItem = {
+  ...SCHEDULE,
+  id: "5c4e1d2c-0000-4000-8000-000000000003",
+  title: "Monthly belt check",
+  triggerSummary: "Every 30 days",
+};
+
+const WITH_NOTE: DegradationResponse = {
+  ...NO_DEGRADATION,
+  candidates: 1,
+  considered: 1,
+  assets: [
+    {
+      ...anAsset(1, [anIndicator({ daysToLimit: { min: 13, max: 17 } })]),
+      assetId: SCHEDULE.assetId,
+      scheduleNotes: [{ scheduleId: SCHEDULE.id, nextDueAt: SCHEDULE.nextDueAt, sentence: NOTE }],
+    },
+  ],
+};
+
+function cardOf(title: string): HTMLElement {
+  return screen.getByText(title).closest("article") as HTMLElement;
+}
+
+/** A schedule whose id has a note shows it, with the info pill, after its Trigger line, in its own card. */
+export async function aScheduleWithANoteShowsIt(): Promise<void> {
+  await renderPanel({ ...SCHEDULE, triggerSummary: "Every 90 days" }, WITH_NOTE);
+  const note = await screen.findByTestId("schedule-trend-note");
+  expect(vi.mocked(degradationApi.fetchDegradation).mock.calls).toEqual([[{}]]);
+  expect(cardOf(SCHEDULE.title)).toContainElement(note);
+  expect(within(note).getByText(NOTE)).toBeInTheDocument();
+  const pill = within(note).getByText("Advisory");
+  expect(pill.getAttribute("class") ?? "").toContain("text-info-ink");
+  expect(note.innerHTML).not.toMatch(/critical|warning/);
+  const trigger = within(cardOf(SCHEDULE.title)).getByText("Trigger: Every 90 days");
+  expect(trigger.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING, "after the Trigger line").toBeTruthy();
+  expect(within(note).queryByRole("button")).toBeNull();
+  expect(within(note).queryByRole("link")).toBeNull();
+}
+
+/** A schedule with no note — the same asset's other schedule — shows none. */
+export async function aScheduleWithNoNoteShowsNone(): Promise<void> {
+  await renderPanel(SCHEDULE, WITH_NOTE, [SAME_ASSET]);
+  await screen.findByTestId("schedule-trend-note");
+  expect(screen.getAllByTestId("schedule-trend-note")).toHaveLength(1);
+  expect(within(cardOf(SAME_ASSET.title)).queryByTestId("schedule-trend-note")).toBeNull();
+  expect(within(cardOf(SAME_ASSET.title)).queryByText(/Trend reaches/)).toBeNull();
+}
+
+/** A failed degradation read leaves the panel exactly as a read with no asset leaves it. */
+export async function aFailedDegradationReadLeavesThePanel(): Promise<void> {
+  await renderPanel(SCHEDULE, NO_DEGRADATION, [SAME_ASSET]);
+  await waitFor(() => expect(degradationApi.fetchDegradation).toHaveBeenCalled());
+  await new Promise((r) => setTimeout(r, 20));
+  const quiet = document.body.innerHTML;
+  cleanup();
+
+  await renderPanel(SCHEDULE, new Error("degradation 500"), [SAME_ASSET]);
+  await waitFor(() => expect(degradationApi.fetchDegradation).toHaveBeenCalled());
+  await new Promise((r) => setTimeout(r, 20));
+  expect(screen.queryByTestId("schedule-trend-note")).toBeNull();
+  expect(screen.queryByText(/degradation/i)).toBeNull();
+  expect(document.body.innerHTML).toBe(quiet);
 }
