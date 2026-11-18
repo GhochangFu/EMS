@@ -27,6 +27,7 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
 vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
   HealthBadActorsCard: () => null,
 }));
+vi.mock("../../components/degradation/degradation-trend-card", () => ({ DegradationTrendCard: () => null }));
 
 /**
  * `F3.69` U3 — the key binding between `SiteDashboardView`'s `Try again` and

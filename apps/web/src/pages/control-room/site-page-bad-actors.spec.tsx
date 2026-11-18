@@ -49,6 +49,8 @@ vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
   ),
 }));
 
+vi.mock("../../components/degradation/degradation-trend-card", () => ({ DegradationTrendCard: () => null }));
+
 vi.mock("../../components/ml/ml-findings-card", () => ({
   MlFindingsCard: () => <div data-testid="ml-findings-card" />,
 }));

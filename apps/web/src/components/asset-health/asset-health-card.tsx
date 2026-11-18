@@ -1,4 +1,5 @@
 import type { AssetHealthResponse } from "@bms/shared";
+import { DEGRADATION_ESTIMATED_LABEL } from "@bms/shared/contracts";
 import type { AssetHealthInputsResponse } from "@bms/shared/contracts";
 
 import {
@@ -21,6 +22,11 @@ type AssetHealthCardProps = {
    * failed): the card is exactly what it was before, with no error text.
    */
   inputs?: AssetHealthInputsResponse;
+  /**
+   * `E1.5b` (ADR 0138, plan T2.3) — the server's health `summary` for a `crossing` indicator, drawn
+   * as sent. Absent (no crossing, loading, or a failed read): the card is exactly what it was.
+   */
+  trendSummary?: string;
 };
 
 /**
@@ -35,7 +41,7 @@ type AssetHealthCardProps = {
  * unconfigured. Collapsing these into one "no data" reading is exactly the
  * failure `packages/shared/src/contracts/health.ts`'s docblock names.
  */
-export function AssetHealthCard({ title = "Asset Health", data, inputs }: AssetHealthCardProps) {
+export function AssetHealthCard({ title = "Asset Health", data, inputs, trendSummary }: AssetHealthCardProps) {
   const hasScore = data.score !== null;
   const coverage = healthWindowCoverage(data.coveredBuckets, data.expectedBuckets);
   // R-b: from the score this card shows, never from another number.
@@ -113,6 +119,15 @@ export function AssetHealthCard({ title = "Asset Health", data, inputs }: AssetH
               </li>
             ))}
           </ul>
+        </div>
+      ) : null}
+
+      {/* `E1.5b` — after the inputs list; the server's words, never a band or severity colour. */}
+      {trendSummary !== undefined ? (
+        <div data-testid="health-trend-line" className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+          <span className="text-ink">{trendSummary}</span>
+          <span className="text-2xs">{DEGRADATION_ESTIMATED_LABEL}</span>
+          <StatusPill label="Advisory" tone="info" />
         </div>
       ) : null}
 

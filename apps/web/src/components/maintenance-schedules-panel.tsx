@@ -10,6 +10,8 @@ import {
 
 import type { AssetRow } from "../api/assets";
 import { fetchMaintenanceSchedules } from "../api/maintenance";
+import { useDegradationList } from "../hooks/use-degradation";
+import { noteForSchedule } from "../lib/degradation";
 // The three label maps left this file in `F2.19` (ADR 0038 Amendment 5 Part B).
 // The Maintenance tab is the second surface that renders these twenty-three
 // strings, and two copies of one vocabulary's labels drift — a category renamed
@@ -23,6 +25,7 @@ import {
 import { MaintenanceScheduleConvertWizard } from "./maintenance-schedule-convert-wizard";
 import { MaintenanceScheduleToggleWizard } from "./maintenance-schedule-toggle-wizard";
 import { MaintenanceScheduleWizard } from "./maintenance-schedule-wizard";
+import { StatusPill } from "./status-pill";
 
 type MaintenanceSchedulesPanelProps = {
   assetOptions: AssetRow[];
@@ -114,6 +117,16 @@ function dueLabel(item: MaintenanceScheduleItem): string {
   return `Due in ${days}d`;
 }
 
+/** `E1.5b` (ADR 0138 decision 4): the schedule's trend note, display only; nothing without one. */
+function ScheduleTrendNote({ sentence }: { sentence: string | undefined }) {
+  return sentence === undefined ? null : (
+    <span data-testid="schedule-trend-note" className="flex flex-wrap items-center gap-2 text-ink">
+      <span>{sentence}</span>
+      <StatusPill label="Advisory" tone="info" />
+    </span>
+  );
+}
+
 /**
  * Manages maintenance schedule templates and generates related work orders.
  *
@@ -123,6 +136,10 @@ function dueLabel(item: MaintenanceScheduleItem): string {
  * role the routes admit. "Show inactive" (owner ruling DC3) lists deactivated
  * schedules so a person reaches the Activate stepper too. "Generate WO" stays a
  * direct call: the convert route is excluded from the catalog.
+ *
+ * `E1.5b` (ADR 0138 decision 4, plan T2.5, §4.7, Q4 (a)) — after a schedule's *Trigger* line, the
+ * server's trend note for that schedule, if any, with the *Advisory* pill. Display only: no
+ * button, no link, no state; a failed or pending degradation read leaves the panel as it is.
  */
 export function MaintenanceSchedulesPanel({
   assetOptions,
@@ -135,6 +152,10 @@ export function MaintenanceSchedulesPanel({
   const [showInactive, setShowInactive] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [toggleItem, setToggleItem] = useState<MaintenanceScheduleItem | null>(null);
+
+  // A failed read — first or a later refetch — draws no note, never an earlier answer (R-p).
+  const degradationQuery = useDegradationList({}, true);
+  const degradation = degradationQuery.isError ? undefined : degradationQuery.data;
 
   const schedulesQ = useQuery({
     queryKey: [
@@ -355,6 +376,7 @@ export function MaintenanceSchedulesPanel({
                   {item.triggerSummary ? (
                     <span>Trigger: {item.triggerSummary}</span>
                   ) : null}
+                  <ScheduleTrendNote sentence={degradation ? noteForSchedule(degradation, item.id)?.sentence : undefined} />
                 </div>
                 <div className="mt-4 flex flex-wrap justify-end gap-2">
                   <button

@@ -31,6 +31,7 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
 vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
   HealthBadActorsCard: () => null,
 }));
+vi.mock("../../components/degradation/degradation-trend-card", () => ({ DegradationTrendCard: () => null }));
 
 /**
  * `F3.77` (ADR 0087 Amendment 3 ruling 7, plan D8, owner rulings OQ2 and OQ3) — the site page's

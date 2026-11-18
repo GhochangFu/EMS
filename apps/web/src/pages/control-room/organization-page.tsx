@@ -11,6 +11,7 @@ import { OrganizationKpiStrip, OrganizationStripCharts } from "../../components/
 import { OrganizationLoadTrend } from "../../components/control-room/organization-load-trend";
 import { OrganizationSiteMap } from "../../components/control-room/organization-site-map";
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
+import { DegradationTrendCard } from "../../components/degradation/degradation-trend-card";
 import { LocationKpiCard } from "../../components/location-kpi-card";
 import { MlFindingsCard } from "../../components/ml/ml-findings-card";
 import { PageHeader } from "../../components/page-header";
@@ -68,6 +69,10 @@ type ControlRoomOrganizationPageProps = {
  * `E1.8c` (ADR 0050 Amendment 5) — directly after Asset health and before the load trend: the
  * *Bad actors — advisory* card (`HealthBadActorsCard`), scoped to the organization, without its
  * count line (the organization's sits under the donut).
+ *
+ * `E1.5b` (ADR 0138 decision 5, plan T2.4) — directly after it: the *Trending toward a limit —
+ * advisory* card (`DegradationTrendCard`), scoped to the organization, keyed so each organization
+ * mounts its own.
  */
 export function ControlRoomOrganizationPage({
   user,
@@ -184,6 +189,8 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
       <HealthSummarySection organizationId={organizationId} />
       {/* `E1.8c` (ADR 0050 Amendment 5) — directly after Asset health; no count line, the donut has it. */}
       <HealthBadActorsCard key={`bad-actors-${organizationId}`} organizationId={organizationId} />
+      {/* `E1.5b` (ADR 0138 decision 5) — directly after Bad actors. */}
+      <DegradationTrendCard key={`degradation-${organizationId}`} organizationId={organizationId} />
       {energyShown ? <OrganizationLoadTrend organizationId={organizationId} /> : null}
       <ScopedDashboardsList organizationId={organizationId} />
     </>

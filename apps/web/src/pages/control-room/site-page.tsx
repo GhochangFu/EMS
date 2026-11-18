@@ -16,6 +16,7 @@ import { SiteDashboardView } from "../../components/control-room/site-dashboard-
 import { SiteTrendsView } from "../../components/control-room/site-trends-view";
 import { SmocSiteView } from "../../components/control-room/smoc-site-view";
 import { WallFrame } from "../../components/control-room/wall-frame";
+import { DegradationTrendCard } from "../../components/degradation/degradation-trend-card";
 import { MlFindingsCard } from "../../components/ml/ml-findings-card";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
@@ -121,6 +122,10 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * the *Bad actors — advisory* card (`HealthBadActorsCard`), scoped to the site and its organization
  * and with the site's count line inside it (`showCount`; the site page has no donut). Same places
  * as the findings card: never the wall, the assets tab, the trends tab or a pending read.
+ *
+ * `E1.5b` (ADR 0138 decision 5, plan T2.4) — directly after that card: the *Trending toward a
+ * limit — advisory* card (`DegradationTrendCard`), scoped to the site and its organization. The
+ * same places: never the wall, the assets tab, the trends tab or a pending read.
  */
 export function ControlRoomSitePage({ user, locationId: locationIdProp }: ControlRoomSitePageProps) {
   const params = useParams();
@@ -258,6 +263,8 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                   />
                   {/* `E1.8c` (Q2 (a)) — the body only, with the site's count line inside the card. */}
                   <HealthBadActorsCard organizationId={site.organization.id} locationId={site.id} showCount />
+                  {/* `E1.5b` (ADR 0138 decision 5) — the body only; never on the wall. */}
+                  <DegradationTrendCard organizationId={site.organization.id} locationId={site.id} />
                   <ScopedDashboardsList locationId={site.id} organizationId={site.organization.id} />
                 </>
               )}

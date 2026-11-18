@@ -6,8 +6,10 @@ import { fetchDashboards } from "../../api/dashboards";
 import { useAssetHealth, useAssetHealthInputs } from "../../hooks/use-asset-health";
 import { useActiveMaintenance } from "../../hooks/use-active-maintenance";
 import { useAssetKpis } from "../../hooks/use-asset-kpis";
+import { useAssetDegradation } from "../../hooks/use-degradation";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { activeLabel, NONE, noDashboardsSentence } from "../../lib/asset-browser";
+import { healthCrossingOf } from "../../lib/degradation";
 import { AssetHealthCard } from "../asset-health/asset-health-card";
 import { MaintenanceBadge } from "../maintenance/maintenance-badge";
 import { StatusPill } from "../status-pill";
@@ -51,6 +53,10 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
   // read leaves `data` undefined and the card exactly as it was — no error text (plan T2.5).
   const inputsQ = useAssetHealthInputs(asset.id);
   const kpisQ = useAssetKpis(asset.id);
+  // `E1.5b` (ADR 0138, plan T2.3): one trend line, only for a health `crossing` (Q3 (a)); a pending
+  // or failed read leaves the card exactly as it was (R-p).
+  const degradationAsset = useAssetDegradation(asset.id)?.assets[0];
+  const trendSummary = degradationAsset ? healthCrossingOf(degradationAsset)?.summary : undefined;
   // `F4.359` U16 (plan Q7): the badge while a maintenance window covers this asset.
   const inMaintenance = useActiveMaintenance({ assetId: asset.id }).coveredAssetIds.has(asset.id);
   const dashboardsQ = useQuery({
@@ -106,7 +112,9 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
             Health could not be read. {apiErrorMessage(healthQ.error as Error)}
           </p>
         ) : null}
-        {healthQ.data ? <AssetHealthCard title="Health" data={healthQ.data} inputs={inputsQ.data} /> : null}
+        {healthQ.data ? (
+          <AssetHealthCard title="Health" data={healthQ.data} inputs={inputsQ.data} trendSummary={trendSummary} />
+        ) : null}
 
         {kpisQ.isLoading ? <p className="text-xs text-ink-muted">Loading KPIs…</p> : null}
         {kpisQ.isError ? (
