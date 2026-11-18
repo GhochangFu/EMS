@@ -17,6 +17,7 @@ import {
   p7IntervalHoldingZeroIsNoTrend,
   p8PAboveTheLevelIsNoTrend,
   p9NothingInTheLastThreeDaysIsStale,
+  aCrossingAtTheHorizonIsNotLostToFloatNoise,
   theMedianSlopeDecidesTheHorizon,
 } from "./degradation-trend.spec";
 
@@ -28,6 +29,7 @@ describe("E1.5a — the trend rule and the projection (ADR 0138, plan §4.4, R-g
   it("P4: V1 toward 0.25 is beyond the horizon", () => p4BeyondTheHorizonHasNoRange());
   it("P5: V2 toward 0.30 reads 74 to more than 90", () => p5LongCrossingReadsToMoreThanNinety());
   it("the median slope decides the horizon, not the range's min", () => theMedianSlopeDecidesTheHorizon());
+  it("a crossing at the horizon is not lost to float noise", () => aCrossingAtTheHorizonIsNotLostToFloatNoise());
   it("P6: V2 toward 0.80 is already past", () => p6AlreadyPast());
   it("P7: V9, the interval holds 0", () => p7IntervalHoldingZeroIsNoTrend());
   it("P8: V11, p is 0.087", () => p8PAboveTheLevelIsNoTrend());

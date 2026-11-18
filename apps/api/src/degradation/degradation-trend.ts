@@ -96,7 +96,8 @@ export function trendOf<L extends TrendLimit>(series: DailySeries, limit: L | Tr
 
   // 6. The projection: the median slope decides the horizon; the interval gives the range.
   const distance = Math.abs(found.value - current);
-  const point = distance / Math.abs(slope);
+  // Rounded as the range's quotients are (R-g), so float noise cannot move a crossing at the horizon.
+  const point = roundQuotient(distance / Math.abs(slope));
   if (point < DEGRADATION_MIN_HORIZON_DAYS) return reject("under_one_day", measured, found);
   const reported = { n, current, slope, low, high, p, limit: found };
   if (point > DEGRADATION_MAX_HORIZON_DAYS) return { ...reported, status: "beyond_horizon", daysToLimit: null };

@@ -10,6 +10,7 @@ import {
   theResponseIsTheEnginesAnswerInOrder,
   theScheduleReadRunsOnlyForAssetsWithACrossing,
   theServiceWiresTheReads,
+  aStoredUtcZoneIsSentAsStored,
 } from "./degradation.service.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -26,4 +27,5 @@ describe("E1.5a — DegradationService (ADR 0138)", () => {
   it("a throwing schedule read gives the same response without notes and one warn with the class name only", () =>
     aThrowingScheduleReadLeavesTheNotesOut());
   it("the service wires the real reads: the pool and the health service", () => theServiceWiresTheReads());
+  it("a stored UTC zone is sent as stored and grouped in Etc/UTC", () => aStoredUtcZoneIsSentAsStored());
 });

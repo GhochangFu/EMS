@@ -147,7 +147,7 @@ export function theFixedStringsAreTheAdrsText(): void {
 
 export function theDriftTargetsAreTwentyOneWithoutKwhTotal(): void {
   expect(DEGRADATION_DRIFT_TARGETS).toHaveLength(21);
-  expect(DEGRADATION_DRIFT_TARGETS.some((t) => t.pointKey === "kwh_total")).toBe(false);
+  expect(DEGRADATION_DRIFT_TARGETS.some((t) => (t.pointKey as string) === "kwh_total")).toBe(false);
   const keys = DEGRADATION_DRIFT_TARGETS.map((t) => `${t.domain}/${t.assetType}/${t.pointKey}`);
   expect(new Set(keys).size).toBe(21);
 }

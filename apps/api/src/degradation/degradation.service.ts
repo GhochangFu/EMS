@@ -170,21 +170,25 @@ export async function computeDegradation(
   const consideredIds = considered.map((row) => row.asset_id);
 
   // 3. One window per zone (R-a, R-b); the read range is their union.
+  // The window is computed in the arithmetic zone and names the stored zone, as the
+  // site chain shows it ("UTC", not "Etc/UTC"); the SQL groups in the arithmetic zone.
   const windowsByZone = new Map<string, DegradationWindow>();
   const windowOf = new Map<string, DegradationWindow>();
+  const arithmeticZoneOf = new Map<string, string>();
   for (const row of considered) {
-    const zone = resolveSiteTimeZone(row.location_zone, row.organization_zone).arithmeticZone;
-    let window = windowsByZone.get(zone);
+    const { timeZone, arithmeticZone } = resolveSiteTimeZone(row.location_zone, row.organization_zone);
+    let window = windowsByZone.get(timeZone);
     if (window === undefined) {
-      window = degradationWindow(nowMs, zone);
-      windowsByZone.set(zone, window);
+      window = { ...degradationWindow(nowMs, arithmeticZone), zone: timeZone };
+      windowsByZone.set(timeZone, window);
     }
     windowOf.set(row.asset_id, window);
+    arithmeticZoneOf.set(row.asset_id, arithmeticZone);
   }
   const windows = [...windowsByZone.values()];
   const fromMs = Math.min(...windows.map((w) => w.fromMs));
   const toMs = Math.max(...windows.map((w) => w.toMs));
-  const zoneOf = (assetId: string): string => windowOf.get(assetId)!.zone;
+  const zoneOf = (assetId: string): string => arithmeticZoneOf.get(assetId)!;
 
   // 4. With the considered ids only: health blocks, then the two day reads in parallel.
   const healthOf = await reads.health(consideredIds);
@@ -219,7 +223,26 @@ export async function computeDegradation(
   ]);
 
   // 5. The engine, one asset at a time, then the order. A row outside the asset's own days is dropped (R-c).
-  const inWindow = (assetId: string, day: string): boolean => windowOf.get(assetId)!.days.includes(day);
+  // Group the day rows once by asset (and point), so the per-asset step is a lookup (security review L1).
+  const daysOf = new Map<string, Set<string>>();
+  for (const [assetId, window] of windowOf) daysOf.set(assetId, new Set(window.days));
+  const inWindow = (assetId: string, day: string): boolean => daysOf.get(assetId)!.has(day);
+  const counterDaysOf = new Map<string, AssetCounterDay[]>();
+  for (const day of counterDays) {
+    if (!inWindow(day.assetId, day.day)) continue;
+    const list = counterDaysOf.get(day.assetId);
+    if (list) list.push(day);
+    else counterDaysOf.set(day.assetId, [day]);
+  }
+  const meanDaysOf = new Map<string, AssetMeanDay[]>();
+  for (const day of meanDays) {
+    if (!inWindow(day.assetId, day.day)) continue;
+    const key = `${day.assetId}\u0000${day.pointKey}`;
+    const list = meanDaysOf.get(key);
+    if (list) list.push(day);
+    else meanDaysOf.set(key, [day]);
+  }
+  const healthIdSet = new Set(healthIds);
   const assets = orderAssets(
     considered.flatMap((row) => {
       const assetId = row.asset_id;
@@ -233,11 +256,11 @@ export async function computeDegradation(
         assetRtuName: row.asset_rtu_name,
         assetLocationName: row.location_name,
         window,
-        health: healthIds.includes(assetId) ? healthOf.get(assetId) : undefined,
-        counterDays: counterDays.filter((day) => day.assetId === assetId && inWindow(assetId, day.day)),
+        health: healthIdSet.has(assetId) ? healthOf.get(assetId) : undefined,
+        counterDays: counterDaysOf.get(assetId) ?? [],
         driftPoints: (driftOf.get(assetId) ?? []).map((point) => ({
           ...point,
-          days: meanDays.filter((day) => day.assetId === assetId && day.pointKey === point.pointKey && inWindow(assetId, day.day)),
+          days: meanDaysOf.get(`${assetId}\u0000${point.pointKey}`) ?? [],
         })),
       };
       const asset = computeAssetDegradation(input);

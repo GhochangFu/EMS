@@ -365,3 +365,16 @@ export async function theServiceWiresTheReads(): Promise<void> {
     ["scoresInScope", [idOf(1)], undefined, 1_440, NOW],
   ]);
 }
+
+/**
+ * A site stored as `UTC` answers `timeZone: "UTC"`, as the site chain shows it,
+ * while its days are grouped in the arithmetic zone `Etc/UTC` (code review).
+ */
+export async function aStoredUtcZoneIsSentAsStored(): Promise<void> {
+  const h = harness([row(1, { location_zone: null, organization_zone: "UTC" })]);
+  const body = await computeDegradation(h.reads, null, NOW, log(h));
+  expect(h.calls.counterDays).toEqual([[{ assetId: idOf(1), zone: "Etc/UTC" }]]);
+  expect(body.assets[0]).toMatchObject({ timeZone: "UTC" });
+  const window = body.assets[0]!.indicators[0]!.assumptions[0]!;
+  expect(window.endsWith(", UTC.")).toBe(true);
+}

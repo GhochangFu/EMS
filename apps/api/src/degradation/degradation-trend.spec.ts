@@ -161,6 +161,20 @@ export function daysRangeKeepsItsBounds(): void {
  * The median slope decides the horizon, not the range's `min`: V2 toward 0.235
  * is 93.5 days at the median slope (beyond) though the steepest end gives 84.
  */
+/**
+ * A crossing exactly at the horizon stays a crossing: the point quotient is
+ * rounded to 6 decimals as the range's are (R-g). Here the median slope is
+ * `-0.0009999999999999966` in floating point, so the raw quotient is a hair
+ * above 90 and would be sent as `beyond_horizon`.
+ */
+export function aCrossingAtTheHorizonIsNotLostToFloatNoise(): void {
+  const xs = Array.from({ length: 28 }, (_, i) => i);
+  const ys = xs.map((i) => Number((0.824 - 0.001 * i).toFixed(4)));
+  const outcome = trendOf({ xs, ys }, health(0.708));
+  expect(Math.abs(0.708 - outcome.current!) / Math.abs(outcome.slope!)).toBeGreaterThan(90);
+  expect(outcome).toMatchObject({ status: "crossing", daysToLimit: { min: 90, max: null } });
+}
+
 export function theMedianSlopeDecidesTheHorizon(): void {
   const outcome = trendOf(V2, health(0.235));
   expect(outcome.status).toBe("beyond_horizon");
