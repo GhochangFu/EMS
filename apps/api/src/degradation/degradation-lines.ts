@@ -91,7 +91,7 @@ export function cutRuleName(name: string): string {
   return `${chars.slice(0, RULE_NAME_MAX_CHARS - 1).join("")}${ELLIPSIS}`;
 }
 
-/** `<min>–<max>`, or `<min> to more than 90` when `max` is `null`. */
+/** `<min>–<max>`, or `<min> to more than <horizon>` when `max` is `null`. */
 export function rangeWords(days: DaysToLimit): string {
   return days.max === null
     ? `${days.min} to more than ${DEGRADATION_MAX_HORIZON_DAYS}`
