@@ -2,11 +2,12 @@
 
 ## Status
 
-**Proposed — 2026-11-18.** Drafted by an agent for backlog row `E1.5` at the
-step 2 gate (AGENTS.md §10, `docs/build-operating-model.md`). Nothing is built
-until the owner rules on the questions in §Open questions. Lines marked
-*(recommended)* are the drafter's calls; each one is also an owner question,
-and "accept as recommended" accepts all of them.
+**Accepted — 2026-11-18** (owner, in chat: "Accept as recommended";
+proposed the same day in PR #1427). Drafted by an agent for backlog row
+`E1.5` at the step 2 gate (AGENTS.md §10, `docs/build-operating-model.md`).
+Lines marked *(recommended)* were the drafter's calls; the owner accepted the
+ADR with them as written, so **every *(recommended)* line is now a ruling**
+and Q1–Q11 are ruled as recommended (see §Rulings).
 
 Builds on [ADR 0050](./0050-asset-health-score.md) (the health score, its
 per-tag in-range counters `telemetry.point_in_range_*` and its bands; its
@@ -270,3 +271,10 @@ Each has a recommended answer. "Accept as recommended" accepts all of them.
     | closure | backlog, ADR build record, then the `chore(agents):` catch-up | docs |
 
     *and `F4.385` / `F4.386` filed as their own rows.*
+
+## Rulings
+
+**2026-11-18, owner, in chat: "Accept as recommended".** Q1–Q11 are ruled as
+recommended. Rows `E1.5d`, `F4.385` and `F4.386` are filed with this
+acceptance. The build waits for the step-3 plan
+(`docs/plans/e1.5-degradation-trends.md`) and the owner's yes to it.
