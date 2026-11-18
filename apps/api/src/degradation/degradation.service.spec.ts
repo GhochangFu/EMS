@@ -1,6 +1,7 @@
 import {
   DEGRADATION_MAX_ASSETS,
   degradationResponseSchema,
+  type DegradationResponse,
   type TemplateHealth,
 } from "@bms/shared";
 import type { BmsDb } from "@bms/db";
@@ -9,7 +10,7 @@ import { expect } from "vitest";
 
 import type { AssetHealthService, HealthScopeScore } from "../asset-health/asset-health.service";
 import type { ThresholdRuleDbRow } from "../ml/ml-findings.forecast-facts";
-import type { CounterDay, MeanDay } from "./degradation-engine.types";
+import type { CounterDay, MeanDay, ScheduleInput } from "./degradation-engine.types";
 import type { DegradationCandidateDbRow } from "./degradation.reads";
 import {
   DegradationService,
@@ -38,10 +39,12 @@ import { V2, V7, type TrendVector } from "./trend-math.fixture";
  * read scope, the 200 cap (only above it), every fleet read with the considered
  * ids only (never `null`), the counter read only for assets with a usable
  * `fair` band, the mean read only for drift points with a covered rule, the
- * engine and the order. Assertions live here;
+ * engine and the order, then the schedule read only for assets with a crossing,
+ * which a failure leaves out with one `warn`. Assertions live here;
  * `degradation.service.test.ts` is the vitest entry point (ADR 0014).
  */
 const NOW = new Date(FX_NOW_MS);
+const DAY_MS = 86_400_000;
 const POINT = "cold_room_temp_c";
 
 const idOf = (n: number): string => fxUuid("aaaaaaaa", n);
@@ -68,12 +71,14 @@ type Profile = { health?: TemplateHealth | undefined; counters?: TrendVector | n
 
 interface Harness {
   reads: DegradationReads;
+  warnings: string[];
   calls: {
     candidates: (string[] | null)[];
     scores: (readonly string[])[];
     health: (readonly string[])[];
     counterDays: { assetId: string; zone: string }[][];
     meanDays: { assetId: string; pointKey: string; zone: string }[][];
+    schedules: (readonly string[])[];
     order: string[];
   };
 }
@@ -84,9 +89,11 @@ function harness(
   options: {
     rules?: ThresholdRuleDbRow[];
     scores?: (ids: readonly string[]) => HealthScopeScore[];
+    schedules?: ScheduleInput[] | Error;
   } = {},
 ): Harness {
-  const calls: Harness["calls"] = { candidates: [], scores: [], health: [], counterDays: [], meanDays: [], order: [] };
+  const calls: Harness["calls"] = { candidates: [], scores: [], health: [], counterDays: [], meanDays: [], schedules: [], order: [] };
+  const warnings: string[] = [];
   const reads: DegradationReads = {
     candidates: async (ids) => {
       calls.order.push("candidates");
@@ -119,20 +126,29 @@ function harness(
         return vector ? meansOf(vector).map((day: MeanDay) => ({ assetId: p.assetId, pointKey: p.pointKey, ...day })) : [];
       });
     },
+    schedules: async (ids) => {
+      calls.order.push("schedules");
+      calls.schedules.push([...ids]);
+      if (options.schedules instanceof Error) throw options.schedules;
+      return (options.schedules ?? []).filter((s) => ids.includes(s.assetId));
+    },
   };
-  return { reads, calls };
+  return { reads, warnings, calls };
 }
+
+const log = (h: Harness) => ({ warn: (message: string) => h.warnings.push(message) });
 
 /** The ids every read after the cap received (the score read is the cap itself). */
 const fleetIdsOf = (h: Harness): string[] => [
   ...h.calls.health.flat(),
   ...h.calls.counterDays.flat().map((a) => a.assetId),
   ...h.calls.meanDays.flat().map((p) => p.assetId),
+  ...h.calls.schedules.flat(),
 ];
 
 export async function anEmptyScopeMakesNoRead(): Promise<void> {
   const h = harness([row(1)]);
-  expect(await computeDegradation(h.reads, [], NOW)).toEqual({
+  expect(await computeDegradation(h.reads, [], NOW, log(h))).toEqual({
     asOf: NOW.toISOString(),
     candidates: 0,
     considered: 0,
@@ -141,7 +157,7 @@ export async function anEmptyScopeMakesNoRead(): Promise<void> {
   expect(h.calls.order).toEqual([]);
   // No candidate: nothing after the candidate read.
   const none = harness([]);
-  expect(await computeDegradation(none.reads, null, NOW)).toEqual({
+  expect(await computeDegradation(none.reads, null, NOW, log(none))).toEqual({
     asOf: NOW.toISOString(),
     candidates: 0,
     considered: 0,
@@ -166,7 +182,7 @@ export async function theCapRunsTheScoreReadOnlyAbove200(): Promise<void> {
         scoredTagCount: 1,
       }));
   const h = harness(rows, () => ({ health: FX_HEALTH, counters: null }), { scores });
-  const body = await computeDegradation(h.reads, null, NOW);
+  const body = await computeDegradation(h.reads, null, NOW, log(h));
   expect(h.calls.scores).toEqual([rows.map((r) => r.asset_id)]);
   expect(body.candidates).toBe(total);
   expect(body.considered).toBe(DEGRADATION_MAX_ASSETS);
@@ -182,7 +198,7 @@ export async function theCapRunsTheScoreReadOnlyAbove200(): Promise<void> {
 
   // With 200 it does not run, and every candidate is considered.
   const exact = harness(rows.slice(0, DEGRADATION_MAX_ASSETS), () => ({ health: FX_HEALTH, counters: null }), { scores });
-  const exactBody = await computeDegradation(exact.reads, null, NOW);
+  const exactBody = await computeDegradation(exact.reads, null, NOW, log(exact));
   expect(exact.calls.scores).toEqual([]);
   expect(exactBody.candidates).toBe(DEGRADATION_MAX_ASSETS);
   expect(exactBody.considered).toBe(DEGRADATION_MAX_ASSETS);
@@ -193,13 +209,14 @@ export async function everyFleetReadGetsTheConsideredIdsOnly(): Promise<void> {
   for (const ids of [null, [idOf(1), idOf(2)]]) {
     const h = harness([row(1), driftRow(2)], (id) => (id === idOf(1) ? { health: FX_HEALTH, counters: V2 } : { means: V7 }), {
       rules: [fxRule(idOf(2), "gt", 8, { point_key: POINT })],
+      schedules: [],
     });
-    await computeDegradation(h.reads, ids, NOW);
+    await computeDegradation(h.reads, ids, NOW, log(h));
     expect(h.calls.candidates).toEqual([ids]);
     expect(h.calls.health).toEqual([[idOf(1), idOf(2)]]);
     expect(h.calls.counterDays).toEqual([[{ assetId: idOf(1), zone: FX_ZONE }, { assetId: idOf(2), zone: FX_ZONE }]]);
     expect(h.calls.meanDays).toEqual([[{ assetId: idOf(2), pointKey: POINT, zone: FX_ZONE }]]);
-    for (const list of h.calls.health) {
+    for (const list of [...h.calls.health, ...h.calls.schedules]) {
       expect(list).not.toBeNull();
       expect(Array.isArray(list)).toBe(true);
     }
@@ -221,12 +238,12 @@ export async function anAssetWithNoUsableFairBandReachesNoCounterRead(): Promise
     [idOf(4)]: { health: fairLast, counters: V2 },
   };
   const h = harness([row(1), row(2), row(3), row(4)], (id) => profiles[id]!);
-  const body = await computeDegradation(h.reads, null, NOW);
+  const body = await computeDegradation(h.reads, null, NOW, log(h));
   expect(h.calls.counterDays).toEqual([[{ assetId: idOf(1), zone: FX_ZONE }]]);
   expect(body.assets.map((a) => a.assetId)).toEqual([idOf(1)]);
   // Nobody with a usable band: no counter read at all.
   const none = harness([row(2)], (id) => profiles[id]!);
-  await computeDegradation(none.reads, null, NOW);
+  await computeDegradation(none.reads, null, NOW, log(none));
   expect(none.calls.counterDays).toEqual([]);
 }
 
@@ -238,11 +255,11 @@ export async function aDriftPointWithNoCoveredRuleReachesNoMeanRead(): Promise<v
       fxRule(idOf(2), "gt", 8, { point_key: POINT, rule_unit: "degF" }),
     ],
   });
-  const body = await computeDegradation(h.reads, null, NOW);
+  const body = await computeDegradation(h.reads, null, NOW, log(h));
   expect(h.calls.meanDays).toEqual([[{ assetId: idOf(1), pointKey: POINT, zone: FX_ZONE }]]);
   expect(body.assets.map((a) => a.assetId)).toEqual([idOf(1)]);
   const none = harness([driftRow(2)], () => ({ health: undefined, means: V7 }), { rules: [] });
-  await computeDegradation(none.reads, null, NOW);
+  await computeDegradation(none.reads, null, NOW, log(none));
   expect(none.calls.meanDays).toEqual([]);
 }
 
@@ -251,7 +268,7 @@ export async function theResponseIsTheEnginesAnswerInOrder(): Promise<void> {
   const h = harness([driftRow(2), row(1)], (id) => (id === idOf(1) ? { health: FX_HEALTH, counters: V2 } : { health: undefined, means: V7 }), {
     rules: [fxRule(idOf(2), "gt", 8, { point_key: POINT })],
   });
-  const body = await computeDegradation(h.reads, null, NOW);
+  const body = await computeDegradation(h.reads, null, NOW, log(h));
   expect(degradationResponseSchema.safeParse(body).success).toBe(true);
   expect(body.asOf).toBe(NOW.toISOString());
   expect(body.candidates).toBe(2);
@@ -261,6 +278,50 @@ export async function theResponseIsTheEnginesAnswerInOrder(): Promise<void> {
   expect(body.assets[0]!.indicators[0]).toMatchObject({ kind: "point_drift", daysToLimit: { min: 10, max: 12 } });
   expect(body.assets[1]!.indicators[0]).toMatchObject({ kind: "health", daysToLimit: { min: 13, max: 17 } });
   expect(body.assets[1]).toMatchObject({ timeZone: FX_ZONE, windowFrom: FX_WINDOW.days[0], windowTo: FX_WINDOW.days[27] });
+}
+
+/** The schedule read runs only when an asset has a crossing, with those ids; the note is the engine's. */
+export async function theScheduleReadRunsOnlyForAssetsWithACrossing(): Promise<void> {
+  const schedules: ScheduleInput[] = [
+    { scheduleId: fxUuid("eeeeeeee", 1), assetId: idOf(1), nextDueMs: FX_NOW_MS + 60 * DAY_MS },
+    { scheduleId: fxUuid("eeeeeeee", 2), assetId: idOf(1), nextDueMs: FX_NOW_MS + 5 * DAY_MS },
+  ];
+  const profiles: Record<string, Profile> = {
+    [idOf(1)]: { health: FX_HEALTH, counters: V2 },
+    [idOf(2)]: { health: FX_HEALTH, counters: null },
+  };
+  const h = harness([row(1), row(2)], (id) => profiles[id]!, { schedules });
+  const body = await computeDegradation(h.reads, null, NOW, log(h));
+  expect(h.calls.schedules).toEqual([[idOf(1)]]);
+  expect(h.calls.order.at(-1)).toBe("schedules");
+  expect(body.assets[0]!.scheduleNotes).toEqual([
+    {
+      scheduleId: fxUuid("eeeeeeee", 1),
+      nextDueAt: new Date(FX_NOW_MS + 60 * DAY_MS).toISOString(),
+      sentence: "Trend reaches its limit in about 13–17 days; next service due in 60 days.",
+    },
+  ]);
+  // No crossing: no schedule read.
+  const none = harness([row(2)], (id) => profiles[id]!, { schedules });
+  await computeDegradation(none.reads, null, NOW, log(none));
+  expect(none.calls.schedules).toEqual([]);
+}
+
+/** A throwing schedule read: the same response without notes, and one `warn` naming the error's class only. */
+export async function aThrowingScheduleReadLeavesTheNotesOut(): Promise<void> {
+  const schedules: ScheduleInput[] = [{ scheduleId: fxUuid("eeeeeeee", 1), assetId: idOf(1), nextDueMs: FX_NOW_MS + 60 * DAY_MS }];
+  const ok = harness([row(1)], undefined, { schedules });
+  const withNotes = await computeDegradation(ok.reads, null, NOW, log(ok));
+  expect(withNotes.assets[0]!.scheduleNotes).toHaveLength(1);
+  expect(ok.warnings).toEqual([]);
+
+  class FixtureReadError extends Error {}
+  const failing = harness([row(1)], undefined, { schedules: new FixtureReadError("secret detail from the database") });
+  const body: DegradationResponse = await computeDegradation(failing.reads, null, NOW, log(failing));
+  expect(body).toEqual({ ...withNotes, assets: withNotes.assets.map((a) => ({ ...a, scheduleNotes: [] })) });
+  expect(failing.warnings).toHaveLength(1);
+  expect(failing.warnings[0]).toContain("FixtureReadError");
+  expect(failing.warnings[0]).not.toContain("secret detail");
 }
 
 /** The service: an empty scope makes no query; the real reads run on the pool and through the health service. */
@@ -291,6 +352,7 @@ export async function theServiceWiresTheReads(): Promise<void> {
 
   const reads = degradationReadsOf({ tenantDb: noDb, fleetDb: noDb, pool, health });
   expect(await reads.candidates([])).toEqual({ candidates: [], rules: [] });
+  expect(await reads.schedules([])).toEqual([]);
   expect(await reads.counterDays([{ assetId: idOf(1), zone: FX_ZONE }], FX_WINDOW.fromMs, FX_WINDOW.toMs)).toEqual([]);
   expect(await reads.meanDays([{ assetId: idOf(1), pointKey: POINT, zone: FX_ZONE }], FX_WINDOW.fromMs, FX_WINDOW.toMs)).toEqual([]);
   expect(queries).toHaveLength(2);

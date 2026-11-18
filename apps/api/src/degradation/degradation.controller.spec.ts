@@ -1,7 +1,8 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import type { DegradationResponse, JwtPayload } from "@bms/shared";
 import { expect } from "vitest";
 
+import type { AccessControlService } from "../auth/access-control.service";
 import type { AssetFilterScopeService, AssetScopeFilter } from "../filter-options/asset-filter-scope.service";
 import { DegradationController } from "./degradation.controller";
 import type { DegradationService } from "./degradation.service";
@@ -9,24 +10,32 @@ import type { DegradationService } from "./degradation.service";
 /**
  * `E1.5a` / ADR 0138 (plan T1.7, T1.8, §4.1) — the two routes. `list`: the
  * query (400) before `narrow`, `narrow` gets exactly the parsed keys, its value
- * reaches the service unchanged with one clock. Assertions live here; `degradation.controller.test.ts` is the vitest entry point (ADR 0014).
+ * reaches the service unchanged with one clock. `forAsset`: the id (400), then
+ * `canReadAsset` (403), then the service with `[assetId]`. Assertions live
+ * here; `degradation.controller.test.ts` is the vitest entry point (ADR 0014).
  */
 const USER: JwtPayload = { sub: "u1", email: "op@bms.local", name: "Operator", role: "viewer" };
 const ORG = "D0D0D0D0-0000-4000-8000-000000000001";
 const LOC = "d1d1d1d1-0000-4000-8000-000000000001";
 const ASSET = "aaaaaaaa-0000-4000-8000-000000000001";
 
-type Call = { route: "list"; arg: string[] | null; now: Date };
+type Call = { route: "list" | "forAsset"; arg: string[] | null | string; now: Date };
 
-function harness(narrowed: string[] | null = null) {
+function harness(narrowed: string[] | null = null, canRead = true) {
   const order: string[] = [];
   const narrowCalls: AssetScopeFilter[] = [];
+  const readChecks: string[] = [];
   const calls: Call[] = [];
   const answer = (now: Date): DegradationResponse => ({ asOf: now.toISOString(), candidates: 0, considered: 0, assets: [] });
   const service = {
     list: async (assetIds: string[] | null, now: Date) => {
       order.push("service");
       calls.push({ route: "list", arg: assetIds, now });
+      return answer(now);
+    },
+    forAsset: async (assetId: string, now: Date) => {
+      order.push("service");
+      calls.push({ route: "forAsset", arg: assetId, now });
       return answer(now);
     },
   } as unknown as DegradationService;
@@ -37,7 +46,14 @@ function harness(narrowed: string[] | null = null) {
       return narrowed;
     },
   } as unknown as AssetFilterScopeService;
-  return { controller: new DegradationController(service, scope), order, narrowCalls, calls };
+  const access = {
+    canReadAsset: async (_user: JwtPayload, assetId: string) => {
+      order.push("canReadAsset");
+      readChecks.push(assetId);
+      return canRead;
+    },
+  } as unknown as AccessControlService;
+  return { controller: new DegradationController(service, scope, access), order, narrowCalls, readChecks, calls };
 }
 
 async function settle(run: Promise<unknown>): Promise<unknown> {
@@ -81,4 +97,25 @@ export async function aBadQueryIs400BeforeNarrow(): Promise<void> {
     expect(err, JSON.stringify(query)).toBeInstanceOf(BadRequestException);
     expect(h.order).toEqual([]);
   }
+}
+
+/** `forAsset`: a non-UUID is 400 before any check; outside scope is 403 before the service; else the service with that id. */
+export async function forAssetChecksTheIdThenTheScopeThenReads(): Promise<void> {
+  const bad = harness();
+  expect(await settle(bad.controller.forAsset(USER, "not-a-uuid"))).toBeInstanceOf(BadRequestException);
+  expect(bad.order).toEqual([]);
+
+  const denied = harness(null, false);
+  expect(await settle(denied.controller.forAsset(USER, ASSET))).toBeInstanceOf(ForbiddenException);
+  expect(denied.order).toEqual(["canReadAsset"]);
+  expect(denied.calls).toEqual([]);
+
+  const ok = harness(null, true);
+  const before = Date.now();
+  const body = await ok.controller.forAsset(USER, ASSET);
+  expect(ok.order).toEqual(["canReadAsset", "service"]);
+  expect(ok.readChecks).toEqual([ASSET]);
+  expect(ok.calls[0]?.arg).toBe(ASSET);
+  expect(ok.calls[0]?.now.getTime()).toBeGreaterThanOrEqual(before);
+  expect(body.asOf).toBe(ok.calls[0]?.now.toISOString());
 }

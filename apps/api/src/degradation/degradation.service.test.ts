@@ -4,9 +4,11 @@ import {
   aDriftPointWithNoCoveredRuleReachesNoMeanRead,
   anAssetWithNoUsableFairBandReachesNoCounterRead,
   anEmptyScopeMakesNoRead,
+  aThrowingScheduleReadLeavesTheNotesOut,
   everyFleetReadGetsTheConsideredIdsOnly,
   theCapRunsTheScoreReadOnlyAbove200,
   theResponseIsTheEnginesAnswerInOrder,
+  theScheduleReadRunsOnlyForAssetsWithACrossing,
   theServiceWiresTheReads,
 } from "./degradation.service.spec";
 
@@ -19,5 +21,9 @@ describe("E1.5a — DegradationService (ADR 0138)", () => {
   it("an asset with no usable fair band reaches no counter read", () => anAssetWithNoUsableFairBandReachesNoCounterRead());
   it("a drift point with no covered rule reaches no mean read", () => aDriftPointWithNoCoveredRuleReachesNoMeanRead());
   it("the response is the engine's answer in the plan's order and parses", () => theResponseIsTheEnginesAnswerInOrder());
+  it("the schedule read runs only for assets with a crossing, with those ids", () =>
+    theScheduleReadRunsOnlyForAssetsWithACrossing());
+  it("a throwing schedule read gives the same response without notes and one warn with the class name only", () =>
+    aThrowingScheduleReadLeavesTheNotesOut());
   it("the service wires the real reads: the pool and the health service", () => theServiceWiresTheReads());
 });

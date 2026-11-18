@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { Pool } from "pg";
 
 import type { BmsDb } from "@bms/db";
@@ -17,12 +17,13 @@ import { withReadScope } from "../database/tenant-read-scope";
 import type { ThresholdRuleDbRow } from "../ml/ml-findings.forecast-facts";
 import { readThresholdRules } from "../ml/ml-findings.reads";
 import { coveredRulesOf } from "./degradation-drift";
-import type { DegradationAssetInput, DegradationWindow, DriftPointInput } from "./degradation-engine.types";
+import type { DegradationAssetInput, DegradationWindow, DriftPointInput, ScheduleInput } from "./degradation-engine.types";
 import { healthLimitOf } from "./degradation-health";
-import { computeAssetDegradation, orderAssets } from "./degradation-rank";
+import { computeAssetDegradation, nearestIndicator, orderAssets, withScheduleNotes } from "./degradation-rank";
 import { degradationWindow } from "./degradation-window";
 import {
   driftPointsOf,
+  readActiveSchedules,
   readCounterDays,
   readDegradationCandidates,
   readMeanDays,
@@ -48,7 +49,10 @@ import {
  * 4. **with the considered ids only, never `null`**: the templates' health
  *    blocks, then, in parallel, the counter days of the assets with a usable
  *    `fair` band and the mean days of the drift points with a covered rule;
- * 5. the pure engine and the order.
+ * 5. the pure engine and the order;
+ * 6. the schedule notes (R-o), after the numbers are final, only for assets
+ *    with a crossing, in a read scope of their own. A failed read means no
+ *    note and one `warn` with the error's class name; never a failed response.
  */
 
 /** The candidates and the rules of their drift points, read on one `tx`. */
@@ -73,6 +77,8 @@ export interface DegradationReads {
     fromMs: number,
     toMs: number,
   ): Promise<AssetMeanDay[]>;
+  /** The active schedules of `ids`, through a `withReadScope` of its own (R-o). */
+  schedules(ids: string[]): Promise<ScheduleInput[]>;
 }
 
 /** What the real reads need. */
@@ -83,7 +89,7 @@ export interface DegradationReadDeps {
   readonly health: Pick<AssetHealthService, "healthForAssets" | "scoresInScope">;
 }
 
-/** The real reads: candidates and rules through `withReadScope`; the day reads on the fleet pool. */
+/** The real reads: candidates, rules and schedules through `withReadScope`; the day reads on the fleet pool. */
 export function degradationReadsOf(deps: DegradationReadDeps): DegradationReads {
   const { tenantDb, fleetDb, pool, health } = deps;
   const none: DegradationScopedRead = { candidates: [], rules: [] };
@@ -100,6 +106,7 @@ export function degradationReadsOf(deps: DegradationReadDeps): DegradationReads 
     health: (ids) => health.healthForAssets(ids),
     counterDays: (assets, fromMs, toMs) => readCounterDays(pool, assets, fromMs, toMs),
     meanDays: (points, fromMs, toMs) => readMeanDays(pool, points, fromMs, toMs),
+    schedules: (ids) => withReadScope(tenantDb, fleetDb, ids, () => [], (tx) => readActiveSchedules(tx, ids)),
   };
 }
 
@@ -123,11 +130,21 @@ export function cappedIds(ids: readonly string[], scores: readonly HealthScopeSc
     .slice(0, DEGRADATION_MAX_ASSETS);
 }
 
+/** A warning sink: Nest's `Logger` in the service, a list in the spec. */
+export type DegradationLog = Pick<Logger, "warn">;
+
+const defaultLog: DegradationLog = new Logger("DegradationService");
+
+/** The class name of a thrown value, and nothing of its message (R-o). */
+const errorClassOf = (err: unknown): string =>
+  err instanceof Error ? err.constructor.name : typeof err;
+
 /** The response of `ids` (`narrow`'s value, or one asset) at `now`: one clock for the whole request. */
 export async function computeDegradation(
   reads: DegradationReads,
   ids: string[] | null,
   now: Date,
+  log: DegradationLog = defaultLog,
 ): Promise<DegradationResponse> {
   const nowMs = now.getTime();
   const respond = (candidates: number, considered: number, assets: DegradationAsset[]): DegradationResponse => ({
@@ -228,7 +245,21 @@ export async function computeDegradation(
     }),
   );
 
-  return respond(candidates.length, considered.length, assets);
+  // 6. The schedule notes (R-o): only assets with a crossing, never a failed response.
+  const crossingIds = assets.filter((asset) => nearestIndicator(asset) !== null).map((asset) => asset.assetId);
+  if (crossingIds.length === 0) return respond(candidates.length, considered.length, assets);
+  let schedules: ScheduleInput[];
+  try {
+    schedules = await reads.schedules(crossingIds);
+  } catch (err) {
+    log.warn(`degradation: the schedule read failed (${errorClassOf(err)}); no schedule notes`);
+    return respond(candidates.length, considered.length, assets);
+  }
+  return respond(
+    candidates.length,
+    considered.length,
+    assets.map((asset) => withScheduleNotes(asset, schedules, nowMs)),
+  );
 }
 
 /**
@@ -253,5 +284,10 @@ export class DegradationService {
   /** `GET /degradation`: `assetIds` is `narrow`'s value, unchanged (`null`: the unrestricted admin). */
   list(assetIds: string[] | null, now: Date): Promise<DegradationResponse> {
     return computeDegradation(this.reads, assetIds, now);
+  }
+
+  /** `GET /assets/:assetId/degradation`, after the controller's `canReadAsset`. */
+  forAsset(assetId: string, now: Date): Promise<DegradationResponse> {
+    return computeDegradation(this.reads, [assetId], now);
   }
 }
