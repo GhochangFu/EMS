@@ -2,7 +2,7 @@ import { ADVISORY_WINDOW_DAYS, BASELINE_WINDOWS } from "@bms/shared";
 import { expect } from "vitest";
 
 import type { HourlyEnergy } from "../telemetry/energy-cost-by-day";
-import { advisoryWindows, hasCoverage, windowTotals } from "./advisory-window";
+import { advisoryWindows, hasCoverage, midnightOf, windowTotals } from "./advisory-window";
 
 /**
  * `E1.6a` / ADR 0137 (plan R-a, R-b, T1.3) — the advisory window, pure.
@@ -91,4 +91,9 @@ export function aDstWeekStillHasSevenDays(): void {
 export function aNonFiniteHourIsLeftOut(): void {
   const totals = windowTotals([hour("2026-11-16T06:30:00Z", Number.NaN)], KOLKATA, ["2026-11-16"]);
   expect(totals).toEqual({ kwh: 0, bucketCount: 0 });
+}
+
+/** `E1.5a` (ADR 0138) — `midnightOf` is exported: local midnight in epoch ms. */
+export function midnightOfIsTheLocalMidnightInstant(): void {
+  expect(midnightOf("2026-11-18", KOLKATA)).toBe(ms("2026-11-17T18:30:00.000Z"));
 }

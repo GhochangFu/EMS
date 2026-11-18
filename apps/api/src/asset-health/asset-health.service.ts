@@ -652,8 +652,10 @@ export class AssetHealthService {
    * §4.3 fleet-read reason: `bms.assets` and `bms.asset_templates` are both
    * RLS-bearing. Contained the same way as `assetsInScope` above — the ids come
    * from the caller's own readable set, never from a request parameter.
+   *
+   * Public for E1.5a (degradation trends, ADR 0138).
    */
-  private async healthForAssets(
+  async healthForAssets(
     assetIds: readonly string[],
   ): Promise<Map<string, TemplateHealth | undefined>> {
     const rows = await this.db

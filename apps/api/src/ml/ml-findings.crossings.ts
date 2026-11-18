@@ -60,7 +60,8 @@ export type Crossing = {
   readonly band: "upper" | "lower";
 };
 
-const covers = (point: CrossingPoint, rule: CrossingRule): boolean =>
+/** Exported for E1.5a (degradation trends, ADR 0138). */
+export const covers = (point: CrossingPoint, rule: CrossingRule): boolean =>
   rule.assetId === point.assetId &&
   rule.pointKey === point.pointKey &&
   rule.ruleType === "threshold" &&
