@@ -284,3 +284,22 @@ Each has a recommended answer. "Accept as recommended" accepts all of them.
 recommended. Rows `E1.5d`, `F4.385` and `F4.386` are filed with this
 acceptance. The build waits for the step-3 plan
 (`docs/plans/e1.5-degradation-trends.md`) and the owner's yes to it.
+
+## Build record — `E1.5` closed (2026-11-18)
+
+| PR | Scope | Squash |
+|---|---|---|
+| [#1427](https://github.com/GhochangFu/EMS/pull/1427) | This ADR (proposed, then accepted) | `4f82134` |
+| [#1429](https://github.com/GhochangFu/EMS/pull/1429) | `E1.5a` API: contract, trend math, window, trend rule, health and drift, sentences, reads, service, `GET /degradation` and `GET /assets/:assetId/degradation` | `201c4f53` |
+| [#1430](https://github.com/GhochangFu/EMS/pull/1430) | Demo-host results for `E1.5a` (plan §15.2.1) | `c5084bd` |
+| [#1431](https://github.com/GhochangFu/EMS/pull/1431) | `E1.5b` web: history section, health-card line, control-room card, schedule note | `5c9f4c5c` |
+| [#1432](https://github.com/GhochangFu/EMS/pull/1432) | Demo-host browser results for `E1.5b` (plan §15.3.1) | `61ff9e61` |
+
+No migration, grant, index, dependency or `apps/ml` change. Reviews found nothing blocking. **Calls made in the build, recorded so a reader does not take them for drift** (each also in the plan's section 20):
+- Review fixes in `E1.5a`: the horizon quotient is rounded correctly, a stored `UTC` zone is sent as stored, and day rows are grouped per asset.
+- Review fixes in `E1.5b`: a 15-minute `gcTime`, a failed refetch draws no note, no 403 re-ask on remount.
+- The demo-host `readMeanDays` read sits on its 300 ms stop line. Owner ruling 2026-11-18: "Accept as host load". No code change.
+- Two wording edge cases are kept as the plan wrote them (a range whose fast end is exactly 90, and a very shallow slope that reads "-0.0").
+- The schedule panel reads the unscoped list, so a schedule whose asset is beyond the 200-asset cap gets no note.
+
+Still owed: the demo-host health-card check after about 2026-11-29, and the `chore(agents):` catch-up (plan section 16), which needs the owner's explicit approval. `E1.5d` stays parked on decision 6's start condition.
