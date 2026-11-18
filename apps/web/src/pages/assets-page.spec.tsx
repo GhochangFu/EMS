@@ -11,10 +11,13 @@ import * as assetHealthApi from "../api/asset-health";
 import * as assetKpisApi from "../api/asset-kpis";
 import * as assetsApi from "../api/assets";
 import * as dashboardsApi from "../api/dashboards";
+import * as degradationApi from "../api/degradation";
 import * as maintenanceApi from "../api/maintenance-windows";
 import * as vocabApi from "../api/vocabularies";
 import type { AuthUser } from "../stores/auth-store";
 import { AssetsPage } from "./assets-page";
+import { healthIndicator, oneAssetAnswer } from "../components/degradation/asset-degradation-section.spec";
+import { anIndicator } from "../lib/degradation.spec";
 import * as copilotApi from "../api/copilot";
 
 /**
@@ -184,6 +187,8 @@ function stubApi(dashboards: DashboardsListResponse = DASHBOARDS, coveredAssetId
   vi.spyOn(assetHealthApi, "fetchAssetHealth").mockResolvedValue(HEALTH);
   // `E1.8b`: the health card's five inputs, read beside the health score.
   vi.spyOn(assetHealthApi, "fetchAssetHealthInputs").mockResolvedValue(INPUTS);
+  // `E1.5b`: the health card's trend line; default no asset, so no line.
+  vi.spyOn(degradationApi, "fetchAssetDegradation").mockResolvedValue({ asOf: "2026-09-17T01:00:00.000Z", candidates: 0, considered: 0, assets: [] });
   return vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue(dashboards);
 }
 
@@ -527,4 +532,37 @@ export async function anUncoveredAssetsPanelShowsNoMaintenanceBadge(): Promise<v
     await read.mock.results[0]?.value;
   });
   expect(within(panel).queryByText("Maintenance")).toBeNull();
+}
+
+/**
+ * `E1.5b` T2.3 — the health card's trend line shows the server's summary for a health `crossing`;
+ * a drift-only answer and a `beyond_horizon` health indicator show no line (Q3 (a)).
+ */
+export async function theTrendLineShowsOnlyForAHealthCrossing(): Promise<void> {
+  const summary = "Trending down: reaches Poor in about 13–17 days";
+  const drift = anIndicator({ id: "x:point_drift:kw", kind: "point_drift", pointKey: "kw", summary: "kw trending up: reaches 9 kW in about 5–9 days" });
+  const beyond = healthIndicator({ status: "beyond_horizon", daysToLimit: null, summary: "Trending down: no limit within 90 days" });
+  for (const [answer, shown] of [
+    [oneAssetAnswer([healthIndicator({ summary })]), true],
+    [oneAssetAnswer([drift]), false],
+    [oneAssetAnswer([beyond, drift]), false],
+  ] as const) {
+    stubApi();
+    const read = vi.spyOn(degradationApi, "fetchAssetDegradation").mockResolvedValue(answer);
+    const view = renderPage();
+    await clickRow("FEED-PUMP-2");
+    expect(await screen.findByText("Health inputs (SOW §4.3)")).toBeInTheDocument();
+    await waitFor(() => expect(read).toHaveBeenCalledWith(UNWIRED.id));
+    if (shown) {
+      const line = await screen.findByTestId("health-trend-line");
+      expect(within(line).getByText(summary)).toBeInTheDocument();
+    } else {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(screen.queryByTestId("health-trend-line")).toBeNull();
+      expect(document.body.textContent).not.toMatch(/Trending|trending|no limit within/);
+    }
+    view.unmount();
+  }
 }
