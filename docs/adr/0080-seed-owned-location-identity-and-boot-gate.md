@@ -10,6 +10,10 @@ written record on 2026-09-28, before the PR was pushed.
 Implements rows `F4.169` and `F4.170` (one PR by owner ruling). Promotes nothing
 out of `AGENTS.md` §6. No migration, no schema change, no new dependency.
 
+**Amended by [ADR 0139](./0139-one-site-per-phe-rtu-and-grouped-site-cards.md)
+(2026-11-19):** the legacy PHE cleanup (decision 4) and its zero-count boot
+check (decision 1) retire; the count becomes a shape check.
+
 ## Context
 
 Both rows began as small `packages/db` fixes: a lowercase asset code with an
