@@ -99,6 +99,7 @@ export async function theListQueryPolicy(): Promise<void> {
   expect(query?.queryKey).toEqual(["degradation", "list", SITE, ORG]);
   const options = query?.options as { staleTime?: number; retry?: unknown; refetchOnWindowFocus?: unknown };
   expect(options.staleTime).toBe(DEGRADATION_STALE_MS);
+  expect((options as { gcTime?: number }).gcTime).toBe(DEGRADATION_STALE_MS);
   expect(options.retry).toBe(false);
   expect(options.refetchOnWindowFocus).toBe(false);
   spy.mockRestore();
@@ -115,4 +116,32 @@ export async function theListQueryPolicy(): Promise<void> {
   await waitFor(() =>
     expect(k.client.getQueryCache().findAll({ queryKey: ["degradation", "list"] })[0]?.queryKey).toEqual(["degradation", "list", null, null]),
   );
+}
+
+/**
+ * The asset read's policy (code review): kept 15 minutes, and a 403 is asked again neither on
+ * focus nor on a remount, while any other error is.
+ */
+export async function theAssetQueryPolicy(): Promise<void> {
+  const spy = vi.spyOn(degradationApi, "fetchAssetDegradation").mockResolvedValue(ANSWER);
+  const { client, wrapper } = harness();
+  renderHook(() => useAssetDegradation(ASSET), { wrapper });
+  await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+  const query = client.getQueryCache().findAll({ queryKey: ["asset-degradation"] })[0]!;
+  const options = query.options as {
+    staleTime?: number;
+    gcTime?: number;
+    refetchOnMount?: (q: unknown) => boolean;
+    refetchOnWindowFocus?: (q: unknown) => boolean;
+  };
+  expect(options.staleTime).toBe(DEGRADATION_STALE_MS);
+  expect(options.gcTime).toBe(DEGRADATION_STALE_MS);
+  const refused = { state: { error: new Error("asset degradation 403") } };
+  const failed = { state: { error: new Error("asset degradation 500") } };
+  for (const policy of [options.refetchOnMount, options.refetchOnWindowFocus]) {
+    expect(typeof policy).toBe("function");
+    expect(policy!(refused)).toBe(false);
+    expect(policy!(failed)).toBe(true);
+  }
+  spy.mockRestore();
 }

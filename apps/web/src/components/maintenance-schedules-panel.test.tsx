@@ -4,6 +4,7 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aFailedDegradationReadLeavesThePanel,
+  aFailedRefetchHidesAnEarlierNote,
   aRefusedConvertShowsTheSentence,
   aScheduleWithANoteShowsIt,
   aScheduleWithNoNoteShowsNone,
@@ -91,5 +92,9 @@ describe("E1.5b a trend note beside a maintenance schedule (ADR 0138 decision 4)
 
   it("a failed degradation read leaves the panel as it is", async () => {
     await aFailedDegradationReadLeavesThePanel();
+  });
+
+  it("a failed refetch hides an earlier note", async () => {
+    await aFailedRefetchHidesAnEarlierNote();
   });
 });

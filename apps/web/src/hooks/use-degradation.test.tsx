@@ -8,6 +8,7 @@ import {
   aNonUuidAsksNothing,
   oneReadForTheAsset,
   theListQueryFnIsAThunkHoldingTheFilter,
+  theAssetQueryPolicy,
   theListQueryPolicy,
 } from "./use-degradation.spec";
 
@@ -23,4 +24,5 @@ describe("E1.5b — the degradation hooks", () => {
   it("a failed refetch drops the data", () => aFailedRefetchDropsTheData());
   it("the list queryFn is a thunk holding the filter", () => theListQueryFnIsAThunkHoldingTheFilter());
   it("the list query policy", () => theListQueryPolicy());
+  it("the asset query policy: kept 15 minutes, a 403 never asked again", () => theAssetQueryPolicy());
 });

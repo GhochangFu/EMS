@@ -153,7 +153,9 @@ export function MaintenanceSchedulesPanel({
   const [createOpen, setCreateOpen] = useState(false);
   const [toggleItem, setToggleItem] = useState<MaintenanceScheduleItem | null>(null);
 
-  const degradation = useDegradationList({}, true).data;
+  // A failed read — first or a later refetch — draws no note, never an earlier answer (R-p).
+  const degradationQuery = useDegradationList({}, true);
+  const degradation = degradationQuery.isError ? undefined : degradationQuery.data;
 
   const schedulesQ = useQuery({
     queryKey: [

@@ -98,7 +98,7 @@ async function renderPanel(
   row: MaintenanceScheduleItem = SCHEDULE,
   degradation: DegradationResponse | Error = NO_DEGRADATION,
   more: MaintenanceScheduleItem[] = [],
-): Promise<void> {
+): Promise<QueryClient> {
   const degradationRead = vi.mocked(degradationApi.fetchDegradation);
   degradationRead.mockReset();
   if (degradation instanceof Error) {
@@ -121,6 +121,7 @@ async function renderPanel(
     </QueryClientProvider>,
   );
   await screen.findByText(SCHEDULE.title);
+  return queryClient;
 }
 
 /** The element carrying the refusal, found by its sentence; it must not carry the JSON. */
@@ -280,4 +281,14 @@ export async function aFailedDegradationReadLeavesThePanel(): Promise<void> {
   expect(screen.queryByTestId("schedule-trend-note")).toBeNull();
   expect(screen.queryByText(/degradation/i)).toBeNull();
   expect(document.body.innerHTML).toBe(quiet);
+}
+
+/** A refetch that fails after a good read hides the earlier note: a failed read draws nothing (R-p). */
+export async function aFailedRefetchHidesAnEarlierNote(): Promise<void> {
+  const queryClient = await renderPanel(SCHEDULE, WITH_NOTE);
+  await screen.findByTestId("schedule-trend-note");
+  vi.mocked(degradationApi.fetchDegradation).mockRejectedValue(new Error("degradation 429"));
+  await queryClient.refetchQueries({ queryKey: ["degradation", "list"] }).catch(() => undefined);
+  await waitFor(() => expect(screen.queryByTestId("schedule-trend-note")).toBeNull());
+  expect(screen.getByText(SCHEDULE.title)).toBeInTheDocument();
 }
