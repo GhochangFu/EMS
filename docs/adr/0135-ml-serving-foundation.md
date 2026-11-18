@@ -2086,3 +2086,10 @@ key's parts, the cap, the timeout or the fail-closed rule.
   when the cache is cold.
 - The jsdom specs that pin the label text and the single `<p>` change in
   the same PR; Amendment 8's guard and pseudonymise specs do not.
+
+**Build record — `E1.9g` (2026-11-17).** Built in two PRs: #1419 (`f7e05867`: the required asset `code`, `finishCard` filling it, prompt version 2 with the ten version-1 lines and a SHA-256 of the whole prompt pinned in a spec) and #1421 (`571e4f0a`: the web box, chips, *Computed facts*, the compact box and the organization-page order); planned in #1417. Calls made in the build, recorded so a reader does not take them for drift:
+- **OQ-1 (a), read for its purpose.** When no shown sentence holds "weak" and a hidden one does, the **first** hidden "weak" sentence takes the last point slot. With exactly one "weak" sentence this is the ruling's words; with two hidden ones a literal "the only sentence" reading would show no "weak" at all. A spec case pins it; recorded in #1421's body for the owner.
+- **Focus after "Show N more".** The button is removed on click (plan R-h), so focus moves to the first line it showed (`tabIndex=-1`) rather than falling to the page.
+- **The chip uses the surface vocabulary** (`surface-pressed-sm`), not `border-line` + `bg-surface`: the first CI run of #1421 failed the `F3.71` surface ratchet (ADR 0085) on that spelling, and one push fixed it.
+- **Not changed, raised for the owner:** a screen reader names a chip by its code only, and an unsafe-link chip's `title` cannot be reached by keyboard (Q3's code-only chips). A visually hidden full label would change the text the specs pin.
+- **Owed:** the demo-host checks of plan §13 after each deploy (PR 1: new version-2 rows, the stop rule, no names in stored rows, the daily cap; PR 2: the box, chips, folding, the organization-page order, the wall), and the `chore(agents):` catch-up of plan §14 (owner approval first).
