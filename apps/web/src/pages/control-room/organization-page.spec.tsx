@@ -153,6 +153,18 @@ vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
   },
 }));
 
+/* `E1.5b` (ADR 0138) — a stand-in that prints its scope and counts mounts; the card is gated by its own spec. */
+const degradationMounts = vi.hoisted(() => ({ count: 0 }));
+
+vi.mock("../../components/degradation/degradation-trend-card", () => ({
+  DegradationTrendCard: ({ organizationId, locationId }: { organizationId?: string; locationId?: string }) => {
+    useEffect(() => {
+      degradationMounts.count += 1;
+    }, []);
+    return <div data-testid="degradation-panel" data-organization-id={organizationId} data-location-id={locationId} />;
+  },
+}));
+
 /*
  * `F3.79` — the site map is a stand-in too: it prints the organization id it is handed and
  * counts its mounts, so a case can tell a fresh map (keyed by organization) from a reused one.
@@ -183,6 +195,7 @@ const PANELS = [
   "ml-findings-panel",
   "health-panel",
   "bad-actors-panel",
+  "degradation-panel",
   "trend-panel",
   "dashboards-panel",
 ] as const;
@@ -646,7 +659,31 @@ export async function theBadActorsCardSitsDirectlyAfterAssetHealth(): Promise<vo
   expect(card.dataset.showCount).toBe("(absent)");
   const health = screen.getByTestId("health-panel");
   expect(health.nextElementSibling, "directly after Asset health").toBe(card);
-  expect(card.nextElementSibling, "the load trend follows it").toBe(screen.getByTestId("trend-panel"));
+  expect(card.nextElementSibling, "E1.5b's card follows it").toBe(screen.getByTestId("degradation-panel"));
+}
+
+/** P13 — `E1.5b` (ADR 0138, plan T2.4): one card, directly after Bad actors, a fresh mount per organization. */
+export async function theDegradationCardFollowsBadActors(): Promise<void> {
+  stubReads(TWO_FULL_ORGS);
+  degradationMounts.count = 0;
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (organizationId: string) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <ControlRoomOrganizationPage user={USER} organizationId={organizationId} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
+  const view = render(tree(ORG_A.id));
+  await siteGrid();
+  const cards = screen.getAllByTestId("degradation-panel");
+  expect(cards.map((c) => [c.dataset.organizationId, c.hasAttribute("data-location-id")])).toEqual([[ORG_A.id, false]]);
+  expect(screen.getByTestId("bad-actors-panel").nextElementSibling, "directly after Bad actors").toBe(cards[0]);
+  expect(cards[0]?.nextElementSibling, "the load trend follows it").toBe(screen.getByTestId("trend-panel"));
+  view.rerender(tree(ORG_B.id));
+  await waitFor(() => expect(screen.getByTestId("degradation-panel").dataset.organizationId).toBe(ORG_B.id));
+  expect(degradationMounts.count, "org B must get a fresh card, not org A's").toBe(2);
 }
 
 /** Two organizations, each with two sites, so neither skips to a site. */

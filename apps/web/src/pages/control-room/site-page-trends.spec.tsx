@@ -24,6 +24,7 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
 vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
   HealthBadActorsCard: () => null,
 }));
+vi.mock("../../components/degradation/degradation-trend-card", () => ({ DegradationTrendCard: () => null }));
 
 /**
  * `F4.302` U4 (ADR 0108 Amendment 4 items 1, 8) — the site page's third section, **Trends &

@@ -40,6 +40,7 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
 vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
   HealthBadActorsCard: () => null,
 }));
+vi.mock("../../components/degradation/degradation-trend-card", () => ({ DegradationTrendCard: () => null }));
 
 vi.mock("../../components/control-room/generated-site-view", () => ({
   GeneratedSiteView: ({ locationId }: { locationId: string }) => {

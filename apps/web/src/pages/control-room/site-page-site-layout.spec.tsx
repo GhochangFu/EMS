@@ -33,6 +33,7 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
 vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
   HealthBadActorsCard: () => null,
 }));
+vi.mock("../../components/degradation/degradation-trend-card", () => ({ DegradationTrendCard: () => null }));
 
 /**
  * `F3.73` plan Task 5.1 (D10, ruling Q5) — the **Make site layout** action on the site page's

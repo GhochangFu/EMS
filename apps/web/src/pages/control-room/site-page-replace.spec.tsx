@@ -26,6 +26,7 @@ vi.mock("../../components/ml/ml-findings-card", () => ({
 vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
   HealthBadActorsCard: () => null,
 }));
+vi.mock("../../components/degradation/degradation-trend-card", () => ({ DegradationTrendCard: () => null }));
 
 /**
  * `F4.320` PR 2 (ADR 0087 Amendment 4 decision 8) — where the site page offers **Replace with this
