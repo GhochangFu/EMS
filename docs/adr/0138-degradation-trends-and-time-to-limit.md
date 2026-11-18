@@ -150,7 +150,13 @@ The same posture as ADR 0137 decision 3 and decision 8:
 - A fixed disclaimer: *"A trend from the last 28 days, not a failure
   prediction."*
 - An *Assumptions* list: the window, the coverage, the limit and its source,
-  and "the tag weights and rules in force today are applied to past days".
+  and, per indicator, what is applied to past days. Health: "Today's tag
+  weights are applied to past days; each past day was counted with the rules
+  in force on that day." Drift: "The limit is the rule in force today."
+  *(Changed 2026-11-18 by the `E1.5` plan's Q1, owner "yes, as recommended":
+  the first wording, "the tag weights and rules in force today are applied to
+  past days", was not true for the health trend, whose counters freeze each
+  hour's rules when it is rolled up.)*
 - No percentage confidence, no accuracy figure.
 - **It reaches nothing:** no alarm, notification, work order, report,
   export, copilot answer or copilot tool, and it changes no schedule. No
