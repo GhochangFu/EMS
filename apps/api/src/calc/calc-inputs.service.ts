@@ -20,12 +20,22 @@ import type { CalcInputSample } from "./calc-inputs";
 const INPUT_READ_BOUND_SECONDS = MAX_INPUT_AGE_SECONDS_BOUND * 7;
 
 /**
+ * `F4.390` — the same bound as a SQL-text literal, so the planner sees a constant and keeps only the
+ * chunks inside it (§4.4). It is built from this module's own closed constant, never from request
+ * input. Bound as a parameter (`now() - ($3 || ' seconds')::interval`), TimescaleDB could exclude
+ * chunks only at execution: on the demo host (2026-11-19, 134 `point_values` chunks) that planned
+ * for 629 ms warm and 7,705 ms on a cold connection, on every calc tick; with the literal, 314 ms
+ * cold.
+ */
+export const INPUT_READ_BOUND_INTERVAL_SQL = `interval '${INPUT_READ_BOUND_SECONDS} seconds'`;
+
+/**
  * Reads the latest stored sample per point key for one asset, batched in a
  * single query rather than one per reference (ADR 0037 decision 3). Raw SQL
- * with `DISTINCT ON`, matching `dashboard.service.ts`/`map.service.ts`'s
- * existing precedent for this exact idiom over `point_values` — Drizzle's
- * query builder has no first-class `DISTINCT ON (a, b)` this repo already
- * reaches for elsewhere.
+ * with `DISTINCT ON` — Drizzle's query builder has no first-class
+ * `DISTINCT ON (a, b)` this repo already reaches for elsewhere. Both reads
+ * bound time by {@link INPUT_READ_BOUND_INTERVAL_SQL}, a plan-time literal
+ * (`F4.390`).
  *
  * That idiom holds for {@link CalcInputsService.getLatestSamples} only.
  * {@link CalcInputsService.getLatestSamplesForPairs} is a lateral join, and
@@ -46,9 +56,9 @@ export class CalcInputsService {
          FROM telemetry.point_values
         WHERE asset_id = $1
           AND point_key = ANY($2::varchar[])
-          AND time > now() - ($3 || ' seconds')::interval
+          AND time > now() - ${INPUT_READ_BOUND_INTERVAL_SQL}
         ORDER BY point_key, time DESC`,
-      [assetId, pointKeys, INPUT_READ_BOUND_SECONDS],
+      [assetId, pointKeys],
     );
     for (const row of rows) {
       map.set(row.point_key, { value: row.value, timeMs: new Date(row.time).getTime() });
@@ -64,10 +74,11 @@ export class CalcInputsService {
    * Keyed by `inputKey(assetId, pointKey)`, since two members can share a
    * point key and a bare key would collapse them.
    *
-   * Under the **same** generous bound as {@link getLatestSamples}, for the
-   * same reason: the caller classifies a member stale against the formula's
-   * own `max_input_age_seconds`, and it can only do so if this read still
-   * returns the row. A pair with no sample inside the bound is absent.
+   * Under the **same** generous bound as {@link getLatestSamples} — the same
+   * plan-time literal, {@link INPUT_READ_BOUND_INTERVAL_SQL} — for the same
+   * reason: the caller classifies a member stale against the formula's own
+   * `max_input_age_seconds`, and it can only do so if this read still returns
+   * the row. A pair with no sample inside the bound is absent.
    *
    * **Why a lateral join and not `DISTINCT ON` — do not "simplify" this back.**
    * `getLatestSamples` above can use `DISTINCT ON` because its `asset_id = $1`
@@ -114,11 +125,11 @@ export class CalcInputsService {
              FROM telemetry.point_values v
             WHERE v.asset_id = p.asset_id
               AND v.point_key = p.point_key
-              AND v.time > now() - ($3 || ' seconds')::interval
+              AND v.time > now() - ${INPUT_READ_BOUND_INTERVAL_SQL}
             ORDER BY v.time DESC
             LIMIT 1
          ) s`,
-      [assetIds, pointKeys, INPUT_READ_BOUND_SECONDS],
+      [assetIds, pointKeys],
     );
     for (const row of rows) {
       map.set(inputKey(row.asset_id, row.point_key), { value: row.value, timeMs: new Date(row.time).getTime() });

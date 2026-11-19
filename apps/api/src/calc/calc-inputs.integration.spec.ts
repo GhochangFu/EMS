@@ -84,6 +84,30 @@ export async function assertOldButWithinBoundSampleIsReturned(pool: pg.Pool): Pr
   assert(stale?.value === 42, `expected value 42, got ${stale?.value}`);
 }
 
+/**
+ * `F4.390` (plan Task 2.2) — the other side of the bound for `getLatestSamples`: a key whose only
+ * sample is older than the 7-day read bound is absent. With
+ * {@link assertOldButWithinBoundSampleIsReturned}, widening or dropping the bound reddens this
+ * case and narrowing it reddens that one (the pairs read already has both sides).
+ */
+export async function assertSampleOlderThanTheBoundIsAbsent(pool: pg.Pool): Promise<void> {
+  const svc = new CalcInputsService(pool);
+  const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+  await insertSample(pool, "CALCIN_TOO_OLD", 5, eightDaysAgo);
+
+  const control = await pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM telemetry.point_values WHERE asset_id = $1 AND point_key = 'CALCIN_TOO_OLD'`,
+    [TEST_ASSET_ID],
+  );
+  assert(control.rows[0]?.n === 1, `control: the 8-day-old sample must be stored, got ${control.rows[0]?.n} rows`);
+
+  const samples = await svc.getLatestSamples(TEST_ASSET_ID, ["CALCIN_TOO_OLD"]);
+  assert(
+    !samples.has("CALCIN_TOO_OLD"),
+    "a key whose only sample is older than the 7-day read bound must be absent",
+  );
+}
+
 export async function assertEmptyPointKeysReturnsEmptyMap(pool: pg.Pool): Promise<void> {
   const svc = new CalcInputsService(pool);
   const samples = await svc.getLatestSamples(TEST_ASSET_ID, []);
