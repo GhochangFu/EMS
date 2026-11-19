@@ -1,6 +1,12 @@
 import type pg from "pg";
 
-import { mimicConfigSchema, sectionTemplateContentSchema, trendStripWidgetConfigSchema } from "@bms/shared";
+import {
+  mimicConfigSchema,
+  mimicLayoutConfigSchema,
+  mimicPresetConfigSchema,
+  sectionTemplateContentSchema,
+  trendStripWidgetConfigSchema,
+} from "@bms/shared";
 import { PUMP_STATION_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 import type { PheCatalogFile } from "./phe-pilot-seed";
@@ -60,8 +66,13 @@ export type StationSettingsKeptReason =
   | "several_station_matches"
   /** The site config is not the as-made config: an administrator changed it. */
   | "edited"
-  /** The station config does not parse with the widget type's shared schema. */
+  /**
+   * The station config does not parse with the widget type's shared schema, or holds a key the
+   * widget write API's `.strict()` arm refuses.
+   */
   | "station_config_invalid"
+  /** The station config's `tabKey` names a tab the site copy does not hold. */
+  | "station_tab_absent"
   /** A mimic pair that is not two `source: "preset"` configs on the same preset. */
   | "mimic_not_same_preset";
 
@@ -83,17 +94,45 @@ export type StationSettingsPlan = {
 /** The widget types whose config the step copies (plan D3). Every other type is not considered. */
 export const STATION_SETTINGS_WIDGET_TYPES: readonly string[] = ["mimic", "trend_strip"];
 
-/** The stamp a copy carries once the step has run on it (plan D3, "Why the stamp"). */
+/**
+ * The stamp a copy carries once the step has run on it (plan D3, "Why the stamp").
+ *
+ * **Stamp 3 means one of two things, and is not a layout version.** A copy made from stock v3 of
+ * `pump-station-standard` (a cold start) carries 3 because the seed stamps a copy with its
+ * template's stock version; a copy this step repaired carries 3 whatever template version it was
+ * made from (on the demo host, a DB-v4 copy). A future `pump-station-standard` upgrade chain must
+ * not read 3 as "holds the v3 layout".
+ */
 export const STATION_SETTINGS_STOCK_VERSION = 3;
 
 function sameConfig(a: unknown, b: unknown): boolean {
   return canonicalJson(a) === canonicalJson(b);
 }
 
-function stationConfigParses(widgetType: string, config: unknown): boolean {
-  if (widgetType === "mimic") return mimicConfigSchema.safeParse(config).success;
-  if (widgetType === "trend_strip") return trendStripWidgetConfigSchema.safeParse(config).success;
-  return false;
+/**
+ * The widget write API's config arms: each shared schema `.strict()`, as `dashboard-writes.ts`
+ * composes them (`bindsNothingArm`, `mimicConfigWriteSchema`). `@bms/shared` exports the arms, not
+ * the composed write schema.
+ */
+const MIMIC_PRESET_WRITE = mimicPresetConfigSchema.strict();
+const MIMIC_LAYOUT_WRITE = mimicLayoutConfigSchema.strict();
+const TREND_STRIP_WRITE = trendStripWidgetConfigSchema.strict();
+
+/**
+ * The station config parsed as the write API would accept it, as its `tabKey` (absent: none), or
+ * null when it does not parse: a config the API would refuse is never copied.
+ */
+function parseStationConfig(widgetType: string, config: unknown): { readonly tabKey: string | undefined } | null {
+  if (widgetType === "trend_strip") {
+    const parsed = TREND_STRIP_WRITE.safeParse(config);
+    return parsed.success ? { tabKey: parsed.data.tabKey } : null;
+  }
+  if (widgetType !== "mimic") return null;
+  const parsed = mimicConfigSchema.safeParse(config);
+  if (!parsed.success) return null;
+  const strict =
+    parsed.data.source === "preset" ? MIMIC_PRESET_WRITE.safeParse(config) : MIMIC_LAYOUT_WRITE.safeParse(config);
+  return strict.success ? { tabKey: parsed.data.tabKey } : null;
 }
 
 /** The preset a mimic config names on the preset arm, or null for any other config. */
@@ -106,14 +145,16 @@ function mimicPreset(config: unknown): string | null {
  * Plan the copy of the station's settings onto one site's widgets. Per site widget of type
  * `mimic` or `trend_strip`: match the station widget on tab key + widget type + rect, exactly one
  * match; copy the whole station config when (a) the site config equals its as-made config,
- * (b) the station config parses, and (c) for a mimic, both are `source: "preset"` on the same
- * preset. A site config already equal to the station's is `unchanged`. Configs compare
+ * (b) the station config parses as the write API accepts it, (c) a `tabKey` it names is one of
+ * `siteTabKeys` (the site copy's own tabs), and (d) for a mimic, both are `source: "preset"` on
+ * the same preset. A site config already equal to the station's is `unchanged`. Configs compare
  * key-order-free (`canonicalJson`), since jsonb keeps its own key order.
  */
 export function planStationSettingsCopy(
   siteWidgets: readonly StationSettingsWidget[],
   stationWidgets: readonly StationSettingsWidget[],
   asMade: StationSettingsAsMade,
+  siteTabKeys: ReadonlySet<string>,
 ): StationSettingsPlan {
   const updates: StationSettingsUpdate[] = [];
   const kept: { widgetId: string; reason: StationSettingsKeptReason }[] = [];
@@ -143,8 +184,13 @@ export function planStationSettingsCopy(
       keep("several_station_matches");
       continue;
     }
-    if (!stationConfigParses(station.widgetType, station.config)) {
+    const parsed = parseStationConfig(station.widgetType, station.config);
+    if (parsed === null) {
       keep("station_config_invalid");
+      continue;
+    }
+    if (parsed.tabKey !== undefined && !siteTabKeys.has(parsed.tabKey)) {
+      keep("station_tab_absent");
       continue;
     }
     if (site.widgetType === "mimic") {
@@ -202,6 +248,8 @@ const SETTINGS_WIDGETS_SQL = `
     LEFT JOIN bms.dashboard_tabs t ON t.id = w.tab_id
    WHERE w.dashboard_id = $1 AND w.organization_id = $2 AND w.widget_type = ANY($3::varchar[])
 `;
+/** A dashboard's tab keys. Params: `[dashboardId, organizationId]`. */
+const TAB_KEYS_SQL = `SELECT tab_key FROM bms.dashboard_tabs WHERE dashboard_id = $1 AND organization_id = $2`;
 /** The copy's own template row, whatever its status: the shape the copy was made from. */
 const TEMPLATE_BY_ID_SQL = `
   SELECT id, content, stock_version FROM bms.dashboard_templates WHERE id = $1 AND organization_id = $2
@@ -224,6 +272,9 @@ type SettingsWidgetRow = {
 };
 
 type WidgetPlace = Pick<StationSettingsWidget, "tabKey" | "widgetType" | "gridX" | "gridY" | "gridW" | "gridH">;
+
+/** One widget of the copy `planSiteCopy` plans: its place and the config the seed writes there. */
+export type PlannedSettingsWidget = WidgetPlace & { readonly config: unknown };
 
 function samePlace(a: WidgetPlace, b: WidgetPlace): boolean {
   return (
@@ -259,9 +310,29 @@ async function readSettingsWidgets(
 }
 
 /**
+ * Pairs each stored widget with the planned widget at its place (tab key + widget type + rect),
+ * one pairing each way: a stored widget gets an as-made config only when exactly one planned
+ * widget and no other stored widget share its place. Any other stored widget has no entry, so the
+ * planner keeps it (`no_as_made`). Pure.
+ */
+export function pairAsMadeConfigs(
+  siteWidgets: readonly StationSettingsWidget[],
+  planned: readonly PlannedSettingsWidget[],
+): Map<string, unknown> {
+  const asMade = new Map<string, unknown>();
+  for (const site of siteWidgets) {
+    const matches = planned.filter((widget) => samePlace(widget, site));
+    const [only] = matches;
+    if (only && matches.length === 1 && siteWidgets.filter((other) => samePlace(other, site)).length === 1) {
+      asMade.set(site.id, only.config);
+    }
+  }
+  return asMade;
+}
+
+/**
  * The as-made map of one copy: `planSiteCopy` run on the copy's own `template_id` row (the
- * `F4.319` move's method), each stored widget paired with the planned widget on tab key + widget
- * type + rect, one pairing each way. A template row that is gone or does not parse, or a plan that
+ * `F4.319` move's method), paired by {@link pairAsMadeConfigs}. A template row that is gone or does not parse, or a plan that
  * is not `planned`, gives an empty map, so every widget is kept (`no_as_made`).
  */
 async function asMadeConfigs(
@@ -273,7 +344,6 @@ async function asMadeConfigs(
   choiceByGroupCode: Readonly<Record<string, string>>,
   points: Map<string, string>,
 ): Promise<Map<string, unknown>> {
-  const asMade = new Map<string, unknown>();
   const row = (
     await pool.query<{ id: string; content: unknown; stock_version: number | null }>(TEMPLATE_BY_ID_SQL, [
       templateId,
@@ -281,21 +351,14 @@ async function asMadeConfigs(
     ])
   ).rows[0];
   const content = row ? sectionTemplateContentSchema.safeParse(row.content) : null;
-  if (!row || !content?.success) return asMade;
+  if (!row || !content?.success) return new Map();
   const template: SeededSiteTemplate = { id: row.id, content: content.data, stockVersion: row.stock_version };
   const plan = await planSiteCopy(pool, organizationId, locationId, template, choiceByGroupCode, points);
-  if (plan.status !== "planned") return asMade;
+  if (plan.status !== "planned") return new Map();
   const planned = plan.tabs.flatMap(({ row: tabRow, widgets }) =>
     widgets.map(({ widget }) => ({ ...widget, tabKey: tabRow.tab.key })),
   );
-  for (const site of siteWidgets) {
-    const matches = planned.filter((widget) => samePlace(widget, site));
-    const [only] = matches;
-    if (only && matches.length === 1 && siteWidgets.filter((other) => samePlace(other, site)).length === 1) {
-      asMade.set(site.id, only.config);
-    }
-  }
-  return asMade;
+  return pairAsMadeConfigs(siteWidgets, planned);
 }
 
 /** The site copies the step looked at. */
@@ -328,9 +391,10 @@ function droppedRowError(prefix: string, what: string, rowCount: number | null):
  *
  * Logs one line per copy (`copied N of M`) and one per kept widget with its reason (owner ruling
  * Q4: keep and log, never throw on a mismatch; a widget edited between the read and the write is
- * kept and logged too). Throws only when the stamp of the row-locked copy writes no row, which means
- * a FORCE-RLS write dropped it (no tenant bracket). Runs in the caller's `withOrganization` bracket
- * and transaction, after `seedSiteLayouts`.
+ * kept and logged too). Throws only when the stamp of a copy the step read and row-locked writes no
+ * row: a dropped write on a row the step can see. Runs in the caller's `withOrganization` bracket
+ * and transaction, after `seedSiteLayouts`. With no tenant bracket, FORCE ROW LEVEL SECURITY hides
+ * every copy from the candidate read, so the step finds no copy and does nothing; it does not throw.
  */
 export async function copyStationWidgetSettings(
   pool: Pick<pg.Pool, "query">,
@@ -392,6 +456,9 @@ export async function copyStationWidgetSettings(
         log(`${prefix}: station ${station.slug} has no dashboard; copied 0 of ${siteWidgets.length}`);
       } else {
         stationWidgets ??= await readSettingsWidgets(pool, organizationId, stationDashboardId);
+        const siteTabKeys = new Set(
+          (await pool.query<{ tab_key: string }>(TAB_KEYS_SQL, [copy.id, organizationId])).rows.map((row) => row.tab_key),
+        );
         points ??= await activePointsByAsset(pool, organizationId);
         const asMade = await asMadeConfigs(
           pool,
@@ -402,7 +469,7 @@ export async function copyStationWidgetSettings(
           options.choiceByGroupCode,
           points,
         );
-        plan = planStationSettingsCopy(siteWidgets, stationWidgets, asMade);
+        plan = planStationSettingsCopy(siteWidgets, stationWidgets, asMade, siteTabKeys);
         for (const update of plan.updates) {
           const res = await pool.query(WIDGET_CONFIG_UPDATE_SQL, [
             update.widgetId,
@@ -411,8 +478,9 @@ export async function copyStationWidgetSettings(
             JSON.stringify(update.from),
           ]);
           // Only the dashboard row is locked: an edit committed between the read and this write
-          // leaves the predicate false. Q4: keep it and log, the boot continues. A missing tenant
-          // bracket drops every write here, and the stamp below then throws on its locked row.
+          // leaves the predicate false. Q4: keep it and log, the boot continues. With no tenant
+          // bracket the step never gets here: FORCE RLS hides the copy from the candidate read. The
+          // stamp's throw below guards a dropped write on a copy the step did read.
           if (res.rowCount === 1) written += 1;
           else log(`${prefix}: kept widget ${update.widgetId}: changed during the seed`);
         }

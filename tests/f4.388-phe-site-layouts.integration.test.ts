@@ -475,6 +475,16 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
   const fSites = pheRtuSites(F);
   let othersBefore = "";
   let othersIds: string[] = [];
+  let templatesBefore = "";
+
+  /** PHEWB's template rows, ordered, **with** `updated_at`: the step reads them and writes none. */
+  async function templateRows(): Promise<string> {
+    const res = await pools().superuser.query<{ row: unknown }>(
+      `SELECT to_jsonb(t) AS row FROM bms.dashboard_templates t WHERE t.organization_id = $1 ORDER BY to_jsonb(t)::text`,
+      [phewbOrgId],
+    );
+    return JSON.stringify(res.rows.map((r) => r.row));
+  }
 
   /** A dashboard's `mimic` and `trend_strip` widgets, ordered by tab and type. */
   async function settingsWidgets(dashboardId: string): Promise<SettingsWidget[]> {
@@ -569,6 +579,7 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
       ])
     ).rows.map((row) => row.id);
     othersBefore = await dashboardRows(othersIds);
+    templatesBefore = await templateRows();
 
     await wholePath(CAT_F, [...PHE_SPLIT_STATION_CODES]);
     const stationCopy = await dashboardOf(siteSlug(slugOf(F)));
@@ -619,17 +630,46 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
     const editedConfig = { ...(asMade.get(edited.id) as Record<string, unknown>), motion: false };
     await setConfig(edited.id, editedConfig);
     await pools().superuser.query(`UPDATE bms.dashboards SET stock_version = 1 WHERE id = $1`, [copy.id]);
+    // A newer published pump-station-standard whose trend strips differ: the as-made configs must
+    // come from the copy's own template row, or its strips read as edited and are kept. Deleted
+    // at the end, so L8 and L10 see the template rows as before.
+    const own = await pools().superuser.query<{ content: { tabs: { widgets: { widgetType: string; config: object }[] }[] } }>(
+      `SELECT tp.content FROM bms.dashboard_templates tp JOIN bms.dashboards d ON d.template_id = tp.id WHERE d.id = $1`,
+      [copy.id],
+    );
+    const tabs = own.rows[0]?.content.tabs.map((tab) => ({
+      ...tab,
+      widgets: tab.widgets.map((w) =>
+        w.widgetType === "trend_strip" ? { ...w, config: { ...w.config, defaultRange: "7d" } } : w,
+      ),
+    }));
+    const newerId = (
+      await pools().superuser.query<{ id: string }>(
+        `INSERT INTO bms.dashboard_templates (organization_id, code, version, name, section, target, description,
+           status, content, published_at, stock_code, stock_version)
+         SELECT tp.organization_id, tp.code, tp.version + 100, tp.name, tp.section, tp.target, tp.description,
+                'published', tp.content || jsonb_build_object('tabs', $2::jsonb), now(), tp.stock_code, tp.stock_version
+           FROM bms.dashboard_templates tp JOIN bms.dashboards d ON d.template_id = tp.id WHERE d.id = $1
+         RETURNING id`,
+        [copy.id, JSON.stringify(tabs)],
+      )
+    ).rows[0]?.id;
+    if (!tabs || !newerId) throw new Error("no newer pump-station-standard row");
     const lines: string[] = [];
 
-    await wholePath(CAT_F, CODES_F, lines);
+    try {
+      await wholePath(CAT_F, CODES_F, lines);
 
-    expect((await settingsWidgets(copy.id)).find((w) => w.id === edited.id)?.config).toEqual(editedConfig);
-    await expectStationSettings(copy.id, stationCopy.id, [edited.id]);
-    expect(await stampOf(copy.id)).toBe(3);
-    expect(lines.filter((line) => line.includes(edited.id) && line.includes("edited"))).toHaveLength(1);
-    const afterRepair = await snapshot();
-    await wholePath(CAT_F, CODES_F);
-    expect(await snapshot(), "a second seed writes nothing").toBe(afterRepair);
+      expect((await settingsWidgets(copy.id)).find((w) => w.id === edited.id)?.config).toEqual(editedConfig);
+      await expectStationSettings(copy.id, stationCopy.id, [edited.id]);
+      expect(await stampOf(copy.id)).toBe(3);
+      expect(lines.filter((line) => line.includes(edited.id) && line.includes("edited"))).toHaveLength(1);
+      const afterRepair = await snapshot();
+      await wholePath(CAT_F, CODES_F);
+      expect(await snapshot(), "a second seed writes nothing").toBe(afterRepair);
+    } finally {
+      await pools().superuser.query(`DELETE FROM bms.dashboard_templates WHERE id = $1`, [newerId]);
+    }
   }, 300_000);
 
   it("L8 a copy stamped 3 is not copied over again", async () => {
@@ -664,8 +704,10 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
     }
   }, 60_000);
 
-  it("L10 every dashboard that is not at F is unchanged by L6 to L8", async () => {
+  it("L10 every dashboard that is not at F, and every template row, is unchanged by L6 to L8", async () => {
     expect(othersIds.length).toBeGreaterThan(0);
     expect(await dashboardRows(othersIds)).toBe(othersBefore);
+    expect(templatesBefore, "PHEWB holds template rows").not.toBe("[]");
+    expect(await templateRows(), "no template row changes").toBe(templatesBefore);
   }, 60_000);
 });
