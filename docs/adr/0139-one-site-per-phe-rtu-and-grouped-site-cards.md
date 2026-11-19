@@ -5,17 +5,22 @@
 **Proposed — 2026-11-19.** Raised by `F4.388` (the owner, from the client,
 2026-11-18) and `F4.240` (raised 2026-10-10 by the `F2.10` closure). The owner
 ruled the order on 2026-11-19 (recorded in both rows, #1439 `04b92a44`) and
-gave six rulings and that order in chat on 2026-11-19, one at a time, each as
-recommended, before this record was written (listed under *Rulings*). Ruling
-Q5 was asked a second time after the migration review found that
-`bms.dashboards` has no archive column. The merge of this record is the
-acceptance. Lines marked *(drafter)* are drafter calls that the plan may
+gave eight rulings in chat on 2026-11-19, one at a time (listed under
+*Rulings*). Ruling Q5 was asked a second time after the migration review found
+that `bms.dashboards` has no archive column. Rulings Q7 and Q8 were asked after
+an impact audit of every reader of an asset's location (alarms, maintenance,
+access, reports, ML, advisories, energy, tariffs, calc; see *Context*); Q7 was
+asked a second time because the first question named one billing meter per
+tariff, and each PHE tariff names two (ADR 0134 Amendment 3). The merge of this
+record is the acceptance. Lines marked *(drafter)* are drafter calls that the plan may
 refine; the others are rulings.
 
 **Amends** [ADR 0080](./0080-seed-owned-location-identity-and-boot-gate.md)
 decisions 1 and 4 (the legacy PHE cleanup and its boot-gate count retire) and
 [ADR 0098](./0098-location-tree-of-any-depth.md) *Drafter choices* 10 (the
-organization's site cards stop being flat); see *Amends and relates to*.
+organization's site cards stop being flat) and
+[ADR 0134](./0134-slab-utility-tariffs.md) Amendment 3 for a split PHEWB
+station (each site gets its own bill); see *Amends and relates to*.
 **Builds on** ADR 0098 (the location tree), [ADR 0007](./0007-phe-mqtt-ingest-pilot.md)
 (the PHE catalog seed), [ADR 0030](./0030-shared-api-contracts.md) (response
 types are `z.infer`red from shared Zod schemas) and
@@ -32,6 +37,8 @@ layout). Code citations are to `main` at `04b92a44`.
 | Q4 | The station's location type | **`campus`.** The 12 sites stay `pump_station`. |
 | Q5 | The station's old site-layout dashboard after the move | First ruled "archive it"; `bms.dashboards` has no `archived_at` (only the template tables do), so asked again: **unlink it, keep the row.** The station's view becomes the generated kind; the dashboard row, its tabs and the emptied groups stay. Nothing is deleted and no migration. |
 | Q6 | `F4.240` part a: the station header on the organization page | **A roll-up, and a click filters the map.** The station name with sites live, assets and active alarms; a click filters the site map to the station's sites. No link to a station page until part b. |
+| Q7 | The station's tariff and monthly bill after the split | First asked with a wrong fact (one billing meter per tariff); asked again with both meters named: **split it into two site bills.** On who writes them and with which load, the owner in chat: "Sites: they will have their stations' organizations carry flight for Lota Pata 1 and Lota Pata 2. All have WBSCDCLs' current settings for tariff." Read as: **each site carries its station's tariff forward**, with the same WBSEDCL settings and its own meter (decision 4a). |
+| Q8 | The asset `site_name` of a split station | **The site's name** (`Lotapata I`), so the alarms page's Site column, the work orders and the asset panel name the office (decision 11). |
 
 **Order (owner, 2026-11-19, `F4.388` row):** one ADR for both rows;
 `F4.240` in two parts (a, the grouped cards; b, a combined station view);
@@ -59,9 +66,12 @@ example Lotapata 1 and Lotapata 2 under Lotapata.
 - Every station has exactly the three seeded asset groups (`pump-station`,
   `electrical`, `environment`), each holding assets of both RTUs, plus 1
   site-layout dashboard (tabs Overview, Electrical, Environment), 1
-  control-room view, 1 tariff and 1 `bms.map_locations` row. No location
-  grant, no asset-group grant and no report schedule names a PHE location or
-  group.
+  control-room view, 1 tariff and 1 `bms.map_locations` row. Each tariff is
+  an administrator's row (created 2026-11-15) and names both RTUs' MFM meters
+  in `bms.location_tariff_meters` (for Lotapata, `PHE-MFM-000000003` on
+  Lotapata I and `PHE-MFM-000000004` on Lotapata II). No location grant, no
+  asset-group grant, no report schedule, no maintenance window, no calc
+  parameter and no edge gateway names a PHE location or group.
 
 **What the code does today.**
 
@@ -120,6 +130,59 @@ example Lotapata 1 and Lotapata 2 under Lotapata.
 - **The site map already filters by parent** (`organizationNodes`,
   `apps/web/src/lib/map-site.ts:80`, `F2.10`).
 
+**Impact audit — who reads an asset's location** (code at `04b92a44`, demo
+host read-only, 2026-11-19). No table stores a location or site snapshot for
+an asset's data: `bms.alarms` keys on asset, RTU and rule; `bms.work_orders`
+on asset; `ml.forecasts` and `ml.anomaly_scores` on asset (`0157`); the four
+continuous aggregates have no location column. A scan of every JSON, text and
+array column in `bms` and `ml` for a PHE station id found only
+`bms.audit_log.payload` (10 rows of history). So every reader falls in one of
+three kinds:
+
+- **Follows the move, by a subtree or ancestor walk — no change needed.** The
+  alarm list and summary filters (`apps/api/src/alarms/alarm-location-scope.ts:57`),
+  maintenance cover (`apps/api/src/alarms/maintenance-cover.ts:45-46`, a
+  window on a station still covers the moved assets), maintenance-window
+  scope, location grants (`apps/api/src/auth/access-scope-sources.ts:127-145`),
+  report schedules, the ML and findings filters
+  (`apps/api/src/filter-options/asset-filter-scope.service.ts:59`), Copilot
+  tools, calc parameters and the per-asset tariff for cost
+  (`apps/api/src/tariffs/location-tariff-read.ts:111-140`). The dedupe key,
+  the alarm bar, escalation and notification routing carry no location.
+- **Follows the move, by the asset's current location — labels change.**
+  Alarm, work-order, ML, advisory (E1.6) and degradation (E1.5) rows show
+  the site as the location, for past rows too; the alarm statistics and the
+  energy reports show two site rows where one station row was, for past
+  periods too. Advisories need the location's own time zone and do not fall
+  back (`apps/api/src/advisories/advisories.reads.ts:110`), which decision 3
+  covers.
+- **Exact location — the gaps this record closes or names.**
+  - The **monthly bill** reads the mapping of the exact location
+    (`readMappingsForLocation`, `location-tariff-read.ts:104`, from
+    `location-energy-bill.service.ts:69`), and the site Energy tab asks for
+    the site (`MonthlyBillCard locationId`, `apps/web/src/components/control-room/site-energy-view.tsx:114`).
+    After a split the sites would show no bill (Q7, decision 4a).
+  - The asset's free-text **`site_name`** is what the alarms page's Site
+    column (`apps/web/src/pages/alarms-page.tsx:491`, its CSV at `:105`), the
+    work orders (`work-orders-page.tsx:606,715`,
+    `work-order-detail-drawer.tsx:93`) and the asset panel
+    (`asset-detail-panel.tsx:70`) show. The PHE seed writes it from the
+    catalog station on every deploy (`phe-pilot-seed.ts:494,510`), so both
+    offices would read "Lotapata" (Q8, decision 11).
+  - The **station's own page** — the generated view
+    (`apps/api/src/control-room/generated-site-view.service.ts:136`), the
+    location detail (`dashboard.service.ts:259,295,435`) and health by
+    location (`asset-health/asset-health.service.ts:612-630`) — matches the
+    exact location, so it is empty once the station holds no asset (see
+    *Consequences*).
+  - A calc formula's `@site`, `@group('…')`, `@domain('…')` and qualified
+    codes resolve at the owner's exact location
+    (`apps/api/src/calc/calc-scope.service.ts:183`), so after a split they see
+    one site. No PHE template point or asset point formula uses one (demo
+    host, 2026-11-19).
+  - An asset-group grant names a group, and the station's groups are emptied
+    (decision 5). None exists on the demo host.
+
 ## Decision
 
 ### Part 1 — the seed splits a station (`F4.388`)
@@ -163,12 +226,31 @@ example Lotapata 1 and Lotapata 2 under Lotapata.
    stays there, and the upserts write that site, so a re-deploy of an older
    release after release B does not raise K4. *(drafter: the reverse move,
    if ever wanted, is its own row)*
+
+   4a. **Each site carries its station's tariff forward** (Q7). In the same
+   transaction, after the move, for each site of a split station that has no
+   tariff mapping of its own, the seed copies each of the station's
+   `bms.location_tariffs` rows (`tariff_key`, `sanctioned_load`,
+   `sanctioned_load_unit`, `effective_from`, `effective_to`) to the site,
+   with only the meters of that mapping that now sit at the site
+   (`bms.location_tariff_meters`; `billing_meter_asset_id` = the first of
+   them). A mapping with no meter at the site is not copied. The match is by
+   asset id, never by a name (ADR 0080 decision 4). **Create-once:** a site
+   that already has a mapping is skipped, so an administrator's later edit —
+   for example each office's own sanctioned load — is never overwritten, and
+   a second run copies nothing. The station's rows stay unchanged, as its
+   dashboard does (Q5). `location_tariffs_no_overlap` is per location and the
+   site has no row, and each copied meter sits at the site, so ADR 0134's
+   subtree rule holds. *(drafter: the copy keeps the station's dates, so the
+   site's past months bill too; the station rows stay)*
 5. **Groups follow by the existing rule.** `seedAssetGroups` runs after the
    move and builds each site's `pump-station`, `electrical` and `environment`
    groups; it removes the moved assets from every group at the station. On
    the demo host those are only the three seeded groups, and no asset-group
    grant names a PHE group (read 2026-11-19); the plan re-reads both before
-   release B. No change to that seed.
+   release B. If a grant then names a station group, the release stops and
+   the owner is asked, because the emptied group would grant no asset.
+   *(drafter)* No change to that seed.
 6. **Each site gets the pump-station layout.** `seedPhewbSiteLayouts`
    (`site-layout-seed-move.ts:345`) gains the 12 sites, resolved by the same
    (slug, `meta.phe.stationCode`) pair — each site carries its station's code
@@ -207,9 +289,15 @@ example Lotapata 1 and Lotapata 2 under Lotapata.
     of a split station at its site, and a view row on each site; the
     asset/RTU location-mismatch count and the pump-station member rule
     (`ag.location_id = a.location_id`, `:736`) stay as they are.
-11. **`site_name` keeps the station's name.** The asset's free-text
-    `site_name` (`phe-pilot-seed.ts:494`) is not rewritten: the simulator's
-    RTU resolution still reads it (ADR 0080 decision 4). *(drafter)*
+11. **`site_name` names the site** (Q8). For an asset that sits at a child
+    site of its station, the PHE seed's asset write sets `site_name` to that
+    site's name (`Lotapata I`) instead of the catalog `StationName`
+    (`phe-pilot-seed.ts:494`); every other PHE asset keeps the catalog name.
+    The simulator's wiring reads only ESKOM assets and skips `PHE-` codes
+    (`hierarchy-seed.ts:337-338`), and the location backfill reads only
+    `location_id IS NULL` (`asset-groups-seed.ts:28-35`), so neither reads a
+    PHE `site_name`. A re-deploy of a release older than release B writes the
+    catalog name back; that is cosmetic and the next release restores it.
 
 ### Part 2 — site cards grouped under their parent (`F4.240` part a)
 
@@ -269,13 +357,18 @@ example Lotapata 1 and Lotapata 2 under Lotapata.
   a foreign holder of the slug or code is logged and skipped.
 - **Retiring the cleanup removes a delete path**, it adds none; the shape
   check keeps a surviving legacy row from being adopted silently.
+- **The tariff copy only adds rows, inside PHEWB** (decision 4a). It runs
+  under the PHEWB tenant context, so the `0155`/`0156` row-security legs
+  check each row and meter; it never edits or deletes a tariff row and never
+  writes a site that already has one.
 
 ## Dependencies
 
 None. No new npm package and **no migration**: `campus` is seeded (`0103`),
 `parent_id` exists (`0103`), and a `generated` view with no dashboard is
-allowed by `0082`'s CHECKs. One additive contract field in
-`packages/shared/src/contracts/`.
+allowed by `0082`'s CHECKs, and the tariff copy writes the existing
+`bms.location_tariffs` and `bms.location_tariff_meters` (`0155`, `0156`).
+One additive contract field in `packages/shared/src/contracts/`.
 
 ## Amends and relates to
 
@@ -288,22 +381,43 @@ allowed by `0082`'s CHECKs. One additive contract field in
   group under their parent (decision 13). Decision 7 (the control room stays
   per node) and decision 11 (the pin rule) stand. ADR 0098 gains a one-line
   pointer in the same change.
+- **ADR 0134 — Amendment 3 amended for a split PHEWB station.** Amendment 3
+  billed one station for both meters because WBSEDCL sent one bill per
+  station; after a split, each site has its own bill with its own meter
+  (decision 4a). The several-meter mapping itself stands. ADR 0134 gains a
+  one-line pointer in the same change.
 - **ADR 0007** — relates; decision 4a's "the seed asserts once, then the
-  operator owns it" is not extended: the seed keeps owning PHE RTU and asset
-  locations.
+  operator owns it" is not extended to locations: the seed keeps owning PHE
+  RTU and asset locations. The tariff copy (decision 4a here) follows that
+  rule: the seed writes a site's tariff once, then the administrator owns it.
 - **ADR 0113** — relates; each site gets the pump-station layout; the
   station's copy is unlinked, not upgraded.
 - **ADR 0111** — relates; labels are unchanged (`<code> · <RTU>`).
 
 ## Consequences
 
-- **History stays.** Telemetry, alarms and findings are keyed by asset, so no
-  row moves; the alarm list and other screens show the site as the asset's
-  location from the move on, for past alarms too (ADR 0098 decision 8).
+- **History stays.** Telemetry, alarms, work orders, ML forecasts, anomaly
+  scores and findings, advisories and degradation rows are keyed by asset, so
+  no row moves; the alarm list and other screens show the site as the asset's
+  location from the move on, for past rows too (ADR 0098 decision 8). The
+  alarm statistics and the energy reports show two site rows where one
+  station row was, for past periods too.
 - **Ingest does not change.** Bindings route by `rtu_code`; the topics and
   RTUs are the same rows.
-- **The tariff stays on the station** and reaches both sites through the
-  ancestor walk.
+- **Each site has its own bill** (decision 4a). The site Energy tab reads
+  the site's mapping, and the per-asset cost reads find the nearest mapping,
+  now the site's. The amounts differ from the one station bill: each site
+  bill takes its own slabs and, until an administrator sets each office's own
+  load on the Tariff page, the station's full sanctioned load, so the fixed
+  charge counts that load once per site. The station keeps its two-meter
+  mappings and bill, on no linked screen.
+- **The station's own page is empty if opened by its URL.** It matches the
+  exact location (*Context*, impact audit) and the station holds no asset.
+  No screen links to it (decisions 9, 14 and 17); an old bookmark shows an
+  empty page until part b.
+- **A calc aggregate at a split station sees one site.** No PHE formula uses
+  one today; a later formula that must span both sites needs part b or its
+  own row.
 - **A failed move stops the boot.** The seed runs in the `migrate` service; if
   the move statement fails, the deploy fails and `bms-ctl rollback` returns to
   the last release, whose seed does not move the RTUs back (decision 4).
@@ -332,16 +446,24 @@ allowed by `0082`'s CHECKs. One additive contract field in
     child of its station.
   - After the move, each split station's three groups have zero members and
     each site's three groups hold its 4 assets with roles.
+  - After the move, each site holds one copy of each station tariff with only
+    its own meter; run 2 copies nothing; a site mapping an administrator
+    edited is not overwritten; the station's mappings are unchanged.
+  - Each moved asset's `site_name` is its site's name; an asset of a station
+    not on the list keeps the catalog name.
   - A cold start (roles, migrate, seed) passes with the list empty; telemetry
     row counts per asset are equal before and after a split.
 - **API.** `parentId` on `GET /api/v1/dashboard/locations` for a child, a
-  root, and a child whose parent the caller cannot read (`null`).
+  root, and a child whose parent the caller cannot read (`null`). The
+  energy bill of a site after a split names one meter.
 - **Web (jsdom).** The grouped cards; the header roll-up; the map filter on a
   header click; Live/Not live with groups; each site count of decision 16;
   the crumbs of decision 17; an organization with no tree renders as today.
 - **Demo host, release B** (read-only checks; owner yes before the deploy):
-  re-read groups and grants at the PHE stations first; then Lotapata I and II
-  exist under Lotapata with one RTU and 4 assets each; both keep ingesting;
-  the station's view is generated and its dashboard row is unlinked; the
-  organization page shows one Lotapata header over two cards; the map shows
-  two pins.
+  re-read groups, grants, tariffs and their meters, maintenance windows, calc
+  formulas with a scope, and edge gateways at the PHE stations first; then
+  Lotapata I and II exist under Lotapata with one RTU and 4 assets each; both
+  keep ingesting; the station's view is generated and its dashboard row is
+  unlinked; the organization page shows one Lotapata header over two cards;
+  the map shows two pins; the Energy tab of each site shows its own bill; the
+  alarms page's Site column reads Lotapata I or Lotapata II.
