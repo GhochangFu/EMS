@@ -5,6 +5,7 @@ import {
   aGeneratedSiteMountsItsGeneratedView,
   aHalfWithoutTheKeyShowsItsEmptyState,
   anUnknownSegmentRedirectsOnceSettled,
+  aPendingSegmentIsNeverEchoed,
   bothHalvesMountTheirOwnDashboard,
   cleanupHalves,
   eachHalfNamesAndLinksItsSite,
@@ -39,6 +40,10 @@ describe("F4.240 part b StationSiteHalves (ADR 0140 decision 3e, plan D8, D9)", 
 
   it("HV5 an unknown segment redirects once every read has settled, never while one is pending", async () => {
     await anUnknownSegmentRedirectsOnceSettled();
+  });
+
+  it("HV8 a pending segment is never echoed onto the page", async () => {
+    await aPendingSegmentIsNeverEchoed();
   });
 
   it("HV6 each half names its site and links to its own page", async () => {

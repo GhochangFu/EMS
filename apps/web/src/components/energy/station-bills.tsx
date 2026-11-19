@@ -20,8 +20,9 @@ const NO_MAPPING_SENTENCE = "No station total: no site has a tariff mapped for t
  * adds no request; no read here names the station, so the station's own tariff row is never read.
  * A placeholder answer from the previous month counts as pending, so the total never adds months.
  * When every site answers `no_mapping` for the current month the block renders nothing. The
- * selector's months count back from the current month the first site's default read answered,
- * as the card's own selector does.
+ * selector's months count back from the current month of the first site whose default read
+ * answered, as the card's own selector does. A site whose read failed, even after an earlier
+ * answer, stops the total.
  */
 export function StationBills({ sites }: { sites: readonly LocationKpiSummary[] }) {
   const [month, setMonth] = useState("");
@@ -30,10 +31,12 @@ export function StationBills({ sites }: { sites: readonly LocationKpiSummary[] }
 
   const reads: StationBillRead[] = sites.map((site, index) => {
     const query = queries[index];
-    const own = query === undefined || query.isPlaceholderData ? undefined : query.data;
-    return { siteName: site.name, bill: own, failed: own === undefined && query?.isError === true };
+    // A failed background refetch keeps TanStack's old `data` and sets `isError`; the card then
+    // shows its error, so the total treats that site as failed, never as its old amount.
+    const own = query === undefined || query.isError || query.isPlaceholderData ? undefined : query.data;
+    return { siteName: site.name, bill: own, failed: query?.isError === true };
   });
-  const firstMonth = month === "" ? reads[0]?.bill?.month : undefined;
+  const firstMonth = month === "" ? reads.find((read) => read.bill !== undefined)?.bill?.month : undefined;
   useEffect(() => {
     if (firstMonth !== undefined) setCurrentMonth(firstMonth);
   }, [firstMonth]);

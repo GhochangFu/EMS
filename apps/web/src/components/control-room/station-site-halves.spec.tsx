@@ -234,6 +234,23 @@ export async function anUnknownSegmentRedirectsOnceSettled(): Promise<void> {
   await waitFor(() => expect(pathname()).toBe(STATION_PATH));
 }
 
+/**
+ * HV8 — while another site's read is pending, a half whose dashboard lacks the raw segment shows a
+ * fixed sentence, never the URL's text (security review of PR 2). Mutation: echo the segment
+ * (`No ${key} tab`) => red.
+ */
+export async function aPendingSegmentIsNeverEchoed(): Promise<void> {
+  stubReads({ "st-1": "s1", "st-2": "s2" }, { s1: D1, s2: "pending" });
+  renderAt(`${STATION_PATH}/crafted-words`);
+  await waitFor(() => expect(dashboardRead).toHaveBeenCalledTimes(2));
+  await settle();
+  expect(await screen.findByText("This site's dashboard has no such tab.")).toBeTruthy();
+  // The harness prints the pathname; the halves themselves must not carry the segment's text.
+  for (const name of ["Lotapata I", "Lotapata II"]) {
+    expect(screen.getByRole("region", { name }).textContent).not.toContain("crafted-words");
+  }
+}
+
 /** HV6 — each half carries the site's name and a link to the site's own page. */
 export async function eachHalfNamesAndLinksItsSite(): Promise<void> {
   stubReads({ "st-1": "s1", "st-2": "s2" });

@@ -15,7 +15,7 @@ type StationSiteHalvesProps = {
   stationId: string;
   /** The station's sites, in the KPI list's order (`stationGroupOf`'s `sites`). */
   sites: readonly LocationKpiSummary[];
-  /** The route's raw `:tab` segment (`undefined` at the bare path); never `assets`, the page owns it. */
+  /** The route's raw `:tab` segment (`undefined` at the bare path); never `assets` or `trends`, the page owns them. */
   tab: string | undefined;
 };
 
@@ -32,13 +32,15 @@ type StationSiteHalvesProps = {
  * **The tab** is the route's `:tab` segment (D8), because the widget links inside each half already
  * point there. The chooser is `stationTabs` over the sites' dashboards; the bare path selects its
  * first key. A segment no site's dashboard holds redirects to the bare station path once every
- * site's reads have settled, never while one is pending; that includes `trends` until the station
- * has its own Trends & Energy arm (`stationTabs` drops the page's own segments).
+ * site's reads have settled, never while one is pending (`stationTabs` drops the page's own
+ * segments; the page sends `assets` and `trends` to their own arms, so the halves never see them).
  *
  * **A half** carries the site's name and a link to the site's page. A `dashboard` view draws
  * `SiteDashboardView` `embedded` (no inner strip, no redirect, no marker read; no `role`, so the
  * trend strip wizard stays on the site's own page), or "No <label> tab at this site." when its
- * dashboard lacks the chosen key. Any other view draws the site's generated view for every tab. A
+ * dashboard lacks the chosen key ("This site's dashboard has no such tab." while the key is a raw
+ * segment, so URL text is never echoed). Any other view draws the site's generated view for every
+ * tab; a `builtin` SMOC site would too, not its SMOC tabs (drafter choice: no PHE site is builtin). A
  * pending resolve says so; a rejected one says the site's view is not available. More than two sites
  * wrap two per row; below `lg` the halves stack.
  *
@@ -59,7 +61,12 @@ export function StationSiteHalves({ stationId, sites, tab }: StationSiteHalvesPr
   );
   const details = useQueries({
     queries: sites.map((site, index) => ({
-      queryKey: ["dashboards", "detail", slugs[index] ?? null, site.organization.id],
+      // The shared key once a slug is known; before that, a per-site key for the disabled read, so
+      // two sites never share one (TanStack's "Duplicate Queries" warning).
+      queryKey:
+        slugs[index] === null
+          ? ["station-site-halves", "no-dashboard", site.id]
+          : ["dashboards", "detail", slugs[index], site.organization.id],
       queryFn: () => fetchDashboard(slugs[index] as string, site.organization.id),
       enabled: slugs[index] !== null,
     })),
@@ -122,7 +129,8 @@ export function StationSiteHalves({ stationId, sites, tab }: StationSiteHalvesPr
               ) : slug !== null ? (
                 lacksKey ? (
                   <p role="status" className="text-sm text-ink-muted">
-                    {`No ${chosen?.label ?? key} tab at this site.`}
+                    {/* A raw segment (another read still pending) is never echoed: a fixed sentence. */}
+                    {chosen === undefined ? "This site's dashboard has no such tab." : `No ${chosen.label} tab at this site.`}
                   </p>
                 ) : (
                   <SiteDashboardView

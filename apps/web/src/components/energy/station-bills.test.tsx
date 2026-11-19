@@ -3,12 +3,14 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aCurrencyMismatchShowsNoTotal,
+  aFailedRefetchStopsTheTotal,
   aRejectedSiteBillShowsNoTotal,
   choosingAMonthRereadsBothSites,
   cleanupBills,
   everySiteUnmappedRendersNothing,
   oneCardPerSiteAndOneSelector,
   theTotalAddsNoRead,
+  theSelectorSurvivesAFailedFirstSite,
   theTotalIsTheSumOfTheSiteBills,
 } from "./station-bills.spec";
 
@@ -44,5 +46,13 @@ describe("F4.240 part b StationBills (ADR 0140 decision 3f, plan D10, D11)", () 
 
   it("B7 every site unmapped for the current month renders nothing", async () => {
     await everySiteUnmappedRendersNothing();
+  });
+
+  it("B8 a failed background refetch stops the total", async () => {
+    await aFailedRefetchStopsTheTotal();
+  });
+
+  it("B9 the month selector survives a failed first site", async () => {
+    await theSelectorSurvivesAFailedFirstSite();
   });
 });

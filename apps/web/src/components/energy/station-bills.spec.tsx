@@ -47,8 +47,11 @@ function stubBills(answers: Record<string, Answer>, byMonth: Record<string, Reco
   }) as unknown as Mock;
 }
 
+let lastClient: QueryClient | null = null;
+
 function renderBills(): ReturnType<typeof render> {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  lastClient = queryClient;
   return render(
     <QueryClientProvider client={queryClient}>
       <StationBills sites={SITES} />
@@ -152,12 +155,47 @@ export async function everySiteUnmappedRendersNothing(): Promise<void> {
   expect(container.innerHTML).toBe("");
 }
 
+/**
+ * B8 — a background refetch that fails keeps TanStack's old `data` and sets `isError`; the card
+ * then shows its error, so the total must not add that old amount. Mutation: read `data` whenever
+ * it is set (`own = query.data`) => red.
+ */
+export async function aFailedRefetchStopsTheTotal(): Promise<void> {
+  stubBills({ "st-1": billOf("st-1", 1000), "st-2": billOf("st-2", 2500) });
+  renderBills();
+  const line = await totalLine();
+  expect(within(line).getByTestId("station-bill-total-amount").textContent).toBe(money(3500));
+
+  billRead?.mockImplementation((locationId: string) =>
+    locationId === "st-1"
+      ? Promise.reject(new Error("locations/energy-bill 500"))
+      : Promise.resolve(billOf("st-2", 2500)),
+  );
+  await act(async () => {
+    await lastClient?.refetchQueries({ queryKey: ["energy", "bill", "st-1"] });
+  });
+  await waitFor(() => expect(line.textContent).toContain(STATION_TOTAL_SENTENCE.failed("Lotapata I")));
+  expect(within(line).queryByTestId("station-bill-total-amount")).toBeNull();
+}
+
+/**
+ * B9 — the first site's default read fails and the second answers: the month selector still
+ * appears, from the first site that answered. Mutation: take the month from `reads[0]` only => red.
+ */
+export async function theSelectorSurvivesAFailedFirstSite(): Promise<void> {
+  stubBills({ "st-1": "reject", "st-2": billOf("st-2", 2500) });
+  renderBills();
+
+  expect(await screen.findByLabelText("Billing month")).toBeTruthy();
+}
+
 /** Unmounts, restores the spies and fails the case if any read reached the network. */
 export function cleanupBills(): void {
   cleanup();
   const networkCalls = fetchSpy?.mock.calls.map((call) => String(call[0])) ?? [];
   fetchSpy = null;
   billRead = null;
+  lastClient = null;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   expect(networkCalls, "a read reached the network").toEqual([]);
