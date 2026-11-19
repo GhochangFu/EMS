@@ -2,7 +2,9 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  bothHalvesReadOnlyTheirOwnSite,
   cleanupRequests,
+  theStationTrendsReadsOnlyTheEnergyViewsAndTheSiteBills,
   theStationAssetsReadsOnlyTheResolve,
   theStationMakesNoStationItselfRead,
   theStationReadsOnlyTheSubtreeReads,
@@ -27,5 +29,13 @@ describe("F4.240 part b the station page's request tripwire (ADR 0140 decision 5
 
   it("T3 names the station only in the resolve on /assets", async () => {
     await theStationAssetsReadsOnlyTheResolve();
+  });
+
+  it("T4 two dashboard sites: T1's station set, and each half's live reads name only its site", async () => {
+    await bothHalvesReadOnlyTheirOwnSite();
+  });
+
+  it("T5 /trends names the station only in the resolve and the two energy views; one bill per site", async () => {
+    await theStationTrendsReadsOnlyTheEnergyViewsAndTheSiteBills();
   });
 });
