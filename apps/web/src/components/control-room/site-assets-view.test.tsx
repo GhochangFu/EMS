@@ -11,6 +11,9 @@ import {
   theHeaderChipShowsTheTypeLabel,
   theTotalLoadTileFollowsEnergyShown,
   aPendingReadFollowsTheSitesEnergyShown,
+  anRtuSwitchKeepsTheRowsWhilePending,
+  aSiteSwitchDoesNotKeepTheFirstSitesRows,
+  unmountingAbortsAPendingRead,
 } from "./site-assets-view.spec";
 
 /**
@@ -54,5 +57,17 @@ describe("F3.72 SiteAssetsView (moved from the F3.4 location dashboard)", () => 
 
   it("L8 (F4.364) a pending read follows the site's energyShown", async () => {
     await aPendingReadFollowsTheSitesEnergyShown();
+  });
+
+  it("L9 (F4.390) an RTU switch keeps the rows, dimmed and busy, with Next off", async () => {
+    await anRtuSwitchKeepsTheRowsWhilePending();
+  });
+
+  it("L10 (F4.390) a site switch does not keep the first site's rows", async () => {
+    await aSiteSwitchDoesNotKeepTheFirstSitesRows();
+  });
+
+  it("L11 (F4.390) unmounting aborts a pending read", async () => {
+    await unmountingAbortsAPendingRead();
   });
 });

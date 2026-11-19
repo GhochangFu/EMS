@@ -55,7 +55,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
   } = useExecutiveDashboard();
   const locationQ = useQuery({
     queryKey: ["dashboard", "locations"],
-    queryFn: fetchLocationKpis,
+    queryFn: ({ signal }) => fetchLocationKpis(signal),
     refetchInterval: 8000,
   });
   const [orgFilter, setOrgFilter] = useState<OrgFilter>("all");

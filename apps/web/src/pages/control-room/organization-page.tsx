@@ -95,7 +95,7 @@ export function ControlRoomOrganizationPage({
   const organizationId = organizationIdProp ?? params.organizationId ?? "";
   const locationQ = useQuery({
     queryKey: ["dashboard", "locations"],
-    queryFn: fetchLocationKpis,
+    queryFn: ({ signal }) => fetchLocationKpis(signal),
     refetchInterval: 8000,
   });
   const items = locationQ.data?.items;

@@ -165,6 +165,8 @@ export async function theOrganizationsLevelRendersTheEstate(): Promise<void> {
   expect(screen.queryByText("Choose an organization to open its sites")).toBeNull();
   expect(screen.queryByRole("complementary")).toBeNull();
   expect(screen.queryByText(/landed on/)).toBeNull();
+  // F4.390: the query's abort signal reaches the fetcher (a `() => fetchLocationKpis()` would forward none).
+  expect(locationsApi.fetchLocationKpis).toHaveBeenCalledWith(expect.any(AbortSignal));
 }
 
 /** O3 — one organization with two sites skips to the organization level. */

@@ -144,12 +144,19 @@ export function SiteAssetsView({ locationId, siteName, energyShown }: SiteAssets
 
   const q = useQuery({
     queryKey: ["dashboard", "location", locationId, page, pageSize, rtuFilter],
-    queryFn: () =>
-      fetchLocationDashboard(locationId, {
-        page,
-        pageSize,
-        rtuId: rtuFilter === "all" ? undefined : rtuFilter,
-      }),
+    queryFn: ({ signal }) =>
+      fetchLocationDashboard(
+        locationId,
+        {
+          page,
+          pageSize,
+          rtuId: rtuFilter === "all" ? undefined : rtuFilter,
+        },
+        signal,
+      ),
+    // `F4.390`: a new page, size or RTU keeps the answered rows (dimmed, `aria-busy`) until the
+    // next answer; never across sites — the router keeps this view mounted on a site switch.
+    placeholderData: (previous) => (previous?.id === locationId ? previous : undefined),
     enabled: !!locationId,
     refetchInterval: 8000,
   });
@@ -325,7 +332,9 @@ export function SiteAssetsView({ locationId, siteName, energyShown }: SiteAssets
                 <button
                   type="button"
                   className="surface-button px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={!assetPage || assetPage.page >= assetPage.totalPages}
+                  disabled={
+                    !assetPage || assetPage.page >= assetPage.totalPages || q.isPlaceholderData
+                  }
                   onClick={() => setPage((current) => current + 1)}
                 >
                   Next
@@ -343,7 +352,10 @@ export function SiteAssetsView({ locationId, siteName, energyShown }: SiteAssets
                 No assets on this page. Use the pagination controls to move back.
               </div>
             ) : (
-              <div className="overflow-hidden surface-table">
+              <div
+                className={`overflow-hidden surface-table${q.isPlaceholderData ? " opacity-60" : ""}`}
+                aria-busy={q.isPlaceholderData}
+              >
                 <table className="w-full text-left text-sm">
                   <thead className="bg-well text-xs uppercase tracking-wide text-ink-muted">
                     <tr>
