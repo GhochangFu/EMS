@@ -11,6 +11,9 @@ old and the new parent" let a location administrator take over a root; ruling
 draft left open among its drafter choices. Each ruling maps to a numbered
 decision below.
 Amendment 2 (2026-10-22, `F4.243`) reverses *Drafter choices* 7.
+[ADR 0139](./0139-one-site-per-phe-rtu-and-grouped-site-cards.md) (2026-11-19)
+amends *Drafter choices* 10: the organization's site cards group under their
+parent.
 Where a decision needed a detail the rulings do not give, the detail is listed
 under *Drafter choices (not asked)* for the owner to confirm at acceptance.
 Drafted before any implementation code. Line citations are to `main` at

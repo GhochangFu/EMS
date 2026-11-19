@@ -9,6 +9,12 @@ rulings are marked *(owner, 2026-11-14)*. Lines marked *(recommended)* were
 the agent's calls; the owner accepted the ADR with them as written, so
 **every *(recommended)* line is now a ruling**.
 
+**Amended by [ADR 0139](./0139-one-site-per-phe-rtu-and-grouped-site-cards.md)
+(2026-11-19):** after a PHEWB station is split, each site carries the
+station's tariff forward with its own meter, so each site has its own bill
+(Amendment 3's one bill per station no longer applies to a split station;
+the station's own two-meter mapping stays, on no linked screen).
+
 Builds on [ADR 0070](./0070-sustainability-metrics-engine.md) (the
 effective-dated `bms.calc_parameters` store and `energy_tariff_per_kwh`),
 [ADR 0043](./0043-multi-tenant-architecture.md) / [ADR 0045](./0045-non-superuser-table-owner.md)
