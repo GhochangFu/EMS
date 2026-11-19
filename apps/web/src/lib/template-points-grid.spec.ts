@@ -7,10 +7,13 @@
  */
 import { adminAssetTemplateDtoSchema, adminTemplatePointDtoSchema } from "@bms/shared/contracts";
 import type { AdminAssetTemplateDto } from "@bms/shared";
+import { CALC_DIALECT } from "@bms/shared";
 
 import {
   MAX_TEMPLATE_POINTS,
   TEMPLATE_POINT_TIERS,
+  INCOMPLETE_DERIVED_POINT_MESSAGE,
+  blankDerivedPointRow,
   blankPointRow,
   brokenFormulaRefs,
   buildPointsPayload,
@@ -382,6 +385,42 @@ export function runSeedTests(): void {
   assert(gapped.sortOrder === 10, `appends after the highest sortOrder — got ${gapped.sortOrder}`);
 }
 
+/**
+ * `F4.389`: the row the Calculations tab's **Add a derived point** appends.
+ * Derived from the start, `bms-calc-v1`, and with **no trigger**, so
+ * `calcConfigErrors` makes the author choose one rather than this helper
+ * choosing for them.
+ */
+export function runBlankDerivedRowTests(): void {
+  const rows = pointRowsFrom(template([point()]));
+  const blank = blankDerivedPointRow(rows);
+  assert(blank.kind === "derived", "the new row is derived");
+  assert(blank.pointKey === "", "the author picks the key");
+  assert(blank.formula === "", `the formula starts empty — got ${JSON.stringify(blank.formula)}`);
+  assert(blank.formulaDialect === CALC_DIALECT, `v1 by default — got ${blank.formulaDialect}`);
+  assert(blank.calcTrigger === null, "no trigger until the author chooses one");
+  assert(
+    blank.calcIntervalSeconds === null &&
+      blank.maxInputAgeSeconds === null &&
+      blank.minCoverageRatio === null,
+    "no other calc configuration",
+  );
+  assert(blank.sourceDataKeyPattern === "", "a derived point has no source pattern");
+  assert(
+    blank.scaleMultiplier === null &&
+      blank.scaleOffset === null &&
+      blank.engMin === null &&
+      blank.engMax === null &&
+      blank.qualityPolicy === null,
+    "a computed value has no instrument metadata (ADR 0056 decision 3)",
+  );
+  assert(blank.meta === null, "no tier, so the payload omits meta");
+  assert(blank.sortOrder === 1, `sorts after the last — got ${blank.sortOrder}`);
+
+  const [sent] = buildPointsPayload([blank]);
+  assert(!("meta" in sent), "the payload has no meta key — the server refuses {}");
+}
+
 /** Empty optional boxes send `null`, never `""`. */
 export function runEmptyOverridesBecomeNullTests(): void {
   const rows = pointRowsFrom(template([point()]));
@@ -509,9 +548,17 @@ export function runIncompleteDerivedPointTests(): void {
   const problems = pointGridErrors([promoted]);
   assert(problems.length === 1, `one problem — got ${JSON.stringify(problems)}`);
   assert(problems[0].field === "kind", "reported against the control the author touched");
+  // `F4.389`: the whole sentence, because the old one sent the author to a tab
+  // that could not finish the point. It now names the control that can.
   assert(
-    problems[0].message.includes("Calculations tab"),
+    problems[0].message === INCOMPLETE_DERIVED_POINT_MESSAGE,
     `the message must say where to finish it — got ${problems[0].message}`,
+  );
+  assert(
+    INCOMPLETE_DERIVED_POINT_MESSAGE ===
+      "A derived point needs a formula and a trigger. To add one, use Add a derived point on the " +
+        "Calculations tab. To change a saved point to derived, remove it here and save, then add it there.",
+    `the message text is the one the owner ruled (F4.389 Q3) — got ${INCOMPLETE_DERIVED_POINT_MESSAGE}`,
   );
 
   // The mirror case: a measured point carrying a formula. Reachable only if

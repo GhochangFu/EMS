@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runBlankDerivedRowTests,
   runBrokenFormulaRefTests,
   runBrokenFormulaRefsReadTheRowsDialectTests,
   runCalcFieldsSurviveARoundTripTests,
@@ -36,6 +37,10 @@ describe("template points grid", () => {
 
   it("seeds rows from the template and appends after the highest sortOrder", () => {
     runSeedTests();
+  });
+
+  it("appends a derived row with no key, formula or trigger for the Calculations tab (F4.389)", () => {
+    runBlankDerivedRowTests();
   });
 
   it("sends null for an emptied override, never an empty string", () => {

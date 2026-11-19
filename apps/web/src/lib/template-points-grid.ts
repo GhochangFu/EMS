@@ -250,6 +250,27 @@ export function setPointKind(
 }
 
 /**
+ * The row the Calculations tab's **Add a derived point** appends (`F4.389`).
+ *
+ * Built from `blankPointRow` through `setPointKind`, so it clears exactly what
+ * a kind change clears, then given an empty formula under `bms-calc-v1`. The
+ * trigger stays `null` on purpose: `calcConfigErrors` then asks the author to
+ * choose one, rather than this helper choosing for them.
+ */
+export function blankDerivedPointRow(rows: readonly TemplatePointRow[]): TemplatePointRow {
+  return { ...setPointKind(blankPointRow(rows), "derived"), formula: "", formulaDialect: CALC_DIALECT };
+}
+
+/**
+ * Why the Points tab refuses a derived row with no formula, and where to
+ * finish it. The text is the owner's `F4.389` Q3 ruling: before it, the message
+ * sent the author to a Calculations tab that could not show an unsaved point.
+ */
+export const INCOMPLETE_DERIVED_POINT_MESSAGE =
+  "A derived point needs a formula and a trigger. To add one, use Add a derived point on the " +
+  "Calculations tab. To change a saved point to derived, remove it here and save, then add it there.";
+
+/**
  * The three tiers ADR 0040 decision 3 names, in the order the select offers
  * them.
  *
@@ -399,14 +420,13 @@ export function pointGridErrors(rows: readonly TemplatePointRow[]): PointGridPro
 
   rows.forEach((row, index) => {
     // The Points tab can make a point derived but cannot complete it. Refusing
-    // here beats a 400 naming `formula` on a tab with no formula field.
+    // here beats a 400 naming `formula` on a tab with no formula field. The
+    // message names the control that can (`F4.389`).
     if (row.kind === "derived" && (row.formula ?? "").trim() === "") {
       problems.push({
         row: index,
         field: "kind",
-        message:
-          "A derived point needs a formula and a trigger. Set them on the Calculations tab, " +
-          "or change this point back to measured.",
+        message: INCOMPLETE_DERIVED_POINT_MESSAGE,
       });
     }
     if (row.kind === "measured" && (row.formula ?? "").trim() !== "") {

@@ -17,16 +17,28 @@
  * built — until now the lazy chunk existed but nothing loaded it.
  *
  * **Only derived points appear here.** A measured point has no formula, and
- * ADR 0037's trigger fields are refused on one. Making a point derived is the
- * Points tab's control, per decision 4, so this tab says where to go rather
- * than growing a second kind switch.
+ * ADR 0037's trigger fields are refused on one. Changing a saved point's kind
+ * is the Points tab's control (ADR 0038 decision 2), so this tab grows no kind
+ * switch.
+ *
+ * **`F4.389` — Add a derived point.** Each tab builds its rows from the
+ * *stored* points, so a derived row added on the Points tab never reached this
+ * tab and could not be finished: no UI path created a derived point. This tab
+ * now appends one itself (`blankDerivedPointRow`), with a point-key select,
+ * label and unit for that row only, and the existing formula and trigger
+ * controls below them; the existing Save sends it. A row is "new" while its
+ * index is past the stored points: this tab never reorders or deletes a stored
+ * row, so the stored ones are always the first `template.points.length`. The
+ * point-key catalog is fetched only while a new row exists, under the Points
+ * tab's query key, so it is one cache entry, not two (ADR 0038 Amendment 8).
  */
 import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type { AdminAssetTemplateDto, CalcDialect } from "@bms/shared";
 import { CALC_DIALECT, CALC_TRIGGERS, isCrossAssetDialect, isParameterDialect } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
+import { fetchAdminPointKeys } from "../../api/admin/point-keys";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { useFollowStoredWhenClean } from "../../lib/use-follow-stored-when-clean";
 import { validateEditorFormula } from "../../lib/formula-editor-rules";
@@ -51,8 +63,11 @@ import {
 import { previewWindowReads } from "../../lib/calc-preview";
 import { templateCycleProblems } from "../../lib/template-calc-cycles";
 import {
+  MAX_TEMPLATE_POINTS,
+  blankDerivedPointRow,
   brokenFormulaRefs,
   buildPointsPayload,
+  pointGridErrors,
   pointRowsFrom,
   pointsHaveChanged,
   type TemplatePointRow,
@@ -127,6 +142,22 @@ export function CalculationsTab({
       ).state === "error",
   );
   const configProblems = calcGridErrors(rows);
+  // `F4.389`: the rows past the stored points were added here, so this tab
+  // owns their key. Only the key and grid-size rules of the Points tab's check
+  // apply; its "derived needs a formula" rule is this tab's formula check.
+  const storedCount = template.points.length;
+  const newRowCount = Math.max(0, rows.length - storedCount);
+  const keyProblems = pointGridErrors(rows).filter(
+    (problem) => problem.row === null || (problem.field === "pointKey" && problem.row >= storedCount),
+  );
+  const gridProblems = keyProblems.filter((problem) => problem.row === null);
+  const catalogQ = useQuery({
+    // The Points tab's key: one cache entry for both tabs.
+    queryKey: ["admin", "point-keys", "true"],
+    queryFn: () => fetchAdminPointKeys("true"),
+    enabled: editable && newRowCount > 0,
+  });
+  const catalog = catalogQ.data?.items ?? [];
   const refProblems = brokenFormulaRefs(rows);
   // `F2.22` item 7 — the within-template cycle mirror, wording for a save the
   // server refuses through `templateCycles`. Blocking here, like the other
@@ -134,6 +165,7 @@ export function CalculationsTab({
   // otherwise learn of it only from the 400.
   const cycleProblems = templateCycleProblems(rows);
   const blocked =
+    keyProblems.length > 0 ||
     formulaProblems.length > 0 ||
     configProblems.length > 0 ||
     refProblems.length > 0 ||
@@ -154,12 +186,26 @@ export function CalculationsTab({
     );
   }
 
+  const addButton = editable ? (
+    <button
+      type="button"
+      disabled={rows.length >= MAX_TEMPLATE_POINTS || saveM.isPending}
+      onClick={() => setRows((current) => [...current, blankDerivedPointRow(current)])}
+      className="surface-button px-3 py-1.5 disabled:opacity-60"
+    >
+      Add a derived point
+    </button>
+  ) : null;
+
   if (derivedIndexes.length === 0) {
     return (
-      <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
-        This template has no derived points. Add a point on the Points tab and set its kind to
-        derived, then set its formula here.
-      </p>
+      <div className="space-y-3">
+        <p className="rounded border border-dashed border-line-strong p-4 text-xs text-ink-muted">
+          This template has no derived points.
+          {editable ? " Use Add a derived point to add one, then set its formula here." : null}
+        </p>
+        {addButton}
+      </div>
     );
   }
 
@@ -168,6 +214,15 @@ export function CalculationsTab({
       {error ? (
         <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">{error}</p>
       ) : null}
+
+      {gridProblems.map((problem) => (
+        <p
+          key={problem.message}
+          className="rounded border border-critical-line bg-critical-wash p-3 text-xs text-critical-ink-strong"
+        >
+          {problem.message}
+        </p>
+      ))}
 
       {derivedIndexes.map(({ row, index }) => {
         // The dialect the formula is stored under, read once per row so the
@@ -199,7 +254,10 @@ export function CalculationsTab({
         // reference and a cycle both land on `formula`, and the reference
         // comes first: a key that is no longer in the template is the
         // simpler thing to fix, and fixing it may dissolve the cycle.
+        const isNew = index >= storedCount;
+        const newNumber = index - storedCount + 1;
         const problems = [
+          ...keyProblems.filter((problem) => problem.row === index),
           ...calcConfigErrors(row, index),
           ...refProblems.filter((problem) => problem.row === index),
           ...cycleProblems.filter((problem) => problem.row === index),
@@ -208,14 +266,86 @@ export function CalculationsTab({
           problems.find((problem) => problem.field === field)?.message;
 
         return (
-          <section key={row.pointKey || index} className="surface-raised-sm p-3">
+          // A new row is keyed by position: its point key changes as the
+          // author picks one, and a key change would remount the section.
+          <section key={isNew ? `new-${index}` : row.pointKey || index} className="surface-raised-sm p-3">
             <header className="mb-2 flex flex-wrap items-baseline gap-2">
               <span className="text-xs font-semibold text-ink">
                 {row.pointKey || "(no point key)"}
               </span>
               {row.label ? <span className="text-2xs text-ink-muted">{row.label}</span> : null}
               {row.unit ? <span className="text-2xs text-ink-muted">· {row.unit}</span> : null}
+              {isNew ? <span className="text-2xs text-ink-muted">· not saved yet</span> : null}
+              {isNew && editable ? (
+                <button
+                  type="button"
+                  aria-label={`Remove new point ${newNumber}`}
+                  onClick={() =>
+                    setRows((current) => current.filter((_, position) => position !== index))
+                  }
+                  className="ml-auto text-2xs text-critical-ink underline"
+                >
+                  Remove
+                </button>
+              ) : null}
             </header>
+
+            {/* `F4.389`: key, label and unit, for a row added here only. A
+                stored row's key is the Points tab's to change. */}
+            {isNew ? (
+              <div className="mb-3 grid gap-3 md:grid-cols-3">
+                <label className="block space-y-1">
+                  <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
+                    Point key
+                  </span>
+                  <select
+                    aria-label={`Point key of new point ${newNumber}`}
+                    value={row.pointKey}
+                    disabled={!editable}
+                    onChange={(event) => update(index, { pointKey: event.target.value })}
+                    className={fieldClass(!editable, problemFor("pointKey"))}
+                  >
+                    <option value="">Select a point key…</option>
+                    {catalog.map((entry) => (
+                      <option key={entry.code} value={entry.code}>
+                        {entry.code}
+                      </option>
+                    ))}
+                  </select>
+                  {problemFor("pointKey") ? (
+                    <span className="block text-2xs text-critical-ink">{problemFor("pointKey")}</span>
+                  ) : null}
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
+                    Label
+                  </span>
+                  <input
+                    type="text"
+                    aria-label={`Label of new point ${newNumber}`}
+                    value={row.label}
+                    disabled={!editable}
+                    placeholder="catalog default"
+                    onChange={(event) => update(index, { label: event.target.value })}
+                    className={fieldClass(!editable, undefined)}
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
+                    Unit
+                  </span>
+                  <input
+                    type="text"
+                    aria-label={`Unit of new point ${newNumber}`}
+                    value={row.unit}
+                    disabled={!editable}
+                    placeholder="catalog default"
+                    onChange={(event) => update(index, { unit: event.target.value })}
+                    className={fieldClass(!editable, undefined)}
+                  />
+                </label>
+              </div>
+            ) : null}
 
             <label className="block space-y-1">
               <span className="text-2xs font-semibold uppercase tracking-wide text-ink-muted">
@@ -490,6 +620,7 @@ export function CalculationsTab({
 
       {editable ? (
         <div className="flex flex-wrap items-center gap-3">
+          {addButton}
           <button
             type="button"
             disabled={blocked || !changed || saveM.isPending}
