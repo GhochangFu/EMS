@@ -52,9 +52,15 @@ the superpowers skills, made concrete):
 | 4. **Build via TDD** | Claude (+ subagents) | **Per unit** — Opus or Sonnet by the nature of the task; **Fable only when the dispatch states a critical reason** (the ladder below, revised 2026-09-16) | **`medium`**, pinned | `implementer` agent (Opus-pinned as the default; every dispatch passes its own `model:`), `superpowers:test-driven-development` | — |
 | 5. **Review** — parallel passes | Subagents | **Opus** ×3, **Sonnet** ×1 | **`high`** ×3, **`medium`** ×1, pinned | `code-reviewer`, `security-reviewer`, `agents-compliance-reviewer`, plus `migration-reviewer` for anything under `packages/db` | 👀 batched |
 | 6. **Verify against the running Docker stack** | Claude | **Sonnet** for the evidence, session model for the reading | **`medium`** for `browser-verifier`, pinned; an ad-hoc evidence dispatch inherits the session (≤ `high`) | `docker compose`, psql, and **`browser-verifier`** for the browser half (§3) | — |
-| 7. **Approve & merge** | Human | — | — | — | ✅ **gate** |
+| 7. **Approve & merge** | Human — or Claude on the owner's standing approval when CI is green (2026-11-19, below) | — | — | — | ✅ **gate** |
 
 The human owns **steps 2 and 7** only. Everything else Claude carries.
+
+**Step 7 standing approval (owner ruling, 2026-11-19).** The owner has approved
+in advance the merge of any pull request a Claude session opened itself, once
+CI on its head commit is green. The exact conditions are in
+[`CLAUDE.md`](../CLAUDE.md) (*Merging*). Step 2 is unchanged: scope and ADRs
+still wait for the human.
 
 ### Which model runs which step
 
@@ -488,7 +494,8 @@ the critical path, and merge approvals.
 [ ] 6. Verify against the running stack. Record which layers were N/A.
        browser-verifier for the browser half.               [Sonnet medium]
        Effort never above high anywhere, and no ultra mode, unless the owner says so.
-[ ] 7. Human approves. Merge. Mirror into docs/roadmap.md.
+[ ] 7. Merge (CI green on a PR Claude opened: Claude merges, CLAUDE.md
+       "Merging"; otherwise the human approves). Mirror into docs/roadmap.md.
        Clear the context, then the next item.
 ```
 
