@@ -20,7 +20,7 @@ import { WidgetIconGlyph } from "../components/widget-icon";
 import { LoadTrendChart } from "../components/load-trend-chart";
 import { OrganizationCardGrid } from "../components/control-room/organization-card-grid";
 import { ScopedDashboardsList } from "../components/control-room/scoped-dashboards-list";
-import { ESTATE_GRID, OrgLocationAccordion } from "../components/org-location-accordion";
+import { OrgLocationAccordion } from "../components/org-location-accordion";
 import { SiteCardGroups } from "../components/control-room/site-card-groups";
 import { HealthSummarySection } from "../components/asset-health/health-summary-section";
 import { PageHeader } from "../components/page-header";
@@ -296,7 +296,10 @@ export function DashboardPage({ user }: DashboardPageProps) {
                 // `F4.240` (ADR 0139, owner ruling Q1) — one organization's cards, grouped under
                 // their parent; the header is a heading (no parent-filtered map on this page).
                 <div className="space-y-3">
-                  <SiteCardGroups grouped={groupSitesByParent(filteredLocations)} gridClassName={ESTATE_GRID} />
+                  <SiteCardGroups
+                    grouped={groupSitesByParent(filteredLocations)}
+                    gridClassName="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+                  />
                 </div>
               )}
             </>

@@ -197,7 +197,7 @@ describe("F4.240 — site cards grouped under their parent (ADR 0139 decisions 1
     await theSubtitleCountsTwelveSites();
   });
 
-  it("GP2 sets the map's filter to the parent a header click names", async () => {
+  it("GP2 sets the map's filter to the parent a header click names; a second click clears it", async () => {
     await aHeaderClickFiltersTheMap();
   });
 

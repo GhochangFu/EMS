@@ -8,9 +8,6 @@ import {
   type OrganizationLocationGroup,
 } from "../lib/location-kpi-groups";
 
-/** The estate's card grid (`F4.240`: shared with the filtered grid of `dashboard-page.tsx`). */
-export const ESTATE_GRID = "grid gap-3 md:grid-cols-2 xl:grid-cols-3";
-
 type OrgLocationAccordionProps = {
   groups: OrganizationLocationGroup[];
 };
@@ -99,7 +96,10 @@ export function OrgLocationAccordion({ groups }: OrgLocationAccordionProps) {
             </button>
             {expanded ? (
               <div id={panelId} className="space-y-3 border-t border-well-deep bg-well/60 p-3">
-                <SiteCardGroups grouped={groupSitesByParent(group.locations)} gridClassName={ESTATE_GRID} />
+                <SiteCardGroups
+                  grouped={groupSitesByParent(group.locations)}
+                  gridClassName="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+                />
               </div>
             ) : null}
           </section>

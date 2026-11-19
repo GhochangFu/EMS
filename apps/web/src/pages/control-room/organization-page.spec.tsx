@@ -916,7 +916,11 @@ export async function theSubtitleCountsTwelveSites(): Promise<void> {
   expect(cardHrefs(grid)).not.toContain("/control-room/site/s1");
 }
 
-/** GP2 — a header click sets the map's filter to that parent and scrolls the map into view. */
+/**
+ * GP2 — a header click sets the map's filter to that parent and scrolls the map into view; a
+ * second click on the pressed header clears it (review fix: the map's own control may have no
+ * option for a parent the stored scope does not yet hold, so the header must be able to undo it).
+ */
 export async function aHeaderClickFiltersTheMap(): Promise<void> {
   stubReads(phewbSplit());
   const scroll = vi.fn();
@@ -932,6 +936,11 @@ export async function aHeaderClickFiltersTheMap(): Promise<void> {
     expect(screen.getByTestId("site-map-panel").dataset.rootId).toBe("s3");
     expect(header.getAttribute("aria-pressed")).toBe("true");
     expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+
+    fireEvent.click(header);
+    expect(screen.getByTestId("site-map-panel").hasAttribute("data-root-id"), "a second click clears it").toBe(false);
+    expect(header.getAttribute("aria-pressed")).toBe("false");
+    expect(scroll, "clearing the filter does not scroll").toHaveBeenCalledTimes(1);
   } finally {
     Element.prototype.scrollIntoView = original;
   }

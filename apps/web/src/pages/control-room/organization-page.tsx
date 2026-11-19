@@ -83,7 +83,8 @@ type ControlRoomOrganizationPageProps = {
  *
  * `F4.240` (ADR 0139 decisions 13–16, plan D11–D12) — the cards are grouped under their parent
  * (`SiteCardGroups`); an organization with no tree renders as before. A header click sets the
- * site map's parent filter, which this page now owns (`mapRootId`), and scrolls the map into view.
+ * site map's parent filter, which this page now owns (`mapRootId`), and scrolls the map into view;
+ * a click on the pressed header clears it.
  * The overview is keyed by organization, so the filter does not survive a move to another one.
  */
 export function ControlRoomOrganizationPage({
@@ -168,10 +169,15 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
   // `F4.259` — each group keeps the name order. `F4.240` (D11) — Live and Not live hold the
   // parent groups, and their headings count sites, as the organization card's chips do.
   const { live, notLive } = splitGroupsByLive(groupSitesByParent(sites));
-  // `F4.240` (D12) — the map's parent filter; a header click sets it.
+  // `F4.240` (D12) — the map's parent filter; a header click sets it, and a click on the pressed
+  // header clears it (the map's own control may hold no option for that parent yet).
   const [mapRootId, setMapRootId] = useState<string | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const selectParent = (parentId: string) => {
+    if (mapRootId === parentId) {
+      setMapRootId(null);
+      return;
+    }
     setMapRootId(parentId);
     // jsdom has no `scrollIntoView`, hence `?.`.
     mapRef.current?.scrollIntoView?.({ block: "nearest" });
