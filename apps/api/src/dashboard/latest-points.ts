@@ -1,3 +1,7 @@
+import type { Pool } from "pg";
+
+import { RAW_RETENTION_DAYS } from "../telemetry/point-aggregates";
+
 /**
  * `F4.390` — the Assets tab's "newest sample per point" read
  * (`DashboardService.locationDashboard`), in two steps that never read an asset's whole history.
@@ -124,4 +128,33 @@ latest_points AS (
       pairs.map((pair) => groupOfDay.get(pair.lastDay) as number),
     ],
   };
+}
+
+/**
+ * The discovery horizon: the raw retention plus one day, a closed constant written into the SQL
+ * text as a literal so the planner sees it (D1; never request input, §4.4). A bucket older than
+ * this has no raw row left for the lateral to read.
+ */
+const DISCOVERY_INTERVAL_SQL = `interval '${RAW_RETENTION_DAYS + 1} days'`;
+
+/**
+ * D1 — per `(asset_id, point_key)` of `assetIds`, the UTC day of its newest daily bucket in the
+ * real-time `telemetry.point_values_1d`. `asset_id = ANY($1)` is a plain qual on a grouping
+ * column, so it reaches every level of the hierarchical view; a join against a CTE would not. An
+ * empty list issues no query.
+ */
+export async function discoverLatestPairs(pool: Pool, assetIds: readonly string[]): Promise<LatestPair[]> {
+  if (assetIds.length === 0) {
+    return [];
+  }
+  const { rows } = await pool.query<{ asset_id: string; point_key: string; last_day: string }>(
+    `SELECT d.asset_id, d.point_key,
+            to_char(max(d.bucket) AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS last_day
+     FROM telemetry.point_values_1d d
+     WHERE d.asset_id = ANY($1::uuid[])
+       AND d.bucket > now() - ${DISCOVERY_INTERVAL_SQL}
+     GROUP BY d.asset_id, d.point_key`,
+    [assetIds],
+  );
+  return rows.map((row) => ({ assetId: row.asset_id, pointKey: row.point_key, lastDay: row.last_day }));
 }
