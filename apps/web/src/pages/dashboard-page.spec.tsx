@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -419,6 +419,48 @@ export async function theEstateKeepsTheLocationAccordion(): Promise<void> {
     "/control-room/site/a2",
     "/control-room/site/b1",
   ]);
+}
+
+/**
+ * `F4.240` (ADR 0139, owner ruling Q1) — the estate's "Location performance" groups the cards
+ * under their parent: in the accordion and in one organization's filtered grid, an asset-less
+ * station is a heading (not a button: no map filter here) and never a card reading
+ * "0 RTUs · 0 assets". Flat org B is the control that a flat organization is unchanged.
+ */
+export async function theEstateGroupsSitesUnderTheirParent(): Promise<void> {
+  stubDashboard(1.42, false, {}, [
+    site({ id: "st", name: "Alpha Station", organization: ORG_A, assetCount: 0 }),
+    { ...site({ id: "st-i", name: "Alpha Station I", organization: ORG_A, assetCount: 4 }), parentId: "st" },
+    { ...site({ id: "st-ii", name: "Alpha Station II", organization: ORG_A, assetCount: 4 }), parentId: "st" },
+    site({ id: "b1", name: "Beta One", organization: ORG_B }),
+    site({ id: "b2", name: "Beta Two", organization: ORG_B }),
+  ]);
+  renderPage();
+
+  const tabs = await screen.findByRole("tablist", { name: "Filter locations by organization" });
+  const section = sectionTitled("Location performance");
+  const siteHrefs = () =>
+    Array.from(section.querySelectorAll('a[href^="/control-room/site/"]')).map((a) => a.getAttribute("href"));
+  expect(within(section).getByTestId("site-group-st").textContent).toContain("0 of 2 sites live · 8 assets · 0 alarms");
+  expect(within(section).getAllByText("0 RTUs · 4 assets"), "control: the RTU sites draw cards").toHaveLength(2);
+  expect(within(section).queryByText("0 RTUs · 0 assets")).toBeNull();
+  expect(siteHrefs()).toEqual([
+    "/control-room/site/st-i",
+    "/control-room/site/st-ii",
+    "/control-room/site/b1",
+    "/control-room/site/b2",
+  ]);
+
+  fireEvent.click(within(tabs).getByRole("tab", { name: "AAA" }));
+  const group = within(section).getByTestId("site-group-st");
+  expect(within(group).getByRole("heading", { level: 3 }).textContent).toContain("Alpha Station");
+  expect(within(group).queryByRole("button")).toBeNull();
+  expect(within(section).queryByText("0 RTUs · 0 assets")).toBeNull();
+  expect(siteHrefs()).toEqual(["/control-room/site/st-i", "/control-room/site/st-ii"]);
+
+  fireEvent.click(within(tabs).getByRole("tab", { name: "BBB" }));
+  expect(section.querySelector('[data-testid^="site-group-"]'), "a flat organization draws no header").toBeNull();
+  expect(siteHrefs()).toEqual(["/control-room/site/b1", "/control-room/site/b2"]);
 }
 
 /**

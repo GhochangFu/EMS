@@ -83,6 +83,11 @@ export function organizationEntryTarget(
  * `/control-room`. So a one-site organization among several gives
  * `Control Room / <site>`. The last crumb carries no `to`: it names the current
  * page. `ControlRoomBreadcrumb` renders nothing for a one-crumb list.
+ *
+ * `F4.240` (ADR 0139 decision 17) — between the organization and the site, the site's parents
+ * (`PHEWB / Lotapata / Lotapata I`) as plain steps with no `to`: there is no station page. Only a
+ * parent in `items` is named (the API nulls an unreadable `parentId`), so a site with a `null`
+ * parent keeps today's trail.
  */
 export function controlRoomCrumbs(
   items: readonly LocationKpiSummary[],
@@ -110,10 +115,38 @@ export function controlRoomCrumbs(
   }
 
   if (site && (organizationsLevelShown || organizationLevelShown)) {
+    // `F4.240` (ADR 0139 decision 17) — the site's readable parents, root first, as plain text.
+    for (const parent of readableParents(items, site)) {
+      crumbs.push({ label: parent.name });
+    }
     crumbs.push({ label: site.name, to: `/control-room/site/${site.id}` });
   }
 
   const last = crumbs[crumbs.length - 1];
   crumbs[crumbs.length - 1] = { label: last.label };
   return crumbs;
+}
+
+/**
+ * `F4.240` — walks `parentId` up through `items`, root first. It stops at a parent not in the
+ * list, and the visited set stops a cycle the data should never hold.
+ */
+function readableParents(
+  items: readonly LocationKpiSummary[],
+  site: LocationKpiSummary,
+): LocationKpiSummary[] {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const visited = new Set<string>([site.id]);
+  const parents: LocationKpiSummary[] = [];
+  let parentId = site.parentId;
+  while (parentId !== null && !visited.has(parentId)) {
+    const parent = byId.get(parentId);
+    if (parent === undefined) {
+      break;
+    }
+    visited.add(parentId);
+    parents.unshift(parent);
+    parentId = parent.parentId;
+  }
+  return parents;
 }

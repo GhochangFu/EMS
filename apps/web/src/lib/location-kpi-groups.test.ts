@@ -1,6 +1,21 @@
 import { describe, it } from "vitest";
 
-import { runK1, runK2, runK3, runK4, runK5, runK6, runK7 } from "./location-kpi-groups.spec";
+import {
+  runG1,
+  runG2,
+  runG3,
+  runG4,
+  runG5,
+  runG6,
+  runG7,
+  runK1,
+  runK2,
+  runK3,
+  runK4,
+  runK5,
+  runK6,
+  runK7,
+} from "./location-kpi-groups.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
 describe("location-kpi-groups", () => {
@@ -30,5 +45,33 @@ describe("location-kpi-groups", () => {
 
   it("K7 — anyEnergyShown is true when one location shows energy (F4.375)", () => {
     runK7();
+  });
+
+  it("G1 — no item has a parent: no group, every item loose (F4.240)", () => {
+    runG1();
+  });
+
+  it("G2 — six asset-less parents over twelve children: 12 sites, 6 groups (F4.240)", () => {
+    runG2();
+  });
+
+  it("G3 — a parent that holds an asset is a site, first in its group (F4.240)", () => {
+    runG3();
+  });
+
+  it("G4 — the group roll-up sums live sites, sites, assets and alarms (F4.240)", () => {
+    runG4();
+  });
+
+  it("G5 — a group with one live site sits in Live, whole (F4.240)", () => {
+    runG5();
+  });
+
+  it("G6 — a child with a null parentId is loose (F4.240)", () => {
+    runG6();
+  });
+
+  it("G7 — three levels: the nearest parent is the header (F4.240)", () => {
+    runG7();
   });
 });

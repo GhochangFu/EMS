@@ -4,6 +4,7 @@ import { afterEach, describe, it } from "vitest";
 import {
   cleanupAccordion,
   eachHeaderShowsItsLiveAndNotLiveChips,
+  theAccordionGroupsSitesUnderTheirParent,
   theHeaderOmitsKwWhenNoLocationShowsEnergy,
 } from "./org-location-accordion.spec";
 
@@ -22,5 +23,9 @@ describe("F4.261 OrgLocationAccordion", () => {
 
   it("A2 (F4.364) sums kW over the energy locations and omits it when none shows energy", () => {
     theHeaderOmitsKwWhenNoLocationShowsEnergy();
+  });
+
+  it("A3 (F4.240) groups an organization's sites under their parent, with a heading", () => {
+    theAccordionGroupsSitesUnderTheirParent();
   });
 });

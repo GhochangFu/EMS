@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect } from "react";
 import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -175,18 +175,28 @@ const siteMapMounts = vi.hoisted(() => ({ count: 0 }));
 vi.mock("../../components/control-room/organization-site-map", () => ({
   // `F2.10` — the real map also takes `nodes` (its parent filter); the stand-in ignores it.
   // `F4.260` — it also prints `syncedAt`, the site read's `dataUpdatedAt` it re-reads on.
+  // `F4.240` — it prints the page-owned filter `rootId` (absent when `null`).
   OrganizationSiteMap: ({
     organizationId,
     syncedAt,
+    rootId,
   }: {
     organizationId: string;
     nodes: readonly unknown[];
     syncedAt: number;
+    rootId: string | null;
   }) => {
     useEffect(() => {
       siteMapMounts.count += 1;
     }, []);
-    return <div data-testid="site-map-panel" data-organization-id={organizationId} data-synced-at={syncedAt} />;
+    return (
+      <div
+        data-testid="site-map-panel"
+        data-organization-id={organizationId}
+        data-synced-at={syncedAt}
+        data-root-id={rootId ?? undefined}
+      />
+    );
   },
 }));
 
@@ -867,3 +877,109 @@ export async function theLoadCardAndKwTileFollowTheSites(anyShown: boolean): Pro
     loadCard: screen.queryByTestId("trend-panel") !== null,
   }).toEqual({ totalLoad: anyShown, loadCard: anyShown });
 }
+
+/**
+ * `F4.240` (ADR 0139 decisions 13–16, plan D11–D12) — PHE after the split: six asset-less stations
+ * over twelve RTU sites; only `s1-1` is live. ORG_A (two flat sites) is the organization a move
+ * goes to.
+ */
+function phewbSplit(): LocationKpiSummary[] {
+  const items: LocationKpiSummary[] = [...ONE_ORG];
+  for (let n = 1; n <= 6; n += 1) {
+    items.push({ ...site({ id: `s${n}`, name: `Station ${n}`, organization: ORG_PHE, assetCount: 0 }), parentId: null });
+    for (const suffix of ["I", "II"]) {
+      const id = `s${n}-${suffix}`;
+      const live = n === 1 && suffix === "I";
+      items.push({
+        ...site({ id, name: `Station ${n} ${suffix}`, organization: ORG_PHE, assetCount: 4, freshAssetCount: live ? 4 : 0 }),
+        parentId: `s${n}`,
+      });
+    }
+  }
+  return items;
+}
+
+async function groupedGrid(): Promise<HTMLElement> {
+  const grid = await screen.findByTestId("control-room-sites");
+  await within(grid).findByText("Station 1 I");
+  return grid;
+}
+
+/** GP1 — the subtitle counts sites once: `12 sites`, not 18; no card for a station. */
+export async function theSubtitleCountsTwelveSites(): Promise<void> {
+  stubReads(phewbSplit());
+  renderAt(ORG_PHE.id);
+
+  const grid = await groupedGrid();
+  expect(screen.getByText("PHEWB · 12 sites · 0 alarms")).toBeInTheDocument();
+  expect(cardHrefs(grid)).toHaveLength(12);
+  expect(cardHrefs(grid)).not.toContain("/control-room/site/s1");
+}
+
+/** GP2 — a header click sets the map's filter to that parent and scrolls the map into view. */
+export async function aHeaderClickFiltersTheMap(): Promise<void> {
+  stubReads(phewbSplit());
+  const scroll = vi.fn();
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = scroll;
+  try {
+    renderAt(ORG_PHE.id);
+    await groupedGrid();
+    expect(screen.getByTestId("site-map-panel").hasAttribute("data-root-id"), "control: no filter yet").toBe(false);
+
+    const header = within(screen.getByTestId("site-group-s3")).getByRole("button");
+    fireEvent.click(header);
+    expect(screen.getByTestId("site-map-panel").dataset.rootId).toBe("s3");
+    expect(header.getAttribute("aria-pressed")).toBe("true");
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+  } finally {
+    Element.prototype.scrollIntoView = original;
+  }
+}
+
+/**
+ * GP3 — the headings count the organization's live and not-live **sites** (D11): 1 and 11. The
+ * group with one live site of two sits under Live, whole, and its not-live card keeps its badge.
+ */
+export async function theHeadingsCountSitesAndALiveGroupMovesWhole(): Promise<void> {
+  stubReads(phewbSplit());
+  renderAt(ORG_PHE.id);
+
+  await groupedGrid();
+  const live = screen.getByTestId("control-room-sites-live");
+  const notLive = screen.getByTestId("control-room-sites-not-live");
+  expect(within(live).getByRole("heading", { level: 2 }).textContent).toBe("Live sites (1)");
+  expect(within(notLive).getByRole("heading", { level: 2 }).textContent).toBe("Not live (11)");
+  const group = within(live).getByTestId("site-group-s1");
+  expect(cardHrefs(group)).toEqual(["/control-room/site/s1-I", "/control-room/site/s1-II"]);
+  const dark = group.querySelector('a[href="/control-room/site/s1-II"]') as HTMLElement;
+  expect(within(dark).getByTestId("site-live-badge").textContent).toBe("Not live");
+  expect(within(notLive).queryByTestId("site-group-s1")).toBeNull();
+  expect(within(notLive).getAllByRole("button")).toHaveLength(5);
+}
+
+/** GP4 — a move to another organization clears the map's filter (the overview is keyed by organization). */
+export async function aMoveToAnotherOrganizationClearsTheFilter(): Promise<void> {
+  stubReads(phewbSplit());
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (organizationId: string) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<ControlRoomOrganizationPage user={USER} organizationId={organizationId} />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
+  const view = render(tree(ORG_PHE.id));
+  await groupedGrid();
+  fireEvent.click(within(screen.getByTestId("site-group-s2")).getByRole("button"));
+  expect(screen.getByTestId("site-map-panel").dataset.rootId, "control: the filter was set").toBe("s2");
+
+  view.rerender(tree(ORG_A.id));
+  await siteGrid();
+  expect(screen.getByTestId("site-map-panel").dataset.organizationId).toBe(ORG_A.id);
+  expect(screen.getByTestId("site-map-panel").hasAttribute("data-root-id")).toBe(false);
+}
+

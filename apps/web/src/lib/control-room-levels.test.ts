@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runC1, runC2, runC3, runC4, runC5, runC6, runL1, runL2, runL3, runL4, runL5, runL6, runL7, runL8 } from "./control-room-levels.spec";
+import { runC1, runC2, runC3, runC4, runC5, runC6, runC7, runC8, runC9, runL1, runL2, runL3, runL4, runL5, runL6, runL7, runL8 } from "./control-room-levels.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
 describe("control-room-levels", () => {
@@ -58,5 +58,17 @@ describe("control-room-levels", () => {
 
   it("C6 — a two-site organization among several gives three crumbs, the organization linked", () => {
     runC6();
+  });
+
+  it("C7 — a site's trail names its parent as a plain step (F4.240)", () => {
+    runC7();
+  });
+
+  it("C8 — a site with a null parent keeps today's trail (F4.240)", () => {
+    runC8();
+  });
+
+  it("C9 — a chain of two parents gives two plain steps, root first (F4.240)", () => {
+    runC9();
   });
 });

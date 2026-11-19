@@ -19,6 +19,7 @@ import {
   theOfflineDevicesTileHidesAtZeroMonitored,
   theOfflineDevicesTileReadsNOfM,
   theEstateKeepsTheLocationAccordion,
+  theEstateGroupsSitesUnderTheirParent,
   theEstateListsTheDashboards,
   theEstateShowsOneCardPerOrganization,
   theEstateTitleIsControlRoomEstate,
@@ -138,6 +139,10 @@ describe("F3.72 the Control Room estate (ADR 0087, plan D2)", () => {
 
   it("lists the library dashboards of the whole read scope", async () => {
     await theEstateListsTheDashboards();
+  });
+
+  it("groups the location cards under their parent, in the accordion and a filtered grid (F4.240, Q1)", async () => {
+    await theEstateGroupsSitesUnderTheirParent();
   });
 });
 

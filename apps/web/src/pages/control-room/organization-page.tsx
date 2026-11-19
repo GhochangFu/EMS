@@ -1,5 +1,6 @@
 import type { LocationKpiSummary } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 
 import { fetchLocationKpis } from "../../api/locations";
@@ -11,8 +12,8 @@ import { OrganizationKpiStrip, OrganizationStripCharts } from "../../components/
 import { OrganizationLoadTrend } from "../../components/control-room/organization-load-trend";
 import { OrganizationSiteMap } from "../../components/control-room/organization-site-map";
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
+import { SiteCardGroups } from "../../components/control-room/site-card-groups";
 import { DegradationTrendCard } from "../../components/degradation/degradation-trend-card";
-import { LocationKpiCard } from "../../components/location-kpi-card";
 import { MlFindingsCard } from "../../components/ml/ml-findings-card";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
@@ -22,7 +23,13 @@ import {
   organizationCards,
   organizationEntryTarget,
 } from "../../lib/control-room-levels";
-import { anyEnergyShown, groupByOrganization, splitByLiveTelemetry } from "../../lib/location-kpi-groups";
+import {
+  anyEnergyShown,
+  groupByOrganization,
+  groupSitesByParent,
+  splitGroupsByLive,
+  type GroupedSites,
+} from "../../lib/location-kpi-groups";
 import { organizationNodes } from "../../lib/map-site";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { useBoard } from "../../lib/board-spans";
@@ -73,6 +80,11 @@ type ControlRoomOrganizationPageProps = {
  * `E1.5b` (ADR 0138 decision 5, plan T2.4) — directly after it: the *Trending toward a limit —
  * advisory* card (`DegradationTrendCard`), scoped to the organization, keyed so each organization
  * mounts its own.
+ *
+ * `F4.240` (ADR 0139 decisions 13–16, plan D11–D12) — the cards are grouped under their parent
+ * (`SiteCardGroups`); an organization with no tree renders as before. A header click sets the
+ * site map's parent filter, which this page now owns (`mapRootId`), and scrolls the map into view.
+ * The overview is keyed by organization, so the filter does not survive a move to another one.
  */
 export function ControlRoomOrganizationPage({
   user,
@@ -112,7 +124,12 @@ export function ControlRoomOrganizationPage({
               </Link>
             </SectionCard>
           ) : (
-            <OrganizationOverview items={items} organizationId={organizationId} syncedAt={locationQ.dataUpdatedAt} />
+            <OrganizationOverview
+              key={organizationId}
+              items={items}
+              organizationId={organizationId}
+              syncedAt={locationQ.dataUpdatedAt}
+            />
           )
         ) : locationQ.isError ? (
           <SectionCard title="Control Room unavailable" bodyClassName="p-4">
@@ -148,8 +165,18 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
     items.filter((item) => item.organization.id === organizationId),
   )[0].locations;
   const card = organizationCards(sites)[0];
-  // `F4.259` — each group keeps the name order.
-  const { live, notLive } = splitByLiveTelemetry(sites);
+  // `F4.259` — each group keeps the name order. `F4.240` (D11) — Live and Not live hold the
+  // parent groups, and their headings count sites, as the organization card's chips do.
+  const { live, notLive } = splitGroupsByLive(groupSitesByParent(sites));
+  // `F4.240` (D12) — the map's parent filter; a header click sets it.
+  const [mapRootId, setMapRootId] = useState<string | null>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const selectParent = (parentId: string) => {
+    setMapRootId(parentId);
+    // jsdom has no `scrollIntoView`, hence `?.`.
+    mapRef.current?.scrollIntoView?.({ block: "nearest" });
+  };
+  const groupProps = { onSelectParent: selectParent, selectedParentId: mapRootId };
   // `F4.375` (ADR 0133 Amendment 2 rulings Q5, Q7) — no site of this organization in scope shows
   // energy: the strip drops its kW-only tiles and the load card is not drawn.
   const energyShown = anyEnergyShown(sites);
@@ -163,19 +190,37 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
         subtitle={`${card.organization.code} · ${card.siteCount} sites · ${card.openAlarms} alarms`}
       />
       <OrganizationKpiStrip key={`kpi-strip-${organizationId}`} organizationId={organizationId} energyShown={energyShown} />
-      <OrganizationSiteMap
-        key={organizationId}
-        organizationId={organizationId}
-        nodes={organizationNodes(scopeLocations, items, organizationId)}
-        syncedAt={syncedAt}
-      />
+      <div ref={mapRef}>
+        <OrganizationSiteMap
+          key={organizationId}
+          organizationId={organizationId}
+          nodes={organizationNodes(scopeLocations, items, organizationId)}
+          syncedAt={syncedAt}
+          rootId={mapRootId}
+          onRootChange={setMapRootId}
+        />
+      </div>
       <div className={`grid gap-4 ${board.grid}`}>
         <div data-testid="control-room-sites" data-tile="sites" className={`min-w-0 space-y-4 ${board.span("sites")}`}>
-          {live.length > 0 ? (
-            <SiteGroup testId="control-room-sites-live" title="Live sites" live sites={live} />
+          {hasCards(live) ? (
+            <SiteGroup
+              testId="control-room-sites-live"
+              title="Live sites"
+              live
+              count={card.sitesOnline}
+              grouped={live}
+              {...groupProps}
+            />
           ) : null}
-          {notLive.length > 0 ? (
-            <SiteGroup testId="control-room-sites-not-live" title="Not live" live={false} sites={notLive} />
+          {hasCards(notLive) ? (
+            <SiteGroup
+              testId="control-room-sites-not-live"
+              title="Not live"
+              live={false}
+              count={card.siteCount - card.sitesOnline}
+              grouped={notLive}
+              {...groupProps}
+            />
           ) : null}
         </div>
         <div data-tile="active-alarms" className={`min-w-0 ${board.span("active-alarms")}`}>
@@ -197,15 +242,27 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
   );
 }
 
+function hasCards(grouped: GroupedSites): boolean {
+  return grouped.loose.length > 0 || grouped.groups.length > 0;
+}
+
 type SiteGroupProps = {
   testId: string;
   title: string;
   live: boolean;
-  sites: readonly LocationKpiSummary[];
+  /** `F4.240` (D11) — the organization's live or not-live sites, the organization card's chip. */
+  count: number;
+  grouped: GroupedSites;
+  onSelectParent: (parentId: string) => void;
+  selectedParentId: string | null;
 };
 
-/** `F4.259` — one group of site cards under a heading that carries its count. */
-function SiteGroup({ testId, title, live, sites }: SiteGroupProps) {
+/**
+ * `F4.259` — one group of site cards under a heading that carries its count. `F4.240` — the cards
+ * sit under their parent headers; the count is of sites, so a group's not-live card under Live is
+ * explained by its header's "x of y sites live".
+ */
+function SiteGroup({ testId, title, live, count, grouped, onSelectParent, selectedParentId }: SiteGroupProps) {
   return (
     <section data-testid={testId} className="space-y-2">
       <h2
@@ -217,13 +274,9 @@ function SiteGroup({ testId, title, live, sites }: SiteGroupProps) {
           aria-hidden
           className={`inline-flex h-2.5 w-2.5 rounded-full ${live ? "bg-ok" : "border-2 border-warning"}`}
         />
-        {`${title} (${sites.length})`}
+        {`${title} (${count})`}
       </h2>
-      <div className="grid content-start gap-3 md:grid-cols-2">
-        {sites.map((location) => (
-          <LocationKpiCard key={location.id} location={location} />
-        ))}
-      </div>
+      <SiteCardGroups grouped={grouped} onSelectParent={onSelectParent} selectedParentId={selectedParentId} />
     </section>
   );
 }
