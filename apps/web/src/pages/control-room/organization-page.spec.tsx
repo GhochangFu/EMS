@@ -765,8 +765,9 @@ export async function theKpiStripReplacesTheLiveStatusStrip(): Promise<void> {
   expect(screen.queryByTestId("live-status-strip")).toBeNull();
 }
 
+/** The site cards' links, by the card's own `data-live` attribute: a header's Open link (`F4.240` part b) is no card. */
 function cardHrefs(group: HTMLElement): (string | null)[] {
-  return Array.from(group.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+  return Array.from(group.querySelectorAll("a[data-live]")).map((a) => a.getAttribute("href"));
 }
 
 /**
