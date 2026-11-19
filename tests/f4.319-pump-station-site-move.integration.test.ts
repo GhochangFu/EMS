@@ -8,6 +8,7 @@ import type * as SeedTenant from "../packages/db/dist/seed-tenant.js";
 import type * as SiteLayoutSeed from "../packages/db/dist/site-layout-seed.js";
 import type * as SiteLayoutSeedMove from "../packages/db/dist/site-layout-seed-move.js";
 import { requireIntegrationDb } from "../apps/api/src/testing/integration-db-gate.js";
+import { PHE_SPLIT_STATION_CODES } from "../packages/db/src/phe-split-stations.js";
 
 // Loaded from `packages/db/dist`, the `f3.73-site-layout-seed` way: run `pnpm --filter @bms/db
 // build` after a source edit, or this suite runs the last build.
@@ -16,7 +17,7 @@ const { loadPheCatalog } = require_("../packages/db/dist/phe-pilot-seed.js") as 
 const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typeof SeedTenant;
 const {
   ensureSiteTemplate,
-  pheSiteLayoutStations,
+  pheSiteLayoutSites,
   resolvePhewbSiteLayoutLocations,
   seedSiteLayouts,
   SITE_LAYOUT_PHEWB_CHOICE,
@@ -74,8 +75,14 @@ describe.skipIf(!ownerUrl)("F4.319 — the seed moves the untouched PHE copies t
       const smoc = await ensureSiteTemplate(p, phewbOrgId);
       const station = await ensureSiteTemplate(p, phewbOrgId, PUMP_STATION_STANDARD_SITE_TEMPLATE);
       if (smoc === null || station === null) throw new Error("F4.319: both templates must be published");
-      const [locationId] = await resolvePhewbSiteLayoutLocations(p, phewbOrgId, pheSiteLayoutStations(loadPheCatalog()));
-      if (locationId === undefined) throw new Error("F4.319: no PHE station resolved");
+      // `F4.388` (ADR 0139 decision 6): the first PHEWB location that holds a copy, an unsplit
+      // station or, in place of a station on the committed split list, its first RTU site.
+      const [locationId] = await resolvePhewbSiteLayoutLocations(
+        p,
+        phewbOrgId,
+        pheSiteLayoutSites(loadPheCatalog(), PHE_SPLIT_STATION_CODES),
+      );
+      if (locationId === undefined) throw new Error("F4.319: no PHE copy location resolved");
       // Rewind: the station holds a smoc-standard copy, as before ADR 0113.
       await p.query(`DELETE FROM bms.site_control_room_views WHERE location_id = $1`, [locationId]);
       await p.query(`DELETE FROM bms.dashboards WHERE location_id = $1 AND slug LIKE 'site-layout-%'`, [locationId]);

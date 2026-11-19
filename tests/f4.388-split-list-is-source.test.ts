@@ -65,8 +65,8 @@ function callArities(source: string, name: string): number[] {
 }
 
 describe("F4.388 — the PHE split list is source", () => {
-  it("names Lotapata only in release B (release C changes this assertion with the list)", () => {
-    expect(PHE_SPLIT_STATION_CODES).toEqual(["CBLTPT1"]);
+  it("names all six PHE stations in release C", () => {
+    expect(PHE_SPLIT_STATION_CODES).toEqual(["CBLTPT1", "CBMDK1", "ALPBNCK1", "CBBILSI1", "ALPBHTNRGHT2", "SALKMHT1"]);
   });
 
   it("names only catalog station codes, once each", () => {

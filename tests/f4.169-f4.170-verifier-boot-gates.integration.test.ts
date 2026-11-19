@@ -660,8 +660,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
     expect(after, "an admin PHEWB location must not move the location check").toBe(before.actual);
   }, 60_000);
 
-  /** ADR 0139 decision 8 — a free RTU site, its station and another station (PHEWB's context). By
-   * the catalog, not `pheStationId`: a split station's asset sits on its taken site slug. */
+  /** ADR 0139 decision 8 — an RTU site, its station and another station; a slug its real site holds is freed in the case's transaction. */
   async function rtuSiteHost(pool: SeedPool): Promise<{ site: PheRtuSite; stationId: string; otherStationId: string }> {
     const { rtuSites } = hierarchyExpectations().phe;
     const { rows } = await pool.query<{ id: string; slug: string }>(
@@ -670,9 +669,10 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       [[...rtuSites.flatMap((site) => [site.slug, site.stationSlug])]],
     );
     const idOf = (slug: string) => rows.find((row) => row.slug === slug)?.id;
-    const site = rtuSites.find((candidate) => idOf(candidate.slug) === undefined && idOf(candidate.stationSlug));
-    const other = rtuSites.find((candidate) => candidate.stationSlug !== site?.stationSlug);
-    const [stationId, otherStationId] = [idOf(site?.stationSlug ?? ""), idOf(other?.stationSlug ?? "")];
+    const site = rtuSites.find((candidate) => idOf(candidate.stationSlug) !== undefined);
+    if (site && idOf(site.slug)) await pool.query(`UPDATE bms.locations SET slug = $1 WHERE id = $2`, [`${site.slug}-f4169-${runId}`, idOf(site.slug)]);
+    const other = rtuSites.find((candidate) => candidate.stationSlug !== site?.stationSlug)?.stationSlug ?? "";
+    const [stationId, otherStationId] = [idOf(site?.stationSlug ?? ""), idOf(other)];
     assert(site !== undefined && stationId !== undefined && otherStationId !== undefined, "no free PHE RTU site");
     return { site: site as PheRtuSite, stationId: stationId as string, otherStationId: otherStationId as string };
   }

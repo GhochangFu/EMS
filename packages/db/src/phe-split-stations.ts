@@ -13,7 +13,14 @@
  * a deployed seed ever reads; a test drives the split path through the
  * parameter. A code that is not a catalog station's throws before any write.
  *
- * Release A committed it empty. Release B names Lotapata (`CBLTPT1`) only;
- * release C adds the other five.
+ * Release A committed it empty. Release B named Lotapata (`CBLTPT1`) only;
+ * release C names all six stations.
  */
-export const PHE_SPLIT_STATION_CODES: readonly string[] = ["CBLTPT1"];
+export const PHE_SPLIT_STATION_CODES: readonly string[] = [
+  "CBLTPT1",
+  "CBMDK1",
+  "ALPBNCK1",
+  "CBBILSI1",
+  "ALPBHTNRGHT2",
+  "SALKMHT1",
+];
