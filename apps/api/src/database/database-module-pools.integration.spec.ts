@@ -40,6 +40,8 @@ import { expect, vi, type MockInstance } from "vitest";
  * not share a red local run made with real credentials.
  */
 
+import { POOL_IDLE_TIMEOUT_MS } from "./database.module";
+
 type ErrorSpy = MockInstance<Logger["error"]>;
 type ClientState = "idle" | "checked-out";
 
@@ -182,4 +184,31 @@ export async function assertCheckoutLeavesNoListenerBehind(pool: pg.Pool): Promi
   // only means something if it is the same one.
   expect(second).toBe(first);
   expect(second.listenerCount("error")).toBe(settled);
+}
+
+/** pg-pool's own idle timeout when none is passed. */
+const PG_DEFAULT_IDLE_TIMEOUT_MS = 10_000;
+
+/**
+ * `F4.390` (plan Task 2.3) — the auth, tenant and fleet pools from the real module all carry
+ * {@link POOL_IDLE_TIMEOUT_MS}, not pg-pool's 10 s default.
+ */
+export function assertPoolsCarryTheIdleTimeout(pools: Readonly<Record<string, pg.Pool>>): void {
+  expect(Object.keys(pools).sort(), "control: the three pools").toEqual(["auth", "fleet", "tenant"]);
+  for (const [name, pool] of Object.entries(pools)) {
+    expect(pool.options.idleTimeoutMillis, `${name} pool's idleTimeoutMillis`).toBe(POOL_IDLE_TIMEOUT_MS);
+  }
+}
+
+/**
+ * `F4.390` (plan Task 2.3) — behaviour, not only the option: a client released to the pool is
+ * still the same backend after pg-pool's 10 s default has passed, so the next query does not pay
+ * a new connection and a cold catalog cache. pg-pool hands out the most recently released client,
+ * so the second query takes the client the first one released, unless it was closed.
+ */
+export async function assertAnIdleClientOutlivesPgsDefault(pool: pg.Pool): Promise<void> {
+  const before = await backendPid(pool);
+  await new Promise((resolve) => setTimeout(resolve, PG_DEFAULT_IDLE_TIMEOUT_MS + 1_500));
+  const after = await backendPid(pool);
+  expect(after, `the idle client was closed after pg's ${PG_DEFAULT_IDLE_TIMEOUT_MS} ms default`).toBe(before);
 }

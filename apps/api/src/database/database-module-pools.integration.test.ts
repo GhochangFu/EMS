@@ -4,11 +4,13 @@ import type pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, it, vi, type MockInstance } from "vitest";
 
 import {
+  assertAnIdleClientOutlivesPgsDefault,
   assertCheckedOutClientLossIsLoggedForPool,
   assertCheckoutLeavesNoListenerBehind,
   assertIdleClientLossIsLoggedForPool,
   assertPoolServesTheNextQuery,
   assertPoolServesTheNextQueryAfterACheckout,
+  assertPoolsCarryTheIdleTimeout,
 } from "./database-module-pools.integration.spec";
 import { DatabaseModule } from "./database.module";
 import { AUTH_POOL, FLEET_POOL, TENANT_POOL } from "./database.tokens";
@@ -117,5 +119,14 @@ describe.skipIf(!connectionString)(
         await assertCheckoutLeavesNoListenerBehind(pools[name]);
       });
     }
+
+    // `F4.390` (plan Task 2.3) — the pools keep an idle client past pg's 10 s default.
+    it("F4.390 — every pool carries the module's idle timeout", () => {
+      assertPoolsCarryTheIdleTimeout(pools);
+    });
+
+    it("F4.390 — an idle tenant client is still the same backend after 11.5 s", async () => {
+      await assertAnIdleClientOutlivesPgsDefault(pools.tenant);
+    }, 30_000);
   },
 );
