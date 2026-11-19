@@ -19,6 +19,7 @@ import { seedPointKeyHeadlineRanks } from "./point-key-headline-ranks-seed";
 import { seedPointKeyTrendDefaults } from "./point-key-trend-defaults-seed";
 import { seedPointKeyStates } from "./point-key-states-seed";
 import { loadPheCatalog, seedPheCatalog } from "./phe-pilot-seed";
+import type { PheSkippedSite } from "./phe-site-split";
 import { createDb } from "./client";
 import { backfillAssetLocations, seedAssetGroups } from "./asset-groups-seed";
 import {
@@ -131,6 +132,9 @@ async function main(): Promise<void> {
   // Written by `seedEskomLadderRules` in the second ESKOM bracket, read by the
   // verifier after every bracket has closed.
   let ladderCollisionSkips: LadderCollisionSkip[] = [];
+  // ADR 0139 decision 3 / owner ruling Q2: the PHE sites seedPheCatalog
+  // skipped on a holder, read by the verifier after every bracket has closed.
+  let pheSkippedSites: readonly PheSkippedSite[] = [];
   // The row seedEskomLocations resolved for RSMOC-WC, for the scoped demo
   // users' grants after the groups exist (owner ruling 17); null when none.
   let westernCapeId: string | null = null;
@@ -237,7 +241,10 @@ async function main(): Promise<void> {
 
     // ── PHEWB ─────────────────────────────────────────────────────────────
     await withOrganization(pool, phewbOrgId, async () => {
-      await seedPheCatalog(db, pool);
+      // The split list and the catalog are the committed ones (plan D2); the
+      // site-holder read runs on the superuser pool, as seedEskomLocations' does.
+      const pheOutcome = await seedPheCatalog(db, pool, { holderReader: superuserPool });
+      pheSkippedSites = pheOutcome.skippedSites;
       // `F3.41` — PHEWB's derivation pass, AFTER the catalog that creates the
       // locations and assets it derives from. All three calls moved, not two:
       // dropping `assignEskomAssetRtus` from this pass is probably harmless and
@@ -403,8 +410,9 @@ async function main(): Promise<void> {
     await enforceHierarchyNotNull(pool);
     const { verifyHierarchySeed } = await import("./verify-hierarchy-seed.js");
     // The ladder seed's collision skips, so the verifier exempts exactly those
-    // assets from its uncovered-asset check and logs each one.
-    await verifyHierarchySeed(pool, { eskomOrgId, phewbOrgId }, { ladderCollisionSkips });
+    // assets from its uncovered-asset check and logs each one; and the PHE
+    // sites the catalog seed skipped, which it exempts by owner ruling Q2.
+    await verifyHierarchySeed(pool, { eskomOrgId, phewbOrgId }, { ladderCollisionSkips, pheSkippedSites });
   } finally {
     await pool.end();
     await superuserPool.end();

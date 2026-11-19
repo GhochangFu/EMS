@@ -9,7 +9,8 @@ import {
 } from "./automation-rules-seed";
 import { findSeedLocation } from "./eskom-locations-seed";
 import { getOrganizationId } from "./hierarchy-seed";
-import type { PheRtuSite } from "./phe-pilot-seed";
+import type { PheRtuSite, PheSplitSite } from "./phe-pilot-seed";
+import { gateExemptsSkip, type PheSkippedSite } from "./phe-site-split";
 import { type HierarchyExpectations, hierarchyExpectations } from "./verify-hierarchy-expected";
 import { ORGANIZATION_LAYOUT_SEED_SLUG } from "./organization-layout-seed";
 import { withOrganization } from "./seed-tenant";
@@ -89,12 +90,15 @@ const MIGRATION_0029_ASSET_DOMAINS = 5;
  * one), the four water counts and the RSMOC-WC control-room view (each already
  * reads only seeded rows), and the zero counts for orphan and mismatched
  * assets. The uncovered-electrical-asset count exempts the ladder seed's
- * collision skips — see {@link EskomCheckOptions}.
+ * collision skips — see {@link EskomCheckOptions} — and the PHE split presence
+ * counts exempt the sites `seedPheCatalog` skipped on another organization's
+ * slug or on a code holder, but never one a PHEWB slug holder blocks (owner
+ * ruling Q2) — see {@link PhewbCheckOptions}.
  */
 export async function verifyHierarchySeed(
   pool: pg.Pool,
   organizationIds?: { eskomOrgId: string; phewbOrgId: string },
-  options?: EskomCheckOptions,
+  options?: VerifyHierarchyOptions,
 ): Promise<void> {
   const eskomOrgId = organizationIds?.eskomOrgId ?? (await getOrganizationId(pool, "ESKOM"));
   const phewbOrgId = organizationIds?.phewbOrgId ?? (await getOrganizationId(pool, "PHEWB"));
@@ -106,7 +110,9 @@ export async function verifyHierarchySeed(
     checks.push(...(await readEskomChecks(pool, eskomOrgId, { ...options, expected })));
   });
   await withOrganization(pool, phewbOrgId, async () => {
-    checks.push(...(await readPhewbChecks(pool, expected)));
+    checks.push(
+      ...(await readPhewbChecks(pool, expected, { pheSkippedSites: options?.pheSkippedSites, log: options?.log })),
+    );
   });
 
   const errors = failingChecks(checks);
@@ -254,6 +260,22 @@ export type EskomCheckOptions = {
   /** The seed's rows; derived here when the caller has none. */
   readonly expected?: HierarchyExpectations;
 };
+
+/** What `seed.ts` hands the PHEWB pass (owner ruling Q2, plan D9). */
+export type PhewbCheckOptions = {
+  /**
+   * The sites `seedPheCatalog` skipped in this seed run. The split presence
+   * checks exempt exactly those {@link gateExemptsSkip} allows, by edge RTU,
+   * and log each one. Empty by default, so the `verify:hierarchy` CLI, which
+   * runs no seed, fails closed on every missing split site.
+   */
+  readonly pheSkippedSites?: readonly PheSkippedSite[];
+  /** Where each exemption line goes; `console.error` by default. */
+  readonly log?: (line: string) => void;
+};
+
+/** {@link verifyHierarchySeed}'s options: the ESKOM pass's and the PHEWB pass's. */
+export type VerifyHierarchyOptions = EskomCheckOptions & Pick<PhewbCheckOptions, "pheSkippedSites">;
 
 /**
  * Pass 2 — the ESKOM checks. The caller holds ESKOM's tenant context
@@ -659,9 +681,9 @@ export const PHE_RTU_SLUG_SHAPE_SQL = `
 
 /**
  * The shape check, as a zero count whose failure names each offending row
- * and the fix (owner ruling Q2, plan 12.1). Once the split path lands, the
- * seed skips a site whose slug such a row holds (ADR 0139 decision 3), so the
- * boot stops here with a line an operator can act on. It replaces the zero count of the retired legacy cleanup: a legacy
+ * and the fix (owner ruling Q2, plan 12.1). The split path skips a site
+ * whose slug such a row holds and never adopts it (ADR 0139 decision 3,
+ * `decidePheSite`), so the boot stops here with a line an operator can act on. It replaces the zero count of the retired legacy cleanup: a legacy
  * one-RTU-per-location row restored from an old backup lands here.
  */
 async function readPheRtuSlugShapeCheck(pool: pg.Pool, sites: readonly PheRtuSite[]): Promise<HierarchyCheck> {
@@ -684,6 +706,81 @@ async function readPheRtuSlugShapeCheck(pool: pg.Pool, sites: readonly PheRtuSit
   };
 }
 
+/** ADR 0139 decision 10 — the labels of the split presence checks, exported for the suites. */
+export const PHE_SPLIT_SITES_LABEL = "PHEWB split-station sites present";
+export const PHE_SPLIT_RTUS_LABEL = "PHEWB split-station RTUs at their site";
+export const PHE_SPLIT_ASSETS_LABEL = "PHEWB split-station assets at their site";
+
+/**
+ * ADR 0139 decision 10 (plan D9) — the split sites present (a PHEWB child of
+ * its station, found by slug, carrying the triple: the shape check's rule),
+ * each split RTU at its site and each split asset at its site. Params:
+ * `[slugs, stationSlugs, stationCodes, edgeRtuIds, assetEdgeRtuIds,
+ * assetCodes]`.
+ */
+export const PHE_SPLIT_PRESENCE_SQL = `
+  WITH site AS (
+    SELECT s.edge_rtu_id, l.id
+      FROM unnest($1::varchar[], $2::varchar[], $3::varchar[], $4::int[])
+        AS s(slug, station_slug, station_code, edge_rtu_id)
+      INNER JOIN bms.locations l ON l.slug = s.slug
+      INNER JOIN bms.organizations o ON o.id = l.organization_id
+      INNER JOIN bms.locations p ON p.id = l.parent_id
+     WHERE o.code = 'PHEWB'
+       AND p.organization_id = l.organization_id
+       AND p.slug = s.station_slug
+       AND l.meta->'phe'->>'stationCode' = s.station_code
+       AND l.meta->'phe'->>'edgeRtuId' = s.edge_rtu_id::text
+  )
+  SELECT
+    (SELECT COUNT(*)::text FROM site) AS sites,
+    (SELECT COUNT(*)::text FROM site
+      INNER JOIN bms.rtus r ON r.external_rtu_id = site.edge_rtu_id AND r.location_id = site.id) AS rtus,
+    (SELECT COUNT(*)::text FROM site
+      INNER JOIN unnest($5::int[], $6::varchar[]) AS x(edge_rtu_id, asset_code) ON x.edge_rtu_id = site.edge_rtu_id
+      INNER JOIN bms.assets a ON a.code = x.asset_code AND a.location_id = site.id) AS assets
+`;
+
+/** The three split presence checks, over the split sites the gate does not exempt. */
+async function readPheSplitChecks(
+  pool: pg.Pool,
+  splitSites: readonly PheSplitSite[],
+  options: PhewbCheckOptions,
+): Promise<HierarchyCheck[]> {
+  const log = options.log ?? ((line: string) => console.error(line));
+  const exempt = new Map(
+    (options.pheSkippedSites ?? []).filter(gateExemptsSkip).map((skip) => [skip.site.edgeRtuId, skip]),
+  );
+  const counted = splitSites.filter((site) => {
+    const skip = exempt.get(site.edgeRtuId);
+    if (skip) {
+      log(
+        `verifyHierarchySeed: exempted ${site.slug} from the split-station checks: seedPheCatalog skipped it ` +
+          `because location ${skip.holderId} (${skip.holderSlug}) holds its ${skip.reason === "code-holder" ? "code" : "slug"}`,
+      );
+    }
+    return !skip;
+  });
+  const res = await pool.query<{ sites: string; rtus: string; assets: string }>(PHE_SPLIT_PRESENCE_SQL, [
+    counted.map((site) => site.slug),
+    counted.map((site) => site.stationSlug),
+    counted.map((site) => site.stationCode),
+    counted.map((site) => site.edgeRtuId),
+    counted.flatMap((site) => site.assetCodes.map(() => site.edgeRtuId)),
+    counted.flatMap((site) => site.assetCodes),
+  ]);
+  const row = res.rows[0];
+  return [
+    exactCheck(PHE_SPLIT_SITES_LABEL, row?.sites, counted.length),
+    exactCheck(PHE_SPLIT_RTUS_LABEL, row?.rtus, counted.length),
+    exactCheck(
+      PHE_SPLIT_ASSETS_LABEL,
+      row?.assets,
+      counted.reduce((sum, site) => sum + site.assetCodes.length, 0),
+    ),
+  ];
+}
+
 /**
  * Pass 3 — the PHEWB checks. The caller holds PHEWB's tenant context; this
  * function opens no transaction.
@@ -691,6 +788,7 @@ async function readPheRtuSlugShapeCheck(pool: pg.Pool, sites: readonly PheRtuSit
 export async function readPhewbChecks(
   pool: pg.Pool,
   expected: HierarchyExpectations = hierarchyExpectations(),
+  options: PhewbCheckOptions = {},
 ): Promise<HierarchyCheck[]> {
   const checks: HierarchyCheck[] = [];
   const expect = (label: string, actual: string | undefined, wanted: number): void => {
@@ -799,6 +897,7 @@ export async function readPhewbChecks(
   const row = res.rows[0];
   expect("PHEWB catalog locations present", row?.phe_locs, phe.locationCodes.length);
   checks.push(await readPheRtuSlugShapeCheck(pool, phe.rtuSites));
+  checks.push(...(await readPheSplitChecks(pool, phe.splitSites, options)));
   expect("PHEWB catalog RTUs present", row?.phe_rtus, phe.externalRtuIds.length);
   expect("PHE catalog assets present", row?.phe_assets, phe.assetCodes.length);
   // 252 today, not 264: the catalog's 12 `TS` sensors are the MQTT envelope's

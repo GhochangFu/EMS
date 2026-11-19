@@ -7,6 +7,7 @@ import { seedPheCatalog } from "../packages/db/src/phe-pilot-seed.js";
 import {
   openIntegrationPool,
   requireIntegrationDb,
+  resolveIntegrationRoleUrl,
 } from "../apps/api/src/testing/integration-db-gate.js";
 
 /**
@@ -44,6 +45,12 @@ type IntegrationPool = Awaited<ReturnType<typeof openIntegrationPool>>;
 
 let pool: IntegrationPool | undefined;
 let db: ReturnType<typeof createDb> | undefined;
+/**
+ * ADR 0139 (plan D2) — the superuser pool the seed's site-holder read runs on, as `seed.ts`
+ * passes it. Unused while the committed split list is empty; without it, release B's list
+ * would make `seedPheCatalog` refuse here.
+ */
+let holderReader: IntegrationPool | undefined;
 let vendorName: string | undefined;
 
 async function readAsset(): Promise<{ name: string; site_name: string }> {
@@ -64,12 +71,16 @@ async function rename(name: string): Promise<void> {
 
 async function reseed(): Promise<void> {
   if (!db || !pool) throw new Error("pool not initialised");
-  await seedPheCatalog(db, pool);
+  await seedPheCatalog(db, pool, { holderReader });
 }
 
 describe.skipIf(!connectionString)("PHE seed keeps an existing asset's name", () => {
   beforeAll(async () => {
     pool = await openIntegrationPool(connectionString as string, "PHE seed asset name");
+    holderReader = await openIntegrationPool(
+      resolveIntegrationRoleUrl(connectionString as string, "superuser", process.env),
+      "PHE seed asset name",
+    );
     db = createDb(pool);
     await reseed();
     vendorName = (await readAsset()).name;
@@ -79,6 +90,7 @@ describe.skipIf(!connectionString)("PHE seed keeps an existing asset's name", ()
     // Leave the asset with the name it had before the suite.
     if (vendorName !== undefined) await rename(vendorName);
     await pool?.end();
+    await holderReader?.end();
   }, 120_000);
 
   it("does not put the vendor name back on a renamed asset", async () => {

@@ -98,9 +98,12 @@ example Lotapata 1 and Lotapata 2 under Lotapata.
   DO UPDATE SET location_id = EXCLUDED.location_id`) and each asset's
   `locationId` (`:494-510`) from the catalog station. A hand move is undone by
   the next deploy.
-- **Location `slug` and `code` are unique across organizations**
-  (`0010_phase5_location_access.sql:15-16`), and the seed finds a PHE station
-  by slug and organization.
+- **Location `slug` is unique across organizations**
+  (`0010_phase5_location_access.sql:16`); **`code` is unique per
+  organization** (`0016_org_location_rtu_hierarchy.sql:37-39` replaced
+  `locations_code_unique` with `locations_org_code_idx`). (corrected
+  2026-11-19, owner ruling B on PR 3) The seed finds a PHE station by slug and
+  organization.
 - **The legacy cleanup** (`cleanupLegacyPheRtuLocations`,
   `packages/db/src/hierarchy-seed.ts:459`, ADR 0080 decision 4) deletes on every
   boot each location whose slug is in `legacyLocationSlugs` — the RTU display
@@ -214,6 +217,7 @@ three kinds:
      ESKOM: a holder that is not this site — another organization's row, or
      an administrator's PHEWB row — is logged and the site is skipped, so its
      RTU stays where it is. Never `23505`, never a takeover.
+     (amended 2026-11-19 by owner ruling B on PR 3: only a PHEWB row holding the code skips the site; another organization's code row is no holder — plan 12.1)
 4. **The move is one statement, and never back.** Before the RTU upsert, the
    seed moves each RTU of a split station whose `location_id` is not its site,
    together with every asset wired to it, in **one** data-modifying statement
@@ -229,6 +233,7 @@ three kinds:
    stays there, and the upserts write that site, so a re-deploy of an older
    release after release B does not raise K4. *(drafter: the reverse move,
    if ever wanted, is its own row)*
+   (amended 2026-11-19 by owner ruling A on PR 3: an RTU at any PHEWB location other than its station stays there, logged when that is not its site; site_name is that location's name — plan 12.1)
 
    4a. **Each site carries its station's tariff forward** (Q7, drafter
    reading). In the same
@@ -304,7 +309,7 @@ three kinds:
     site of its station, the PHE seed's asset write sets `site_name` to the
     site's `bms.locations.name` as decision 3 writes it (`Lotapata I`)
     instead of the catalog `StationName` (`phe-pilot-seed.ts:494`); every
-    other PHE asset keeps the catalog name. The simulator's seed wiring reads
+    other PHE asset keeps the catalog name. (amended 2026-11-19 by owner ruling A on PR 3: an RTU at any PHEWB location other than its station stays there, logged when that is not its site; site_name is that location's name — plan 12.1) The simulator's seed wiring reads
     only ESKOM assets and skips `PHE-` codes (`hierarchy-seed.ts:337-338`),
     the simulator runtime filters on `SIM_SITE_NAMES`
     (`apps/sim/src/index.js:629`), which names no PHE station, and the
@@ -368,6 +373,7 @@ three kinds:
   the tree guard refuse anything else.
 - **No takeover by slug.** A site is adopted only by its triple (decision 3);
   a foreign holder of the slug or code is logged and skipped.
+  (amended 2026-11-19 by owner ruling B on PR 3: only a PHEWB row holding the code skips the site; another organization's code row is no holder — plan 12.1)
 - **Retiring the cleanup removes a delete path**, it adds none; the shape
   check keeps a surviving legacy row from being adopted silently.
 - **The tariff copy only adds rows, inside PHEWB** (decision 4a). It runs
@@ -455,6 +461,7 @@ One additive contract field in `packages/shared/src/contracts/`.
     RTUs stay at their sites and the boot gate passes.
   - A slug or code held by another organization or by an admin's PHEWB row
     is logged and skipped, never adopted, never `23505`.
+    (amended 2026-11-19 by owner ruling B on PR 3: only a PHEWB row holding the code skips the site; another organization's code row is no holder — plan 12.1)
   - The shape check stops the boot on a planted legacy-slug row that is not a
     child of its station.
   - After the move, each split station's three groups have zero members and

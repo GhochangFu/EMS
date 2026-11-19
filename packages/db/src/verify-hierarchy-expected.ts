@@ -16,6 +16,7 @@ import {
   phePilotExpectedRows,
   type PhePilotExpectedRows,
 } from "./phe-pilot-seed";
+import { PHE_SPLIT_STATION_CODES } from "./phe-split-stations";
 import { PUE_DEMO_INCOMER_ROLE } from "./pue-demo-seed";
 import { eskomSiteLayoutIdentities, pheSiteLayoutStations } from "./site-layout-seed";
 
@@ -91,9 +92,14 @@ export type HierarchyExpectations = {
  * The PHE RTU sites are in the set too: an empty list would turn the boot
  * gate's site-shape check off (ADR 0139 decision 8). The `TS` pairs are not,
  * because a catalog with no `TS` sensor is a legitimate vendor export (see
- * `seedPheCatalog`).
+ * `seedPheCatalog`). Nor are the split sites: `splitStationCodes` is
+ * `PHE_SPLIT_STATION_CODES`, which release A commits empty (ADR 0139 decision
+ * 1); a code that is not a catalog station's throws.
  */
-export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalog()): HierarchyExpectations {
+export function hierarchyExpectations(
+  pheCatalog: PheCatalogFile = loadPheCatalog(),
+  splitStationCodes: readonly string[] = PHE_SPLIT_STATION_CODES,
+): HierarchyExpectations {
   const mapLocationRows = seedMapLocationRows(pheCatalog);
   const eskomCatalog = eskomSeedAssetCatalog(mapLocationRows);
   const viewRow = eskomCanonicalLocationRows(mapLocationRows).find(
@@ -118,7 +124,7 @@ export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalo
       .filter((asset) => demoRoleForAsset(asset.code, asset.domain) === PUE_DEMO_INCOMER_ROLE)
       .map((asset) => asset.code),
     eskomItCodes: eskomCatalog.filter((asset) => asset.domain === "it").map((asset) => asset.code),
-    phe: phePilotExpectedRows(pheCatalog),
+    phe: phePilotExpectedRows(pheCatalog, splitStationCodes),
     siteLayoutEskomLocations: eskomSiteLayoutIdentities(mapLocationRows),
     siteLayoutPheSlugs: pheSiteLayoutStations(pheCatalog).map((station) => station.slug),
     organizationLayoutOrganizationCodes: SEED_ORGANIZATION_CODES,
