@@ -14,6 +14,8 @@ import {
   theStationAssetsListsEachSite,
   theStationHasNoWall,
   theStationPollsTheListAtSixtySeconds,
+  theStationSaysStationView,
+  theStationViewIsWider,
   theStationUrlRendersTheStation,
   theTotalsLineIsTheHeadersSentenceAndTheKw,
 } from "./site-page-station.spec";
@@ -55,7 +57,7 @@ describe("F4.240 part b the site page at a station (ADR 0140)", () => {
     await theStationAssetsListsEachSite();
   });
 
-  it("ST8 redirects /trends and an unknown segment; the strip has two entries", async () => {
+  it("ST8 the halves redirect /trends and an unknown segment, keep a site's tab; the strip has two entries", async () => {
     await otherSegmentsRedirectAndTheStripHasTwoEntries();
   });
 
@@ -77,5 +79,13 @@ describe("F4.240 part b the site page at a station (ADR 0140)", () => {
 
   it("ST12 keeps the site page's 60 s list poll at a station (ruling Q2)", async () => {
     await theStationPollsTheListAtSixtySeconds();
+  });
+
+  it("ST13 the ribbon and the pending line say station view at a station, site view at a site", async () => {
+    await theStationSaysStationView();
+  });
+
+  it("ST14 the Station view widens to 1800 px; /assets and a site keep 1200 px (plan D12)", async () => {
+    await theStationViewIsWider();
   });
 });

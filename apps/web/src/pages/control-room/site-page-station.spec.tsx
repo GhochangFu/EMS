@@ -3,11 +3,12 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi, type Mock } from "vitest";
 
-import type { LocationKpiSummary, ResolvedSiteControlRoomViewDto } from "@bms/shared";
+import type { DashboardDto, LocationKpiSummary, ResolvedSiteControlRoomViewDto } from "@bms/shared";
 
 import * as assetsApi from "../../api/assets";
 import * as controlRoomApi from "../../api/control-room";
 import * as copilotApi from "../../api/copilot";
+import * as dashboardsApi from "../../api/dashboards";
 import * as locationsApi from "../../api/locations";
 import * as systemStatusApi from "../../api/system-status";
 import { SiteCardGroups } from "../../components/control-room/site-card-groups";
@@ -67,7 +68,9 @@ vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
   ),
 }));
 vi.mock("../../components/control-room/generated-site-view", () => ({
-  GeneratedSiteView: () => <div data-testid="generated-site-view" />,
+  GeneratedSiteView: (props: { locationId: string }) => (
+    <div data-testid="generated-site-view" data-location-id={props.locationId} />
+  ),
 }));
 vi.mock("../../components/control-room/site-assets-view", () => ({
   SiteAssetsView: () => <div data-testid="site-assets-view" />,
@@ -77,7 +80,9 @@ vi.mock("../../components/control-room/site-trends-view", () => ({
 }));
 vi.mock("../../components/control-room/smoc-site-view", () => ({ SmocSiteView: () => null }));
 vi.mock("../../components/control-room/site-dashboard-view", () => ({
-  SiteDashboardView: () => <div data-testid="site-dashboard-view" />,
+  SiteDashboardView: (props: { locationId: string; tab?: string }) => (
+    <div data-testid="site-dashboard-view" data-location-id={props.locationId} data-tab={props.tab ?? ""} />
+  ),
 }));
 vi.mock("../../components/control-room/replace-site-layout-wizard", () => ({ ReplaceSiteLayoutWizard: () => null }));
 vi.mock("../../components/control-room/site-layout-wizard", () => ({
@@ -127,7 +132,16 @@ function view(locationId: string, fields: Partial<ResolvedSiteControlRoomViewDto
 
 let fetchSpy: Mock | null = null;
 
-function stubReads(items: readonly LocationKpiSummary[], answer: ResolvedSiteControlRoomViewDto | "reject"): void {
+/**
+ * `answer` is the resolve for its own `locationId`; every other id (the station's sites, read by
+ * the halves since PR 2) resolves to `generated` unless `others` names it, so a station answer never
+ * leaks into a site half.
+ */
+function stubReads(
+  items: readonly LocationKpiSummary[],
+  answer: ResolvedSiteControlRoomViewDto | "reject",
+  others: Record<string, ResolvedSiteControlRoomViewDto> = {},
+): void {
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
   vi.stubGlobal("fetch", fetchSpy);
   useAuthStore.setState({ scope: { kind: "global", locations: [], assetGroups: [], assetIds: [] } });
@@ -139,7 +153,9 @@ function stubReads(items: readonly LocationKpiSummary[], answer: ResolvedSiteCon
   if (answer === "reject") {
     resolve.mockRejectedValue(new Error("control-room/site-view 404"));
   } else {
-    resolve.mockResolvedValue(answer);
+    resolve.mockImplementation((id: string) =>
+      Promise.resolve(id === answer.locationId ? answer : (others[id] ?? view(id))),
+    );
   }
 }
 
@@ -191,7 +207,13 @@ export async function theStationUrlRendersTheStation(): Promise<void> {
   expect(screen.getByText("PHEWB · PHEWB")).toBeInTheDocument();
   expect(crumbs().textContent?.replace(/\s+/g, " ").trim()).toBe("Control Room/PHEWB/Lotapata");
   expect(cardHrefs()).toEqual(["/control-room/site/st-1", "/control-room/site/st-2"]);
-  expect(screen.queryByTestId("generated-site-view")).toBeNull();
+  // PR 2: the halves draw each site's generated view; none is drawn for the station itself.
+  await waitFor(() =>
+    expect(screen.getAllByTestId("generated-site-view").map((el) => el.getAttribute("data-location-id"))).toEqual([
+      "st-1",
+      "st-2",
+    ]),
+  );
   expect(screen.queryByTestId("site-view-notice-box")).toBeNull();
   expect(screen.queryByTestId("site-layout-wizard")).toBeNull();
 }
@@ -283,7 +305,12 @@ function stripLabels(): string[] {
     .map((link) => link.textContent ?? "");
 }
 
-/** ST8 — `/trends` and an unknown segment redirect to the bare path; the strip has two entries. */
+/**
+ * ST8 (PR 2, plan D8) — a station is exempt from the page's redirect, and the halves decide: an
+ * unknown segment, and `trends` until the station's own Trends & Energy arm (plan Task 2.5),
+ * redirect to the bare path once the sites' reads settle; a tab a site's dashboard holds stays and
+ * reaches that site's half. The strip has two entries throughout.
+ */
 export async function otherSegmentsRedirectAndTheStripHasTwoEntries(): Promise<void> {
   for (const segment of ["trends", "anything"]) {
     stubReads(ITEMS, view("st"));
@@ -296,7 +323,44 @@ export async function otherSegmentsRedirectAndTheStripHasTwoEntries(): Promise<v
     cleanup();
     vi.restoreAllMocks();
   }
+
+  stubReads(ITEMS, view("st"), {
+    "st-1": view("st-1", { kind: "dashboard", dashboardSlug: "st-1-site", dashboardId: "d-st-1" }),
+  });
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(SITE_DASHBOARD);
+  renderAt("/control-room/site/st/electrical");
+  const half = await screen.findByTestId("site-dashboard-view");
+  expect([half.getAttribute("data-location-id"), half.getAttribute("data-tab")]).toEqual(["st-1", "electrical"]);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(screen.getByTestId("pathname").textContent).toBe("/control-room/site/st/electrical");
+  expect(stripLabels()).toEqual(["Station view", "Assets & RTUs"]);
 }
+
+/** A site layout with two tabs, for ST8's third arm. */
+const SITE_DASHBOARD: DashboardDto = {
+  id: "d-st-1",
+  organizationId: ORG_PHE.id,
+  slug: "st-1-site",
+  name: "Lotapata I site",
+  description: null,
+  locationId: "st-1",
+  assetGroupId: null,
+  assetId: null,
+  assetTemplateId: null,
+  templateId: null,
+  createdAt: new Date(0).toISOString(),
+  updatedAt: new Date(0).toISOString(),
+  tabs: ["overview", "electrical"].map((key, sortOrder) => ({
+    id: `t-${key}`,
+    dashboardId: "d-st-1",
+    organizationId: ORG_PHE.id,
+    key,
+    label: key,
+    sortOrder,
+    assetGroupId: null,
+  })),
+  widgets: [],
+};
 
 /** ST9 — no Wall link; a `dashboard` resolve with `?wall=1` still renders the normal station page. */
 export async function theStationHasNoWall(): Promise<void> {
@@ -306,6 +370,8 @@ export async function theStationHasNoWall(): Promise<void> {
   expect(await screen.findByTestId("station-totals")).toBeInTheDocument();
   expect(screen.queryByTestId("wall-clock")).toBeNull();
   expect(screen.queryByRole("link", { name: "Wall" })).toBeNull();
+  // The sites resolve `generated` here, so no dashboard view is drawn, for the station or a half.
+  await waitFor(() => expect(screen.getAllByTestId("generated-site-view")).toHaveLength(2));
   expect(screen.queryByTestId("site-dashboard-view")).toBeNull();
 }
 
@@ -358,6 +424,52 @@ export async function theStationPollsTheListAtSixtySeconds(): Promise<void> {
   expect(await screen.findByTestId("station-totals")).toBeInTheDocument();
   const observers = queryClient.getQueryCache().find({ queryKey: ["dashboard", "locations"] })?.observers;
   expect(observers?.map((observer) => observer.options.refetchInterval)).toEqual([60_000]);
+}
+
+function ribbon(): string {
+  return screen.getByText(/^Control Room · (site|station) view$/).textContent ?? "";
+}
+
+/**
+ * ST13 (PR 1 review nit) — at a station the ribbon reads "station view", and so does the pending
+ * line while the resolve read is out; a site keeps "site view" (the control).
+ */
+export async function theStationSaysStationView(): Promise<void> {
+  stubReads(ITEMS, view("st"));
+  vi.spyOn(controlRoomApi, "fetchResolvedSiteControlRoomView").mockImplementation(() => new Promise(() => undefined));
+  renderAt("/control-room/site/st");
+  expect(await screen.findByText("Loading the station view…")).toBeInTheDocument();
+  expect(ribbon()).toBe("Control Room · station view");
+  expectNoNetworkSoFar();
+  cleanup();
+  vi.restoreAllMocks();
+
+  stubReads(ITEMS, view("st-1"));
+  vi.spyOn(controlRoomApi, "fetchResolvedSiteControlRoomView").mockImplementation(() => new Promise(() => undefined));
+  renderAt("/control-room/site/st-1");
+  expect(await screen.findByText("Loading the site view…")).toBeInTheDocument();
+  expect(ribbon()).toBe("Control Room · site view");
+}
+
+function pageWidth(heading: HTMLElement): string | undefined {
+  return heading.closest("div.mx-auto")?.className.split(/\s+/).find((name) => name.startsWith("max-w-"));
+}
+
+/** ST14 (plan D12) — the Station view widens to 1800 px; the station's `/assets` and a site keep 1200 px. */
+export async function theStationViewIsWider(): Promise<void> {
+  const cases: [string, string, string][] = [
+    ["/control-room/site/st", "Lotapata", "max-w-[1800px]"],
+    ["/control-room/site/st/assets", "Lotapata", "max-w-[1200px]"],
+    ["/control-room/site/st-1", "Lotapata I", "max-w-[1200px]"],
+  ];
+  for (const [path, name, width] of cases) {
+    stubReads(ITEMS, view(path.split("/")[3] ?? ""));
+    renderAt(path);
+    expect(pageWidth(await stationHeading(name)), path).toBe(width);
+    expectNoNetworkSoFar();
+    cleanup();
+    vi.restoreAllMocks();
+  }
 }
 
 export function cleanupStation(): void {

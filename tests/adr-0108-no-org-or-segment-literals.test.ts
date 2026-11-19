@@ -176,6 +176,7 @@ const MODULES: readonly string[] = [
   "apps/web/src/components/control-room/station-view.tsx",
   // F4.240 part b PR 2 (ADR 0140 decision 3e, plan D13): the tab chooser rule and the site halves.
   "apps/web/src/lib/station-view.ts",
+  "apps/web/src/components/control-room/station-site-halves.tsx",
 ];
 
 /**

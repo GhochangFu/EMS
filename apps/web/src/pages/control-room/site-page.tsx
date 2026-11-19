@@ -142,10 +142,14 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * `F4.240` part b (ADR 0140 decisions 1–4, plan D1, D6, D7) — at a **station** (`stationGroupOf`:
  * a location in the list that holds no asset and heads sites) the body is `StationView`: the
  * totals, the site cards, the station's alarms, the advisory cards and its dashboards, or at
- * `/assets` a list of the sites. The strip reads **Station view** and **Assets & RTUs** only; any
- * other segment redirects to the bare path. No notice, layout wizard, wall or Wall link at a
- * station, and the resolve read still decides access exactly as for a site (decision 6). The list
- * poll stays at 60 s (owner ruling Q2 (a)), though the station draws live figures from it.
+ * `/assets` a list of the sites. The strip reads **Station view** and **Assets & RTUs** only. No
+ * notice, layout wizard, wall or Wall link at a station, and the resolve read still decides access
+ * exactly as for a site (decision 6). The list poll stays at 60 s (owner ruling Q2 (a)), though the
+ * station draws live figures from it. PR 2 (decision 3e, plan D8, D12): a station is exempt from
+ * the D5 redirect; its view section hands the raw segment to `StationSiteHalves`, which redirects a
+ * segment no site's dashboard holds (`trends` included, until the station's own arm) once every
+ * site read has settled. The Station view widens to `max-w-[1800px]`, and the ribbon and the
+ * pending line say "station view".
  */
 export function ControlRoomSitePage({ user, locationId: locationIdProp }: ControlRoomSitePageProps) {
   const params = useParams();
@@ -196,7 +200,10 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
     siteView.data !== undefined &&
     tabParam !== undefined &&
     !onAssetsTab &&
-    (atStation || (!onTrendsTab && !showsDashboard && (!showsSmocTabs || tab === null)))
+    !atStation &&
+    !onTrendsTab &&
+    !showsDashboard &&
+    (!showsSmocTabs || tab === null)
   ) {
     return <Navigate to={sitePath} replace />;
   }
@@ -228,9 +235,10 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
   return (
     <AppShell
       user={user}
-      kpiRibbon={<span className="text-ink">Control Room · site view</span>}
+      kpiRibbon={<span className="text-ink">{atStation ? "Control Room · station view" : "Control Room · site view"}</span>}
     >
-      <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
+      {/* `F4.240` part b (plan D12) — the Station view widens for its two halves; `/assets` does not. */}
+      <div className={`mx-auto ${atStation && !onAssetsTab ? "max-w-[1800px]" : "max-w-[1200px]"} space-y-4 pb-8`}>
         {items !== undefined ? (
           site !== undefined && !(siteView.data === undefined && siteView.isError) ? (
             <>
@@ -259,10 +267,15 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
               />
               {siteView.data === undefined ? (
                 <p role="status" className="text-sm text-ink-muted">
-                  Loading the site view…
+                  {atStation ? "Loading the station view…" : "Loading the site view…"}
                 </p>
               ) : stationGroup !== null ? (
-                <StationView station={site} group={stationGroup} section={onAssetsTab ? "assets" : "view"} />
+                <StationView
+                  station={site}
+                  group={stationGroup}
+                  section={onAssetsTab ? "assets" : "view"}
+                  tab={onAssetsTab ? undefined : tabParam}
+                />
               ) : onAssetsTab ? (
                 <SiteAssetsView locationId={site.id} siteName={site.name} energyShown={site.energyShown} />
               ) : onTrendsTab ? (
