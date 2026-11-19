@@ -40,7 +40,7 @@ const D = 86_400_000;
 /** 5 A1 keys + 8 single-day A1 keys + 2 A2 keys. */
 const EXPECTED_ROWS = 15;
 
-function assert(condition: boolean, message: string): void {
+function assert(condition: boolean, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
   }
