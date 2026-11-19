@@ -253,9 +253,20 @@ read both of its sites.
 - **No new read path.** The station view uses reads that already exist and
   already check scope (decision 5). Each site panel is the site's own page
   body, behind the site's own 404 rule.
-- **No id leak.** A caller who cannot read the station never receives its
-  id: the KPI list nulls `parentId` (ADR 0139 decision 12), and the site
-  routes answer 404 (decision 6).
+- **No new id leak.** The station view adds no path that gives the station's
+  id to a caller who cannot read the station: the KPI list nulls `parentId`
+  (ADR 0139 decision 12), and the site routes answer 404 (decision 6).
+  (corrected 2026-11-19 by the security review of PR 1:)
+  - The dashboards list (`GET /api/v1/dashboards`) and the dashboard detail
+    are scoped by organization (ADR 0047 Amendment 2 ruling 2,
+    `apps/api/src/dashboard-builder/dashboards.service.ts:145-164`).
+  - So a dashboard scoped at the station, for example its old site-layout
+    copy (Q4), carries the station's `locationId` to any reader in its
+    organization, a one-site grantee included.
+  - This is unchanged by this record. Widget data stays gated by the
+    caller's readable assets.
+  - Narrowing location-scoped dashboard reads by the readable locations
+    would be its own row.
 - **The subtree reads it uses are bounded.** The alarm filter refuses a node
   the caller cannot read before it walks (`alarm-location-scope.ts:59-61`).
   The energy view's walk is bound to the placed organization and limited to
