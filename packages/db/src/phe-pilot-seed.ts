@@ -17,6 +17,7 @@ import {
   pheOffSiteLine,
   pheRtuTarget,
   readRtusAwayFromStation,
+  unlinkSplitStationView,
 } from "./phe-site-split";
 import { PHE_SPLIT_STATION_CODES } from "./phe-split-stations";
 import { assets, locations } from "./schema/bms-schema";
@@ -554,10 +555,21 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool, options: PheSeedO
     log(`phe site split: moved ${moved.moves.length} RTU(s) with ${moved.assets} asset(s) to their sites`);
   }
   const movedSiteIds = new Set(moved.moves.map((move) => move.locationId));
+  /** Decision 7 (plan D7): unlinked in this transaction, once per station whose RTU moved this run. */
+  const unlinkAsked = new Set<string>();
   for (const site of split.sites) {
     const stationId = splitStations.get(site.stationCode)?.locationId;
     if (stationId !== undefined && movedSiteIds.has(site.locationId)) {
       await copyStationTariffsToSite(pool, { stationId, site, log });
+      if (!unlinkAsked.has(stationId)) {
+        unlinkAsked.add(stationId);
+        await unlinkSplitStationView(pool, {
+          stationId,
+          stationSlug: site.stationSlug,
+          organizationId: phewbOrgId,
+          log,
+        });
+      }
     }
   }
   const resolvedByRtu = new Map(split.sites.map((site) => [site.edgeRtuId, site]));

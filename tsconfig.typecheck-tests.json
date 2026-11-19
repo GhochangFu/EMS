@@ -84,6 +84,7 @@
     "tests/phe-seed-keeps-asset-name.integration.test.ts",
     "tests/f4.388-split-list-is-source.test.ts",
     "tests/f4.388-phe-site-split.integration.test.ts",
+    "tests/f4.388-phe-site-layouts.integration.test.ts",
     "tests/f3.8-notification-schema.integration.test.ts",
     "tests/f4.52-auth-failure-status.test.ts",
     "tests/f4.63-query-retry-wiring.test.ts",

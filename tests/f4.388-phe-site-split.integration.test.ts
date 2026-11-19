@@ -8,6 +8,7 @@ import type * as DbClient from "../packages/db/dist/client.js";
 import type * as PhePilotSeed from "../packages/db/dist/phe-pilot-seed.js";
 import type * as PheSiteSplit from "../packages/db/dist/phe-site-split.js";
 import type * as SeedTenant from "../packages/db/dist/seed-tenant.js";
+import type * as SiteLayoutSeedMove from "../packages/db/dist/site-layout-seed-move.js";
 import type * as VerifyHierarchyExpected from "../packages/db/dist/verify-hierarchy-expected.js";
 import type * as VerifyHierarchySeed from "../packages/db/dist/verify-hierarchy-seed.js";
 import {
@@ -36,6 +37,9 @@ const { hierarchyExpectations } = require_(
 ) as typeof VerifyHierarchyExpected;
 const { PHE_SITE_HOLDERS_SQL } = require_("../packages/db/dist/phe-site-split.js") as typeof PheSiteSplit;
 const { seedAssetGroups } = require_("../packages/db/dist/asset-groups-seed.js") as typeof AssetGroupsSeed;
+const { seedPhewbSiteLayouts } = require_(
+  "../packages/db/dist/site-layout-seed-move.js",
+) as typeof SiteLayoutSeedMove;
 const { createDb } = require_("../packages/db/dist/client.js") as typeof DbClient;
 const { createSeedPool, withOrganization } = require_("../packages/db/dist/seed-tenant.js") as typeof SeedTenant;
 
@@ -149,6 +153,9 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
   async function cleanUp(pool: IntegrationPool): Promise<void> {
     const assetIds = `SELECT id FROM bms.assets WHERE code LIKE '%-X${RUN}%'`;
     const locationIds = `SELECT id FROM bms.locations WHERE slug LIKE 'phe-split-${run}-%' OR code LIKE '%${RUN}%'`;
+    // The layout copies S4 and S5 made (cascading their tabs, widgets and points), before the groups.
+    await pool.query(`DELETE FROM bms.site_control_room_views WHERE location_id IN (${locationIds})`);
+    await pool.query(`DELETE FROM bms.dashboards WHERE location_id IN (${locationIds})`);
     await pool.query(`DELETE FROM bms.location_tariffs WHERE location_id IN (${locationIds})`);
     await pool.query(`DELETE FROM bms.asset_group_members WHERE asset_id IN (${assetIds})`);
     await pool.query(`DELETE FROM bms.asset_groups WHERE location_id IN (${locationIds})`);
@@ -204,13 +211,13 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
     }
   }
 
-  /**
-   * The site-layout view count reads `phe_site_layout_views`, which Task 5
-   * (PR 4) owns: these synthetic stations get no layout. Every other check is
-   * PR 3's and must hold.
-   */
-  const notLayout = (lines: string[]): string[] =>
-    lines.filter((line) => !line.startsWith("PHEWB catalog station site-layout view rows"));
+  /** The PHEWB site-layout seed for `catalog`, committed as `seed.ts`'s second PHEWB bracket. */
+  async function layoutSeed(catalog: Catalog, codes: readonly string[]): Promise<void> {
+    const { pool } = pools();
+    await withOrganization(pool, phewbOrgId, () =>
+      seedPhewbSiteLayouts(pool, phewbOrgId, catalog, () => undefined, codes),
+    );
+  }
 
   async function locationOf(slug: string): Promise<{
     id: string;
@@ -420,8 +427,11 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
         Array(4).fill([site.slug, site.name]),
       );
     }
-    expect(notLayout(await gateFailures(AB, []))).toEqual([]);
-    expect(notLayout(await gateFailures(AB, [codeOf(A)]))).toEqual([]);
+    // Since PR 4 (plan D7) the layouts give A's sites copies and A a generated view, so the
+    // view count holds with the rest.
+    await layoutSeed(AB, [codeOf(A)]);
+    expect(await gateFailures(AB, [])).toEqual([]);
+    expect(await gateFailures(AB, [codeOf(A)])).toEqual([]);
   }, 120_000);
 
   it("S12 the gate fails when a split RTU is back at its station", async () => {
@@ -438,7 +448,7 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
     // The next seed with the station listed moves it to its site again.
     const outcome = await seed(AB, [codeOf(A)]);
     expect(outcome.movedExternalRtuIds).toEqual([siteAI?.edgeRtuId]);
-    expect(notLayout(await gateFailures(AB, [codeOf(A)]))).toEqual([]);
+    expect(await gateFailures(AB, [codeOf(A)])).toEqual([]);
   }, 120_000);
 
   // ── S5: holders (owner ruling Q2) ──
@@ -472,6 +482,7 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
     const lines: string[] = [];
     const outcome = await seed(CDE, [codeOf(C), codeOf(D), codeOf(E)], lines);
     await groupSeed();
+    await layoutSeed(CDE, [codeOf(C), codeOf(D), codeOf(E)]);
 
     expect(outcome.skippedSites.map((skip) => [skip.site.slug, skip.reason])).toEqual([
       [cI.slug, "foreign-slug"],
@@ -512,7 +523,7 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
     const cdSkips = outcome.skippedSites.filter((skip) => skip.reason !== "phewb-slug");
     const exemptions: string[] = [];
     const cd = await gateFailures(CD, [codeOf(C), codeOf(D)], cdSkips, exemptions);
-    expect(notLayout(cd)).toEqual([]);
+    expect(cd, "a skip leaves the view count as it leaves the presence checks").toEqual([]);
     expect(exemptions.filter((line) => line.includes("exempted"))).toHaveLength(2);
     // Fail-closed without the seed's list, as the CLI runs.
     expect(await gateFailures(CD, [codeOf(C), codeOf(D)])).toContain(`${PHE_SPLIT_SITES_LABEL}: expected 4, got 2`);
@@ -740,8 +751,9 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
         `name ${JSON.stringify(renamedName)}), which is not its site by slug, parent and meta.phe; ` +
         "its assets stay with it (never back, owner ruling A)",
     ]);
+    await layoutSeed(L, [codeOf(L)]);
     const exemptions: string[] = [];
-    expect(notLayout(await gateFailures(L, [codeOf(L)], outcome.skippedSites, exemptions))).toEqual([]);
+    expect(await gateFailures(L, [codeOf(L)], outcome.skippedSites, exemptions)).toEqual([]);
     expect(exemptions.filter((line) => line.includes(`exempted ${lI.slug} `))).toHaveLength(1);
   }, 180_000);
 
@@ -753,7 +765,8 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
     expect(outcome.movedExternalRtuIds).toEqual([]);
     await expectStaysAt(L, lI.edgeRtuId, renamedSlug, renamedName);
     expect(offSiteLines(lines, lI.edgeRtuId)).toHaveLength(1);
-    expect(notLayout(await gateFailures(L, []))).toEqual([]);
+    await layoutSeed(L, []);
+    expect(await gateFailures(L, [])).toEqual([]);
   }, 180_000);
 
   it("S15 a re-parented site keeps its RTU, and the gate's shape check stops the boot naming the row", async () => {

@@ -8,6 +8,8 @@ import {
   type PheSiteHolder,
   pheRtuTarget,
 } from "./phe-site-split";
+import { pheSiteMapLocationRows } from "./phe-map-seed";
+import { pheSiteLayoutSites, pheSiteLayoutStations } from "./site-layout-seed";
 import { hierarchyExpectations } from "./verify-hierarchy-expected";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
@@ -194,4 +196,56 @@ export function assertTheRtuTargetOrder(): void {
     'phe site split: edge RTU 3 stays at location phe-lotapata-east (id renamed, name "Lotapata East"), ' +
       "which is not its site by slug, parent and meta.phe; its assets stay with it (never back, owner ruling A)",
   );
+}
+
+/**
+ * Plan D7 — the locations `seedPhewbSiteLayouts` makes a copy at: the unsplit stations and the
+ * sites of a split one, each by the (slug, station code) pair; never the split station itself.
+ */
+export function assertTheSiteLayoutLocationsSwapASplitStationForItsSites(): void {
+  const catalog = loadPheCatalog();
+  expect(pheSiteLayoutSites(catalog, [])).toEqual(pheSiteLayoutStations(catalog));
+  const split = pheSiteLayoutSites(catalog, ["CBLTPT1"]);
+  expect(split).toHaveLength(7);
+  expect(split.map((entry) => entry.slug)).not.toContain("phe-lotapata");
+  expect(split.filter((entry) => entry.stationCode === "CBLTPT1")).toEqual([
+    { slug: "phe-lotapata-i", stationCode: "CBLTPT1" },
+    { slug: "phe-lotapata-ii", stationCode: "CBLTPT1" },
+  ]);
+  expect(split.filter((entry) => entry.stationCode !== "CBLTPT1")).toEqual(
+    pheSiteLayoutStations(catalog).filter((station) => station.stationCode !== "CBLTPT1"),
+  );
+  expect(() => pheSiteLayoutSites(catalog, ["NOPE"])).toThrow(/not a catalog StationCode/);
+}
+
+/** Plan D8 — one map row per resolved site, named as the location is, and none for no site. */
+export function assertOneMapRowPerResolvedSite(): void {
+  const catalog = loadPheCatalog();
+  expect(pheSiteMapLocationRows([], catalog)).toEqual([]);
+  const [first] = pheRtuSites(catalog);
+  if (!first) throw new Error("no site");
+  const head = catalog.rows.find((row) => row.EdgeRTUId === first.edgeRtuId);
+  const rows = pheSiteMapLocationRows([{ ...first, locationId: "loc-1", locationName: "Lotapata I" }], catalog);
+  expect(rows).toEqual([
+    {
+      slug: "phe-lotapata-i",
+      name: "Lotapata I",
+      kind: "pump_station",
+      siteName: "Lotapata I",
+      latitude: first.latitude,
+      longitude: first.longitude,
+      capacityMw: null,
+      stationType: null,
+      stationCategory: "PHEWB",
+      province: "West Bengal",
+      stationOperatingStatus: null,
+      meta: {
+        source: "phe-catalog",
+        organizationCode: "PHEWB",
+        stationCode: "CBLTPT1",
+        stationId: head?.StationId,
+        edgeRtuId: first.edgeRtuId,
+      },
+    },
+  ]);
 }

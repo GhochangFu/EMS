@@ -3,8 +3,10 @@ import type pg from "pg";
 import { PUMP_STATION_STANDARD_SITE_TEMPLATE, SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 import type { PheCatalogFile } from "./phe-pilot-seed";
+import { PHE_SPLIT_STATION_CODES } from "./phe-split-stations";
 import {
   ensureSiteTemplate,
+  pheSiteLayoutSites,
   pheSiteLayoutStations,
   type PlannedCopyTab,
   planSiteCopy,
@@ -336,22 +338,52 @@ export async function moveUntouchedPheCopies(
 }
 
 /**
+ * `F4.388` (ADR 0139 decision 7, plan D7) — a split station's view when it has none: `generated`,
+ * no dashboard (`0082`'s checks allow it). `DO NOTHING`: a station that had a view keeps it, as the
+ * move's unlink (`unlinkSplitStationView`) or an administrator left it.
+ * Params: `[locationIds, organizationId]`.
+ */
+const SPLIT_STATION_VIEW_INSERT_SQL = `
+  INSERT INTO bms.site_control_room_views (location_id, organization_id, kind, dashboard_id)
+  SELECT x.id, $2, 'generated', NULL FROM unnest($1::uuid[]) AS x(id)
+  ON CONFLICT (location_id) DO NOTHING
+`;
+
+/**
  * PHEWB: the templates, then a copy at each catalog station (`F4.319`, ADR 0113 decision 8, plan
  * D7). `smoc-standard` is still imported and its upgrade chain still runs, so a copy at an older
  * stock shape reaches the current one first; then each untouched `smoc-standard` copy moves to
  * `pump-station-standard`, and a station with no copy yet gets one made from
  * `pump-station-standard` directly.
+ *
+ * `F4.388` (ADR 0139 decisions 6 and 7, plan D7): a station on `splitStationCodes` is left out of
+ * the upgrade, move and copy steps and its sites take its place ({@link pheSiteLayoutSites}); the
+ * station gets a `generated` view row when it has none, so a cold start ends where the move's
+ * unlink leaves a station that had a copy. The committed list by default (plan D2).
  */
 export async function seedPhewbSiteLayouts(
   pool: Pick<pg.Pool, "query">,
   phewbOrgId: string,
   pheCatalog: PheCatalogFile,
   log?: (line: string) => void,
+  splitStationCodes: readonly string[] = PHE_SPLIT_STATION_CODES,
 ): Promise<SiteLayoutSeedOutcome> {
   const say = log ?? ((line: string) => console.error(line));
+  const locationIds = await resolvePhewbSiteLayoutLocations(
+    pool,
+    phewbOrgId,
+    pheSiteLayoutSites(pheCatalog, splitStationCodes),
+  );
+  const splitStationIds = await resolvePhewbSiteLayoutLocations(
+    pool,
+    phewbOrgId,
+    pheSiteLayoutStations(pheCatalog).filter((entry) => splitStationCodes.includes(entry.stationCode)),
+  );
+  if (splitStationIds.length > 0) {
+    await pool.query(SPLIT_STATION_VIEW_INSERT_SQL, [splitStationIds, phewbOrgId]);
+  }
   const smoc = await ensureSiteTemplate(pool, phewbOrgId);
   const station = await ensureSiteTemplate(pool, phewbOrgId, PUMP_STATION_STANDARD_SITE_TEMPLATE);
-  const locationIds = await resolvePhewbSiteLayoutLocations(pool, phewbOrgId, pheSiteLayoutStations(pheCatalog));
   // The smoc chain runs whenever smoc-standard is published, as before F4.319, so the copies that
   // stay on it keep their upgrades even while pump-station-standard is an unpublished draft.
   if (smoc !== null) {

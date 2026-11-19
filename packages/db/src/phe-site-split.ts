@@ -1,6 +1,7 @@
 import type pg from "pg";
 
 import type { PheRtuSite } from "./phe-pilot-seed";
+import { siteLayoutSlug } from "./site-layout-seed-reads";
 
 /**
  * `F4.388` (ADR 0139 decisions 3, 4 and 4a; plan D3–D6) — the database steps
@@ -504,4 +505,49 @@ export async function copyStationTariffsToSite(
     );
   }
   return copied;
+}
+
+/**
+ * ADR 0139 decision 7 (owner ruling Q5; plan D7) — the station's view stops naming its seeded
+ * site-layout copy: `kind = 'generated'`, no dashboard. Only while the view still names that copy
+ * (`site-layout-<station slug>` at the station), so a view an administrator pointed elsewhere is
+ * kept. The dashboard row, its tabs and the emptied groups stay. Params: `[stationId,
+ * organizationId, dashboardSlug]`.
+ */
+const UNLINK_STATION_VIEW_SQL = `
+  UPDATE bms.site_control_room_views AS v
+     SET kind = 'generated', dashboard_id = NULL, updated_at = now(), updated_by = NULL
+   WHERE v.location_id = $1 AND v.organization_id = $2 AND v.kind = 'dashboard'
+     AND v.dashboard_id = (
+       SELECT d.id FROM bms.dashboards d
+        WHERE d.organization_id = $2 AND d.slug = $3 AND d.location_id = $1
+     )
+  RETURNING v.location_id
+`;
+
+/**
+ * Unlinks a split station's view from its seeded copy (decision 7). `seedPheCatalog` calls it in
+ * the move's transaction, only for a station with an RTU the move statement moved this run: the
+ * move happens once, so the unlink does too, and a view an administrator re-links later is not
+ * matched again. Returns whether it unlinked.
+ */
+export async function unlinkSplitStationView(
+  pool: pg.Pool,
+  args: {
+    readonly stationId: string;
+    readonly stationSlug: string;
+    readonly organizationId: string;
+    readonly log: (line: string) => void;
+  },
+): Promise<boolean> {
+  const dashboardSlug = siteLayoutSlug(args.stationSlug);
+  const res = await pool.query(UNLINK_STATION_VIEW_SQL, [args.stationId, args.organizationId, dashboardSlug]);
+  const unlinked = (res.rowCount ?? 0) > 0;
+  if (unlinked) {
+    args.log(
+      `phe site split: unlinked the view of station ${args.stationSlug} from ${dashboardSlug}; ` +
+        "it is generated now, and the dashboard row and its tabs stay",
+    );
+  }
+  return unlinked;
 }

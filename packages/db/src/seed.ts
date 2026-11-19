@@ -19,6 +19,7 @@ import { seedPointKeyHeadlineRanks } from "./point-key-headline-ranks-seed";
 import { seedPointKeyTrendDefaults } from "./point-key-trend-defaults-seed";
 import { seedPointKeyStates } from "./point-key-states-seed";
 import { loadPheCatalog, seedPheCatalog } from "./phe-pilot-seed";
+import { pheSiteMapLocationRows } from "./phe-map-seed";
 import type { PheSkippedSite } from "./phe-site-split";
 import { createDb } from "./client";
 import { backfillAssetLocations, seedAssetGroups } from "./asset-groups-seed";
@@ -245,6 +246,10 @@ async function main(): Promise<void> {
       // site-holder read runs on the superuser pool, as seedEskomLocations' does.
       const pheOutcome = await seedPheCatalog(db, pool, { holderReader: superuserPool });
       pheSkippedSites = pheOutcome.skippedSites;
+      // ADR 0139 decision 9 (plan D8): a map row for each site the catalog seed resolved, here
+      // and not with the pre-tenant map rows, so a skipped site's slug never gets a row that
+      // would pin another organization's holder. None while the split list is empty.
+      await seedMapLocations(db, pheSiteMapLocationRows(pheOutcome.sites, pheCatalog));
       // `F3.41` — PHEWB's derivation pass, AFTER the catalog that creates the
       // locations and assets it derives from. All three calls moved, not two:
       // dropping `assignEskomAssetRtus` from this pass is probably harmless and
