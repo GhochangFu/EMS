@@ -2,8 +2,10 @@
 
 ## Status
 
-**Proposed — 2026-11-19.** The owner accepts it by merging this record (the
-merge is the acceptance, as for ADR 0139). [ADR 0139](./0139-one-site-per-phe-rtu-and-grouped-site-cards.md)
+**Accepted — 2026-11-19** (owner, in chat: "merge"; merged as #1455
+`3c92c641`; proposed the same day). Plan:
+[`docs/plans/f4.240-part-b-station-view.md`](../plans/f4.240-part-b-station-view.md),
+with plan rulings Q1 and Q2 in its section 10.1. [ADR 0139](./0139-one-site-per-phe-rtu-and-grouped-site-cards.md)
 decision 21 put `F4.240` part b out of scope, "later, only if the client
 asks". On 2026-11-19 the owner asked for part b's scope record now. They had
 already ruled that day that the build starts only after `F4.388` release C
