@@ -12,7 +12,7 @@ watermark mid-test (the F4.28 pattern).
 |-------|------------------------------------------------------------|-----------------------------|
 | R1    | meta.telemetrySource = 'mqtt', 60 d, full                  | forecast                    |
 | R2    | measured on an ingest_enabled RTU, 60 d                    | forecast                    |
-| G1    | mqtt, 60 d, a 5 h hole on each of the last 15 days         | forecast; context holds NaN |
+| G1    | mqtt, 60 d, 5 h out of each of the last 15 days            | forecast; context holds NaN |
 | W1    | mqtt, 17 d at 4 h a day (the VAP_Blast_Freezer_2 shape)    | nothing, too_few_days       |
 | V1    | mqtt, 33 d full (the two VAP rooms)                        | nothing, too_few_days       |
 | S1    | R1's data, not mqtt, on an RTU with ingest_enabled = false | nothing, never returned     |
@@ -73,6 +73,11 @@ ORGANIZATIONS = {"A": "ESKOM", "B": "PHEWB"}
 FORECAST = ("MLFX-R1", "MLFX-R2", "MLFX-G1", "MLFX-O2")
 NO_FORECAST = ("MLFX-W1", "MLFX-V1", "MLFX-S1", "MLFX-T0")
 G1_MISSING_HOURS = 15 * 5
+# G1's hole, counted back from as_of: 5 h a day on each of the last 15 days, from
+# 6 h back, past readiness's FRESHNESS_HOURS (3), so it never depends on the clock.
+G1_HOLE_DAYS = 15
+G1_HOLE_HOURS = 5
+G1_HOLE_START = 6
 
 # --- E1.2: the anomaly classes ---------------------------------------------------------
 METER_TYPE = "ml_fixture_meter"
@@ -129,8 +134,17 @@ def full(days: int) -> list[int]:
     return list(range(1, days * 24 + 1))
 
 
-def with_daily_hole(days: int, as_of: datetime) -> list[int]:
-    return [h for h in full(days) if not (h <= 15 * 24 and 1 <= (as_of - timedelta(hours=h)).hour <= 5)]
+def with_daily_hole(days: int) -> list[int]:
+    """`days` full, less G1_HOLE_HOURS in each of the last G1_HOLE_DAYS days.
+
+    The hole sits at hours G1_HOLE_START.. back from as_of in each 24 h, so it
+    never touches the newest bucket (as_of - 1 h stays planted, fresh within
+    readiness's 3 h line) and always lies between two planted hours, at every
+    hour of the day. It used to sit at 01:00-05:59 UTC, which left G1 stale when
+    the suite started at 04:00-06:59 UTC (tests/test_fixture_shapes.py).
+    """
+    hole = {day * 24 + G1_HOLE_START + i for day in range(G1_HOLE_DAYS) for i in range(G1_HOLE_HOURS)}
+    return [h for h in full(days) if h not in hole]
 
 
 def four_hours_a_day(days: int, as_of: datetime) -> list[int]:
@@ -139,6 +153,10 @@ def four_hours_a_day(days: int, as_of: datetime) -> list[int]:
     `eligibility` counts UTC days, so the four hours of one day must share a
     date: at an `as_of` hour of 1-3 the four hours before it cross midnight, so
     they start just before it instead (tests/test_fixture_shapes.py).
+
+    That shift makes W1's newest bucket 2-4 h old at those hours, past the 3 h
+    freshness line at hour 3. Harmless: `readiness.verdict` checks days before
+    freshness, so W1 is `too_few_days` at every hour, which the same file holds.
     """
     first = as_of.hour + 1 if 1 <= as_of.hour <= 3 else 1
     return [first + day * 24 + offset for day in range(days) for offset in range(4)]
@@ -175,7 +193,7 @@ def hours_for(code: str, as_of: datetime) -> list[int]:
     if code.startswith("MLFX-X"):
         return full(90)
     if code == "MLFX-G1":
-        return with_daily_hole(60, as_of)
+        return with_daily_hole(60)
     if code == "MLFX-W1":
         return four_hours_a_day(17, as_of)
     if code == "MLFX-V1":
