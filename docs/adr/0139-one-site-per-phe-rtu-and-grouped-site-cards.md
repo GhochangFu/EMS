@@ -2,7 +2,8 @@
 
 ## Status
 
-**Proposed — 2026-11-19.** Raised by `F4.388` (the owner, from the client,
+**Accepted — 2026-11-19** (owner, in chat: "Yes, merge on green"; merged as
+#1440 `529cc4f4`; proposed the same day). Raised by `F4.388` (the owner, from the client,
 2026-11-18) and `F4.240` (raised 2026-10-10 by the `F2.10` closure). The owner
 ruled the order on 2026-11-19 (recorded in both rows, #1439 `04b92a44`) and
 gave eight rulings in chat on 2026-11-19, one at a time (listed under
@@ -166,8 +167,9 @@ three kinds:
   - The asset's free-text **`site_name`** is what the alarms page's Site
     column (`apps/web/src/pages/alarms-page.tsx:491`, its CSV at `:105`), the
     work orders (`work-orders-page.tsx:606,715`,
-    `work-order-detail-drawer.tsx:93`) and the asset panel
-    (`asset-detail-panel.tsx:70`) show. The PHE seed writes it from the
+    `apps/web/src/components/work-orders/work-order-detail-drawer.tsx:93`)
+    and the asset panel (`apps/web/src/components/assets/asset-detail-panel.tsx:70`)
+    show. The PHE seed writes it from the
     catalog station on every deploy (`phe-pilot-seed.ts:494,510`), so both
     offices would read "Lotapata" (Q8, decision 11).
   - The **station's own page** — the generated view
