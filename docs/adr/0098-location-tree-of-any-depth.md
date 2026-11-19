@@ -14,6 +14,9 @@ Amendment 2 (2026-10-22, `F4.243`) reverses *Drafter choices* 7.
 [ADR 0139](./0139-one-site-per-phe-rtu-and-grouped-site-cards.md) (2026-11-19)
 amends *Drafter choices* 10: the organization's site cards group under their
 parent.
+[ADR 0140](./0140-combined-station-view.md) (2026-11-19) amends decision 7:
+it is the "later row" for a campus view. A parent with sites and no assets of
+its own gets a combined view built from per-node reads.
 Where a decision needed a detail the rulings do not give, the detail is listed
 under *Drafter choices (not asked)* for the owner to confirm at acceptance.
 Drafted before any implementation code. Line citations are to `main` at

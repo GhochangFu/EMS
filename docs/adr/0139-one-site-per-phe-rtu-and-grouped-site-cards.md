@@ -23,6 +23,9 @@ decisions 1 and 4 (the legacy PHE cleanup and its boot-gate count retire) and
 organization's site cards stop being flat) and
 [ADR 0134](./0134-slab-utility-tariffs.md) Amendment 3 for a split PHEWB
 station (each site gets its own bill); see *Amends and relates to*.
+[ADR 0140](./0140-combined-station-view.md) (2026-11-19) takes up `F4.240`
+part b and amends decisions 14, 17 and 21: the combined station view at the
+station's own URL.
 **Builds on** ADR 0098 (the location tree), [ADR 0007](./0007-phe-mqtt-ingest-pilot.md)
 (the PHE catalog seed), [ADR 0030](./0030-shared-api-contracts.md) (response
 types are `z.infer`red from shared Zod schemas) and
@@ -333,7 +336,7 @@ three kinds:
 14. **The header** (Q6) shows the parent's name and a roll-up of its subtree
     from the same KPI items — sites live of total, assets, active alarms — and
     a click sets the site map's parent filter to that parent. It links to no
-    station page.
+    station page. (amended 2026-11-19 by ADR 0140 decision 2: the header keeps the map filter and gains an Open link to the station view)
 15. **Live and Not live** (`F4.259`) hold groups: a group sits under Live when
     at least one of its sites is live, and each card keeps its own badge.
     *(drafter)*
@@ -345,7 +348,7 @@ three kinds:
     estate tile (`sitesTotal`, `dashboard.service.ts:520-599`, shown at
     `dashboard-page.tsx:179`). *(drafter: the plan confirms each source)*
 17. **The site page's crumbs name the parent** as plain text (`PHEWB ›
-    Lotapata › Lotapata I`). *(drafter)*
+    Lotapata › Lotapata I`). *(drafter)* (amended 2026-11-19 by ADR 0140 decision 2: the station crumb links to the station view for a caller who can read the station)
 
 ### Part 3 — releases
 
@@ -359,6 +362,7 @@ three kinds:
     alarms and both mimics) — later, only if the client asks; the `F4.240` row
     stays open for it. A "move RTU" admin action. A reverse move. Renaming
     RTUs or assets. Splitting any organization other than PHEWB.
+    (amended 2026-11-19: `F4.240` part b leaves this list; ADR 0140 scopes it, and its build starts after release C is deployed)
 
 ## Security
 
