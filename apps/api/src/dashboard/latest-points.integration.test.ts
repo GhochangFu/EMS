@@ -54,8 +54,10 @@ describe.skipIf(!connectionString)("F4.390 — the Assets tab latest read", () =
     await assertNoAssetsDiscoverNothingWithoutQuerying();
   });
 
-  it("locationDashboard lists each asset's reported keys, and none for a silent asset", async () => {
+  it("locationDashboard lists each asset's reported keys, and none for a silent asset", async (ctx) => {
     if (!pool) throw new Error("pool required");
-    await inRolledBackTransaction(pool, assertLocationDashboardListsReportedKeysOnly);
+    await inRolledBackTransaction(pool, (client) =>
+      assertLocationDashboardListsReportedKeysOnly(client, (reason) => ctx.skip(reason)),
+    );
   }, 60_000);
 });

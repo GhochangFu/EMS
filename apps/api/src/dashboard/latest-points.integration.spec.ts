@@ -1,7 +1,13 @@
 import type pg from "pg";
 
 import { materializeCompleteBuckets } from "../testing/cagg-materialize";
-import { insertSampleBeforeNow, seedAsset, seedSite, type Site } from "./dashboard-freshness.integration.spec";
+import {
+  SAMPLE_NOT_IN_THE_DAILY_AGGREGATE,
+  sampleReachedTheDailyAggregate,
+  seedAsset,
+  seedSite,
+  type Site,
+} from "./dashboard-freshness.integration.spec";
 import { DashboardService } from "./dashboard.service";
 import { discoverLatestPairs, planLatestPoints } from "./latest-points";
 
@@ -89,6 +95,11 @@ function samples(): Sample[] {
   return out;
 }
 
+/**
+ * Deletes every fixture row (A1–A4). With the fixture's span, it then materializes again, so the
+ * aggregates drop the deleted rows (the `0027` obligation); without one (the pre-seed sweep of a
+ * crashed run) it only deletes.
+ */
 export async function cleanup(pool: pg.Pool, fixture?: LatestFixture): Promise<void> {
   await pool.query(`DELETE FROM telemetry.point_values WHERE asset_id = ANY($1::uuid[])`, [ALL]);
   if (fixture) {
@@ -193,28 +204,47 @@ async function catalogPoint(client: pg.PoolClient, site: Site, assetId: string, 
   );
 }
 
+/** A sample stamped at the statement's own instant, which no aggregate watermark has passed yet. */
+async function insertSampleNow(client: pg.PoolClient, assetId: string, pointKey: string, value: number): Promise<void> {
+  await client.query(
+    `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
+     VALUES (clock_timestamp(), $1, $2, $3, 'u')`,
+    [assetId, pointKey, value],
+  );
+}
+
 /**
  * Task 1.3 — `locationDashboard` end to end, in the caller's rolled-back transaction: asset X has
- * a catalogued `kw` (5 s old), an uncatalogued `zz_uncatalogued` (4 s old) and a catalogued `pf`
- * with no sample; asset Y is silent. X lists exactly the two reported keys, in the `telemetry`
- * CTE's order; Y lists none. It pins "no visible change", so it passes before the edit and after.
- * The samples are under 60 s old and inserted last: an older uncommitted row falls behind the
- * `_1m` watermark and the aggregate would not see it.
+ * a catalogued `kw`, an uncatalogued `zz_uncatalogued` and a catalogued `pf` with no sample; asset
+ * Y is silent. X lists exactly the two reported keys, in the `telemetry` CTE's order; Y lists
+ * none. It pins "no visible change", so it passed on `main`'s read before the edit and after.
+ *
+ * The samples are uncommitted, so the aggregate sees them only above the `_1m`/`_1h` watermarks.
+ * They are stamped with `clock_timestamp()` and inserted last, so no watermark has passed them when
+ * they are written; this suite's own seed materializes up to the current minute just before. A
+ * watermark another suite moves past them mid-case makes the case skip with the reason
+ * (`SAMPLE_NOT_IN_THE_DAILY_AGGREGATE`, checked after the read).
  */
-export async function assertLocationDashboardListsReportedKeysOnly(client: pg.PoolClient): Promise<void> {
+export async function assertLocationDashboardListsReportedKeysOnly(
+  client: pg.PoolClient,
+  skip: (reason: string) => never,
+): Promise<void> {
   const site = await seedSite(client);
   const x = await seedAsset(client, site, "X");
   const y = await seedAsset(client, site, "Y");
   await catalogPoint(client, site, x, "kw");
   await catalogPoint(client, site, x, "pf");
-  await insertSampleBeforeNow(client, x, "kw", 12.5, 5);
-  await insertSampleBeforeNow(client, x, "zz_uncatalogued", 1, 4);
+  await insertSampleNow(client, x, "kw", 12.5);
+  await insertSampleNow(client, x, "zz_uncatalogued", 1);
 
   const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS, NO_HEALTH);
   const dto = await service.locationDashboard(site.locationId, {
     locationIds: [site.locationId],
     assetIds: null,
   });
+  for (const key of ["kw", "zz_uncatalogued"]) {
+    if (!(await sampleReachedTheDailyAggregate(client, x, key))) skip(SAMPLE_NOT_IN_THE_DAILY_AGGREGATE);
+  }
   const items = dto?.assets.items ?? [];
   const rowX = items.find((item) => item.id === x);
   const rowY = items.find((item) => item.id === y);

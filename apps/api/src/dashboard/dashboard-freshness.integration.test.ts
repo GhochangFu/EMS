@@ -80,9 +80,25 @@ describe.skipIf(!connectionString)("F3.30 — dashboard freshness counts use the
 
   it("kpis.totalKw still sums a stale kw with no site online", run(assertKpisTotalKwUnchanged), 60_000);
 
-  it("the asset rows call a 22 s sample live", run(assertTelemetryFreshnessReadsConstant), 60_000);
+  // F4.390: the two asset-row cases skip, with the reason, when their uncommitted sample fell
+  // behind an aggregate watermark mid-case (SAMPLE_NOT_IN_THE_DAILY_AGGREGATE).
+  it(
+    "the asset rows call a 22 s sample live",
+    (ctx) =>
+      inRolledBackTransaction(pool as pg.Pool, (client) =>
+        assertTelemetryFreshnessReadsConstant(client, (reason) => ctx.skip(reason)),
+      ),
+    60_000,
+  );
 
-  it("the asset rows call a 30 s sample stale", run(assertTelemetryFreshnessStaleBeyondWindow), 60_000);
+  it(
+    "the asset rows call a 30 s sample stale",
+    (ctx) =>
+      inRolledBackTransaction(pool as pg.Pool, (client) =>
+        assertTelemetryFreshnessStaleBeyondWindow(client, (reason) => ctx.skip(reason)),
+      ),
+    60_000,
+  );
 
   it("three samples of one asset do not fan out totalKw or freshAssetCount", run(assertThreeSamplesDoNotFanOutTotalKw), 60_000);
 

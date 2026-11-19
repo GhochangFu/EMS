@@ -374,17 +374,53 @@ export async function assertKpisTotalKwUnchanged(client: pg.PoolClient): Promise
 }
 
 /**
+ * `F4.390` — why a rolled-back `locationDashboard` telemetry case may be unable to run. The
+ * Assets tab now finds an asset's keys in the real-time `telemetry.point_values_1d`, so an
+ * uncommitted sample is visible only while it lies above the `_1m` and `_1h` watermarks; another
+ * suite's `materializeCompleteBuckets`, or the refresh job, can move one past it mid-case. The
+ * telemetry cases therefore stamp their sample at the current instant (never behind a watermark
+ * yet) and check, after the read, that it is still in the daily aggregate. A watermark only moves
+ * forward, so a sample visible then was visible to the read; one that is not reads skipped, never
+ * a silent green or a false red.
+ */
+export const SAMPLE_NOT_IN_THE_DAILY_AGGREGATE =
+  "the uncommitted sample fell behind a point_values_1m/_1h watermark during the case (another suite " +
+  "or the refresh job materialized past it), so the Assets tab read could not see it; " +
+  "latest-points.integration gates the read on committed rows";
+
+/** `F4.390` — whether `assetId`'s `pointKey` sample is visible in the real-time daily aggregate. */
+export async function sampleReachedTheDailyAggregate(
+  client: pg.PoolClient,
+  assetId: string,
+  pointKey: string,
+): Promise<boolean> {
+  const r = await client.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM telemetry.point_values_1d
+     WHERE asset_id = $1 AND point_key = $2 AND bucket > now() - interval '2 days'`,
+    [assetId, pointKey],
+  );
+  return (r.rows[0]?.n ?? 0) >= 1;
+}
+
+/**
  * Case 7 — an asset whose newest sample is 22 s old reads `"live"` in the
  * asset rows. `Date.now()` is pinned for the read: `telemetryFreshness` runs
  * after every query of `locationDashboard`, which took 3.7 s on the dev
  * database — more than the 3 s between 22 s and the 25 s window — so an
  * unpinned wall clock made the age drift past the window on its own.
+ * `F4.390`: the sample is stamped now and the read judged 22 s later, not the
+ * reverse, so the sample is never behind an aggregate watermark when it is
+ * written ({@link SAMPLE_NOT_IN_THE_DAILY_AGGREGATE}).
  */
-export async function assertTelemetryFreshnessReadsConstant(client: pg.PoolClient): Promise<void> {
+export async function assertTelemetryFreshnessReadsConstant(
+  client: pg.PoolClient,
+  skip: (reason: string) => never,
+): Promise<void> {
   const site = await seedSite(client);
   const a = await seedAsset(client, site, "A");
-  const judgedAt = Date.now();
-  await insertSampleAt(client, a, "temp_c", 21.5, new Date(judgedAt - 22_000));
+  const sampledAt = Date.now();
+  await insertSampleAt(client, a, "temp_c", 21.5, new Date(sampledAt));
+  const judgedAt = sampledAt + 22_000;
   const clock = vi.spyOn(Date, "now").mockReturnValue(judgedAt);
   let dto: Awaited<ReturnType<DashboardService["locationDashboard"]>>;
   try {
@@ -395,6 +431,7 @@ export async function assertTelemetryFreshnessReadsConstant(client: pg.PoolClien
   } finally {
     clock.mockRestore();
   }
+  if (!(await sampleReachedTheDailyAggregate(client, a, "temp_c"))) skip(SAMPLE_NOT_IN_THE_DAILY_AGGREGATE);
   const row = dto?.assets.items.find((item) => item.id === a);
   assert(
     row?.freshness === "live",
@@ -405,13 +442,18 @@ export async function assertTelemetryFreshnessReadsConstant(client: pg.PoolClien
 /**
  * Case 8 — the upper bound: an asset whose newest sample is 30 s old reads
  * `"stale"`. Case 7 alone catches only a narrower window; this one catches a
- * wider one. `Date.now()` is pinned for the read, for case 7's reason.
+ * wider one. `Date.now()` is pinned for the read, for case 7's reason, and the
+ * sample is stamped now and judged 30 s later, for case 7's `F4.390` reason.
  */
-export async function assertTelemetryFreshnessStaleBeyondWindow(client: pg.PoolClient): Promise<void> {
+export async function assertTelemetryFreshnessStaleBeyondWindow(
+  client: pg.PoolClient,
+  skip: (reason: string) => never,
+): Promise<void> {
   const site = await seedSite(client);
   const a = await seedAsset(client, site, "A");
-  const judgedAt = Date.now();
-  await insertSampleAt(client, a, "temp_c", 21.5, new Date(judgedAt - 30_000));
+  const sampledAt = Date.now();
+  await insertSampleAt(client, a, "temp_c", 21.5, new Date(sampledAt));
+  const judgedAt = sampledAt + 30_000;
   const clock = vi.spyOn(Date, "now").mockReturnValue(judgedAt);
   let dto: Awaited<ReturnType<DashboardService["locationDashboard"]>>;
   try {
@@ -422,6 +464,7 @@ export async function assertTelemetryFreshnessStaleBeyondWindow(client: pg.PoolC
   } finally {
     clock.mockRestore();
   }
+  if (!(await sampleReachedTheDailyAggregate(client, a, "temp_c"))) skip(SAMPLE_NOT_IN_THE_DAILY_AGGREGATE);
   const row = dto?.assets.items.find((item) => item.id === a);
   assert(
     row?.freshness === "stale",
