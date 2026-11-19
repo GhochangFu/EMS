@@ -17,8 +17,8 @@ import {
   requireIntegrationDb,
   resolveIntegrationRoleUrl,
 } from "../apps/api/src/testing/integration-db-gate.js";
-import { pg } from "./harness/pg";
-import { withDatabase } from "./harness/worker-database";
+import { assertDatabaseName, copyDatabase, dropDatabaseIfExists } from "./harness/template-database";
+import { withDatabase, workerDatabaseName } from "./harness/worker-database";
 
 // Loaded from `packages/db/dist` through `createRequire`, as
 // `tests/f4.388-phe-site-split.integration.test.ts` does and for its reason.
@@ -54,10 +54,14 @@ const { createSeedPool, withOrganization } = require_("../packages/db/dist/seed-
  * **This suite splits the real Lotapata, and a split never moves back**, so it
  * cannot run on its worker's database copy (ADR 0124): every later file on
  * that worker would read a split station. It makes **its own copy** of the
- * run's seeded template (`<worker database>_f4388`, under the run's prefix, so
- * the harness's end-of-run drop on an external server also catches a copy a
- * crashed run left), and drops it in `afterAll`. With no isolating run context
- * (the `shared` mode) there is no template to copy, and it skips.
+ * run's seeded template, `<worker database>_f4388`: the name comes from the
+ * harness (`workerDatabaseName` under the run's prefix), and the harness's
+ * guarded `copyDatabase` / `dropDatabaseIfExists` create and drop it. The
+ * harness's name guard accepts that per-suite suffix under the run's prefix,
+ * so on an external server the end-of-run `dropRunDatabases` also drops a copy
+ * a killed or failed run left. `afterAll` drops it in a `finally` after the
+ * pools close. With no isolating run context (the `shared` mode) there is no
+ * template to copy, and it skips.
  *
  * The split path runs through the injected `catalog` and `splitStationCodes`
  * (plan D2): the committed list stays empty. Synthetic stations (Lotapata's 2
@@ -135,33 +139,18 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
   let phewbOrgId = "";
   let eskomOrgId = "";
 
-  async function onMaintenance(work: (client: InstanceType<typeof pg.Client>) => Promise<void>): Promise<void> {
-    if (!isolating) throw new Error("no isolating run context");
-    const client = new pg.Client({ connectionString: withDatabase(isolating.superuserUrl, "postgres") });
-    await client.connect();
-    try {
-      await work(client);
-    } finally {
-      await client.end();
-    }
-  }
-
   beforeAll(async () => {
     if (!isolating) throw new Error("no isolating run context");
     const url = ownerUrl as string;
-    const workerDatabase = new URL(url).pathname.slice(1);
-    // The name goes into SQL unquoted by a parameter: hold it to the harness's own shapes.
-    if (!/^bms(_t[a-z0-9]{6,12})?_w[0-9]{1,2}$/.test(workerDatabase)) {
-      throw new Error(`F4.388: ${JSON.stringify(workerDatabase)} is not a worker database name`);
+    // The harness's own name for this worker's copy, plus this suite's suffix; the harness's
+    // guard holds it to the run's prefix on an external server before it goes into SQL.
+    const workerDatabase = workerDatabaseName(process.env.VITEST_POOL_ID, isolating.prefix);
+    if (new URL(url).pathname.slice(1) !== workerDatabase) {
+      throw new Error(`F4.388: the owner URL does not name this worker's database ${workerDatabase}`);
     }
-    if (!/^bms(_t[a-z0-9]{6,12})?_template$/.test(isolating.template)) {
-      throw new Error(`F4.388: ${JSON.stringify(isolating.template)} is not a template database name`);
-    }
-    ownDatabase = `${workerDatabase}_f4388`;
-    await onMaintenance(async (client) => {
-      await client.query(`DROP DATABASE IF EXISTS "${ownDatabase}" WITH (FORCE)`);
-      await client.query(`CREATE DATABASE "${ownDatabase}" TEMPLATE "${isolating.template}"`);
-    });
+    ownDatabase = assertDatabaseName(`${workerDatabase}_f4388`, isolating.server);
+    await dropDatabaseIfExists(isolating.superuserUrl, ownDatabase, isolating.server);
+    await copyDatabase(isolating.superuserUrl, isolating.template, ownDatabase, isolating.server);
     superPool = await openIntegrationPool(
       withDatabase(resolveIntegrationRoleUrl(url, "superuser", process.env), ownDatabase),
       "F4.388",
@@ -178,12 +167,13 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
   }, 120_000);
 
   afterAll(async () => {
-    await seedPool?.end();
-    await superPool?.end();
-    if (ownDatabase !== "") {
-      await onMaintenance(async (client) => {
-        await client.query(`DROP DATABASE IF EXISTS "${ownDatabase}" WITH (FORCE)`);
-      });
+    try {
+      await seedPool?.end();
+      await superPool?.end();
+    } finally {
+      if (isolating && ownDatabase !== "") {
+        await dropDatabaseIfExists(isolating.superuserUrl, ownDatabase, isolating.server);
+      }
     }
   }, 120_000);
 

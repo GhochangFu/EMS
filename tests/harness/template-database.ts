@@ -66,8 +66,11 @@ export function databaseScopedProvisioning(): string[] {
   return ROLE_PROVISIONING_SQL.filter((statement) => /^\s*CREATE EXTENSION\b/i.test(statement));
 }
 
-const PLAIN_NAME = /^bms_(template|shared|w[0-9]{1,2})$/;
-const PREFIXED_NAME = /^bms_t[a-z0-9]{6,12}_(template|shared|w[0-9]{1,2})$/;
+// A worker name may carry one per-suite suffix: `<worker database>_<suite>` is the copy a suite
+// makes when it cannot share its worker's (`F4.388`, which splits a station for good). Under the
+// run's prefix, so `dropRunDatabases` accepts, and drops, one a crashed suite left.
+const PLAIN_NAME = /^bms_(template|shared|w[0-9]{1,2}(_[a-z0-9]{1,16})?)$/;
+const PREFIXED_NAME = /^bms_t[a-z0-9]{6,12}_(template|shared|w[0-9]{1,2}(_[a-z0-9]{1,16})?)$/;
 
 /**
  * The only names this module will put into SQL. Names are interpolated (`CREATE DATABASE` takes
@@ -240,6 +243,12 @@ async function dropDatabase(client: PgClient, name: string, server: ServerKind):
   }
   await client.query(`ALTER DATABASE "${name}" WITH IS_TEMPLATE false`);
   await client.query(`DROP DATABASE "${name}" WITH (FORCE)`);
+}
+
+/** Force-drops one database this module would have created, if it exists. Guarded by name. */
+export async function dropDatabaseIfExists(superuserUrl: string, name: string, server: ServerKind): Promise<void> {
+  assertDatabaseName(name, server);
+  await onMaintenanceDb(superuserUrl, (client) => dropDatabase(client, name, server));
 }
 
 /**

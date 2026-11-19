@@ -27,6 +27,43 @@ const BLOCK_COMMENT = new RegExp(["/", "\\*", "[\\s\\S]*?", "\\*", "/"].join("")
 const LINE_COMMENT = /\/\/.*$/gm;
 const tsOnly = (source: string): string => source.replace(BLOCK_COMMENT, "").replace(LINE_COMMENT, "");
 
+/**
+ * The argument count of every `name(` call in `source` (top-level commas, a trailing one
+ * ignored). Brackets nest; string and template literals are skipped so a comma inside one
+ * does not count.
+ */
+function callArities(source: string, name: string): number[] {
+  const arities: number[] = [];
+  const call = new RegExp(`\\b${name}\\s*\\(`, "g");
+  for (let match = call.exec(source); match !== null; match = call.exec(source)) {
+    let depth = 1;
+    let commas = 0;
+    let sawArgument = false;
+    let lastNonSpace = "(";
+    for (let i = match.index + match[0].length; i < source.length; i += 1) {
+      const ch = source[i] as string;
+      if (ch === '"' || ch === "'" || ch === "`") {
+        for (i += 1; i < source.length && source[i] !== ch; i += 1) {
+          if (source[i] === "\\") i += 1;
+        }
+        sawArgument = true;
+        lastNonSpace = ch;
+        continue;
+      }
+      if ("([{".includes(ch)) depth += 1;
+      else if (")]}".includes(ch)) depth -= 1;
+      if (depth === 0) break;
+      if (depth === 1 && ch === ",") commas += 1;
+      if (!/\s/.test(ch)) {
+        sawArgument = true;
+        lastNonSpace = ch;
+      }
+    }
+    arities.push(sawArgument ? commas + (lastNonSpace === "," ? 0 : 1) : 0);
+  }
+  return arities;
+}
+
 describe("F4.388 — the PHE split list is source", () => {
   it("is empty in release A (releases B and C change this assertion with the list)", () => {
     expect(PHE_SPLIT_STATION_CODES).toEqual([]);
@@ -54,5 +91,23 @@ describe("F4.388 — the PHE split list is source", () => {
       expect(source, `${rel} must not pass a split list`).not.toContain("splitStationCodes");
       expect(source, `${rel} must not pass a catalog`).not.toMatch(/\bcatalog\s*:/);
     }
+  });
+
+  // `seedPhewbSiteLayouts` takes the split list as its fifth positional argument (after the
+  // catalog and the logger), so the `splitStationCodes` scan above cannot see it passed there.
+  it("never passes seedPhewbSiteLayouts a fifth (split-list) argument from seed.ts", () => {
+    const arities = callArities(tsOnly(read("packages/db/src/seed.ts")), "seedPhewbSiteLayouts");
+    expect(arities.length, "seed.ts must call seedPhewbSiteLayouts").toBeGreaterThan(0);
+    for (const arity of arities) {
+      expect(arity, "seed.ts must leave the split list to PHE_SPLIT_STATION_CODES").toBeLessThanOrEqual(4);
+    }
+  });
+
+  it("counts a call's arguments past nested brackets, strings and a trailing comma", () => {
+    expect(callArities("f(a, g(b, c), [d, e], { x: 1, y: 2 }, 'p,q')", "f")).toEqual([5]);
+    expect(callArities("f(\n  a,\n  b,\n)", "f")).toEqual([2]);
+    expect(callArities("f()", "f")).toEqual([0]);
+    const mutated = 'seedPhewbSiteLayouts(pool, org, cat, undefined, ["CBLTPT1"])';
+    expect(callArities(mutated, "seedPhewbSiteLayouts")).toEqual([5]);
   });
 });

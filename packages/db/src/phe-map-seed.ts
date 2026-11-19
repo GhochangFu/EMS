@@ -19,25 +19,14 @@ export function pheMapLocationRowsForInsert(catalog: PheCatalogFile = loadPheCat
       throw new Error(`Missing station head for id ${stationId}`);
     }
     const name = head.StationName;
-    return {
+    return pheMapRow({
       slug: stationSlug(name),
       name,
-      kind: "pump_station" as const,
       siteName: name,
       latitude: Number(head.Latitude),
       longitude: Number(head.Longitude),
-      capacityMw: null as number | null,
-      stationType: null as string | null,
-      stationCategory: "PHEWB",
-      province: "West Bengal",
-      stationOperatingStatus: null as string | null,
-      meta: {
-        source: "phe-catalog",
-        organizationCode: "PHEWB",
-        stationCode: head.StationCode,
-        stationId,
-      },
-    };
+      meta: { stationCode: head.StationCode, stationId },
+    });
   });
 }
 
@@ -55,25 +44,41 @@ export function pheSiteMapLocationRows(sites: readonly PheResolvedSite[], catalo
     if (!head) {
       throw new Error(`pheSiteMapLocationRows: no catalog row for edge RTU ${site.edgeRtuId} (${site.slug})`);
     }
-    return {
+    return pheMapRow({
       slug: site.slug,
       name: site.name,
-      kind: "pump_station" as const,
       siteName: site.locationName,
       latitude: site.latitude,
       longitude: site.longitude,
-      capacityMw: null as number | null,
-      stationType: null as string | null,
-      stationCategory: "PHEWB",
-      province: "West Bengal",
-      stationOperatingStatus: null as string | null,
-      meta: {
-        source: "phe-catalog",
-        organizationCode: "PHEWB",
-        stationCode: site.stationCode,
-        stationId: head.StationId,
-        edgeRtuId: site.edgeRtuId,
-      },
-    };
+      meta: { stationCode: site.stationCode, stationId: head.StationId, edgeRtuId: site.edgeRtuId },
+    });
   });
+}
+
+/**
+ * One PHE map row. The station rows and the `F4.388` site rows share it, so `kind` is written in
+ * one place (`tests/f4.157-location-types-schema.test.ts` T8 holds that).
+ */
+function pheMapRow(input: {
+  slug: string;
+  name: string;
+  siteName: string;
+  latitude: number;
+  longitude: number;
+  meta: { stationCode: string; stationId: number; edgeRtuId?: number };
+}) {
+  return {
+    slug: input.slug,
+    name: input.name,
+    kind: "pump_station" as const,
+    siteName: input.siteName,
+    latitude: input.latitude,
+    longitude: input.longitude,
+    capacityMw: null as number | null,
+    stationType: null as string | null,
+    stationCategory: "PHEWB",
+    province: "West Bengal",
+    stationOperatingStatus: null as string | null,
+    meta: { source: "phe-catalog", organizationCode: "PHEWB", ...input.meta },
+  };
 }
