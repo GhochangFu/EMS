@@ -156,10 +156,13 @@ export function assertTwelvePheRtuSites(): void {
 
 /**
  * Plan D3 — a site identity the seed cannot write is refused, not guessed: a
- * display name whose last word is not `[A-Z0-9]+` once upper-cased, and two
- * RTUs whose names give one slug or one code.
+ * display name whose last word is not `[A-Z0-9]+` once upper-cased, two RTUs
+ * whose names give one slug or one code, and a site slug that is a station's
+ * slug (the boot gate's shape check would count the live station).
  *
- * Mutation: dropping either throw returns the bad entries.
+ * Mutations: dropping any one throw returns the bad entries. The slug throw
+ * is held by two rows of one display name at different station codes, whose
+ * codes differ; the code throw by `Lota-pata I`, whose slug differs.
  */
 export function assertABadRtuSiteIdentityIsRefused(): void {
   const catalog = loadPheCatalog();
@@ -170,8 +173,17 @@ export function assertABadRtuSiteIdentityIsRefused(): void {
     rows: names.map((name, index) => ({ ...head, EdgeRTUId: 9000 + index, RTUDisplayName: name })),
   });
   expect(() => pheRtuSites(withNames("Lotapata I-A"))).toThrow(/Lotapata I-A/);
-  expect(() => pheRtuSites(withNames("Lotapata I", "Lotapata  I"))).toThrow(/duplicate/);
-  expect(() => pheRtuSites(withNames("Lotapata I", "Lota-pata I"))).toThrow(/duplicate/);
+  expect(() => pheRtuSites(withNames("Lotapata I", "Lotapata  I"))).toThrow(/duplicate site slug/);
+  expect(() => pheRtuSites(withNames("Lotapata I", "Lota-pata I"))).toThrow(/duplicate site code/);
+  const twoStations = withNames("Lotapata I", "Lotapata I");
+  const [first, second] = twoStations.rows;
+  if (!first || !second) throw new Error("withNames gave fewer than two rows");
+  expect(() =>
+    pheRtuSites({ ...twoStations, rows: [first, { ...second, StationCode: `${head.StationCode}X` }] }),
+  ).toThrow(/duplicate site slug/);
+  expect(() => pheRtuSites(withNames(head.StationName))).toThrow(
+    new RegExp(`${stationSlug(head.StationName)}, which is a station's slug`),
+  );
   expect(pheRtuSites(withNames("Lotapata I", "Lotapata II")).map((site) => site.code)).toEqual([
     `PHE-${head.StationCode}-I`,
     `PHE-${head.StationCode}-II`,

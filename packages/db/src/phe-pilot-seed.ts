@@ -149,11 +149,14 @@ export type PheRtuSite = {
  * the station name cannot be cut off instead, because `Bhutnirghat I` belongs
  * to the station `BhutnirGhat`. Throws, rather than guess, on a suffix that is
  * not `[A-Z0-9]+` and on two RTUs that give one slug or one code, because
- * either would make the seed adopt one site for two RTUs.
+ * either would make the seed adopt one site for two RTUs; and on a site slug
+ * that is some station's slug, because the boot gate's shape check would then
+ * count the live station itself.
  */
 export function pheRtuSites(catalog: PheCatalogFile): PheRtuSite[] {
   const sites: PheRtuSite[] = [];
   const seen = new Set<number>();
+  const stationSlugs = new Set(catalog.rows.map((row) => stationSlug(row.StationName)));
   const slugs = new Map<string, number>();
   const codes = new Map<string, number>();
   for (const row of catalog.rows) {
@@ -178,6 +181,12 @@ export function pheRtuSites(catalog: PheCatalogFile): PheRtuSite[] {
       latitude: Number(row.Latitude),
       longitude: Number(row.Longitude),
     };
+    if (stationSlugs.has(site.slug)) {
+      throw new Error(
+        `pheRtuSites: edge RTU ${row.EdgeRTUId} "${row.RTUDisplayName}" gives the site slug ${site.slug}, ` +
+          "which is a station's slug",
+      );
+    }
     for (const [kind, key, held] of [
       ["slug", site.slug, slugs],
       ["code", site.code, codes],

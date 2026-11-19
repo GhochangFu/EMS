@@ -659,9 +659,9 @@ export const PHE_RTU_SLUG_SHAPE_SQL = `
 
 /**
  * The shape check, as a zero count whose failure names each offending row
- * and the fix (owner ruling Q2, plan 12.1): the seed skips a site whose slug
- * such a row holds, so the boot stops here with a line an operator can act
- * on. It replaces the zero count of the retired legacy cleanup: a legacy
+ * and the fix (owner ruling Q2, plan 12.1). Once the split path lands, the
+ * seed skips a site whose slug such a row holds (ADR 0139 decision 3), so the
+ * boot stops here with a line an operator can act on. It replaces the zero count of the retired legacy cleanup: a legacy
  * one-RTU-per-location row restored from an old backup lands here.
  */
 async function readPheRtuSlugShapeCheck(pool: pg.Pool, sites: readonly PheRtuSite[]): Promise<HierarchyCheck> {
@@ -680,7 +680,7 @@ async function readPheRtuSlugShapeCheck(pool: pg.Pool, sites: readonly PheRtuSit
     ...check,
     detail:
       `each holds an RTU site's slug and is not that site (ADR 0139 decision 8): ${rows.join(", ")}; ` +
-      "fix: rename its slug, and the next seed creates the RTU's site",
+      "fix: rename its slug",
   };
 }
 

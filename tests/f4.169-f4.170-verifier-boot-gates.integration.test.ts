@@ -660,22 +660,25 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
     expect(after, "an admin PHEWB location must not move the location check").toBe(before.actual);
   }, 60_000);
 
-  /** ADR 0139 decision 8 — the RTU site of the station hosting the PHEWB fixtures (PHEWB's context). */
-  async function hostRtuSite(pool: SeedPool): Promise<PheRtuSite> {
-    const station = await pool.query<{ slug: string }>(`SELECT slug FROM bms.locations WHERE id = $1`, [pheStationId]);
-    const stationSlug = station.rows[0]?.slug;
-    const site = hierarchyExpectations().phe.rtuSites.find((candidate) => candidate.stationSlug === stationSlug);
-    assert(site !== undefined, `the PHE catalog must derive an RTU site under station ${stationSlug}`);
-    return site as PheRtuSite;
+  /** ADR 0139 decision 8 — a free RTU site, its station and another station (PHEWB's context). By
+   * the catalog, not `pheStationId`: a split station's asset sits on its taken site slug. */
+  async function rtuSiteHost(pool: SeedPool): Promise<{ site: PheRtuSite; stationId: string; otherStationId: string }> {
+    const { rtuSites } = hierarchyExpectations().phe;
+    const { rows } = await pool.query<{ id: string; slug: string }>(
+      `SELECT l.id, l.slug FROM bms.locations l JOIN bms.organizations o ON o.id = l.organization_id
+        WHERE o.code = 'PHEWB' AND l.slug = ANY($1::varchar[])`,
+      [[...rtuSites.flatMap((site) => [site.slug, site.stationSlug])]],
+    );
+    const idOf = (slug: string) => rows.find((row) => row.slug === slug)?.id;
+    const site = rtuSites.find((candidate) => idOf(candidate.slug) === undefined && idOf(candidate.stationSlug));
+    const other = rtuSites.find((candidate) => candidate.stationSlug !== site?.stationSlug);
+    const [stationId, otherStationId] = [idOf(site?.stationSlug ?? ""), idOf(other?.stationSlug ?? "")];
+    assert(site !== undefined && stationId !== undefined && otherStationId !== undefined, "no free PHE RTU site");
+    return { site: site as PheRtuSite, stationId: stationId as string, otherStationId: otherStationId as string };
   }
 
   /** A PHEWB location on `slug`, under `parentId`, with `meta`. */
-  function insertRtuSlugLocation(
-    pool: SeedPool,
-    slug: string,
-    parentId: string | null,
-    meta: Record<string, unknown>,
-  ): Promise<string> {
+  function insertRtuSlugLocation(pool: SeedPool, slug: string, parentId: string | null, meta: object): Promise<string> {
     return insertOne(
       pool,
       `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude, parent_id, meta)
@@ -686,42 +689,44 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
     );
   }
 
-  it("P2: a PHEWB location on an RTU site's slug with no parent moves the shape check (+1) and names the row and the fix", async () => {
-    // A legacy one-RTU-per-location row restored from an old backup: the slug, no parent, no meta.
+  const phe = (site: PheRtuSite, change: Partial<Pick<PheRtuSite, "stationCode" | "edgeRtuId">> = {}) => ({
+    phe: { stationCode: site.stationCode, edgeRtuId: site.edgeRtuId, ...change },
+  });
+  // Each row names the mutation of PHE_RTU_SLUG_SHAPE_SQL it kills (each read 0, not +1).
+  const SHAPE_MOVERS: { title: string; parent: "none" | "station" | "other station"; meta: (site: PheRtuSite) => object }[] = [
+    // A legacy row restored from an old backup. Mutation: no COALESCE (a NULL is not counted).
+    { title: "a legacy row (no parent, no meta)", parent: "none", meta: () => ({}) },
+    // Mutation: deleting `p.organization_id = l.organization_id AND p.slug = s.station_slug`.
+    { title: "the matching meta with no parent", parent: "none", meta: (site) => phe(site) },
+    // Mutation: deleting `p.slug = s.station_slug`.
+    { title: "matching meta under another station", parent: "other station", meta: (site) => phe(site) },
+    // Mutation: deleting the `edgeRtuId` comparison.
+    { title: "the right station, a wrong edgeRtuId", parent: "station", meta: (site) => phe(site, { edgeRtuId: site.edgeRtuId + 1000 }) },
+    // Mutation: deleting the `stationCode` comparison.
+    { title: "the right station, a wrong stationCode", parent: "station", meta: (site) => phe(site, { stationCode: `${site.stationCode}X` }) },
+  ];
+
+  it.each(SHAPE_MOVERS)("P2: $title on an RTU site's slug moves the shape check (+1) and names the row and the fix", async ({ parent, meta }) => {
     let slug = "";
     let fixtureId = "";
     const { before, after, afterCheck } = await around(
       "phewb",
       PHE_RTU_SLUG_SHAPE_LABEL,
       async (pool) => {
-        slug = (await hostRtuSite(pool)).slug;
-        fixtureId = await insertRtuSlugLocation(pool, slug, null, {});
+        const { site, stationId, otherStationId } = await rtuSiteHost(pool);
+        const parentId = { none: null, station: stationId, "other station": otherStationId }[parent];
+        slug = site.slug;
+        fixtureId = await insertRtuSlugLocation(pool, slug, parentId, meta(site));
       },
       PROBE.phewbLocations,
     );
     assertSeeded(before);
-    expect(after, "an unparented row on an RTU site's slug must fail the check").toBe(before.actual + 1);
+    expect(after, "a row on an RTU site's slug that is not that site must fail the check").toBe(before.actual + 1);
     // Owner ruling Q2 (plan 12.1): the boot stops with a line that names the row and the fix.
     const [failure] = failingChecks([afterCheck]);
     expect(failure, "the failing check must name the slug").toContain(slug);
     expect(failure, "the failing check must name the row's id").toContain(fixtureId);
-    expect(failure, "the failing check must name the fix").toMatch(/rename its slug/);
-  }, 60_000);
-
-  it("P2: an RTU-slug child of the right station with the wrong edgeRtuId moves the shape check (+1)", async () => {
-    const { before, after } = await around(
-      "phewb",
-      PHE_RTU_SLUG_SHAPE_LABEL,
-      async (pool) => {
-        const site = await hostRtuSite(pool);
-        await insertRtuSlugLocation(pool, site.slug, pheStationId, {
-          phe: { stationCode: site.stationCode, edgeRtuId: site.edgeRtuId + 1000 },
-        });
-      },
-      PROBE.phewbLocations,
-    );
-    assertSeeded(before);
-    expect(after, "a wrong edgeRtuId is not the RTU's site").toBe(before.actual + 1);
+    expect(failure, "the failing check must name the fix").toMatch(/fix: rename its slug$/);
   }, 60_000);
 
   it("P2 positive twin: the RTU's site, a child of its station with the matching triple, leaves the shape check at 0", async () => {
@@ -729,10 +734,8 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       "phewb",
       PHE_RTU_SLUG_SHAPE_LABEL,
       async (pool) => {
-        const site = await hostRtuSite(pool);
-        await insertRtuSlugLocation(pool, site.slug, pheStationId, {
-          phe: { stationCode: site.stationCode, edgeRtuId: site.edgeRtuId },
-        });
+        const { site, stationId } = await rtuSiteHost(pool);
+        await insertRtuSlugLocation(pool, site.slug, stationId, phe(site));
       },
       PROBE.phewbLocations,
     );

@@ -9,6 +9,7 @@ import type * as EskomLocationsSeed from "../packages/db/dist/eskom-locations-se
 import type * as MapLocationsSeed from "../packages/db/dist/map-locations-seed.js";
 import type * as PheMapSeed from "../packages/db/dist/phe-map-seed.js";
 import type * as SeedTenant from "../packages/db/dist/seed-tenant.js";
+import type * as VerifyHierarchyExpected from "../packages/db/dist/verify-hierarchy-expected.js";
 import type * as VerifyHierarchySeed from "../packages/db/dist/verify-hierarchy-seed.js";
 import {
   openIntegrationPool,
@@ -22,9 +23,12 @@ import {
 // edit, run `pnpm --filter @bms/db build` before this suite, or it runs the
 // last build.
 const require_ = createRequire(import.meta.url);
-const { readEskomChecks } = require_(
+const { PHE_RTU_SLUG_SHAPE_LABEL, readEskomChecks, readPhewbChecks } = require_(
   "../packages/db/dist/verify-hierarchy-seed.js",
 ) as typeof VerifyHierarchySeed;
+const { hierarchyExpectations } = require_(
+  "../packages/db/dist/verify-hierarchy-expected.js",
+) as typeof VerifyHierarchyExpected;
 const { eskomCanonicalLocationRows, eskomLocationCode, resolveSeedLocation, seedEskomLocations } = require_(
   "../packages/db/dist/eskom-locations-seed.js",
 ) as typeof EskomLocationsSeed;
@@ -443,5 +447,26 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
       await holderClient.query("ROLLBACK");
       holderClient.release();
     }
+  }, 60_000);
+
+  // ── ADR 0139 decision 8: the shape check reads the RTU-site slugs, not a pattern ──
+
+  it("C2: an admin PHEWB location whose slug ends -ii but is no RTU site's slug leaves the shape check unmoved", async () => {
+    // The slug the retired legacy cleanup's old pattern `^phe-.+-(i|ii)$` matched.
+    const adminPheSlug = `phe-f4169${runId}-new-station-ii`;
+    const siteSlugs = hierarchyExpectations().phe.rtuSites.map((site) => site.slug);
+    assert(!siteSlugs.includes(adminPheSlug), "the admin slug must not be an RTU site's slug");
+    await inTransaction(phewbOrgId, async (pool) => {
+      const before = actualOf(await readPhewbChecks(pool), PHE_RTU_SLUG_SHAPE_LABEL);
+      await insertLocation(pool, phewbOrgId, `F4169-${RUN_ID}-NEW`, adminPheSlug, "pump_station");
+      const probe = await pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM bms.locations WHERE slug = $1`, [
+        adminPheSlug,
+      ]);
+      assert(probe.rows[0]?.n === 1, "the admin location must be visible in PHEWB's context");
+      // Mutation: the check matching RTU-slug rows by the pattern reads +12 (one per site).
+      expect(actualOf(await readPhewbChecks(pool), PHE_RTU_SLUG_SHAPE_LABEL), "the admin slug is no RTU site's").toBe(
+        before,
+      );
+    });
   }, 60_000);
 });
