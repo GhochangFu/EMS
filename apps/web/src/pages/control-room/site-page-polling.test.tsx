@@ -12,7 +12,7 @@ describe("F4.390 the site page's site-list poll", () => {
     cleanupPolling();
   });
 
-  it("P1 polls the site list at 60 s", async () => {
+  it("P1 polls the site list at 60 s and hands the read its abort signal", async () => {
     await theSitePagePollsTheSiteListAtSixtySeconds();
   });
 });

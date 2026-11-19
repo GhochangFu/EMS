@@ -54,8 +54,9 @@ export function cleanupPolling(): void {
 }
 
 /**
- * P1 — after render, the one observer of the site-list key on the site page polls at 60 s. The
- * page's own name is read first, so the options are read from a mounted, answered page.
+ * P1 — after render, the one observer of the site-list key on the site page polls at 60 s, and
+ * its read was handed the query's abort signal. The page's own name is read first, so the options
+ * are read from a mounted, answered page.
  */
 export async function theSitePagePollsTheSiteListAtSixtySeconds(): Promise<void> {
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
@@ -90,4 +91,7 @@ export async function theSitePagePollsTheSiteListAtSixtySeconds(): Promise<void>
   const observers = queryClient.getQueryCache().find({ queryKey: ["dashboard", "locations"] })?.observers;
   expect(observers?.length, "control: the site list has an observer").toBeGreaterThan(0);
   expect(observers?.map((observer) => observer.options.refetchInterval)).toEqual([60_000]);
+  // Task 3.1 on this page too: the query's abort signal reaches the fetcher (a `() => fetchLocationKpis()`
+  // compiles and forwards none, so leaving the page would not abort the read).
+  expect(locationsApi.fetchLocationKpis).toHaveBeenCalledWith(expect.any(AbortSignal));
 }

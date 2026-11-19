@@ -169,7 +169,7 @@ export async function theOrganizationsLevelRendersTheEstate(): Promise<void> {
   expect(locationsApi.fetchLocationKpis).toHaveBeenCalledWith(expect.any(AbortSignal));
 }
 
-/** O3— one organization with two sites skips to the organization level. */
+/** O3 — one organization with two sites skips to the organization level. */
 export async function oneOrganizationSkipsToIt(): Promise<void> {
   stubShell();
   stubLocations([
