@@ -334,8 +334,10 @@ export async function aSiteSwitchDoesNotKeepTheFirstSitesRows(): Promise<void> {
 
 /** L11 (`F4.390`) — leaving the page while a read is pending aborts that read's request. */
 export async function unmountingAbortsAPendingRead(): Promise<void> {
+  let started = false;
   let signal: AbortSignal | undefined;
   vi.spyOn(locationsApi, "fetchLocationDashboard").mockImplementation((_id, _opts, querySignal) => {
+    started = true;
     signal = querySignal;
     return new Promise(() => undefined);
   });
@@ -343,8 +345,9 @@ export async function unmountingAbortsAPendingRead(): Promise<void> {
   renderView();
 
   await waitFor(() => {
-    expect(signal, "the read never started").toBeDefined();
+    expect(started, "the read never started").toBe(true);
   });
+  expect(signal, "the read was handed no abort signal").toBeInstanceOf(AbortSignal);
   expect(signal?.aborted, "control: the signal starts unaborted").toBe(false);
 
   cleanup();
