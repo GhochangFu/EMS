@@ -255,6 +255,23 @@ export function assertSixPheSiteLayoutSlugs(): void {
   );
 }
 
+/**
+ * `F4.388` L6 (ADR 0139 decision 6, plan D9) — a split station keeps its slug on the list (its
+ * view row becomes `generated`, decision 7) and each of its sites adds one: six for the committed
+ * empty list, eight with Lotapata on it.
+ */
+export function assertSiteLayoutPheSlugsGainTheSplitSites(): void {
+  const catalog = loadPheCatalog();
+  const stations = [...new Set(catalog.rows.map((row) => stationSlug(row.StationName)))];
+  const none = hierarchyExpectations(catalog, []).siteLayoutPheSlugs;
+  expect(none).toHaveLength(6);
+  expect([...none].sort()).toEqual([...stations].sort());
+  const lotapata = hierarchyExpectations(catalog, ["CBLTPT1"]).siteLayoutPheSlugs;
+  expect(lotapata).toHaveLength(8);
+  expect(distinct(lotapata)).toBe(8);
+  expect([...lotapata].sort()).toEqual([...stations, "phe-lotapata-i", "phe-lotapata-ii"].sort());
+}
+
 /** `F4.317` ruling Q3 — both seed organizations carry a seeded organization layout pointer row. */
 export function assertTwoOrganizationLayoutOrganizations(): void {
   const { organizationLayoutOrganizationCodes } = hierarchyExpectations();

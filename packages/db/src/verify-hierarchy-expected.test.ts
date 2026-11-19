@@ -4,6 +4,7 @@ import {
   assertOneEskomSiteLayoutLocation,
   assertSeventyTwoSmocRoledAssets,
   assertSixPheSiteLayoutSlugs,
+  assertSiteLayoutPheSlugsGainTheSplitSites,
   assertABadRtuSiteIdentityIsRefused,
   assertAnEmptyDerivedListIsRefused,
   assertCombinedAndEskomOnlyRowsAgree,
@@ -84,6 +85,10 @@ describe("F4.169/F4.170 addendum — the boot gate's expectations derive from th
 
   it("F3.73 derives six PHE site-layout station slugs", () => {
     assertSixPheSiteLayoutSlugs();
+  });
+
+  it("F4.388 L6 adds each split site's slug to the six station slugs", () => {
+    assertSiteLayoutPheSlugsGainTheSplitSites();
   });
 
   it("F4.317 derives the two organizations that carry a seeded organization layout", () => {

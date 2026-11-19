@@ -10,6 +10,14 @@ import type { GroupMember } from "@bms/shared";
  * read the copy rule's inputs two ways; its own file, because the seed imports the upgrade.
  */
 
+/** The copy's slug is this prefix and the location's slug (re-exported by `site-layout-seed.ts`). */
+export const SITE_LAYOUT_SLUG_PREFIX = "site-layout-";
+
+/** The copy's slug at a location with slug `locationSlug`. */
+export function siteLayoutSlug(locationSlug: string): string {
+  return `${SITE_LAYOUT_SLUG_PREFIX}${locationSlug}`;
+}
+
 /** `ORDER BY a.code`: `planTemplateWidget`'s tie-break reads the code (ADR 0049 Amendment 2). */
 const MEMBERS_SQL = `
   SELECT agm.role, a.id AS asset_id, a.code

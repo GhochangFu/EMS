@@ -2,10 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   assertAnUnknownStationCodeThrows,
+  assertOneMapRowPerResolvedSite,
   assertLotapataSplitSites,
   assertTheGateExemptsAllButAPhewbSlugHolder,
   assertTheHolderRule,
   assertTheRtuTargetOrder,
+  assertTheSiteLayoutLocationsSwapASplitStationForItsSites,
   assertTheSeedRefusesABadListBeforeAnyQuery,
   assertTheSplitListIsNotInTheThrowOnEmptySet,
   assertTheSuffixRuleOnTheRealNames,
@@ -42,5 +44,13 @@ describe("F4.388 — the PHE split path, pure halves (ADR 0139)", () => {
 
   it("writes an RTU at its site, else where it sits, else at the station", () => {
     assertTheRtuTargetOrder();
+  });
+
+  it("makes a layout copy at a split station's sites and not at the station", () => {
+    assertTheSiteLayoutLocationsSwapASplitStationForItsSites();
+  });
+
+  it("writes one map row per resolved site", () => {
+    assertOneMapRowPerResolvedSite();
   });
 });

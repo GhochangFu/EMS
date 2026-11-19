@@ -798,6 +798,12 @@ export async function readPhewbChecks(
   // Every count an admin write can move reads the rows seedPheCatalog writes
   // for phe-catalog.json (phePilotExpectedRows), counted present.
   const phe = expected.phe;
+  // ADR 0139 owner ruling Q2: a split site the seed skipped and the gate exempts gets no copy and
+  // no view (it is not the site), so it leaves the view count as it leaves the presence checks.
+  const exemptSlugs = new Set(
+    (options.pheSkippedSites ?? []).filter(gateExemptsSkip).map((skip) => skip.site.slug),
+  );
+  const siteLayoutSlugs = expected.siteLayoutPheSlugs.filter((slug) => !exemptSlugs.has(slug));
   const res = await pool.query<{
     phe_locs: string;
     phe_rtus: string;
@@ -892,7 +898,7 @@ export async function readPhewbChecks(
     phe.tsPoints.map((point) => point.assetCode),
     phe.tsPoints.map((point) => point.pointKey),
     phe.electricalAssetCodes,
-    expected.siteLayoutPheSlugs,
+    siteLayoutSlugs,
   ]);
   const row = res.rows[0];
   expect("PHEWB catalog locations present", row?.phe_locs, phe.locationCodes.length);
@@ -920,7 +926,7 @@ export async function readPhewbChecks(
   // since `F4.319` they take `rtu-controller`, and the pump-station count
   // below reads them (an administrator's role still passes: any non-NULL).
   expect("PHE catalog electrical members carrying a role", row?.phe_elec_roled, phe.electricalAssetCodes.length);
-  expect("PHEWB catalog station site-layout view rows", row?.phe_site_layout_views, expected.siteLayoutPheSlugs.length);
+  expect("PHEWB catalog station site-layout view rows", row?.phe_site_layout_views, siteLayoutSlugs.length);
   // `F4.319` — 48 today = 6 stations × 8 assets, each in its station's `pump-station` group with a
   // role. An administrator may change or clear a role, but the seed refills a NULL on every boot
   // (the `COALESCE` membership upsert), so after a seed a NULL here is the seed's own fault.

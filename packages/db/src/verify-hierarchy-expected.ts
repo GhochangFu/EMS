@@ -71,7 +71,10 @@ export type HierarchyExpectations = {
   readonly phe: PhePilotExpectedRows;
   /** `F3.73` — the ESKOM identities whose row carries a seeded site-layout view (CSMOC Gauteng). */
   readonly siteLayoutEskomLocations: readonly SeedLocationIdentity[];
-  /** `F3.73` — the PHE catalog station slugs whose row carries a seeded site-layout view. */
+  /**
+   * `F3.73` — the PHE catalog station slugs whose row carries a seeded site-layout view; since
+   * `F4.388` (ADR 0139 decision 6) also each split site's slug.
+   */
   readonly siteLayoutPheSlugs: readonly string[];
   /**
    * `F4.317` ruling Q3 — the organizations whose `bms.organization_control_room_views` layout the
@@ -111,6 +114,7 @@ export function hierarchyExpectations(
         "which seedSiteControlRoomViews seeds the control room view on",
     );
   }
+  const phe = phePilotExpectedRows(pheCatalog, splitStationCodes);
   const expected: HierarchyExpectations = {
     organizationCodes: SEED_ORGANIZATION_CODES,
     eskomLocationCodes: [
@@ -124,9 +128,14 @@ export function hierarchyExpectations(
       .filter((asset) => demoRoleForAsset(asset.code, asset.domain) === PUE_DEMO_INCOMER_ROLE)
       .map((asset) => asset.code),
     eskomItCodes: eskomCatalog.filter((asset) => asset.domain === "it").map((asset) => asset.code),
-    phe: phePilotExpectedRows(pheCatalog, splitStationCodes),
+    phe,
     siteLayoutEskomLocations: eskomSiteLayoutIdentities(mapLocationRows),
-    siteLayoutPheSlugs: pheSiteLayoutStations(pheCatalog).map((station) => station.slug),
+    // ADR 0139 decision 6 (plan D9): each station keeps a view row (a split one's is `generated`,
+    // decision 7) and each split site gains one.
+    siteLayoutPheSlugs: [
+      ...pheSiteLayoutStations(pheCatalog).map((station) => station.slug),
+      ...phe.splitSites.map((site) => site.slug),
+    ],
     organizationLayoutOrganizationCodes: SEED_ORGANIZATION_CODES,
     eskomSmocRoledCodes: eskomCatalog
       .filter((asset) => SMOC_SEED_ROLES.includes(demoRoleForAsset(asset.code, asset.domain) ?? ""))
