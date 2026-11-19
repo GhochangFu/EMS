@@ -757,13 +757,15 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
   }, 180_000);
 
   it("S15 a re-parented site keeps its RTU, and the gate's shape check stops the boot naming the row", async () => {
+    // Re-parents under station L, which S13 seeded.
+    if (renamedId === "") throw new Error("S13 did not run");
     const M = syntheticStation(11);
     const [mI] = sitesOf(M);
     if (!mI) throw new Error("station M has no RTU");
     await seed(M, []);
     await seed(M, [codeOf(M)]);
     const site = await locationOf(mI.slug);
-    // Under another PHEWB location: station L, a campus since S13.
+    // Under another PHEWB location: station L.
     await pools().superuser.query(`UPDATE bms.locations SET parent_id = $1 WHERE id = $2`, [
       (await locationOf(slugOf(L))).id,
       site.id,
