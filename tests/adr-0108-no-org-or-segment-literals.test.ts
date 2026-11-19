@@ -178,6 +178,8 @@ const MODULES: readonly string[] = [
   "apps/web/src/lib/station-view.ts",
   "apps/web/src/components/control-room/station-site-halves.tsx",
   "apps/web/src/components/energy/station-bills.tsx",
+  "apps/web/src/components/control-room/station-energy-view.tsx",
+  "apps/web/src/hooks/use-energy-organization-views.ts",
 ];
 
 /**

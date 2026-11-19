@@ -78,6 +78,15 @@ vi.mock("../../components/control-room/site-assets-view", () => ({
 vi.mock("../../components/control-room/site-trends-view", () => ({
   SiteTrendsView: () => <div data-testid="site-trends-view" />,
 }));
+vi.mock("../../components/control-room/station-energy-view", () => ({
+  StationEnergyView: (props: { stationId: string; sites: readonly LocationKpiSummary[] }) => (
+    <div
+      data-testid="station-energy-view"
+      data-station-id={props.stationId}
+      data-site-ids={props.sites.map((entry) => entry.id).join(",")}
+    />
+  ),
+}));
 vi.mock("../../components/control-room/smoc-site-view", () => ({ SmocSiteView: () => null }));
 vi.mock("../../components/control-room/site-dashboard-view", () => ({
   SiteDashboardView: (props: { locationId: string; tab?: string }) => (
@@ -306,23 +315,34 @@ function stripLabels(): string[] {
 }
 
 /**
- * ST8 (PR 2, plan D8) — a station is exempt from the page's redirect, and the halves decide: an
- * unknown segment, and `trends` until the station's own Trends & Energy arm (plan Task 2.5),
- * redirect to the bare path once the sites' reads settle; a tab a site's dashboard holds stays and
- * reaches that site's half. The strip has two entries throughout.
+ * ST8 (PR 2, plan D8) — a station is exempt from the page's redirect. An unknown segment still
+ * redirects to the bare path (the halves decide, once the sites' reads settle); `/trends` stays
+ * and renders the station's own Trends & Energy tab; a tab a site's dashboard holds stays and
+ * reaches that site's half. The strip has three entries.
  */
-export async function otherSegmentsRedirectAndTheStripHasTwoEntries(): Promise<void> {
-  for (const segment of ["trends", "anything"]) {
-    stubReads(ITEMS, view("st"));
-    renderAt(`/control-room/site/st/${segment}`);
-    await waitFor(() => expect(screen.getByTestId("pathname").textContent).toBe("/control-room/site/st"));
-    expect(await screen.findByTestId("station-totals")).toBeInTheDocument();
-    expect(screen.queryByTestId("site-trends-view")).toBeNull();
-    expect(stripLabels()).toEqual(["Station view", "Assets & RTUs"]);
-    expectNoNetworkSoFar();
-    cleanup();
-    vi.restoreAllMocks();
-  }
+export async function aStationsSegmentsAndItsThreeEntries(): Promise<void> {
+  stubReads(ITEMS, view("st"));
+  renderAt("/control-room/site/st/anything");
+  await waitFor(() => expect(screen.getByTestId("pathname").textContent).toBe("/control-room/site/st"));
+  expect(await screen.findByTestId("station-totals")).toBeInTheDocument();
+  expect(stripLabels()).toEqual(["Station view", "Assets & RTUs", "Trends & Energy"]);
+  expectNoNetworkSoFar();
+  cleanup();
+  vi.restoreAllMocks();
+
+  stubReads(ITEMS, view("st"));
+  renderAt("/control-room/site/st/trends");
+  const energy = await screen.findByTestId("station-energy-view");
+  expect([energy.getAttribute("data-station-id"), energy.getAttribute("data-site-ids")]).toEqual(["st", "st-1,st-2"]);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(screen.getByTestId("pathname").textContent).toBe("/control-room/site/st/trends");
+  expect(screen.queryByTestId("site-trends-view")).toBeNull();
+  expect(screen.queryByTestId("station-totals")).toBeNull();
+  const strip = screen.getByRole("navigation", { name: "Site sections" });
+  expect(within(strip).getByRole("link", { name: "Trends & Energy" }).getAttribute("aria-current")).toBe("page");
+  expectNoNetworkSoFar();
+  cleanup();
+  vi.restoreAllMocks();
 
   stubReads(ITEMS, view("st"), {
     "st-1": view("st-1", { kind: "dashboard", dashboardSlug: "st-1-site", dashboardId: "d-st-1" }),
@@ -333,7 +353,7 @@ export async function otherSegmentsRedirectAndTheStripHasTwoEntries(): Promise<v
   expect([half.getAttribute("data-location-id"), half.getAttribute("data-tab")]).toEqual(["st-1", "electrical"]);
   await new Promise((resolve) => setTimeout(resolve, 30));
   expect(screen.getByTestId("pathname").textContent).toBe("/control-room/site/st/electrical");
-  expect(stripLabels()).toEqual(["Station view", "Assets & RTUs"]);
+  expect(stripLabels()).toEqual(["Station view", "Assets & RTUs", "Trends & Energy"]);
 }
 
 /** A site layout with two tabs, for ST8's third arm. */
@@ -455,11 +475,15 @@ function pageWidth(heading: HTMLElement): string | undefined {
   return heading.closest("div.mx-auto")?.className.split(/\s+/).find((name) => name.startsWith("max-w-"));
 }
 
-/** ST14 (plan D12) — the Station view widens to 1800 px; the station's `/assets` and a site keep 1200 px. */
+/**
+ * ST14 (plan D12) — the Station view widens to 1800 px; the station's `/assets` and `/trends` and a
+ * site keep 1200 px.
+ */
 export async function theStationViewIsWider(): Promise<void> {
   const cases: [string, string, string][] = [
     ["/control-room/site/st", "Lotapata", "max-w-[1800px]"],
     ["/control-room/site/st/assets", "Lotapata", "max-w-[1200px]"],
+    ["/control-room/site/st/trends", "Lotapata", "max-w-[1200px]"],
     ["/control-room/site/st-1", "Lotapata I", "max-w-[1200px]"],
   ];
   for (const [path, name, width] of cases) {
@@ -470,6 +494,22 @@ export async function theStationViewIsWider(): Promise<void> {
     cleanup();
     vi.restoreAllMocks();
   }
+}
+
+/**
+ * ST15 (plan Task 2.5, EV5) — the third entry is named by the sites: "Trends" when none shows
+ * energy, though the station's own item does; "Trends & Energy" when one does (ST8).
+ */
+export async function theStationsThirdEntryIsNamedByItsSites(): Promise<void> {
+  stubReads(
+    ITEMS.map((item) =>
+      item.id === "st-1" || item.id === "st-2" ? withFields(item, { energyShown: false }) : withFields(item, { energyShown: true }),
+    ),
+    view("st"),
+  );
+  renderAt("/control-room/site/st");
+  await stationHeading();
+  expect(stripLabels()).toEqual(["Station view", "Assets & RTUs", "Trends"]);
 }
 
 export function cleanupStation(): void {

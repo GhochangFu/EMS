@@ -13,6 +13,7 @@ import { SiteLayoutWizard } from "../../components/control-room/site-layout-wiza
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
 import { SiteAssetsView } from "../../components/control-room/site-assets-view";
 import { SiteDashboardView } from "../../components/control-room/site-dashboard-view";
+import { StationEnergyView } from "../../components/control-room/station-energy-view";
 import { StationView } from "../../components/control-room/station-view";
 import { SiteTrendsView } from "../../components/control-room/site-trends-view";
 import { SmocSiteView } from "../../components/control-room/smoc-site-view";
@@ -25,7 +26,7 @@ import { AppShell } from "../../layouts/app-shell";
 import { isMasterDataAdmin } from "../../lib/admin-access";
 import { controlRoomCrumbs } from "../../lib/control-room-levels";
 import { FOCUS_OUTLINE_CLASS } from "../../lib/focus-classes";
-import { stationGroupOf } from "../../lib/location-kpi-groups";
+import { anyEnergyShown, stationGroupOf } from "../../lib/location-kpi-groups";
 import { siteViewNoticeText, siteViewNoticeTone } from "../../lib/site-view-notice";
 import {
   DEFAULT_SMOC_TAB,
@@ -142,14 +143,15 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * `F4.240` part b (ADR 0140 decisions 1–4, plan D1, D6, D7) — at a **station** (`stationGroupOf`:
  * a location in the list that holds no asset and heads sites) the body is `StationView`: the
  * totals, the site cards, the station's alarms, the advisory cards and its dashboards, or at
- * `/assets` a list of the sites. The strip reads **Station view** and **Assets & RTUs** only. No
+ * `/assets` a list of the sites. The strip reads **Station view** and **Assets & RTUs** (PR 1). No
  * notice, layout wizard, wall or Wall link at a station, and the resolve read still decides access
  * exactly as for a site (decision 6). The list poll stays at 60 s (owner ruling Q2 (a)), though the
  * station draws live figures from it. PR 2 (decision 3e, plan D8, D12): a station is exempt from
  * the D5 redirect; its view section hands the raw segment to `StationSiteHalves`, which redirects a
- * segment no site's dashboard holds (`trends` included, until the station's own arm) once every
- * site read has settled. The Station view widens to `max-w-[1800px]`, and the ribbon and the
- * pending line say "station view".
+ * segment no site's dashboard holds once every site read has settled. `/trends` is the station's
+ * own **Trends & Energy** entry (`StationEnergyView`; "Trends" when no site shows energy). The
+ * Station view widens to `max-w-[1800px]` (`/assets` and `/trends` keep 1200 px), and the ribbon
+ * and the pending line say "station view".
  */
 export function ControlRoomSitePage({ user, locationId: locationIdProp }: ControlRoomSitePageProps) {
   const params = useParams();
@@ -237,8 +239,10 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
       user={user}
       kpiRibbon={<span className="text-ink">{atStation ? "Control Room · station view" : "Control Room · site view"}</span>}
     >
-      {/* `F4.240` part b (plan D12) — the Station view widens for its two halves; `/assets` does not. */}
-      <div className={`mx-auto ${atStation && !onAssetsTab ? "max-w-[1800px]" : "max-w-[1200px]"} space-y-4 pb-8`}>
+      {/* `F4.240` part b (plan D12) — the Station view widens for its two halves; `/assets` and `/trends` do not. */}
+      <div
+        className={`mx-auto ${atStation && !onAssetsTab && !onTrendsTab ? "max-w-[1800px]" : "max-w-[1200px]"} space-y-4 pb-8`}
+      >
         {items !== undefined ? (
           site !== undefined && !(siteView.data === undefined && siteView.isError) ? (
             <>
@@ -262,13 +266,15 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                 locationId={site.id}
                 onAssetsTab={onAssetsTab}
                 onTrendsTab={onTrendsTab}
-                energyShown={site.energyShown}
+                energyShown={stationGroup !== null ? anyEnergyShown(stationGroup.sites) : site.energyShown}
                 station={atStation}
               />
               {siteView.data === undefined ? (
                 <p role="status" className="text-sm text-ink-muted">
                   {atStation ? "Loading the station view…" : "Loading the site view…"}
                 </p>
+              ) : stationGroup !== null && onTrendsTab ? (
+                <StationEnergyView stationId={site.id} sites={stationGroup.sites} />
               ) : stationGroup !== null ? (
                 <StationView
                   station={site}
@@ -327,8 +333,8 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
  * the bare path and every SMOC tab segment; "Assets & RTUs" only at `/assets`;
  * "Trends & Energy" (`F4.302`, ADR 0108 Amendment 4 item 1) only at `/trends`. `F4.364` (ADR
  * 0133 Amendment 1): when the site's energy is not shown, that entry is named "Trends" (same path).
- * `F4.240` part b (plan D7): at a station the first entry reads "Station view" and there is no
- * third entry until PR 2.
+ * `F4.240` part b (plan D7): at a station the first entry reads "Station view"; PR 2 gives it the
+ * third entry too, named by whether any of its sites shows energy.
  */
 function SiteSectionStrip({
   locationId,
@@ -350,9 +356,7 @@ function SiteSectionStrip({
       active: !onAssetsTab && !onTrendsTab,
     },
     { label: "Assets & RTUs", to: siteAssetsPath(locationId), active: onAssetsTab },
-    ...(station
-      ? []
-      : [{ label: energyShown ? "Trends & Energy" : "Trends", to: siteTrendsPath(locationId), active: onTrendsTab }]),
+    { label: energyShown ? "Trends & Energy" : "Trends", to: siteTrendsPath(locationId), active: onTrendsTab },
   ];
   return (
     <nav aria-label="Site sections" className="flex flex-wrap gap-1 border-b border-line pb-2">

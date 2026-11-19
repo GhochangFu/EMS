@@ -1,9 +1,10 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 
-import type { EnergyOrganizationViews, EnergyView, EnergyViewPeriod, EnergyViewQuery, PointAggregateBucket } from "@bms/shared";
+import type { EnergyView, EnergyViewPeriod, EnergyViewQuery, PointAggregateBucket } from "@bms/shared";
 
-import { fetchEnergyOrganizationViews, fetchEnergyView } from "../../api/energy-view";
+import { fetchEnergyView } from "../../api/energy-view";
+import { useEnergyOrganizationViews } from "../../hooks/use-energy-organization-views";
 import type { SiteRankingSort } from "../../lib/energy-organization-views";
 import { partialNote } from "../../lib/energy-view-filter";
 import { siteEnergyQueryOf } from "../../lib/site-trends";
@@ -25,16 +26,17 @@ type Props = {
   /** The site ranking's sort, the section's `rankBy` in the URL (`F4.303`). */
   rankBy: SiteRankingSort;
   onRankBy: (next: SiteRankingSort) => void;
+  /**
+   * `F4.240` part b (ADR 0140 decision 3f) — drawn where the month's bill goes, instead of
+   * `MonthlyBillCard` at `locationId`: the station passes its sites' bills, so it never prices the
+   * station on both meters. Omitted, the card shows as before.
+   */
+  billSlot?: ReactNode;
 };
 
 function viewOf(query: EnergyViewQuery | null): Promise<EnergyView> {
   // Unreachable: the query is disabled while `query` is null.
   return query === null ? Promise.reject(new Error("no energy view query")) : fetchEnergyView(query);
-}
-
-function organizationViewsOf(query: EnergyViewQuery | null): Promise<EnergyOrganizationViews> {
-  // Unreachable: the query is disabled while `query` is null.
-  return query === null ? Promise.reject(new Error("no energy view query")) : fetchEnergyOrganizationViews(query);
 }
 
 /** The previous period's total kW per bucket (grid + DG + solar), for the dashed overlay; `null` without one. */
@@ -53,8 +55,11 @@ function compareTotalOf(compare: EnergyViewPeriod | null): PointAggregateBucket[
  * source mix with the previous period dashed, the top consuming assets, the heatmap and the
  * advisory abnormal list. The site ranking shows only when the site has readable children
  * (`sites.totalSites > 1`, owner 2026-11-02); on a flat site it is omitted.
+ *
+ * `F4.240` part b: the organization-views read is `useEnergyOrganizationViews` (shared with the
+ * station's tab), and an optional `billSlot` replaces the bill card.
  */
-export function SiteEnergyView({ locationId, value, rankBy, onRankBy }: Props) {
+export function SiteEnergyView({ locationId, value, rankBy, onRankBy, billSlot }: Props) {
   const query = siteEnergyQueryOf(locationId, value);
 
   const viewQ = useQuery({
@@ -64,13 +69,7 @@ export function SiteEnergyView({ locationId, value, rankBy, onRankBy }: Props) {
     placeholderData: keepPreviousData,
     refetchInterval: 60_000,
   });
-  const orgViewsQ = useQuery({
-    queryKey: ["energy", "organization-views", query],
-    queryFn: () => organizationViewsOf(query),
-    enabled: query !== null,
-    placeholderData: keepPreviousData,
-    refetchInterval: 60_000,
-  });
+  const orgViewsQ = useEnergyOrganizationViews(query);
 
   const status: KpiTileStatus = viewQ.isError ? "error" : viewQ.data === undefined ? "loading" : "ready";
   const v = status === "ready" ? viewQ.data : undefined;
@@ -111,7 +110,7 @@ export function SiteEnergyView({ locationId, value, rankBy, onRankBy }: Props) {
       <EnergyKpiTiles status={status} view={v} floorAreaTile={{ hasReadableChildren: showsSiteRanking }} />
 
       {/* `F4.365` U10: the month's bill, self-fetching; nothing for a site with no tariff mapping. */}
-      <MonthlyBillCard locationId={locationId} />
+      {billSlot ?? <MonthlyBillCard locationId={locationId} />}
 
       <SectionCard
         title="Source mix · grid / solar / nominal DG"

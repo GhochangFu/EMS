@@ -8,7 +8,7 @@ import {
   aParentThatHoldsAssetsRendersTheSitePage,
   aSitesStationCrumbIsALink,
   cleanupStation,
-  otherSegmentsRedirectAndTheStripHasTwoEntries,
+  aStationsSegmentsAndItsThreeEntries,
   theLowerCardsCarryTheStation,
   theRailReadsTheStationLocation,
   theStationAssetsListsEachSite,
@@ -16,6 +16,7 @@ import {
   theStationPollsTheListAtSixtySeconds,
   theStationSaysStationView,
   theStationViewIsWider,
+  theStationsThirdEntryIsNamedByItsSites,
   theStationUrlRendersTheStation,
   theTotalsLineIsTheHeadersSentenceAndTheKw,
 } from "./site-page-station.spec";
@@ -57,8 +58,8 @@ describe("F4.240 part b the site page at a station (ADR 0140)", () => {
     await theStationAssetsListsEachSite();
   });
 
-  it("ST8 the halves redirect /trends and an unknown segment, keep a site's tab; the strip has two entries", async () => {
-    await otherSegmentsRedirectAndTheStripHasTwoEntries();
+  it("ST8 an unknown segment redirects; /trends and a site's tab stay; the strip has three entries", async () => {
+    await aStationsSegmentsAndItsThreeEntries();
   });
 
   it("ST9 draws no wall and no Wall link at a station", async () => {
@@ -85,7 +86,11 @@ describe("F4.240 part b the site page at a station (ADR 0140)", () => {
     await theStationSaysStationView();
   });
 
-  it("ST14 the Station view widens to 1800 px; /assets and a site keep 1200 px (plan D12)", async () => {
+  it("ST14 the Station view widens to 1800 px; /assets, /trends and a site keep 1200 px (plan D12)", async () => {
     await theStationViewIsWider();
+  });
+
+  it("ST15 the third entry reads Trends when no site shows energy", async () => {
+    await theStationsThirdEntryIsNamedByItsSites();
   });
 });
