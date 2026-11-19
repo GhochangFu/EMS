@@ -6,11 +6,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type * as AccessFixturesSeed from "../packages/db/dist/access-fixtures-seed.js";
 import type * as DbClient from "../packages/db/dist/client.js";
 import type * as EskomLocationsSeed from "../packages/db/dist/eskom-locations-seed.js";
-import type * as HierarchySeed from "../packages/db/dist/hierarchy-seed.js";
 import type * as MapLocationsSeed from "../packages/db/dist/map-locations-seed.js";
 import type * as PheMapSeed from "../packages/db/dist/phe-map-seed.js";
-import type * as PhePilotSeed from "../packages/db/dist/phe-pilot-seed.js";
 import type * as SeedTenant from "../packages/db/dist/seed-tenant.js";
+import type * as VerifyHierarchyExpected from "../packages/db/dist/verify-hierarchy-expected.js";
 import type * as VerifyHierarchySeed from "../packages/db/dist/verify-hierarchy-seed.js";
 import {
   openIntegrationPool,
@@ -24,13 +23,12 @@ import {
 // edit, run `pnpm --filter @bms/db build` before this suite, or it runs the
 // last build.
 const require_ = createRequire(import.meta.url);
-const { cleanupLegacyPheRtuLocations } = require_("../packages/db/dist/hierarchy-seed.js") as typeof HierarchySeed;
-const { loadPheCatalog, phePilotExpectedRows } = require_(
-  "../packages/db/dist/phe-pilot-seed.js",
-) as typeof PhePilotSeed;
-const { readEskomChecks, readPhewbChecks } = require_(
+const { PHE_RTU_SLUG_SHAPE_LABEL, readEskomChecks, readPhewbChecks } = require_(
   "../packages/db/dist/verify-hierarchy-seed.js",
 ) as typeof VerifyHierarchySeed;
+const { hierarchyExpectations } = require_(
+  "../packages/db/dist/verify-hierarchy-expected.js",
+) as typeof VerifyHierarchyExpected;
 const { eskomCanonicalLocationRows, eskomLocationCode, resolveSeedLocation, seedEskomLocations } = require_(
   "../packages/db/dist/eskom-locations-seed.js",
 ) as typeof EskomLocationsSeed;
@@ -83,9 +81,6 @@ type HierarchyCheck = VerifyHierarchySeed.HierarchyCheck;
 /** Lowercase hex from `randomUUID`; the fixture codes and slugs carry it. */
 const runId = randomUUID().slice(0, 8);
 const RUN_ID = runId.toUpperCase();
-
-/** The list `seed.ts` hands `cleanupLegacyPheRtuLocations`, derived the same way. */
-const legacySlugs = phePilotExpectedRows(loadPheCatalog()).legacyLocationSlugs;
 
 describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only the rows it owns", () => {
   let probePool: IntegrationPool | undefined;
@@ -170,119 +165,6 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
     assert(found.length === 1, `expected one check labelled "${label}", found ${found.length}`);
     return found[0]?.actual ?? Number.NaN;
   }
-
-  // ── Owner ruling 13: the legacy PHE cleanup deletes only the legacy slugs ──
-
-  /** An admin PHEWB location whose slug the old pattern `^phe-.+-(i|ii)$` matched. */
-  const adminPheSlug = `phe-f4169${runId}-new-station-ii`;
-
-  it("C1: an admin PHEWB location whose slug ends -ii keeps its row and its asset through the cleanup", async () => {
-    assert(!legacySlugs.includes(adminPheSlug), "the admin slug must not be a legacy slug");
-    await inTransaction(phewbOrgId, async (pool) => {
-      const locationId = await insertLocation(pool, phewbOrgId, `F4169-${RUN_ID}-NEW`, adminPheSlug, "pump_station");
-      const assetId = await insertOne(
-        pool,
-        `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
-         VALUES ($1, $2, $3, 'F4.169 fixture admin PHE asset', 'F4.169 fixture', 'electrical')
-         RETURNING id`,
-        [phewbOrgId, locationId, `F4169-${RUN_ID}-NEWASSET`],
-        "admin PHE asset",
-      );
-      // Mutation: the cleanup back on the pattern deletes the location, and
-      // its asset's foreign key stops the statement with 23503 here.
-      await cleanupLegacyPheRtuLocations(pool, legacySlugs);
-      const rows = await pool.query<{ id: string }>(
-        `SELECT a.id FROM bms.assets a
-           JOIN bms.locations l ON l.id = a.location_id
-          WHERE l.id = $1`,
-        [locationId],
-      );
-      expect(rows.rows, "the admin location and its asset must both survive").toEqual([{ id: assetId }]);
-    });
-  }, 60_000);
-
-  it("C2: an admin PHEWB location whose slug ends -ii leaves the legacy zero count unmoved", async () => {
-    await inTransaction(phewbOrgId, async (pool) => {
-      const label = "PHEWB legacy per-RTU locations";
-      const before = actualOf(await readPhewbChecks(pool), label);
-      await insertLocation(pool, phewbOrgId, `F4169-${RUN_ID}-NEW`, adminPheSlug, "pump_station");
-      const probe = await pool.query<{ n: number }>(
-        `SELECT COUNT(*)::int AS n FROM bms.locations WHERE slug = $1`,
-        [adminPheSlug],
-      );
-      assert(probe.rows[0]?.n === 1, "the admin location must be visible in PHEWB's context");
-      // Mutation: the count back on the pattern reads +1.
-      expect(actualOf(await readPhewbChecks(pool), label), "the admin slug is not a legacy row").toBe(
-        before,
-      );
-    });
-  }, 60_000);
-
-  it("C3b: the cleanup's line prints an admin code as a JSON string, so a newline in it cannot forge a line", async () => {
-    const legacySlug = legacySlugs[0];
-    assert(legacySlug !== undefined, "the catalog must derive at least one legacy slug");
-    await inTransaction(phewbOrgId, async (pool) => {
-      // The admin API bounds a location code's length, not its characters.
-      const code = `F4169-${RUN_ID}-LEG\nseed: forged "line"`;
-      const locationId = await insertLocation(pool, phewbOrgId, code, legacySlug as string, "pump_station");
-      const lines: string[] = [];
-      await cleanupLegacyPheRtuLocations(pool, legacySlugs, (line) => lines.push(line));
-      const named = lines.filter((line) => line.includes(locationId));
-      assert(named.length === 1, "one line names the location");
-      // Mutation: the code printed raw carries the newline into the log.
-      expect(named[0], "the code is printed as JSON").toContain(JSON.stringify(code));
-    });
-  }, 60_000);
-
-  it("C3: a location with a legacy slug, an RTU and an empty group is removed with both", async () => {
-    const legacySlug = legacySlugs[0];
-    assert(legacySlug !== undefined, "the catalog must derive at least one legacy slug");
-    await inTransaction(phewbOrgId, async (pool) => {
-      const locationId = await insertLocation(
-        pool,
-        phewbOrgId,
-        `F4169-${RUN_ID}-LEG`,
-        legacySlug as string,
-        "pump_station",
-      );
-      await insertOne(
-        pool,
-        `INSERT INTO bms.rtus (location_id, code, display_name, organization_id)
-         VALUES ($1, $2, 'F4.169 fixture legacy RTU', $3)
-         RETURNING id`,
-        [locationId, `F4169-${RUN_ID}-LEGRTU`, phewbOrgId],
-        "legacy RTU",
-      );
-      await insertOne(
-        pool,
-        `INSERT INTO bms.asset_groups (location_id, code, name, organization_id)
-         VALUES ($1, 'electrical', 'F4.169 fixture legacy group', $2)
-         RETURNING id`,
-        [locationId, phewbOrgId],
-        "legacy group",
-      );
-      const lines: string[] = [];
-      await cleanupLegacyPheRtuLocations(pool, legacySlugs, (line) => lines.push(line));
-      // Addendum 3: a deletion is never silent. Mutation: no log line.
-      expect(
-        lines.filter((line) => line.includes(locationId)),
-        "one line names the location before it is deleted",
-      ).toHaveLength(1);
-      const left = await pool.query<{ locations: number; rtus: number; groups: number }>(
-        `SELECT
-           (SELECT COUNT(*)::int FROM bms.locations WHERE id = $1) AS locations,
-           (SELECT COUNT(*)::int FROM bms.rtus WHERE location_id = $1) AS rtus,
-           (SELECT COUNT(*)::int FROM bms.asset_groups WHERE location_id = $1) AS groups`,
-        [locationId],
-      );
-      // Mutation: an empty list deletes nothing, and all three read 1.
-      expect(left.rows[0], "the legacy location, its RTU and its group must all be gone").toEqual({
-        locations: 0,
-        rtus: 0,
-        groups: 0,
-      });
-    });
-  }, 60_000);
 
   // ── Owner ruling 16: the seed owns the slug and code of its locations ──────
 
@@ -565,5 +447,26 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 2 — the seed changes only t
       await holderClient.query("ROLLBACK");
       holderClient.release();
     }
+  }, 60_000);
+
+  // ── ADR 0139 decision 8: the shape check reads the RTU-site slugs, not a pattern ──
+
+  it("C2: an admin PHEWB location whose slug ends -ii but is no RTU site's slug leaves the shape check unmoved", async () => {
+    // The slug the retired legacy cleanup's old pattern `^phe-.+-(i|ii)$` matched.
+    const adminPheSlug = `phe-f4169${runId}-new-station-ii`;
+    const siteSlugs = hierarchyExpectations().phe.rtuSites.map((site) => site.slug);
+    assert(!siteSlugs.includes(adminPheSlug), "the admin slug must not be an RTU site's slug");
+    await inTransaction(phewbOrgId, async (pool) => {
+      const before = actualOf(await readPhewbChecks(pool), PHE_RTU_SLUG_SHAPE_LABEL);
+      await insertLocation(pool, phewbOrgId, `F4169-${RUN_ID}-NEW`, adminPheSlug, "pump_station");
+      const probe = await pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM bms.locations WHERE slug = $1`, [
+        adminPheSlug,
+      ]);
+      assert(probe.rows[0]?.n === 1, "the admin location must be visible in PHEWB's context");
+      // Mutation: the check matching RTU-slug rows by the pattern reads +12 (one per site).
+      expect(actualOf(await readPhewbChecks(pool), PHE_RTU_SLUG_SHAPE_LABEL), "the admin slug is no RTU site's").toBe(
+        before,
+      );
+    });
   }, 60_000);
 });

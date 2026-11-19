@@ -9,6 +9,7 @@ import {
 } from "./automation-rules-seed";
 import { findSeedLocation } from "./eskom-locations-seed";
 import { getOrganizationId } from "./hierarchy-seed";
+import type { PheRtuSite } from "./phe-pilot-seed";
 import { type HierarchyExpectations, hierarchyExpectations } from "./verify-hierarchy-expected";
 import { ORGANIZATION_LAYOUT_SEED_SLUG } from "./organization-layout-seed";
 import { withOrganization } from "./seed-tenant";
@@ -62,9 +63,10 @@ const MIGRATION_0029_ASSET_DOMAINS = 5;
  * DELETE for these tables) and the seed re-creates each one before this runs.
  *
  * What a presence count cannot see, a zero count states: the decommissioned
- * fixture location stays inactive, none of the twelve legacy per-RTU PHE
- * slugs survives `cleanupLegacyPheRtuLocations`, and no `TS` point is
- * catalogued. Three things no count here sees, and what still guards each:
+ * fixture location stays inactive, every PHEWB location on an RTU site's slug
+ * is that RTU's site (ADR 0139 decision 8; a failure names each row and the
+ * fix), and no `TS` point is catalogued. Three things no count here sees, and
+ * what still guards each:
  *
  * - **Over-pinning.** An asset other than a catalog incomer pinned to the
  *   incomer template is not counted. `pue-demo-seed.spec.ts` holds the pin's
@@ -140,6 +142,8 @@ export type HierarchyCheck = {
   readonly actual: number;
   readonly wanted: number;
   readonly kind: "exact" | "atLeast";
+  /** Appended to the failure line only: the rows behind the count and the fix. */
+  readonly detail?: string;
 };
 
 /** A count column as a number; a missing row is `NaN`, which fails every check. */
@@ -162,12 +166,13 @@ export function failingChecks(checks: readonly HierarchyCheck[]): string[] {
   const failures: string[] = [];
   for (const check of checks) {
     const got = Number.isNaN(check.actual) ? "no row" : String(check.actual);
+    const detail = check.detail === undefined ? "" : `; ${check.detail}`;
     if (check.kind === "atLeast") {
       if (!(check.actual >= check.wanted)) {
-        failures.push(`${check.label}: expected at least ${check.wanted}, got ${got}`);
+        failures.push(`${check.label}: expected at least ${check.wanted}, got ${got}${detail}`);
       }
     } else if (check.actual !== check.wanted) {
-      failures.push(`${check.label}: expected ${check.wanted}, got ${got}`);
+      failures.push(`${check.label}: expected ${check.wanted}, got ${got}${detail}`);
     }
   }
   return failures;
@@ -624,6 +629,61 @@ export async function readEskomChecks(
   return checks;
 }
 
+/** ADR 0139 decision 8 — the label of the RTU-site shape check, exported for the suites. */
+export const PHE_RTU_SLUG_SHAPE_LABEL = "PHEWB RTU-slug locations not shaped as a site";
+
+/**
+ * ADR 0139 decision 8 — the PHEWB locations on an RTU site's slug that are
+ * not that RTU's site: a child of its station (by the station's slug, as
+ * `seedPheCatalog` finds it) whose `meta.phe` carries the RTU's
+ * `stationCode` and `edgeRtuId`. Params: `[slugs, stationSlugs,
+ * stationCodes, edgeRtuIds]`, one element per {@link PheRtuSite}. A NULL
+ * anywhere in the triple or a missing parent counts the row (the COALESCE).
+ */
+export const PHE_RTU_SLUG_SHAPE_SQL = `
+  SELECT l.id, l.slug, l.name
+    FROM bms.locations l
+    INNER JOIN bms.organizations o ON o.id = l.organization_id
+    INNER JOIN unnest($1::varchar[], $2::varchar[], $3::varchar[], $4::int[])
+      AS s(slug, station_slug, station_code, edge_rtu_id) ON s.slug = l.slug
+    LEFT JOIN bms.locations p ON p.id = l.parent_id
+   WHERE o.code = 'PHEWB'
+     AND NOT COALESCE(
+       p.organization_id = l.organization_id
+       AND p.slug = s.station_slug
+       AND l.meta->'phe'->>'stationCode' = s.station_code
+       AND l.meta->'phe'->>'edgeRtuId' = s.edge_rtu_id::text,
+       false)
+   ORDER BY l.slug, l.id
+`;
+
+/**
+ * The shape check, as a zero count whose failure names each offending row
+ * and the fix (owner ruling Q2, plan 12.1). Once the split path lands, the
+ * seed skips a site whose slug such a row holds (ADR 0139 decision 3), so the
+ * boot stops here with a line an operator can act on. It replaces the zero count of the retired legacy cleanup: a legacy
+ * one-RTU-per-location row restored from an old backup lands here.
+ */
+async function readPheRtuSlugShapeCheck(pool: pg.Pool, sites: readonly PheRtuSite[]): Promise<HierarchyCheck> {
+  const res = await pool.query<{ id: string; slug: string; name: string }>(PHE_RTU_SLUG_SHAPE_SQL, [
+    sites.map((site) => site.slug),
+    sites.map((site) => site.stationSlug),
+    sites.map((site) => site.stationCode),
+    sites.map((site) => site.edgeRtuId),
+  ]);
+  const rows = res.rows.map((r) => `${r.slug} (id ${r.id}, name ${JSON.stringify(r.name)})`);
+  const check: HierarchyCheck = { label: PHE_RTU_SLUG_SHAPE_LABEL, actual: res.rows.length, wanted: 0, kind: "exact" };
+  if (rows.length === 0) {
+    return check;
+  }
+  return {
+    ...check,
+    detail:
+      `each holds an RTU site's slug and is not that site (ADR 0139 decision 8): ${rows.join(", ")}; ` +
+      "fix: rename its slug",
+  };
+}
+
 /**
  * Pass 3 — the PHEWB checks. The caller holds PHEWB's tenant context; this
  * function opens no transaction.
@@ -642,7 +702,6 @@ export async function readPhewbChecks(
   const phe = expected.phe;
   const res = await pool.query<{
     phe_locs: string;
-    phe_legacy_locs: string;
     phe_rtus: string;
     phe_assets: string;
     phe_points: string;
@@ -659,30 +718,20 @@ export async function readPhewbChecks(
         INNER JOIN bms.organizations o ON o.id = l.organization_id
         WHERE o.code = 'PHEWB'
           AND l.code = ANY($1::varchar[])) AS phe_locs,
-      -- The one-RTU-per-location rows cleanupLegacyPheRtuLocations deletes,
-      -- by the same twelve slugs (owner ruling 13), never a pattern an admin
-      -- slug can match. The old exact location count was what caught a
-      -- cleanup that ran without a tenant context and deleted nothing; this
-      -- zero count keeps that, now that the location count reads only the
-      -- catalog codes.
-      (SELECT COUNT(*)::text FROM bms.locations l
-        INNER JOIN bms.organizations o ON o.id = l.organization_id
-        WHERE o.code = 'PHEWB'
-          AND l.slug = ANY($2::varchar[])) AS phe_legacy_locs,
       (SELECT COUNT(*)::text FROM bms.rtus r
         INNER JOIN bms.locations l ON l.id = r.location_id
         INNER JOIN bms.organizations o ON o.id = l.organization_id
         WHERE o.code = 'PHEWB'
-          AND r.external_rtu_id = ANY($3::int[])) AS phe_rtus,
+          AND r.external_rtu_id = ANY($2::int[])) AS phe_rtus,
       -- Moved here from Pass 1: assets/asset_points are policied since 0047,
       -- and every PHE row is PHEWB's, so this pass sees exactly them.
       (SELECT COUNT(*)::text FROM bms.assets
-        WHERE code = ANY($4::varchar[])) AS phe_assets,
+        WHERE code = ANY($3::varchar[])) AS phe_assets,
       (SELECT COUNT(*)::text FROM bms.asset_points ap
         INNER JOIN bms.assets a ON a.id = ap.asset_id
         WHERE (a.code, ap.point_key) IN (
           SELECT x.asset_code, x.point_key
-          FROM unnest($5::varchar[], $6::varchar[]) AS x(asset_code, point_key)
+          FROM unnest($4::varchar[], $5::varchar[]) AS x(asset_code, point_key)
         )) AS phe_points,
       -- The TS pairs the seed deletes rather than catalogues: zero, so a
       -- seed that catalogued them again fails here and not only in a total.
@@ -690,7 +739,7 @@ export async function readPhewbChecks(
         INNER JOIN bms.assets a ON a.id = ap.asset_id
         WHERE (a.code, ap.point_key) IN (
           SELECT x.asset_code, x.point_key
-          FROM unnest($7::varchar[], $8::varchar[]) AS x(asset_code, point_key)
+          FROM unnest($6::varchar[], $7::varchar[]) AS x(asset_code, point_key)
         )) AS phe_ts_points,
       -- Whole-fleet invariants, PHEWB's half (see the ESKOM pass).
       (SELECT COUNT(*)::text FROM bms.assets WHERE location_id IS NULL) AS orphan_assets,
@@ -704,7 +753,7 @@ export async function readPhewbChecks(
       -- membership and no role. That was invisible on a developer machine —
       -- which has been re-seeded many times and therefore holds the rows
       -- already — and invisible in CI, which seeds once and asserted none of
-      -- this. Both read only the catalog electrical codes ($9).
+      -- this. Both read only the catalog electrical codes ($8).
       --
       -- NO BACKTICK MAY APPEAR IN THIS COMMENT. The whole SELECT is a
       -- JavaScript template literal, so a backtick here closes it and the
@@ -714,31 +763,30 @@ export async function readPhewbChecks(
         INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
         INNER JOIN bms.assets a ON a.id = agm.asset_id
         WHERE ag.code = 'electrical'
-          AND a.code = ANY($9::varchar[])) AS phe_elec_members,
+          AND a.code = ANY($8::varchar[])) AS phe_elec_members,
       (SELECT COUNT(*)::text FROM bms.asset_group_members agm
         INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
         INNER JOIN bms.assets a ON a.id = agm.asset_id
         WHERE ag.code = 'electrical'
-          AND a.code = ANY($9::varchar[])
+          AND a.code = ANY($8::varchar[])
           AND agm.role IS NOT NULL) AS phe_elec_roled,
       -- F3.73 plan D12: a view row, of any kind, on each catalog station
       -- (the F3.67 shape; the seed does not own the row once written).
       (SELECT COUNT(*)::text FROM bms.site_control_room_views v
         INNER JOIN bms.locations l ON l.id = v.location_id
-        WHERE l.slug = ANY($10::varchar[])) AS phe_site_layout_views,
+        WHERE l.slug = ANY($9::varchar[])) AS phe_site_layout_views,
       -- F4.319, ADR 0113 decision 6: every catalog asset is a member of its
       -- station's pump-station group, carrying a role (meter, pump,
-      -- dosing-pump or rtu-controller). Read off the frozen catalog ($4).
+      -- dosing-pump or rtu-controller). Read off the frozen catalog ($3).
       (SELECT COUNT(*)::text FROM bms.asset_group_members agm
         INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
         INNER JOIN bms.assets a ON a.id = agm.asset_id
         WHERE ag.code = 'pump-station'
           AND ag.location_id = a.location_id
-          AND a.code = ANY($4::varchar[])
+          AND a.code = ANY($3::varchar[])
           AND agm.role IS NOT NULL) AS phe_pump_station_roled
   `, [
     phe.locationCodes,
-    phe.legacyLocationSlugs,
     phe.externalRtuIds,
     phe.assetCodes,
     phe.points.map((point) => point.assetCode),
@@ -750,7 +798,7 @@ export async function readPhewbChecks(
   ]);
   const row = res.rows[0];
   expect("PHEWB catalog locations present", row?.phe_locs, phe.locationCodes.length);
-  expect("PHEWB legacy per-RTU locations", row?.phe_legacy_locs, 0);
+  checks.push(await readPheRtuSlugShapeCheck(pool, phe.rtuSites));
   expect("PHEWB catalog RTUs present", row?.phe_rtus, phe.externalRtuIds.length);
   expect("PHE catalog assets present", row?.phe_assets, phe.assetCodes.length);
   // 252 today, not 264: the catalog's 12 `TS` sensors are the MQTT envelope's
