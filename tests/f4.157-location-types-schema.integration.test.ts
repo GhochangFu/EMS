@@ -7,6 +7,7 @@ import {
   requireIntegrationDb,
   resolveIntegrationRoleUrl,
 } from "../apps/api/src/testing/integration-db-gate.js";
+import { PHE_SPLIT_STATION_CODES } from "../packages/db/src/phe-split-stations.js";
 
 /**
  * `F4.157` / ADR 0077 decisions 1-4 — what migration `0085` guarantees against
@@ -187,16 +188,26 @@ describe.skipIf(!has)("F4.157 — bms.location_types against a live database", (
   });
 
   // I5 — see the module docblock.
-  it("I5 every seeded PHE location and its map pin carry type/kind pump_station", async () => {
+  it("I5 every seeded PHE location carries type pump_station (campus for a split station) and its map pin kind pump_station", async () => {
     await inTx(async (run) => {
       await run("SET LOCAL ROLE bms_fleet");
+      // ADR 0139 decision 2: a station on the committed split list is `campus`; its RTU sites
+      // (`meta.phe.edgeRtuId`) and every unsplit station stay `pump_station`.
       const locationRows = await run(
-        `SELECT l.type FROM bms.locations l
+        `SELECT l.type,
+                CASE WHEN l.meta->'phe' ? 'edgeRtuId' THEN 'pump_station'
+                     WHEN l.meta->'phe'->>'stationCode' = ANY($1::text[]) THEN 'campus'
+                     ELSE 'pump_station' END AS wanted
+           FROM bms.locations l
            JOIN bms.organizations o ON o.id = l.organization_id
           WHERE o.code = 'PHEWB' AND l.meta ? 'phe'`,
+        [[...PHE_SPLIT_STATION_CODES]],
       );
       expect(locationRows.rows.length, "no PHEWB locations found — run pnpm db:seed").toBeGreaterThan(0);
-      expect(new Set(locationRows.rows.map((r) => r.type))).toEqual(new Set(["pump_station"]));
+      expect(locationRows.rows.filter((r) => r.type !== r.wanted)).toEqual([]);
+      expect(new Set(locationRows.rows.map((r) => r.type))).toEqual(
+        new Set(PHE_SPLIT_STATION_CODES.length > 0 ? ["pump_station", "campus"] : ["pump_station"]),
+      );
 
       const mapRows = await run(
         `SELECT ml.kind FROM bms.map_locations ml

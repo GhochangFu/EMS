@@ -18,7 +18,7 @@ describe("F4.388 — the PHE split path, pure halves (ADR 0139)", () => {
     assertTheSuffixRuleOnTheRealNames();
   });
 
-  it("derives Lotapata's two split sites with four assets each, and none for the committed list", () => {
+  it("derives Lotapata's two split sites with four assets each, none for an empty list, the same two for the committed list", () => {
     assertLotapataSplitSites();
   });
 

@@ -17,6 +17,7 @@ import {
   requireIntegrationDb,
   resolveIntegrationRoleUrl,
 } from "../apps/api/src/testing/integration-db-gate.js";
+import { PHE_SPLIT_STATION_CODES } from "../packages/db/src/phe-split-stations.js";
 import { assertDatabaseName, copyDatabase, dropDatabaseIfExists } from "./harness/template-database";
 import { withDatabase, workerDatabaseName } from "./harness/worker-database";
 
@@ -51,9 +52,9 @@ const { createSeedPool, withOrganization } = require_("../packages/db/dist/seed-
  * station's site layouts, its unlinked view, and its sites' map rows, through
  * the whole PHEWB path twice.
  *
- * **This suite splits the real Lotapata, and a split never moves back**, so it
- * cannot run on its worker's database copy (ADR 0124): every later file on
- * that worker would read a split station. It makes **its own copy** of the
+ * **This suite splits synthetic stations B to E, and a split never moves
+ * back**, so it cannot run on its worker's database copy (ADR 0124): every
+ * later file on that worker would read its split stations. It makes **its own copy** of the
  * run's seeded template, `<worker database>_f4388`: the name comes from the
  * harness (`workerDatabaseName` under the run's prefix), and the harness's
  * guarded `copyDatabase` / `dropDatabaseIfExists` create and drop it. The
@@ -64,9 +65,12 @@ const { createSeedPool, withOrganization } = require_("../packages/db/dist/seed-
  * template to copy, and it skips.
  *
  * The split path runs through the injected `catalog` and `splitStationCodes`
- * (plan D2): the committed list stays empty. Synthetic stations (Lotapata's 2
- * RTUs and 8 devices under run-tagged codes) cover the cold path, a skipped
- * site and an administrator's view.
+ * (plan D2). The template is seeded with the committed list, so a real station
+ * on it is born split there (release B: Lotapata). The real stations therefore
+ * ride along on the committed list, and synthetic stations (Lotapata's 2 RTUs
+ * and 8 devices under run-tagged codes) cover the demo-host path (B: seeded
+ * unsplit, then split), the cold path, a skipped site and an administrator's
+ * view.
  *
  * Connection `"owner"`, as `pnpm db:seed` runs, so `FORCE ROW LEVEL SECURITY`
  * binds every write.
@@ -97,7 +101,6 @@ const RTU_BASE = 1_100_000_000 + (parseInt(RUN.slice(0, 6), 16) % 1_000_000) * 1
 
 const real = loadPheCatalog();
 const lotapataRows = real.rows.filter((row) => row.StationCode === "CBLTPT1");
-const LOTAPATA = "CBLTPT1";
 
 /** A copy of Lotapata (2 RTUs, 8 devices) under run-tagged identities. */
 function syntheticStation(n: number): Catalog {
@@ -345,23 +348,28 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
     for (const site of pheRtuSites(E)) await expectSiteCopy(site.slug);
   }, 240_000);
 
-  // ── The real Lotapata (demo-host path), a cold station C and a station D with a skipped site ──
+  // ── Station B (the demo-host path: seeded unsplit, then split), a cold station C and a station D
+  // with a skipped site; the real stations ride along on the committed list ──
+  const B = syntheticStation(6);
   const C = syntheticStation(3);
   const D = syntheticStation(4);
-  const CAT = catalogOf(real, C, D);
-  const CODES = [LOTAPATA, codeOf(C), codeOf(D)];
-  const lotapataSites = pheRtuSites(real).filter((site) => site.stationCode === LOTAPATA);
+  const CAT = catalogOf(real, B, C, D);
+  const CODES = [...PHE_SPLIT_STATION_CODES, codeOf(B), codeOf(C), codeOf(D)];
+  const realSplitSites = pheRtuSites(real).filter((site) => PHE_SPLIT_STATION_CODES.includes(site.stationCode));
+  const bSites = pheRtuSites(B);
   const [dI, dII] = pheRtuSites(D);
-  let lotapataBefore: { view?: { kind: string; dashboard_id: string | null }; map?: Record<string, unknown> } = {};
+  let bBefore: { view?: { kind: string; dashboard_id: string | null }; map?: Record<string, unknown> } = {};
   let run1: Outcome | undefined;
   let afterRun1 = "";
   const run1Lines: string[] = [];
 
-  it("L1 a split Lotapata's sites get the pump-station copies and the station's view is unlinked", async () => {
+  it("L1 a split station B's sites get the pump-station copies and the station's view is unlinked", async () => {
     if (!dI || !dII) throw new Error("station D has no two RTUs");
-    const before = await dashboardOf(siteSlug("phe-lotapata"));
-    lotapataBefore = { view: await viewOf("phe-lotapata"), map: await mapRow("phe-lotapata") };
-    expect(lotapataBefore.view, "the template's Lotapata view is its seeded copy").toEqual({
+    // B as the demo host holds a station before its release: seeded with its code off the list.
+    await wholePath(catalogOf(real, B), [...PHE_SPLIT_STATION_CODES]);
+    const before = await dashboardOf(siteSlug(slugOf(B)));
+    bBefore = { view: await viewOf(slugOf(B)), map: await mapRow(slugOf(B)) };
+    expect(bBefore.view, "B's view is its seeded copy").toEqual({
       kind: "dashboard",
       dashboard_id: before?.id,
     });
@@ -375,15 +383,16 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
     run1 = await wholePath(CAT, CODES, run1Lines);
 
     expect(run1.skippedSites.map((skip) => [skip.site.slug, skip.reason])).toEqual([[dI.slug, "foreign-slug"]]);
-    expect([...run1.movedExternalRtuIds].sort(), "Lotapata's two RTUs moved; C and D were born at their sites").toEqual(
-      lotapataSites.map((site) => site.edgeRtuId).sort(),
-    );
-    for (const site of lotapataSites) await expectSiteCopy(site.slug);
-    expect(await viewOf("phe-lotapata"), "decision 7 (Q5): unlinked").toEqual({
+    expect(
+      [...run1.movedExternalRtuIds].sort(),
+      "B's two RTUs moved; C and D were born at their sites, the real split stations in the template",
+    ).toEqual(bSites.map((site) => site.edgeRtuId).sort());
+    for (const site of bSites) await expectSiteCopy(site.slug);
+    expect(await viewOf(slugOf(B)), "decision 7 (Q5): unlinked").toEqual({
       kind: "generated",
       dashboard_id: null,
     });
-    const after = await dashboardOf(siteSlug("phe-lotapata"));
+    const after = await dashboardOf(siteSlug(slugOf(B)));
     expect(after, "the station's dashboard row and its tabs stay").toEqual(before);
     expect(run1Lines.filter((line) => line.includes("unlinked")), "one line for the one unlink").toHaveLength(1);
     afterRun1 = await snapshot();
@@ -402,7 +411,7 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
   it("L4 one map row per resolved site, none for a skipped site, the station's row unchanged", async () => {
     const resolved = run1?.sites ?? [];
     expect(resolved.map((site) => site.slug).sort()).toEqual(
-      [...lotapataSites, ...pheRtuSites(C), dII].map((site) => site?.slug).sort(),
+      [...realSplitSites, ...bSites, ...pheRtuSites(C), dII].map((site) => site?.slug).sort(),
     );
     for (const site of resolved) {
       const row = await mapRow(site.slug);
@@ -420,7 +429,7 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
       });
     }
     expect(await mapRow(dI?.slug ?? ""), "a skipped site's slug gets no row").toBeUndefined();
-    expect(await mapRow("phe-lotapata")).toEqual(lotapataBefore.map);
+    expect(await mapRow(slugOf(B))).toEqual(bBefore.map);
   }, 60_000);
 
   it("L5 the whole PHEWB path twice changes no row, and the gate holds after each run", async () => {
@@ -434,14 +443,14 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
   }, 300_000);
 
   it("L2b a station view an administrator re-links after the split stays linked on the next seed", async () => {
-    const station = await locationId("phe-lotapata");
-    const old = await dashboardOf(siteSlug("phe-lotapata"));
+    const station = await locationId(slugOf(B));
+    const old = await dashboardOf(siteSlug(slugOf(B)));
     await pools().superuser.query(
       `UPDATE bms.site_control_room_views SET kind = 'dashboard', dashboard_id = $1 WHERE location_id = $2`,
       [old?.id, station],
     );
     await wholePath(CAT, CODES);
-    expect(await viewOf("phe-lotapata"), "the unlink is the move's, once").toEqual({
+    expect(await viewOf(slugOf(B)), "the unlink is the move's, once").toEqual({
       kind: "dashboard",
       dashboard_id: old?.id,
     });

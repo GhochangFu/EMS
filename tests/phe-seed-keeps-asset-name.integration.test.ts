@@ -47,8 +47,8 @@ let pool: IntegrationPool | undefined;
 let db: ReturnType<typeof createDb> | undefined;
 /**
  * ADR 0139 (plan D2) — the superuser pool the seed's site-holder read runs on, as `seed.ts`
- * passes it. Unused while the committed split list is empty; without it, release B's list
- * would make `seedPheCatalog` refuse here.
+ * passes it. The committed split list is not empty since release B, and without it
+ * `seedPheCatalog` would refuse here.
  */
 let holderReader: IntegrationPool | undefined;
 let vendorName: string | undefined;

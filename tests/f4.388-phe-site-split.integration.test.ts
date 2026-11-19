@@ -48,7 +48,7 @@ const { createSeedPool, withOrganization } = require_("../packages/db/dist/seed-
  * splits a station into one site per RTU.
  *
  * Every case runs the split path through `seedPheCatalog`'s injected
- * `catalog` and `splitStationCodes` (plan D2): the committed list stays empty.
+ * `catalog` and `splitStationCodes` (plan D2), never the committed list.
  * Each case seeds its own synthetic stations, copied from Lotapata's 2 RTUs
  * and 8 devices with run-tagged codes, so the real PHEWB rows are never
  * touched and the cases share no row. The seed runs in `withOrganization`,
