@@ -1194,3 +1194,56 @@ no seed data change beyond the import move in B3.
   publish, follow the hint to Versions & migration, migrate one asset, and its
   donut shows a slice; Remove health bands then save leaves no `health` key.
 - N/A: API, database, migrations, worker, ingest/MQTT.
+
+## Amendment 8 — the Calculations tab can add a new derived point (`F4.389`, owner, 2026-11-19)
+
+**Status: Proposed — the owner chose plan option (b) in chat on 2026-11-19
+and took the recommended answers to Q2 and Q3; the owner's merge of this text
+approves it.** Backlog row `F4.389`, plan
+`docs/plans/f4.389-derived-point-editor.md`. Lines marked *drafter choice*
+were not asked.
+
+This amendment widens one cell of decision 2's table. The Calculations tab
+still writes `PATCH /:id` with the whole `points[]`, and it now also sets
+`pointKey`, `label`, `unit` and `sortOrder` **for a derived point it adds**.
+Changing a **saved** point's kind stays the Points tab's control.
+
+### Facts the amendment rests on
+
+- Each tab builds its rows from the stored `template.points`. A derived row
+  added on the Points tab never reached the Calculations tab, and the Points
+  tab refused to save it with no formula. No UI path created a derived point.
+  It was found on 2026-11-19 during `F4.387`, which was finished with a direct
+  `PATCH`.
+
+### Decision
+
+1. The Calculations tab has an **Add a derived point** control on a draft. It
+   appends a derived row (`bms-calc-v1`, no trigger, so the author must choose
+   one). That row shows a point-key select over the active catalog, a label
+   and a unit, then the existing formula and trigger controls. The existing
+   Save sends it.
+2. A row added there and not yet saved can be removed there. A stored row is
+   not removable from this tab (*drafter choice*: removal of a stored point
+   stays a Points tab edit).
+3. The Points tab's message for a derived row with no formula names the new
+   control, and says how to change a saved point to derived: remove it on the
+   Points tab and save, then add it on the Calculations tab (owner, Q3).
+4. The point-key catalog is fetched only while an added row exists, under the
+   Points tab's query key (*drafter choice*).
+
+### Not in scope
+
+- One-step change of a saved measured point to derived (plan option (c),
+  shared unsaved state between the two tabs).
+- Any API, contract or schema change.
+
+### Verification owed
+
+- Spec: `calculations-tab.add-derived.spec.tsx` adds a derived point with a
+  formula and a trigger and holds the PATCH body (both points, no `meta`
+  key); an incomplete added point blocks Save; no control on a frozen
+  version; the empty state names the control; an added point can be removed.
+- Browser: on a draft, add a derived point, save, hard reload: the point is
+  still there.
+- N/A: API, database, migrations, worker, ingest/MQTT.
