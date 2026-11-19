@@ -52,7 +52,8 @@ shapes, every `d` under 8,192 characters, the largest file 40,537 bytes.
    pump station, ESKOM LV single line, water train, HVAC chiller plant) can
    draw the isometric version of each core symbol.
 3. **Default:** every existing widget keeps the core glyphs; an admin opts a
-   widget in to the isometric set.
+   widget in to the isometric set. *Amended by Amendment 2 (2026-11-19): the
+   stock `pump-station-standard` v3 opts its three mimics in.*
 
 ## Decision
 
@@ -195,3 +196,24 @@ them.
   (today 1,070.50 kB raw / 304.85 kB gzip for 50).
 - **Deferred:** a core tower symbol for the core set; per-asset-type default
   glyphs; glyphs for door switches, humidity and power meters of a cold room.
+
+## Amendment 2 — the stock `pump-station-standard` draws the isometric set (`F4.388`) (owner, 2026-11-19)
+
+**Status: Proposed — accepted when the PR that adds it merges** (owner ruling
+Q3 of the [F4.388 site-copy plan](../plans/f4.388-site-copy-station-settings.md)).
+The owner asked on 2026-11-19 that the PHE site dashboards made by the
+ADR 0139 split look like the approved station layout, whose mimics draw the
+isometric set, and ruled "Both": the sites copy their station
+(ADR 0139 Amendment 1) **and** the stock template changes.
+
+1. **`pump-station-standard` goes to `stockVersion` 3**: its three `mimic`
+   widgets (`pump_station_overview`, `_electrical`, `_environment`) carry
+   `glyphSet: "iso"`. This amends ruling 3 for this stock template only;
+   every other widget keeps the core default.
+2. **Glyph only** (ruling Q1): the stock trend strips hold no selection,
+   because ADR 0108 Amendment 7 stands.
+3. **No live row changes.** A stock bump touches no organization's row
+   (ADR 0052 decision 7); `pump-station-standard` has no upgrade chain, so
+   the demo host's template rows and copies stay as they are. The change
+   reaches a copy the seed makes after it: a cold start, or a new PHE site
+   with no station to copy from.

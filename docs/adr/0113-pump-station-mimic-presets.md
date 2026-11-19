@@ -184,7 +184,8 @@ list up to three (`F4.307`, ADR 0081 Amendment 1).
    `electrical` group apply. An asset may be in more than one group, so the
    `electrical` and `environment` groups do not change.
 
-7. **A new stock site template `pump-station-standard`** in
+7. **A new stock site template `pump-station-standard`** *(stockVersion 3
+   draws the isometric set: ADR 0121 Amendment 2, 2026-11-19)* in
    `packages/shared/src/site-templates/`, registered in
    `apps/api/src/admin/dashboard-templates/stock-catalog.ts` beside
    `smoc-standard`. Three tabs *(drafter: tile set beyond the mimics)*:
