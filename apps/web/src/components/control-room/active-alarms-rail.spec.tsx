@@ -105,6 +105,8 @@ type Setup = {
   assetsStatus?: "pending" | "success" | "error";
   /** `F3.66`: render the organization-scoped rail instead of the id-scoped one. */
   organizationId?: string;
+  /** `F4.240` part b: render the location-scoped rail (a station and its sites). */
+  locationId?: string;
 };
 
 const ORG = "44444444-4444-4444-8444-444444444444";
@@ -114,6 +116,7 @@ function renderRail({
   items = [alarm(1)],
   assetsStatus = "success",
   organizationId,
+  locationId,
 }: Setup = {}): void {
   mocks.handlers.clear();
   mocks.fetchActiveAlarms.mockImplementation(
@@ -136,7 +139,9 @@ function renderRail({
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        {organizationId !== undefined ? (
+        {locationId !== undefined ? (
+          <ActiveAlarmsRail locationId={locationId} />
+        ) : organizationId !== undefined ? (
           <ActiveAlarmsRail organizationId={organizationId} />
         ) : (
           <ActiveAlarmsRail assetIds={ids} assetsStatus={assetsStatus} />
@@ -436,4 +441,27 @@ export async function theBadgeIsOnTheSuppressedRowOnly(): Promise<void> {
   expect(within(await railRow("Alarm message 1")).getByText("Maintenance")).toBeInTheDocument();
   expect(within(await railRow("Alarm message 2")).queryByText("Maintenance")).toBeNull();
   expect(within(await railRow("Alarm message 3")).queryByText("Maintenance")).toBeNull();
+}
+
+/*
+ * `F4.240` part b (ADR 0140 decision 3, plan D5) — the location-scoped rail: the station page's
+ * alarms of the station and every site under it, read by `locationId` (the API walks the subtree).
+ */
+
+/** R-L1 — given a location, both reads ask for exactly `{ locationId }`, and no no-ids note shows. */
+export async function fetchesBothReadsForTheLocation(): Promise<void> {
+  renderRail({ locationId: "st" });
+  await waitFor(() => expect(mocks.fetchActiveAlarms).toHaveBeenCalledWith({ locationId: "st" }));
+  await waitFor(() => expect(mocks.fetchAlarmSummary).toHaveBeenCalledWith({ locationId: "st" }));
+  expect(screen.queryByText("No assets in scope")).toBeNull();
+}
+
+/** R-L2 — an empty location id makes no call. */
+export async function anEmptyLocationIdMakesNoCall(): Promise<void> {
+  renderRail({ locationId: "" });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(mocks.fetchActiveAlarms).not.toHaveBeenCalled();
+  expect(mocks.fetchAlarmSummary).not.toHaveBeenCalled();
 }
