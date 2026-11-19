@@ -2,6 +2,8 @@ import type { Logger } from "@nestjs/common";
 import pg from "pg";
 import { expect, vi, type MockInstance } from "vitest";
 
+import { POOL_IDLE_TIMEOUT_MS } from "./database.module";
+
 /**
  * `F4.173` — the three `DatabaseModule` pools survive a client that the server
  * ends, whether the client is idle in the pool or checked out of it.
@@ -39,8 +41,6 @@ import { expect, vi, type MockInstance } from "vitest";
  * output. In CI these are the dev defaults already in the workflow file; do
  * not share a red local run made with real credentials.
  */
-
-import { POOL_IDLE_TIMEOUT_MS } from "./database.module";
 
 type ErrorSpy = MockInstance<Logger["error"]>;
 type ClientState = "idle" | "checked-out";
