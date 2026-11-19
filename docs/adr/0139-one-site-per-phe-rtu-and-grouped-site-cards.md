@@ -6,7 +6,8 @@
 2026-11-18) and `F4.240` (raised 2026-10-10 by the `F2.10` closure). The owner
 ruled the order on 2026-11-19 (recorded in both rows, #1439 `04b92a44`) and
 gave eight rulings in chat on 2026-11-19, one at a time (listed under
-*Rulings*). Ruling Q5 was asked a second time after the migration review found
+*Rulings*); the second part of Q7 was a free-text answer, recorded verbatim
+with the drafter's reading. Ruling Q5 was asked a second time after the migration review found
 that `bms.dashboards` has no archive column. Rulings Q7 and Q8 were asked after
 an impact audit of every reader of an asset's location (alarms, maintenance,
 access, reports, ML, advisories, energy, tariffs, calc; see *Context*); Q7 was
@@ -37,7 +38,7 @@ layout). Code citations are to `main` at `04b92a44`.
 | Q4 | The station's location type | **`campus`.** The 12 sites stay `pump_station`. |
 | Q5 | The station's old site-layout dashboard after the move | First ruled "archive it"; `bms.dashboards` has no `archived_at` (only the template tables do), so asked again: **unlink it, keep the row.** The station's view becomes the generated kind; the dashboard row, its tabs and the emptied groups stay. Nothing is deleted and no migration. |
 | Q6 | `F4.240` part a: the station header on the organization page | **A roll-up, and a click filters the map.** The station name with sites live, assets and active alarms; a click filters the site map to the station's sites. No link to a station page until part b. |
-| Q7 | The station's tariff and monthly bill after the split | First asked with a wrong fact (one billing meter per tariff); asked again with both meters named: **split it into two site bills.** On who writes them and with which load, the owner in chat: "Sites: they will have their stations' organizations carry flight for Lota Pata 1 and Lota Pata 2. All have WBSCDCLs' current settings for tariff." Read as: **each site carries its station's tariff forward**, with the same WBSEDCL settings and its own meter (decision 4a). |
+| Q7 | The station's tariff and monthly bill after the split | First asked with a wrong fact (one billing meter per tariff); asked again with both meters named: **split it into two site bills.** On who writes them and with which load, the owner in chat: "Sites: they will have their stations' organizations carry flight for Lota Pata 1 and Lota Pata 2. All have WBSCDCLs' current settings for tariff." Read as: **each site carries its station's tariff forward**, with the same WBSEDCL settings and its own meter (decision 4a). *(drafter reading; the owner confirms it by merging this record)* |
 | Q8 | The asset `site_name` of a split station | **The site's name** (`Lotapata I`), so the alarms page's Site column, the work orders and the asset panel name the office (decision 11). |
 
 **Order (owner, 2026-11-19, `F4.388` row):** one ADR for both rows;
@@ -143,7 +144,7 @@ three kinds:
   alarm list and summary filters (`apps/api/src/alarms/alarm-location-scope.ts:57`),
   maintenance cover (`apps/api/src/alarms/maintenance-cover.ts:45-46`, a
   window on a station still covers the moved assets), maintenance-window
-  scope, location grants (`apps/api/src/auth/access-scope-sources.ts:127-145`),
+  scope, location grants (`apps/api/src/auth/access-scope-sources.ts:195-197`),
   report schedules, the ML and findings filters
   (`apps/api/src/filter-options/asset-filter-scope.service.ts:59`), Copilot
   tools, calc parameters and the per-asset tariff for cost
@@ -227,19 +228,27 @@ three kinds:
    release after release B does not raise K4. *(drafter: the reverse move,
    if ever wanted, is its own row)*
 
-   4a. **Each site carries its station's tariff forward** (Q7). In the same
-   transaction, after the move, for each site of a split station that has no
+   4a. **Each site carries its station's tariff forward** (Q7, drafter
+   reading). In the same
+   transaction, after the move, for each site whose RTU the move statement
+   moved **in this run** (its `RETURNING`), and only when that site has no
    tariff mapping of its own, the seed copies each of the station's
    `bms.location_tariffs` rows (`tariff_key`, `sanctioned_load`,
    `sanctioned_load_unit`, `effective_from`, `effective_to`) to the site,
    with only the meters of that mapping that now sit at the site
-   (`bms.location_tariff_meters`; `billing_meter_asset_id` = the first of
-   them). A mapping with no meter at the site is not copied. The match is by
-   asset id, never by a name (ADR 0080 decision 4). **Create-once:** a site
-   that already has a mapping is skipped, so an administrator's later edit —
-   for example each office's own sanctioned load — is never overwritten, and
-   a second run copies nothing. The station's rows stay unchanged, as its
-   dashboard does (Q5). `location_tariffs_no_overlap` is per location and the
+   (`bms.location_tariff_meters`; `billing_meter_asset_id` = the station's
+   billing meter if it is at the site, else the lowest asset id, the list
+   order of `apps/api/src/tariffs/location-tariffs.service.ts:385`). A
+   mapping with no meter at the site is not copied. The match is by asset
+   id, never by a name (ADR 0080 decision 4). **Once per move:** a later run
+   moves nothing, so it copies nothing — an administrator's later edit (for
+   example each office's own sanctioned load), a deleted site mapping, and a
+   station mapping added later are never copied again. The station's rows
+   stay unchanged, as its dashboard does (Q5). The seed logs each copy and
+   writes no audit row (no actor), as `db:seed`'s other writes do (ADR 0134
+   Amendment 2); the API's `master.location_tariff.create` row
+   (`location-tariffs.service.ts:150-160`) is for an administrator's write.
+   *(drafter)* `location_tariffs_no_overlap` is per location and the
    site has no row, and each copied meter sits at the site, so ADR 0134's
    subtree rule holds. *(drafter: the copy keeps the station's dates, so the
    site's past months bill too; the station rows stay)*
@@ -290,13 +299,15 @@ three kinds:
     asset/RTU location-mismatch count and the pump-station member rule
     (`ag.location_id = a.location_id`, `:736`) stay as they are.
 11. **`site_name` names the site** (Q8). For an asset that sits at a child
-    site of its station, the PHE seed's asset write sets `site_name` to that
-    site's name (`Lotapata I`) instead of the catalog `StationName`
-    (`phe-pilot-seed.ts:494`); every other PHE asset keeps the catalog name.
-    The simulator's wiring reads only ESKOM assets and skips `PHE-` codes
-    (`hierarchy-seed.ts:337-338`), and the location backfill reads only
-    `location_id IS NULL` (`asset-groups-seed.ts:28-35`), so neither reads a
-    PHE `site_name`. A re-deploy of a release older than release B writes the
+    site of its station, the PHE seed's asset write sets `site_name` to the
+    site's `bms.locations.name` as decision 3 writes it (`Lotapata I`)
+    instead of the catalog `StationName` (`phe-pilot-seed.ts:494`); every
+    other PHE asset keeps the catalog name. The simulator's seed wiring reads
+    only ESKOM assets and skips `PHE-` codes (`hierarchy-seed.ts:337-338`),
+    the simulator runtime filters on `SIM_SITE_NAMES`
+    (`apps/sim/src/index.js:629`), which names no PHE station, and the
+    location backfill reads only `location_id IS NULL`
+    (`asset-groups-seed.ts:26-36`), so none reads a PHE `site_name`. A re-deploy of a release older than release B writes the
     catalog name back; that is cosmetic and the next release restores it.
 
 ### Part 2 — site cards grouped under their parent (`F4.240` part a)
@@ -388,8 +399,8 @@ One additive contract field in `packages/shared/src/contracts/`.
   one-line pointer in the same change.
 - **ADR 0007** — relates; decision 4a's "the seed asserts once, then the
   operator owns it" is not extended to locations: the seed keeps owning PHE
-  RTU and asset locations. The tariff copy (decision 4a here) follows that
-  rule: the seed writes a site's tariff once, then the administrator owns it.
+  RTU and asset locations. The tariff copy (this record's decision 4a)
+  follows ADR 0007 decision 4a's rule: the seed writes a site's tariff once, then the administrator owns it.
 - **ADR 0113** — relates; each site gets the pump-station layout; the
   station's copy is unlinked, not upgraded.
 - **ADR 0111** — relates; labels are unchanged (`<code> · <RTU>`).
@@ -448,7 +459,8 @@ One additive contract field in `packages/shared/src/contracts/`.
     each site's three groups hold its 4 assets with roles.
   - After the move, each site holds one copy of each station tariff with only
     its own meter; run 2 copies nothing; a site mapping an administrator
-    edited is not overwritten; the station's mappings are unchanged.
+    edited or deleted is not written again on the next boot; the station's
+    mappings are unchanged.
   - Each moved asset's `site_name` is its site's name; an asset of a station
     not on the list keeps the catalog name.
   - A cold start (roles, migrate, seed) passes with the list empty; telemetry
