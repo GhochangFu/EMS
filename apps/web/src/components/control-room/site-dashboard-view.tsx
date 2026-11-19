@@ -32,13 +32,22 @@ type SiteDashboardViewProps = {
    * Required, so every host names it; `false` drops kW-only widgets at render (`DashboardLiveCanvas`).
    */
   energyShown: boolean;
+  /**
+   * `F4.240` part b (ADR 0140 decision 3e, plan D9) — drawn as one half of the station view, under
+   * the station's own tab chooser: no inner tab strip, never a `<Navigate>` (a key this dashboard
+   * lacks shows a status line instead, so a half never moves the station page), and no tab-marker
+   * read. Omitted, nothing changes.
+   */
+  embedded?: boolean;
 };
 
 /**
  * The site page's resolve read is keyed `["control-room", "site-view", locationId]`
  * (`pages/control-room/site-page.tsx`). This view is handed the slug, not the
- * location id, so `Try again` invalidates by the stable prefix: only the
- * mounted site page's read is active, so only it refetches.
+ * location id, so `Try again` invalidates by the stable prefix and every mounted
+ * resolve read refetches: one on a site page, and since `F4.240` part b the station's
+ * and each of its sites' on a station page (`StationSiteHalves`). An unmounted entry
+ * is only marked stale.
  */
 const SITE_VIEW_RESOLVE_PREFIX = ["control-room", "site-view"] as const;
 
@@ -93,6 +102,12 @@ const SITE_VIEW_RESOLVE_PREFIX = ["control-room", "site-view"] as const;
  * `Set up trend strips` beside `Open in Dashboards`. It opens the wizard in `append` mode: Finish
  * posts once through the trend arm, then this view's read is invalidated, so the canvas draws the
  * stored strips. The server decides the dashboard; a refused user sees the wizard's fixed sentence.
+ *
+ * **Embedded (`F4.240` part b, ADR 0140 decision 3e, plan D9).** In a station half the station page
+ * owns the tab choice: `embedded` draws no tab strip, calls `useTabMarkers` with a null key (no
+ * site-widgets or vocabulary read for markers), and answers a key the dashboard lacks with a
+ * status line, never a redirect. The halves pass no `role`, so `Set up trend strips` stays on the
+ * site's own page.
  */
 export function SiteDashboardView({
   slug,
@@ -103,6 +118,7 @@ export function SiteDashboardView({
   role,
   siteName,
   energyShown,
+  embedded = false,
 }: SiteDashboardViewProps) {
   const queryClient = useQueryClient();
   const { search } = useLocation();
@@ -123,17 +139,23 @@ export function SiteDashboardView({
   const selected = tab === undefined ? tabs[0] : tabs.find((candidate) => candidate.key === tab);
   // `F3.77` (plan D4) — keyed on the FIRST stored tab, never the selected one: the Overview's own
   // read, so a tab switch makes no second read. Called before the redirect below (a hook).
-  const markers = useTabMarkers(dashboardQ.data?.id ?? "", tabs[0]?.key ?? null);
+  // Embedded, the strip is not drawn, so its markers are not read (plan D9).
+  const markers = useTabMarkers(dashboardQ.data?.id ?? "", embedded ? null : (tabs[0]?.key ?? null));
+  const missingTab = dashboardQ.data !== undefined && tab !== undefined && selected === undefined;
 
-  if (dashboardQ.data !== undefined && tab !== undefined && selected === undefined) {
+  if (missingTab && !embedded) {
     return <Navigate to={`${sitePath}${search}`} replace />;
   }
 
   const name = dashboardQ.data?.name ?? slug;
   const body =
-    dashboardQ.data !== undefined ? (
+    missingTab ? (
+      <p role="status" className="text-sm text-ink-muted">
+        This dashboard has no such tab.
+      </p>
+    ) : dashboardQ.data !== undefined ? (
       <>
-        {tabs.length > 0 ? (
+        {tabs.length > 0 && !embedded ? (
           <nav aria-label="Dashboard tabs" className="mb-3 flex flex-wrap gap-1 border-b border-line pb-2">
             {tabs.map((entry) => {
               const marker = markers.byTab.get(entry.key);
