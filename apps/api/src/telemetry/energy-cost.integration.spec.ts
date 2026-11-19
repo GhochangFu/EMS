@@ -109,8 +109,14 @@ async function nonDemoOrganization(
   );
   const org = orgs[0];
   assert(org !== undefined, "E4.1c: no seeded organization without a tariff row — run pnpm db:seed");
+  // Leaves only: a location-scope row resolves for the location and its descendants (the
+  // ancestor walk), so neither location may be the other's ancestor. A split PHE station
+  // (ADR 0139) is the parent of its sites; two leaves are at most siblings.
   const { rows: locations } = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.locations WHERE organization_id = $1 AND active = true ORDER BY created_at, code LIMIT 2`,
+    `SELECT l.id FROM bms.locations l
+      WHERE l.organization_id = $1 AND l.active = true
+        AND NOT EXISTS (SELECT 1 FROM bms.locations c WHERE c.parent_id = l.id)
+      ORDER BY l.created_at, l.code LIMIT 2`,
     [org.id],
   );
   assert(locations.length === 2, "E4.1c: the fixture organization needs two active locations");
