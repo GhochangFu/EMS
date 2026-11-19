@@ -96,8 +96,8 @@ export type HierarchyExpectations = {
  * gate's site-shape check off (ADR 0139 decision 8). The `TS` pairs are not,
  * because a catalog with no `TS` sensor is a legitimate vendor export (see
  * `seedPheCatalog`). Nor are the split sites: `splitStationCodes` is
- * `PHE_SPLIT_STATION_CODES`, which release A commits empty (ADR 0139 decision
- * 1); a code that is not a catalog station's throws.
+ * `PHE_SPLIT_STATION_CODES`, which release A committed empty (ADR 0139 decision
+ * 1) and releases B and C fill; a code that is not a catalog station's throws.
  */
 export function hierarchyExpectations(
   pheCatalog: PheCatalogFile = loadPheCatalog(),

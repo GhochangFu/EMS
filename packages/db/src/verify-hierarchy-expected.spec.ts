@@ -4,6 +4,7 @@ import { eskomSeedAssetCatalog } from "./eskom-assets-seed";
 import { eskomCanonicalLocationRows, eskomLocationCode, seedMapLocationRows } from "./eskom-locations-seed";
 import { mapLocationRowsForInsert } from "./map-locations-seed";
 import { loadPheCatalog, pheRtuSites, stationSlug } from "./phe-pilot-seed";
+import { PHE_SPLIT_STATION_CODES } from "./phe-split-stations";
 import { hierarchyExpectations } from "./verify-hierarchy-expected";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
@@ -261,7 +262,7 @@ export function assertSixPheSiteLayoutSlugs(): void {
 /**
  * `F4.388` L6 (ADR 0139 decision 6, plan D9) — a split station keeps its slug on the list (its
  * view row becomes `generated`, decision 7) and each of its sites adds one: six for an empty list,
- * eight with Lotapata on it, which is the committed list in release B.
+ * eight with Lotapata on it. The default is the committed list.
  */
 export function assertSiteLayoutPheSlugsGainTheSplitSites(): void {
   const catalog = loadPheCatalog();
@@ -273,7 +274,9 @@ export function assertSiteLayoutPheSlugsGainTheSplitSites(): void {
   expect(lotapata).toHaveLength(8);
   expect(distinct(lotapata)).toBe(8);
   expect([...lotapata].sort()).toEqual([...stations, "phe-lotapata-i", "phe-lotapata-ii"].sort());
-  expect([...hierarchyExpectations().siteLayoutPheSlugs].sort(), "the committed list").toEqual([...lotapata].sort());
+  expect([...hierarchyExpectations().siteLayoutPheSlugs].sort(), "the default is the committed list").toEqual(
+    [...hierarchyExpectations(catalog, PHE_SPLIT_STATION_CODES).siteLayoutPheSlugs].sort(),
+  );
 }
 
 /** `F4.317` ruling Q3 — both seed organizations carry a seeded organization layout pointer row. */

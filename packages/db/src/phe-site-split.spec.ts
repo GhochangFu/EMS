@@ -9,6 +9,7 @@ import {
   pheRtuTarget,
 } from "./phe-site-split";
 import { pheSiteMapLocationRows } from "./phe-map-seed";
+import { PHE_SPLIT_STATION_CODES } from "./phe-split-stations";
 import { pheSiteLayoutSites, pheSiteLayoutStations } from "./site-layout-seed";
 import { hierarchyExpectations } from "./verify-hierarchy-expected";
 
@@ -44,14 +45,17 @@ export function assertTheSuffixRuleOnTheRealNames(): void {
 }
 
 /**
- * Lotapata's two sites with their four asset codes each; none for an empty list, and the same
- * two for the committed list (release B names Lotapata only).
+ * Lotapata's two sites with their four asset codes each; none for an empty list. The default is
+ * the committed list: the same sites as passing `PHE_SPLIT_STATION_CODES` (pinned in
+ * `tests/f4.388-split-list-is-source.test.ts`, the one line releases B and C change).
  */
 export function assertLotapataSplitSites(): void {
   const catalog = loadPheCatalog();
   expect(phePilotExpectedRows(catalog, []).splitSites).toEqual([]);
   const split = phePilotExpectedRows(catalog, ["CBLTPT1"]).splitSites;
-  expect(phePilotExpectedRows(catalog).splitSites, "the committed list splits Lotapata").toEqual(split);
+  expect(phePilotExpectedRows(catalog).splitSites, "the default is the committed list").toEqual(
+    phePilotExpectedRows(catalog, PHE_SPLIT_STATION_CODES).splitSites,
+  );
   expect(split.map((site) => [site.slug, site.code, site.edgeRtuId])).toEqual([
     ["phe-lotapata-i", "PHE-CBLTPT1-I", 3],
     ["phe-lotapata-ii", "PHE-CBLTPT1-II", 5],
@@ -89,10 +93,9 @@ export async function assertTheSeedRefusesABadListBeforeAnyQuery(): Promise<void
 export function assertTheSplitListIsNotInTheThrowOnEmptySet(): void {
   expect(() => hierarchyExpectations(loadPheCatalog(), [])).not.toThrow();
   expect(hierarchyExpectations(loadPheCatalog(), []).phe.splitSites).toEqual([]);
-  expect(hierarchyExpectations().phe.splitSites.map((site) => site.slug), "the committed list").toEqual([
-    "phe-lotapata-i",
-    "phe-lotapata-ii",
-  ]);
+  expect(hierarchyExpectations().phe.splitSites, "the default is the committed list").toEqual(
+    hierarchyExpectations(loadPheCatalog(), PHE_SPLIT_STATION_CODES).phe.splitSites,
+  );
 }
 
 const PHEWB = "00000000-0000-0000-0000-00000000000a";

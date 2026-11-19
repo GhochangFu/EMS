@@ -52,9 +52,9 @@ const { createSeedPool, withOrganization } = require_("../packages/db/dist/seed-
  * station's site layouts, its unlinked view, and its sites' map rows, through
  * the whole PHEWB path twice.
  *
- * **This suite splits the real Lotapata, and a split never moves back**, so it
- * cannot run on its worker's database copy (ADR 0124): every later file on
- * that worker would read a split station. It makes **its own copy** of the
+ * **This suite splits synthetic stations B to E, and a split never moves
+ * back**, so it cannot run on its worker's database copy (ADR 0124): every
+ * later file on that worker would read its split stations. It makes **its own copy** of the
  * run's seeded template, `<worker database>_f4388`: the name comes from the
  * harness (`workerDatabaseName` under the run's prefix), and the harness's
  * guarded `copyDatabase` / `dropDatabaseIfExists` create and drop it. The

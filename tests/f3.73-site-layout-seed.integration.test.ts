@@ -25,7 +25,7 @@ const require_ = createRequire(import.meta.url);
 const { seedMapLocationRows } = require_(
   "../packages/db/dist/eskom-locations-seed.js",
 ) as typeof EskomLocationsSeed;
-const { loadPheCatalog } = require_("../packages/db/dist/phe-pilot-seed.js") as typeof PhePilotSeed;
+const { loadPheCatalog, stationSlug } = require_("../packages/db/dist/phe-pilot-seed.js") as typeof PhePilotSeed;
 const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typeof SeedTenant;
 const {
   pheSiteLayoutSites,
@@ -92,6 +92,13 @@ const mapRows = seedMapLocationRows(loadPheCatalog());
 // in place of a station on the committed split list, its two RTU sites.
 const pheSlugs = pheSiteLayoutSites(loadPheCatalog(), PHE_SPLIT_STATION_CODES).map((station) => station.slug);
 const COPIES = 1 + pheSlugs.length;
+const splitStationSlugs = [
+  ...new Set(
+    loadPheCatalog()
+      .rows.filter((row) => PHE_SPLIT_STATION_CODES.includes(row.StationCode))
+      .map((row) => stationSlug(row.StationName)),
+  ),
+];
 const CSMOC_SLUG = siteLayoutSlug("csmoc-gauteng");
 
 // 60 s a case: the rewinding cases re-seed CSMOC up to three times in one transaction, and a
@@ -183,6 +190,14 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     // Each split station gives way to its two sites: six stations, plus one per split station.
     expect(pheSlugs).toHaveLength(6 + PHE_SPLIT_STATION_CODES.length);
     expect(res.rows[0]?.n).toBe(COPIES);
+    // A split station holds no asset and gets no copy of its own (ADR 0139 decision 7).
+    const atSplit = await probePool!.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM bms.dashboards d JOIN bms.locations l ON l.id = d.location_id
+        WHERE l.slug = ANY($1::varchar[]) AND d.slug = 'site-layout-' || l.slug`,
+      [splitStationSlugs],
+    );
+    expect(splitStationSlugs).toHaveLength(PHE_SPLIT_STATION_CODES.length);
+    expect(atSplit.rows[0]?.n).toBe(0);
   });
 
   it("points each copy's site view at it, kind dashboard", async () => {
