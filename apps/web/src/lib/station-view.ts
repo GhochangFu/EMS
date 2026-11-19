@@ -1,4 +1,4 @@
-import type { DashboardDto } from "@bms/shared";
+import type { DashboardDto, EnergyBill } from "@bms/shared";
 
 import { SITE_ASSETS_TAB, SITE_TRENDS_TAB } from "./smoc-pages";
 
@@ -37,4 +37,87 @@ export function stationTabs(dashboards: readonly (Pick<DashboardDto, "tabs"> | u
     }
   }
   return out;
+}
+
+/** One site's bill read, as the station's bills block holds it: the answer, or a failed read. */
+export type StationBillRead = {
+  readonly siteName: string;
+  /** The read's own answer; `undefined` while pending (a placeholder from another month counts as pending). */
+  readonly bill: EnergyBill | undefined;
+  /** The read rejected with no answer of its own. */
+  readonly failed: boolean;
+};
+
+/** The station total: pending, nothing to show, "—" with one sentence, or the sum. */
+export type StationBillTotal =
+  | { readonly kind: "pending" }
+  | { readonly kind: "nothing" }
+  | { readonly kind: "none"; readonly sentence: string }
+  | {
+      readonly kind: "total";
+      readonly total: number;
+      readonly currency: string;
+      readonly month: string;
+      readonly complete: boolean;
+      readonly estimated: boolean;
+    };
+
+/** The fixed sentence for each reason the station has no total, naming the site (plan D11). */
+export const STATION_TOTAL_SENTENCE = {
+  failed: (site: string): string => `No station total: the bill for ${site} could not be read.`,
+  unpriced: (site: string): string => `No station total: ${site} has no priced bill for this month.`,
+  noCurrency: (site: string): string => `No station total: the bill for ${site} names no currency.`,
+  month: (site: string): string => `No station total: the bill for ${site} is for a different month.`,
+  currency: (site: string): string => `No station total: the bill for ${site} is in a different currency.`,
+} as const;
+
+/**
+ * `F4.240` part b (ADR 0140 decision 3f, plan D11) — the station's bill total: the site bills'
+ * `bill.total` added, never re-priced (no unit is multiplied by a rate here). It shows only when
+ * every site's bill is priced (no `reason`, a `bill`) for the same month in the same, named
+ * currency; it is month to date when any site's month is, and estimated when any bill is.
+ * Otherwise it is "—" with one fixed sentence naming the first site, in list order, that stops it
+ * ({@link STATION_TOTAL_SENTENCE}). Any pending read makes the total pending; every site
+ * answering `no_mapping` (or no site at all) is "nothing", which the bills block draws as nothing
+ * for the current month.
+ */
+export function stationBillTotal(reads: readonly StationBillRead[]): StationBillTotal {
+  if (reads.some((read) => read.bill === undefined && !read.failed)) {
+    return { kind: "pending" };
+  }
+  if (reads.every((read) => read.bill?.reason === "no_mapping")) {
+    return { kind: "nothing" };
+  }
+  let total = 0;
+  let first: EnergyBill | undefined;
+  for (const read of reads) {
+    const answer = read.bill;
+    if (answer === undefined) {
+      return { kind: "none", sentence: STATION_TOTAL_SENTENCE.failed(read.siteName) };
+    }
+    if (answer.reason !== null || answer.bill === null) {
+      return { kind: "none", sentence: STATION_TOTAL_SENTENCE.unpriced(read.siteName) };
+    }
+    if (answer.currency === null) {
+      return { kind: "none", sentence: STATION_TOTAL_SENTENCE.noCurrency(read.siteName) };
+    }
+    first ??= answer;
+    if (answer.month !== first.month) {
+      return { kind: "none", sentence: STATION_TOTAL_SENTENCE.month(read.siteName) };
+    }
+    if (answer.currency !== first.currency) {
+      return { kind: "none", sentence: STATION_TOTAL_SENTENCE.currency(read.siteName) };
+    }
+    total += answer.bill.total;
+  }
+  // `first` is set: `reads` is not empty (an empty list is "nothing" above) and every read passed.
+  const head = first as EnergyBill;
+  return {
+    kind: "total",
+    total,
+    currency: head.currency as string,
+    month: head.month,
+    complete: reads.every((read) => read.bill?.complete === true),
+    estimated: reads.some((read) => read.bill?.bill?.estimated === true),
+  };
 }
