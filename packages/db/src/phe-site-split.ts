@@ -19,10 +19,19 @@ export type PheSiteSkipReason =
   | "foreign-slug"
   /** A PHEWB location holds the site's slug and is not the site. */
   | "phewb-slug"
-  /** A location of any organization holds the site's code under another slug. */
+  /**
+   * A PHEWB location holds the site's code under another slug. Only PHEWB's
+   * own rows count: `code` is unique per organization (`locations_org_code_idx`,
+   * migration 0016), so another organization's row on the code collides with
+   * nothing (owner ruling B, 2026-11-19).
+   */
   | "code-holder";
 
-/** A location that holds a site's slug or code, as the superuser reader sees it. */
+/**
+ * A location that holds a site's slug (any organization: `slug` is globally
+ * unique) or its code (PHEWB only, owner ruling B), as the superuser reader
+ * sees it.
+ */
 export type PheSiteHolder = {
   readonly id: string;
   readonly slug: string;
@@ -57,10 +66,12 @@ export type PheResolvedSite = PheRtuSite & { readonly locationId: string; readon
  * ADR 0139 decision 3 — what the seed does with one site, given every row
  * that holds its slug or its code. Pure.
  *
- * Adopt only the site itself. Any other holder skips the site, so its RTU
- * stays where it is: never a `23505`, never a takeover. A PHEWB row on the
- * slug is named first, because it is the one holder the boot gate stops on
- * (owner ruling Q2).
+ * Adopt only the site itself. Any other holder of the slug, or a PHEWB row on
+ * the code, skips the site, so its RTU stays where it is: never a `23505`,
+ * never a takeover. Another organization's row on the code is not a holder
+ * (owner ruling B): it collides with nothing, so the site is written. A PHEWB
+ * row on the slug is named first, because it is the one holder the boot gate
+ * stops on (owner ruling Q2).
  */
 export function decidePheSite(
   site: PheRtuSite,
@@ -68,7 +79,7 @@ export function decidePheSite(
   phewbOrgId: string,
 ): PheSiteDecision {
   const slugHolder = holders.find((holder) => holder.slug === site.slug);
-  const codeHolder = holders.find((holder) => holder.code === site.code);
+  const codeHolder = holders.find((holder) => holder.code === site.code && holder.organizationId === phewbOrgId);
   if (slugHolder && !slugHolder.isSite) {
     const reason = slugHolder.organizationId === phewbOrgId ? "phewb-slug" : "foreign-slug";
     return { kind: "skip", reason, holderId: slugHolder.id, holderSlug: slugHolder.slug };
@@ -91,40 +102,76 @@ export function gateExemptsSkip(skip: PheSkippedSite): boolean {
 /** A location an RTU and its assets can be written at. */
 export type PheTargetLocation = { readonly locationId: string; readonly name: string };
 
+/** The PHEWB location an RTU sits at now, when that is not its station (plan D5 step 2). */
+export type PheCurrentLocation = PheTargetLocation & {
+  readonly slug: string;
+  /** The row is the RTU's own site by the triple (slug, parent = its station, `meta.phe`). */
+  readonly isOwnSite: boolean;
+};
+
 export type PheRtuTarget = {
   readonly locationId: string;
   /** The assets' `site_name` (ADR 0139 decision 11). */
   readonly siteName: string;
   readonly kind: "site" | "stays" | "station";
+  /**
+   * Case 2 only, when the row is not the RTU's own site by the triple (an
+   * administrator re-slugged or re-parented it): the row the seed names in
+   * its one log line (owner ruling A).
+   */
+  readonly offSite?: { readonly locationId: string; readonly slug: string; readonly name: string };
 };
 
 /**
- * ADR 0139 decisions 4 and 11 (plan D5) — where the seed writes an RTU and its
- * assets: its resolved site, when its station is on the list and the site was
- * not skipped; else the site it already sits at (never back); else the
- * station. `site_name` is the location's name in the first two and the
- * catalog `StationName` (`station.name`) in the third. Pure.
+ * ADR 0139 decisions 4 and 11 (plan D5, amended by owner ruling A on
+ * 2026-11-19) — where the seed writes an RTU and its assets: (1) its resolved
+ * site, when its station is on the list and the site was not skipped; else
+ * (2) the PHEWB location it sits at now, when that is not its station (never
+ * back, literally: an administrator's re-slug or re-parent does not send the
+ * RTU back alone and raise `23503` on K4); else (3) the station. `site_name`
+ * is the location's name in the first two and the catalog `StationName`
+ * (`station.name`) in the third. Pure.
  */
 export function pheRtuTarget(input: {
   readonly site?: PheTargetLocation;
-  readonly current?: PheTargetLocation;
+  readonly current?: PheCurrentLocation;
   readonly station: PheTargetLocation;
 }): PheRtuTarget {
   if (input.site) {
     return { locationId: input.site.locationId, siteName: input.site.name, kind: "site" };
   }
-  if (input.current) {
-    return { locationId: input.current.locationId, siteName: input.current.name, kind: "stays" };
+  const current = input.current;
+  if (current && current.locationId !== input.station.locationId) {
+    const stays: PheRtuTarget = { locationId: current.locationId, siteName: current.name, kind: "stays" };
+    return current.isOwnSite
+      ? stays
+      : { ...stays, offSite: { locationId: current.locationId, slug: current.slug, name: current.name } };
   }
   return { locationId: input.station.locationId, siteName: input.station.name, kind: "station" };
+}
+
+/**
+ * Owner ruling A — the one line the seed logs for an RTU that stays at a
+ * PHEWB location which is not its site by the triple. Names the RTU and the
+ * row (slug, id, name), nothing else. Pure.
+ */
+export function pheOffSiteLine(edgeRtuId: number, offSite: NonNullable<PheRtuTarget["offSite"]>): string {
+  return (
+    `phe site split: edge RTU ${edgeRtuId} stays at location ${offSite.slug} (id ${offSite.locationId}, ` +
+    `name ${JSON.stringify(offSite.name)}), which is not its site by slug, parent and meta.phe; ` +
+    "its assets stay with it (never back, owner ruling A)"
+  );
 }
 
 /**
  * The holders of a site's slug or code, read on the superuser pool so another
  * organization's row is seen (ADR 0080 ruling 16). `is_site` is the boot gate's
  * shape rule (`PHE_RTU_SLUG_SHAPE_SQL`) for one site, with the parent named by
- * id: the station `seedPheCatalog` found by slug in PHEWB. Params: `[slug, code,
- * phewbOrgId, stationId, stationCode, edgeRtuId]`.
+ * id: the station `seedPheCatalog` found by slug in PHEWB. The slug leg is
+ * cross-organization (`locations_slug_unique` is global); the code leg reads
+ * PHEWB's rows only (`code` is unique per organization, migration 0016; owner
+ * ruling B), so another organization's row is neither a holder nor logged.
+ * Params: `[slug, code, phewbOrgId, stationId, stationCode, edgeRtuId]`.
  */
 export const PHE_SITE_HOLDERS_SQL = `
   SELECT l.id, l.slug, l.code, l.organization_id::text AS organization_id,
@@ -138,7 +185,7 @@ export const PHE_SITE_HOLDERS_SQL = `
            false) AS is_site
     FROM bms.locations l
     LEFT JOIN bms.locations p ON p.id = l.parent_id
-   WHERE l.slug = $1 OR l.code = $2
+   WHERE l.slug = $1 OR (l.code = $2 AND l.organization_id = $3::uuid)
    ORDER BY l.id
 `;
 
@@ -268,39 +315,55 @@ export async function ensurePheSites(
 }
 
 /**
- * The RTUs of `sites` that already sit at their site: the never-back read
- * (ADR 0139 decision 4). The same shape rule as {@link PHE_SITE_HOLDERS_SQL},
- * read under the caller's PHEWB tenant context. Params: `[edgeRtuIds,
- * stationIds, slugs, stationCodes, organizationId]`.
+ * The never-back read (ADR 0139 decision 4; plan D5 step 2 as amended by owner
+ * ruling A): each RTU of `sites` that sits at a PHEWB location other than its
+ * station, with whether that row is its own site by the triple (the same shape
+ * rule as {@link PHE_SITE_HOLDERS_SQL}). Read under the caller's PHEWB tenant
+ * context. On a database where every PHE RTU sits at its station it returns no
+ * row. Params: `[edgeRtuIds, stationIds, slugs, stationCodes, organizationId]`.
  */
-export const PHE_RTUS_AT_THEIR_SITE_SQL = `
-  SELECT r.external_rtu_id, l.id, l.name
+export const PHE_RTUS_AWAY_FROM_STATION_SQL = `
+  SELECT r.external_rtu_id, l.id, l.slug, l.name,
+         COALESCE(
+           l.parent_id = s.station_id
+           AND l.slug = s.slug
+           AND l.meta->'phe'->>'stationCode' = s.station_code
+           AND l.meta->'phe'->>'edgeRtuId' = s.edge_rtu_id::text,
+           false) AS is_own_site
     FROM bms.rtus r
     INNER JOIN bms.locations l ON l.id = r.location_id
     INNER JOIN unnest($1::int[], $2::uuid[], $3::varchar[], $4::varchar[])
       AS s(edge_rtu_id, station_id, slug, station_code) ON s.edge_rtu_id = r.external_rtu_id
    WHERE r.organization_id = $5
      AND l.organization_id = r.organization_id
-     AND l.parent_id = s.station_id
-     AND l.slug = s.slug
-     AND l.meta->'phe'->>'stationCode' = s.station_code
-     AND l.meta->'phe'->>'edgeRtuId' = s.edge_rtu_id::text
+     AND l.id <> s.station_id
 `;
 
-/** Reads which RTUs already sit at their own site (plan D5 step 2, the never-back read). */
-export async function readRtusAtTheirSite(
+/** Reads where each RTU sits when that is a PHEWB location other than its station (plan D5 step 2). */
+export async function readRtusAwayFromStation(
   pool: pg.Pool,
   sites: readonly (PheRtuSite & { readonly stationLocationId: string })[],
   organizationId: string,
-): Promise<Map<number, { locationId: string; name: string }>> {
-  const res = await pool.query<{ external_rtu_id: number; id: string; name: string }>(PHE_RTUS_AT_THEIR_SITE_SQL, [
+): Promise<Map<number, PheCurrentLocation>> {
+  const res = await pool.query<{
+    external_rtu_id: number;
+    id: string;
+    slug: string;
+    name: string;
+    is_own_site: boolean;
+  }>(PHE_RTUS_AWAY_FROM_STATION_SQL, [
     sites.map((site) => site.edgeRtuId),
     sites.map((site) => site.stationLocationId),
     sites.map((site) => site.slug),
     sites.map((site) => site.stationCode),
     organizationId,
   ]);
-  return new Map(res.rows.map((row) => [Number(row.external_rtu_id), { locationId: row.id, name: row.name }]));
+  return new Map(
+    res.rows.map((row) => [
+      Number(row.external_rtu_id),
+      { locationId: row.id, slug: row.slug, name: row.name, isOwnSite: row.is_own_site },
+    ]),
+  );
 }
 
 /**

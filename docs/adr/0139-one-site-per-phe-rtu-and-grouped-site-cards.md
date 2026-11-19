@@ -98,9 +98,12 @@ example Lotapata 1 and Lotapata 2 under Lotapata.
   DO UPDATE SET location_id = EXCLUDED.location_id`) and each asset's
   `locationId` (`:494-510`) from the catalog station. A hand move is undone by
   the next deploy.
-- **Location `slug` and `code` are unique across organizations**
-  (`0010_phase5_location_access.sql:15-16`), and the seed finds a PHE station
-  by slug and organization.
+- **Location `slug` is unique across organizations**
+  (`0010_phase5_location_access.sql:16`); **`code` is unique per
+  organization** (`0016_org_location_rtu_hierarchy.sql:37-39` replaced
+  `locations_code_unique` with `locations_org_code_idx`). (corrected
+  2026-11-19, owner ruling B on PR 3) The seed finds a PHE station by slug and
+  organization.
 - **The legacy cleanup** (`cleanupLegacyPheRtuLocations`,
   `packages/db/src/hierarchy-seed.ts:459`, ADR 0080 decision 4) deletes on every
   boot each location whose slug is in `legacyLocationSlugs` — the RTU display

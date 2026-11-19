@@ -4,6 +4,7 @@ import { loadPheCatalog, phePilotExpectedRows, pheRtuSites, type PheRtuSite, see
 import {
   decidePheSite,
   gateExemptsSkip,
+  pheOffSiteLine,
   type PheSiteHolder,
   pheRtuTarget,
 } from "./phe-site-split";
@@ -118,12 +119,18 @@ export function assertTheHolderRule(): void {
     kind: "skip",
     reason: "phewb-slug",
   });
-  // A row on the code under another slug, in either organization.
-  for (const organizationId of [PHEWB, ESKOM]) {
-    expect(
-      decidePheSite(site, [holder({ slug: "phe-other", isSite: false, organizationId })], PHEWB),
-    ).toMatchObject({ kind: "skip", reason: "code-holder" });
-  }
+  // A PHEWB row on the code under another slug skips the site.
+  expect(
+    decidePheSite(site, [holder({ slug: "phe-other", isSite: false, organizationId: PHEWB })], PHEWB),
+  ).toMatchObject({ kind: "skip", reason: "code-holder" });
+  // Owner ruling B: another organization's row on the code collides with
+  // nothing (`code` is unique per organization), so the site is written.
+  expect(decidePheSite(site, [holder({ slug: "phe-other", isSite: false, organizationId: ESKOM })], PHEWB)).toEqual({
+    kind: "insert",
+  });
+  expect(
+    decidePheSite(site, [holder({}), holder({ id: "h2", slug: "phe-other", isSite: false, organizationId: ESKOM })], PHEWB),
+  ).toEqual({ kind: "adopt", locationId: "h1" });
   // The site itself, but another row holds its code: never a 23505.
   expect(
     decidePheSite(site, [holder({ code: "PHE-ADMIN" }), holder({ id: "h2", slug: "phe-other", isSite: false })], PHEWB),
@@ -153,19 +160,38 @@ export function assertTheGateExemptsAllButAPhewbSlugHolder(): void {
 }
 
 /**
- * ADR 0139 decisions 4 and 11 (plan D5): the resolved site, else the site the
- * RTU already sits at (never back), else the station; `site_name` is the
- * location's name in the first two and the catalog station name in the third.
+ * ADR 0139 decisions 4 and 11 (plan D5, amended by owner ruling A): the
+ * resolved site, else the PHEWB location the RTU sits at now when that is not
+ * its station (never back, whether or not the row is still its site), else
+ * the station; `site_name` is the location's name in the first two and the
+ * catalog station name in the third.
  */
 export function assertTheRtuTargetOrder(): void {
   const station = { locationId: "station", name: "Lotapata" };
   const site = { locationId: "site", name: "Lotapata I" };
-  const current = { locationId: "current", name: "Lotapata I (renamed)" };
+  const current = { locationId: "current", slug: "phe-lotapata-i", name: "Lotapata I", isOwnSite: true };
+  const renamed = { locationId: "renamed", slug: "phe-lotapata-east", name: "Lotapata East", isOwnSite: false };
   expect(pheRtuTarget({ site, current, station })).toEqual({ locationId: "site", siteName: "Lotapata I", kind: "site" });
-  expect(pheRtuTarget({ current, station })).toEqual({
-    locationId: "current",
-    siteName: "Lotapata I (renamed)",
-    kind: "stays",
+  expect(pheRtuTarget({ site, current: renamed, station })).toEqual({
+    locationId: "site",
+    siteName: "Lotapata I",
+    kind: "site",
   });
+  expect(pheRtuTarget({ current, station })).toEqual({ locationId: "current", siteName: "Lotapata I", kind: "stays" });
+  // Ruling A: a row that is no longer its site by the triple still keeps the RTU, and is named.
+  expect(pheRtuTarget({ current: renamed, station })).toEqual({
+    locationId: "renamed",
+    siteName: "Lotapata East",
+    kind: "stays",
+    offSite: { locationId: "renamed", slug: "phe-lotapata-east", name: "Lotapata East" },
+  });
+  // The station itself is never "away from the station".
+  expect(
+    pheRtuTarget({ current: { ...renamed, locationId: "station", name: "Lotapata" }, station }),
+  ).toEqual({ locationId: "station", siteName: "Lotapata", kind: "station" });
   expect(pheRtuTarget({ station })).toEqual({ locationId: "station", siteName: "Lotapata", kind: "station" });
+  expect(pheOffSiteLine(3, { locationId: "renamed", slug: "phe-lotapata-east", name: "Lotapata East" })).toBe(
+    'phe site split: edge RTU 3 stays at location phe-lotapata-east (id renamed, name "Lotapata East"), ' +
+      "which is not its site by slug, parent and meta.phe; its assets stay with it (never back, owner ruling A)",
+  );
 }

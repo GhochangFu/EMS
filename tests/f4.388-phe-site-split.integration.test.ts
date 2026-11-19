@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type * as AssetGroupsSeed from "../packages/db/dist/asset-groups-seed.js";
 import type * as DbClient from "../packages/db/dist/client.js";
 import type * as PhePilotSeed from "../packages/db/dist/phe-pilot-seed.js";
+import type * as PheSiteSplit from "../packages/db/dist/phe-site-split.js";
 import type * as SeedTenant from "../packages/db/dist/seed-tenant.js";
 import type * as VerifyHierarchyExpected from "../packages/db/dist/verify-hierarchy-expected.js";
 import type * as VerifyHierarchySeed from "../packages/db/dist/verify-hierarchy-seed.js";
@@ -33,6 +34,7 @@ const {
 const { hierarchyExpectations } = require_(
   "../packages/db/dist/verify-hierarchy-expected.js",
 ) as typeof VerifyHierarchyExpected;
+const { PHE_SITE_HOLDERS_SQL } = require_("../packages/db/dist/phe-site-split.js") as typeof PheSiteSplit;
 const { seedAssetGroups } = require_("../packages/db/dist/asset-groups-seed.js") as typeof AssetGroupsSeed;
 const { createDb } = require_("../packages/db/dist/client.js") as typeof DbClient;
 const { createSeedPool, withOrganization } = require_("../packages/db/dist/seed-tenant.js") as typeof SeedTenant;
@@ -449,7 +451,8 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
     const [cI] = sitesOf(C);
     const [dI] = sitesOf(D);
     const [eI] = sitesOf(E);
-    if (!cI || !dI || !eI) throw new Error("a synthetic station has no RTU");
+    const cII = sitesOf(C)[1];
+    if (!cI || !cII || !dI || !eI) throw new Error("a synthetic station has no RTU");
     const { superuser } = pools();
     const holder = (organizationId: string, code: string, slug: string) =>
       superuser.query<{ id: string }>(
@@ -462,6 +465,9 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
     await holder(eskomOrgId, `ESK-${RUN}-C`, cI.slug);
     await holder(phewbOrgId, dI.code, `phe-split-${run}-holder-d`);
     const eHolder = (await holder(phewbOrgId, `PHE-${RUN}-HOLDER-E`, eI.slug)).rows[0]?.id;
+    // Owner ruling B: an ESKOM row on C II's code under another slug is no
+    // holder (code is unique per organization), so C II is created as normal.
+    const eskomCodeHolder = (await holder(eskomOrgId, cII.code, `phe-split-${run}-holder-c2`)).rows[0]?.id ?? "";
 
     const lines: string[] = [];
     const outcome = await seed(CDE, [codeOf(C), codeOf(D), codeOf(E)], lines);
@@ -484,6 +490,20 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
     expect([...outcome.movedExternalRtuIds].sort()).toEqual(
       [C, D, E].map((station) => sitesOf(station)[1]?.edgeRtuId).sort(),
     );
+    expect(lines.filter((line) => line.includes(eskomCodeHolder)), "no line names the other tenant's row").toEqual([]);
+    const cStation = await locationOf(slugOf(C));
+    const cIIRow = await locationOf(cII.slug);
+    expect([cIIRow.code, cIIRow.parent_id]).toEqual([cII.code, cStation.id]);
+    // The holder read itself returns only the site: the SQL filters the code leg, not just decidePheSite.
+    const read = await superuser.query<{ id: string }>(PHE_SITE_HOLDERS_SQL, [
+      cII.slug,
+      cII.code,
+      phewbOrgId,
+      cStation.id,
+      cII.stationCode,
+      cII.edgeRtuId,
+    ]);
+    expect(read.rows.map((row) => row.id)).toEqual([cIIRow.id]);
     const notAdopted = await locationOf(eI.slug);
     expect([notAdopted.id, notAdopted.parent_id, notAdopted.meta]).toEqual([eHolder, null, null]);
 
@@ -677,4 +697,87 @@ describe.skipIf(!ownerUrl)("F4.388 — the PHE seed splits a station into one si
     // A second run re-asserts the sites under the inactive parent without raising.
     await seed(K, [codeOf(K)]);
   }, 120_000);
+
+  // ── S13–S15: never back is literal (owner ruling A, 2026-11-19) ──
+  const L = syntheticStation(10);
+  const [lI] = sitesOf(L);
+  const renamedSlug = `phe-split-${run}-renamed-l1`;
+  const renamedName = `Renamed ${run} L1`;
+  let renamedId = "";
+  const offSiteLines = (lines: string[], edgeRtuId: number | undefined) =>
+    lines.filter((line) => line.startsWith(`phe site split: edge RTU ${edgeRtuId} stays at location `));
+
+  async function expectStaysAt(catalog: Catalog, edgeRtuId: number | undefined, slug: string, name: string) {
+    const at = (await placement(catalog)).get(edgeRtuId ?? 0);
+    expect(at?.rtuAt).toBe(slug);
+    expect(at?.assets.map((asset) => [asset.at, asset.siteName])).toEqual(Array(4).fill([slug, name]));
+  }
+
+  it("S13 a re-slugged site keeps its RTU and assets, names the row once, and the gate exempts it", async () => {
+    if (!lI) throw new Error("station L has no RTU");
+    await seed(L, []);
+    await seed(L, [codeOf(L)]);
+    const site = await locationOf(lI.slug);
+    renamedId = site.id;
+    // An administrator's PATCH /admin/locations/:id: a new slug and name, the code kept.
+    await pools().superuser.query(`UPDATE bms.locations SET slug = $1, name = $2 WHERE id = $3`, [
+      renamedSlug,
+      renamedName,
+      renamedId,
+    ]);
+
+    const lines: string[] = [];
+    const outcome = await seed(L, [codeOf(L)], lines);
+    await groupSeed();
+
+    expect(outcome.skippedSites.map((skip) => [skip.site.slug, skip.reason, skip.holderId])).toEqual([
+      [lI.slug, "code-holder", renamedId],
+    ]);
+    expect(outcome.movedExternalRtuIds).toEqual([]);
+    await expectStaysAt(L, lI.edgeRtuId, renamedSlug, renamedName);
+    expect(offSiteLines(lines, lI.edgeRtuId)).toEqual([
+      `phe site split: edge RTU ${lI.edgeRtuId} stays at location ${renamedSlug} (id ${renamedId}, ` +
+        `name ${JSON.stringify(renamedName)}), which is not its site by slug, parent and meta.phe; ` +
+        "its assets stay with it (never back, owner ruling A)",
+    ]);
+    const exemptions: string[] = [];
+    expect(notLayout(await gateFailures(L, [codeOf(L)], outcome.skippedSites, exemptions))).toEqual([]);
+    expect(exemptions.filter((line) => line.includes(`exempted ${lI.slug} `))).toHaveLength(1);
+  }, 180_000);
+
+  it("S14 the same re-slug, then a seed with the empty list (a rollback to release A), keeps the RTU", async () => {
+    if (!lI || renamedId === "") throw new Error("S13 did not run");
+    const lines: string[] = [];
+    const outcome = await seed(L, [], lines);
+    await groupSeed();
+    expect(outcome.movedExternalRtuIds).toEqual([]);
+    await expectStaysAt(L, lI.edgeRtuId, renamedSlug, renamedName);
+    expect(offSiteLines(lines, lI.edgeRtuId)).toHaveLength(1);
+    expect(notLayout(await gateFailures(L, []))).toEqual([]);
+  }, 180_000);
+
+  it("S15 a re-parented site keeps its RTU, and the gate's shape check stops the boot naming the row", async () => {
+    const M = syntheticStation(11);
+    const [mI] = sitesOf(M);
+    if (!mI) throw new Error("station M has no RTU");
+    await seed(M, []);
+    await seed(M, [codeOf(M)]);
+    const site = await locationOf(mI.slug);
+    // Under another PHEWB location: station L, a campus since S13.
+    await pools().superuser.query(`UPDATE bms.locations SET parent_id = $1 WHERE id = $2`, [
+      (await locationOf(slugOf(L))).id,
+      site.id,
+    ]);
+
+    const lines: string[] = [];
+    const outcome = await seed(M, [codeOf(M)], lines);
+
+    expect(outcome.skippedSites.map((skip) => [skip.site.slug, skip.reason])).toEqual([[mI.slug, "phewb-slug"]]);
+    await expectStaysAt(M, mI.edgeRtuId, mI.slug, mI.name);
+    expect(offSiteLines(lines, mI.edgeRtuId)).toHaveLength(1);
+    const failures = await gateFailures(M, [codeOf(M)], outcome.skippedSites);
+    const shape = failures.find((line) => line.startsWith(PHE_RTU_SLUG_SHAPE_LABEL));
+    expect(shape).toContain(`${mI.slug} (id ${site.id}`);
+    expect(shape).toMatch(/fix: rename its slug$/);
+  }, 180_000);
 });

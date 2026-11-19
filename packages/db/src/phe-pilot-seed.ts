@@ -14,8 +14,9 @@ import {
   type PheResolvedSite,
   type PheSkippedSite,
   type PheSplitStation,
+  pheOffSiteLine,
   pheRtuTarget,
-  readRtusAtTheirSite,
+  readRtusAwayFromStation,
 } from "./phe-site-split";
 import { PHE_SPLIT_STATION_CODES } from "./phe-split-stations";
 import { assets, locations } from "./schema/bms-schema";
@@ -560,9 +561,10 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool, options: PheSeedO
     }
   }
   const resolvedByRtu = new Map(split.sites.map((site) => [site.edgeRtuId, site]));
-  // Never back (decision 4): an RTU already at a site of its own station
-  // stays there, whether or not its station is listed.
-  const atTheirSite = await readRtusAtTheirSite(
+  // Never back (decision 4, owner ruling A): an RTU already at a PHEWB
+  // location other than its station stays there, whether or not its station
+  // is listed and whether or not that row is still shaped as its site.
+  const awayFromStation = await readRtusAwayFromStation(
     pool,
     pheRtuSites(catalog).flatMap((site) => {
       const station = stationsByCode.get(site.stationCode);
@@ -587,13 +589,17 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool, options: PheSeedO
     if (!stationLocationId) {
       continue;
     }
-    // Plan D5: the RTU's site, else where it sits (never back), else the station.
+    // Plan D5 (ruling A): the RTU's site, else where it sits off its station
+    // (never back), else the station.
     const resolvedSite = resolvedByRtu.get(edgeRtuId);
     const target = pheRtuTarget({
       site: resolvedSite && { locationId: resolvedSite.locationId, name: resolvedSite.locationName },
-      current: atTheirSite.get(edgeRtuId),
+      current: awayFromStation.get(edgeRtuId),
       station: { locationId: stationLocationId, name: head.StationName },
     });
+    if (target.offSite) {
+      log(pheOffSiteLine(edgeRtuId, target.offSite));
+    }
     const locationId = target.locationId;
 
     // What the database already thinks, read before the upsert overwrites it.
