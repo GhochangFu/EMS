@@ -139,6 +139,7 @@ describe("checkResponse", () => {
       openAlarms: 0,
       criticalAlarms: 0,
       scopeLabel: "full",
+      parentId: null,
       rtus: [],
       assets: { items: [], page: 1, pageSize: 100, total: 0, totalPages: 0 },
       topAssets: [],

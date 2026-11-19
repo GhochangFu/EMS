@@ -36,6 +36,7 @@ export const ENERGY_ROW = {
   openAlarms: 0,
   criticalAlarms: 0,
   scopeLabel: "full",
+  parentId: null,
 } as const;
 
 /** E1 — the lists, in the order the form shows them; `auto` first and the resolved list without it. */

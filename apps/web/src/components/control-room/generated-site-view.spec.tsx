@@ -147,6 +147,7 @@ function kpis(scopeLabel: "full" | "partial" = "full"): LocationDashboardDto {
     openAlarms: 7,
     criticalAlarms: 6,
     scopeLabel,
+    parentId: null,
     rtus: [],
     assets: { items: [], page: 1, pageSize: 10, total: 0, totalPages: 0 },
     topAssets: [],

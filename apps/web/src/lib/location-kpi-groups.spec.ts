@@ -41,6 +41,7 @@ function site(opts: {
     openAlarms: 0,
     criticalAlarms: 0,
     scopeLabel: "full",
+    parentId: null,
   });
 }
 

@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runDashboardKpisEnergyShownTest,
+  runLocationKpiSummaryRequiresParentIdTest,
   runLocationKpiSummaryRequiresTypeLabelTest,
   runMapSiteDtoRequiresKindLabelTest,
   runRowWithCodeParsesTest,
@@ -34,5 +35,11 @@ describe("F4.157 U8 — locationKpiSummarySchema gains typeLabel (OQ4)", () => {
 describe("F4.375 — the estate KPI payload says whether energy is shown (ADR 0133 Amendment 2)", () => {
   it("U2 — energyShown is a required boolean; totalKw is nullable, never undefined", () => {
     runDashboardKpisEnergyShownTest();
+  });
+});
+
+describe("F4.240 — the location KPI row names its parent (ADR 0139 decision 12)", () => {
+  it("P0 — parentId parses as null or a string; a row without the key is refused", () => {
+    runLocationKpiSummaryRequiresParentIdTest();
   });
 });

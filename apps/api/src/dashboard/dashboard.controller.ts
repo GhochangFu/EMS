@@ -15,6 +15,7 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { loadTrendQuerySchema, locationDashboardQuerySchema } from "./dashboard.schema";
 import { DashboardService } from "./dashboard.service";
+import { parentIdByLocation } from "./location-parent";
 
 @Controller("dashboard")
 @UseGuards(JwtAuthGuard)
@@ -32,7 +33,9 @@ export class DashboardController {
   @Get("locations")
   async locationKpis(@CurrentUser() user: JwtPayload) {
     const currentUser = await this.accessControl.currentUser(user);
+    // F4.240 (ADR 0139 decision 12): the scope's own parentIds — never re-decided here.
     return this.dashboard.locationKpis({
+      parentIdByLocation: parentIdByLocation(currentUser.scope),
       locationIds:
         currentUser.scope.kind === "global"
           ? null
@@ -52,6 +55,7 @@ export class DashboardController {
     const parsedQuery = this.parseLocationDashboardQuery(query);
     const currentUser = await this.accessControl.currentUser(user);
     const payload = await this.dashboard.locationDashboard(locationId, {
+      parentIdByLocation: parentIdByLocation(currentUser.scope),
       locationIds:
         currentUser.scope.kind === "global"
           ? null

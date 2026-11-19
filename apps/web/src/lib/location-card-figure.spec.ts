@@ -36,6 +36,7 @@ function location(over: Partial<LocationKpiSummary>): LocationKpiSummary {
     openAlarms: 5,
     criticalAlarms: 3,
     scopeLabel: "full",
+    parentId: null,
     ...over,
   });
 }
