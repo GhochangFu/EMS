@@ -277,6 +277,8 @@ three kinds:
    (`site-layout-phe-lotapata-i`), its three tabs bound to the site's groups
    (ADR 0113's presets) and one `dashboard` view. `siteLayoutPheSlugs`
    (`verify-hierarchy-seed.ts:728,776`) gains the 12 site slugs.
+   *Amended by Amendment 1 (2026-11-19): each site's copy then takes its
+   station's mimic and trend-strip settings, once.*
 7. **The station's old dashboard is unlinked** (Q5). Once, when a station is
    first split, and only when the station's view still names the seeded
    site-layout dashboard: the view row becomes `kind = 'generated'` with
@@ -492,3 +494,55 @@ One additive contract field in `packages/shared/src/contracts/`.
   unlinked; the organization page shows one Lotapata header over two cards;
   the map shows two pins; the Energy tab of each site shows its own bill; the
   alarms page's Site column reads Lotapata I or Lotapata II.
+
+## Amendment 1 — a split site's copy takes its station's mimic and trend-strip settings (owner, 2026-11-19)
+
+**Status: Proposed — accepted when the PR that adds it merges** (owner ruling
+Q3 of the [plan](../plans/f4.388-site-copy-station-settings.md); the owner
+approves that merge). Raised by the owner on 2026-11-19 after release B split
+Lotapata on the demo host: "lota pata 1 and lota pata 2 side dashboards should
+be exactly like the dashboard it previously was … the mimic builder is using
+isometric clips, whereas you divided the lota patha 1. Those are not
+isometric." Asked in chat, one at a time: "Both" (copy from the station, and
+update the stock template), then Q1–Q4 of the plan, each as recommended.
+
+### Facts
+
+- Measured on the demo host, read-only, 2026-11-19: Lotapata I and II carry
+  the station dashboard's 40 widgets in the same tabs, order, positions and
+  titles; their chart bindings are per site (one train). Six config keys
+  differ: `glyphSet: "iso"` on the 3 `mimic` widgets (set on the station
+  copies by an AWS data change of 2026-11-09, ADR 0121 Amendment 1), and
+  `points`, `segments`, `styles`, `colors` on the 3 `trend_strip` widgets.
+  The strip points are `group code:point key`, never an asset id.
+- Decision 6 made each site's copy from `pump-station-standard`, which holds
+  neither (ADR 0108 Amendment 7: a template holds no strip selection).
+
+### Decision
+
+1. **Decision 6 gains a step.** After `seedSiteLayouts` makes the split
+   sites' copies, in the same transaction, each `mimic` and `trend_strip`
+   widget of a site's copy takes the whole config of the station dashboard's
+   widget at the same tab key, widget type and position (the station's own
+   `site-layout-<station slug>` row, kept by decision 7). A mimic is copied
+   only when both are `source: "preset"` on the same preset.
+2. **Once per copy.** The step considers a copy made in this run, or one whose
+   `stock_version` is below 3; it writes a widget only while that widget
+   still holds the config the seed made, then stamps the copy 3. So the copies
+   release B made (Lotapata I, II) are repaired once on the next deploy, and an
+   administrator's later edit is never overwritten.
+3. **No match, keep and log** (Q4). A widget with no single station match, an
+   edited widget, or a station config that does not parse keeps its config;
+   the seed logs one line naming it and the reason; the boot continues.
+4. **A cold start** has no station dashboard: the copy keeps the stock
+   config (`pump-station-standard` v3, ADR 0121 Amendment 2).
+5. **No station row, no template row and no other copy changes.** No
+   migration, contract or web change.
+
+### Consequences
+
+- On the next deploy the demo host writes 12 widget configs and 2 stamps at
+  Lotapata I and II; release C's five stations take their own settings at the
+  split.
+- A cold start does not equal the approved Bilsi layout (stock has 23
+  widgets; the Bilsi layout's 40 are not in the repository) — Q2, accepted.

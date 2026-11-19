@@ -286,6 +286,7 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
       "asset_group_members",
       "dashboards",
       "dashboard_tabs",
+      "dashboard_widgets",
       "site_control_room_views",
       "location_tariffs",
       "location_tariff_meters",
@@ -455,4 +456,258 @@ describe.skipIf(!ownerUrl || !isolating)("F4.388 — a split station's site layo
       dashboard_id: old?.id,
     });
   }, 300_000);
+
+  // ── ADR 0139 Amendment 1 (plan Task 3): a split site's copy takes its station's mimic and
+  // trend-strip settings, one time per copy. Station F is new, so L1–L5 keep their snapshots. ──
+  type SettingsWidget = {
+    id: string;
+    tab_key: string;
+    widget_type: string;
+    grid_x: number;
+    grid_y: number;
+    grid_w: number;
+    grid_h: number;
+    config: Record<string, unknown>;
+  };
+  const F = syntheticStation(7);
+  const CAT_F = catalogOf(real, F);
+  const CODES_F = [...PHE_SPLIT_STATION_CODES, codeOf(F)];
+  const fSites = pheRtuSites(F);
+  let othersBefore = "";
+  let othersIds: string[] = [];
+  let templatesBefore = "";
+
+  /** PHEWB's template rows, ordered, **with** `updated_at`: the step reads them and writes none. */
+  async function templateRows(): Promise<string> {
+    const res = await pools().superuser.query<{ row: unknown }>(
+      `SELECT to_jsonb(t) AS row FROM bms.dashboard_templates t WHERE t.organization_id = $1 ORDER BY to_jsonb(t)::text`,
+      [phewbOrgId],
+    );
+    return JSON.stringify(res.rows.map((r) => r.row));
+  }
+
+  /** A dashboard's `mimic` and `trend_strip` widgets, ordered by tab and type. */
+  async function settingsWidgets(dashboardId: string): Promise<SettingsWidget[]> {
+    const res = await pools().superuser.query<SettingsWidget>(
+      `SELECT w.id, t.tab_key, w.widget_type, w.grid_x, w.grid_y, w.grid_w, w.grid_h, w.config
+         FROM bms.dashboard_widgets w JOIN bms.dashboard_tabs t ON t.id = w.tab_id
+        WHERE w.dashboard_id = $1 AND w.widget_type IN ('mimic', 'trend_strip')
+        ORDER BY t.tab_key, w.widget_type`,
+      [dashboardId],
+    );
+    return res.rows;
+  }
+
+  const placeOf = (w: SettingsWidget): string =>
+    `${w.tab_key}/${w.widget_type}/${w.grid_x},${w.grid_y},${w.grid_w},${w.grid_h}`;
+
+  /** The config the seed wrote for each of a copy's settings widgets: its template row's widget at the same place. */
+  async function asMadeOf(dashboardId: string): Promise<Map<string, unknown>> {
+    const res = await pools().superuser.query<{ id: string; config: unknown }>(
+      `SELECT w.id, tw->'config' AS config
+         FROM bms.dashboard_widgets w
+         JOIN bms.dashboard_tabs t ON t.id = w.tab_id
+         JOIN bms.dashboards d ON d.id = w.dashboard_id
+         JOIN bms.dashboard_templates tp ON tp.id = d.template_id
+         CROSS JOIN LATERAL jsonb_array_elements(tp.content->'tabs') AS tt
+         CROSS JOIN LATERAL jsonb_array_elements(tt->'widgets') AS tw
+        WHERE w.dashboard_id = $1 AND w.widget_type IN ('mimic', 'trend_strip')
+          AND tt->>'key' = t.tab_key AND tw->>'widgetType' = w.widget_type
+          AND (tw->>'gridX')::int = w.grid_x AND (tw->>'gridY')::int = w.grid_y
+          AND (tw->>'gridW')::int = w.grid_w AND (tw->>'gridH')::int = w.grid_h`,
+      [dashboardId],
+    );
+    return new Map(res.rows.map((row) => [row.id, row.config] as const));
+  }
+
+  async function stampOf(dashboardId: string): Promise<number | null> {
+    const res = await pools().superuser.query<{ stock_version: number | null }>(
+      `SELECT stock_version FROM bms.dashboards WHERE id = $1`,
+      [dashboardId],
+    );
+    return res.rows[0]?.stock_version ?? null;
+  }
+
+  async function setConfig(widgetId: string, config: unknown): Promise<void> {
+    await pools().superuser.query(`UPDATE bms.dashboard_widgets SET config = $2::jsonb WHERE id = $1`, [
+      widgetId,
+      JSON.stringify(config),
+    ]);
+  }
+
+  /** The rows of `dashboardIds` and their tabs, widgets, points and sources, ordered, **with** `updated_at`. */
+  async function dashboardRows(dashboardIds: readonly string[]): Promise<string> {
+    const parts: string[] = [];
+    const tables: readonly [string, string][] = [
+      ["dashboards", "t.id = ANY($1::uuid[])"],
+      ["dashboard_tabs", "t.dashboard_id = ANY($1::uuid[])"],
+      ["dashboard_widgets", "t.dashboard_id = ANY($1::uuid[])"],
+      [
+        "dashboard_widget_points",
+        "t.widget_id IN (SELECT w.id FROM bms.dashboard_widgets w WHERE w.dashboard_id = ANY($1::uuid[]))",
+      ],
+      [
+        "dashboard_widget_sources",
+        "t.widget_id IN (SELECT w.id FROM bms.dashboard_widgets w WHERE w.dashboard_id = ANY($1::uuid[]))",
+      ],
+    ];
+    for (const [table, where] of tables) {
+      const res = await pools().superuser.query<{ row: unknown }>(
+        `SELECT to_jsonb(t) AS row FROM bms.${table} t WHERE ${where} ORDER BY to_jsonb(t)::text`,
+        [dashboardIds],
+      );
+      parts.push(`${table}:${JSON.stringify(res.rows.map((r) => r.row))}`);
+    }
+    return parts.join("\n");
+  }
+
+  /** Each site widget's config equals the station widget's at the same place. */
+  async function expectStationSettings(siteCopyId: string, stationCopyId: string, except: string[] = []): Promise<void> {
+    const station = new Map((await settingsWidgets(stationCopyId)).map((w) => [placeOf(w), w.config] as const));
+    const site = await settingsWidgets(siteCopyId);
+    expect(site, "six mimic and trend-strip widgets").toHaveLength(6);
+    for (const w of site) {
+      if (except.includes(w.id)) continue;
+      expect(w.config, `${placeOf(w)} takes the station's config`).toEqual(station.get(placeOf(w)));
+    }
+  }
+
+  it("L6 a station seeded unsplit, its settings edited, then split: each site copy takes them", async () => {
+    othersIds = (
+      await pools().superuser.query<{ id: string }>(`SELECT id FROM bms.dashboards WHERE organization_id = $1`, [
+        phewbOrgId,
+      ])
+    ).rows.map((row) => row.id);
+    othersBefore = await dashboardRows(othersIds);
+    templatesBefore = await templateRows();
+
+    await wholePath(CAT_F, [...PHE_SPLIT_STATION_CODES]);
+    const stationCopy = await dashboardOf(siteSlug(slugOf(F)));
+    if (!stationCopy) throw new Error("F has no copy");
+    // Not stock: no glyphSet on the mimics, and a selection with a colour on each strip.
+    await pools().superuser.query(
+      `UPDATE bms.dashboard_widgets SET config = config - 'glyphSet'
+        WHERE dashboard_id = $1 AND widget_type = 'mimic'`,
+      [stationCopy.id],
+    );
+    await pools().superuser.query(
+      `UPDATE bms.dashboard_widgets SET config = config || $2::jsonb
+        WHERE dashboard_id = $1 AND widget_type = 'trend_strip'`,
+      [
+        stationCopy.id,
+        JSON.stringify({
+          segments: ["electrical"],
+          points: ["electrical:kw", "electrical:pf"],
+          colors: { "electrical:kw": "series-8" },
+        }),
+      ],
+    );
+    const stationBefore = await dashboardRows([stationCopy.id]);
+    const lines: string[] = [];
+
+    await wholePath(CAT_F, CODES_F, lines);
+
+    for (const site of fSites) {
+      const copy = await dashboardOf(siteSlug(site.slug));
+      if (!copy) throw new Error(`${site.slug} has no copy`);
+      await expectStationSettings(copy.id, stationCopy.id);
+      expect(await stampOf(copy.id), `${site.slug}'s copy is stamped`).toBe(3);
+    }
+    expect(lines.filter((line) => line.includes("copied 6 of 6")), "one line per site copy").toHaveLength(2);
+    expect(await dashboardRows([stationCopy.id]), "the station's dashboard is not written").toBe(stationBefore);
+  }, 300_000);
+
+  it("L7 the repair: a site copy at stamp 1 takes the station's settings except an edited widget", async () => {
+    const stationCopy = await dashboardOf(siteSlug(slugOf(F)));
+    const copy = await dashboardOf(siteSlug(fSites[0]?.slug ?? ""));
+    if (!stationCopy || !copy) throw new Error("F or its first site has no copy");
+    const asMade = await asMadeOf(copy.id);
+    const widgets = await settingsWidgets(copy.id);
+    expect(asMade.size, "every settings widget has an as-made config").toBe(6);
+    for (const w of widgets) await setConfig(w.id, asMade.get(w.id));
+    const edited = widgets.find((w) => w.tab_key === "overview" && w.widget_type === "mimic");
+    if (!edited) throw new Error("no overview mimic");
+    const editedConfig = { ...(asMade.get(edited.id) as Record<string, unknown>), motion: false };
+    await setConfig(edited.id, editedConfig);
+    await pools().superuser.query(`UPDATE bms.dashboards SET stock_version = 1 WHERE id = $1`, [copy.id]);
+    // A newer published pump-station-standard whose trend strips differ: the as-made configs must
+    // come from the copy's own template row, or its strips read as edited and are kept. Deleted
+    // at the end, so L8 and L10 see the template rows as before.
+    const own = await pools().superuser.query<{ content: { tabs: { widgets: { widgetType: string; config: object }[] }[] } }>(
+      `SELECT tp.content FROM bms.dashboard_templates tp JOIN bms.dashboards d ON d.template_id = tp.id WHERE d.id = $1`,
+      [copy.id],
+    );
+    const tabs = own.rows[0]?.content.tabs.map((tab) => ({
+      ...tab,
+      widgets: tab.widgets.map((w) =>
+        w.widgetType === "trend_strip" ? { ...w, config: { ...w.config, defaultRange: "7d" } } : w,
+      ),
+    }));
+    const newerId = (
+      await pools().superuser.query<{ id: string }>(
+        `INSERT INTO bms.dashboard_templates (organization_id, code, version, name, section, target, description,
+           status, content, published_at, stock_code, stock_version)
+         SELECT tp.organization_id, tp.code, tp.version + 100, tp.name, tp.section, tp.target, tp.description,
+                'published', tp.content || jsonb_build_object('tabs', $2::jsonb), now(), tp.stock_code, tp.stock_version
+           FROM bms.dashboard_templates tp JOIN bms.dashboards d ON d.template_id = tp.id WHERE d.id = $1
+         RETURNING id`,
+        [copy.id, JSON.stringify(tabs)],
+      )
+    ).rows[0]?.id;
+    if (!tabs || !newerId) throw new Error("no newer pump-station-standard row");
+    const lines: string[] = [];
+
+    try {
+      await wholePath(CAT_F, CODES_F, lines);
+
+      expect((await settingsWidgets(copy.id)).find((w) => w.id === edited.id)?.config).toEqual(editedConfig);
+      await expectStationSettings(copy.id, stationCopy.id, [edited.id]);
+      expect(await stampOf(copy.id)).toBe(3);
+      expect(lines.filter((line) => line.includes(edited.id) && line.includes("edited"))).toHaveLength(1);
+      const afterRepair = await snapshot();
+      await wholePath(CAT_F, CODES_F);
+      expect(await snapshot(), "a second seed writes nothing").toBe(afterRepair);
+    } finally {
+      await pools().superuser.query(`DELETE FROM bms.dashboard_templates WHERE id = $1`, [newerId]);
+    }
+  }, 300_000);
+
+  it("L8 a copy stamped 3 is not copied over again", async () => {
+    const copy = await dashboardOf(siteSlug(fSites[1]?.slug ?? ""));
+    if (!copy) throw new Error("F's second site has no copy");
+    expect(await stampOf(copy.id)).toBe(3);
+    const asMade = await asMadeOf(copy.id);
+    const strip = (await settingsWidgets(copy.id)).find((w) => w.tab_key === "env" && w.widget_type === "trend_strip");
+    if (!strip) throw new Error("no env trend strip");
+    await setConfig(strip.id, asMade.get(strip.id));
+
+    await wholePath(CAT_F, CODES_F);
+
+    expect((await settingsWidgets(copy.id)).find((w) => w.id === strip.id)?.config).toEqual(asMade.get(strip.id));
+  }, 300_000);
+
+  it("L9 a station born split: its sites' copies are stock v3, iso mimics, and the step wrote nothing", async () => {
+    for (const site of pheRtuSites(C)) {
+      const copy = await dashboardOf(siteSlug(site.slug));
+      if (!copy) throw new Error(`${site.slug} has no copy`);
+      expect(await stampOf(copy.id)).toBe(3);
+      const asMade = await asMadeOf(copy.id);
+      const widgets = await settingsWidgets(copy.id);
+      expect(widgets).toHaveLength(6);
+      for (const w of widgets) expect(w.config, placeOf(w)).toEqual(asMade.get(w.id));
+      const mimics = widgets.filter((w) => w.widget_type === "mimic");
+      expect(mimics.map((w) => w.config.glyphSet)).toEqual(["iso", "iso", "iso"]);
+      expect(
+        run1Lines.filter((line) => line.includes(`: ${site.slug} (copy ${copy.id})`) && line.includes("copied 0 of")),
+        "the step looked at the copy made this run and wrote nothing",
+      ).toHaveLength(1);
+    }
+  }, 60_000);
+
+  it("L10 every dashboard that is not at F, and every template row, is unchanged by L6 to L8", async () => {
+    expect(othersIds.length).toBeGreaterThan(0);
+    expect(await dashboardRows(othersIds)).toBe(othersBefore);
+    expect(templatesBefore, "PHEWB holds template rows").not.toBe("[]");
+    expect(await templateRows(), "no template row changes").toBe(templatesBefore);
+  }, 60_000);
 });
