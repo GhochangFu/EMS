@@ -17,6 +17,17 @@ const urls = (): ReturnType<typeof resolveDatabaseUrls> => resolveDatabaseUrls(p
 const logger = new Logger("DatabaseModule");
 
 /**
+ * `F4.390` (owner ruling Q2) — how long an idle client stays open in each pool. pg-pool's default
+ * is 10 s, which equals the calc engine's base tick: a backend closed just before each tick, and
+ * the next tick planned against a fresh backend's cold catalog cache (demo host 2026-11-19: tenant
+ * backends lived 13–108 s; a calc input read planned for 7,705 ms cold against 629 ms warm).
+ * pg-pool hands out the most recently released client, so only as many backends stay open as the
+ * last 30 s needed. 30 s, not longer, because Postgres runs at 816 MiB of its 1 GiB limit there.
+ * The worker gets the same pools (this module is imported by both). Deliberately not an env var.
+ */
+export const POOL_IDLE_TIMEOUT_MS = 30_000;
+
+/**
  * `F4.173` — one pool, with the `'error'` listeners every pool needs. pg emits
  * `'error'` on a client whose backend the server ends (a Postgres restart, a
  * failover, `pg_terminate_backend`, an idle-timeout proxy); with no listener
@@ -35,7 +46,7 @@ const logger = new Logger("DatabaseModule");
  * carries the client, whose connection parameters include the password.
  */
 function createPool(name: "auth" | "tenant" | "fleet", connectionString: string): pg.Pool {
-  const pool = new pg.Pool({ connectionString });
+  const pool = new pg.Pool({ connectionString, idleTimeoutMillis: POOL_IDLE_TIMEOUT_MS });
   pool.on("error", (err: Error) => {
     logger.error(`${name} pool: idle client error: ${err.message}`);
   });

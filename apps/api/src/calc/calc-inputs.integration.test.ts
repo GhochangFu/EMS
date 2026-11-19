@@ -11,6 +11,7 @@ import {
   assertPairsReadOmitsAPairOlderThanTheBound,
   assertPairsReadReturnsExactlyOneRowPerPair,
   assertPairsReadReturnsTheLatestPerPair,
+  assertSampleOlderThanTheBoundIsAbsent,
   assertUnreportedKeyIsAbsent,
   cleanup,
 } from "./calc-inputs.integration.spec";
@@ -56,6 +57,11 @@ describe.skipIf(!connectionString)("F2.4 — calc input reader", () => {
   it("still returns a sample older than any legal staleness limit, within the 7-day bound", async () => {
     if (!pool) throw new Error("pool required");
     await assertOldButWithinBoundSampleIsReturned(pool);
+  });
+
+  it("F4.390 — leaves a key whose only sample is older than the 7-day bound absent", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertSampleOlderThanTheBoundIsAbsent(pool);
   });
 
   it("returns an empty map for an empty pointKeys list without querying", async () => {
