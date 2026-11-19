@@ -189,7 +189,10 @@ export function CalculationsTab({
   const addButton = editable ? (
     <button
       type="button"
-      disabled={rows.length >= MAX_TEMPLATE_POINTS || saveM.isPending}
+      // The cap only, like the Points tab's Add a point. Not `saveM.isPending`:
+      // a row added during a save stays unsaved and is sent by the next one,
+      // and a control disabled while pending must announce it (F4.168 H15).
+      disabled={rows.length >= MAX_TEMPLATE_POINTS}
       onClick={() => setRows((current) => [...current, blankDerivedPointRow(current)])}
       className="surface-button px-3 py-1.5 disabled:opacity-60"
     >
