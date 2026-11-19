@@ -1,0 +1,53 @@
+import type pg from "pg";
+
+import { afterAll, beforeAll, describe, it } from "vitest";
+
+import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import {
+  assertNoAssetsDiscoverNothingWithoutQuerying,
+  assertTheNewReadEqualsTheOldRead,
+  cleanup,
+  seedLatestFixture,
+  type LatestFixture,
+} from "./latest-points.integration.spec";
+
+/**
+ * `F4.390` — Vitest entry point for the Assets tab latest read against a real database.
+ * Assertions live in the sibling `.spec` (ADR 0014, AGENTS.md §4.6); this file owns the pool and
+ * the committed fixture's lifecycle.
+ */
+
+const connectionString = requireIntegrationDb({
+  item: "F4.390",
+  label: "Assets tab latest read",
+  because:
+    "the discovery from the real-time daily aggregate and the day-literal-bounded lateral are SQL over " +
+    "continuous aggregates, so a green run without a database asserts nothing about either.",
+});
+
+describe.skipIf(!connectionString)("F4.390 — the Assets tab latest read", () => {
+  let pool: pg.Pool | undefined;
+  let fixture: LatestFixture | undefined;
+
+  beforeAll(async () => {
+    pool = await openIntegrationPool(connectionString as string, "F4.390");
+    await cleanup(pool);
+    fixture = await seedLatestFixture(pool);
+  }, 120_000);
+
+  afterAll(async () => {
+    if (pool) {
+      await cleanup(pool, fixture);
+      await pool.end();
+    }
+  }, 120_000);
+
+  it("returns exactly the rows of the old unbounded DISTINCT ON read", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertTheNewReadEqualsTheOldRead(pool);
+  });
+
+  it("discovers nothing, without a query, for an empty asset list", async () => {
+    await assertNoAssetsDiscoverNothingWithoutQuerying();
+  });
+});
