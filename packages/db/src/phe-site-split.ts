@@ -287,6 +287,7 @@ export const PHE_RTUS_AT_THEIR_SITE_SQL = `
      AND l.meta->'phe'->>'edgeRtuId' = s.edge_rtu_id::text
 `;
 
+/** Reads which RTUs already sit at their own site (plan D5 step 2, the never-back read). */
 export async function readRtusAtTheirSite(
   pool: pg.Pool,
   sites: readonly (PheRtuSite & { readonly stationLocationId: string })[],
@@ -327,6 +328,7 @@ export const PHE_MOVE_RTUS_SQL = `
 
 export type PheRtuMove = { readonly externalRtuId: number; readonly locationId: string };
 
+/** Runs the one-statement move (plan D4); returns the RTUs it moved and the assets they carried. */
 export async function movePheRtusToSites(
   pool: pg.Pool,
   sites: readonly PheResolvedSite[],

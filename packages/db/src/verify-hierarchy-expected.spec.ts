@@ -220,11 +220,14 @@ export function assertCombinedAndEskomOnlyRowsAgree(): void {
  */
 export function assertAnEmptyDerivedListIsRefused(): void {
   const empty = { ...loadPheCatalog(), rows: [] };
-  expect(() => hierarchyExpectations(empty)).toThrow(/phe\.locationCodes/);
-  expect(() => hierarchyExpectations(empty)).toThrow(/phe\.rtuSites/);
+  // The split list is passed as `[]`, not left to its default: this case is about empty derived
+  // lists, and a committed list (release B) would otherwise throw first, naming a code the empty
+  // catalog does not hold.
+  expect(() => hierarchyExpectations(empty, [])).toThrow(/phe\.locationCodes/);
+  expect(() => hierarchyExpectations(empty, [])).toThrow(/phe\.rtuSites/);
   let message = "";
   try {
-    hierarchyExpectations(empty);
+    hierarchyExpectations(empty, []);
   } catch (err: unknown) {
     message = err instanceof Error ? err.message : String(err);
   }

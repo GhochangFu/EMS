@@ -11,6 +11,7 @@ import {
 import {
   openIntegrationPool,
   requireIntegrationDb,
+  resolveIntegrationRoleUrl,
 } from "../apps/api/src/testing/integration-db-gate.js";
 
 /**
@@ -62,6 +63,12 @@ type IntegrationPool = Awaited<ReturnType<typeof openIntegrationPool>>;
 
 let pool: IntegrationPool | undefined;
 let db: ReturnType<typeof createDb> | undefined;
+/**
+ * ADR 0139 (plan D2) — the superuser pool the seed's site-holder read runs on, as `seed.ts`
+ * passes it. Unused while the committed split list is empty; without it, release B's list
+ * would make `seedPheCatalog` refuse here.
+ */
+let holderReader: IntegrationPool | undefined;
 
 type RtuState = {
   ingest_enabled: boolean;
@@ -97,12 +104,16 @@ async function operatorSets(code: string, enabled: boolean): Promise<void> {
 
 async function reseed(): Promise<void> {
   if (!db || !pool) throw new Error("pool not initialised");
-  await seedPheCatalog(db, pool);
+  await seedPheCatalog(db, pool, { holderReader });
 }
 
 describe.skipIf(!connectionString)("F1.7 seed ownership across two passes", () => {
   beforeAll(async () => {
     pool = await openIntegrationPool(connectionString as string, "F1.7");
+    holderReader = await openIntegrationPool(
+      resolveIntegrationRoleUrl(connectionString as string, "superuser", process.env),
+      "F1.7",
+    );
     db = createDb(pool);
     // Clear the stamp first, so pass one *adopts* rather than deferring.
     //
@@ -124,6 +135,7 @@ describe.skipIf(!connectionString)("F1.7 seed ownership across two passes", () =
     // Leave the database as the seed would have left it, whatever the cases did.
     if (db && pool) await reseed();
     await pool?.end();
+    await holderReader?.end();
   }, 120_000);
 
   it("does not re-enable what an operator disabled", async () => {
