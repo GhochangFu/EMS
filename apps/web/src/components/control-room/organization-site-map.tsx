@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import type { AccessLocation } from "@bms/shared";
 
 import { fetchMapSites } from "../../api/map";
@@ -18,6 +18,13 @@ type OrganizationSiteMapProps = {
    * its own.
    */
   syncedAt: number;
+  /**
+   * `F4.240` (ADR 0139 decision 14, plan D12) — the parent filter's value, owned by the page so a
+   * parent header can set it; `null` shows every pin of the organization.
+   */
+  rootId: string | null;
+  /** Called with the parent the filter control picks, or `null` for "All sites". */
+  onRootChange: (rootId: string | null) => void;
 };
 
 /**
@@ -36,10 +43,16 @@ type OrganizationSiteMapProps = {
  * succeeded, since a remount would fit the box again and drop the user's pan and zoom.
  *
  * `F2.10` (ADR 0098 decision 11, B12) — a parent filter zooms to a subtree: the server narrows
- * the pins, and the map is keyed by the filter so it fits the subtree's box.
+ * the pins, and the map is keyed by the filter so it fits the subtree's box. `F4.240` (plan D12):
+ * the filter is controlled (`rootId`, `onRootChange`), so the page's parent headers set it too.
  */
-export function OrganizationSiteMap({ organizationId, nodes, syncedAt }: OrganizationSiteMapProps) {
-  const [rootId, setRootId] = useState<string | null>(null);
+export function OrganizationSiteMap({
+  organizationId,
+  nodes,
+  syncedAt,
+  rootId,
+  onRootChange,
+}: OrganizationSiteMapProps) {
   const rootName = nodes.find((n) => n.id === rootId)?.name ?? null;
   const query = useQuery({
     queryKey: ["map", "sites", rootId],
@@ -60,7 +73,7 @@ export function OrganizationSiteMap({ organizationId, nodes, syncedAt }: Organiz
       title="Site map"
       subtitle={query.data ? `${pins.length} sites · OpenStreetMap` : "OpenStreetMap"}
       bodyClassName={pins.length > 0 ? "p-0" : "p-4"}
-      actions={<MapSubtreeFilter nodes={nodes} value={rootId} onChange={setRootId} />}
+      actions={<MapSubtreeFilter nodes={nodes} value={rootId} onChange={onRootChange} />}
     >
       {query.isPending ? (
         <p role="status" className="text-sm text-ink-muted">

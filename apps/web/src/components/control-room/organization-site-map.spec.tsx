@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -89,11 +89,44 @@ function stubFetch(): void {
   );
 }
 
-function mapTree(queryClient: QueryClient, organizationId: string, nodes: readonly AccessLocation[], syncedAt: number) {
+/**
+ * `F4.240` (plan D12) — the filter is controlled by the page now; this harness owns it as the page
+ * does, starting from `initialRootId`, so the cases drive the real control.
+ */
+function ControlledMap({
+  organizationId,
+  nodes,
+  syncedAt,
+  initialRootId,
+}: {
+  organizationId: string;
+  nodes: readonly AccessLocation[];
+  syncedAt: number;
+  initialRootId: string | null;
+}) {
+  const [rootId, setRootId] = useState<string | null>(initialRootId);
+  return (
+    <OrganizationSiteMap
+      organizationId={organizationId}
+      nodes={nodes}
+      syncedAt={syncedAt}
+      rootId={rootId}
+      onRootChange={setRootId}
+    />
+  );
+}
+
+function mapTree(
+  queryClient: QueryClient,
+  organizationId: string,
+  nodes: readonly AccessLocation[],
+  syncedAt: number,
+  initialRootId: string | null = null,
+) {
   return (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <OrganizationSiteMap organizationId={organizationId} nodes={nodes} syncedAt={syncedAt} />
+        <ControlledMap organizationId={organizationId} nodes={nodes} syncedAt={syncedAt} initialRootId={initialRootId} />
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -314,3 +347,24 @@ export async function aCachedMapMountsWithOneRead(): Promise<void> {
     release();
   });
 }
+
+/**
+ * S12 — `F4.240` (plan D12): a `rootId` handed in by the page (a parent header's click) reads that
+ * subtree and shows in the filter control, with no change event of the map's own.
+ */
+export async function aRootIdFromThePageReadsTheSubtree(): Promise<void> {
+  stubFetch();
+  const read = vi.spyOn(mapApi, "fetchMapSites").mockResolvedValue(PINS);
+  const node = (id: string, name: string, parentId: string | null): AccessLocation => ({
+    id, code: id.toUpperCase(), slug: id, name, type: "site", province: null, parentId,
+  });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    mapTree(queryClient, ORG_A.id, [node("loc-a", "Alpha Campus", null), node("loc-a1", "Alpha One", "loc-a")], 1, "loc-a"),
+  );
+  const select = await screen.findByLabelText("Zoom to");
+  expect((select as HTMLSelectElement).value).toBe("loc-a");
+  await waitFor(() => expect(read).toHaveBeenCalledWith("loc-a"));
+  expect(read, "no read of the whole organization while a parent is the filter").not.toHaveBeenCalledWith(undefined);
+}
+

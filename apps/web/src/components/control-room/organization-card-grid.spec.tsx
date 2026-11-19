@@ -78,6 +78,30 @@ export function theCardShowsLiveAndNotLiveChips(): void {
   expect(within(b).getByTestId("live-share-bar").style.width).toBe("0%");
 }
 
+/**
+ * O4 — `F4.240` (ADR 0139 decision 16): six asset-less stations over twelve RTU sites (one live)
+ * read `12 sites`, not 18, and the chips count sites: 1 live, 11 not live.
+ */
+export function theCardCountsSitesOnce(): void {
+  const items: LocationKpiSummary[] = [];
+  for (let n = 1; n <= 6; n += 1) {
+    items.push({ ...site({ id: `s${n}`, name: `Station ${n}`, organization: ORG_B, assetCount: 0 }), parentId: null });
+    for (const suffix of ["I", "II"]) {
+      const live = n === 1 && suffix === "I";
+      items.push({
+        ...site({ id: `s${n}-${suffix}`, name: `Station ${n} ${suffix}`, organization: ORG_B, freshAssetCount: live ? 1 : 0 }),
+        parentId: `s${n}`,
+      });
+    }
+  }
+  renderGrid(items);
+
+  const card = orgCardLink("org-b");
+  expect(within(card).getByText("12 sites · 0 alarms")).toBeInTheDocument();
+  expect(within(card).getByTestId("live-chip").textContent).toBe("1 live");
+  expect(within(card).getByTestId("not-live-chip").textContent).toBe("11 not live");
+}
+
 export function cleanupGrid(): void {
   cleanup();
 }

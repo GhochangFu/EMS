@@ -103,3 +103,56 @@ export async function loadTrendMalformedOrganizationIdIsABadRequest(): Promise<v
     "a malformed organizationId must be refused before any access-control read",
   );
 }
+
+/**
+ * `F4.240` (ADR 0139 decision 12, plan D10) — both location routes hand the service the
+ * caller's own scope's parent map, as the scope carries it: a readable parent by id, a hidden
+ * one (already `null` in the scope) as `null`.
+ */
+export async function locationRoutesPassTheScopesOwnParentMap(): Promise<void> {
+  const PARENT = "11111111-1111-4111-8111-111111111111";
+  const CHILD = "22222222-2222-4222-8222-222222222222";
+  const HIDDEN_CHILD = "33333333-3333-4333-8333-333333333333";
+  const at = (id: string, parentId: string | null) => ({
+    id,
+    code: id.slice(0, 4),
+    slug: id,
+    name: id,
+    type: "pump_station",
+    province: null,
+    parentId,
+  });
+  const scope = {
+    kind: "location" as const,
+    locations: [at(PARENT, null), at(CHILD, PARENT), at(HIDDEN_CHILD, null)],
+    assetGroups: [],
+    assetIds: [],
+  };
+  const received: { route: string; map: ReadonlyMap<string, string | null> | undefined }[] = [];
+  const dashboard = {
+    locationKpis: async (opts: { parentIdByLocation?: ReadonlyMap<string, string | null> }) => {
+      received.push({ route: "locations", map: opts.parentIdByLocation });
+      return { items: [] };
+    },
+    locationDashboard: async (_id: string, opts: { parentIdByLocation?: ReadonlyMap<string, string | null> }) => {
+      received.push({ route: "locations/:id", map: opts.parentIdByLocation });
+      return {};
+    },
+  } as unknown as DashboardService;
+  const access = { currentUser: async () => ({ scope }) } as unknown as AccessControlService;
+  const controller = new DashboardController(dashboard, access);
+
+  await controller.locationKpis(USER);
+  await controller.locationDashboard(USER, CHILD, {});
+
+  const want = JSON.stringify([
+    [PARENT, null],
+    [CHILD, PARENT],
+    [HIDDEN_CHILD, null],
+  ]);
+  assert(received.length === 2, `expected one service call per route, got ${received.length}`);
+  for (const { route, map } of received) {
+    const got = map ? JSON.stringify([...map.entries()]) : String(map);
+    assert(got === want, `${route}: the service received parentIdByLocation = ${got}, expected the scope's own ${want}`);
+  }
+}

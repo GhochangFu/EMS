@@ -30,6 +30,7 @@ const ROW_WITHOUT_CODE = {
   openAlarms: 0,
   criticalAlarms: 0,
   scopeLabel: "full",
+  parentId: null,
 };
 
 /** K1 — a row without `code` is refused. */
@@ -65,6 +66,31 @@ export function runLocationKpiSummaryRequiresTypeLabelTest(): void {
       accepted.success ? "" : JSON.stringify(accepted.error.issues)
     }`,
   );
+}
+
+/**
+ * `F4.240` (ADR 0139 decision 12) — the location KPI row names its parent: a
+ * string, or `null` for a root and for a parent the caller cannot read. The
+ * key is required, so a producer that forgets it is refused rather than read
+ * as a root.
+ */
+export function runLocationKpiSummaryRequiresParentIdTest(): void {
+  const row = { ...ROW_WITHOUT_CODE, code: "RSMOC-WC" };
+  const asRoot = locationKpiSummarySchema.safeParse({ ...row, parentId: null });
+  assert(
+    asRoot.success === true,
+    `a row with parentId: null — expected success, got a refusal: ${
+      asRoot.success ? "" : JSON.stringify(asRoot.error.issues)
+    }`,
+  );
+  const asChild = locationKpiSummarySchema.safeParse({ ...row, parentId: "loc-parent" });
+  assert(
+    asChild.success === true && asChild.data.parentId === "loc-parent",
+    `a row with parentId: "loc-parent" — expected success carrying it, got ${JSON.stringify(asChild)}`,
+  );
+  const { parentId: _parentId, ...withoutParentId } = { ...row, parentId: null };
+  const refused = locationKpiSummarySchema.safeParse(withoutParentId);
+  assert(refused.success === false, "a location KPI row without parentId — expected a refusal, got success");
 }
 
 const MAP_SITE_WITHOUT_KIND_LABEL = {

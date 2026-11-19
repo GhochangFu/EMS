@@ -85,6 +85,7 @@ const LOCATION: LocationDashboardDto = locationDashboardDtoSchema.parse({
   openAlarms: 0,
   criticalAlarms: 0,
   scopeLabel: "full",
+  parentId: null,
   rtus: [],
   assets: {
     items: [

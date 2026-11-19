@@ -60,10 +60,37 @@ export function theHeaderOmitsKwWhenNoLocationShowsEnergy(): void {
       <OrgLocationAccordion groups={groups} />
     </MemoryRouter>,
   );
-  expect(header("Alpha Utilities").textContent).toContain("3 locations · 15.0 kW · 0 alarms");
+  expect(header("Alpha Utilities").textContent).toContain("3 sites · 15.0 kW · 0 alarms");
   const b = header("Beta Works").textContent ?? "";
-  expect(b).toContain("1 locations · 0 alarms");
+  expect(b).toContain("1 sites · 0 alarms");
   expect(b).not.toContain("kW");
+}
+
+/**
+ * A3 — `F4.240` (ADR 0139, owner ruling Q1): the estate groups the cards under their parent too.
+ * Org A's asset-less station heads its two RTU sites with a heading, not a button (no map filter
+ * here), draws no card of its own, and the line counts 2 sites; flat Org B is unchanged.
+ */
+export function theAccordionGroupsSitesUnderTheirParent(): void {
+  const groups = groupByOrganization([
+    site({ id: "st", name: "Alpha Station", organization: ORG_A, assetCount: 0, freshAssetCount: 0, totalKw: null }),
+    { ...site({ id: "st-i", name: "Alpha Station I", organization: ORG_A, freshAssetCount: 1, openAlarms: 2 }), parentId: "st" },
+    { ...site({ id: "st-ii", name: "Alpha Station II", organization: ORG_A, openAlarms: 1 }), parentId: "st" },
+    site({ id: "b1", name: "Beta One", organization: ORG_B }),
+  ]);
+  render(
+    <MemoryRouter>
+      <OrgLocationAccordion groups={groups} />
+    </MemoryRouter>,
+  );
+
+  expect(header("Alpha Utilities").textContent).toContain("2 sites · 0.0 kW · 3 alarms");
+  const group = screen.getByTestId("site-group-st");
+  expect(within(group).getByRole("heading").textContent).toBe("Alpha Station1 of 2 sites live · 6 assets · 3 alarms");
+  expect(within(group).queryByRole("button")).toBeNull();
+  const hrefs = Array.from(document.querySelectorAll('a[href^="/control-room/site/"]')).map((a) => a.getAttribute("href"));
+  expect(hrefs).toEqual(["/control-room/site/st-i", "/control-room/site/st-ii", "/control-room/site/b1"]);
+  expect(screen.queryByText("0 RTUs · 0 assets")).toBeNull();
 }
 
 export function cleanupAccordion(): void {

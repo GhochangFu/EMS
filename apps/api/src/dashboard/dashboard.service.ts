@@ -51,11 +51,19 @@ export class DashboardService {
     private readonly health: Pick<AssetHealthService, "scoresByLocation">,
   ) {}
 
-  /** Returns location KPI cards for the current access scope. */
+  /**
+   * Returns location KPI cards for the current access scope.
+   *
+   * `F4.240` (ADR 0139 decision 12, plan D10): `parentIdByLocation` is the caller's own scope's
+   * parent map (`parentIdByLocation` in `./location-parent`), which already nulls a parent the
+   * caller cannot read. A location missing from it — or no map at all — reads `null`, so a
+   * caller that passes none leaks no parent id (fail closed).
+   */
   async locationKpis(opts?: {
     locationIds?: string[] | null;
     assetIds?: string[] | null;
     partial?: boolean;
+    parentIdByLocation?: ReadonlyMap<string, string | null>;
   }): Promise<{ items: LocationKpiSummary[] }> {
     const rows = await this.pool.query<{
       id: string;
@@ -202,6 +210,7 @@ export class DashboardService {
         openAlarms: Number(row.open_alarms),
         criticalAlarms: Number(row.critical_alarms),
         scopeLabel: opts?.partial ? "partial" : "full",
+        parentId: opts?.parentIdByLocation?.get(row.id) ?? null,
       })),
     };
   }
@@ -213,6 +222,8 @@ export class DashboardService {
       locationIds?: string[] | null;
       assetIds?: string[] | null;
       partial?: boolean;
+      /** `F4.240`: passed through to `locationKpis`, which the `locationIds` narrowing below does not touch. */
+      parentIdByLocation?: ReadonlyMap<string, string | null>;
       page?: number;
       pageSize?: number;
       rtuId?: string;
