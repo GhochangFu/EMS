@@ -245,9 +245,12 @@ export function assertOneEskomSiteLayoutLocation(): void {
   expect(siteLayoutEskomLocations.map((identity) => identity.key)).not.toContain(controlRoomViewLocation.key);
 }
 
-/** `F3.73` plan D12 — each of the six PHE catalog stations carries one, by its station slug. */
+/**
+ * `F3.73` plan D12 — each of the six PHE catalog stations carries one, by its station slug. The
+ * list is passed as `[]`: the split sites a committed list adds are L6's case below.
+ */
 export function assertSixPheSiteLayoutSlugs(): void {
-  const { siteLayoutPheSlugs } = hierarchyExpectations();
+  const { siteLayoutPheSlugs } = hierarchyExpectations(loadPheCatalog(), []);
   const catalog = loadPheCatalog();
   expect(distinct(siteLayoutPheSlugs)).toBe(6);
   expect([...siteLayoutPheSlugs].sort()).toEqual(
@@ -257,8 +260,8 @@ export function assertSixPheSiteLayoutSlugs(): void {
 
 /**
  * `F4.388` L6 (ADR 0139 decision 6, plan D9) — a split station keeps its slug on the list (its
- * view row becomes `generated`, decision 7) and each of its sites adds one: six for the committed
- * empty list, eight with Lotapata on it.
+ * view row becomes `generated`, decision 7) and each of its sites adds one: six for an empty list,
+ * eight with Lotapata on it, which is the committed list in release B.
  */
 export function assertSiteLayoutPheSlugsGainTheSplitSites(): void {
   const catalog = loadPheCatalog();
@@ -270,6 +273,7 @@ export function assertSiteLayoutPheSlugsGainTheSplitSites(): void {
   expect(lotapata).toHaveLength(8);
   expect(distinct(lotapata)).toBe(8);
   expect([...lotapata].sort()).toEqual([...stations, "phe-lotapata-i", "phe-lotapata-ii"].sort());
+  expect([...hierarchyExpectations().siteLayoutPheSlugs].sort(), "the committed list").toEqual([...lotapata].sort());
 }
 
 /** `F4.317` ruling Q3 — both seed organizations carry a seeded organization layout pointer row. */

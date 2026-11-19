@@ -43,12 +43,15 @@ export function assertTheSuffixRuleOnTheRealNames(): void {
   expect(bhutnirghat?.stationSlug).toBe("phe-bhutnirghat");
 }
 
-/** Lotapata's two sites with their four asset codes each; none for the default list. */
+/**
+ * Lotapata's two sites with their four asset codes each; none for an empty list, and the same
+ * two for the committed list (release B names Lotapata only).
+ */
 export function assertLotapataSplitSites(): void {
   const catalog = loadPheCatalog();
-  expect(phePilotExpectedRows(catalog).splitSites, "the committed list splits nothing").toEqual([]);
   expect(phePilotExpectedRows(catalog, []).splitSites).toEqual([]);
   const split = phePilotExpectedRows(catalog, ["CBLTPT1"]).splitSites;
+  expect(phePilotExpectedRows(catalog).splitSites, "the committed list splits Lotapata").toEqual(split);
   expect(split.map((site) => [site.slug, site.code, site.edgeRtuId])).toEqual([
     ["phe-lotapata-i", "PHE-CBLTPT1-I", 3],
     ["phe-lotapata-ii", "PHE-CBLTPT1-II", 5],
@@ -85,7 +88,11 @@ export async function assertTheSeedRefusesABadListBeforeAnyQuery(): Promise<void
 /** The split list is not in the throw-on-empty set: release A's empty list derives. */
 export function assertTheSplitListIsNotInTheThrowOnEmptySet(): void {
   expect(() => hierarchyExpectations(loadPheCatalog(), [])).not.toThrow();
-  expect(hierarchyExpectations().phe.splitSites).toEqual([]);
+  expect(hierarchyExpectations(loadPheCatalog(), []).phe.splitSites).toEqual([]);
+  expect(hierarchyExpectations().phe.splitSites.map((site) => site.slug), "the committed list").toEqual([
+    "phe-lotapata-i",
+    "phe-lotapata-ii",
+  ]);
 }
 
 const PHEWB = "00000000-0000-0000-0000-00000000000a";

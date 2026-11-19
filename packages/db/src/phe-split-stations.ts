@@ -13,6 +13,7 @@
  * a deployed seed ever reads; a test drives the split path through the
  * parameter. A code that is not a catalog station's throws before any write.
  *
- * Release A commits it empty: nothing moves on any database.
+ * Release A committed it empty. Release B names Lotapata (`CBLTPT1`) only;
+ * release C adds the other five.
  */
-export const PHE_SPLIT_STATION_CODES: readonly string[] = [];
+export const PHE_SPLIT_STATION_CODES: readonly string[] = ["CBLTPT1"];
