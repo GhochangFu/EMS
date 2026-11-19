@@ -93,8 +93,8 @@ export function deviceDomain(deviceCode: string, modelCode: string): string {
 
 /**
  * The `bms.locations.slug` a PHE station takes. Exported so `phe-map-seed.ts`
- * uses this one copy, and so {@link phePilotExpectedRows} can derive the
- * legacy per-RTU slugs from the RTU display names with the same function.
+ * uses this one copy, and so {@link pheRtuSites} derives an RTU site's slug
+ * from the RTU display name with the same function.
  */
 export function stationSlug(stationName: string): string {
   return `phe-${stationName
@@ -118,6 +118,83 @@ export function pheRtuCode(rtuCode: string): string {
   return `RTU-${rtuCode}`;
 }
 
+/**
+ * ADR 0139 decision 3 (plan D3) — the identity of the site an edge RTU gets
+ * when its station splits. The seed adopts a location as this site only by
+ * the triple (`slug`, `meta.phe.stationCode`, `meta.phe.edgeRtuId`) with
+ * `parent_id` = the station, which is also the shape the boot gate checks.
+ */
+export type PheRtuSite = {
+  /** The RTU's display name, for example `Lotapata I`. */
+  readonly name: string;
+  /** {@link stationSlug} of the display name, for example `phe-lotapata-i`. */
+  readonly slug: string;
+  /** `PHE-<StationCode>-<SUFFIX>`, for example `PHE-CBLTPT1-I`. */
+  readonly code: string;
+  /** The station's catalog `StationCode`, as `meta.phe.stationCode` carries it. */
+  readonly stationCode: string;
+  /** The station's `bms.locations.slug`: the site's parent. */
+  readonly stationSlug: string;
+  /** The catalog `EdgeRTUId`, as `meta.phe.edgeRtuId` carries it. */
+  readonly edgeRtuId: number;
+  /** The RTU's first catalog row's coordinates. */
+  readonly latitude: number;
+  readonly longitude: number;
+};
+
+/**
+ * One {@link PheRtuSite} per edge RTU of `catalog`, in catalog order. Pure.
+ *
+ * The code's suffix is the display name's last word, upper-cased (`I`, `II`):
+ * the station name cannot be cut off instead, because `Bhutnirghat I` belongs
+ * to the station `BhutnirGhat`. Throws, rather than guess, on a suffix that is
+ * not `[A-Z0-9]+` and on two RTUs that give one slug or one code, because
+ * either would make the seed adopt one site for two RTUs.
+ */
+export function pheRtuSites(catalog: PheCatalogFile): PheRtuSite[] {
+  const sites: PheRtuSite[] = [];
+  const seen = new Set<number>();
+  const slugs = new Map<string, number>();
+  const codes = new Map<string, number>();
+  for (const row of catalog.rows) {
+    if (seen.has(row.EdgeRTUId)) {
+      continue;
+    }
+    seen.add(row.EdgeRTUId);
+    const suffix = (row.RTUDisplayName.trim().split(/\s+/).pop() ?? "").toUpperCase();
+    if (!/^[A-Z0-9]+$/.test(suffix)) {
+      throw new Error(
+        `pheRtuSites: edge RTU ${row.EdgeRTUId} "${row.RTUDisplayName}" gives the site-code suffix ` +
+          `${JSON.stringify(suffix)}, which is not [A-Z0-9]+`,
+      );
+    }
+    const site: PheRtuSite = {
+      name: row.RTUDisplayName,
+      slug: stationSlug(row.RTUDisplayName),
+      code: `${pheLocationCode(row.StationCode)}-${suffix}`,
+      stationCode: row.StationCode,
+      stationSlug: stationSlug(row.StationName),
+      edgeRtuId: row.EdgeRTUId,
+      latitude: Number(row.Latitude),
+      longitude: Number(row.Longitude),
+    };
+    for (const [kind, key, held] of [
+      ["slug", site.slug, slugs],
+      ["code", site.code, codes],
+    ] as const) {
+      const other = held.get(key);
+      if (other !== undefined) {
+        throw new Error(
+          `pheRtuSites: edge RTUs ${other} and ${row.EdgeRTUId} give the duplicate site ${kind} ${key}`,
+        );
+      }
+      held.set(key, row.EdgeRTUId);
+    }
+    sites.push(site);
+  }
+  return sites;
+}
+
 /** One `(asset code, point key)` pair. */
 export type PheAssetPoint = { readonly assetCode: string; readonly pointKey: string };
 
@@ -136,14 +213,13 @@ export type PhePilotExpectedRows = {
   /** The devices whose domain is `electrical`. */
   readonly electricalAssetCodes: readonly string[];
   /**
-   * The slugs of the legacy one-RTU-per-location rows an earlier seed wrote:
-   * {@link stationSlug} of each edge RTU's display name (`<Station> I`,
-   * `<Station> II`), less any station slug, without duplicates. No generator
-   * of those rows survives in the repository, so this list is the only record
-   * of them; `cleanupLegacyPheRtuLocations` deletes exactly these slugs and
-   * the boot gate counts them, which must be zero (owner ruling 13, OQ1).
+   * ADR 0139 decision 8 — one {@link PheRtuSite} per edge RTU, whether or
+   * not its station is split. The boot gate's shape check reads it: a PHEWB
+   * location on one of these slugs must be that RTU's site, so a legacy
+   * one-RTU-per-location row restored from an old backup stops the boot
+   * rather than being adopted.
    */
-  readonly legacyLocationSlugs: readonly string[];
+  readonly rtuSites: readonly PheRtuSite[];
 };
 
 /**
@@ -159,12 +235,8 @@ export function phePilotExpectedRows(catalog: PheCatalogFile): PhePilotExpectedR
   const domains = new Map<string, string>();
   const points = new Map<string, PheAssetPoint>();
   const tsPoints = new Map<string, PheAssetPoint>();
-  const stationSlugs = new Set<string>();
-  const rtuSlugs = new Set<string>();
   for (const row of catalog.rows) {
     locationCodes.add(pheLocationCode(row.StationCode));
-    stationSlugs.add(stationSlug(row.StationName));
-    rtuSlugs.add(stationSlug(row.RTUDisplayName));
     externalRtuIds.add(row.EdgeRTUId);
     const code = assetCode(row.DeviceCode);
     // The seed takes a device's domain from its first catalog row.
@@ -182,7 +254,7 @@ export function phePilotExpectedRows(catalog: PheCatalogFile): PhePilotExpectedR
     points: [...points.values()],
     tsPoints: [...tsPoints.values()],
     electricalAssetCodes: [...domains].filter(([, domain]) => domain === "electrical").map(([code]) => code),
-    legacyLocationSlugs: [...rtuSlugs].filter((slug) => !stationSlugs.has(slug)),
+    rtuSites: pheRtuSites(catalog),
   };
 }
 

@@ -4,6 +4,7 @@ import {
   assertOneEskomSiteLayoutLocation,
   assertSeventyTwoSmocRoledAssets,
   assertSixPheSiteLayoutSlugs,
+  assertABadRtuSiteIdentityIsRefused,
   assertAnEmptyDerivedListIsRefused,
   assertCombinedAndEskomOnlyRowsAgree,
   assertElevenEskomLocations,
@@ -15,7 +16,7 @@ import {
   assertTsPointsAreDisjointFromThePoints,
   assertTwelvePheRtus,
   assertTwoHundredFiftyTwoPhePoints,
-  assertTwelveLegacyPheSlugs,
+  assertTwelvePheRtuSites,
   assertTwoOrganizationLayoutOrganizations,
   assertTwoSeedOrganizations,
 } from "./verify-hierarchy-expected.spec";
@@ -61,8 +62,12 @@ describe("F4.169/F4.170 addendum — the boot gate's expectations derive from th
     assertThirtySixPheElectricalAssets();
   });
 
-  it("derives twelve legacy per-RTU PHE slugs, none a station's", () => {
-    assertTwelveLegacyPheSlugs();
+  it("ADR 0139 derives twelve PHE RTU sites, none on a station's slug", () => {
+    assertTwelvePheRtuSites();
+  });
+
+  it("ADR 0139 refuses an RTU site identity the seed cannot write", () => {
+    assertABadRtuSiteIdentityIsRefused();
   });
 
   it("gives the same ESKOM codes and asset catalog from the combined and the ESKOM-only map rows", () => {

@@ -88,9 +88,10 @@ export type HierarchyExpectations = {
  * **Throws on an empty list.** A presence count's wanted number is its list's
  * length, so an empty list wants 0 and the count passes whatever the database
  * holds — a derivation that broke would turn its check off without a word.
- * The legacy PHE slugs are in the set too: an empty list would also make the
- * legacy cleanup delete nothing. The `TS` pairs are not, because a catalog
- * with no `TS` sensor is a legitimate vendor export (see `seedPheCatalog`).
+ * The PHE RTU sites are in the set too: an empty list would turn the boot
+ * gate's site-shape check off (ADR 0139 decision 8). The `TS` pairs are not,
+ * because a catalog with no `TS` sensor is a legitimate vendor export (see
+ * `seedPheCatalog`).
  */
 export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalog()): HierarchyExpectations {
   const mapLocationRows = seedMapLocationRows(pheCatalog);
@@ -135,7 +136,7 @@ export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalo
     ["phe.assetCodes", expected.phe.assetCodes],
     ["phe.points", expected.phe.points],
     ["phe.electricalAssetCodes", expected.phe.electricalAssetCodes],
-    ["phe.legacyLocationSlugs", expected.phe.legacyLocationSlugs],
+    ["phe.rtuSites", expected.phe.rtuSites],
     ["siteLayoutEskomLocations", expected.siteLayoutEskomLocations],
     ["siteLayoutPheSlugs", expected.siteLayoutPheSlugs],
     ["organizationLayoutOrganizationCodes", expected.organizationLayoutOrganizationCodes],

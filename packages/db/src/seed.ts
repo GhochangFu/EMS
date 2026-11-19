@@ -10,7 +10,6 @@ import {
   ensureOrganizations,
   enforceHierarchyNotNull,
   getOrganizationId,
-  cleanupLegacyPheRtuLocations,
 } from "./hierarchy-seed";
 import { seedAccessControlFixtures, seedDecommissionedLocation } from "./access-fixtures-seed";
 import { seedAssetDomains } from "./asset-domains-seed";
@@ -19,7 +18,7 @@ import { seedPointKeyCatalog } from "./point-keys-seed";
 import { seedPointKeyHeadlineRanks } from "./point-key-headline-ranks-seed";
 import { seedPointKeyTrendDefaults } from "./point-key-trend-defaults-seed";
 import { seedPointKeyStates } from "./point-key-states-seed";
-import { loadPheCatalog, phePilotExpectedRows, seedPheCatalog } from "./phe-pilot-seed";
+import { loadPheCatalog, seedPheCatalog } from "./phe-pilot-seed";
 import { createDb } from "./client";
 import { backfillAssetLocations, seedAssetGroups } from "./asset-groups-seed";
 import {
@@ -124,14 +123,11 @@ async function main(): Promise<void> {
     connectionString: resolveSeedSuperuserUrl(databaseUrl, process.env),
   });
   const identityDb = createDb(superuserPool);
-  // The PHE catalog is read once here, for the map rows and the legacy slugs.
+  // The PHE catalog is read once here, for the map rows.
   const pheCatalog = loadPheCatalog();
   // The same list `hierarchyExpectations` derives the boot gate's ESKOM
   // location codes and asset catalog from.
   const mapLocationRows = seedMapLocationRows(pheCatalog);
-  // Owner ruling 13: the legacy PHE cleanup deletes these twelve slugs and no
-  // other row, whatever slug an administrator gives a PHEWB location.
-  const legacyPheLocationSlugs = phePilotExpectedRows(pheCatalog).legacyLocationSlugs;
   // Written by `seedEskomLadderRules` in the second ESKOM bracket, read by the
   // verifier after every bracket has closed.
   let ladderCollisionSkips: LadderCollisionSkip[] = [];
@@ -242,7 +238,6 @@ async function main(): Promise<void> {
     // ── PHEWB ─────────────────────────────────────────────────────────────
     await withOrganization(pool, phewbOrgId, async () => {
       await seedPheCatalog(db, pool);
-      await cleanupLegacyPheRtuLocations(pool, legacyPheLocationSlugs);
       // `F3.41` — PHEWB's derivation pass, AFTER the catalog that creates the
       // locations and assets it derives from. All three calls moved, not two:
       // dropping `assignEskomAssetRtus` from this pass is probably harmless and
