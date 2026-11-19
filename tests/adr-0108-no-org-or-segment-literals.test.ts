@@ -174,6 +174,8 @@ const MODULES: readonly string[] = [
   // F4.240 part b (ADR 0140 decision 1, plan D13) — the station view names no level, type or
   // organization.
   "apps/web/src/components/control-room/station-view.tsx",
+  // F4.240 part b PR 2 (ADR 0140 decision 3e, plan D13): the tab chooser rule and the site halves.
+  "apps/web/src/lib/station-view.ts",
 ];
 
 /**
