@@ -19,6 +19,8 @@ import type { SectionTemplateWidget, StockDashboardTemplateDto } from "../index"
  *   `pump_station_electrical`, the breaker table, the alarm rail and the asset table.
  * - `F4.332` (stockVersion 2): the Electrical tab ends with the read-time energy cost row —
  *   "Cost today", "Cost last 7 days", "Cost this month" and a 90-day "Daily energy cost" chart.
+ * - `F4.388` (stockVersion 3, ADR 0121 Amendment 2): the three mimics draw `glyphSet: "iso"`. The
+ *   trend strips gain no selection (ADR 0108 Amendment 7).
  * - **Environment**: the trend strip, `pump_station_environment`, the alarm rail and the asset
  *   table. No tiles: ruling Q7 names RTU health only, and the mimic shows each point on its node.
  *
@@ -131,7 +133,7 @@ const OVERVIEW_WIDGETS: Widget[] = [
   sourceTile("overview-health-tile", "Asset health", 3,
     { catalogKey: "assets.health.score", params: {}, sortOrder: 0 }, { icon: "gauge" }),
   trendStrip("overview", null),
-  mimic("overview-station-mimic", OVERVIEW_MIMIC_Y, { source: "preset", preset: "pump_station_overview", compact: true }),
+  mimic("overview-station-mimic", OVERVIEW_MIMIC_Y, { source: "preset", preset: "pump_station_overview", compact: true, glyphSet: "iso" }),
   alarmsRail("overview", OVERVIEW_RAIL_Y, FULL_W),
   {
     key: "overview-legend",
@@ -185,7 +187,7 @@ const ELECTRICAL_WIDGETS: Widget[] = [
     config: { unit: "Hz", decimals: 2 },
   },
   trendStrip("electrical", "electrical"),
-  mimic("electrical-mimic", BODY_Y, { source: "preset", preset: "pump_station_electrical" }),
+  mimic("electrical-mimic", BODY_Y, { source: "preset", preset: "pump_station_electrical", glyphSet: "iso" }),
   {
     key: "electrical-breaker-table",
     title: "Breakers",
@@ -224,7 +226,7 @@ const ENV_LOWER_Y = BODY_Y + MIMIC_H;
 
 const ENV_WIDGETS: Widget[] = [
   trendStrip("env", "env"),
-  mimic("env-mimic", BODY_Y, { source: "preset", preset: "pump_station_environment" }),
+  mimic("env-mimic", BODY_Y, { source: "preset", preset: "pump_station_environment", glyphSet: "iso" }),
   alarmsRail("env", ENV_LOWER_Y, HALF_W),
   assetsTable("env", ENV_LOWER_Y),
 ];
@@ -240,7 +242,8 @@ export const PUMP_STATION_STANDARD_SITE_TEMPLATE = {
   // `F4.332` (ADR 0112 Amendment 3 item 6, ADR 0052 decision 7) — v2 adds the energy cost row to
   // the Electrical tab. Bumping touches no organization's row; the PHE layouts on AWS get the
   // widgets in place (owner ruling 4).
-  stockVersion: 2,
+  // `F4.388` (ADR 0121 Amendment 2, ruling Q1) — v3 draws the three mimics with `glyphSet: "iso"`.
+  stockVersion: 3,
   content: {
     widgets: [],
     tabs: [

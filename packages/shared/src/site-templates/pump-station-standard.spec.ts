@@ -1,3 +1,4 @@
+import { createDashboardTemplateBodySchema } from "../contracts/dashboard-template-writes";
 import { stockDashboardTemplateDtoSchema, templateTargetContentMessage } from "../contracts/dashboard-templates";
 import type { StockDashboardTemplateDto } from "../index";
 import { planSiteLayout, type SiteLayoutGroup } from "../site-layout-planner";
@@ -19,8 +20,9 @@ export function theEntryIsTheSiteTargetStockRow(): void {
   const parsed = stockDashboardTemplateDtoSchema.safeParse(entry);
   assert(parsed.success, `does not parse: ${parsed.success ? "" : parsed.error.message}`);
   const shape = `${entry.code}|${entry.section}|${entry.target}|${entry.stockVersion}`;
-  // `F4.332` (ADR 0112 Amendment 3 item 6) — v2 adds the energy cost row to the Electrical tab.
-  assert(shape === "pump-station-standard|site|site|2", `code|section|target|stockVersion: got ${shape}`);
+  // `F4.332` (ADR 0112 Amendment 3 item 6) — v2 adds the energy cost row to the Electrical tab;
+  // `F4.388` (ADR 0121 Amendment 2) — v3 draws every mimic with the isometric glyph set.
+  assert(shape === "pump-station-standard|site|site|3", `code|section|target|stockVersion: got ${shape}`);
   assert(templateTargetContentMessage(entry.target, entry.content) === null, "the site target refuses the content");
 }
 
@@ -49,6 +51,44 @@ export function eachTabDrawsItsPumpStationPreset(): void {
     assert((config.compact === true) === (tab.key === "overview"), `${tab.key}: compact is ${config.compact}`);
     if (tab.mimicPreset !== undefined) assert(tab.mimicPreset === want[tab.key], `${tab.key}: mimicPreset`);
   }
+}
+
+/** `F4.388` (ADR 0121 Amendment 2, ruling Q1) — stockVersion 3: every mimic draws the isometric set. */
+export function eachMimicDrawsTheIsometricSet(): void {
+  let seen = 0;
+  for (const tab of entry.content.tabs) {
+    for (const widget of tab.widgets) {
+      if (widget.widgetType !== "mimic") continue;
+      seen += 1;
+      const config = widget.config as { glyphSet?: string };
+      assert(config.glyphSet === "iso", `${widget.key}: glyphSet is ${config.glyphSet}`);
+    }
+  }
+  assert(seen === 3, `expected 3 mimics, got ${seen}`);
+}
+
+/**
+ * ADR 0108 Amendment 7 — a template trend strip holds no `points`, `segments`, `colors` or
+ * `styles`. Each strip parses through the create body, which refuses a selection.
+ */
+export function noTrendStripHoldsASelection(): void {
+  let seen = 0;
+  for (const tab of entry.content.tabs) {
+    for (const widget of tab.widgets) {
+      if (widget.widgetType !== "trend_strip") continue;
+      seen += 1;
+      const result = createDashboardTemplateBodySchema.safeParse({
+        organizationId: "0b7c6d5e-4f3a-4b2c-8d1e-9f0a1b2c3d4e",
+        code: "site",
+        name: "Site",
+        section: "site",
+        target: "site",
+        content: { widgets: [], tabs: [{ ...tab, widgets: [widget] }] },
+      });
+      assert(result.success, `${widget.key} does not parse: ${result.success ? "" : result.error.message}`);
+    }
+  }
+  assert(seen === 3, `expected 3 trend strips, got ${seen}`);
 }
 
 /** No two widgets of a tab overlap, and every widget lies inside the 12-column grid. */
