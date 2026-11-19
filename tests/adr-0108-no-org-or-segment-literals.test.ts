@@ -171,6 +171,9 @@ const MODULES: readonly string[] = [
   "apps/web/src/lib/trend-strip-wizard.ts",
   // F4.306 PR 2 U12: the wizard dialog.
   "apps/web/src/components/dashboards/trend-strip-wizard.tsx",
+  // F4.240 part b (ADR 0140 decision 1, plan D13) — the station view names no level, type or
+  // organization.
+  "apps/web/src/components/control-room/station-view.tsx",
 ];
 
 /**

@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { DashboardSummaryDto } from "@bms/shared";
+import type { DashboardDto, DashboardSummaryDto } from "@bms/shared";
 
 import * as dashboardsApi from "../../api/dashboards";
 import { ScopedDashboardsList } from "./scoped-dashboards-list";
@@ -29,14 +29,20 @@ const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const OTHER_ORG_ID = "55555555-5555-4555-8555-555555555555";
 const LOCATION_ID = "33333333-3333-4333-8333-333333333333";
 
-function dashboard(opts: { id: string; organizationId: string; slug: string; name: string }): DashboardSummaryDto {
+function dashboard(opts: {
+  id: string;
+  organizationId: string;
+  slug: string;
+  name: string;
+  locationId?: string | null;
+}): DashboardSummaryDto {
   return {
     id: opts.id,
     organizationId: opts.organizationId,
     slug: opts.slug,
     name: opts.name,
     description: null,
-    locationId: null,
+    locationId: opts.locationId ?? null,
     assetGroupId: null,
     assetId: null,
     assetTemplateId: null,
@@ -66,7 +72,7 @@ const TWO_ORGS = {
   ],
 };
 
-function renderList(props: { organizationId?: string; locationId?: string }): void {
+function renderList(props: { organizationId?: string; locationId?: string; omitTemplateCopies?: boolean }): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
@@ -183,6 +189,142 @@ export async function theKeyCarriesTheLocationId(): Promise<void> {
   expect(spy).toHaveBeenCalledTimes(2);
   expect(spy.mock.calls[0]).toEqual([ORG_ID, undefined, undefined, undefined]);
   expect(spy.mock.calls[1]).toEqual([ORG_ID, undefined, undefined, LOCATION_ID]);
+}
+
+/*
+ * `F4.240` part b (ADR 0140 decision 3h, plan Task 1.5, owner ruling Q1 (a)) — `omitTemplateCopies`
+ * leaves out a dashboard scoped at the location whose detail carries a `templateId` (the station's
+ * old site-layout copy). The list DTO has no template stamp, so each row scoped at the location is
+ * detail-read, under the viewer's own key. The names are chosen so a name rule would keep the
+ * copy and drop the other row: the copy is "Daily Ops", the kept row "Station Overview".
+ */
+
+const COPY = dashboard({
+  id: "77777777-7777-4777-8777-777777777777",
+  organizationId: ORG_ID,
+  slug: "daily-ops",
+  name: "Daily Ops",
+  locationId: LOCATION_ID,
+});
+const OWN = dashboard({
+  id: "88888888-8888-4888-8888-888888888888",
+  organizationId: ORG_ID,
+  slug: "station-overview",
+  name: "Station Overview",
+  locationId: LOCATION_ID,
+});
+const GROUP_SCOPED = dashboard({
+  id: "99999999-9999-4999-8999-999999999999",
+  organizationId: ORG_ID,
+  slug: "group-energy",
+  name: "Group Energy",
+});
+
+/** A detail read that answers `templateId` per slug; a slug mapped to `"error"` rejects. */
+function stubDetails(templateIds: Record<string, string | null | "error" | "pending">) {
+  return vi.spyOn(dashboardsApi, "fetchDashboard").mockImplementation((slug: string) => {
+    const templateId = templateIds[slug];
+    if (templateId === "error") {
+      return Promise.reject(new Error("dashboards/:slug 503"));
+    }
+    if (templateId === "pending") {
+      return new Promise<DashboardDto>(() => undefined);
+    }
+    return Promise.resolve({ templateId: templateId ?? null } as unknown as DashboardDto);
+  });
+}
+
+function rowNames(): string[] {
+  return Array.from(document.querySelectorAll("li > span")).map((span) => span.textContent ?? "");
+}
+
+/** D1 — with `omitTemplateCopies`, the row whose detail carries a `templateId` is left out. */
+export async function omitsTheTemplateCopy(): Promise<void> {
+  stubList({ items: [COPY, OWN] });
+  const details = stubDetails({ "daily-ops": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "station-overview": null });
+  renderList({ organizationId: ORG_ID, locationId: LOCATION_ID, omitTemplateCopies: true });
+
+  expect(await screen.findByText("Station Overview")).toBeInTheDocument();
+  expect(rowNames()).toEqual(["Station Overview"]);
+  expect(details.mock.calls.map((call) => call.slice(0, 2))).toEqual(
+    expect.arrayContaining([
+      ["daily-ops", ORG_ID],
+      ["station-overview", ORG_ID],
+    ]),
+  );
+}
+
+/**
+ * D1b — the detail read shares `SiteDashboardView`'s key (`["dashboards","detail",slug,org]`): a
+ * detail already in that cache entry decides the row, and no detail read is made for it. The
+ * client's `staleTime` is `Infinity` so a mount does not refetch the seeded entry; the stub answers
+ * `templateId: null`, so a read under any other key would list the copy.
+ */
+export async function aCachedDetailUnderTheViewersKeyDecidesTheRow(): Promise<void> {
+  stubList({ items: [COPY, OWN] });
+  const details = stubDetails({ "daily-ops": null, "station-overview": null });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  queryClient.setQueryData(["dashboards", "detail", COPY.slug, ORG_ID], {
+    templateId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  } as unknown as DashboardDto);
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <ScopedDashboardsList organizationId={ORG_ID} locationId={LOCATION_ID} omitTemplateCopies />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  expect(await screen.findByText("Station Overview")).toBeInTheDocument();
+  expect(rowNames()).toEqual(["Station Overview"]);
+  expect(details.mock.calls.map((call) => call[0])).not.toContain(COPY.slug);
+}
+
+/** D2 — without the prop both rows are listed and no detail is read (D1's control). */
+export async function withoutThePropEveryRowIsListed(): Promise<void> {
+  stubList({ items: [COPY, OWN] });
+  const details = stubDetails({ "daily-ops": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "station-overview": null });
+  renderList({ organizationId: ORG_ID, locationId: LOCATION_ID });
+
+  expect(await screen.findByText("Station Overview")).toBeInTheDocument();
+  expect(rowNames()).toEqual(["Daily Ops", "Station Overview"]);
+  expect(details).not.toHaveBeenCalled();
+}
+
+/** D3 — a failed detail read keeps its row. */
+export async function aFailedDetailReadKeepsItsRow(): Promise<void> {
+  stubList({ items: [COPY, OWN] });
+  stubDetails({ "daily-ops": "error", "station-overview": null });
+  renderList({ organizationId: ORG_ID, locationId: LOCATION_ID, omitTemplateCopies: true });
+
+  expect(await screen.findByText("Daily Ops")).toBeInTheDocument();
+  expect(rowNames()).toEqual(["Daily Ops", "Station Overview"]);
+}
+
+/** D4 — a row not scoped at the location (`locationId: null`) is listed and never detail-read. */
+export async function aRowNotScopedAtTheLocationIsNotDetailRead(): Promise<void> {
+  stubList({ items: [GROUP_SCOPED, OWN] });
+  const details = stubDetails({ "station-overview": null });
+  renderList({ organizationId: ORG_ID, locationId: LOCATION_ID, omitTemplateCopies: true });
+
+  expect(await screen.findByText("Group Energy")).toBeInTheDocument();
+  expect(rowNames()).toEqual(["Group Energy", "Station Overview"]);
+  expect(details.mock.calls.map((call) => call[0])).toEqual(["station-overview"]);
+}
+
+/** D5 — while a detail read is pending, the loading line shows and no row. */
+export async function aPendingDetailReadShowsTheLoadingLine(): Promise<void> {
+  stubList({ items: [COPY, OWN] });
+  const details = stubDetails({ "daily-ops": "pending", "station-overview": null });
+  renderList({ organizationId: ORG_ID, locationId: LOCATION_ID, omitTemplateCopies: true });
+
+  // A detail read only starts once the list has answered, so the list is settled here.
+  await waitFor(() => expect(details).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(screen.getByText("Loading dashboards…")).toBeInTheDocument();
+  expect(rowNames()).toEqual([]);
 }
 
 export function cleanupList(): void {

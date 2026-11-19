@@ -88,7 +88,10 @@ export function theAccordionGroupsSitesUnderTheirParent(): void {
   const group = screen.getByTestId("site-group-st");
   expect(within(group).getByRole("heading").textContent).toBe("Alpha Station1 of 2 sites live · 6 assets · 3 alarms");
   expect(within(group).queryByRole("button")).toBeNull();
-  const hrefs = Array.from(document.querySelectorAll('a[href^="/control-room/site/"]')).map((a) => a.getAttribute("href"));
+  // The cards by their own `data-live` attribute: a header's Open link (`F4.240` part b) is no card.
+  const hrefs = Array.from(document.querySelectorAll('a[data-live][href^="/control-room/site/"]')).map((a) =>
+    a.getAttribute("href"),
+  );
   expect(hrefs).toEqual(["/control-room/site/st-i", "/control-room/site/st-ii", "/control-room/site/b1"]);
   expect(screen.queryByText("0 RTUs · 0 assets")).toBeNull();
 }

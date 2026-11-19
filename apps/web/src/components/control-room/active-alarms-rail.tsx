@@ -22,11 +22,12 @@ function feedOf<T>(query: { status: "pending" | "error" | "success"; data?: { it
 }
 
 /**
- * The rail reads one of two scopes. `assetIds` is the `F3.28` pages' scope.
+ * The rail reads one of three scopes. `assetIds` is the `F3.28` pages' scope.
  * `organizationId` (`F3.66` step-5 fix) is the Control Room organization
  * page's: the API narrows by organization, intersected with the caller's
  * readable assets, so the page no longer sends every asset id against the
- * API's 200-id cap.
+ * API's 200-id cap. `locationId` (`F4.240` part b, ADR 0140 decision 3, plan
+ * D5) is the station page's: one location and every location under it.
  */
 export type ActiveAlarmsRailProps =
   | {
@@ -39,11 +40,19 @@ export type ActiveAlarmsRailProps =
        */
       assetsStatus?: AssetsStatus;
       organizationId?: undefined;
+      locationId?: undefined;
     }
   | {
       organizationId: string;
       assetIds?: undefined;
       assetsStatus?: undefined;
+      locationId?: undefined;
+    }
+  | {
+      locationId: string;
+      assetIds?: undefined;
+      assetsStatus?: undefined;
+      organizationId?: undefined;
     };
 
 /**
@@ -61,7 +70,11 @@ export type ActiveAlarmsRailProps =
 export function ActiveAlarmsRail(props: ActiveAlarmsRailProps) {
   const { assetsStatus = "success" } = props;
   const { active, summary } = useActiveAlarms(
-    props.organizationId !== undefined ? { organizationId: props.organizationId } : props.assetIds,
+    props.locationId !== undefined
+      ? { locationId: props.locationId }
+      : props.organizationId !== undefined
+        ? { organizationId: props.organizationId }
+        : props.assetIds,
   );
   const vocabQ = useQuery({
     queryKey: vocabulariesQueryKey,
@@ -69,9 +82,11 @@ export function ActiveAlarmsRail(props: ActiveAlarmsRailProps) {
     staleTime: 5 * 60 * 1000,
   });
   // With no ids nothing is fetched: say why, never "No active alarms". The
-  // organization scope needs no ids, so it never shows this note.
+  // organization and location scopes need no ids, so they never show this note.
   const noIdsNote =
-    props.organizationId !== undefined || props.assetIds.length > 0 ? null : NO_IDS_NOTE[assetsStatus];
+    props.locationId !== undefined || props.organizationId !== undefined || props.assetIds.length > 0
+      ? null
+      : NO_IDS_NOTE[assetsStatus];
 
   return (
     <section aria-label="Alarms" className="surface-raised p-4">

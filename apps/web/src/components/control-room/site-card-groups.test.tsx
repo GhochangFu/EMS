@@ -3,10 +3,13 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aFlatListDrawsNoHeader,
+  aParentThatHoldsAssetsDrawsNoOpenLink,
   anotherSelectionLeavesTheHeaderUnpressed,
   cleanupSiteCardGroups,
   noCardForAnAssetLessParent,
   theHeaderTextIsTheParentAndItsRollup,
+  theOpenLinkSitsBesideTheHeaderButton,
+  theOpenLinkSitsBesideTheHeading,
   withOnSelectParentTheHeaderIsAPressedButton,
   withoutOnSelectParentTheHeaderIsAHeading,
 } from "./site-card-groups.spec";
@@ -42,5 +45,17 @@ describe("F4.240 SiteCardGroups (ADR 0139 decisions 13–14)", () => {
 
   it("H5 draws no header for a flat list", () => {
     aFlatListDrawsNoHeader();
+  });
+
+  it("H7 draws an Open link beside the header button, not inside it (F4.240 part b)", () => {
+    theOpenLinkSitsBesideTheHeaderButton();
+  });
+
+  it("H8 draws the Open link beside the heading (F4.240 part b)", () => {
+    theOpenLinkSitsBesideTheHeading();
+  });
+
+  it("H9 draws no Open link for a parent that holds assets (F4.240 part b)", () => {
+    aParentThatHoldsAssetsDrawsNoOpenLink();
   });
 });

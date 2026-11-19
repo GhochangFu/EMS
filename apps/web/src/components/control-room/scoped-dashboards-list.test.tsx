@@ -2,15 +2,21 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aCachedDetailUnderTheViewersKeyDecidesTheRow,
+  aFailedDetailReadKeepsItsRow,
   aFailedReadShowsUnavailable,
   anEmptyListShowsTheSentence,
+  aPendingDetailReadShowsTheLoadingLine,
   aPendingReadShowsTheLoadingLine,
+  aRowNotScopedAtTheLocationIsNotDetailRead,
   aSiteReadsByItsLocationId,
   cleanupList,
   eachRowOpensTheViewerWithItsOrganization,
+  omitsTheTemplateCopy,
   readsTheListByTheOrganizationId,
   theEstateReadsWithNoOrganization,
   theKeyCarriesTheLocationId,
+  withoutThePropEveryRowIsListed,
 } from "./scoped-dashboards-list.spec";
 
 /**
@@ -53,5 +59,29 @@ describe("F3.72 U1 ScopedDashboardsList (D7)", () => {
 
   it("shows the loading line while the read is pending", async () => {
     await aPendingReadShowsTheLoadingLine();
+  });
+
+  it("D1 F4.240 omitTemplateCopies leaves out the row whose detail carries a templateId", async () => {
+    await omitsTheTemplateCopy();
+  });
+
+  it("D1b F4.240 a cached detail under the viewer's key decides the row with no read", async () => {
+    await aCachedDetailUnderTheViewersKeyDecidesTheRow();
+  });
+
+  it("D2 F4.240 without omitTemplateCopies lists every row and reads no detail", async () => {
+    await withoutThePropEveryRowIsListed();
+  });
+
+  it("D3 F4.240 a failed detail read keeps its row", async () => {
+    await aFailedDetailReadKeepsItsRow();
+  });
+
+  it("D4 F4.240 a row not scoped at the location is listed and never detail-read", async () => {
+    await aRowNotScopedAtTheLocationIsNotDetailRead();
+  });
+
+  it("D5 F4.240 a pending detail read shows the loading line and no row", async () => {
+    await aPendingDetailReadShowsTheLoadingLine();
   });
 });

@@ -47,8 +47,9 @@ function renderGroups(onSelectParent?: (parentId: string) => void, selectedParen
   );
 }
 
+/** The site cards' links, by the card's own `data-live` attribute, so a header's Open link is not counted. */
 function cardHrefs(root: HTMLElement): (string | null)[] {
-  return Array.from(root.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+  return Array.from(root.querySelectorAll("a[data-live]")).map((a) => a.getAttribute("href"));
 }
 
 /** H1 — the header reads the parent's name, then `{live} of {total} sites live · {assets} assets · {alarms} alarms`. */
@@ -119,6 +120,52 @@ export function aFlatListDrawsNoHeader(): void {
   expect(document.querySelector('[data-testid^="site-group-"]')).toBeNull();
   expect(screen.queryByRole("heading")).toBeNull();
   expect(cardHrefs(document.body)).toEqual(["/control-room/site/a1"]);
+}
+
+/**
+ * H7 (`F4.240` part b, ADR 0140 decision 2, plan D3) — with `onSelectParent`, an asset-less
+ * parent's header carries an "Open <station>" link to its page, beside the button and never inside
+ * it; a click on the button still selects the parent.
+ */
+export function theOpenLinkSitsBesideTheHeaderButton(): void {
+  const onSelect = vi.fn();
+  renderGroups(onSelect);
+
+  const group = screen.getByTestId("site-group-lotapata");
+  const link = within(group).getByRole("link", { name: "Open Lotapata" });
+  expect(link.getAttribute("href")).toBe("/control-room/site/lotapata");
+  expect(link.textContent).toBe("Open");
+  const button = within(group).getByRole("button");
+  expect(button.contains(link), "the link must not sit inside the button").toBe(false);
+  fireEvent.click(button);
+  expect(onSelect).toHaveBeenCalledWith("lotapata");
+}
+
+/** H8 (plan D3) — without `onSelectParent`, the same link sits beside the heading. */
+export function theOpenLinkSitsBesideTheHeading(): void {
+  renderGroups();
+
+  const group = screen.getByTestId("site-group-lotapata");
+  const link = within(group).getByRole("link", { name: "Open Lotapata" });
+  expect(link.getAttribute("href")).toBe("/control-room/site/lotapata");
+  expect(within(group).getByRole("heading").contains(link), "the link must not sit inside the heading").toBe(false);
+}
+
+/** H9 (plan D3) — a parent that holds assets is a site, not a station: its header draws no Open link. */
+export function aParentThatHoldsAssetsDrawsNoOpenLink(): void {
+  const items: LocationKpiSummary[] = [
+    site({ id: "p", name: "Holder", organization: ORG_A, assetCount: 2 }),
+    withParent(site({ id: "c1", name: "Child One", organization: ORG_A }), "p"),
+  ];
+  render(
+    <MemoryRouter>
+      <SiteCardGroups grouped={groupSitesByParent(items)} onSelectParent={vi.fn()} />
+    </MemoryRouter>,
+  );
+
+  const group = screen.getByTestId("site-group-p");
+  expect(within(group).queryByRole("link", { name: /^Open/ })).toBeNull();
+  expect(cardHrefs(group)).toEqual(["/control-room/site/p", "/control-room/site/c1"]);
 }
 
 export function cleanupSiteCardGroups(): void {

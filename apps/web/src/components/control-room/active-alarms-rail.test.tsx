@@ -5,10 +5,12 @@ import { onlineManager } from "@tanstack/react-query";
 
 import {
   aDeviceAlarmNamesItsRtuOrTheIngestHost,
+  anEmptyLocationIdMakesNoCall,
   emptyIdsFetchNoActiveList,
   emptyIdsFetchNoSummary,
   failedAssetReadDoesNotSayLoading,
   failedAssetReadSaysUnavailable,
+  fetchesBothReadsForTheLocation,
   fetchesTheActiveListForTheGivenIds,
   fetchesTheActiveListForTheOrganization,
   fetchesTheSummaryForTheOrganization,
@@ -161,5 +163,13 @@ describe("F3.28 active alarms rail", () => {
 
   it("F4.359 draws the Maintenance badge on the suppressed row only", async () => {
     await theBadgeIsOnTheSuppressedRowOnly();
+  });
+
+  it("R-L1 F4.240 fetches the active list and the summary for the location", async () => {
+    await fetchesBothReadsForTheLocation();
+  });
+
+  it("R-L2 F4.240 makes no call for an empty location id", async () => {
+    await anEmptyLocationIdMakesNoCall();
   });
 });

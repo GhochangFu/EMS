@@ -442,7 +442,8 @@ export async function theEstateGroupsSitesUnderTheirParent(): Promise<void> {
   const tabs = await screen.findByRole("tablist", { name: "Filter locations by organization" });
   const section = sectionTitled("Location performance");
   const siteHrefs = () =>
-    Array.from(section.querySelectorAll('a[href^="/control-room/site/"]')).map((a) => a.getAttribute("href"));
+    // The cards by their own `data-live` attribute: a header's Open link (`F4.240` part b) is no card.
+    Array.from(section.querySelectorAll('a[data-live][href^="/control-room/site/"]')).map((a) => a.getAttribute("href"));
   expect(within(section).getByTestId("site-group-st").textContent).toContain("0 of 2 sites live · 8 assets · 0 alarms");
   expect(within(section).getAllByText("0 RTUs · 4 assets"), "control: the RTU sites draw cards").toHaveLength(2);
   expect(within(section).queryByText("0 RTUs · 0 assets")).toBeNull();

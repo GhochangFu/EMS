@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchActiveAlarms, fetchAlarmSummary, type AlarmScope } from "../api/alarms";
+import { fetchActiveAlarms, fetchAlarmSummary, type AlarmReadScope } from "../api/alarms";
 import { useAlarmsSocket } from "./use-alarms-socket";
 
 /** Prefixes, without the ids: one socket event refreshes every scope's entry. */
@@ -20,10 +20,19 @@ export const alarmSummaryQueryPrefix = ["alarms", "summary"] as const;
  * asset*, a wider read than the rail describes. The organization scope is
  * enabled by its id alone. Both scopes key under the same prefixes, so one
  * socket event refreshes either.
+ *
+ * `F4.240` part b (ADR 0140 decision 3, plan D5) — a third scope, one location
+ * and every location under it (the station page's rail), read by `locationId`
+ * and enabled by a non-empty id, as the organization scope is.
  */
-export function useActiveAlarms(scope: AlarmScope) {
+export function useActiveAlarms(scope: AlarmReadScope) {
   const qc = useQueryClient();
-  const enabled = "organizationId" in scope ? scope.organizationId.length > 0 : scope.length > 0;
+  const enabled =
+    "locationId" in scope
+      ? scope.locationId.length > 0
+      : "organizationId" in scope
+        ? scope.organizationId.length > 0
+        : scope.length > 0;
   const active = useQuery({
     queryKey: [...activeAlarmsQueryPrefix, scope],
     queryFn: () => fetchActiveAlarms(scope),

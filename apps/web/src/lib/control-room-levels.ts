@@ -85,9 +85,11 @@ export function organizationEntryTarget(
  * page. `ControlRoomBreadcrumb` renders nothing for a one-crumb list.
  *
  * `F4.240` (ADR 0139 decision 17) — between the organization and the site, the site's parents
- * (`PHEWB / Lotapata / Lotapata I`) as plain steps with no `to`: there is no station page. Only a
- * parent in `items` is named (the API nulls an unreadable `parentId`), so a site with a `null`
- * parent keeps today's trail.
+ * (`PHEWB / Lotapata / Lotapata I`). Only a parent in `items` is named (the API nulls an
+ * unreadable `parentId`), so a site with a `null` parent keeps today's trail. `F4.240` part b
+ * (ADR 0140 decision 2, plan D4): a reader of the parent gets a link to its page
+ * (`/control-room/site/<parent id>`); a parent the caller cannot read is not in `items`, so it has
+ * no crumb at all.
  */
 export function controlRoomCrumbs(
   items: readonly LocationKpiSummary[],
@@ -115,9 +117,10 @@ export function controlRoomCrumbs(
   }
 
   if (site && (organizationsLevelShown || organizationLevelShown)) {
-    // `F4.240` (ADR 0139 decision 17) — the site's readable parents, root first, as plain text.
+    // `F4.240` (ADR 0139 decision 17; ADR 0140 decision 2) — the site's readable parents, root
+    // first, each linked to its page.
     for (const parent of readableParents(items, site)) {
-      crumbs.push({ label: parent.name });
+      crumbs.push({ label: parent.name, to: `/control-room/site/${encodeURIComponent(parent.id)}` });
     }
     crumbs.push({ label: site.name, to: `/control-room/site/${site.id}` });
   }

@@ -217,7 +217,8 @@ export function runC6(): void {
 }
 
 // ---------------------------------------------------------------------------
-// `F4.240` (ADR 0139 decision 17) — the site page's crumbs name the parent, as plain text.
+// `F4.240` (ADR 0139 decision 17) — the site page's crumbs name the parent. Part b (ADR 0140
+// decision 2, plan D4): a readable parent's step links to its page.
 // ---------------------------------------------------------------------------
 
 const ORG_PHE = { id: "org-phe", code: "PHEWB", name: "PHEWB" };
@@ -226,7 +227,7 @@ function child(id: string, name: string, parentId: string | null, assetCount = 4
   return { ...site({ id, name, organization: ORG_PHE }), assetCount, parentId };
 }
 
-/** `C7` — `Control Room / PHEWB / Lotapata / Lotapata I`, the parent step with no `to`. */
+/** `C7` — `Control Room / PHEWB / Lotapata / Lotapata I`, the parent step linked (ADR 0140 decision 2). */
 export function runC7(): void {
   const items = [
     child("lotapata", "Lotapata", null, 0),
@@ -238,12 +239,12 @@ export function runC7(): void {
   const expected = [
     { label: "Control Room", to: "/control-room" },
     { label: "PHEWB", to: "/control-room/org/org-phe" },
-    { label: "Lotapata" },
+    { label: "Lotapata", to: "/control-room/site/lotapata" },
     { label: "Lotapata I" },
   ];
   assert(
     JSON.stringify(crumbs) === JSON.stringify(expected),
-    `the trail must name the parent as plain text — got ${JSON.stringify(crumbs)}`,
+    `the trail must link the parent — got ${JSON.stringify(crumbs)}`,
   );
 }
 
@@ -267,7 +268,7 @@ export function runC8(): void {
 }
 
 /**
- * `C9` — a chain of two parents gives two plain steps, root first. A parent named but not in the
+ * `C9` — a chain of two parents gives two linked steps, root first (ADR 0140 decision 2). A parent named but not in the
  * list (unreadable) ends the walk, and a cycle in the data cannot loop it (visited set).
  */
 export function runC9(): void {
@@ -284,7 +285,17 @@ export function runC9(): void {
     `two parents, root first — got ${JSON.stringify(labels)}`,
   );
   const plain = controlRoomCrumbs(items, { locationId: "rtu" }).filter((crumb) => crumb.to === undefined);
-  assert(plain.length === 3, `the two parent steps and the current site carry no link — got ${plain.length}`);
+  assert(
+    JSON.stringify(plain) === JSON.stringify([{ label: "RTU I" }]),
+    `only the current site is a plain step — got ${JSON.stringify(plain)}`,
+  );
+  const parentLinks = controlRoomCrumbs(items, { locationId: "rtu" })
+    .slice(2, 4)
+    .map((crumb) => crumb.to);
+  assert(
+    JSON.stringify(parentLinks) === JSON.stringify(["/control-room/site/region", "/control-room/site/station"]),
+    `both parents link to their pages — got ${JSON.stringify(parentLinks)}`,
+  );
 
   const cycle = [child("x", "X", "y", 0), child("y", "Y", "x"), site({ id: "b1", name: "B1", organization: ORG_B })];
   const cycleLabels = controlRoomCrumbs(cycle, { locationId: "y" }).map((crumb) => crumb.label);
