@@ -142,6 +142,8 @@ export async function aMeasuredRatioRendersOnTheDashboard(): Promise<void> {
   const tile = tileLabelled("PUE");
   expect(await within(tile).findByText("1.42")).toBeInTheDocument();
   expect(within(tile).getByText(MEASURED_HINT)).toBeInTheDocument();
+  // F4.390: the query's abort signal reaches the fetcher (a `() => fetchLocationKpis()` would forward none).
+  expect(locationsApi.fetchLocationKpis).toHaveBeenCalledWith(expect.any(AbortSignal));
 }
 
 /** Nothing configured: the dash, and the sentence that says what to configure. */

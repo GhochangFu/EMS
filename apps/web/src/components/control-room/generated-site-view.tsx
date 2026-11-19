@@ -40,7 +40,7 @@ export function GeneratedSiteView({
 }) {
   const kpiQuery = useQuery({
     queryKey: ["dashboard", "location", locationId],
-    queryFn: () => fetchLocationDashboard(locationId),
+    queryFn: ({ signal }) => fetchLocationDashboard(locationId, undefined, signal),
     enabled: !!locationId,
     refetchInterval: 8000,
   });

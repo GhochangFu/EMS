@@ -276,6 +276,8 @@ export async function theStripReadsTheWholeSite(): Promise<void> {
   renderView();
   await screen.findByText("AHU-01");
   expect(mocks.fetchSiteTrendStrip.mock.calls).toEqual([[LOCATION_ID, { range: "24h", assetGroupId: null }]]);
+  // F4.390: the query's abort signal is the third argument of the dashboard read.
+  expect(mocks.fetchLocationDashboard).toHaveBeenCalledWith(LOCATION_ID, undefined, expect.any(AbortSignal));
 }
 
 /**

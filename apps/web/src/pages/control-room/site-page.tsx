@@ -51,6 +51,13 @@ type ControlRoomSitePageProps = {
 /** `E1.9e` — the site body's card shows both kinds. */
 const SITE_FINDINGS_KINDS = ["anomalies", "forecasts"] as const;
 
+/**
+ * `F4.390` — the site list is read here for the name, the organization, `energyShown` and the
+ * crumbs, never for a live figure; admin edits already invalidate the key. So one read a minute,
+ * not every 8 s. The other pages on this key draw live card figures from it and keep 8 s.
+ */
+const SITE_SUMMARY_REFETCH_MS = 60_000;
+
 const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong hover:underline";
 
 /**
@@ -114,6 +121,9 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * `SiteTrendsView` for every view kind once the resolve read has answered, never a wall page,
  * and the **Wall** link omits the segment there.
  *
+ * `F4.390` — the page re-reads the site list once a minute (`SITE_SUMMARY_REFETCH_MS`), and the
+ * read carries the query's abort signal.
+ *
  * `E1.9e` (ADR 0135 Amendment 8 decision 13) — the Site view body carries the compact findings
  * card (`MlFindingsCard`, both kinds, scoped to the site and its organization) between the body
  * and the site's dashboards. The wall, the assets tab, the trends tab and a pending read draw none.
@@ -138,8 +148,8 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
   const scope = useAuthStore((state) => state.scope);
   const locationQ = useQuery({
     queryKey: ["dashboard", "locations"],
-    queryFn: fetchLocationKpis,
-    refetchInterval: 8000,
+    queryFn: ({ signal }) => fetchLocationKpis(signal),
+    refetchInterval: SITE_SUMMARY_REFETCH_MS,
   });
   const siteView = useQuery({
     queryKey: ["control-room", "site-view", locationId],

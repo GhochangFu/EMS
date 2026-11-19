@@ -311,6 +311,8 @@ export async function siteCardsLinkToTheSiteLevel(): Promise<void> {
   const grid = await siteGrid();
   const hrefs = Array.from(grid.querySelectorAll("a")).map((a) => a.getAttribute("href"));
   expect(hrefs).toEqual(["/control-room/site/a1", "/control-room/site/a2"]);
+  // F4.390: the query's abort signal reaches the fetcher (a `() => fetchLocationKpis()` would forward none).
+  expect(locationsApi.fetchLocationKpis).toHaveBeenCalledWith(expect.any(AbortSignal));
 }
 
 /** G2 — an organization with one readable site skips to the site. */

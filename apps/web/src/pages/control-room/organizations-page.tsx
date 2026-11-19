@@ -39,7 +39,7 @@ type ControlRoomOrganizationsPageProps = {
 export function ControlRoomOrganizationsPage({ user, entry = false }: ControlRoomOrganizationsPageProps) {
   const locationQ = useQuery({
     queryKey: ["dashboard", "locations"],
-    queryFn: fetchLocationKpis,
+    queryFn: ({ signal }) => fetchLocationKpis(signal),
     refetchInterval: 8000,
   });
 
