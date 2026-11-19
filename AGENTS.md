@@ -3654,6 +3654,23 @@ Do not add top-level folders without updating this section.
   "tidy" 735 to 730: an aggregate must outlive its source **strictly**, or the two
   independent policy schedules can leave raw holding a period its aggregate does
   not — which reads as **empty**, not as an error, and which no refresh repairs.
+- **A raw `telemetry.point_values` read carries a plan-time literal time bound,
+  and is listed in `tests/f4.390-point-values-readers.test.ts`** (`F4.390`). The
+  table gains a chunk a day and keeps 730 days, so a read the planner cannot bound
+  before it runs plans every chunk, and gets slower daily. A bound passed as a
+  parameter does not count: TimescaleDB then excludes chunks only at execution,
+  after planning them all — the calc input reads planned for **629 ms warm and
+  7,705 ms cold for a 53 ms read**, and 314 ms cold once the bound was a literal.
+  Build the literal from the module's own closed constant
+  (`INPUT_READ_BOUND_INTERVAL_SQL`, `GENERATED_LATEST_WINDOW_SQL`) or from a value
+  validated before any SQL text exists (`planLatestPoints`' day literals), never
+  from request input; in a drizzle `sql` template that means `sql.raw(…)`, since a
+  bare `${…}` is a bind parameter. The worst case was the Assets tab's unbounded
+  `DISTINCT ON`: 1,425,482 rows from all 134 chunks, 100,759 ms, to keep 33. The
+  test counts every raw reader per file and pins each literal-bounded file's bound
+  text, so a new reader fails until it is added with its bound stated. The
+  readers it still lists without a literal are open rows (`F4.391`–`F4.394`) — a
+  record of what is left, not a precedent for adding another.
 - **Read telemetry rollups through `apps/api/src/telemetry/point-aggregates.ts`,
   not with your own `date_trunc`/`time_bucket` SQL** (ADR 0023). The mean is
   `sum(sum_value) / sum(sample_count)` — **never** an average of averages, which
