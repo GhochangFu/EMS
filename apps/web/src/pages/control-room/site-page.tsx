@@ -13,6 +13,7 @@ import { SiteLayoutWizard } from "../../components/control-room/site-layout-wiza
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
 import { SiteAssetsView } from "../../components/control-room/site-assets-view";
 import { SiteDashboardView } from "../../components/control-room/site-dashboard-view";
+import { StationView } from "../../components/control-room/station-view";
 import { SiteTrendsView } from "../../components/control-room/site-trends-view";
 import { SmocSiteView } from "../../components/control-room/smoc-site-view";
 import { WallFrame } from "../../components/control-room/wall-frame";
@@ -24,6 +25,7 @@ import { AppShell } from "../../layouts/app-shell";
 import { isMasterDataAdmin } from "../../lib/admin-access";
 import { controlRoomCrumbs } from "../../lib/control-room-levels";
 import { FOCUS_OUTLINE_CLASS } from "../../lib/focus-classes";
+import { stationGroupOf } from "../../lib/location-kpi-groups";
 import { siteViewNoticeText, siteViewNoticeTone } from "../../lib/site-view-notice";
 import {
   DEFAULT_SMOC_TAB,
@@ -136,6 +138,14 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * `E1.5b` (ADR 0138 decision 5, plan T2.4) — directly after that card: the *Trending toward a
  * limit — advisory* card (`DegradationTrendCard`), scoped to the site and its organization. The
  * same places: never the wall, the assets tab, the trends tab or a pending read.
+ *
+ * `F4.240` part b (ADR 0140 decisions 1–4, plan D1, D6, D7) — at a **station** (`stationGroupOf`:
+ * a location in the list that holds no asset and heads sites) the body is `StationView`: the
+ * totals, the site cards, the station's alarms, the advisory cards and its dashboards, or at
+ * `/assets` a list of the sites. The strip reads **Station view** and **Assets & RTUs** only; any
+ * other segment redirects to the bare path. No notice, layout wizard, wall or Wall link at a
+ * station, and the resolve read still decides access exactly as for a site (decision 6). The list
+ * poll stays at 60 s (owner ruling Q2 (a)), though the station draws live figures from it.
  */
 export function ControlRoomSitePage({ user, locationId: locationIdProp }: ControlRoomSitePageProps) {
   const params = useParams();
@@ -162,15 +172,17 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
 
   const items = locationQ.data?.items;
   const site = items?.find((item) => item.id === locationId);
+  const stationGroup = items === undefined ? null : stationGroupOf(items, locationId);
+  const atStation = stationGroup !== null;
 
   const showsSmocTabs = siteView.data?.kind === "builtin" && site !== undefined && isSmocSite(site);
   const dashboardSlug = siteView.data?.kind === "dashboard" ? siteView.data.dashboardSlug : null;
-  const showsDashboard = dashboardSlug !== null;
+  const showsDashboard = dashboardSlug !== null && !atStation;
 
   // `F3.77` (plan D8, OQ3) — the wall shows a site's `dashboard` view only, never the assets tab.
   const wall = parseWallParams(location.search);
   const sitePath = `/control-room/site/${encodeURIComponent(locationId)}`;
-  const wallSite = wall.on && dashboardSlug !== null && !onAssetsTab && !onTrendsTab ? site : undefined;
+  const wallSite = wall.on && showsDashboard && !onAssetsTab && !onTrendsTab ? site : undefined;
   // The rotation's tab order. The same key and read as `SiteDashboardView`'s (and the viewer's),
   // so the wall shares that cache entry and adds no request.
   const wallDashboardQ = useQuery({
@@ -184,9 +196,7 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
     siteView.data !== undefined &&
     tabParam !== undefined &&
     !onAssetsTab &&
-    !onTrendsTab &&
-    !showsDashboard &&
-    (!showsSmocTabs || tab === null)
+    (atStation || (!onTrendsTab && !showsDashboard && (!showsSmocTabs || tab === null)))
   ) {
     return <Navigate to={sitePath} replace />;
   }
@@ -245,11 +255,14 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                 onAssetsTab={onAssetsTab}
                 onTrendsTab={onTrendsTab}
                 energyShown={site.energyShown}
+                station={atStation}
               />
               {siteView.data === undefined ? (
                 <p role="status" className="text-sm text-ink-muted">
                   Loading the site view…
                 </p>
+              ) : stationGroup !== null ? (
+                <StationView station={site} group={stationGroup} section={onAssetsTab ? "assets" : "view"} />
               ) : onAssetsTab ? (
                 <SiteAssetsView locationId={site.id} siteName={site.name} energyShown={site.energyShown} />
               ) : onTrendsTab ? (
@@ -301,26 +314,32 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
  * the bare path and every SMOC tab segment; "Assets & RTUs" only at `/assets`;
  * "Trends & Energy" (`F4.302`, ADR 0108 Amendment 4 item 1) only at `/trends`. `F4.364` (ADR
  * 0133 Amendment 1): when the site's energy is not shown, that entry is named "Trends" (same path).
+ * `F4.240` part b (plan D7): at a station the first entry reads "Station view" and there is no
+ * third entry until PR 2.
  */
 function SiteSectionStrip({
   locationId,
   onAssetsTab,
   onTrendsTab,
   energyShown,
+  station,
 }: {
   locationId: string;
   onAssetsTab: boolean;
   onTrendsTab: boolean;
   energyShown: boolean;
+  station: boolean;
 }) {
   const entries = [
     {
-      label: "Site view",
+      label: station ? "Station view" : "Site view",
       to: `/control-room/site/${encodeURIComponent(locationId)}`,
       active: !onAssetsTab && !onTrendsTab,
     },
     { label: "Assets & RTUs", to: siteAssetsPath(locationId), active: onAssetsTab },
-    { label: energyShown ? "Trends & Energy" : "Trends", to: siteTrendsPath(locationId), active: onTrendsTab },
+    ...(station
+      ? []
+      : [{ label: energyShown ? "Trends & Energy" : "Trends", to: siteTrendsPath(locationId), active: onTrendsTab }]),
   ];
   return (
     <nav aria-label="Site sections" className="flex flex-wrap gap-1 border-b border-line pb-2">
