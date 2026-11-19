@@ -189,8 +189,9 @@ export async function theStationAssetsReadsOnlyTheResolve(): Promise<void> {
   stubFetch();
   renderAt(`/control-room/site/${ST}/assets`);
   await screen.findByRole("heading", { level: 1, name: "Lotapata" });
-  // The section has answered (the resolve read is in); then the page settles. No wait on the
-  // section's own markup, so a body that reads the station still reaches the assertion.
+  // The waitFor confirms the resolve was requested; the 100 ms wait then lets the body render.
+  // No wait on the section's own markup, so a body that reads the station still reaches the
+  // assertion.
   await waitFor(() => expect(stationPaths()).toContain("/control-room/sites/<st>/view"));
   await new Promise((resolve) => setTimeout(resolve, 100));
 

@@ -115,7 +115,7 @@ function GroupHeader({ group, onSelectParent, pressed }: GroupHeaderProps) {
 function OpenStationLink({ parent }: { parent: LocationKpiSummary }) {
   return (
     <Link
-      to={`/control-room/site/${parent.id}`}
+      to={`/control-room/site/${encodeURIComponent(parent.id)}`}
       aria-label={`Open ${parent.name}`}
       className="shrink-0 text-xs font-semibold text-accent-strong hover:underline"
     >

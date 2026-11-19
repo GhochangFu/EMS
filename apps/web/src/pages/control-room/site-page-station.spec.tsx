@@ -143,6 +143,12 @@ function stubReads(items: readonly LocationKpiSummary[], answer: ResolvedSiteCon
   }
 }
 
+/** The `cleanupStation` network check, for a case that cleans up and re-stubs half-way. */
+function expectNoNetworkSoFar(): void {
+  const networkCalls = fetchSpy?.mock.calls.map((call) => String(call[0])) ?? [];
+  expect(networkCalls, "a read reached the network").toEqual([]);
+}
+
 function PathnameProbe() {
   const { pathname } = useLocation();
   return <p data-testid="pathname">{pathname}</p>;
@@ -286,6 +292,7 @@ export async function otherSegmentsRedirectAndTheStripHasTwoEntries(): Promise<v
     expect(await screen.findByTestId("station-totals")).toBeInTheDocument();
     expect(screen.queryByTestId("site-trends-view")).toBeNull();
     expect(stripLabels()).toEqual(["Station view", "Assets & RTUs"]);
+    expectNoNetworkSoFar();
     cleanup();
     vi.restoreAllMocks();
   }
@@ -311,6 +318,18 @@ export async function anUnreadableStationShowsTheNotAvailableCard(): Promise<voi
   expect(screen.queryByTestId("station-totals")).toBeNull();
 }
 
+/**
+ * ST10b — the station in the list, its resolve rejected (the API's 404): the not-available card,
+ * never the station body. The resolve read decides access at a station as at a site (decision 6).
+ */
+export async function aRejectedStationResolveShowsTheNotAvailableCard(): Promise<void> {
+  stubReads(ITEMS, "reject");
+  renderAt("/control-room/site/st");
+
+  expect(await screen.findByText("Site view unavailable")).toBeInTheDocument();
+  expect(screen.queryByTestId("station-totals")).toBeNull();
+}
+
 /** ST11 — a site's page links its station crumb; with `parentId: null` there is no such crumb. */
 export async function aSitesStationCrumbIsALink(): Promise<void> {
   stubReads(ITEMS, view("st-1"));
@@ -318,6 +337,7 @@ export async function aSitesStationCrumbIsALink(): Promise<void> {
 
   await stationHeading("Lotapata I");
   expect(within(crumbs()).getByRole("link", { name: "Lotapata" }).getAttribute("href")).toBe("/control-room/site/st");
+  expectNoNetworkSoFar();
   cleanup();
   vi.restoreAllMocks();
 

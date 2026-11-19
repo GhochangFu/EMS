@@ -254,6 +254,32 @@ export async function omitsTheTemplateCopy(): Promise<void> {
   );
 }
 
+/**
+ * D1b — the detail read shares `SiteDashboardView`'s key (`["dashboards","detail",slug,org]`): a
+ * detail already in that cache entry decides the row, and no detail read is made for it. The
+ * client's `staleTime` is `Infinity` so a mount does not refetch the seeded entry; the stub answers
+ * `templateId: null`, so a read under any other key would list the copy.
+ */
+export async function aCachedDetailUnderTheViewersKeyDecidesTheRow(): Promise<void> {
+  stubList({ items: [COPY, OWN] });
+  const details = stubDetails({ "daily-ops": null, "station-overview": null });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  queryClient.setQueryData(["dashboards", "detail", COPY.slug, ORG_ID], {
+    templateId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  } as unknown as DashboardDto);
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <ScopedDashboardsList organizationId={ORG_ID} locationId={LOCATION_ID} omitTemplateCopies />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  expect(await screen.findByText("Station Overview")).toBeInTheDocument();
+  expect(rowNames()).toEqual(["Station Overview"]);
+  expect(details.mock.calls.map((call) => call[0])).not.toContain(COPY.slug);
+}
+
 /** D2 — without the prop both rows are listed and no detail is read (D1's control). */
 export async function withoutThePropEveryRowIsListed(): Promise<void> {
   stubList({ items: [COPY, OWN] });

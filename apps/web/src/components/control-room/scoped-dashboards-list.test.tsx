@@ -2,6 +2,7 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aCachedDetailUnderTheViewersKeyDecidesTheRow,
   aFailedDetailReadKeepsItsRow,
   aFailedReadShowsUnavailable,
   anEmptyListShowsTheSentence,
@@ -62,6 +63,10 @@ describe("F3.72 U1 ScopedDashboardsList (D7)", () => {
 
   it("D1 F4.240 omitTemplateCopies leaves out the row whose detail carries a templateId", async () => {
     await omitsTheTemplateCopy();
+  });
+
+  it("D1b F4.240 a cached detail under the viewer's key decides the row with no read", async () => {
+    await aCachedDetailUnderTheViewersKeyDecidesTheRow();
   });
 
   it("D2 F4.240 without omitTemplateCopies lists every row and reads no detail", async () => {

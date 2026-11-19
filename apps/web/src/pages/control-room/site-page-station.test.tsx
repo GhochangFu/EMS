@@ -4,6 +4,7 @@ import { afterEach, describe, it } from "vitest";
 import {
   aLeafRendersTheSitePage,
   anUnreadableStationShowsTheNotAvailableCard,
+  aRejectedStationResolveShowsTheNotAvailableCard,
   aParentThatHoldsAssetsRendersTheSitePage,
   aSitesStationCrumbIsALink,
   cleanupStation,
@@ -64,6 +65,10 @@ describe("F4.240 part b the site page at a station (ADR 0140)", () => {
 
   it("ST10 shows the not-available card for a station outside the list", async () => {
     await anUnreadableStationShowsTheNotAvailableCard();
+  });
+
+  it("ST10b shows the not-available card when the station's resolve is rejected", async () => {
+    await aRejectedStationResolveShowsTheNotAvailableCard();
   });
 
   it("ST11 links a site's station crumb; no crumb with a null parent", async () => {

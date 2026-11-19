@@ -120,7 +120,7 @@ export function controlRoomCrumbs(
     // `F4.240` (ADR 0139 decision 17; ADR 0140 decision 2) — the site's readable parents, root
     // first, each linked to its page.
     for (const parent of readableParents(items, site)) {
-      crumbs.push({ label: parent.name, to: `/control-room/site/${parent.id}` });
+      crumbs.push({ label: parent.name, to: `/control-room/site/${encodeURIComponent(parent.id)}` });
     }
     crumbs.push({ label: site.name, to: `/control-room/site/${site.id}` });
   }

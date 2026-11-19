@@ -38,6 +38,8 @@ type StationViewProps = {
  * view: each would read or write at the station itself (decisions 3, 5). Every figure comes from
  * the items the page already holds, so no code names a level, a type or an organization (ADR 0098
  * decision 7).
+ *
+ * Specs: `pages/control-room/site-page-station.spec.tsx`, `site-page-station-requests.spec.tsx`.
  */
 export function StationView({ station, group, section }: StationViewProps) {
   if (section === "assets") {
