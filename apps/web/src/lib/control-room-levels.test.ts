@@ -60,7 +60,7 @@ describe("control-room-levels", () => {
     runC6();
   });
 
-  it("C7 — a site's trail names its parent as a plain step (F4.240)", () => {
+  it("C7 — a site's trail links its readable parent (F4.240, ADR 0140 decision 2)", () => {
     runC7();
   });
 
@@ -68,7 +68,7 @@ describe("control-room-levels", () => {
     runC8();
   });
 
-  it("C9 — a chain of two parents gives two plain steps, root first (F4.240)", () => {
+  it("C9 — a chain of two parents gives two linked steps, root first (F4.240, ADR 0140 decision 2)", () => {
     runC9();
   });
 });
