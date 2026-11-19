@@ -16,7 +16,7 @@ import { TARIFF_VERIFY_TITLE } from "./tariff-verify-badge";
 
 const LOC = "11111111-1111-4111-8111-111111111111";
 
-const BILLED: EnergyBill = {
+export const BILLED: EnergyBill = {
   locationId: LOC,
   month: "2026-10",
   timeZone: "Asia/Kolkata",
@@ -75,11 +75,11 @@ function stubBill(answer: EnergyBill | Error) {
   return spy;
 }
 
-function renderCard(): ReturnType<typeof render> {
+function renderCard(props: { title?: string; month?: string } = {}): ReturnType<typeof render> {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MonthlyBillCard locationId={LOC} />
+      <MonthlyBillCard locationId={LOC} {...props} />
     </QueryClientProvider>,
   );
 }
@@ -287,4 +287,24 @@ export async function oneMeterSaysNoCount(): Promise<void> {
   renderCard();
   await screen.findByText(/1,500 kWh/);
   expect(screen.queryByText(/\d meters?$/)).toBeNull();
+}
+
+/**
+ * `F4.240` part b (ADR 0140 decision 3f, plan D10, Task 2.4) — MB-C1: a controlled `month` is the
+ * month read, and the card draws no "Billing month" selector of its own.
+ */
+export async function aControlledMonthIsReadAndDrawsNoSelector(): Promise<void> {
+  const spy = stubBill(BILLED);
+  renderCard({ month: "2026-09" });
+  expect((await screen.findAllByText(money(9250))).length).toBeGreaterThan(0);
+  expect(spy.mock.calls).toEqual([[LOC, "2026-09"]]);
+  expect(screen.queryByLabelText("Billing month")).toBeNull();
+}
+
+/** MB-C2 — a `title` is the card's title; without one it stays "Monthly bill" (the control). */
+export async function aTitleNamesTheCard(): Promise<void> {
+  stubBill(BILLED);
+  renderCard({ title: "Lotapata I" });
+  expect(await screen.findByRole("heading", { name: "Lotapata I" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Monthly bill" })).toBeNull();
 }
