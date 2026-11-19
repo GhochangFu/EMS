@@ -7,10 +7,13 @@ import {
   groupSitesByParent,
   hasLiveTelemetry,
   orgSectionSummary,
+  sectionKw,
   siteGroupRollup,
+  siteGroupRollupText,
   siteLocations,
   splitByLiveTelemetry,
   splitGroupsByLive,
+  stationGroupOf,
 } from "./location-kpi-groups";
 
 function assert(condition: boolean, message: string): void {
@@ -292,4 +295,86 @@ export function runG7(): void {
   assert(ids(grouped.groups.map((g) => g.parent)) === "p", `only the nearest parent heads a group — got ${ids(grouped.groups.map((g) => g.parent))}`);
   assert(ids(grouped.groups[0].sites) === "c1,c2" && grouped.loose.length === 0, "the children sit under p");
   assert(orgSectionSummary(items).locationCount === 2, "two sites");
+}
+
+// ---------------------------------------------------------------------------
+// `F4.240` part b (ADR 0140 decisions 1–2, plan D1–D2) — the station rule and the header's sentence.
+// ---------------------------------------------------------------------------
+
+/** `S1` — an asset-less parent over two sites: its group, the two sites in input order. */
+export function runS1(): void {
+  const items = [
+    parent("st", "Station"),
+    site({ id: "st-1", name: "Station I", organization: ORG_A, parentId: "st" }),
+    site({ id: "x", name: "Other", organization: ORG_A }),
+    site({ id: "st-2", name: "Station II", organization: ORG_A, parentId: "st" }),
+  ];
+  const group = stationGroupOf(items, "st");
+  if (group === null) {
+    throw new Error("an asset-less parent over two sites is a station");
+  }
+  assert(group.parent.id === "st", `the group's parent is the station — got ${group.parent.id}`);
+  assert(ids(group.sites) === "st-1,st-2", `the two sites in input order — got ${ids(group.sites)}`);
+}
+
+/** `S2` — a leaf is no station. */
+export function runS2(): void {
+  const items = [parent("st", "Station"), site({ id: "st-1", name: "Station I", organization: ORG_A, parentId: "st" })];
+  assert(stationGroupOf(items, "st-1") === null, "a leaf gives null");
+}
+
+/** `S3` — a parent that holds assets and has children is a site, not a station. */
+export function runS3(): void {
+  const items = [
+    site({ id: "p", name: "Parent", organization: ORG_A, assetCount: 2 }),
+    site({ id: "c1", name: "C1", organization: ORG_A, parentId: "p" }),
+    site({ id: "c2", name: "C2", organization: ORG_A, parentId: "p" }),
+  ];
+  assert(stationGroupOf(items, "p") === null, "a parent that holds assets gives null");
+}
+
+/** `S4` — an id not in the items gives `null`, whatever groups exist. */
+export function runS4(): void {
+  const items = [parent("st", "Station"), site({ id: "st-1", name: "Station I", organization: ORG_A, parentId: "st" })];
+  assert(stationGroupOf(items, "unknown") === null, "an id not in the items gives null");
+}
+
+/** `S5` — an asset-less grandparent over asset-less parents has no direct site: `null` (plan D1). */
+export function runS5(): void {
+  const items = [
+    parent("g", "Grandparent"),
+    parent("p", "Parent", "g"),
+    site({ id: "c1", name: "C1", organization: ORG_A, parentId: "p" }),
+    site({ id: "c2", name: "C2", organization: ORG_A, parentId: "p" }),
+  ];
+  assert(stationGroupOf(items, "g") === null, "the grandparent keeps today's page");
+  assert(stationGroupOf(items, "p")?.parent.id === "p", "the nearest parent is the station");
+}
+
+/** `S6` — the header's sentence, over the `site-card-groups.spec.tsx` fixture. */
+export function runS6(): void {
+  const items = [
+    site({ id: "loose", name: "Alpha Loose", organization: ORG_A }),
+    site({ id: "lotapata", name: "Lotapata", organization: ORG_A, assetCount: 0, openAlarms: 0 }),
+    site({ id: "lotapata-i", name: "Lotapata I", organization: ORG_A, assetCount: 4, freshAssetCount: 4, openAlarms: 2, parentId: "lotapata" }),
+    site({ id: "lotapata-ii", name: "Lotapata II", organization: ORG_A, assetCount: 4, freshAssetCount: 0, openAlarms: 1, parentId: "lotapata" }),
+  ];
+  const [group] = groupSitesByParent(items).groups;
+  const text = siteGroupRollupText(group);
+  assert(text === "1 of 2 sites live · 8 assets · 3 alarms", `the roll-up sentence — got ${text}`);
+}
+
+/** `S7` — `sectionKw` sums only the sites that show energy, and is `null` when none has a number. */
+export function runS7(): void {
+  const kw = sectionKw([
+    site({ id: "a1", name: "A1", organization: ORG_A, totalKw: 4 }),
+    site({ id: "a2", name: "A2", organization: ORG_A, totalKw: 9, energyShown: false }),
+    site({ id: "a3", name: "A3", organization: ORG_A, totalKw: 1.5 }),
+  ]);
+  assert(kw === 5.5, `only the shown sites' kW — got ${kw}`);
+  const none = sectionKw([
+    site({ id: "a1", name: "A1", organization: ORG_A, totalKw: null }),
+    site({ id: "a2", name: "A2", organization: ORG_A, totalKw: 9, energyShown: false }),
+  ]);
+  assert(none === null, `no shown number gives null — got ${none}`);
 }

@@ -202,7 +202,38 @@ export function siteGroupRollup(group: SiteCardGroup): {
   };
 }
 
-function sectionKw(locations: readonly LocationKpiSummary[]): number | null {
+/**
+ * `F4.240` part b (ADR 0140 decision 2, plan D2) — the roll-up as the header reads it:
+ * `{live} of {total} sites live · {assets} assets · {alarms} alarms`. The organization page's
+ * group header and the station page's totals draw this one sentence.
+ */
+export function siteGroupRollupText(group: SiteCardGroup): string {
+  const rollup = siteGroupRollup(group);
+  return `${rollup.liveSites} of ${rollup.sites} sites live · ${rollup.assets} assets · ${rollup.alarms} alarms`;
+}
+
+/**
+ * `F4.240` part b (ADR 0140 decision 1, plan D1) — the station a location id names: the
+ * `groupSitesByParent` group whose parent is `locationId`, when that parent holds no asset; else
+ * `null` (a site, a parent that holds assets, an id not in the items, or an asset-less parent with
+ * no direct site, such as a grandparent over parents: plan D1 keeps today's page for it). The rule
+ * reads only the KPI items, whatever the location's view row says. No code names a level, a type
+ * or an organization (ADR 0098 decision 7).
+ */
+export function stationGroupOf(items: readonly LocationKpiSummary[], locationId: string): SiteCardGroup | null {
+  const location = items.find((item) => item.id === locationId);
+  if (location === undefined || location.assetCount !== 0) {
+    return null;
+  }
+  return groupSitesByParent(items).groups.find((group) => group.parent.id === locationId) ?? null;
+}
+
+/**
+ * `F4.364` (plan ruling Q4) — the kW over the locations that show energy; `null` when none of them
+ * has a number. Exported for `F4.240` part b (ADR 0140 decision 2, plan D2): the station's totals
+ * add it to the roll-up sentence.
+ */
+export function sectionKw(locations: readonly LocationKpiSummary[]): number | null {
   const values = locations.flatMap((location) =>
     location.energyShown && location.totalKw !== null ? [location.totalKw] : [],
   );
