@@ -1,5 +1,5 @@
 import type { DeviceAlarmRaiseInput, DeviceAlarmRaiseResult } from "../alarms/alarm-raise.service";
-import { RTU_COMMS_RAISE_AFTER_SECONDS } from "./device-alarm-rule";
+import { INGEST_HOST_RAISE_AFTER_SECONDS, RTU_COMMS_RAISE_AFTER_SECONDS } from "./device-alarm-rule";
 import type { RtuHealthRow } from "./device-health.reads";
 import { runDeviceHealthSweep, type DeviceHealthSweepDeps } from "./device-health-sweep.service";
 import type { HostBeat } from "./device-state";
@@ -38,6 +38,8 @@ function rtu(id: string, silentSeconds: number, overrides: Partial<RtuHealthRow>
     organizationId: ORG_A,
     code: `RTU-${id}`,
     displayName: `Pump house ${id}`,
+    locationId: `loc-${id}`,
+    locationName: `Site ${id}`,
     edgeServed: false,
     hostKey: HOST,
     lastSeenMs: beat - silentSeconds * 1000,
@@ -170,26 +172,72 @@ export async function assertANotMonitoredRtuRaisesNothing(): Promise<void> {
 }
 
 /**
- * Decisions 6 and 15: a stale host (31 s with no beat, past the 30 s bound) raises one critical
- * `ingest_host` alarm in each organization with a monitored RTU — and no RTU alarm, though every
- * RTU here is long silent.
+ * Decisions 6 and 15, with ADR 0127 Amendment 2: a host silent past the 120 s raise hold raises one
+ * critical `ingest_host` alarm in each organization with a monitored RTU — and no RTU alarm. Each
+ * organization's text names the host and only its own sites and RTUs.
  */
 export async function assertAStaleHostRaisesOneHostAlarmPerOrganizationAndNoRtuAlarm(): Promise<void> {
   const { deps, recorded } = fakeDeps({
-    rows: [rtu("a1", 600), rtu("a2", 600), rtu("b1", 600, { organizationId: ORG_B })],
-    hosts: [host(31)],
+    rows: [rtu("a1", 5), rtu("a2", 5), rtu("b1", 5, { organizationId: ORG_B }), rtu("a3", 600)],
+    hosts: [host(INGEST_HOST_RAISE_AFTER_SECONDS)],
   });
   const summary = await runDeviceHealthSweep(deps);
   const hostRaises = recorded.raises.filter((raise) => raise.source === "ingest_host");
-  const organizations = hostRaises.map((raise) => raise.organizationId).sort();
+  const textOf = (org: string) => hostRaises.find((raise) => raise.organizationId === org)?.message;
   assert(
-    recorded.raises.length === 2 &&
-      hostRaises.length === 2 &&
-      organizations.join() === [ORG_A, ORG_B].sort().join() &&
-      hostRaises.every((raise) => raise.severity === "critical" && raise.message === "Ingest host not reporting"),
-    `expected exactly one critical "Ingest host not reporting" per organization and no rtu_comms, got ${describeRaises(recorded.raises)}`,
+    recorded.raises.length === 2 && hostRaises.length === 2 && hostRaises.every((raise) => raise.severity === "critical"),
+    `expected exactly one critical ingest_host per organization and no rtu_comms, got ${describeRaises(recorded.raises)}`,
   );
+  const expectedA = `Ingest host not reporting: ${HOST} — 2 RTUs at 2 sites stopped: Site a1, Site a2; RTUs: Pump house a1, Pump house a2`;
+  const expectedB = `Ingest host not reporting: ${HOST} — 1 RTU at 1 site stopped: Site b1; RTUs: Pump house b1`;
+  assert(textOf(ORG_A) === expectedA, `ORG_A text: expected ${expectedA}, got ${textOf(ORG_A)}`);
+  assert(textOf(ORG_B) === expectedB, `ORG_B text: expected ${expectedB}, got ${textOf(ORG_B)}`);
   assert(summary.hostAlarms === 2 && summary.rtuAlarms === 0, `expected 2 host and 0 RTU alarms, got ${JSON.stringify(summary)}`);
+}
+
+/**
+ * Amendment 2: a restart shorter than the hold — stale (31 s) up to 119 s — raises nothing at all:
+ * no host alarm, and still no `rtu_comms` alarm though the RTUs are long silent (decision 6's hold).
+ */
+export async function assertARestartShorterThanTheHoldRaisesNothing(): Promise<void> {
+  for (const silent of [31, 45, INGEST_HOST_RAISE_AFTER_SECONDS - 1]) {
+    const { deps, recorded } = fakeDeps({ rows: [rtu("a1", 600), rtu("a2", 5)], hosts: [host(silent)] });
+    const summary = await runDeviceHealthSweep(deps);
+    assert(
+      recorded.raises.length === 0 && summary.organizations === 1,
+      `host silent ${silent} s: expected no raise, got ${describeRaises(recorded.raises)}`,
+    );
+  }
+}
+
+/** The AWS restart shape over two ticks: 45 s stale, then fresh again — nothing raised on either. */
+export async function assertARestartAcrossTwoTicksRaisesNothing(): Promise<void> {
+  const rows = [rtu("a1", 5)];
+  const first = fakeDeps({ rows, hosts: [host(45)] });
+  await runDeviceHealthSweep(first.deps);
+  const second = fakeDeps({ rows, hosts: [host(3)] });
+  await runDeviceHealthSweep(second.deps);
+  assert(
+    first.recorded.raises.length === 0 && second.recorded.raises.length === 0,
+    `expected no raise across the restart, got ${describeRaises([...first.recorded.raises, ...second.recorded.raises])}`,
+  );
+}
+
+/** §9.6: a failed host raise warns with ids and the cause, never the alarm text (no site or RTU name). */
+export async function assertAFailedHostRaiseLogsNoNames(): Promise<void> {
+  const { deps, recorded } = fakeDeps({
+    rows: [rtu("a1", 5)],
+    hosts: [host(INGEST_HOST_RAISE_AFTER_SECONDS + 30)],
+    raise: () => Promise.reject(new Error("tenant write refused")),
+  });
+  await runDeviceHealthSweep(deps);
+  assert(
+    recorded.warnings.length === 1 &&
+      recorded.warnings[0]!.includes(ORG_A) &&
+      !recorded.warnings[0]!.includes("Site a1") &&
+      !recorded.warnings[0]!.includes("Pump house"),
+    `expected one warn with the org id and no names, got ${JSON.stringify(recorded.warnings)}`,
+  );
 }
 
 /** A host with no row at all for a key the RTUs name is not reporting either; an organization with no monitored RTU gets nothing. */

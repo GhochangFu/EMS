@@ -10,6 +10,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   assertASecondTickRaisesNothingNew,
+  assertAnOpenHostAlarmKeepsItsText,
   assertAStaleHostRaisesOnePerOrganizationAndHoldsTheRtus,
   assertOnlyTheOfflineRtuRaises,
   assertThePruneKeepsThirtyDays,
@@ -160,8 +161,12 @@ describe.skipIf(!connectionString)("F3.16 — the device-health sweep", () => {
     await assertASecondTickRaisesNothingNew(f);
   });
 
-  it("S3 a stale host raises one critical host alarm per organization and no RTU alarm", async () => {
+  it("S3 a host gap under 120 s raises nothing; past it, one critical host alarm per organization naming its RTUs", async () => {
     await assertAStaleHostRaisesOnePerOrganizationAndHoldsTheRtus(f);
+  });
+
+  it("S3b an open host alarm keeps its text on a later tick", async () => {
+    await assertAnOpenHostAlarmKeepsItsText(f);
   });
 
   it("S4 the prune deletes buckets older than 30 days on both tables", async () => {
