@@ -30,8 +30,8 @@ No npm package is added, so AGENTS.md §9.4 does not apply. This ADR amends:
   tables carry no `organization_id`.
 - [ADR 0063](./0063-bullmq-job-queue-and-worker-process.md): one more queue.
 
-**Amendment 2 (`F3.89`, proposed 2026-11-20, not accepted)** would make the
-host alarm name the host, sites and RTUs; see below.
+**Amendment 2 (`F3.89`, accepted 2026-11-20)** makes the host alarm name the
+host, sites and RTUs, and holds its raise 120 s so a deploy restart raises none.
 
 ADR 0016 Amendment 8 (`F4.61`) is unchanged: the ingest health page stays
 container-local.
@@ -360,7 +360,10 @@ nothing, 300 s raises one; a 900 s window still governs).
 
 ## Amendment 2 — the host alarm names the host, sites and RTUs, and a deploy restart raises none (`F3.89`, proposed 2026-11-20)
 
-**Proposed — 2026-11-20.** Not accepted. Raised by the owner in chat: add which
+**Accepted — 2026-11-20** (owner, in chat on PR #1468: "Approved and merge"). The
+PR listed the six questions below with a recommended answer each; the approval is read
+as the recommended answer on all six (Q1 a, Q2 a, Q3 a, Q4 a, Q5 a, Q6 a = 120 s), and
+the plan is approved with it. Raised by the owner in chat: add which
 site, which locations and which active RTUs stopped reporting to the alert
 message; then, the same day (relayed from the owner's chat by another
 session): "Add the deploy restart grace to that session too". The open choices
@@ -385,7 +388,7 @@ critical alarm in every organization, which clears ~2 min later. Goal: a
 normal deploy restart raises no `ingest_host` alarm; a real outage still raises
 one.
 
-**Decision (proposed), part A — the text.** Decisions 6 and 15 are amended: the `ingest_host`
+**Decision, part A — the text.** Decisions 6 and 15 are amended: the `ingest_host`
 alarm's message is built per organization when it is raised (names
 illustrative):
 
@@ -421,7 +424,7 @@ Ingest host not reporting: cloud — 14 RTUs at 9 sites stopped: Lotapata I, Lot
    `source = 'ingest_host'` with no RTU and no location, so the Site column
    stays blank and the subject stays "Ingest host" (Q4).
 
-**Decision (proposed), part B — a raise hold for the host alarm (Q5).**
+**Decision, part B — a raise hold for the host alarm (Q5).**
 Decision 16 gains `INGEST_HOST_RAISE_AFTER_SECONDS` = **120 s**: the
 `ingest_host` alarm is raised only when a serving host has been silent at
 least that long, counted on the database clock from its `last_beat_at`
@@ -465,7 +468,7 @@ another organization's. This is the same class as `F4.396` (dashboards list).
 No PHEWB location grant exists today (ADR 0139 *Context*), so no one is
 affected yet. Q3 asks whether to accept this or to show only counts.
 
-### Questions for the owner
+### Questions for the owner (ruled 2026-11-20: the recommended answer on each)
 
 1. **Q1 Message shape.** (a) Host key, counts, up to 5 site names and up to
    5 RTU names, then "+N more" (the example above) — **recommended**; (b) host
