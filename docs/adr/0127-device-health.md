@@ -30,6 +30,9 @@ No npm package is added, so AGENTS.md §9.4 does not apply. This ADR amends:
   tables carry no `organization_id`.
 - [ADR 0063](./0063-bullmq-job-queue-and-worker-process.md): one more queue.
 
+**Amendment 2 (`F3.89`, accepted 2026-11-20)** makes the host alarm name the
+host, sites and RTUs, and holds its raise 120 s so a deploy restart raises none.
+
 ADR 0016 Amendment 8 (`F4.61`) is unchanged: the ingest health page stays
 container-local.
 
@@ -354,6 +357,139 @@ now holds for the display only. A host whose beat gaps past 30 s more often
 than every 5 minutes would therefore hold every comms alarm — rare, since it
 takes three failed flushes, and the host alarm covers a gap it catches. Tests: `device-health-sweep.service.spec.ts` (299 s raises
 nothing, 300 s raises one; a 900 s window still governs).
+
+## Amendment 2 — the host alarm names the host, sites and RTUs, and a deploy restart raises none (`F3.89`, proposed 2026-11-20)
+
+**Accepted — 2026-11-20** (owner, in chat on PR #1468: "Approved and merge"). The
+PR listed the six questions below with a recommended answer each; the approval is read
+as the recommended answer on all six (Q1 a, Q2 a, Q3 a, Q4 a, Q5 a, Q6 a = 120 s), and
+the plan is approved with it. Raised by the owner in chat: add which
+site, which locations and which active RTUs stopped reporting to the alert
+message; then, the same day (relayed from the owner's chat by another
+session): "Add the deploy restart grace to that session too". The open choices
+are under *Questions for the owner*, each with a
+recommended answer. Plan:
+[`docs/plans/f3.89-ingest-host-alarm-detail.md`](../plans/f3.89-ingest-host-alarm-detail.md).
+
+**Why.** Decisions 6 and 15 fix the text "Ingest host not reporting" for every
+organization. An operator who gets it cannot tell which host stopped or what it
+affects. On AWS (read-only check, 2026-11-20) one ingest host row,
+`host_key = cloud`, serves all three organizations (PHEWB, BCPL, WBLDC). Each
+organization got 162 `ingest_host` alarms in 8 days (~20 a day), always all
+three in the same second, each clearing after ~2–2.5 min.
+
+**Most of them are deploy restarts.** Each of those alarms matches an ingest
+restart: the host's `started_at` lands a few seconds after the alarm's
+`raised_at` (for example raised 03:02:37, host started 03:02:45 UTC). So most
+are deploy restarts: the host beats every 10 s, is stale after 30 s
+(`INGEST_HOST_STALE_SECONDS`) and the sweep runs every 30 s
+(`DEVICE_HEALTH_INTERVAL_MS`), so a restart that takes 30–60 s raises a
+critical alarm in every organization, which clears ~2 min later. Goal: a
+normal deploy restart raises no `ingest_host` alarm; a real outage still raises
+one.
+
+**Decision, part A — the text.** Decisions 6 and 15 are amended: the `ingest_host`
+alarm's message is built per organization when it is raised (names
+illustrative):
+
+```
+Ingest host not reporting: cloud — 14 RTUs at 9 sites stopped: Lotapata I, Lotapata II, Bilsi I, Mora Nodir Kuthi I, Bhutnirghat I, +4 more sites; RTUs: LOTPT1, LOTPT2, BILSI1, MNK1, BHUT1, +9 more
+```
+
+1. **Host.** The `host_key` of each serving host that is not reporting
+   (stale, or named by an RTU with no host row), sorted, comma-separated.
+2. **RTUs.** The organization's monitored RTUs (`monitored_since` set) served
+   by those hosts whose decision-11 state at the host's last beat was Online
+   or Stale, so they were reporting until the host stopped. An RTU already
+   Offline is left out: it stopped on its own and has its own "Communication
+   lost" alarm. Edge-served RTUs count, because their uplinks pass through
+   the host too (Q2). Name: display name, else code, as `rtuCommsMessage`.
+3. **Sites.** The distinct `bms.locations.name` of those RTUs'
+   `location_id` (since ADR 0139, one site per PHE RTU).
+4. **Caps.** At most 5 site names and 5 RTU names, sorted by name, then
+   `+N more`. Each name is cut to 64 characters, and the whole message to 500
+   characters with `…`. With no RTU in the list (all already Offline) the text
+   is `Ingest host not reporting: cloud — no active RTUs`.
+5. **Only the organization's own.** The list is built from that
+   organization's rows only (the sweep already groups by organization), so no
+   message names another organization's site or RTU.
+6. **Fixed while open.** `raiseDevice` inserts with `ON CONFLICT DO NOTHING`,
+   so the message is the snapshot at raise time. Later ticks do not rewrite it,
+   do not re-raise and do not send new notifications. The notification dedupe
+   key is the alarm, not the text (ADR 0041 decision 7), so nothing churns.
+   The clear text stays `Cleared: <message>`.
+7. **Logging (§9.6).** The sweep keeps logging ids and the cause, never the
+   alarm text.
+8. **No schema change.** No new column; the alarm row stays
+   `source = 'ingest_host'` with no RTU and no location, so the Site column
+   stays blank and the subject stays "Ingest host" (Q4).
+
+**Decision, part B — a raise hold for the host alarm (Q5).**
+Decision 16 gains `INGEST_HOST_RAISE_AFTER_SECONDS` = **120 s**: the
+`ingest_host` alarm is raised only when a serving host has been silent at
+least that long, counted on the database clock from its `last_beat_at`
+(`dbNow − lastBeatMs`, as `hostSummaryFor` returns it). The host still reads
+stale after 30 s for everything else (footer `field_data`, RTU states frozen).
+A host key with no host row (`never`) has no beat to count from and raises at
+once, as today.
+
+- **Why 120 s.** On AWS the restart gap is ~40–70 s (stale at 30 s, raised at
+  the next sweep, the new host up ~8 s later). 120 s covers it with margin; a
+  deploy that pulls a slow image may still pass it, and then it is worth an
+  alarm.
+- **Cost.** A real outage now alarms after ~120–150 s (hold plus one sweep),
+  not ~30–60 s. Every option delays a real alarm; this one by a fixed, known
+  amount.
+- **Per-RTU alarms during the hold.** Unchanged and still held: while the host
+  is stale the sweep raises no `rtu_comms` alarm, whether or not the host alarm
+  is raised yet (decision 6). After the restart, `healthy_since` resets, so
+  Amendment 1's 300 s counts again from it and no RTU raises "Communication
+  lost" for 5 minutes. So a deploy raises nothing at all.
+- **Clear path unchanged.** The lifecycle sweep still clears an open host alarm
+  after 120 s of a fresh host (decision 16). A gap shorter than the hold opens
+  no alarm, so there is nothing to clear.
+- **Options not chosen.** (b) A restart grace keyed on a fresh `started_at` or
+  `healthy_since` cannot help on its own: while the host is down its row still
+  holds the *old* `started_at`, so the sweep only learns of a restart after the
+  host is back — too late to hold the raise. It works only with a deploy marker
+  written by `bms-ctl` before the stop (a new write, and a marker left behind
+  hides a real outage unless it expires). (c) Both: more code for the same
+  result on today's evidence.
+
+Everything else in decisions 6, 14, 15, 16 and Amendment 1 stands: one
+critical host alarm per organization, the per-RTU alarms held while the host
+is stale, the 120 s clear hold and who can see and acknowledge it.
+
+**Security.** Decision 14 shows the host alarm to any user of the organization
+with an asset served by one of its monitored RTUs, including a location-scoped
+user. With this amendment that user reads the names of sibling sites and RTUs
+of their own organization. Names only, no readings and no ids, and never
+another organization's. This is the same class as `F4.396` (dashboards list).
+No PHEWB location grant exists today (ADR 0139 *Context*), so no one is
+affected yet. Q3 asks whether to accept this or to show only counts.
+
+### Questions for the owner (ruled 2026-11-20: the recommended answer on each)
+
+1. **Q1 Message shape.** (a) Host key, counts, up to 5 site names and up to
+   5 RTU names, then "+N more" (the example above) — **recommended**; (b) host
+   and counts only; (c) every name, no cap.
+2. **Q2 Which RTUs.** (a) Monitored RTUs of the stale host that were Online or
+   Stale at its last beat, edge-served included — **recommended**; (b) every
+   monitored RTU of the host, Offline included; (c) cloud-served only.
+3. **Q3 Scoped users.** (a) Accept: every reader of the host alarm sees the
+   organization's names, revisit with `F4.396` before per-office logins —
+   **recommended**; (b) names only for organization-level users, counts for
+   scoped users (needs a read-time view and is a larger build).
+4. **Q4 Site column.** (a) No schema change; the names live in the message —
+   **recommended**; (b) a migration adding `host_key` (and a label) to the
+   alarm row so the grid's subject reads "Ingest host cloud".
+5. **Q5 Deploy restarts.** (a) A raise hold: alarm only after 120 s of
+   silence — **recommended** (delays a real alarm by ~90 s; no new write);
+   (b) a restart grace on a deploy marker written by `bms-ctl` (a real outage
+   during a deploy is hidden until the marker expires; more build); (c) both.
+6. **Q6 The hold's length** (if Q5 is a or c). (a) 120 s — **recommended**;
+   (b) 180 s (more margin for slow deploys, a later real alarm); (c) 300 s, the
+   same as Amendment 1.
 
 ## Dependencies
 
