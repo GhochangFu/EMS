@@ -10,8 +10,9 @@ import {
 } from "../alarms/alarm-raise.service";
 import {
   byOrganization,
-  INGEST_HOST_ALARM_MESSAGE,
   INGEST_HOST_SEVERITY,
+  ingestHostDue,
+  ingestHostMessage,
   organizationHostReporting,
   RTU_COMMS_SEVERITY,
   rtuCommsDue,
@@ -37,9 +38,11 @@ import type { HostBeat } from "./device-state";
  * clock. Then, per organization with a monitored RTU:
  *
  * - the ingest host serving its RTUs is not reporting (stale on the database
- *   clock, or named but rowless) → one `ingest_host` alarm (`critical`) and
- *   **no** `rtu_comms` alarm this tick: a stopped host freezes every state, so
- *   the per-RTU alarms are held (decision 6);
+ *   clock, or named but rowless) → **no** `rtu_comms` alarm this tick: a stopped
+ *   host freezes every state, so the per-RTU alarms are held (decision 6); and,
+ *   once a host has been silent `INGEST_HOST_RAISE_AFTER_SECONDS` (120 s) or has
+ *   no row, one `ingest_host` alarm (`critical`) naming the stopped hosts and the
+ *   organization's own sites and RTUs they took down (ADR 0127 Amendment 2);
  * - otherwise each monitored, cloud-served RTU whose decision-11 state is
  *   `offline` **and** that has been silent at least
  *   `RTU_COMMS_RAISE_AFTER_SECONDS` (300 s, ADR 0127 Amendment 1) → one
@@ -129,13 +132,16 @@ export async function runDeviceHealthSweep(
     }
     summary.organizations += 1;
     if (!reporting) {
+      // Decision 6: a stale host holds the RTU alarms at once; Amendment 2: its own alarm waits
+      // INGEST_HOST_RAISE_AFTER_SECONDS, so a deploy restart raises nothing.
       if (
-        await raise({
+        ingestHostDue(ofOrganization, hosts, dbNowMs) === true &&
+        (await raise({
           organizationId,
           source: "ingest_host",
           severity: INGEST_HOST_SEVERITY,
-          message: INGEST_HOST_ALARM_MESSAGE,
-        })
+          message: ingestHostMessage(ofOrganization, hostsByKey, dbNowMs),
+        }))
       ) {
         summary.hostAlarms += 1;
       }
