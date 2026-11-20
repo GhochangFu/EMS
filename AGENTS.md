@@ -1257,9 +1257,10 @@
 > `bms.users.kind` and `bms.service_account_tokens`: a service account is a
 > `kind = 'service'` user, `viewer` or `operator` only, authenticating with a
 > `bms_sat_` token (§4.7).
-> And **device health and device alarms** (**ADR 0127** with **Amendment 1**;
-> row `F3.16`; plan #1263, PR A #1270 `de236ae5`, PR B #1272 `97e29f50`,
-> Amendment 1 #1273; this sweep merges last). The ingest host flushes every
+> And **device health and device alarms** (**ADR 0127** with **Amendments 1
+> and 2**; row `F3.16`; plan #1263, PR A #1270 `de236ae5`, PR B #1272
+> `97e29f50`, Amendment 1 #1273; this sweep merges last; Amendment 2 is row
+> `F3.89`, #1468 `85a35502`, #1469 `3999f775`, #1470 `853e2467`). The ingest host flushes every
 > `INGEST_HEALTH_FLUSH_MS` (10 s) on `bms_fleet`: per-RTU last-seen, clock skew
 > (`device_time`'s first reader) and hourly drop counts naming the first dropped
 > point per counter, kept 30 days, plus a heartbeat on the database clock that
@@ -1277,8 +1278,16 @@
 > rule; the lifecycle sweep clears them. **Amendment 1** (owner, 2026-11-12,
 > after flapping on AWS): "Communication lost" waits until the RTU is Offline
 > **and** silent at least `RTU_COMMS_RAISE_AFTER_SECONDS` (300 s); the display
-> states keep the window. Simulator, catalog and edge-served RTUs raise no
-> device alarm (the gateway alarm is `F3.88`).
+> states keep the window. **Amendment 2** (owner, 2026-11-20, after ~20
+> deploy-restart host alarms a day per organization on AWS): "Ingest host not
+> reporting" waits until a serving host has been silent at least
+> `INGEST_HOST_RAISE_AFTER_SECONDS` (120 s; a host key with no row raises at
+> once), while the per-RTU alarms stay held from the 30 s stale mark; its text
+> (`ingestHostMessage`) names the stopped host keys and that organization's own
+> RTUs that were Online or Stale at the host's last beat, with their distinct
+> site names, 5 of each then "+N more", fixed at raise time and never logged
+> (§9.6). No schema change. Simulator, catalog and edge-served RTUs raise no
+> per-RTU alarm (the gateway alarm is `F3.88`).
 > And **a new organization admin gets its home organization's grant**
 > (**ADR 0128**, row `F4.340`, plan and build in #1255 `47fbc2ba`). Creating an
 > `organization_admin` or changing a user's role to it writes the home
