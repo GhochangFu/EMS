@@ -491,6 +491,18 @@ affected yet. Q3 asks whether to accept this or to show only counts.
    (b) 180 s (more margin for slow deploys, a later real alarm); (c) 300 s, the
    same as Amendment 1.
 
+### Owner ruling after the build (2026-11-20)
+
+Asked in chat after the build PR's code review; ruled as recommended ("a, leave
+as built"). **An RTU's "active" state for the host alarm's list stays decision
+11's.** Decision 11 counts silence from the latest of last-seen,
+`monitored_since` and the host's `healthy_since`. So if the host restarts and
+then stops again within an RTU's window (for example a new container that
+crashes within ~25 s), an RTU that was already silent before the restart is
+listed as "stopped". The case is rare and the text follows the ADR's wording,
+so the build stands (#1469). Judging the list without the `healthy_since`
+credit is a small follow-up if it ever misleads an operator.
+
 ## Dependencies
 
 None added. Uses BullMQ (ADR 0063) and the pools of ADR 0045.
