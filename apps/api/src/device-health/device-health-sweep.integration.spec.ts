@@ -20,6 +20,9 @@ export type SweepFixtures = {
   hostKey: string;
   orgA: string;
   orgB: string;
+  /** Org A's location name and the Online RTU's code (its display name): the host alarm's text. */
+  locAName: string;
+  onlineCode: string;
   rtus: {
     /** Org A, silent 10 min: Offline. */
     offline: string;
@@ -124,10 +127,10 @@ export async function assertAStaleHostRaisesOnePerOrganizationAndHoldsTheRtus(f:
     `expected one critical host alarm in each organization, got ${JSON.stringify(host)}`,
   );
   const prefix = `Ingest host not reporting: ${f.hostKey} — `;
-  assert(
-    ofA[0]!.message.startsWith(`${prefix}1 RTU at 1 site stopped: `),
-    `expected org A's text to name the host and its one active RTU, got ${ofA[0]!.message}`,
-  );
+  // The site name comes from bms.locations.name through readRtuHealthRows' join (plan unit 1).
+  const cut = (name: string) => (name.length > 64 ? `${name.slice(0, 63)}…` : name);
+  const expectedA = `${prefix}1 RTU at 1 site stopped: ${cut(f.locAName)}; RTUs: ${cut(f.onlineCode)}`;
+  assert(ofA[0]!.message === expectedA, `expected org A's text ${expectedA}, got ${ofA[0]!.message}`);
   assert(
     ofB[0]!.message === `${prefix}no active RTUs`,
     `expected org B's text to list no RTU (its one RTU was Offline at the beat), got ${ofB[0]!.message}`,

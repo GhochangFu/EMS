@@ -166,6 +166,14 @@ export function assertLongNamesAreCut(): void {
   assert(capped.length <= 500 && capped.endsWith("…"), `expected ≤ 500 ending in …, got ${capped.length}`);
 }
 
+/** Sites are the distinct names: two sites of one name read once; a blank name is named so. */
+export function assertSitesAreDistinctNames(): void {
+  expectText(
+    message([row("R1", "Pump", 5), row("R2", "Pump", 5, { locationId: "loc-other" }), row("R3", " ", 5)]),
+    "Ingest host not reporting: cloud — 3 RTUs at 2 sites stopped: (unnamed site), Pump; RTUs: R1, R2, R3",
+  );
+}
+
 /** The same rows in any order give the same text. */
 export function assertTheTextIsStable(): void {
   const rows = [row("R3", "S2", 5), row("R1", "S1", 5), row("R2", "S3", 5)];

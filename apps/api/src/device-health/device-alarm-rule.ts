@@ -133,14 +133,11 @@ export function ingestHostMessage(
   if (active.length === 0) {
     return `${head} — no active RTUs`;
   }
-  const sites = new Map<string, string>();
-  for (const row of active) {
-    sites.set(row.locationId, row.locationName);
-  }
-  const siteNames = [...sites.values()].sort(byName);
+  // Amendment 2: the distinct site names (two sites of one name read as one; a blank name is named so).
+  const siteNames = [...new Set(active.map((row) => (row.locationName.trim() === "" ? "(unnamed site)" : row.locationName)))].sort(byName);
   const rtuNames = active.map(rtuName).sort(byName);
   const text =
-    `${head} — ${plural(active.length, "RTU")} at ${plural(sites.size, "site")} stopped: ` +
+    `${head} — ${plural(active.length, "RTU")} at ${plural(siteNames.length, "site")} stopped: ` +
     `${capped(siteNames, (n) => `+${n} more site${n === 1 ? "" : "s"}`)}; ` +
     `RTUs: ${capped(rtuNames, (n) => `+${n} more`)}`;
   return text.length > INGEST_HOST_MESSAGE_CHARS ? `${text.slice(0, INGEST_HOST_MESSAGE_CHARS - 1)}…` : text;

@@ -18,5 +18,6 @@ describe("F3.89 — the ingest-host alarm's hold and text (ADR 0127 Amendment 2)
   it("names a rowless host with no active RTUs", () => spec.assertARowlessHostIsNamedWithNoActiveRtus());
   it("reads 'no active RTUs' when none was reporting", () => spec.assertNoActiveRtusReadsSo());
   it("cuts long names and the whole text", () => spec.assertLongNamesAreCut());
+  it("lists distinct site names", () => spec.assertSitesAreDistinctNames());
   it("is stable under row order", () => spec.assertTheTextIsStable());
 });
