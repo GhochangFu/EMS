@@ -8,12 +8,15 @@ import {
   aParentThatHoldsAssetsRendersTheSitePage,
   aSitesStationCrumbIsALink,
   cleanupStation,
-  otherSegmentsRedirectAndTheStripHasTwoEntries,
+  aStationsSegmentsAndItsThreeEntries,
   theLowerCardsCarryTheStation,
   theRailReadsTheStationLocation,
   theStationAssetsListsEachSite,
   theStationHasNoWall,
   theStationPollsTheListAtSixtySeconds,
+  theStationSaysStationView,
+  theStationViewIsWider,
+  theStationsThirdEntryIsNamedByItsSites,
   theStationUrlRendersTheStation,
   theTotalsLineIsTheHeadersSentenceAndTheKw,
 } from "./site-page-station.spec";
@@ -55,8 +58,8 @@ describe("F4.240 part b the site page at a station (ADR 0140)", () => {
     await theStationAssetsListsEachSite();
   });
 
-  it("ST8 redirects /trends and an unknown segment; the strip has two entries", async () => {
-    await otherSegmentsRedirectAndTheStripHasTwoEntries();
+  it("ST8 an unknown segment redirects; /trends and a site's tab stay; the strip has three entries", async () => {
+    await aStationsSegmentsAndItsThreeEntries();
   });
 
   it("ST9 draws no wall and no Wall link at a station", async () => {
@@ -77,5 +80,17 @@ describe("F4.240 part b the site page at a station (ADR 0140)", () => {
 
   it("ST12 keeps the site page's 60 s list poll at a station (ruling Q2)", async () => {
     await theStationPollsTheListAtSixtySeconds();
+  });
+
+  it("ST13 the ribbon and the pending line say station view at a station, site view at a site", async () => {
+    await theStationSaysStationView();
+  });
+
+  it("ST14 the Station view widens to 1800 px; /assets, /trends and a site keep 1200 px (plan D12)", async () => {
+    await theStationViewIsWider();
+  });
+
+  it("ST15 the third entry reads Trends when no site shows energy", async () => {
+    await theStationsThirdEntryIsNamedByItsSites();
   });
 });

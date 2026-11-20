@@ -25,6 +25,10 @@ import { ControlRoomSitePage } from "./site-page";
  * findings paragraph (`/ml/findings/paragraph`) joins it only when a summary holds findings; the
  * `{}` answers here hold none, so it is not requested.
  *
+ * `F4.240` part b PR 2 (plan Task 2.6): the site halves read each site (T1–T2 with generated
+ * sites, T4 with dashboard sites), and `/trends` reads the subtree energy views and one bill per
+ * site (T5).
+ *
  * Assertions live here; `site-page-station-requests.test.tsx` is the Vitest entry point and carries
  * the `@vitest-environment jsdom` docblock (ADR 0014, ADR 0042 decision 2).
  */
@@ -90,6 +94,63 @@ const DETAIL: DashboardDto = {
   widgets: [],
 };
 
+/**
+ * `F4.240` part b PR 2 (plan Task 2.6) — T4's two dashboard sites: each site's view is a
+ * `dashboard`, and its dashboard holds one site widget (`asset_class_strip`, which reads the site widgets) and one trend strip on its
+ * one tab, so each half mounts the live canvas and its two reads. T1–T3 and T5 leave this off,
+ * and the site resolves answer `generated`, so each half mounts the site's generated view and its
+ * read, which T2 holds to the sites.
+ */
+let dashboardSites = false;
+
+function siteDashboard(n: 1 | 2, locationId: string): DashboardDto {
+  const id = `6000000${n}-0000-4000-8000-000000000001`;
+  const tabId = `6000000${n}-0000-4000-8000-000000000002`;
+  const widget = {
+    dashboardId: id,
+    organizationId: ORG.id,
+    tabId,
+    title: null,
+    gridX: 0,
+    gridW: 12,
+    gridH: 4,
+    points: [],
+    sources: [],
+  };
+  return {
+    ...STAMP,
+    id,
+    slug: `lotapata-${n}-site`,
+    name: `Lotapata ${n} site`,
+    locationId,
+    templateId: null,
+    tabs: [{ id: tabId, dashboardId: id, organizationId: ORG.id, key: "overview", label: "Overview", sortOrder: 0, assetGroupId: null }],
+    widgets: [
+      { ...widget, id: `6000000${n}-0000-4000-8000-000000000003`, gridY: 0, widgetType: "asset_class_strip", config: {} },
+      {
+        ...widget,
+        id: `6000000${n}-0000-4000-8000-000000000004`,
+        gridY: 4,
+        widgetType: "trend_strip",
+        config: { defaultRange: "24h" },
+      },
+    ],
+  };
+}
+
+const SITE_DASHBOARDS = [siteDashboard(1, ST_1), siteDashboard(2, ST_2)] as const;
+
+function siteView(dashboard: DashboardDto): ResolvedSiteControlRoomViewDto {
+  return {
+    locationId: dashboard.locationId as string,
+    kind: "dashboard",
+    dashboardId: dashboard.id,
+    dashboardSlug: dashboard.slug,
+    builtinKey: null,
+    notice: null,
+  };
+}
+
 let fetchSpy: Mock | null = null;
 
 function json(body: unknown): Response {
@@ -102,6 +163,12 @@ function answer(url: URL): Response {
   if (path === `/control-room/sites/${ST}/view`) return json(VIEW);
   if (path === "/dashboards") return json({ items: [SUMMARY] });
   if (path === `/dashboards/${SUMMARY.slug}`) return json(DETAIL);
+  for (const dashboard of SITE_DASHBOARDS) {
+    if (path === `/control-room/sites/${dashboard.locationId}/view`) {
+      return json(dashboardSites ? siteView(dashboard) : { ...VIEW, locationId: dashboard.locationId, notice: null });
+    }
+    if (dashboardSites && path === `/dashboards/${dashboard.slug}`) return json(dashboard);
+  }
   return json({});
 }
 
@@ -198,8 +265,72 @@ export async function theStationAssetsReadsOnlyTheResolve(): Promise<void> {
   expect(stationPaths()).toEqual(["/control-room/sites/<st>/view"]);
 }
 
+/** The pathnames (without `/api/v1`) of every request whose path ends in `suffix`, ids kept. */
+function pathsEndingIn(suffix: string): string[] {
+  const paths = requested()
+    .map((url) => url.pathname.replace(/^\/api\/v1/, ""))
+    .filter((path) => path.endsWith(suffix));
+  return [...new Set(paths)].sort();
+}
+
+/**
+ * T4 (PR 2) — the bare path with two dashboard sites: the station-naming set is still exactly T1's,
+ * and each half's live reads name only its own site: the site-widgets reads name the two sites'
+ * dashboards, and the trend-strip reads the two sites. Mutation: resolve a half at the station's
+ * id => red. Handing an embedded half the station's id as its `locationId` changes no request (the
+ * canvas reads the dashboard's own location; the id only built the strip and the redirect, both
+ * off when embedded), so that one is not a mutation this case can see.
+ */
+export async function bothHalvesReadOnlyTheirOwnSite(): Promise<void> {
+  dashboardSites = true;
+  stubFetch();
+  renderAt(`/control-room/site/${ST}`);
+  await settledStation();
+  await waitFor(() => expect(pathsEndingIn("/site-widgets")).toHaveLength(2));
+  await waitFor(() => expect(pathsEndingIn("/trend-strip")).toHaveLength(2));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  expect(stationPaths()).toEqual(ALLOWED);
+  expect(pathsEndingIn("/site-widgets")).toEqual(
+    SITE_DASHBOARDS.map((dashboard) => `/dashboards/${dashboard.id}/site-widgets`).sort(),
+  );
+  expect(pathsEndingIn("/trend-strip")).toEqual([ST_1, ST_2].map((id) => `/control-room/sites/${id}/trend-strip`).sort());
+  expect(pathsEndingIn("/view").filter((path) => path.startsWith("/control-room/sites/"))).toEqual(
+    [ST, ST_1, ST_2].map((id) => `/control-room/sites/${id}/view`).sort(),
+  );
+}
+
+/**
+ * T5 (PR 2) — `/trends`: the station is named only by the resolve and the two subtree energy reads;
+ * each site's bill is requested once, the station's never; no segment read names the station.
+ * Mutation: drop `billSlot` in `StationEnergyView` => the station's own bill is read => red.
+ */
+export async function theStationTrendsReadsOnlyTheEnergyViewsAndTheSiteBills(): Promise<void> {
+  stubFetch();
+  renderAt(`/control-room/site/${ST}/trends`);
+  await screen.findByRole("heading", { level: 1, name: "Lotapata" });
+  await waitFor(() =>
+    expect(stationPaths()).toEqual(
+      expect.arrayContaining(["/reports/energy/view", "/reports/energy/organization-views"]),
+    ),
+  );
+  await waitFor(() => expect(pathsEndingIn("/energy-bill")).toHaveLength(2));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  expect(stationPaths()).toEqual(
+    ["/control-room/sites/<st>/view", "/reports/energy/organization-views", "/reports/energy/view"].sort(),
+  );
+  const bills = requested()
+    .map((url) => url.pathname.replace(/^\/api\/v1/, ""))
+    .filter((path) => path.endsWith("/energy-bill"))
+    .sort();
+  expect(bills).toEqual([ST_1, ST_2].map((id) => `/locations/${id}/energy-bill`).sort());
+  expect(requested().filter((url) => url.pathname.includes("segment-views") && url.pathname.includes(ST))).toEqual([]);
+}
+
 export function cleanupRequests(): void {
   cleanup();
+  dashboardSites = false;
   fetchSpy = null;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();

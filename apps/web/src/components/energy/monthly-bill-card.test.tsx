@@ -3,6 +3,8 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aControlledMonthIsReadAndDrawsNoSelector,
+  aTitleNamesTheCard,
   aBilledMonthShowsUnitsSlabLinesChargesAndTotal,
   aCompleteMonthDoesNotSayMonthToDate,
   aFailedMonthKeepsTheSelector,
@@ -120,5 +122,13 @@ describe("F4.365 the monthly bill card", () => {
 
   it("F4.374: says N meters, not 'reported', when every meter reported", async () => {
     await allMetersReportedSaysNoMissing();
+  });
+
+  it("F4.240 MB-C1 a controlled month is read and draws no selector", async () => {
+    await aControlledMonthIsReadAndDrawsNoSelector();
+  });
+
+  it("F4.240 MB-C2 a title names the card", async () => {
+    await aTitleNamesTheCard();
   });
 });

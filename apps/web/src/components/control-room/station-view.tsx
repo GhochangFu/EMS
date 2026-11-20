@@ -10,6 +10,7 @@ import { SectionCard } from "../section-card";
 import { ActiveAlarmsRail } from "./active-alarms-rail";
 import { ScopedDashboardsList } from "./scoped-dashboards-list";
 import { SiteCardGroups } from "./site-card-groups";
+import { StationSiteHalves } from "./station-site-halves";
 
 /** The station's findings card shows both kinds, as the site body's does (`E1.9e`). */
 const STATION_FINDINGS_KINDS = ["anomalies", "forecasts"] as const;
@@ -21,6 +22,8 @@ type StationViewProps = {
   group: SiteCardGroup;
   /** The page's section: the bare path (`view`) or `/assets`. */
   section: "view" | "assets";
+  /** `F4.240` part b PR 2 — the route's raw `:tab` segment, the halves' tab choice (plan D8). */
+  tab: string | undefined;
 };
 
 /**
@@ -32,6 +35,9 @@ type StationViewProps = {
  * (`ActiveAlarmsRail` by `locationId`: the station and every site under it); the three advisory
  * cards scoped to the station (each read walks the subtree, decision 3g); and the station's
  * dashboards without its old template copy (`omitTemplateCopies`, decision 3h, ruling Q1 (a)).
+ * PR 2 (decision 3e, plan D8, D9): under the cards and the alarms, both sites side by side under
+ * one tab chooser (`StationSiteHalves`), the tab being the route's segment; each half reads only
+ * its own site.
  *
  * The **assets** section lists the sites from the KPI items, each linking to its own Assets & RTUs
  * page; it makes no read (decision 3d). No notice, no layout wizard, no wall, no bill, no generated
@@ -41,7 +47,7 @@ type StationViewProps = {
  *
  * Specs: `pages/control-room/site-page-station.spec.tsx`, `site-page-station-requests.spec.tsx`.
  */
-export function StationView({ station, group, section }: StationViewProps) {
+export function StationView({ station, group, section, tab }: StationViewProps) {
   if (section === "assets") {
     return <StationAssets sites={group.sites} />;
   }
@@ -57,6 +63,7 @@ export function StationView({ station, group, section }: StationViewProps) {
         </div>
         <ActiveAlarmsRail locationId={station.id} />
       </div>
+      <StationSiteHalves stationId={station.id} sites={group.sites} tab={tab} />
       <MlFindingsCard
         kinds={STATION_FINDINGS_KINDS}
         scope={{ organizationId: station.organization.id, locationId: station.id }}
