@@ -100,6 +100,13 @@ import { aggregateRelation, avgExpr, type AggregateLevel } from "./point-aggrega
  */
 export const PUE_LATEST_MAX_AGE_SECONDS = 3 * DEFAULT_MAX_INPUT_AGE_SECONDS;
 
+/**
+ * {@link PUE_LATEST_MAX_AGE_SECONDS} as ONE interval literal (`F4.393`, plan D3): `now()` minus
+ * one interval literal is removed while planning, where `now()` minus a computed interval is
+ * pruned only at executor startup, after every chunk was planned.
+ */
+export const PUE_LATEST_WINDOW_SQL = `interval '${PUE_LATEST_MAX_AGE_SECONDS} seconds'`;
+
 /** The three numbers ruling 3 reduces a scope to. */
 export interface PueRatioInput {
   /** Incomers that computed **both** points. Zero means "not configured". */
@@ -180,13 +187,20 @@ function ratioOfRow(row: PueSumsRow | undefined): number | null {
  * With `at` the window is `(at − 900 s, at]`: the same bound, moved back, so the
  * KPI ribbon's "vs yesterday" PUE compares like with like. Without it the read
  * is unchanged — `time > now() − 900 s` and **no** upper bound, still one-sided
- * for the reasons in the module docblock. The ceiling is conditional
- * (`$3 IS NULL OR time <= $3`) rather than `time <= COALESCE($3, now())` on
- * purpose: that form would drop future-stamped rows from the live read, which
- * reverses the one-sided decision and makes the 2031 fixture in
- * `pue-ratio.integration.spec.ts` invisible (measured: four of its cases fail).
- * `$3` is cast to `timestamptz` everywhere it appears, because an untyped
- * `null` parameter fails with "could not determine data type of parameter $3".
+ * for the reasons in the module docblock. The ceiling exists only on the `at`
+ * text rather than as `time <= COALESCE(at, now())` on purpose: that form would
+ * drop future-stamped rows from the live read, which reverses the one-sided
+ * decision and makes the 2031 fixture in `pue-ratio.integration.spec.ts`
+ * invisible (measured: four of its cases fail).
+ *
+ * **Two texts, not one conditional statement** (`F4.393`, plan D3). The live
+ * text is `time > now() - {@link PUE_LATEST_WINDOW_SQL}` — one interval literal,
+ * so the planner removes every older chunk before it runs; the single statement
+ * this replaces (`COALESCE($3, now()) - ($2 * interval '1 second')`, ceiling
+ * `$3 IS NULL OR time <= $3`) was pruned only at executor startup on the live
+ * read. The `at` text binds `at` as `$2::timestamptz`, compared to `time`
+ * directly, which is planned away too. Each text is that statement with `$3`
+ * resolved (null, or not), so the rows are the same.
  *
  * @param assetIds the caller's scope. `null` is every incomer; an empty array is
  *   nothing, and answers `null` — the same treatment `kw_latest` gives it.
@@ -197,14 +211,19 @@ export async function latestPueRatio(
   assetIds: string[] | null,
   at?: Date,
 ): Promise<number | null> {
+  // Two lines on purpose: the inventory's `now() - … $n` scan reads to the end of a line.
+  const timeBound =
+    at === undefined
+      ? `time > now() - ${PUE_LATEST_WINDOW_SQL}`
+      : `time > $2::timestamptz - ${PUE_LATEST_WINDOW_SQL} AND time <= $2::timestamptz`;
+  const params: unknown[] = at === undefined ? [assetIds ?? null] : [assetIds ?? null, at.toISOString()];
   const r = await pool.query<PueSumsRow>(
     `
     WITH latest AS (
       SELECT DISTINCT ON (asset_id, point_key) asset_id, point_key, value
       FROM telemetry.point_values
       WHERE point_key IN ('site_kw', 'it_kw')
-        AND time > COALESCE($3::timestamptz, now()) - ($2::int * interval '1 second')
-        AND ($3::timestamptz IS NULL OR time <= $3::timestamptz)
+        AND ${timeBound}
         AND ($1::uuid[] IS NULL OR asset_id = ANY($1::uuid[]))
       ORDER BY asset_id, point_key, time DESC
     ),
@@ -222,7 +241,7 @@ export async function latestPueRatio(
            COALESCE(SUM(it_kw), 0)::float8 AS it_kw
     FROM paired
     `,
-    [assetIds ?? null, PUE_LATEST_MAX_AGE_SECONDS, at ? at.toISOString() : null],
+    params,
   );
   return ratioOfRow(r.rows[0]);
 }

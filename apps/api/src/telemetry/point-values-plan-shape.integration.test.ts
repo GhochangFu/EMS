@@ -6,6 +6,8 @@ import { inRolledBackTransaction } from "../dashboard/kpi-prior.integration.spec
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertLatestPointValuesPlansOnlyItsWindow,
+  assertLivePuePlansOnlyItsWindow,
+  assertPueAtAnInstantPlansOnlyItsWindow,
   assertRecentForPointPlansOnlyItsWindow,
   assertTheDetectorSeesStartupOnlyPruning,
   assertTheFixtureShowsAnAllChunkPlan,
@@ -45,4 +47,8 @@ describe.skipIf(!connectionString)("F4.393 — point_values readers plan only th
   it("latestPointValues plans only its window (pin)", run(assertLatestPointValuesPlansOnlyItsWindow));
 
   it("recentForPoint plans only its window", run(assertRecentForPointPlansOnlyItsWindow));
+
+  it("latestPueRatio live plans only its window", run(assertLivePuePlansOnlyItsWindow));
+
+  it("latestPueRatio at an instant plans only its window (pin)", run(assertPueAtAnInstantPlansOnlyItsWindow));
 });

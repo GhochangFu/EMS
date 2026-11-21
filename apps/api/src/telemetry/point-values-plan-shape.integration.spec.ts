@@ -5,6 +5,7 @@ import { encodePointRef } from "@bms/shared";
 
 import { planShape, recordingClient, seedDayChunks } from "../testing/plan-shape";
 import type { Recorded } from "../testing/recording-pool";
+import { latestPueRatio } from "./pue-ratio";
 import { TelemetryService } from "./telemetry.service";
 
 /**
@@ -99,4 +100,28 @@ export async function assertRecentForPointPlansOnlyItsWindow(client: pg.PoolClie
     shape.chunks <= fixture.total - FIXTURE_DAYS,
     `recentForPoint: ${shape.chunks} chunks in the plan of ${fixture.total}`,
   );
+}
+
+const DAY_MS = 86_400_000;
+
+/** `latestPueRatio` live (plan D3): `time > now() - interval '900 seconds'`, planned away. */
+export async function assertLivePuePlansOnlyItsWindow(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedDayChunks(client);
+  const rec = recordingClient(client);
+  await latestPueRatio(rec.pool, [fixture.assetId]);
+  const shape = await planShape(client, only(rec.statements, "latestPueRatio live"));
+  assert(shape.excludedAtStartup === 0, `latestPueRatio live: ${shape.excludedAtStartup} excluded at startup`);
+  assert(
+    shape.chunks <= fixture.total - FIXTURE_DAYS,
+    `latestPueRatio live: ${shape.chunks} chunks in the plan of ${fixture.total}`,
+  );
+}
+
+/** `latestPueRatio` at `now − 10 d` (pin): `(at − 900 s, at]` from a parameter, one or two chunks. */
+export async function assertPueAtAnInstantPlansOnlyItsWindow(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedDayChunks(client);
+  const rec = recordingClient(client);
+  await latestPueRatio(rec.pool, [fixture.assetId], new Date(Date.now() - 10 * DAY_MS));
+  const shape = await planShape(client, only(rec.statements, "latestPueRatio at"));
+  assert(shape.chunks <= 2, `latestPueRatio at: ${shape.chunks} chunks in the plan of ${fixture.total}`);
 }
