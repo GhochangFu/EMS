@@ -6,6 +6,7 @@ import { inRolledBackTransaction } from "../dashboard/kpi-prior.integration.spec
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertLatestPointValuesPlansOnlyItsWindow,
+  assertRecentForPointPlansOnlyItsWindow,
   assertTheDetectorSeesStartupOnlyPruning,
   assertTheFixtureShowsAnAllChunkPlan,
 } from "./point-values-plan-shape.integration.spec";
@@ -42,4 +43,6 @@ describe.skipIf(!connectionString)("F4.393 — point_values readers plan only th
   it("control: the detector sees chunks excluded only at startup", run(assertTheDetectorSeesStartupOnlyPruning));
 
   it("latestPointValues plans only its window (pin)", run(assertLatestPointValuesPlansOnlyItsWindow));
+
+  it("recentForPoint plans only its window", run(assertRecentForPointPlansOnlyItsWindow));
 });

@@ -1,6 +1,7 @@
 import type pg from "pg";
 
 import { createDb } from "@bms/db";
+import { encodePointRef } from "@bms/shared";
 
 import { planShape, recordingClient, seedDayChunks } from "../testing/plan-shape";
 import type { Recorded } from "../testing/recording-pool";
@@ -84,5 +85,18 @@ export async function assertLatestPointValuesPlansOnlyItsWindow(client: pg.PoolC
   assert(
     shape.chunks <= fixture.total - FIXTURE_DAYS,
     `latestPointValues: ${shape.chunks} chunks in the plan of ${fixture.total}`,
+  );
+}
+
+/** `recentForPoint("15m")` (plan D2): one interval literal, so its chunks go at plan time. */
+export async function assertRecentForPointPlansOnlyItsWindow(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedDayChunks(client);
+  const rec = recordingClient(client);
+  await telemetryService(rec.pool).recentForPoint(encodePointRef(fixture.assetId, fixture.pointKey), "15m");
+  const shape = await planShape(client, only(rec.statements, "recentForPoint"));
+  assert(shape.excludedAtStartup === 0, `recentForPoint: ${shape.excludedAtStartup} excluded at startup`);
+  assert(
+    shape.chunks <= fixture.total - FIXTURE_DAYS,
+    `recentForPoint: ${shape.chunks} chunks in the plan of ${fixture.total}`,
   );
 }
