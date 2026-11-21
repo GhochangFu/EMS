@@ -3,6 +3,8 @@ import type pg from "pg";
 import { createDb } from "@bms/db";
 import { encodePointRef } from "@bms/shared";
 
+import { MEASURED_ROLLUP_FRESH_MS, readLatestWithinBounds } from "../dashboard-builder/sustainability-rollup";
+import type { BmsTx } from "../database/tenant-context";
 import { planShape, recordingClient, seedDayChunks } from "../testing/plan-shape";
 import type { Recorded } from "../testing/recording-pool";
 import { latestPueRatio } from "./pue-ratio";
@@ -124,4 +126,37 @@ export async function assertPueAtAnInstantPlansOnlyItsWindow(client: pg.PoolClie
   await latestPueRatio(rec.pool, [fixture.assetId], new Date(Date.now() - 10 * DAY_MS));
   const shape = await planShape(client, only(rec.statements, "latestPueRatio at"));
   assert(shape.chunks <= 2, `latestPueRatio at: ${shape.chunks} chunks in the plan of ${fixture.total}`);
+}
+
+/** The roll-up's latest read, live (plan D4): the literal envelope plans only its window. */
+export async function assertRollupLatestLivePlansOnlyItsWindow(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedDayChunks(client);
+  const rec = recordingClient(client);
+  await readLatestWithinBounds(
+    createDb(rec.pool) as unknown as BmsTx,
+    [fixture.assetId],
+    [MEASURED_ROLLUP_FRESH_MS / 1000],
+    fixture.pointKey,
+  );
+  const shape = await planShape(client, only(rec.statements, "roll-up latest live"));
+  assert(shape.excludedAtStartup === 0, `roll-up latest live: ${shape.excludedAtStartup} excluded at startup`);
+  assert(
+    shape.chunks <= fixture.total - FIXTURE_DAYS,
+    `roll-up latest live: ${shape.chunks} chunks in the plan of ${fixture.total}`,
+  );
+}
+
+/** The roll-up's latest read at `now − 10 d`: the envelope measured back from `at`. */
+export async function assertRollupLatestAtPlansOnlyItsWindow(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedDayChunks(client);
+  const rec = recordingClient(client);
+  await readLatestWithinBounds(
+    createDb(rec.pool) as unknown as BmsTx,
+    [fixture.assetId],
+    [MEASURED_ROLLUP_FRESH_MS / 1000],
+    fixture.pointKey,
+    new Date(Date.now() - 10 * DAY_MS),
+  );
+  const shape = await planShape(client, only(rec.statements, "roll-up latest at"));
+  assert(shape.chunks <= 2, `roll-up latest at: ${shape.chunks} chunks in the plan of ${fixture.total}`);
 }

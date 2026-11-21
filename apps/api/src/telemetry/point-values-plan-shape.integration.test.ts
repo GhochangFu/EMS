@@ -9,6 +9,8 @@ import {
   assertLivePuePlansOnlyItsWindow,
   assertPueAtAnInstantPlansOnlyItsWindow,
   assertRecentForPointPlansOnlyItsWindow,
+  assertRollupLatestAtPlansOnlyItsWindow,
+  assertRollupLatestLivePlansOnlyItsWindow,
   assertTheDetectorSeesStartupOnlyPruning,
   assertTheFixtureShowsAnAllChunkPlan,
 } from "./point-values-plan-shape.integration.spec";
@@ -51,4 +53,8 @@ describe.skipIf(!connectionString)("F4.393 — point_values readers plan only th
   it("latestPueRatio live plans only its window", run(assertLivePuePlansOnlyItsWindow));
 
   it("latestPueRatio at an instant plans only its window (pin)", run(assertPueAtAnInstantPlansOnlyItsWindow));
+
+  it("the roll-up's latest read, live, plans only its window", run(assertRollupLatestLivePlansOnlyItsWindow));
+
+  it("the roll-up's latest read at an instant plans only its window", run(assertRollupLatestAtPlansOnlyItsWindow));
 });

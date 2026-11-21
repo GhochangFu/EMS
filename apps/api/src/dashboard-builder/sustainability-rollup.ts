@@ -32,6 +32,14 @@ import type { BmsTx } from "../database/tenant-context";
  * back). Folding the bound into a SQL `CASE` would be a second declaration of the freshness
  * rule that the test cannot see.
  *
+ * `F4.393` (plan D4): the latest read (`readLatestWithinBounds`) also carries the WIDEST of
+ * those bounds as one interval literal (`rollupEnvelopeSql`), beside each asset's own. A bound
+ * that names the lateral's column (`make_interval(secs => p.bound_seconds)`) is applied only per
+ * loop at run time, after every chunk of the hypertable was planned; `now()` (or `at`) minus one
+ * literal is applied while planning. The envelope cannot change a row: every sample inside an
+ * asset's own bound is inside the widest bound too, so it only removes chunks no asset's bound
+ * reaches.
+ *
  * ## Currency (ADR 0072 ruling 4, plan OQ1; sweep ruling 2026-09-22)
  *
  * `isMoneyPointKey` decides WHETHER a tile carries a currency: membership in
@@ -207,25 +215,8 @@ export async function readRollupRows(
       calcIntervalSeconds: row.calc_interval_seconds,
     }),
   );
-  const latest = await tx.execute<{ asset_id: string; value: number }>(sql`
-    SELECT p.asset_id, s.value
-      FROM unnest(${sql.param(assetIds)}::uuid[], ${sql.param(bounds)}::int[]) AS p(asset_id, bound_seconds)
-      CROSS JOIN LATERAL (
-        SELECT v.value
-          FROM telemetry.point_values v
-         WHERE v.asset_id = p.asset_id
-           AND v.point_key = ${pointKey}
-           ${
-             at === undefined
-               ? sql`AND v.time > now() - make_interval(secs => p.bound_seconds)`
-               : sql`AND v.time > ${at.toISOString()}::timestamptz - make_interval(secs => p.bound_seconds)
-           AND v.time <= ${at.toISOString()}::timestamptz`
-           }
-         ORDER BY v.time DESC
-         LIMIT 1
-      ) s
-  `);
-  const valueByAsset = new Map(latest.rows.map((row) => [row.asset_id, Number(row.value)]));
+  const latest = await readLatestWithinBounds(tx, assetIds, bounds, pointKey, at);
+  const valueByAsset = new Map(latest.map((row) => [row.asset_id, Number(row.value)]));
 
   return carrying.rows.map((row) => ({
     assetId: row.asset_id,
@@ -235,6 +226,60 @@ export async function readRollupRows(
     locationName: row.location_name,
     value: valueByAsset.get(row.asset_id) ?? null,
   }));
+}
+
+/**
+ * `F4.393` (plan D4) — the widest of `bounds` as ONE interval literal, the envelope
+ * {@link readLatestWithinBounds} adds beside each asset's own bound. Each bound is
+ * `freshnessBoundSeconds` (three times a database integer, or 900); it is checked to be a positive
+ * safe integer before any SQL text exists, so nothing else can reach the text.
+ */
+export function rollupEnvelopeSql(bounds: readonly number[]): string {
+  if (bounds.length === 0) throw new Error("rollupEnvelopeSql: no freshness bound to envelope");
+  let widest = 0;
+  for (const bound of bounds) {
+    if (!Number.isSafeInteger(bound) || bound <= 0) {
+      throw new Error(`rollupEnvelopeSql: freshness bound ${String(bound)} is not a positive integer`);
+    }
+    widest = Math.max(widest, bound);
+  }
+  return `interval '${widest} seconds'`;
+}
+
+/**
+ * The latest sample of `pointKey` per asset inside that asset's own freshness bound (`bounds[i]`
+ * seconds for `assetIds[i]`), measured back from `now()`, or from `at` with nothing after `at`.
+ * An asset with no such sample is absent. The second statement of {@link readRollupRows}.
+ */
+export async function readLatestWithinBounds(
+  tx: BmsTx,
+  assetIds: readonly string[],
+  bounds: readonly number[],
+  pointKey: string,
+  at?: Date,
+): Promise<{ asset_id: string; value: number }[]> {
+  const envelope = sql.raw(rollupEnvelopeSql(bounds));
+  const latest = await tx.execute<{ asset_id: string; value: number }>(sql`
+    SELECT p.asset_id, s.value
+      FROM unnest(${sql.param([...assetIds])}::uuid[], ${sql.param([...bounds])}::int[]) AS p(asset_id, bound_seconds)
+      CROSS JOIN LATERAL (
+        SELECT v.value
+          FROM telemetry.point_values v
+         WHERE v.asset_id = p.asset_id
+           AND v.point_key = ${pointKey}
+           ${
+             at === undefined
+               ? sql`AND v.time > now() - make_interval(secs => p.bound_seconds)
+           AND v.time > now() - ${envelope}`
+               : sql`AND v.time > ${at.toISOString()}::timestamptz - make_interval(secs => p.bound_seconds)
+           AND v.time <= ${at.toISOString()}::timestamptz
+           AND v.time > ${at.toISOString()}::timestamptz - ${envelope}`
+           }
+         ORDER BY v.time DESC
+         LIMIT 1
+      ) s
+  `);
+  return latest.rows;
 }
 
 /**
