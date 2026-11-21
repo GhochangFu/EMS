@@ -6,7 +6,8 @@ import type { EnergyHeatmapCell } from "@bms/shared";
 
 import { useChartTheme } from "../../lib/chart-theme";
 import { colourMax, heatmapGrid } from "../../lib/energy-organization-views";
-import { withAlpha, type Roles } from "../../lib/theme";
+import { heatmapEmptyCells, heatmapEmptySeries, heatmapTileStyle, heatmapVisualMaps } from "../../lib/heatmap-style";
+import { type Roles } from "../../lib/theme";
 import type { EnergySectionStatus } from "./energy-stack-chart";
 import { chartType } from "../../lib/design";
 
@@ -20,15 +21,16 @@ function hourLabel(hour: number): string {
 }
 
 /**
- * The heatmap option: local days across, local hours down, one hue (`accent`)
- * from 8 % alpha at 0 to full at the nearest-rank P95 (cells above saturate).
- * A missing cell is not drawn.
+ * The heatmap option: local days across, local hours down, one hue (`series-1`) in five stepped
+ * bands from 0 to the nearest-rank P95 (cells above land in the top band), on gapped tiles. An hour
+ * with no reading is a plain `well` tile (`lib/heatmap-style.ts`).
  */
 function heatmapOption(cells: readonly EnergyHeatmapCell[], roles: Roles): EChartsOption {
   const grid = heatmapGrid(cells);
   const dayIndex = new Map(grid.days.map((day, i) => [day, i]));
+  const filled = cells.map((c) => [dayIndex.get(c.day) as number, c.hour, c.kwh] as [number, number, number]);
   return {
-    grid: { left: 52, right: 20, top: 16, bottom: 72 },
+    grid: { left: 52, right: 20, top: 16, bottom: 56 },
     tooltip: {
       position: "top",
       formatter: (params) => {
@@ -39,23 +41,10 @@ function heatmapOption(cells: readonly EnergyHeatmapCell[], roles: Roles): EChar
     },
     xAxis: { type: "category", data: grid.days, splitArea: { show: false }, axisLabel: { fontSize: chartType()["3xs"] } },
     yAxis: { type: "category", data: grid.hours.map(hourLabel), axisLabel: { fontSize: chartType()["3xs"] } },
-    visualMap: {
-      type: "continuous",
-      min: 0,
-      max: colourMax(cells),
-      calculable: true,
-      orient: "horizontal",
-      left: "center",
-      bottom: 0,
-      text: ["kWh", ""],
-      inRange: { color: [withAlpha(roles["series-1"], 0.08), roles["series-1"]] },
-    },
+    visualMap: heatmapVisualMaps(0, colourMax(cells), roles["series-1"], roles, (v) => `${v.toFixed(1)} kWh`),
     series: [
-      {
-        name: "kWh",
-        type: "heatmap",
-        data: cells.map((c) => [dayIndex.get(c.day) as number, c.hour, c.kwh]),
-      },
+      { name: "kWh", type: "heatmap", data: filled, itemStyle: heatmapTileStyle(roles) },
+      heatmapEmptySeries(heatmapEmptyCells(grid.days.length, grid.hours.length, filled), roles),
     ],
   };
 }
