@@ -23,6 +23,15 @@ const API_SRC = join(repoRoot, "apps/api/src");
  * from a parameter. Comments are stripped first, so a docblock may name a table it does not read. The open rows are follow-ups: `F4.391` (rule and alarm latest
  * reads), `F4.392` (the `kw` latest reads, fix 4), `F4.393` (measure, then bound the rest); the
  * health roll-up is fix 5, behind an owner gate.
+ *
+ * `F4.393` (plan §1 D1, measured §2): what the planner removes before it runs is `time > now() -
+ * interval 'N unit'` with ONE interval literal, and `time <op> $n::timestamptz` (a bound
+ * parameter compared to `time` directly, or minus one interval literal). `now()` minus anything
+ * else — `15 * interval '1 minute'`, `$n::int * interval '1 second'`, `make_interval(…)` — is
+ * pruned only at executor startup, after every chunk was planned; a bound naming a lateral
+ * column only per loop at run time. {@link PINNED_BOUNDS} holds each bound `F4.393` adds or
+ * confirms by its exact text and count, and `telemetry/point-values-plan-shape.integration.spec.ts`
+ * holds the property itself (the chunks in the plan).
  */
 
 /**
@@ -41,7 +50,9 @@ const READERS: Record<string, number> = {
   "dashboard-builder/breaker-rows.ts": 1,
   "dashboard-builder/mimic-nodes.service.ts": 1,
   "telemetry/telemetry-cadence.ts": 1,
-  // One literal; two upper-only; one absolute parameter — `F4.393`.
+  // `F4.393`: `recentForPoint` one interval literal (was `n * interval '1 minute'`, pruned only at
+  // startup); `pointValuesAt` and `pointRawRecords` upper-only (PR 3, staged); `latestPointValues`
+  // a `$3::timestamptz` floor, planned away — pinned.
   "telemetry/telemetry.service.ts": 4,
   // None / upper only — `F4.392`.
   "dashboard/estate-energy.ts": 1,
@@ -49,11 +60,14 @@ const READERS: Record<string, number> = {
   // None — `F4.391`.
   "rules/rule-samples.ts": 2,
   "alarms/alarm-details.service.ts": 1,
-  // Parameter interval, per-row or parameter range — `F4.393`.
+  // `F4.393`: live `now() - ${PUE_LATEST_WINDOW_SQL}`; `at` `(at − 900 s, at]` from a parameter.
   "telemetry/pue-ratio.ts": 1,
+  // `F4.393` PR 2: per-row lateral bounds, all chunks planned twice — envelope owed.
   "calc/calc-windows.service.ts": 2,
   "tariffs/register-read.ts": 2,
+  // `F4.393`: `readSamples` per-row (PR 2, envelope owed); `readInputTimes` a parameter range.
   "calc-backfill/calc-backfill-reads.ts": 2,
+  // `F4.393`: the per-asset bound plus the widest bound as a literal envelope.
   "dashboard-builder/sustainability-rollup.ts": 1,
   // Fix 5, owner gate.
   "asset-health/health-rollup-sql.ts": 1,
@@ -71,13 +85,42 @@ const LITERAL_BOUNDS: Record<string, string> = {
   "dashboard-builder/breaker-rows.ts": "pv.time > now() - ${sql.raw(generatedSiteView.GENERATED_LATEST_WINDOW_SQL)}",
   "dashboard-builder/mimic-nodes.service.ts": "pv.time > now() - ${generatedSiteView.GENERATED_LATEST_WINDOW_SQL}",
   "telemetry/telemetry-cadence.ts": "pv.time > now() - interval '${FRESHNESS_CAP_SECONDS} seconds'",
+  "telemetry/pue-ratio.ts": "time > now() - ${PUE_LATEST_WINDOW_SQL}",
+  "dashboard-builder/sustainability-rollup.ts": "AND v.time > now() - ${envelope}",
 };
+
+/**
+ * `F4.393` (plan D8) — file → `[bound text, exact count]`: each text must appear exactly that
+ * many times in the comment-stripped source. A bound parameter compared to `time` directly is
+ * planned away like a literal (plan §2), so these hold the parameter bounds and the mixed file
+ * `telemetry.service.ts`, where a literal and parameter bounds sit side by side.
+ */
+const PINNED_BOUNDS: Record<string, readonly (readonly [string, number])[]> = {
+  "telemetry/pue-ratio.ts": [["time > $2::timestamptz - ${PUE_LATEST_WINDOW_SQL} AND time <= $2::timestamptz", 1]],
+  "dashboard-builder/sustainability-rollup.ts": [["AND v.time > ${at.toISOString()}::timestamptz - ${envelope}", 1]],
+  "telemetry/telemetry.service.ts": [
+    // `recentForPoint`: one interval literal, built from `parseWindow`'s integer.
+    ["gte(pointValues.time, sql`now() - ${intervalExpr}`)", 1],
+    ["sql.raw(`interval '${n} ${unit === \"m\" ? \"minutes\" : \"hours\"}'`)", 1],
+    // `latestPointValues`: a bound `timestamptz` floor.
+    ["AND pv.time > $3::timestamptz", 1],
+  ],
+};
+
+/** The files whose `now()` bound must be one interval literal, never a multiplied unit interval. */
+const NO_MULTIPLIED_INTERVAL = ["telemetry/pue-ratio.ts", "telemetry/telemetry.service.ts"];
 
 const RAW_READ = /\b(FROM|JOIN)\s+telemetry\.point_values(?![_\w])/gi;
 const DRIZZLE_READ = /\.(from|(inner|left|right|full)Join)\(\s*pointValues\b/g;
 /** A `time > now() - …` bound that ends in a bound parameter: pruned only at execution, if at all. */
 const PARAMETER_NOW_BOUND = /\btime\s*>=?\s*now\(\)\s*-\s*[^'\n]*\$\d/;
 const PARAMETER_SECONDS = /\|\|\s*' seconds'/;
+/**
+ * `F4.393` — a multiplied unit interval (`n * interval '1 minute'`): pruned only at startup when
+ * it bounds `time` from `now()`. Not a global rule: `telemetry-cadence.ts` multiplies on a
+ * derived column, not on the hypertable bound.
+ */
+const MULTIPLIED_INTERVAL = /\*\s*interval\s+'1 /;
 
 /** `source` with block comments and `//` lines removed (the `tests/f3.28…` `code()` shape). */
 function withoutComments(source: string): string {
@@ -125,6 +168,9 @@ describe("F4.390 — raw telemetry.point_values readers", () => {
     expect(PARAMETER_NOW_BOUND.test("AND v.time > now() - $2::interval")).toBe(true);
     expect(PARAMETER_NOW_BOUND.test("AND time > now() - interval '604800 seconds'")).toBe(false);
     expect(PARAMETER_SECONDS.test("($3 || ' seconds')::interval")).toBe(true);
+    expect(MULTIPLIED_INTERVAL.test("`${n} * interval '1 minute'`")).toBe(true);
+    expect(MULTIPLIED_INTERVAL.test("($2::int * interval '1 second')")).toBe(true);
+    expect(MULTIPLIED_INTERVAL.test("interval '15 minutes'")).toBe(false);
     expect(readsIn(withoutComments("/** FROM telemetry.point_values */\n// JOIN telemetry.point_values\nx"))).toBe(0);
   });
 
@@ -145,18 +191,28 @@ describe("F4.390 — raw telemetry.point_values readers", () => {
     ).toEqual(READERS);
   });
 
-  it("the literal-bounded readers keep a plan-time bound, never a parameter one", () => {
-    for (const [file, bound] of Object.entries(LITERAL_BOUNDS)) {
+  it.each(Object.entries(LITERAL_BOUNDS))("%s keeps its plan-time literal bound, never a parameter one", (file, bound) => {
+    const source = code(join(API_SRC, file));
+    const reads = readsIn(source);
+    expect(reads, `${file}: control, the file still reads point_values`).toBeGreaterThan(0);
+    expect(
+      source.split(bound).length - 1,
+      `${file}: its literal bound (${bound}) must appear at least once per raw read`,
+    ).toBeGreaterThanOrEqual(reads);
+    expect(PARAMETER_NOW_BOUND.test(source), `${file}: a time bound of now() minus a bound parameter`).toBe(false);
+    expect(PARAMETER_SECONDS.test(source), `${file}: an interval built as $n || ' seconds'`).toBe(false);
+  });
+
+  describe.each(Object.entries(PINNED_BOUNDS))("%s pins its bounds (F4.393)", (file, pins) => {
+    it.each(pins.map(([text, count]) => [text, count] as const))("%s appears exactly %d time(s)", (text, count) => {
       const source = code(join(API_SRC, file));
-      const reads = readsIn(source);
-      expect(reads, `${file}: control, the file still reads point_values`).toBeGreaterThan(0);
-      expect(
-        source.split(bound).length - 1,
-        `${file}: its literal bound (${bound}) must appear at least once per raw read`,
-      ).toBeGreaterThanOrEqual(reads);
-      expect(PARAMETER_NOW_BOUND.test(source), `${file}: a time bound of now() minus a bound parameter`).toBe(false);
-      expect(PARAMETER_SECONDS.test(source), `${file}: an interval built as $n || ' seconds'`).toBe(false);
-    }
+      expect(source.split(text).length - 1, `${file}: ${text}`).toBe(count);
+    });
+  });
+
+  it.each(NO_MULTIPLIED_INTERVAL)("%s bounds time by one interval literal, never a multiplied unit interval", (file) => {
+    const source = code(join(API_SRC, file));
+    expect(MULTIPLIED_INTERVAL.test(source), `${file}: n * interval '1 …'`).toBe(false);
   });
 
   it("the calc input reads both bound time by the module's literal interval", () => {
