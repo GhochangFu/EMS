@@ -3,7 +3,7 @@ import type { EChartsOption } from "echarts";
 import type { PointAggregateFunction } from "@bms/shared";
 
 import { seriesPalette } from "./chart-theme";
-import { withAlpha, type Roles } from "./theme";
+import { type Roles } from "./theme";
 import {
   CHART_SERIES,
   widgetToneColor,
@@ -13,6 +13,7 @@ import {
 } from "./widget-catalog";
 import { formatWidgetValue } from "./widget-value";
 import { chartType } from "./design";
+import { heatmapEmptyCells, heatmapEmptySeries, heatmapTileStyle, heatmapVisualMaps } from "./heatmap-style";
 
 function clamp(value: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, value));
@@ -387,8 +388,8 @@ const hourLabel = (hour: number): string => `${String(hour).padStart(2, "0")}:00
 
 /**
  * `F4.323` PR 2 — `heatmap`: local days across, local hours down, for the one bound point. One
- * hue (`accent`) from 8 % alpha at the lowest cell to full at the highest, the
- * `energy-heatmap.tsx` precedent (no new colour token). `stacked` and `yAxisLabel` are not read.
+ * hue in five stepped bands on gapped tiles, empty hours as `well` tiles (`lib/heatmap-style.ts`,
+ * shared with `energy-heatmap.tsx`). `stacked` and `yAxisLabel` are not read.
  */
 function heatmapOption(
   config: ChartConfig,
@@ -405,6 +406,10 @@ function heatmapOption(
   const max = values.length > 0 ? Math.max(...values) : 0;
   const format = valueFormatter(config);
   const hue = config.colors?.[0] ? roles[config.colors[0]] : roles["series-1"];
+  const filled = cells.flatMap((c) => {
+    const x = dayIndex.get(c.day);
+    return x === undefined ? [] : [[x, c.hour, c.value] as [number, number, number]];
+  });
   return {
     grid: { left: 44, right: 12, top: 8, bottom: 56 },
     tooltip: {
@@ -416,27 +421,10 @@ function heatmapOption(
     },
     xAxis: { type: "category", data: days, axisLabel: { fontSize: chartType()["3xs"] } },
     yAxis: { type: "category", data: Array.from({ length: 24 }, (_, hour) => hourLabel(hour)), axisLabel: { fontSize: chartType()["3xs"] } },
-    visualMap: {
-      type: "continuous",
-      min,
-      max: max > min ? max : min + 1,
-      calculable: true,
-      orient: "horizontal",
-      left: "center",
-      bottom: 0,
-      itemHeight: 80,
-      textStyle: { fontSize: chartType()["3xs"] },
-      // `F4.325` — the scale's hue is the first point's chosen colour, else the accent.
-      inRange: { color: [withAlpha(hue, 0.08), hue] },
-    },
+    visualMap: heatmapVisualMaps(min, max, hue, roles, format),
     series: [
-      {
-        type: shape.type,
-        data: cells.flatMap((c) => {
-          const x = dayIndex.get(c.day);
-          return x === undefined ? [] : [[x, c.hour, c.value] as [number, number, number]];
-        }),
-      },
+      { type: shape.type, data: filled, itemStyle: heatmapTileStyle(roles) },
+      heatmapEmptySeries(heatmapEmptyCells(days.length, 24, filled), roles),
     ],
   };
 }
@@ -495,7 +483,7 @@ export function matrixCells(
 /**
  * `F4.325` — `matrix`: the bound points down (in `sortOrder`, the first at the top), the last 24
  * local hours across, each cell the point's hour by `config.aggregate`. One hue for every row —
- * `colors[0]` or the accent — from 8 % alpha to full, as the heatmap. `stacked` and `yAxisLabel`
+ * `colors[0]` or the accent — in the heatmap's stepped bands and tiles. `stacked` and `yAxisLabel`
  * are not read.
  */
 function matrixOption(
@@ -535,19 +523,11 @@ function matrixOption(
     },
     xAxis: { type: "category", data: hours.map((hour) => hour.label), axisLabel: { fontSize: chartType()["3xs"] } },
     yAxis: { type: "category", inverse: true, data: names, axisLabel: { fontSize: chartType()["3xs"] } },
-    visualMap: {
-      type: "continuous",
-      min,
-      max: max > min ? max : min + 1,
-      calculable: true,
-      orient: "horizontal",
-      left: "center",
-      bottom: 0,
-      itemHeight: 80,
-      textStyle: { fontSize: chartType()["3xs"] },
-      inRange: { color: [withAlpha(hue, 0.08), hue] },
-    },
-    series: [{ type: shape.type, data }],
+    visualMap: heatmapVisualMaps(min, max, hue, roles, format),
+    series: [
+      { type: shape.type, data, itemStyle: heatmapTileStyle(roles) },
+      heatmapEmptySeries(heatmapEmptyCells(hours.length, names.length, data), roles),
+    ],
   };
 }
 

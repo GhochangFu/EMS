@@ -14,7 +14,7 @@ import { EnergyHeatmap } from "./energy-heatmap";
 type Recorded = {
   option: {
     series: { type: string; data: unknown[] }[];
-    visualMap: { max: number; min: number };
+    visualMap: { max: number; min: number }[];
     xAxis: { data: string[] };
     yAxis: { data: string[] };
   };
@@ -52,17 +52,18 @@ const WHOLE_DAY: EnergyHeatmapCell[] = Array.from({ length: 24 }, (_, hour) => (
 export function oneHeatmapSeriesWithOnePointPerCell(): void {
   render(<EnergyHeatmap cells={SPARSE} status="ready" />);
   const option = last();
-  expect(option.series).toHaveLength(1);
+  expect(option.series, "the data, then the empty tiles").toHaveLength(2);
   expect(option.series[0].type).toBe("heatmap");
   expect(option.series[0].data).toHaveLength(SPARSE.length);
+  expect(option.series[1].data, "every other hour of the two days is an empty tile").toHaveLength(2 * 24 - SPARSE.length);
 }
 
 export function theColourScaleTopIsTheNearestRankP95(): void {
   render(<EnergyHeatmap cells={WHOLE_DAY} status="ready" />);
   const option = last();
-  expect(option.visualMap.min).toBe(0);
-  expect(option.visualMap.max).toBe(colourMax(WHOLE_DAY));
-  expect(option.visualMap.max).not.toBe(24);
+  expect(option.visualMap[0].min).toBe(0);
+  expect(option.visualMap[0].max).toBe(colourMax(WHOLE_DAY));
+  expect(option.visualMap[0].max).not.toBe(24);
 }
 
 export function theAxesAre24HoursAndTheDays(): void {

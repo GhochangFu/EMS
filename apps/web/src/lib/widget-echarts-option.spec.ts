@@ -510,7 +510,7 @@ export function heatmapKeepsAnEmptyDay(): void {
 type HeatmapShape = {
   readonly xAxis: { readonly type: string; readonly data: readonly string[] };
   readonly yAxis: { readonly type: string; readonly data: readonly string[] };
-  readonly visualMap: { readonly min: number; readonly max: number; readonly inRange: { readonly color: readonly string[] } };
+  readonly visualMap: readonly { readonly min: number; readonly max: number; readonly inRange: { readonly color: readonly string[] } }[];
   readonly series: readonly { readonly type: string; readonly data: readonly (readonly [number, number, number])[] }[];
 };
 
@@ -541,9 +541,10 @@ export function chartHeatmapDrawsDaysAcrossAndHoursDown(): void {
     [1, 1, 8],
     [0, 5, 2],
   ]);
-  expect(option.visualMap.min).toBe(2);
-  expect(option.visualMap.max).toBe(8);
-  expect(option.visualMap.inRange.color.at(-1), "one hue, series-1 (F4.341 A5c)").toBe(roles["series-1"]);
+  expect(option.series[1]?.data, "every other hour of the two days is an empty tile").toHaveLength(2 * 24 - 2);
+  expect(option.visualMap[0].min).toBe(2);
+  expect(option.visualMap[0].max).toBe(8);
+  expect(option.visualMap[0].inRange.color.at(-1), "one hue, series-1 (F4.341 A5c)").toBe(roles["series-1"]);
 }
 
 /**
@@ -612,7 +613,7 @@ export function heatmapScaleTakesTheFirstColour(): void {
     roles,
     "Etc/UTC",
   ) as unknown as HeatmapShape;
-  expect(option.visualMap.inRange.color.at(-1)).toBe(roles["series-7"]);
+  expect(option.visualMap[0].inRange.color.at(-1)).toBe(roles["series-7"]);
 }
 
 /** A colour past the last point (a cascaded retired sensor) is never drawn and never throws. */
@@ -679,7 +680,7 @@ export function matrixCellsFoldMinutesIntoHoursByTheFunction(): void {
 type MatrixShape = {
   readonly xAxis: { readonly type: string; readonly data: readonly string[] };
   readonly yAxis: { readonly type: string; readonly data: readonly string[]; readonly inverse?: boolean };
-  readonly visualMap: { readonly min: number; readonly max: number; readonly inRange: { readonly color: readonly string[] } };
+  readonly visualMap: readonly { readonly min: number; readonly max: number; readonly inRange: { readonly color: readonly string[] } }[];
   readonly series: readonly { readonly type: string; readonly data: readonly (readonly [number, number, number])[] }[];
 };
 
@@ -719,9 +720,9 @@ export function chartMatrixDrawsPointsDownAndHoursAcross(): void {
     [0, 0, 0.25],
     [23, 1, 1],
   ]);
-  expect(option.visualMap.min).toBe(0.25);
-  expect(option.visualMap.max).toBe(1);
-  expect(option.visualMap.inRange.color.at(-1), "one hue, series-1 by default (F4.341 A5c)").toBe(roles["series-1"]);
+  expect(option.visualMap[0].min).toBe(0.25);
+  expect(option.visualMap[0].max).toBe(1);
+  expect(option.visualMap[0].inRange.color.at(-1), "one hue, series-1 by default (F4.341 A5c)").toBe(roles["series-1"]);
   const coloured = buildChartOption(
     { series: "matrix", aggregate: "avg", colors: ["series-5"] },
     series,
@@ -729,5 +730,5 @@ export function chartMatrixDrawsPointsDownAndHoursAcross(): void {
     roles,
     "Etc/UTC",
   ) as unknown as MatrixShape;
-  expect(coloured.visualMap.inRange.color.at(-1), "colors[0] is the scale's hue").toBe(roles["series-5"]);
+  expect(coloured.visualMap[0].inRange.color.at(-1), "colors[0] is the scale's hue").toBe(roles["series-5"]);
 }
