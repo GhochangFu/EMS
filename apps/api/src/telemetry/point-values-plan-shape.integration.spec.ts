@@ -52,6 +52,7 @@ function telemetryService(pool: pg.Pool): TelemetryService {
   return new TelemetryService(createDb(pool), pool, pool);
 }
 
+/** Control: an unbounded read names every fixture chunk, so the fixture can show an all-chunk plan. */
 export async function assertTheFixtureShowsAnAllChunkPlan(client: pg.PoolClient): Promise<void> {
   const fixture = await seedDayChunks(client);
   const shape = await planShape(client, {
@@ -66,6 +67,7 @@ export async function assertTheFixtureShowsAnAllChunkPlan(client: pg.PoolClient)
   );
 }
 
+/** Control: the frozen multiplied-interval read is pruned only at startup, and `planShape` sees it. */
 export async function assertTheDetectorSeesStartupOnlyPruning(client: pg.PoolClient): Promise<void> {
   const fixture = await seedDayChunks(client);
   const shape = await planShape(client, {
@@ -79,6 +81,7 @@ export async function assertTheDetectorSeesStartupOnlyPruning(client: pg.PoolCli
   );
 }
 
+/** Pin (plan D9): `latestPointValues` already prunes at plan time, and keeps doing so. */
 export async function assertLatestPointValuesPlansOnlyItsWindow(client: pg.PoolClient): Promise<void> {
   const fixture = await seedDayChunks(client);
   const rec = recordingClient(client);
@@ -125,6 +128,9 @@ export async function assertPueAtAnInstantPlansOnlyItsWindow(client: pg.PoolClie
   const rec = recordingClient(client);
   await latestPueRatio(rec.pool, [fixture.assetId], new Date(Date.now() - 10 * DAY_MS));
   const shape = await planShape(client, only(rec.statements, "latestPueRatio at"));
+  // A startup-only bound also shows one or two chunks in a plain EXPLAIN, so the count alone
+  // cannot tell plan time from startup (code review): assert both.
+  assert(shape.excludedAtStartup === 0, `latestPueRatio at: ${shape.excludedAtStartup} excluded at startup`);
   assert(shape.chunks <= 2, `latestPueRatio at: ${shape.chunks} chunks in the plan of ${fixture.total}`);
 }
 
@@ -158,5 +164,7 @@ export async function assertRollupLatestAtPlansOnlyItsWindow(client: pg.PoolClie
     new Date(Date.now() - 10 * DAY_MS),
   );
   const shape = await planShape(client, only(rec.statements, "roll-up latest at"));
+  // As for the PUE `at` arm: assert plan-time pruning, not only the surviving chunk count.
+  assert(shape.excludedAtStartup === 0, `roll-up latest at: ${shape.excludedAtStartup} excluded at startup`);
   assert(shape.chunks <= 2, `roll-up latest at: ${shape.chunks} chunks in the plan of ${fixture.total}`);
 }

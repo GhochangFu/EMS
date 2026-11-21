@@ -162,7 +162,7 @@ export function capRowsAtTheCapIsNotTruncated(): void {
 
 /** `F4.393` (plan D4): the roll-up's envelope is the widest bound, as one interval literal. */
 export function envelopeIsTheWidestBound(): void {
-  same(rollupEnvelopeSql([180, 900, 10800]), "interval '10800 seconds'", "envelope of 180, 900, 10800");
+  same(rollupEnvelopeSql([180, 10800, 900]), "interval '10800 seconds'", "envelope of 180, 10800, 900 (widest not last)");
 }
 
 /**

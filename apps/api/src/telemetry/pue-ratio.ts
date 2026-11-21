@@ -85,9 +85,11 @@ import { aggregateRelation, avgExpr, type AggregateLevel } from "./point-aggrega
  * which rows count, and an "energy in the last 24 h" panel that silently
  * dropped its own window would be wrong rather than cautious.
  *
- * Parameterised queries throughout; the only interpolation is
- * `aggregateRelation(level)`, a lookup against the closed `RELATIONS` set, and
- * `avgExpr()`, which validates its own alias.
+ * Parameterised queries throughout; the only interpolations are
+ * `aggregateRelation(level)`, a lookup against the closed `RELATIONS` set,
+ * `avgExpr()`, which validates its own alias, and (`F4.393`)
+ * `PUE_LATEST_WINDOW_SQL`, an interval literal built from the module's own
+ * integer constant.
  */
 
 /**
