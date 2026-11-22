@@ -145,3 +145,77 @@ None. No npm package and no web font: the logo is path data.
 | Q3 | Which tagline? | First: lead with pulse / live data (recommended) · energy first · keep board 1's line · board 3's "smart buildings". Then the exact line: "The pulse of every site" (recommended) · "The pulse of your operations" · "Every site. Every signal. Live." · "The pulse of intelligent energy" | **"The pulse of every site"** — decision 4 |
 | Q4 | Beyond the web screens, which surfaces does the rename cover? | All user-visible text, as ADR 0083 Q4 (recommended) · web screens only | **All user-visible text** — decision 5 |
 | Q5 | Does the login headline keep its tail "· Smart insight, always on."? | Tagline alone (recommended — two slogans compete) · tagline plus the old tail | **Tagline alone** — decision 4 |
+
+## Amendment 1 — the pulse and the letters are traced from brand board 1; the pulse is a filled shape (`F4.398`) (owner, 2026-11-22)
+
+**Status: Accepted — 2026-11-22** (owner, in chat: "Accept"; proposed the
+same day). After the ADR merged, the final SVG files were drawn and shown to
+the owner, who answered with a crop of brand board 1 and "Follow this". The
+files were redrawn to that reference twice the same day; the owner approved
+the traced version (A3). This amendment records what changed against
+decisions 2, 3, 5, 6 and 7.
+
+1. **The pulse is one filled shape, not a stroked line** (amends decision 2).
+   As on board 1: a wedge-shaped lead-in, a first rise that starts the V's
+   left arm above the small letters, a foot that drops below the baseline, a
+   peak about 2.3 x-heights above the baseline, and a thin wedge-shaped tail
+   that runs over the "e". The V is therefore larger than the letters beside
+   it. It is still one shape carrying one continuous gradient, foot to peak.
+2. **The pulse and the letters "erve" are traced from board 1**, not set in
+   Montserrat (amends decisions 2 and 3). A first redraw measured the pulse by
+   eye and set the letters in Montserrat ExtraBold; the owner rejected it
+   ("still not okay … compare with the pasted image"). A weight fit then
+   showed Montserrat is not the board's lettering at any weight (best overlap
+   0.74; the board's "e" and "r" are narrower), so the shapes and the spacing
+   are taken from the board itself: each shape's outline is traced from the
+   image, smoothed and written as path data. The letters remain outlines, with
+   no font and no package. Only the tagline is set from a font (Montserrat
+   Medium, outlined). The Montserrat licence note in *Consequences* now
+   applies to the tagline only.
+   The pulse's gradient is on a vertical axis, foot to peak, with five stops
+   at offsets 0, 0.38, 0.6, 0.8 and 1. **The stops are those of the asset
+   files.** Light form, measured on the board: `#16405C`, `#18576C`,
+   `#189E7F`, `#14B088`, `#1DAF86`. Dark form, decision 2's sky → teal → mint
+   spread over the same five offsets: `#38BDF8`, `#22B5D4`, `#14B8A6`,
+   `#2DD4A0`, `#34D399`. The letter ink stays navy `#0F172A` on light and
+   white on dark. These replace decision 2's three-stop lists.
+3. **The gate asserts a fill** (amends decision 7's second assertion): the
+   wordmark's pulse path has exactly one `fill`, that fill is a gradient
+   reference, and the path has no `stroke`.
+4. **The tagline is unchanged.** The reference crop carries board 1's line
+   "Intelligent energy. Seamless control."; the owner was asked and kept
+   decision 4's **"The pulse of every site"**.
+5. **The asset home is `docs/brand/verve/`** — twelve SVG files: the full
+   logo on light and on dark, each with and without the tagline; the short
+   mark on a navy tile, on a white tile and with no tile; and flat navy and
+   flat white forms of the logo and of the mark. `build-logo.py` beside them
+   regenerates all twelve from the board image; the board image itself is the
+   owner's file and is not in the repository.
+
+6. **The gate's old-name pattern is bounded** (amends decision 7). Decision
+   7's `/ion\s?site|nexus/i` gives 107 hits on `f57b23cc`, 51 of them false —
+   identifiers such as `siteZoneOf` and `OrganizationSiteMap`. The gate uses
+   `/trinetra|\bion\s?site|nexus/gi`, and its kept list is token-exact, not
+   a substring allowlist: a string literal whose whole text is `nexus` or
+   `nexus-soft`, or an identifier that is exactly `nexus` or
+   `NEXUS_SOFT_CHART_TYPE`.
+7. **"Nexus Soft (default)" becomes "Verve Soft (default)"** (extends
+   decisions 5 and 6). It is a second appearance label a user reads. The
+   stored design-system key `nexus-soft` and the symbol
+   `NEXUS_SOFT_CHART_TYPE` are kept, as the key `nexus` is: no schema change.
+8. **The logo's fixed colours get one pinned exception in the colour gate**
+   (implements decision 3). `tests/f3.65-colour-roles-gate.test.ts` R21
+   permits no hex literal in the web source. R21 skips exactly
+   `apps/web/src/components/verve-logo-data.ts`, and a new R21b requires that
+   file's hex literals to equal the twelve asset colours of item 2 — a closed
+   set, so a thirteenth colour fails. A logo that re-tints with the colour
+   profile is **not** in this amendment: the owner asked for it "on request",
+   and it is filed as `F4.399` with its own design and ADR owed.
+
+| # | Question | Options put | Ruling |
+|---|---|---|---|
+| A1 | The owner's reference crop — follow it for what? | — (owner: "Follow this") | **The logo shape follows the crop** — items 1 and 2 |
+| A3 | Does the traced logo match the board? | — (shown as `docs/brand/verve/preview.html`) | **Approved** (owner: "Yes, this is perfect") — item 2 |
+| A2 | The crop's tagline differs from decision 4. Which is final? | "The pulse of every site" · "Intelligent energy. Seamless control." | **"The pulse of every site"** — item 4 |
+| A4 | "Nexus Soft (default)" on the Appearance screen — rename it? | Rename the label, keep the keys (recommended) · keep "Nexus Soft" | **Rename the label** — item 7 |
+| A5 | The colour gate permits no fixed colour; the logo needs twelve. | One exact exception (recommended) · the logo follows the theme. Put again with the consequence: keep the approved colours · follow the theme · fixed by default, themed on request | First "the logo follows the theme"; on the second asking **"Fixed by default, themed on request"** — item 8, `F4.399` |
