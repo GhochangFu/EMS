@@ -300,6 +300,85 @@ function readValue(view: DataView, type: Exclude<ModbusValueType, "bool">): numb
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 const safe = (raw: bigint): number => (raw > MAX_SAFE || raw < -MAX_SAFE ? Number.NaN : Number(raw));
 
+/** A value format with the register's scale and offset (decision 7; both default to the identity). */
+export interface ModbusEncodeFormat extends ModbusValueFormat {
+  readonly scale?: number;
+  readonly offset?: number;
+}
+
+/** Integer bounds per integer type; the 64-bit types stop at ±`Number.MAX_SAFE_INTEGER`, as the decoder does. */
+const INTEGER_BOUNDS: Readonly<Partial<Record<ModbusValueType, readonly [number, number]>>> = {
+  int16: [-32_768, 32_767],
+  uint16: [0, 65_535],
+  int32: [-2_147_483_648, 2_147_483_647],
+  uint32: [0, 4_294_967_295],
+  int64: [-Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+  uint64: [0, Number.MAX_SAFE_INTEGER],
+};
+
+/**
+ * The words that `decodeRegisterValue` reads back as `value` — its inverse, for
+ * the simulator (plan PR 8). The engineering value is first turned back into
+ * the raw (`(value - offset) / scale`); an integer type rounds it to the
+ * nearest integer. `bool` writes 1 for any non-zero value. A raw the type
+ * cannot hold — outside the integer range, past ±`Number.MAX_SAFE_INTEGER` for
+ * the 64-bit types, a float32 that overflows — a non-finite value and a scale
+ * of 0 all throw `RangeError`: the encoder never writes words the decoder
+ * would report out of range.
+ */
+export function encodeRegisterValue(value: number, format: ModbusEncodeFormat): number[] {
+  const scale = format.scale ?? 1;
+  const offset = format.offset ?? 0;
+  if (scale === 0 || !Number.isFinite(scale) || !Number.isFinite(offset)) {
+    throw new RangeError("a scale of 0 or a non-finite scale or offset has no inverse");
+  }
+  if (!Number.isFinite(value)) throw new RangeError("a non-finite value cannot be encoded");
+  if (format.type === "bool") return [value === 0 ? 0 : 1];
+  const count = MODBUS_TYPE_WORDS[format.type];
+  const exact = (value - offset) / scale;
+  const bounds = INTEGER_BOUNDS[format.type];
+  const raw = bounds === undefined ? exact : Math.round(exact);
+  if (!Number.isFinite(raw)) throw new RangeError("the raw value is not finite");
+  if (bounds !== undefined && (raw < bounds[0] || raw > bounds[1])) {
+    throw new RangeError(`the raw value ${raw} does not fit ${format.type}`);
+  }
+  const bytes = new Uint8Array(count * 2);
+  const view = new DataView(bytes.buffer);
+  writeValue(view, format.type, raw);
+  const words: number[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const first = bytes[i * 2] as number;
+    const second = bytes[i * 2 + 1] as number;
+    words.push(format.byteSwap ? (second << 8) | first : (first << 8) | second);
+  }
+  if (format.wordOrder === "little") words.reverse();
+  return words;
+}
+
+/** Writes a big-endian value; the caller has range-checked every integer type. */
+function writeValue(view: DataView, type: Exclude<ModbusValueType, "bool">, raw: number): void {
+  switch (type) {
+    case "int16":
+      return view.setInt16(0, raw);
+    case "uint16":
+      return view.setUint16(0, raw);
+    case "int32":
+      return view.setInt32(0, raw);
+    case "uint32":
+      return view.setUint32(0, raw);
+    case "int64":
+      return view.setBigInt64(0, BigInt(raw));
+    case "uint64":
+      return view.setBigUint64(0, BigInt(raw));
+    case "float32":
+      view.setFloat32(0, raw);
+      if (!Number.isFinite(view.getFloat32(0))) throw new RangeError("the value overflows float32");
+      return;
+    case "float64":
+      return view.setFloat64(0, raw);
+  }
+}
+
 // ---- The stream ------------------------------------------------------------
 
 export interface MbapFrameAssembler {
