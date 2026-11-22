@@ -57,11 +57,17 @@ export function buildModbusConnectionConfig(
   if (!registers.success) {
     throw new StoredProfileRegistersInvalidError();
   }
-  const device = modbusDeviceSchema.parse({
+  // `safeParse`, never `parse`: a ZodError escaping here would reach the global filter as a 400
+  // for the server's own stored row (`tests/f4.108-service-parses-are-guarded.test.ts`).
+  const device = modbusDeviceSchema.safeParse({
     unitId: connection.unitId,
     profile: { code: profile.code, version: profile.version },
     registers: registers.data satisfies ModbusRegister[],
   });
+  if (!device.success) {
+    // The unit id was parsed by the body schema, so only the stored profile can be at fault.
+    throw new StoredProfileRegistersInvalidError();
+  }
   const slice: Record<string, unknown> = {
     host: connection.host,
     port: connection.port ?? MODBUS_DEFAULT_PORT,
@@ -72,11 +78,14 @@ export function buildModbusConnectionConfig(
   if (connection.interRequestDelayMs !== undefined) {
     slice.interRequestDelayMs = connection.interRequestDelayMs;
   }
-  // The adapter's strict connection schema must accept everything but the host-owned interval.
-  modbusConfigSchema.parse(slice);
+  // The adapter's strict connection schema must accept everything but the host-owned interval. The
+  // body schema embeds the same fields, so a refusal here is a defect (500), never a caller's 400.
+  if (!modbusConfigSchema.safeParse(slice).success) {
+    throw new Error("the bind's connection slice does not pass modbusConfigSchema");
+  }
   return {
     ...slice,
     ...(connection.pollIntervalMs === null ? {} : { pollIntervalMs: connection.pollIntervalMs }),
-    device,
+    device: device.data,
   };
 }
