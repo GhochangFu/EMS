@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type pg from "pg";
 
+import { inputKey } from "../calc/calc-batch";
 import { BACKFILL_MAX_SAMPLE_ROWS } from "./calc-backfill-plan";
 import { CalcBackfillReads } from "./calc-backfill-reads";
 
@@ -46,17 +47,23 @@ const FROZEN_STATEMENT = `SELECT DISTINCT p.asset_id, p.point_key, s.value, s.ti
 
 async function frozenSamples(
   client: pg.PoolClient,
-  pair: { assetId: string; pointKey: string },
+  pairs: readonly { assetId: string; pointKey: string }[],
   instants: readonly number[],
-): Promise<[number, number][]> {
-  const { rows } = await client.query<{ value: number; time: Date }>(FROZEN_STATEMENT, [
-    [pair.assetId],
-    [pair.pointKey],
+): Promise<Map<string, [number, number][]>> {
+  const { rows } = await client.query<{ asset_id: string; value: number; time: Date }>(FROZEN_STATEMENT, [
+    pairs.map((p) => p.assetId),
+    pairs.map((p) => p.pointKey),
     instants.map((t) => new Date(t)),
     MAX_AGE_SECONDS,
     BACKFILL_MAX_SAMPLE_ROWS + 1,
   ]);
-  return rows.map((row) => [new Date(row.time).getTime(), row.value]);
+  const out = new Map<string, [number, number][]>();
+  for (const row of rows) {
+    const list = out.get(row.asset_id) ?? [];
+    list.push([new Date(row.time).getTime(), row.value]);
+    out.set(row.asset_id, list);
+  }
+  return out;
 }
 
 export async function assertReadSamplesEqualTheFrozenStatement(client: pg.PoolClient): Promise<void> {
@@ -64,33 +71,49 @@ export async function assertReadSamplesEqualTheFrozenStatement(client: pg.PoolCl
   // A whole second, 40 days back: a stored time and an instant can coincide exactly.
   const t0 = Math.floor(new Date(now.rows[0]?.now as Date).getTime() / 1000) * 1000 - 40 * 86_400_000;
   const assetId = randomUUID();
+  // Q's only sample sits exactly `maxInputAge` before the first instant: the per-row bound
+  // `v.time >= i.t - maxAge` is inclusive, so it is served at t0, and it is the envelope's floor.
+  const boundaryAssetId = randomUUID();
   const at = (offsetSeconds: number) => new Date(t0 + offsetSeconds * 1000).toISOString();
-  const rows: [string, string, number][] = [
-    [at(-1000), "0 microseconds", 1],
-    [at(-800), "0 microseconds", 2],
-    [at(100), "0 microseconds", 3],
-    [at(86_400), "500 microseconds", 4],
+  const rows: [string, string, string, number][] = [
+    [assetId, at(-1000), "0 microseconds", 1],
+    [assetId, at(-800), "0 microseconds", 2],
+    [assetId, at(100), "0 microseconds", 3],
+    [assetId, at(86_400), "500 microseconds", 4],
+    [boundaryAssetId, at(-MAX_AGE_SECONDS), "0 microseconds", 5],
   ];
-  for (const [time, extra, value] of rows) {
+  for (const [asset, time, extra, value] of rows) {
     await client.query(
       `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
        VALUES ($1::timestamptz + $2::interval, $3, $4, $5, 'kW')`,
-      [time, extra, assetId, POINT_KEY, value],
+      [time, extra, asset, POINT_KEY, value],
     );
   }
   const instants = [t0, t0 + 300_000, t0 + 86_400_000];
+  const pairs = [
+    { assetId, pointKey: POINT_KEY },
+    { assetId: boundaryAssetId, pointKey: POINT_KEY },
+  ];
   const reads = new CalcBackfillReads(client as unknown as pg.Pool);
-  const got = await reads.readSamples([{ assetId, pointKey: POINT_KEY }], instants, MAX_AGE_SECONDS);
-  const actual = [...got.values()].flat().map((s): [number, number] => [s.timeMs, s.value]);
-  const frozen = await frozenSamples(client, { assetId, pointKey: POINT_KEY }, instants);
-  assert(
-    JSON.stringify(actual) === JSON.stringify(frozen),
-    `readSamples differs from the frozen statement: ${JSON.stringify(actual)} against ${JSON.stringify(frozen)}`,
-  );
+  const got = await reads.readSamples(pairs, instants, MAX_AGE_SECONDS);
+  const frozen = await frozenSamples(client, pairs, instants);
+  for (const pair of pairs) {
+    const actual = (got.get(inputKey(pair.assetId, pair.pointKey)) ?? []).map((s): [number, number] => [s.timeMs, s.value]);
+    const expected = frozen.get(pair.assetId) ?? [];
+    assert(
+      JSON.stringify(actual) === JSON.stringify(expected),
+      `readSamples differs from the frozen statement: ${JSON.stringify(actual)} against ${JSON.stringify(expected)}`,
+    );
+  }
   // Controls: what the plan says each edge serves.
-  const values = actual.map(([, value]) => value);
-  assert(values.includes(2), `the sample 800 s before the first instant is served at it, got ${JSON.stringify(actual)}`);
-  assert(values.includes(4), `the sub-millisecond sample is served at the last instant, got ${JSON.stringify(actual)}`);
-  assert(!values.includes(1), `the sample 1000 s before the first instant is never served, got ${JSON.stringify(actual)}`);
-  assert(values.includes(3), `the sample 100 s after the first instant is served, got ${JSON.stringify(actual)}`);
+  const values = (got.get(inputKey(assetId, POINT_KEY)) ?? []).map((s) => s.value);
+  assert(values.includes(2), `the sample 800 s before the first instant is served at it, got ${JSON.stringify(values)}`);
+  assert(values.includes(4), `the sub-millisecond sample is served at the last instant, got ${JSON.stringify(values)}`);
+  assert(!values.includes(1), `the sample 1000 s before the first instant is never served, got ${JSON.stringify(values)}`);
+  assert(values.includes(3), `the sample 100 s after the first instant is served, got ${JSON.stringify(values)}`);
+  const boundary = (got.get(inputKey(boundaryAssetId, POINT_KEY)) ?? []).map((s) => s.value);
+  assert(
+    boundary.length > 0 && boundary[0] === 5,
+    `the sample exactly maxInputAge before the first instant is served (>= is inclusive), got ${JSON.stringify(boundary)}`,
+  );
 }

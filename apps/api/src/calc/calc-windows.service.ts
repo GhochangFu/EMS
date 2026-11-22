@@ -129,8 +129,9 @@ type Planned = {
  * compared to `time` directly is planned away. Every row's range lies inside
  * the envelope, so the answers are identical. The line is deliberately
  * uncast: a `::timestamptz` would push each `FROM telemetry.point_values`
- * past the 200 characters part (e) allows before its `LIMIT 1`. `tests/adr-0070-calc-v3-invariants.test.ts`
- * part (e) scans this file for exactly two `FROM telemetry.point_values`
+ * past the 200 characters part (e) allows before its `LIMIT 1`.
+ * `tests/adr-0070-calc-v3-invariants.test.ts` part (e) scans this file for
+ * exactly two `FROM telemetry.point_values`
  * each followed by a `LIMIT 1`, and every other `FROM telemetry.` here names
  * one of the four views.
  *
@@ -426,6 +427,13 @@ export class CalcWindowsService {
     if (targets.length === 0) {
       return out;
     }
+    // The envelope's ends, by a loop: `Math.min(...xs)` throws a RangeError past the argument limit.
+    let lowest = Number.POSITIVE_INFINITY;
+    let highest = Number.NEGATIVE_INFINITY;
+    for (const t of targets) {
+      lowest = Math.min(lowest, t.startMs);
+      highest = Math.max(highest, t.request.endMs);
+    }
     const pointKeyOf = (item: Planned): string => (item.request.node.kind === "window" ? item.request.node.ref.pointKey : "");
     const { rows } = await this.pool.query<{
       idx: number;
@@ -461,8 +469,8 @@ export class CalcWindowsService {
         targets.map(pointKeyOf),
         targets.map((t) => new Date(t.startMs).toISOString()),
         targets.map((t) => new Date(t.request.endMs).toISOString()),
-        new Date(Math.min(...targets.map((t) => t.startMs))).toISOString(),
-        new Date(Math.max(...targets.map((t) => t.request.endMs))).toISOString(),
+        new Date(lowest).toISOString(),
+        new Date(highest).toISOString(),
       ],
     );
     for (const row of rows) {

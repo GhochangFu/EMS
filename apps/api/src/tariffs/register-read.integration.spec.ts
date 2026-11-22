@@ -96,14 +96,19 @@ async function seed(client: pg.PoolClient): Promise<{ nowMs: number; x: string; 
   return { nowMs, x, y };
 }
 
-/** Four requests in one call: a hit on the boundary sample, a recent range, an empty range, an empty asset. */
+/**
+ * Four requests in one call: a hit on the boundary sample, a recent range, an empty range, an empty
+ * asset. The earliest `from` belongs to request 1 alone, so an envelope taken from the last request
+ * (`[−12 d, −5 d)`) loses request 1's samples and request 2's newest, and one taken from the first
+ * (`to` −35 d) loses request 2's.
+ */
 export async function assertRegisterProbesEqualTheFrozenStatement(client: pg.PoolClient): Promise<void> {
   const { nowMs, x, y } = await seed(client);
   const requests: RegisterRequest[] = [
     { assetId: x, pointKey: POINT_KEY, from: new Date(nowMs - 45 * DAY_MS), to: new Date(nowMs - 35 * DAY_MS) },
     { assetId: x, pointKey: POINT_KEY, from: new Date(nowMs - 12 * DAY_MS), to: new Date(nowMs) },
     { assetId: x, pointKey: POINT_KEY, from: new Date(nowMs - 30 * DAY_MS), to: new Date(nowMs - 20 * DAY_MS) },
-    { assetId: y, pointKey: POINT_KEY, from: new Date(nowMs - 45 * DAY_MS), to: new Date(nowMs) },
+    { assetId: y, pointKey: POINT_KEY, from: new Date(nowMs - 12 * DAY_MS), to: new Date(nowMs - 5 * DAY_MS) },
   ];
   const actual = await readRegisterProbes(client as unknown as pg.Pool, requests);
   const frozen = await frozenProbes(client, requests);

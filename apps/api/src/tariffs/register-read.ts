@@ -1,6 +1,19 @@
 import type { RegisterDelta } from "@bms/shared";
 import type { Pool } from "pg";
 
+/** One raw register sample: its time and value. */
+export interface Sample {
+  timeMs: number;
+  value: number;
+}
+
+export interface RegisterRequest {
+  assetId: string;
+  pointKey: "kwh_total" | "kvah_total";
+  from: Date;
+  to: Date;
+}
+
 /**
  * `F4.365` (ADR 0134 decision 4, plan D9) — the first and last raw register
  * sample of a point inside `[from, to)`, for any number of requests in one
@@ -17,23 +30,18 @@ import type { Pool } from "pg";
  * excluded by its own: the answers are identical, and only the chunks planned
  * change. Left uncast on purpose, as in `CalcWindowsService.readDeltas`.
  */
-export interface Sample {
-  timeMs: number;
-  value: number;
-}
-
-export interface RegisterRequest {
-  assetId: string;
-  pointKey: "kwh_total" | "kvah_total";
-  from: Date;
-  to: Date;
-}
-
 export async function readRegisterProbes(
   pool: Pick<Pool, "query">,
   requests: readonly RegisterRequest[],
 ): Promise<{ first: Sample | null; last: Sample | null }[]> {
   if (requests.length === 0) return [];
+  // The envelope's ends, by a loop: `Math.min(...xs)` throws a RangeError past the argument limit.
+  let lowest = Number.POSITIVE_INFINITY;
+  let highest = Number.NEGATIVE_INFINITY;
+  for (const r of requests) {
+    lowest = Math.min(lowest, r.from.getTime());
+    highest = Math.max(highest, r.to.getTime());
+  }
   const { rows } = await pool.query<{
     idx: number;
     first_time: Date | null;
@@ -68,8 +76,8 @@ export async function readRegisterProbes(
       requests.map((r) => r.pointKey),
       requests.map((r) => r.from.toISOString()),
       requests.map((r) => r.to.toISOString()),
-      new Date(Math.min(...requests.map((r) => r.from.getTime()))).toISOString(),
-      new Date(Math.max(...requests.map((r) => r.to.getTime()))).toISOString(),
+      new Date(lowest).toISOString(),
+      new Date(highest).toISOString(),
     ],
   );
   const out: { first: Sample | null; last: Sample | null }[] = requests.map(() => ({ first: null, last: null }));
