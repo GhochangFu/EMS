@@ -89,7 +89,7 @@ async function bootstrap(): Promise<void> {
     const { document } = buildOpenApiDocument(app);
     SwaggerModule.setup("docs", app, document, {
       useGlobalPrefix: true,
-      customSiteTitle: "IONSiTE NEXUS EMS API",
+      customSiteTitle: "Verve EMS API",
     });
     Logger.log(
       "OpenAPI docs at /api/v1/docs (UNAUTHENTICATED — set API_DOCS_ENABLED=false to disable)",

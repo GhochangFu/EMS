@@ -11,6 +11,7 @@ import * as systemStatusApi from "../api/system-status";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { useThemeStore } from "../stores/theme-store";
+import { PRODUCT_TAGLINE } from "../lib/brand";
 import {
   AppShell,
   NAV_ICONS,
@@ -502,41 +503,43 @@ export function drawsTheIdleThemeButtonAtEightyFive(): void {
 }
 
 /**
- * `F3.33` U3 (ADR 0083) — the header carries the `IONSiTE NEXUS` text wordmark and the client's
- * descriptor; the footer reads `IONSiTE NEXUS · telemetry-driven`; no `TRINETRA` is on screen.
+ * `F4.398` U3 (ADR 0142) — the header carries the Verve logo and the tagline; the footer reads
+ * `Verve · telemetry-driven`; neither `TRINETRA` nor `IONSiTE NEXUS` is on screen.
  */
-const DESCRIPTOR = "Integrated Building, Energy, Water & Utility Management Platform";
 
 /** B1 — the header holds the wordmark as a named image. */
 export function showsTheWordmarkInTheHeader(): void {
   renderShell(GLOBAL, "/", "operator");
-  expect(within(header()).getByRole("img", { name: "IONSiTE NEXUS" })).toBeTruthy();
+  expect(within(header()).getByRole("img", { name: "Verve" })).toBeTruthy();
 }
 
 /** B2 — the header has no `<img>` element; B1's lookup is the positive control. */
 export function drawsNoImgElementInTheHeader(): void {
   renderShell(GLOBAL, "/", "operator");
-  expect(within(header()).getByRole("img", { name: "IONSiTE NEXUS" })).toBeTruthy();
+  expect(within(header()).getByRole("img", { name: "Verve" })).toBeTruthy();
   expect(header().querySelector("img")).toBeNull();
 }
 
-/** B3 — the header reads the descriptor. */
-export function showsTheDescriptorInTheHeader(): void {
+/** B3 — the header reads the tagline, once, and not the old descriptor. */
+export function showsTheTaglineInTheHeader(): void {
   renderShell(GLOBAL, "/", "operator");
-  expect(within(header()).getByText(DESCRIPTOR)).toBeTruthy();
+  expect(PRODUCT_TAGLINE).toBe("The pulse of every site");
+  expect(within(header()).getByText(PRODUCT_TAGLINE)).toBeTruthy();
+  expect(screen.queryByText(/Integrated Building/)).toBeNull();
 }
 
-/** B4 — the footer reads `IONSiTE NEXUS · telemetry-driven`. */
+/** B4 — the footer reads `Verve · telemetry-driven`. */
 export function showsTheNameInTheFooter(): void {
   renderShell(GLOBAL, "/", "operator");
-  expect(within(screen.getByRole("contentinfo")).getByText("IONSiTE NEXUS · telemetry-driven")).toBeTruthy();
+  expect(within(screen.getByRole("contentinfo")).getByText("Verve · telemetry-driven")).toBeTruthy();
 }
 
-/** B5 — no text node reads TRINETRA; B1's lookup is the positive control. */
-export function readsNoTrinetraInTheShell(): void {
+/** B5 — no text node reads TRINETRA or the IONSiTE NEXUS name; B1's lookup is the positive control. */
+export function readsNoOldNameInTheShell(): void {
   renderShell(GLOBAL, "/", "operator");
-  expect(within(header()).getByRole("img", { name: "IONSiTE NEXUS" })).toBeTruthy();
+  expect(within(header()).getByRole("img", { name: "Verve" })).toBeTruthy();
   expect(screen.queryByText(/trinetra/i)).toBeNull();
+  expect(screen.queryByText(/\bion\s?site|nexus/i)).toBeNull();
 }
 
 /** `F4.318` — set the jsdom viewport width (jsdom's default is 1024 px). Undo it with {@link resetViewport}. */

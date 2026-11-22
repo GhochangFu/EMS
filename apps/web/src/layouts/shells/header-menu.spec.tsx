@@ -9,6 +9,7 @@ import * as assetsApi from "../../api/assets";
 import * as copilotApi from "../../api/copilot";
 import * as systemStatusApi from "../../api/system-status";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
+import { PRODUCT_TAGLINE } from "../../lib/brand";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { useThemeStore } from "../../stores/theme-store";
 import { AppShell } from "../app-shell";
@@ -124,7 +125,7 @@ export function aDesktopKeepsTheSidebarRow(): void {
   expect(within(header()).getByRole("button", { name: "Logout" })).toBeInTheDocument();
   expect(within(header()).getByText("Admin User")).toBeInTheDocument();
   // The subtitle shows from `xl` only.
-  expect(within(header()).getByText(/Integrated Building/)).toHaveClass("hidden", "xl:inline");
+  expect(within(header()).getByText(PRODUCT_TAGLINE)).toHaveClass("hidden", "xl:inline");
 }
 
 /** H4 — the rail below `xl` folds the user and controls, but keeps the status strip in the row. */
