@@ -13,12 +13,13 @@ import {
 import type { BmsTx } from "../../database/tenant-context";
 import { buildModbusConnectionConfig, StoredProfileRegistersInvalidError } from "../rtus/rtu-modbus-config";
 import {
-  assertModbusEndpointServesOneOrganization,
+  assertModbusEndpointsServeOneOrganization,
   lockModbusEndpoints,
   MODBUS_DEFAULT_PORT,
   type ModbusEndpoint,
 } from "../rtus/rtu-modbus-endpoint";
 import { RTU_MODBUS_PROFILE_NOT_FOUND_MESSAGE } from "../rtus/rtus-modbus.service";
+import { configIssueMessage } from "./onboarding-config-issues";
 
 /**
  * `F1.2` plan PR 11 (ADR 0141 Amendment 1 (f), decision 23) — what the onboarding commit does for
@@ -72,7 +73,7 @@ export function draftModbusRtus(draft: OnboardingDraft): DraftModbusRtu[] {
         message: "Draft is not ready to commit",
         errors: parsed.error.issues.map((issue) => ({
           path: [`rtus.${index}.config`, ...issue.path].join("."),
-          message: issue.message,
+          message: configIssueMessage(issue),
         })),
       });
     }
@@ -118,15 +119,8 @@ export async function assertDraftModbusEndpoints(
   }
   const endpoints = modbusRtus.map((rtu) => rtu.endpoint);
   await lockModbusEndpoints(tx, endpoints);
-  const seen = new Set<string>();
-  for (const endpoint of endpoints) {
-    const key = `${endpoint.host}:${endpoint.port}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    await assertModbusEndpointServesOneOrganization(fleetDb, null, organizationId, endpoint);
-  }
+  // PR 11 review L7: one read of the other organizations' endpoints, every draft endpoint tested against it.
+  await assertModbusEndpointsServeOneOrganization(fleetDb, null, organizationId, endpoints);
 }
 
 /**

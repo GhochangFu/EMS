@@ -1,5 +1,6 @@
 import { MODBUS_DRAFT_PROFILE_NEEDS_UNIT_ID_MESSAGE, type OnboardingDraft } from "@bms/shared";
 
+import { UNRECOGNIZED_CONFIG_KEY_MESSAGE } from "./onboarding-config-issues";
 import { EMPTY_PLACEMENT } from "./onboarding-location-parent";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { ONBOARDING_PROFILE_MODBUS_ONLY_MESSAGE, OnboardingValidateService } from "./onboarding-validate.service";
@@ -79,4 +80,14 @@ export function assertNoProfileMessageEchoesTheValue(): void {
       assert(!error.message.includes(SENTINEL), `no echo of the value, got ${error.message}`);
     }
   }
+}
+
+/** VP5 — PR 11 security review L2: an unknown config key is fixed text, never the key's name. */
+export function assertAnUnknownConfigKeyIsFixedText(): void {
+  const errors = errorsOf(modbusRtu({ host: "meter", s3ntinelKey: 1 }));
+  assert(
+    errors.some((e) => e.path === "rtus.0.config" && e.message === UNRECOGNIZED_CONFIG_KEY_MESSAGE),
+    `the fixed sentence at rtus.0.config, got ${JSON.stringify(errors)}`,
+  );
+  assert(!JSON.stringify(errors).includes("s3ntinel"), `no key name, got ${JSON.stringify(errors)}`);
 }

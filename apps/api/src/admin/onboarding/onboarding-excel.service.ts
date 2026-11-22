@@ -49,8 +49,8 @@ import type { OnboardingDraftInput } from "./onboarding.schema";
  * without the credential they supplied. Refusing is the only answer that does
  * not invent a result.
  *
- * **The numbers.** The template's widest section is `RTU_HEADERS` at nine
- * columns, so {@link MAX_HEADER_COLUMNS} = 64 is roughly 7× the sheet this
+ * **The numbers.** The template's widest section is `RTU_HEADERS` at eleven
+ * columns (F1.2 PR 11), so {@link MAX_HEADER_COLUMNS} = 64 is roughly 6× the sheet this
  * system itself produces, and the worst case a workbook can still buy is
  * 20,101 × 64 = **1,286,464** cells. Not 20,102 × 64: the row test below is
  * `>=` and it runs *before* `sheet_to_json`, so the tallest range this parser
@@ -289,6 +289,9 @@ export class OnboardingExcelService {
         "pheadmin",
         "",
       ],
+      // F1.2 PR 11 review L5: a Modbus TCP example. `profile_code` is left empty — a code is the
+      // organization's own (Device profiles page); with none the RTU is committed with ingest off.
+      [`${prefix}-RTU-3`, `${locationExample} RTU 3`, "modbus_tcp", "192.168.1.20", "502", "", "", "", "", "1", ""],
       [],
       ["ASSETS"],
       [...ASSET_HEADERS],
@@ -768,6 +771,12 @@ export class OnboardingExcelService {
       if (unitIdCell !== "" && !UNIT_ID_CELL.test(unitIdCell)) {
         throw new BadRequestException(
           `RTU row ${rtuIndex + 1} has a unit_id that is not a whole number; use 0 to 247, or 255, and upload the workbook again`,
+        );
+      }
+      // PR 11 review L4: a unit id on another protocol's row is refused, as a profile code is.
+      if (unitIdCell !== "" && protocol !== "modbus_tcp") {
+        throw new BadRequestException(
+          `RTU row ${rtuIndex + 1} names a unit_id, which applies to a Modbus TCP RTU only; clear it or set the protocol to modbus_tcp`,
         );
       }
       const profileCode = get(values, "profile_code").trim();

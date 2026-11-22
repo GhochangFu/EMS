@@ -4,6 +4,7 @@ import { expect } from "vitest";
 import type { OnboardingDraft } from "@bms/shared";
 
 import { committedIngestEnabled, draftModbusRtus } from "./onboarding-commit-modbus";
+import { UNRECOGNIZED_CONFIG_KEY_MESSAGE } from "./onboarding-config-issues";
 
 /**
  * `F1.2` plan PR 11 (ADR 0141 Amendment 1 (f), decision 23) — the pure half of the onboarding
@@ -53,6 +54,19 @@ export function assertAnUnparsableModbusConfigIsTheValidation400(): void {
   const body = (caught as BadRequestException).getResponse() as { errors: { path: string; message: string }[] };
   expect(body.errors.map((error) => error.path)).toContain("rtus.0.config.profileId");
   expect(JSON.stringify(body)).not.toContain("s3ntinel");
+}
+
+/** CM2b — PR 11 security review L2: an unknown key in a Modbus config is fixed text, never its name. */
+export function assertAnUnknownKeyIsFixedTextAtCommit(): void {
+  let caught: unknown;
+  try {
+    draftModbusRtus({ rtus: [rtu("modbus_tcp", { host: "meter", s3ntinelKey: 1 })] });
+  } catch (err) {
+    caught = err;
+  }
+  expect(caught).toBeInstanceOf(BadRequestException);
+  const body = (caught as BadRequestException).getResponse() as { errors: { path: string; message: string }[] };
+  expect(body.errors).toEqual([{ path: "rtus.0.config", message: UNRECOGNIZED_CONFIG_KEY_MESSAGE }]);
 }
 
 /** CM3 — ingest at commit: MQTT keeps the switch, Modbus keeps it only with a profile, the rest are off. */

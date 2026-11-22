@@ -19,6 +19,8 @@ import {
   assertAnUnboundRtuIsCommittedWithIngestOff,
   assertAProfileIsCopiedIntoTheDeviceSlice,
   assertTheAuditNamesTheProfileAndNoRegister,
+  assertTheProfileReadsNameTheOrganization,
+  assertTwoDraftRtusMayShareAnEndpoint,
   type OnboardingModbusFixtures,
 } from "./onboarding-commit.modbus-profile.integration.spec";
 import { OnboardingCommitService } from "./onboarding-commit.service";
@@ -106,6 +108,7 @@ describe.skipIf(!connectionString || !superuserConnectionString)(
           { listParentCandidates: async () => [] } as never,
         ),
         tenantDb,
+        fleetDb,
         observer,
         superPool,
         admin: jwtFor("admin@bms.local", "admin"),
@@ -151,6 +154,12 @@ describe.skipIf(!connectionString || !superuserConnectionString)(
     });
     it("OM7 resolves a code to the organization's newest version only", async () => {
       await assertACodeResolvesToTheOrganizationsNewestVersion(ctx);
+    });
+    it("OM8 keeps the organization predicate in both profile reads (review L3)", async () => {
+      await assertTheProfileReadsNameTheOrganization(ctx);
+    });
+    it("OM9 commits two draft RTUs on one endpoint (review L8)", async () => {
+      await assertTwoDraftRtusMayShareAnEndpoint(ctx);
     });
     it("OM6 audits the profile by code and version, never a register", async () => {
       await assertTheAuditNamesTheProfileAndNoRegister(ctx);

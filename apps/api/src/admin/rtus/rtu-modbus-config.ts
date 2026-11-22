@@ -1,6 +1,9 @@
 import { modbusConfigSchema, modbusDeviceSchema, modbusRegistersSchema } from "@bms/shared";
 import type { ModbusRegister } from "@bms/shared";
 
+// The Modbus TCP port (ADR 0141 decision 5), written out so the stored row says what is dialled.
+import { MODBUS_DEFAULT_PORT } from "./rtu-modbus-endpoint";
+
 /**
  * Thrown when a profile row's stored `registers` no longer parse. Every write path validates them
  * (ADR 0141 decision 13), so this is a stored-data defect, not a caller error: the service answers
@@ -30,8 +33,6 @@ export type ModbusBindProfile = {
   readonly registers: unknown;
 };
 
-/** The Modbus TCP port (ADR 0141 decision 5), written out so the stored row says what is dialled. */
-const MODBUS_DEFAULT_PORT = 502;
 
 /**
  * `F1.2` (ADR 0141 decisions 5, 6, 10 and 15, plan T7.2) — the `rtu_connection_configs.config` a

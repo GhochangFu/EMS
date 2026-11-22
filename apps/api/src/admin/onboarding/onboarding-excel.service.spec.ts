@@ -80,7 +80,8 @@ export function assertTemplateRoundTripsUnchanged(): void {
   // the generated workbook is never refused by the type check.
   assert(parsed.location.type === "pump_station", `location.type, got ${JSON.stringify(parsed.location.type)}`);
 
-  assert(parsed.rtus.length === 2, `the template carries two RTUs, got ${parsed.rtus.length}`);
+  // F1.2 PR 11 review L5: two MQTT RTUs and a Modbus TCP example.
+  assert(parsed.rtus.length === 3, `the template carries three RTUs, got ${parsed.rtus.length}`);
   // `F4.103`'s headroom claim, gated instead of asserted in prose: the two count
   // caps are set *above* the sheet this system itself produces, so lowering
   // either below the template turns the generated workbook into a refusal. The
@@ -256,20 +257,20 @@ export function templateRows(): (string | number)[][] {
   });
 }
 
-/** Rows 0–10 of the template: everything down to and including the `ASSETS` header row. */
-export const ROWS_ABOVE_THE_FIRST_ASSET = 11;
+/** Rows 0–11 of the template: everything down to and including the `ASSETS` header row (F1.2 PR 11: three RTU rows). */
+export const ROWS_ABOVE_THE_FIRST_ASSET = 12;
 
 /** Rows 0–5 of the template: everything down to and including the `RTUS` header row. */
 export const ROWS_ABOVE_THE_FIRST_RTU = 6;
 
 /**
- * Row 8 of the template: the blank row that closes the `RTUS` section. Rows 8
+ * Row 9 of the template (F1.2 PR 11: three RTU rows): the blank row that closes the `RTUS` section. Rows 9
  * to {@link ROWS_ABOVE_THE_FIRST_ASSET} are therefore the blank row, the
  * `ASSETS` marker and its header row — taken from the generated template rather
  * than restated, so a change to either marker cannot leave this file describing
  * a workbook the service no longer produces.
  */
-const ROWS_CLOSING_THE_RTU_SECTION = 8;
+const ROWS_CLOSING_THE_RTU_SECTION = 9;
 
 /** An ordinary workbook — no hand-set `!ref`, so SheetJS declares what the cells occupy. */
 export function buildWorkbookBuffer(rows: (string | number)[][]): Buffer {
@@ -565,7 +566,7 @@ export function assertOverCapSectionIsRefused(): void {
     LOCATION_TYPE_CODES,
   );
   assert(
-    template.rtus.length === 2 && template.assets.length === 3,
+    template.rtus.length === 3 && template.assets.length === 3,
     `the generated template survives both caps, got ${template.rtus.length} RTUs and ${template.assets.length} assets`,
   );
 }
@@ -984,7 +985,7 @@ export function assertUnknownRtuProtocolIsRefused(): void {
     LOCATION_TYPE_CODES,
   );
   assert(
-    template.rtus.every((rtu) => rtu.protocol === "mqtt"),
+    JSON.stringify(template.rtus.map((rtu) => rtu.protocol)) === JSON.stringify(["mqtt", "mqtt", "modbus_tcp"]),
     `the template's own protocol column survives the guard, got ${JSON.stringify(template.rtus.map((rtu) => rtu.protocol))}`,
   );
 }

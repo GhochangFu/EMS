@@ -454,3 +454,27 @@ export async function assertConcurrentBindsSerialise(ctx: RtuModbusFixtures): Pr
     expect(refused.reason).toBeInstanceOf(ConflictException);
   }
 }
+
+/**
+ * B12 — PR 11 security review L1 (Amendment 2 (a)): reactivating a cloud-served Modbus RTU onto an
+ * endpoint another organization's active cloud-served RTU now holds is the bind's 409, and the RTU
+ * stays inactive; once that RTU is deactivated, the reactivation goes through.
+ */
+export async function assertReactivationKeepsOneOrganizationPerEndpoint(ctx: RtuModbusFixtures): Promise<void> {
+  const pA = await profile(ctx, ctx.orgA, "b12a");
+  const pB = await profile(ctx, ctx.orgB, "b12b");
+  const a = await rtu(ctx, "A", "b12-a");
+  await ctx.svc.bind(ctx.adminA, a, { host: host(ctx, "b12"), pollIntervalMs: null, unitId: 1, profileId: pA.id });
+  await ctx.rtus.deactivate(ctx.adminA, a);
+  const b = await rtu(ctx, "B", "b12-b");
+  await ctx.svc.bind(ctx.adminB, b, { host: host(ctx, "B12"), pollIntervalMs: null, unitId: 2, profileId: pB.id });
+
+  const err = await rejection(ctx.rtus.reactivate(ctx.adminA, a));
+  expect(err).toBeInstanceOf(ConflictException);
+  expect((err as ConflictException).message).toBe(RTU_MODBUS_ENDPOINT_OTHER_ORGANIZATION_MESSAGE);
+  const { rows } = await ctx.observer.query<{ active: boolean }>("SELECT active FROM bms.rtus WHERE id = $1", [a]);
+  expect(rows[0]?.active).toBe(false);
+
+  await ctx.rtus.deactivate(ctx.adminB, b);
+  expect((await ctx.rtus.reactivate(ctx.adminA, a)).active).toBe(true);
+}

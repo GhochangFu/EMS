@@ -16,6 +16,7 @@ import {
 import { MQTT_PLAINTEXT_ALLOWLIST } from "../../security/mqtt-plaintext-hosts";
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { needsMqttSetup, rtuTopic, topicHasWildcard } from "./onboarding-chat-summaries";
+import { configIssueMessage } from "./onboarding-config-issues";
 import {
   PARENT_REQUIRED_MESSAGE,
   parentChoiceOpen,
@@ -343,7 +344,8 @@ export class OnboardingValidateService {
               // A root-level issue has an empty path; joining the segments leaves no trailing dot.
               const path = [`rtus.${i}.config`, ...issue.path].join(".");
               if (!reported.has(path)) {
-                errors.push({ path, message: issue.message });
+                // PR 11 security review L2: an unknown key is fixed text, never the key's name.
+                errors.push({ path, message: configIssueMessage(issue) });
                 reported.add(path);
               }
             }

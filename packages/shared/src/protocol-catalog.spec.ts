@@ -166,3 +166,20 @@ export function assertRequiredFieldsAreRequiredByTheDraftSchemaOnlyWhereItSaysSo
     expect(e.requiredFields, e.code).toEqual([]);
   }
 }
+
+/**
+ * C8 — `F1.2` PR 11 review L3: the model is never offered `profileId`. The Modbus draft schema
+ * accepts it (the guided chat and the workbook resolve a code to it), but the model has no way to
+ * resolve an id, so neither the field list nor the description it reads names it.
+ */
+export function assertTheModelIsNotOfferedAProfileId(): void {
+  const view = describeProtocol(protocolCatalogEntry("modbus_tcp"));
+  expect(JSON.stringify(view)).not.toContain("profileId");
+  // The schema still takes it: the wizard's draft and the commit read it.
+  const accepted = modbusDraftConfigSchema.safeParse({
+    host: "meter",
+    profileId: "6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b",
+    device: { unitId: 1 },
+  });
+  expect(accepted.success).toBe(true);
+}

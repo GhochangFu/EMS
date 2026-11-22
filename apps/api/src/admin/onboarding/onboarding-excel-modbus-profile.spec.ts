@@ -80,10 +80,23 @@ export function assertABadCellIsRefusedWithoutEcho(): void {
   }
 }
 
-/** XP4 — a profile code on a row of another protocol is refused: only a Modbus TCP RTU is bound. */
+/** XP4 — a profile code or a unit id on a row of another protocol is refused: only a Modbus TCP RTU is bound. */
 export function assertAProfileCodeOnAnotherProtocolIsRefused(): void {
   const message = refusalMessage(buildWorkbookBuffer(modbusRows("", "pm5110", "mqtt")), "profile_code on mqtt");
-  assert(message.includes("RTU row 2") && message.includes("Modbus TCP"), `got ${message}`);
+  assert(message.includes("RTU row 2") && message.includes("profile_code") && message.includes("Modbus TCP"), `got ${message}`);
+  // PR 11 review L4: a unit id on another protocol's row is refused the same way.
+  const unit = refusalMessage(buildWorkbookBuffer(modbusRows("7", "", "mqtt")), "unit_id on mqtt");
+  assert(unit.includes("RTU row 2") && unit.includes("unit_id") && unit.includes("Modbus TCP"), `got ${unit}`);
+}
+
+/** XP6 — PR 11 review L5: the template carries a Modbus TCP example row that parses with its unit id and no profile. */
+export function assertTheTemplateCarriesAModbusExample(): void {
+  const parsed = parse(templateRows());
+  const modbus = parsed.rtus.filter((rtu) => rtu.protocol === "modbus_tcp");
+  assert(modbus.length === 1, `one Modbus example, got ${modbus.length}`);
+  assert(JSON.stringify(modbus[0].config) === JSON.stringify({ host: "192.168.1.20", port: 502, device: { unitId: 1 } }), `got ${JSON.stringify(modbus[0].config)}`);
+  assert(modbusDraftConfigSchema.safeParse(modbus[0].config).success, "the example passes the Modbus draft schema");
+  assert(parsed.rtuProfileCodes.length === 0, "the example names no profile: a code is the organization's own");
 }
 
 /** XP5 — the upload writes the resolved id on the row; an unknown code is refused by row, never echoed. */

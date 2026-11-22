@@ -24,7 +24,7 @@ import { resolveTelemetrySource } from "../telemetry-source";
 import { connectionModbusOf } from "./rtu-connection-modbus";
 import { buildModbusConnectionConfig, StoredProfileRegistersInvalidError } from "./rtu-modbus-config";
 import {
-  assertModbusEndpointServesOneOrganization,
+  assertModbusEndpointsServeOneOrganization,
   lockModbusEndpoints,
   MODBUS_DEFAULT_PORT,
   RTU_MODBUS_ENDPOINT_OTHER_ORGANIZATION_MESSAGE,
@@ -152,7 +152,7 @@ export class RtusModbusService {
           // onboarding commit.
           await lockModbusEndpoints(tx, [{ host: body.host, port }]);
           if (rtu.edgeGatewayId === null) {
-            await assertModbusEndpointServesOneOrganization(this.fleetDb, id, organizationId, { host: body.host, port });
+            await assertModbusEndpointsServeOneOrganization(this.fleetDb, id, organizationId, [{ host: body.host, port }]);
           }
 
           let config: Record<string, unknown>;

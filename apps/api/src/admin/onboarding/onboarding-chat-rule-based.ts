@@ -51,7 +51,7 @@ import {
   topicHasWildcard,
 } from "./onboarding-chat-summaries";
 import { guidedWrite } from "./onboarding-guided-writes";
-import { INGEST_ON_REPLY, ingestOnTurn, PROFILE_TURN, profileTurn } from "./onboarding-chat-profile";
+import { INGEST_ON_REPLY, INGEST_ON_TURN, ingestOnTurn, PROFILE_TURN, profileTurn } from "./onboarding-chat-profile";
 import type { DeviceProfileLookup } from "./onboarding-device-profiles";
 import type { ValidateTemplateContext } from "./onboarding-template-refs";
 import type { CredentialCopyProposal, DiscoveryProposal, DiscoverySecretCopy } from "./onboarding-tool-outcome";
@@ -293,14 +293,15 @@ export async function handleRuleBasedTurn(
     return deps.finalizeTurn(`I did not change the draft. ${error} ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
   };
 
-  // F1.2 plan PR 11 (ADR 0141 decision 23): `profile: <code>` names a device profile on the last
-  // Modbus TCP RTU, and `ingest on` switches ingest on at commit for one that names a profile.
+  // F1.2 plan PR 11 (ADR 0141 decision 23): `profile: <code> [for <RTU>]` names a device profile on
+  // a Modbus TCP RTU, and `ingest on [for <RTU>]` switches ingest on at commit for one naming a profile.
   // First, so neither is read as a location name, a protocol or a step label.
   const profileMatch = message.trim().match(PROFILE_TURN);
-  if (profileMatch || intent === INGEST_ON_REPLY) {
+  const ingestMatch = message.trim().match(INGEST_ON_TURN);
+  if (profileMatch || ingestMatch) {
     const outcome = profileMatch
-      ? await profileTurn(profileMatch[1], draft, state, deps.tools, deps.deviceProfiles)
-      : await ingestOnTurn(draft, state, deps.tools);
+      ? await profileTurn(profileMatch[1], profileMatch[2], draft, state, deps.tools, deps.deviceProfiles)
+      : await ingestOnTurn(ingestMatch?.[1], draft, state, deps.tools);
     if (!outcome.ok) {
       return refused(outcome.error);
     }

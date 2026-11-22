@@ -9,6 +9,7 @@ import { RTU_MODBUS_PROFILE_NOT_FOUND_MESSAGE } from "../rtus/rtus-modbus.servic
 import type { BmsDb } from "@bms/db";
 
 import type { OnboardingCommitService } from "./onboarding-commit.service";
+import { modbusCommitConnection } from "./onboarding-commit-modbus";
 import { newestDeviceProfilesByCode } from "./onboarding-device-profiles";
 
 /**
@@ -24,6 +25,8 @@ export type OnboardingModbusFixtures = {
   commit: OnboardingCommitService;
   /** `bms_tenant`: the profile-code lookup the chat and the workbook use. */
   tenantDb: BmsDb;
+  /** `bms_fleet` (BYPASSRLS): runs the two profile reads with no tenant policy to lean on. */
+  fleetDb: BmsDb;
   /** `bms_fleet` (BYPASSRLS): reads rows back and seeds sessions. */
   observer: pg.Pool;
   /** The superuser: profile rows (append-only by privilege) and the other organization's RTU. */
@@ -246,4 +249,43 @@ export async function assertACodeResolvesToTheOrganizationsNewestVersion(ctx: On
   const foreign = await profile(ctx, ctx.orgB, "om7b", 1);
   const found = await newestDeviceProfilesByCode(ctx.tenantDb, ctx.orgA, [newest.code, foreign.code, "no-such-code", "not a code!"]);
   expect([...found.entries()]).toEqual([[newest.code, { id: newest.id, code: newest.code, version: 2 }]]);
+}
+
+/**
+ * OM8 — PR 11 security review L3: the organization predicate of both profile reads holds on its
+ * own. Run on `bms_fleet`, which bypasses row-level security, the commit's profile read and the
+ * code lookup still do not see another organization's profile — so removing the explicit
+ * predicate reddens this case, where under `bms_tenant` the policy alone would hide the row.
+ */
+export async function assertTheProfileReadsNameTheOrganization(ctx: OnboardingModbusFixtures): Promise<void> {
+  const foreign = await profile(ctx, ctx.orgB, "om8");
+  // The control: on this pool the row is visible to a read that does not filter by organization.
+  const { rows } = await ctx.observer.query("SELECT 1 FROM bms.device_profiles WHERE id = $1", [foreign.id]);
+  expect(rows.length).toBe(1);
+
+  expect((await newestDeviceProfilesByCode(ctx.fleetDb, ctx.orgA, [foreign.code])).size).toBe(0);
+  const rtu = {
+    index: 0,
+    code: "OM8",
+    config: { host: host(ctx, "om8"), profileId: foreign.id, device: { unitId: 1 } },
+    endpoint: { host: host(ctx, "om8"), port: 502 },
+  };
+  const err = await rejection(
+    ctx.fleetDb.transaction((tx) => modbusCommitConnection(tx, ctx.orgA, rtu, { error: () => undefined })),
+  );
+  expect(err).toBeInstanceOf(BadRequestException);
+}
+
+/** OM9 — PR 11 review L8: two Modbus RTUs of one draft on one endpoint are one organization's, and commit. */
+export async function assertTwoDraftRtusMayShareAnEndpoint(ctx: OnboardingModbusFixtures): Promise<void> {
+  const p = await profile(ctx, ctx.orgA, "om9");
+  const d = draft(ctx, "om9", { host: host(ctx, "om9"), profileId: p.id, device: { unitId: 1 } }, true);
+  const code = d.location!.code;
+  d.rtus = [
+    ...d.rtus!,
+    { code: `${code}-RTU2`, displayName: `${code} RTU 2`, protocol: "modbus_tcp", config: { host: host(ctx, "OM9"), port: 502, device: { unitId: 2 } } },
+  ];
+  const result = await commitDraft(ctx, d);
+  expect(result.rtuIds).toHaveLength(2);
+  expect((await storedRtu(ctx, result.rtuIds[1]))?.config).toEqual({ host: host(ctx, "om9"), port: 502, device: { unitId: 2 } });
 }

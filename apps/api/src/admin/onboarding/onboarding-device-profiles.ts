@@ -53,6 +53,18 @@ export async function newestDeviceProfilesByCode(
   return found;
 }
 
+/**
+ * The upload's one call (PR 11 review item 2): the workbook's profile codes resolved for the
+ * session's organization and written on their rows.
+ */
+export function resolveWorkbookProfiles(
+  tenantDb: BmsDb,
+  organizationId: string,
+  parsed: Parameters<typeof applyWorkbookProfiles>[0],
+): Promise<void> {
+  return applyWorkbookProfiles(parsed, (codes) => newestDeviceProfilesByCode(tenantDb, organizationId, codes));
+}
+
 /** The one-code lookup the guided chat is handed for its organization. */
 export function deviceProfileLookup(tenantDb: BmsDb, organizationId: string): DeviceProfileLookup {
   return async (code) => (await newestDeviceProfilesByCode(tenantDb, organizationId, [code])).get(code) ?? null;

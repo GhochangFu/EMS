@@ -276,7 +276,7 @@ export function assertOverlongCellsAreRefused(): void {
       `a ${where} cell of exactly ${max} characters parses whole, got ${read(parsed).length}`,
     );
     assert(
-      parsed.rtus.length === 2 && parsed.assets.length === 3,
+      parsed.rtus.length === 3 && parsed.assets.length === 3,
       `a cell at the bound must not disturb the rest of the sheet (${where}), got ${parsed.rtus.length} RTUs and ${parsed.assets.length} assets`,
     );
 
@@ -349,7 +349,7 @@ export function assertOverlongCellsAreRefused(): void {
     LOCATION_TYPE_CODES,
   );
   assert(
-    template.location.name === "Berhampur" && template.rtus.length === 2 && template.assets.length === 3,
+    template.location.name === "Berhampur" && template.rtus.length === 3 && template.assets.length === 3,
     `the generated template survives all thirteen bounds, got ${JSON.stringify(template.location.name)}`,
   );
 }

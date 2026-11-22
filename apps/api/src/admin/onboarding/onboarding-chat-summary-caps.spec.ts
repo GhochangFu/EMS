@@ -787,7 +787,7 @@ export function assertAssetsBranchStaysUnderItsCeiling(): void {
  * The other direction, and **its own function on purpose**: nothing may be
  * elided on the happy path.
  *
- * 2 RTUs and 3 assets are both far under 25, so the shipped template's own
+ * 3 RTUs and 3 assets are both far under 25, so the shipped template's own
  * import summary carries no tail at any of **the summary's** five sites — site
  * 6 is a later turn of the conversation and no upload reaches it, which is why
  * the number here is five and not the enumeration's six. Driven through the
@@ -806,7 +806,7 @@ export function assertAssetsBranchStaysUnderItsCeiling(): void {
  * `parseRtus` hardcodes `credentialsSet: false` and the template's password
  * cell is blank, so the template as parsed reaches `mqttSetupTemplate` and
  * never `formatAssetsByRtuSummary`. An as-parsed case alone leaves sites 3 and
- * 4 unasserted here and stays green with the cap set to 2 — 2 RTUs against a
+ * 4 unasserted here and stays green with the cap set to 2 — 2 MQTT RTUs against a
  * cap of 2 produce no tail, while 3 assets against it do.
  */
 export function assertShippedTemplateElidesNothing(): void {
@@ -814,8 +814,8 @@ export function assertShippedTemplateElidesNothing(): void {
   const excel = new OnboardingExcelService();
   const parsed = excel.parseUpload(excel.buildTemplateBuffer("Berhampur"), LOCATION_TYPE_CODES);
   assert(
-    parsed.rtus.length === 2 && parsed.assets.length === 3,
-    `the shipped template is 2 RTUs and 3 assets, got ${parsed.rtus.length} and ${parsed.assets.length}`,
+    parsed.rtus.length === 3 && parsed.assets.length === 3,
+    `the shipped template is 3 RTUs (F1.2 PR 11: a Modbus example) and 3 assets, got ${parsed.rtus.length} and ${parsed.assets.length}`,
   );
   const imported = {
     locationName: parsed.location.name,

@@ -2,6 +2,9 @@ import type { OnboardingDraft, OnboardingPhase } from "@bms/shared";
 
 import {
   INGEST_ON_NEEDS_PROFILE,
+  INGEST_ON_TARGET_AMBIGUOUS,
+  PROFILE_TARGET_AMBIGUOUS,
+  TARGET_RTU_NOT_FOUND,
   PROFILE_NEEDS_MODBUS_RTU,
   PROFILE_NOT_FOUND,
   PROFILES_UNAVAILABLE,
@@ -85,7 +88,7 @@ export async function assertAProfileTurnNamesTheProfileOnTheModbusRtu(): Promise
   assert(config(result, 1).profileId === undefined, "the MQTT RTU is untouched");
   assert(
     result.assistantMessage.startsWith(
-      "Device profile **pm5110** version 3 set on **'RTU-1'**: its registers are copied at commit. Say **ingest on** to start reading it when the draft is committed.",
+      "Device profile **pm5110** set on **'RTU-1'** as version 3; a newer version saved later is not picked up. Its registers are copied at commit. Say **ingest on** to start reading it when the draft is committed.",
     ),
     `got ${result.assistantMessage}`,
   );
@@ -136,4 +139,44 @@ export async function assertAProfileBesideRegistersIsRefusedBySchema(): Promise<
   const result = await turn("profile: pm5110", { location: PLACE, rtus: [listed] });
   assert(result.assistantMessage.startsWith("I did not change the draft. "), `got ${result.assistantMessage}`);
   assert(result.draftPatch.rtus === undefined, `nothing written, got ${JSON.stringify(result.draftPatch)}`);
+}
+
+const MODBUS_2 = { ...MODBUS, code: "RTU-3", displayName: "RTU-3", config: { ...MODBUS.config, device: { unitId: 2 } } };
+
+/**
+ * CP6 — PR 11 review L1: with two Modbus RTUs, `profile: <code>` refuses (fixed text) rather than
+ * guess; `profile: <code> for <RTU code>` picks one (case-insensitive); an unknown RTU code refuses
+ * without repeating it.
+ */
+export async function assertAProfileTurnNeedsOneTarget(): Promise<void> {
+  const draft = { location: PLACE, rtus: [MODBUS, MQTT, MODBUS_2] } as OnboardingDraft;
+  const ambiguous = await turn("profile: pm5110", draft);
+  assert(ambiguous.assistantMessage.startsWith(`I did not change the draft. ${PROFILE_TARGET_AMBIGUOUS}`), `got ${ambiguous.assistantMessage}`);
+  assert(ambiguous.draftPatch.rtus === undefined, "nothing written");
+  const picked = await turn("profile: pm5110 for rtu-1", draft);
+  assert(config(picked, 0).profileId === PROFILE_ID, `RTU-1 named, got ${JSON.stringify(picked.draftPatch)}`);
+  assert(config(picked, 2).profileId === undefined, "RTU-3 untouched");
+  const other = await turn("profile: pm5110 for RTU-3", draft);
+  assert(config(other, 2).profileId === PROFILE_ID && config(other, 0).profileId === undefined, "RTU-3 named");
+  const unknown = await turn("profile: pm5110 for s3ntinel-rtu", draft);
+  assert(unknown.assistantMessage.startsWith(`I did not change the draft. ${TARGET_RTU_NOT_FOUND}`), `got ${unknown.assistantMessage}`);
+  assert(!unknown.assistantMessage.includes("s3ntinel"), "the typed RTU code is not repeated");
+  const mqtt = await turn("profile: pm5110 for RTU-2", draft);
+  assert(mqtt.assistantMessage.startsWith(`I did not change the draft. ${TARGET_RTU_NOT_FOUND}`), "an MQTT RTU is never a target");
+}
+
+/** CP7 — PR 11 review L2: `ingest on` with two Modbus RTUs naming a profile refuses; `ingest on for <RTU>` picks one. */
+export async function assertIngestOnNeedsOneTarget(): Promise<void> {
+  const bound = (rtu: typeof MODBUS) => ({ ...rtu, config: { ...rtu.config, profileId: PROFILE_ID } });
+  const draft = { location: PLACE, rtus: [bound(MODBUS), bound(MODBUS_2)] } as OnboardingDraft;
+  const ambiguous = await turn("ingest on", draft);
+  assert(ambiguous.assistantMessage.startsWith(`I did not change the draft. ${INGEST_ON_TARGET_AMBIGUOUS}`), `got ${ambiguous.assistantMessage}`);
+  const picked = await turn("ingest on for RTU-3.", draft);
+  assert(picked.draftPatch.rtus?.[1]?.ingestEnabled === true && picked.draftPatch.rtus?.[0]?.ingestEnabled !== true, `got ${JSON.stringify(picked.draftPatch)}`);
+  // One profiled Modbus RTU beside an unprofiled one: no ambiguity; naming the unprofiled one refuses.
+  const mixed = { location: PLACE, rtus: [MODBUS, bound(MODBUS_2)] } as OnboardingDraft;
+  const single = await turn("ingest on", mixed);
+  assert(single.draftPatch.rtus?.[1]?.ingestEnabled === true, `the one profiled RTU, got ${JSON.stringify(single.draftPatch)}`);
+  const unprofiled = await turn("ingest on for RTU-1", mixed);
+  assert(unprofiled.assistantMessage.startsWith(`I did not change the draft. ${INGEST_ON_NEEDS_PROFILE}`), `got ${unprofiled.assistantMessage}`);
 }
