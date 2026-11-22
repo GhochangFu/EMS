@@ -8,15 +8,17 @@ import { createDb } from "@bms/db";
 import { AccessControlService } from "../../auth/access-control.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
-import { jwtFor, primeSeededSubjects, rememberSubject, SEEDED } from "../../testing/seeded-subjects";
+import { jwtFor, primeSeededSubjects, rememberSubject } from "../../testing/seeded-subjects";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
+  assertALocationAdminReadsItsOrganization,
   assertASaveIsANewRowAndAStaleSaveIs409,
   assertAnEditOrACopyResetsVerified,
   assertAnImportCopiesTheRepositoryNotAPeer,
   assertEveryWriteIsAudited,
   assertOrganizationsAreIsolated,
   assertTheRegisterBound,
+  assertTheUniqueKeySettlesEveryRace,
   fixtureStock,
   type DeviceProfileFixtures,
 } from "./device-profiles.integration.spec";
@@ -29,8 +31,9 @@ import { DeviceProfilesAdminService } from "./device-profiles.service";
  * on `bms_fleet`, access control on `bms_auth` + `bms_fleet`, audit on the
  * tenant transaction.
  *
- * Fixtures: two fresh organizations (inserted on `bms_fleet`) and one
- * `organization_admin` granted on each. The users and grants, and the
+ * Fixtures: two fresh organizations (inserted on `bms_fleet`), one
+ * `organization_admin` granted on each, and a `location_admin` granted one
+ * location of A (its own fixture row). The users and grants, and the
  * cleanup of the profile and audit rows, need the superuser: `bms.users` is
  * FORCE-bound and `bms.device_profiles` is append-only by privilege
  * (migration `0164` — no role the API holds may DELETE a row). Cleanup is by
@@ -59,6 +62,7 @@ describe.skipIf(!connectionString || !superuserConnectionString)("F1.2 — the d
   const stamp = randomUUID().replace(/-/g, "").slice(0, 8);
   const organizationIds: string[] = [];
   const userIds: string[] = [];
+  const locationIds: string[] = [];
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -79,27 +83,47 @@ describe.skipIf(!connectionString || !superuserConnectionString)("F1.2 — the d
       organizationIds.push(rows[0]!.id);
       return rows[0]!.id;
     };
-    const organizationAdmin = async (suffix: string, organizationId: string): Promise<{ id: string; email: string }> => {
+    const user = async (
+      suffix: string,
+      role: "organization_admin" | "location_admin",
+      organizationId: string,
+    ): Promise<{ id: string; email: string }> => {
       const email = `f12dp-${stamp}-${suffix}@bms.local`;
       const { rows } = await superPool.query<{ id: string }>(
         `INSERT INTO bms.users (email, password_hash, display_name, role, organization_id)
-           VALUES ($1, 'unused-not-a-login-test', $2, 'organization_admin', $3) RETURNING id`,
-        [email, `F1.2 admin ${suffix}`, organizationId],
+           VALUES ($1, 'unused-not-a-login-test', $2, $3, $4) RETURNING id`,
+        [email, `F1.2 ${role} ${suffix}`, role, organizationId],
       );
       const id = rows[0]!.id;
       userIds.push(id);
-      await superPool.query("INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES ($1, $2)", [
-        id,
-        organizationId,
-      ]);
       rememberSubject(email, id);
       return { id, email };
+    };
+    const organizationAdmin = async (suffix: string, organizationId: string): Promise<{ id: string; email: string }> => {
+      const admin = await user(suffix, "organization_admin", organizationId);
+      await superPool.query("INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES ($1, $2)", [
+        admin.id,
+        organizationId,
+      ]);
+      return admin;
     };
 
     const orgA = await organization("A");
     const orgB = await organization("B");
     const adminA = await organizationAdmin("a", orgA);
     const adminB = await organizationAdmin("b", orgB);
+    const { rows: location } = await observer.query<{ id: string }>(
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+       VALUES ($1, $2, $3, 'F1.2 device profiles site', (SELECT code FROM bms.location_types ORDER BY code LIMIT 1), 0, 0)
+       RETURNING id`,
+      [orgA, `F12DP-${stamp.toUpperCase()}-LOC`, `f12dp-${stamp}-loc`],
+    );
+    locationIds.push(location[0]!.id);
+    const locationAdminA = await user("loc", "location_admin", orgA);
+    await superPool.query("INSERT INTO bms.user_location_access (user_id, location_id) VALUES ($1, $2)", [
+      locationAdminA.id,
+      location[0]!.id,
+    ]);
 
     const fleetDb = createDb(observer);
     const tenantDb = createDb(tenantPool);
@@ -110,18 +134,18 @@ describe.skipIf(!connectionString || !superuserConnectionString)("F1.2 — the d
         fleetDb,
         new AccessControlService(createDb(authPool), fleetDb),
         new MasterDataAuditService(tenantDb, fleetDb),
-        stock,
+        Object.values(stock),
       ),
       observer,
+      superPool,
       stamp,
       orgA,
       orgB,
       adminA: jwtFor(adminA.email, "organization_admin"),
       adminAId: adminA.id,
       adminB: jwtFor(adminB.email, "organization_admin"),
-      locationAdmin: jwtFor(SEEDED.locationAdmin, "location_admin"),
+      locationAdminA: jwtFor(locationAdminA.email, "location_admin"),
       stock,
-      written: [],
     };
   }, 60_000);
 
@@ -130,7 +154,9 @@ describe.skipIf(!connectionString || !superuserConnectionString)("F1.2 — the d
       await superPool.query("DELETE FROM bms.audit_log WHERE organization_id = ANY($1::uuid[])", [organizationIds]);
       await superPool.query("DELETE FROM bms.device_profiles WHERE organization_id = ANY($1::uuid[])", [organizationIds]);
       await superPool.query("DELETE FROM bms.user_organization_access WHERE user_id = ANY($1::uuid[])", [userIds]);
+      await superPool.query("DELETE FROM bms.user_location_access WHERE user_id = ANY($1::uuid[])", [userIds]);
       await superPool.query("DELETE FROM bms.users WHERE id = ANY($1::uuid[])", [userIds]);
+      await superPool.query("DELETE FROM bms.locations WHERE id = ANY($1::uuid[])", [locationIds]);
       await superPool.query("DELETE FROM bms.organizations WHERE id = ANY($1::uuid[])", [organizationIds]);
     }
     await Promise.all([observer?.end(), authPool?.end(), tenantPool?.end(), superPool?.end()]);
@@ -140,8 +166,16 @@ describe.skipIf(!connectionString || !superuserConnectionString)("F1.2 — the d
     await assertOrganizationsAreIsolated(ctx);
   });
 
-  it("I2/I3 saves a new row and leaves the old one byte-equal; a second save from the same base is 409", async () => {
+  it("I1b lets a location admin read its organization's profiles and keeps another organization 404", async () => {
+    await assertALocationAdminReadsItsOrganization(ctx);
+  });
+
+  it("I2 saves a new row and leaves the old one byte-equal; a stale or mismatched base is 409", async () => {
     await assertASaveIsANewRowAndAStaleSaveIs409(ctx);
+  });
+
+  it("I3 answers 409 when the unique key refuses a save, an import or a create (23505)", async () => {
+    await assertTheUniqueKeySettlesEveryRace(ctx);
   });
 
   it("I4 carries the stock file's verified on an import and resets it to false on an edit or a copy", async () => {

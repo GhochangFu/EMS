@@ -175,7 +175,8 @@ export const modbusUnitIdSchema = z
     message: "a Modbus unit id is 0 to 247, or 255 for a device addressed directly over TCP",
   });
 
-const deviceProfileCodeSchema = z.string().min(1).max(64).regex(CATALOG_CODE_PATTERN);
+/** A profile code: the `bms.device_profiles.code` CHECK class, at most 64. The profiles API's bodies use it too. */
+export const deviceProfileCodeSchema = z.string().min(1).max(64).regex(CATALOG_CODE_PATTERN);
 
 /** Provenance only: the profile a device's registers were copied from (decision 15). */
 export const modbusProfileReferenceSchema = z

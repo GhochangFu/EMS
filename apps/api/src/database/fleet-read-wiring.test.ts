@@ -15,6 +15,7 @@ import {
   assertAssetImagesWriteServiceFleetSlot,
   assertAssetImagesWriteServiceTenantSlot,
   assertConformedServiceSlots,
+  assertDeviceProfilesServiceSlots,
   assertMaintenanceWindowsServiceFleetSlot,
   assertMaintenanceWindowsServiceTenantSlot,
   assertMlAnomaliesServiceFleetSlot,
@@ -196,5 +197,9 @@ describe("E7.1b — services inject the right pool token in the right constructo
 
   it("E1.5a DegradationService injects the tenant pool in slot 0, the fleet pool in slot 1 and the fleet pg pool in slot 2", () => {
     assertDegradationServiceSlots();
+  });
+
+  it("F1.2 DeviceProfilesAdminService injects the tenant pool in slot 0 and the fleet pool in slot 1", () => {
+    assertDeviceProfilesServiceSlots();
   });
 });

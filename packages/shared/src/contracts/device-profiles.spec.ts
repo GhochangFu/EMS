@@ -76,7 +76,13 @@ export function runBadScalarsAreRefused(): void {
   expect(createDeviceProfileBodySchema.safeParse({ ...CREATE, vendor: "  " }).success).toBe(false);
 }
 
-/** B5 — the responses are not strict (a later field does not break an older client) and require the server fields. */
+/** A stored register: every default written out, as a response carries it. */
+const STORED = { sourceKey: "kwh", table: "holding", address: 0, type: "uint16", wordOrder: "big", byteSwap: false, scale: 1, offset: 0 };
+
+/**
+ * B5 — the responses are not strict, the registers inside them included (AGENTS.md §4.8: a later
+ * field does not break an older client), and they require the server fields.
+ */
 export function runTheResponsesAreOpenAndComplete(): void {
   const row = {
     id: "0d6c1b2e-3f40-4b1d-8c55-6f1c2a8e9a43",
@@ -88,17 +94,20 @@ export function runTheResponsesAreOpenAndComplete(): void {
     model: "EM6400",
     source: SOURCE,
     verified: false,
-    registers: registers(1),
+    registers: [STORED],
     stockCode: null,
     stockVersion: null,
     createdBy: null,
     createdAt: "2026-11-22T00:00:00.000Z",
   };
   expect(deviceProfileDtoSchema.safeParse({ ...row, later: 1 }).success).toBe(true);
+  expect(deviceProfileDtoSchema.safeParse({ ...row, registers: [{ ...STORED, later: 1 }] }).success).toBe(true);
+  expect(deviceProfileDtoSchema.safeParse({ ...row, source: { ...SOURCE, later: 1 } }).success).toBe(true);
   const { verified: _verified, ...noVerified } = row;
   expect(deviceProfileDtoSchema.safeParse(noVerified).success).toBe(false);
   expect(deviceProfileDtoSchema.safeParse({ ...row, protocol: "bacnet" }).success).toBe(false);
-  const stock = { code: "em-6400", version: 1, vendor: "S", model: "M", source: SOURCE, verified: true, registers: registers(1) };
+  const stock = { code: "em-6400", version: 1, vendor: "S", model: "M", source: SOURCE, verified: true, registers: [STORED] };
   expect(stockDeviceProfileDtoSchema.safeParse({ ...stock, later: 1 }).success).toBe(true);
-  expect(stockDeviceProfileDtoSchema.safeParse({ ...stock, registers: [] }).success).toBe(false);
+  expect(stockDeviceProfileDtoSchema.safeParse({ ...stock, registers: [{ ...STORED, later: 1 }] }).success).toBe(true);
+  expect(stockDeviceProfileDtoSchema.safeParse({ ...stock, registers: [{ ...STORED, table: "nope" }] }).success).toBe(false);
 }

@@ -1,7 +1,13 @@
 import { z } from "zod";
 
-import { CATALOG_CODE_PATTERN } from "../constants";
-import { deviceProfileSchema, modbusRegistersSchema } from "../ingest-modbus";
+import {
+  deviceProfileCodeSchema,
+  deviceProfileSchema,
+  MODBUS_TABLES,
+  MODBUS_VALUE_TYPES,
+  MODBUS_WORD_ORDERS,
+  modbusRegistersSchema,
+} from "../ingest-modbus";
 
 /**
  * `F1.2` (ADR 0141 decisions 12–14, plan T5.1, builder call C12) — the device
@@ -9,9 +15,10 @@ import { deviceProfileSchema, modbusRegistersSchema } from "../ingest-modbus";
  *
  * Plain `z.object` throughout: bodies `.strict()`, responses not strict, no
  * `.merge()`, no `z.intersection`, no `.readonly()`. The register list is
- * `modbusRegistersSchema` **by reference** (1 to 256 entries, unique
- * `sourceKey`), so a body and a stock file are checked by one schema and a
- * later change to the register shape reaches both.
+ * `modbusRegistersSchema` **by reference** in every body (1 to 256 entries,
+ * unique `sourceKey`), so a body and a stock file are checked by one schema
+ * and a later change to the register shape reaches both. Responses carry a
+ * non-strict register of the same fields (below).
  *
  * A body never carries `version`, `verified`, `createdBy` or `stockCode`: the
  * server sets them (plan P2 — every save is a new row at `max(version) + 1`,
@@ -20,8 +27,23 @@ import { deviceProfileSchema, modbusRegistersSchema } from "../ingest-modbus";
  * dropped and answered 201.
  */
 
-/** A profile code: the `bms.device_profiles.code` CHECK (`^[A-Za-z0-9_-]+$`), at most 64. */
-export const deviceProfileCodeSchema = z.string().min(1).max(64).regex(CATALOG_CODE_PATTERN);
+/**
+ * A register as a response carries it: `modbusRegisterSchema`'s fields, **not
+ * strict** (AGENTS.md §4.8: a later register field must not break an older
+ * client), every default already filled by the write that stored it. Bodies
+ * keep the strict `modbusRegistersSchema`.
+ */
+const deviceProfileRegisterDtoSchema = z.object({
+  sourceKey: z.string(),
+  table: z.enum(MODBUS_TABLES),
+  address: z.number().int(),
+  type: z.enum(MODBUS_VALUE_TYPES),
+  wordOrder: z.enum(MODBUS_WORD_ORDERS),
+  byteSwap: z.boolean(),
+  scale: z.number(),
+  offset: z.number(),
+  unit: z.string().optional(),
+});
 
 /** The manual a profile's registers were read from, as stored (response side, not strict). */
 const deviceProfileSourceDtoSchema = z.object({
@@ -41,7 +63,7 @@ export const deviceProfileDtoSchema = z.object({
   model: z.string(),
   source: deviceProfileSourceDtoSchema,
   verified: z.boolean(),
-  registers: modbusRegistersSchema,
+  registers: z.array(deviceProfileRegisterDtoSchema),
   /** The stock file this row was imported from; both or neither. */
   stockCode: z.string().nullable(),
   stockVersion: z.number().int().min(1).nullable(),
@@ -60,7 +82,7 @@ export const stockDeviceProfileDtoSchema = z.object({
   model: z.string(),
   source: deviceProfileSourceDtoSchema,
   verified: z.boolean(),
-  registers: modbusRegistersSchema,
+  registers: z.array(deviceProfileRegisterDtoSchema),
 });
 
 /** The stock list. */

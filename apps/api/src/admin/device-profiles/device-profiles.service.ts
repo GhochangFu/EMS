@@ -51,6 +51,14 @@ export const WRITE_ROLE_MESSAGE =
 export const PROFILE_NOT_FOUND_MESSAGE = "Device profile not found";
 export const ORGANIZATION_NOT_FOUND_MESSAGE = "Organization not found";
 export const STOCK_PROFILE_NOT_FOUND_MESSAGE = "Stock device profile not found";
+/** The 409 for a code the organization already holds (create, copy). */
+export function codeTakenMessage(code: string): string {
+  return `A device profile with code "${code}" already exists`;
+}
+/** The 409 for an import that lost a race on the next version of its code. */
+export function importRaceMessage(code: string): string {
+  return `Another import or save of "${code}" landed first; reload and try again`;
+}
 export const STALE_BASE_MESSAGE =
   "This profile has a newer version than the one you edited; reload it and make your change again";
 
@@ -68,7 +76,8 @@ type ProfileRow = typeof deviceProfiles.$inferSelect;
  * names the version it was edited from (`baseVersion`); a base that is not the
  * newest is a 409, and two saves racing from the same base are settled by the
  * unique key `(organization_id, protocol, code, version)` — the loser's
- * INSERT raises `23505`, answered 409. Never `SELECT … FOR UPDATE`, which
+ * INSERT raises `23505`, answered 409. `baseVersion` must equal `:id`'s own
+ * version, and that version must be the newest. Never `SELECT … FOR UPDATE`, which
  * needs UPDATE.
  *
  * **`verified` (P2).** A create, an edit and a copy write `false`; only an
@@ -152,7 +161,7 @@ export class DeviceProfilesAdminService {
         createdBy: userId,
       },
       payload: {},
-      onUnique: () => new ConflictException(`A device profile with code "${body.code}" already exists`),
+      onUnique: () => new ConflictException(codeTakenMessage(body.code)),
     });
   }
 
@@ -172,7 +181,10 @@ export class DeviceProfilesAdminService {
       values: async (tx) => {
         const base = await readRow(tx, profileId);
         const newest = await newestVersion(tx, organizationId, base.code);
-        if (body.baseVersion !== newest) {
+        // The editor's base is `:id`'s own version, and that version is still the newest. A
+        // `baseVersion` naming a newer row than the one opened is a 409 too: the edit was made
+        // on `:id`, not on what `baseVersion` names.
+        if (body.baseVersion !== base.version || base.version !== newest) {
           throw new ConflictException(STALE_BASE_MESSAGE);
         }
         return {
@@ -220,7 +232,7 @@ export class DeviceProfilesAdminService {
         };
       },
       payload: () => ({ copiedFrom }),
-      onUnique: () => new ConflictException(`A device profile with code "${body.code}" already exists`),
+      onUnique: () => new ConflictException(codeTakenMessage(body.code)),
     });
   }
 
@@ -261,8 +273,7 @@ export class DeviceProfilesAdminService {
         createdBy: userId,
       }),
       payload: { stockCode: entry.code, stockVersion: entry.version },
-      onUnique: () =>
-        new ConflictException(`Another import or save of "${entry.code}" landed first; reload and try again`),
+      onUnique: () => new ConflictException(importRaceMessage(entry.code)),
     });
   }
 
