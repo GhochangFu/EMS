@@ -46,14 +46,14 @@ export const SITES: readonly Site[] = [
   [4, 70],
   [3, 80],
   [4, 90],
-  [22, 97.5],
+  [1.5, 63],
   // bottom right
   [96, 68],
   [97, 79],
   [96.5, 89],
-  [76, 97.5],
-  // foot
-  [48, 98],
+  [98.5, 52],
+  // top centre
+  [45, 1.5],
 ];
 
 /** Lines between sites, as pairs of indexes into `SITES`. */
@@ -81,12 +81,14 @@ export const LINKS: ReadonlyArray<readonly [number, number]> = [
   [17, 22],
   [18, 19],
   [19, 20],
-  [20, 21],
+  [15, 21],
+  [21, 18],
   [22, 23],
   [23, 24],
-  [24, 25],
-  [21, 26],
-  [26, 25],
+  [16, 25],
+  [25, 17],
+  [13, 26],
+  [26, 6],
 ];
 
 /** True when a point, in per cent of the panel, lies inside the clear zone. */
