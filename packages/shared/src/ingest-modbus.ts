@@ -154,6 +154,9 @@ const modbusHostSchema = z
   .refine((host) => !/[\s/]/.test(host) && (host.match(/:/g) ?? []).length !== 1, {
     message: "a Modbus host is a host name or an IP address, with no port, no slash and no whitespace",
   })
+  // `.describe()` after the refinement (ADR 0029 Amendment 1 fact F): `F1.2`'s RTU Modbus bind
+  // body registers this field, and the document must say what it cannot check.
+  .describe("A host name or an IP address: no port (one colon), no slash, no whitespace; stored lower-cased")
   .transform((host) => host.toLowerCase());
 
 /**

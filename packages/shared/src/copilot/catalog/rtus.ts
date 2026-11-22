@@ -120,8 +120,12 @@ export const RTU_ENTRIES: readonly CatalogEntry[] = [
 
 /**
  * The area's write routes that are not entries. `F4.333` (ADR 0129 decision 2):
- * a credential is typed on a form, never through chat (ADR 0022).
+ * a credential is typed on a form, never through chat (ADR 0022). `F1.2`: the
+ * Modbus bind (plan §1 puts a catalog entry for any new route out of scope).
  */
 export const RTU_PENDING: readonly ExcludedRoute[] = [
   { method: "PUT", path: "/admin/rtus/:id/credentials", reason: "a credential route (ADR 0022, ADR 0129)" },
+  // `F1.2` (ADR 0141 decision 15, plan M18): the Modbus bind copies a profile's registers; the plan
+  // ships no copilot entry for any of its routes.
+  { method: "PUT", path: "/admin/rtus/:id/modbus", reason: "the Modbus bind has no catalog entry in F1.2 (ADR 0141)" },
 ];

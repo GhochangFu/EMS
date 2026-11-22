@@ -652,11 +652,12 @@ export class RtusAdminService {
    * line; it names the RTU only (§9.6) — both org ids are one query away.
    *
    * Called after `canManageLocation`, so a caller without the grant keeps its
-   * 403 and `resolveLocationOrg`'s precondition holds. It replaces
+   * 403 and `resolveLocationOrg`'s precondition holds (`F1.2`'s `RtusModbusService` calls it after
+   * the same gate). It replaces
    * `existing.organizationId ?? resolveLocationOrg(...)`, whose fallback never
    * ran: `rtus.organization_id` is `NOT NULL`.
    */
-  private async resolveAgreedOrg(
+  async resolveAgreedOrg(
     existing: Pick<typeof rtus.$inferSelect, "id" | "locationId" | "organizationId">,
   ): Promise<string> {
     const locationOrgId = await this.resolveLocationOrg(existing.locationId);

@@ -17,12 +17,14 @@ import { pollIntervalMsSchema } from "../ingest-poll-interval";
  */
 export const setRtuModbusBodySchema = z
   .object({
+    // The host's refinement is described where it is defined (`ingest-modbus.ts`); the unit id's
+    // here, after the refinement (ADR 0029 Amendment 1 fact F).
     host: modbusConfigSchema.shape.host,
     port: modbusConfigSchema.shape.port.optional(),
     timeoutMs: modbusConfigSchema.shape.timeoutMs.optional(),
     interRequestDelayMs: modbusConfigSchema.shape.interRequestDelayMs.optional(),
     pollIntervalMs: pollIntervalMsSchema.nullable(),
-    unitId: modbusUnitIdSchema,
+    unitId: modbusUnitIdSchema.describe("0 to 247, or 255 for a device addressed directly over TCP"),
     profileId: z.string().uuid(),
   })
   .strict();

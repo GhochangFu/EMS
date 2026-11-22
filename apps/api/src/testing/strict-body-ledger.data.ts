@@ -567,6 +567,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "saveDeviceProfileVersionBodySchema/registers[]": STRICT(CALLER_ERROR),
   copyDeviceProfileBodySchema: STRICT(CALLER_ERROR),
   importStockDeviceProfileBodySchema: STRICT(CALLER_ERROR),
+  // `F1.2` (ADR 0141 decision 15): the registers come from the profile row, so a `registers` or
+  // `device` key must be a 400, never a list silently dropped and answered 200.
+  setRtuModbusBodySchema: STRICT(CALLER_ERROR),
   // `F4.359` (ADR 0131, plan D1): the window's organization is its targets'; an `organizationId`, a
   // `createdBy` or a second id on a target arm has nowhere to land and must be a 400, never dropped.
   createMaintenanceWindowBodySchema: STRICT(CALLER_ERROR),

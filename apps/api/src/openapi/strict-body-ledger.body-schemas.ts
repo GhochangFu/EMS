@@ -73,6 +73,7 @@ import {
   createDeviceProfileBodySchema,
   importStockDeviceProfileBodySchema,
   saveDeviceProfileVersionBodySchema,
+  setRtuModbusBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -309,6 +310,9 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   saveDeviceProfileVersionBodySchema,
   copyDeviceProfileBodySchema,
   importStockDeviceProfileBodySchema,
+  // `F1.2` (ADR 0141 decision 15). `.strict()`: a `registers` key on the bind is the server's copy,
+  // never the caller's.
+  setRtuModbusBodySchema,
   // `F3.32f` slice 3 (ADR 0086 decisions 4, 6, 7). `.strict()`: a library, a symbol patch and the
   // switch are closed authoring shapes with no `z.record` escape, so an unknown key is a typo.
   createMimicOrgSymbolLibraryBodySchema,
