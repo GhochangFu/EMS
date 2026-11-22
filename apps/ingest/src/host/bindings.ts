@@ -16,6 +16,7 @@ import {
   type EdgeServedAccumulator,
 } from "./binding-targets.js";
 import type { PointIndex, PointTarget } from "./normaliser.js";
+import { keyVersionDetail, narrowCredentials } from "./binding-credentials.js";
 import { combineEndpointPollIntervals, resolveRtuPollInterval, type PollIntervalLevel } from "./poll-interval.js";
 import {
   configFingerprint,
@@ -397,52 +398,6 @@ function isIngestProtocol(value: string): value is IngestProtocol {
   return (INGEST_PROTOCOLS as readonly string[]).includes(value);
 }
 
-/**
- * Keeps only string-valued entries.
- *
- * `decryptCredentials` ends in `JSON.parse`, so the plaintext can hold anything
- * the API wrote. `AdapterContext.credentials` is `Record<string, string>`, and
- * a number leaking through as a `string` at the type level is the kind of lie
- * that surfaces as an unreadable protocol error three layers down. Dropped keys
- * are reported by name; **values never appear anywhere** (AGENTS.md §9.6).
- */
-function narrowCredentials(raw: Record<string, unknown>): {
-  credentials: Record<string, string>;
-  droppedKeys: string[];
-} {
-  const credentials: Record<string, string> = {};
-  const droppedKeys: string[] = [];
-  for (const [key, value] of Object.entries(raw)) {
-    if (typeof value === "string") {
-      credentials[key] = value;
-    } else {
-      droppedKeys.push(key);
-    }
-  }
-  return { credentials, droppedKeys };
-}
-
-/**
- * The one credential-failure cause worth naming to an operator: the row was
- * encrypted under a key this process does not hold (ADR 0062 decision 4).
- *
- * **A constant, never `err.message`.** §9.6 keeps crypto text out of the skip
- * report because it can carry key material or ciphertext framing, and the
- * report is served on the health endpoint. A fixed token also keeps the
- * vocabulary closed, so an operator can grep for it. Every other failure — a
- * wrong-length IV, a bad tag, a truncated ciphertext — carries no detail at
- * all, which is why this returns an empty object rather than a second string.
- *
- * Matched on `name` rather than `instanceof`: vitest can load two module
- * instances of `@bms/shared` (`F4.108`), and the ingest host loads the built
- * `dist` while a spec may load the source.
- */
-function keyVersionDetail(error: unknown): { detail?: string } {
-  const name =
-    typeof error === "object" && error !== null ? (error as { name?: unknown }).name : undefined;
-  return name === "CredentialKeyVersionError" ? { detail: "key-version-not-loaded" } : {};
-}
-
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -530,6 +485,8 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
     credentialMarks: string[];
     /** `F1.2`: each bound RTU's resolved poll interval (`null` = the adapter default). */
     pollIntervals: (number | null)[];
+    /** `F1.2` (ADR 0141 Amendment 2 (a)): the organization a poll endpoint serves. */
+    organizationCode: string;
   };
   const endpoints = new Map<string, Accumulator>();
 
@@ -897,8 +854,14 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         formatByTopic: new Map(),
         credentialMarks: [],
         pollIntervals: [],
+        organizationCode: head.organization_code,
       };
       endpoints.set(groupKey, group);
+    } else if (factory.mode === "poll" && group.organizationCode !== head.organization_code) {
+      // ADR 0141 Amendment 2 (a): one poll endpoint, one organization. Another
+      // organization's RTU on this host:port would share its socket and cadence.
+      skipped.push({ rtuId, rtuCode: deviceKey, reason: "endpoint-organization-conflict", detail: endpointKey });
+      continue;
     } else if (!sameConnection(group.config, configParsed.data)) {
       // F4.326 security review M1, defence in depth: one endpoint key must mean
       // one connection. A row whose host, port or TLS choice differs from the

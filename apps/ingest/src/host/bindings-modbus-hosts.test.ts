@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   assertAListedHostIsPlanned,
   assertAnEdgeServedRtuIsNotChecked,
+  assertASecondOrganizationOnAPollEndpointIsSkipped,
+  assertTwoOrganizationsShareAnMqttBroker,
   assertAnUnlistedHostIsSkippedByName,
   assertDifferentRequestSettingsOnOneGatewayConflict,
   assertMqttIsNotAffected,
@@ -18,4 +20,7 @@ describe("F1.2 — the cloud host dials only listed Modbus hosts (ADR 0141 decis
   it("H5 an edge-served Modbus RTU is not checked against the cloud list", () => assertAnEdgeServedRtuIsNotChecked());
   it("H6 different request settings on one gateway skip the second RTU by name", () =>
     assertDifferentRequestSettingsOnOneGatewayConflict());
+  it("H7 a second organization on a poll endpoint is skipped (ADR 0141 Amendment 2 (a))", () =>
+    assertASecondOrganizationOnAPollEndpointIsSkipped());
+  it("H8 two organizations still share an MQTT broker", () => assertTwoOrganizationsShareAnMqttBroker());
 });

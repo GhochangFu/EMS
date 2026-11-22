@@ -86,6 +86,29 @@ export function assertAnEdgeServedRtuIsNotChecked(): void {
   expect(result.edgeServed.size).toBe(1);
 }
 
+/** ADR 0141 Amendment 2 (a): a poll endpoint serves one organization; another's RTU on it is skipped by name. */
+export function assertASecondOrganizationOnAPollEndpointIsSkipped(): void {
+  const mine = { ...modbusRow("10.0.0.5"), rtu_id: "rtu-a", rtu_code: "M-A", organization_code: "ORG-A" };
+  const sameOrg = { ...mine, rtu_id: "rtu-a2", rtu_code: "M-A2" };
+  const theirs = { ...mine, rtu_id: "rtu-b", rtu_code: "M-B", organization_code: "ORG-B" };
+  const result = plan([row(mine), row(sameOrg), row(theirs)], "10.0.0.5");
+  expect(result.endpoints).toHaveLength(1);
+  expect(result.endpoints[0]?.bindings.map((b) => b.deviceKey)).toEqual(["M-A", "M-A2"]);
+  expect(result.skipped).toEqual([
+    { rtuId: "rtu-b", rtuCode: "M-B", reason: "endpoint-organization-conflict", detail: "modbus_tcp://10.0.0.5:502" },
+  ]);
+}
+
+/** The other direction: MQTT is push, and one broker serves many organizations. */
+export function assertTwoOrganizationsShareAnMqttBroker(): void {
+  const a = row({ rtu_id: "rtu-a", rtu_code: "R-A", mqtt_topic: "t/a", organization_code: "ORG-A" });
+  const b = row({ rtu_id: "rtu-b", rtu_code: "R-B", mqtt_topic: "t/b", organization_code: "ORG-B" });
+  const result = plan([a, b], undefined);
+  expect(result.skipped).toEqual([]);
+  expect(result.endpoints).toHaveLength(1);
+  expect(result.endpoints[0]?.bindings).toHaveLength(2);
+}
+
 export function assertMqttIsNotAffected(): void {
   const result = plan([row()], undefined);
   expect(result.endpoints).toHaveLength(1);
