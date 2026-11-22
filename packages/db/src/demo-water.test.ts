@@ -16,7 +16,7 @@ import {
   assertTheWidgetConfigParsesUnderMimicConfigSchema,
   assertTheIonxGroupIsAWaterDomainGroup,
   assertTheOrganizationInsertBindsTheSiteTimezone,
-} from "./demo-ion-exchange.spec";
+} from "./demo-water.spec";
 
 describe("F3.32 / ADR 0079 Amendment 1 — the Ion Exchange demo command's pure parts", () => {
   it("IONX-DEMO is not a seed organization, so the F4.169 boot gate never counts it", () => {

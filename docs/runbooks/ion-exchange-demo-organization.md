@@ -1,6 +1,6 @@
-# Runbook — the Ion Exchange demo organization (F3.32 / ADR 0079 Amendment 1)
+# Runbook — the water demo organization (F3.32 / ADR 0079 Amendment 1)
 
-How to build, on the demo host, the **Ion Exchange demo organization**
+How to build, on the demo host, the **water demo organization**
 (`IONX-DEMO`) that shows the `F3.32` water-train plant mimic on live
 simulated data — with no visibility into `ESKOM` or `PHEWB`.
 
@@ -34,24 +34,24 @@ host `postgres`. Rebuild the image first if it predates this command:
 
 ```powershell
 docker compose build migrate
-docker compose run --rm migrate pnpm --filter @bms/db demo:ion-exchange
+docker compose run --rm migrate pnpm --filter @bms/db demo:water
 ```
 
 From a host checkout instead, set both variables to the published Postgres
 port of your stack (not the in-network `postgres:5432`) and run
-`pnpm --filter @bms/db demo:ion-exchange`.
+`pnpm --filter @bms/db demo:water`.
 
 It creates, in `IONX-DEMO` only:
 
 | What | Value |
 |------|-------|
-| Organization | code `IONX-DEMO`, name "Ion Exchange Demo", currency `INR` |
-| Site | "Ion Exchange Demo Plant", slug `ionx-demo-plant`, type `pump_station`, zone `Asia/Kolkata` |
+| Organization | code `IONX-DEMO`, name "Water Demo", currency `INR` |
+| Site | "Water Demo Plant", slug `ionx-demo-plant`, type `pump_station`, zone `Asia/Kolkata` |
 | Simulator RTU | `SIM-RTU-IONX-DEMO-PLANT-WATER` (domain `water`) |
 | Water assets | `WTR-WTP-02`, `WTR-RO-02`, `WTR-CT-02`, `WTR-STP-02`, `WTR-ETP-02`, each pinned to this organization's own `DEMO-WATER-<CLASS>` mirror template with its flow points |
 | Asset group | `demo-water-plant`, roles WTP `wtp`, RO `ro`, CT `utilities`, STP `stp`, ETP `etp` |
 | Dashboard | slug `water-plant-mimic`, scoped to that group, one **Plant mimic** widget `{ "source": "preset", "preset": "water_train" }` |
-| Login | `ionx-admin@bms.local`, "Ion Exchange Demo Admin", role `organization_admin`, organization access to `IONX-DEMO` only |
+| Login | `ionx-admin@bms.local`, "Water Demo Admin", role `organization_admin`, organization access to `IONX-DEMO` only |
 
 **Why the codes end `-02`.** `bms.assets.code` is unique across the whole
 fleet, and the seed already owns `WTR-WTP-01` … `WTR-ETP-01` under `ESKOM`.
@@ -88,7 +88,7 @@ with **Email verified** on — see
 The simulator reads assets **once at start**. It must also select the new
 site:
 
-- The compose `sim` service lists `Ion Exchange Demo Plant` in
+- The compose `sim` service lists `Water Demo Plant` in
   `SIM_SITE_NAMES` (`docker-compose.yml`). If a host overrides that list,
   keep the site in it, or the five new assets get no flows.
 - Keep `SIM_ASSET_COUNT=all` (the compose default); a smaller count can leave
@@ -100,6 +100,31 @@ docker compose up -d sim
 
 (`up -d` recreates the container with a changed environment; `restart` does
 not re-read it.)
+
+## 4. A host built before the names changed
+
+Until ADR 0142 Amendment 4 (2026-11-23) the command was `demo:ion-exchange`
+and its display names began "Ion Exchange". The codes, the slug and the login
+e-mail did not change. Every write is insert-if-absent, so a second run on a
+host built before the change **leaves the old names in place**: the
+organization name, the site name, each asset's `site_name`, the simulator
+RTU's display name, the asset group's description, and the login's display
+name. The Keycloak user keeps its old first and last name too, because
+`--import-realm` skips a realm that already exists (§2).
+
+The simulator selects assets by `site_name`. With the compose default
+`SIM_SITE_NAMES` (which now lists `Water Demo Plant`), the five assets of a
+host that still holds the old site name get **no flows**. On such a host do
+one of these:
+
+- rename the rows to the new names, then restart the simulator. The
+  simulator needs `bms.assets.site_name` of the five `WTR-…-02` assets. The
+  screens also show the organization name, the site name,
+  `bms.rtus.display_name`, the asset group's description and
+  `bms.users.display_name`; and the Keycloak user's first and last name
+  (now "Water Demo" and "Admin"); or
+- keep the old site name in that host's own `SIM_SITE_NAMES` override until
+  the rows are renamed.
 
 ## What the demo must show
 
@@ -113,7 +138,7 @@ not a ninth node — ADR 0079 owner ruling 1).
 - **3 nodes show dimmed "Not assigned"**: intake, softener, storage — no
   membership carries `water_intake`, `softener`, or `water_storage` in this
   demo group, by design (ADR 0079 Consequences, Open point 1).
-- The login sees only the Ion Exchange organization — no `ESKOM` or `PHEWB`
+- The login sees only the Water Demo organization — no `ESKOM` or `PHEWB`
   data anywhere in its session.
 
 ## Rehearsal

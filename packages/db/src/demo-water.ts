@@ -19,7 +19,7 @@ import {
 
 /**
  * `F3.32` / ADR 0079 Amendment 1 — the Ion Exchange demo organization, made by
- * a one-off command (`pnpm --filter @bms/db demo:ion-exchange`) and **not** by
+ * a one-off command (`pnpm --filter @bms/db demo:water`) and **not** by
  * `db:seed`. The owner ruled it on 2026-09-28 after the runbook found that no
  * route creates an asset group, a membership, a user or an access grant.
  *
@@ -61,11 +61,11 @@ import {
  */
 
 export const IONX_ORG_CODE = "IONX-DEMO";
-export const IONX_ORG_NAME = "Ion Exchange Demo";
+export const IONX_ORG_NAME = "Water Demo";
 /** ISO 4217 — `bms.organizations.currency` is NOT NULL with no default (migration `0076`). */
 export const IONX_ORG_CURRENCY = "INR";
 
-export const IONX_SITE_NAME = "Ion Exchange Demo Plant";
+export const IONX_SITE_NAME = "Water Demo Plant";
 /** Fleet-wide unique (`locations_slug_unique`). */
 export const IONX_SITE_SLUG = "ionx-demo-plant";
 export const IONX_SITE_CODE = "IONX-DEMO-PLANT";
@@ -87,7 +87,7 @@ export const IONX_DASHBOARD_NAME = "Water plant mimic";
 export const IONX_WIDGET_CONFIG = DEMO_MIMIC_WIDGET_CONFIG;
 
 export const IONX_ADMIN_EMAIL = "ionx-admin@bms.local";
-export const IONX_ADMIN_DISPLAY_NAME = "Ion Exchange Demo Admin";
+export const IONX_ADMIN_DISPLAY_NAME = "Water Demo Admin";
 export const IONX_ADMIN_ROLE = "organization_admin";
 /** The realm's demo password convention (`phe-admin@bms.local`). Change it on a customer-facing host. */
 export const IONX_ADMIN_DEMO_PASSWORD = "admin123";
@@ -170,7 +170,7 @@ export function ionxShortfalls(tenant: IonxTenantCounts, identity: IonxIdentityC
 
 const ORG_INSERT_SQL = `
 INSERT INTO bms.organizations (code, name, meta, currency, timezone)
-VALUES ($1, $2, '{"tenant":"demo","createdBy":"demo:ion-exchange"}'::jsonb, $3, $4)
+VALUES ($1, $2, '{"tenant":"demo","createdBy":"demo:water"}'::jsonb, $3, $4)
 ON CONFLICT (code) DO NOTHING
 `;
 
@@ -179,7 +179,7 @@ const ORG_ID_SQL = `SELECT id FROM bms.organizations WHERE code = $1`;
 const LOCATION_INSERT_SQL = `
 INSERT INTO bms.locations
   (organization_id, code, slug, name, type, province, latitude, longitude, timezone, active, meta)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, '{"createdBy":"demo:ion-exchange"}'::jsonb)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, '{"createdBy":"demo:water"}'::jsonb)
 ON CONFLICT DO NOTHING
 `;
 
@@ -335,7 +335,7 @@ async function oneId(pool: pg.Pool, sql: string, values: unknown[], what: string
   const res = await pool.query<{ id: string }>(sql, values);
   const id = res.rows[0]?.id;
   if (!id) {
-    throw new Error(`demo:ion-exchange: ${what} does not exist after its insert-if-absent`);
+    throw new Error(`demo:water: ${what} does not exist after its insert-if-absent`);
   }
   return id;
 }
@@ -354,7 +354,7 @@ export type IonxDemoResult = {
  * connection (`resolveSeedSuperuserUrl`). Throws with the read-back counts if
  * the post-condition fails.
  */
-export async function runIonExchangeDemo(pool: pg.Pool, superuserPool: pg.Pool): Promise<IonxDemoResult> {
+export async function runWaterDemo(pool: pg.Pool, superuserPool: pg.Pool): Promise<IonxDemoResult> {
   let written = 0;
 
   // Pre-tenant: `bms.organizations` carries no policy.
@@ -412,7 +412,7 @@ export async function runIonExchangeDemo(pool: pg.Pool, superuserPool: pg.Pool):
       locationId,
       IONX_GROUP_CODE,
       IONX_GROUP_NAME,
-      "The Ion Exchange demo plant's water train, for the F3.32 mimic (ADR 0079 Amendment 1).",
+      "The water demo plant's water train, for the F3.32 mimic (ADR 0079 Amendment 1).",
       organizationId,
     ]);
     const groupId = await oneId(pool, GROUP_ID_SQL, [locationId, IONX_GROUP_CODE], `group ${IONX_GROUP_CODE}`);
@@ -449,7 +449,7 @@ export async function runIonExchangeDemo(pool: pg.Pool, superuserPool: pg.Pool):
     ]);
     const row = res.rows[0];
     if (!row) {
-      throw new Error("demo:ion-exchange: the tenant read-back returned no row");
+      throw new Error("demo:water: the tenant read-back returned no row");
     }
     return row;
   });
@@ -478,7 +478,7 @@ export async function runIonExchangeDemo(pool: pg.Pool, superuserPool: pg.Pool):
   const shortfalls = ionxShortfalls(tenant, identity);
   if (shortfalls.length > 0) {
     throw new Error(
-      `demo:ion-exchange: the post-condition failed — ${shortfalls.join(", ")}. ` +
+      `demo:water: the post-condition failed — ${shortfalls.join(", ")}. ` +
         "Each count is read back, not inferred from the statements completing. A code or slug " +
         "another organization owns is left alone by the insert-if-absent and shows up here.",
     );

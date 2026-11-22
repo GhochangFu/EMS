@@ -150,7 +150,7 @@ const WIDGET_INSERT_SQL = `
  * This moves ONLY that row: the named dashboard's mimic widget at exactly the shape the earlier
  * seed wrote (x 0, y 0, 12 wide, 6 tall). Any other size or place is an operator's choice and is
  * left alone. Idempotent: once the row is 10 tall the `WHERE` matches nothing. Shared with
- * `demo-ion-exchange.ts`, which seeded the same shape. Params: `[organizationId, dashboardId]`.
+ * `demo-water.ts`, which seeded the same shape. Params: `[organizationId, dashboardId]`.
  */
 export const DEMO_MIMIC_WIDGET_RESIZE_SQL = `
   UPDATE bms.dashboard_widgets

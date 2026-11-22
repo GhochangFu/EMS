@@ -28,7 +28,7 @@ abnormal state within seconds, knows where it is, and can act on it.
 
 ## Positioning
 
-The Enterprise EMS product line for Ion Exchange (India) Ltd. (ADR 0013), forked
+The Enterprise EMS product line (ADR 0013), forked
 from the Eskom SMOC engagement. One Control Room section (ADR 0087) gives every
 organization the same site view: a tabbed site layout copied from the "SMOC
 standard" template, bound to the site through asset-group roles and point keys,

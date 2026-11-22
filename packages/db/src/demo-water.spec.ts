@@ -10,11 +10,11 @@ import {
   IONX_SITE_TIMEZONE,
   IONX_WIDGET_CONFIG,
   ionxAssetCodeFor,
-  runIonExchangeDemo,
+  runWaterDemo,
   ionxShortfalls,
   type IonxIdentityCounts,
   type IonxTenantCounts,
-} from "./demo-ion-exchange";
+} from "./demo-water";
 import { SEED_ORGANIZATION_CODES } from "./hierarchy-seed";
 import { DEMO_WATER_ASSET_CODES } from "./water-plant-demo-seed";
 import { DEMO_MIMIC_WIDGET_RESIZE_SQL } from "./water-mimic-demo-seed";
@@ -124,7 +124,7 @@ export async function assertTheCommandResizesItsOwnDashboardsWidget(): Promise<v
     }
     return result;
   };
-  await expect(runIonExchangeDemo(pool, pool)).rejects.toBe(stop);
+  await expect(runWaterDemo(pool, pool)).rejects.toBe(stop);
   const resizes = calls.filter((c) => c.sql === DEMO_MIMIC_WIDGET_RESIZE_SQL);
   expect(resizes.map((c) => c.values)).toEqual([["org-id", "dashboard-id"]]);
 }
@@ -145,7 +145,7 @@ export async function assertTheOrganizationInsertBindsTheSiteTimezone(): Promise
     }
     return result;
   };
-  await expect(runIonExchangeDemo(pool, pool)).rejects.toBe(stop);
+  await expect(runWaterDemo(pool, pool)).rejects.toBe(stop);
   const inserts = calls.filter((c) => /INSERT INTO bms.organizations/.test(c.sql));
   expect(inserts).toHaveLength(1);
   const [insert] = inserts;
