@@ -3,13 +3,16 @@ import { afterEach, describe, it } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  animatesOnlyOnRequest,
   carriesNoRoleColourClass,
+  centresTheLettersOnTheHeaderLine,
   drawsAnInlineSvgWithNoText,
   drawsTheDarkFormByDefault,
   drawsTheLightFormOnRequest,
   fillsTheLettersEvenOdd,
   fillsThePulseWithOneGradient,
   givesEachLogoItsOwnGradientId,
+  movesOnlyWhenMotionIsAllowed,
   namesTheHeaderLogoVerve,
   sizesTheHeroAndTheHeader,
 } from "./wordmark.spec";
@@ -55,5 +58,17 @@ describe("F4.398 the Verve logo", () => {
 
   it("W9 carries no role colour class", () => {
     carriesNoRoleColourClass();
+  });
+
+  it("W10 centres the letters, not the box, on the header line", () => {
+    centresTheLettersOnTheHeaderLine();
+  });
+
+  it("W11 animates only on request, without changing the drawing", () => {
+    animatesOnlyOnRequest();
+  });
+
+  it("W12 moves only when motion is allowed", () => {
+    movesOnlyWhenMotionIsAllowed();
   });
 });

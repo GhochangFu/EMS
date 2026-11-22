@@ -87,7 +87,7 @@ export function LoginPage() {
           <div className="absolute bottom-12 left-10 h-24 w-24 rounded-full border border-on-dark/10 bg-on-dark/5" />
           <div className="relative">
             <div className="flex justify-center">
-              <Wordmark variant="hero" />
+              <Wordmark variant="hero" animated />
             </div>
             <h1 className="mt-8 max-w-xl font-condensed text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
               {PRODUCT_TAGLINE}

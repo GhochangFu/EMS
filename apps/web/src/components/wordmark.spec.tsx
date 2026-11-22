@@ -1,7 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { expect } from "vitest";
 
+import indexCss from "../index.css?raw";
 import { PRODUCT_NAME, PRODUCT_TAGLINE } from "../lib/brand";
+import { VERVE_LOGO } from "./verve-logo-data";
 import { Wordmark } from "./wordmark";
 
 /**
@@ -118,6 +120,34 @@ export function sizesTheHeroAndTheHeader(): void {
   expect(paths.every((d) => (d ?? "").length > 1000)).toBe(true);
 }
 
+/**
+ * W10 — the letters, not the logo's box, sit on the header's centre line. The peak of the pulse
+ * puts the letters' centre 21 % of the logo's height below the box's centre (viewBox 205 high,
+ * letters y 107.6–183.91), so a logo centred by its box shows "erve" about 7 px below the header
+ * text beside it (owner, 2026-11-22). Both header sizes lift by that share; the 40 px rail header
+ * takes the smaller `h-7`, because a lifted `h-8` would put the peak above the header. The hero
+ * stands alone and is not lifted.
+ */
+export function centresTheLettersOnTheHeaderLine(): void {
+  const LIFT = "-translate-y-[21%]";
+  const header = render(<Wordmark variant="header" />);
+  expect(mark().getAttribute("class")?.split(" ")).toEqual(["h-8", "w-auto", LIFT]);
+  header.unmount();
+
+  const rail = render(<Wordmark variant="rail" />);
+  expect(mark().getAttribute("class")?.split(" ")).toEqual(["h-7", "w-auto", LIFT]);
+  rail.unmount();
+
+  render(<Wordmark variant="hero" />);
+  expect(mark().getAttribute("class")).not.toContain("translate");
+
+  // The share itself, from the drawing: (letters' centre − box centre) ÷ box height.
+  const [, , , boxHeight] = VERVE_LOGO.viewBox.split(" ").map(Number);
+  const ys = [...VERVE_LOGO.letters.matchAll(/[ML]-?[\d.]+ (-?[\d.]+)/g)].map((m) => Number(m[1]));
+  const lettersCentre = (Math.min(...ys) + Math.max(...ys)) / 2;
+  expect(Math.round(((lettersCentre - boxHeight / 2) / boxHeight) * 100)).toBe(21);
+}
+
 /** W8 — the letters fill by the even-odd rule; without it the counters of "e" fill in. */
 export function fillsTheLettersEvenOdd(): void {
   render(<Wordmark variant="header" />);
@@ -130,4 +160,60 @@ export function carriesNoRoleColourClass(): void {
   const classes = (mark().getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
   expect(classes.length).toBeGreaterThan(0);
   expect(classes.filter((c) => /(^|:)(text|fill|stroke|bg)-/.test(c))).toEqual([]);
+}
+
+/**
+ * W11 — `animated` (ADR 0142 Amendment 2) adds the draw-on clip, the letters' fade and the
+ * travelling light, and changes nothing in the drawing: still one pulse path with its one gradient
+ * fill, the light a second copy of the same `d` in the logo's own white behind its own mask. A
+ * logo that is not animated carries none of it.
+ */
+export function animatesOnlyOnRequest(): void {
+  const still = render(<Wordmark variant="hero" />);
+  expect(mark().querySelector("clipPath, mask, [data-part='light']")).toBeNull();
+  expect(mark().innerHTML).not.toContain("verve-logo-");
+  const stillPulse = pulseOf(mark()).getAttribute("d");
+  still.unmount();
+
+  render(<Wordmark variant="hero" animated />);
+  const svg = mark();
+  expect(svg.querySelectorAll("path[data-part='pulse']")).toHaveLength(1);
+  const pulse = pulseOf(svg);
+  expect(pulse.getAttribute("d")).toBe(stillPulse);
+  expect(pulse.getAttribute("fill")).toMatch(/^url\(#verve-pulse-[\w-]+\)$/);
+
+  const clip = svg.querySelector("clipPath");
+  expect(pulse.parentElement?.getAttribute("clip-path")).toBe(`url(#${clip?.getAttribute("id")})`);
+  expect(clip?.querySelector("rect")?.getAttribute("class")).toBe("verve-logo-reveal");
+
+  const light = svg.querySelector("path[data-part='light']");
+  expect(light?.getAttribute("d")).toBe(stillPulse);
+  expect(light?.getAttribute("fill")).toBe("#FFFFFF");
+  const mask = svg.querySelector("mask");
+  expect(light?.getAttribute("mask")).toBe(`url(#${mask?.getAttribute("id")})`);
+  expect(mask?.querySelector("rect")?.getAttribute("class")).toBe("verve-logo-light");
+  expect(lettersOf(svg).getAttribute("class")).toBe("verve-logo-letters");
+
+  const ids = [...svg.querySelectorAll("[id]")].map((node) => node.getAttribute("id"));
+  expect(new Set(ids).size).toBe(ids.length);
+}
+
+/**
+ * W12 — with reduced motion the logo does not move: every `animation` on a `verve-logo-*` class
+ * sits inside `prefers-reduced-motion: no-preference`, the keyframes move transform and opacity
+ * only, and the light's cycle is slower than three flashes a second (WCAG 2.3.1).
+ */
+export function movesOnlyWhenMotionIsAllowed(): void {
+  const css = indexCss.split("\r\n").join("\n");
+  const block = /@media \(prefers-reduced-motion: no-preference\) \{\s*\.verve-logo-reveal[\s\S]*?\n\}\n/.exec(css)?.[0] ?? "";
+  for (const name of ["verve-logo-reveal", "verve-logo-letters", "verve-logo-light"]) {
+    expect(block, name).toMatch(new RegExp(`\\.${name} \\{[^}]*animation: ${name} `));
+    const frames = new RegExp(`@keyframes ${name} \\{([\\s\\S]*?)\\n\\}\\n`).exec(css)?.[1] ?? "";
+    const props = [...frames.matchAll(/^\s+([a-z-]+):/gm)].map((m) => m[1]);
+    expect(props.length, name).toBeGreaterThan(0);
+    expect(props.every((prop) => prop === "transform" || prop === "opacity"), name).toBe(true);
+  }
+  const outside = css.replace(block, "");
+  expect(outside).not.toMatch(/animation: verve-logo-/);
+  expect(block).toMatch(/animation: verve-logo-light 6s /);
 }
