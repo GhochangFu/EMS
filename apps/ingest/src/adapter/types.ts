@@ -84,7 +84,13 @@ export type PushIngestAdapter<TConfig, TDevice> = IngestAdapterBase<TConfig, TDe
 
 export type PollIngestAdapter<TConfig, TDevice> = IngestAdapterBase<TConfig, TDevice> & {
   readonly mode: "poll";
-  /** Cadence floor. The host may widen it under backoff; it never shortens it. */
+  /**
+   * The adapter's own interval: the **last** fallback (ADR 0016 Amendment 10
+   * (a), ADR 0141 decision 10). The host sleeps the endpoint's
+   * `config.pollIntervalMs`, else the organization's default, else this — and
+   * on an endpoint several RTUs share, the shortest any of them resolves to
+   * (P9). The host owns the timer; an adapter schedules nothing (§5 rule 4).
+   */
   readonly defaultPollIntervalMs: number;
   /** One complete read cycle across every binding. The host guarantees no overlap. */
   poll(): Promise<readonly SourceSample[]>;

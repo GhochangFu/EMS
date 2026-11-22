@@ -749,12 +749,18 @@ export class OnboardingExcelService {
         code: rtuCode,
         displayName,
         protocol,
-        config: {
-          host,
-          port: Number.isFinite(port) ? port : 8883,
-          tls: tlsRaw === "" || tlsRaw === "true" || tlsRaw === "1" || tlsRaw === "yes",
-          topic,
-        },
+        // F1.2 (PR 4 code review 3): a Modbus TCP row carries only what
+        // `modbusDraftConfigSchema` accepts — host and port, 502 by default.
+        // The MQTT columns (tls, topic) would refuse the whole workbook at commit.
+        config:
+          protocol === "modbus_tcp"
+            ? { host, port: Number.isFinite(port) ? port : 502 }
+            : {
+                host,
+                port: Number.isFinite(port) ? port : 8883,
+                tls: tlsRaw === "" || tlsRaw === "true" || tlsRaw === "1" || tlsRaw === "yes",
+                topic,
+              },
         credentialsSet: false,
         ingestEnabled: protocol === "mqtt",
         // F4.339 (ruling Q5): the sheet's `rtu_code` is the device key ingest routes by.

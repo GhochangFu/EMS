@@ -79,6 +79,11 @@ export function planEdgeEndpoints(
             decoderFingerprint: "",
             // F4.333: nor this one; the edge reads its credentials from its own file.
             credentialFingerprint: "",
+            // F1.2: nor this one (ADR 0016 Amendment 10 (a)); the edge never reloads.
+            configFingerprint: "",
+            // F1.2: the file states the resolved interval per endpoint (ADR 0141 decision 17).
+            pollIntervalMs: endpoint.pollIntervalMs,
+            pollIntervalUsesDefault: endpoint.pollIntervalMs === null,
           },
         };
         plans.set(key, entry);

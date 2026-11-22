@@ -44,7 +44,8 @@ export function assertFormatForAssistantNamesTheFieldsAndTheWiring(): void {
     "Required: topic",
     "Optional: host, port",
     "Browse: no",
-    "(`modbus_tcp`, config only)",
+    "(`modbus_tcp`, live ingest)",
+    "(`snmp`, config only)",
   ]) {
     assert(text.includes(expected), `missing ${JSON.stringify(expected)} in:\n${text}`);
   }

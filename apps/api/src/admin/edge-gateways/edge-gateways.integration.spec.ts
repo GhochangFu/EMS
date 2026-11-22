@@ -43,7 +43,7 @@ export type EdgeGatewayFixtures = {
     ok1: string;
     ok2: string;
     noCode: string;
-    modbus: string;
+    noAdapter: string;
     simulatorFed: string;
     /** An RTU of another organization. */
     foreign: string;
@@ -263,7 +263,7 @@ export async function assertTheAssignmentRules(ctx: EdgeGatewayFixtures, admin: 
 
   for (const [rtuId, message] of [
     [ctx.rtus.noCode, RTU_NO_CODE_MESSAGE],
-    [ctx.rtus.modbus, RTU_NO_ADAPTER_MESSAGE],
+    [ctx.rtus.noAdapter, RTU_NO_ADAPTER_MESSAGE],
     [ctx.rtus.simulatorFed, RTU_SIMULATOR_FED_MESSAGE],
     // What `apps/ingest/src/host/bindings.ts` plans: `r.active AND r.ingest_enabled`.
     [ctx.rtus.inactive, RTU_INACTIVE_MESSAGE],

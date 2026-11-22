@@ -1,13 +1,11 @@
-import { createHash } from "node:crypto";
-
 import {
   INGEST_PROTOCOLS,
   MQTT_BUILTIN_PAYLOAD_FORMAT_CODE,
-  MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION,
   mqttPayloadFormatDefinitionSchema,
+  modbusTcpHostAllowed,
   mqttPlaintextDecision,
   type IngestProtocol,
-  type MqttPayloadFormatDefinition,
+  type ModbusTcpHostAllowList,
 } from "@bms/shared/ingest";
 
 import type { IngestAdapterFactory, RtuBinding } from "../adapter/types.js";
@@ -18,6 +16,15 @@ import {
   type EdgeServedAccumulator,
 } from "./binding-targets.js";
 import type { PointIndex, PointTarget } from "./normaliser.js";
+import { keyVersionDetail, narrowCredentials } from "./binding-credentials.js";
+import { combineEndpointPollIntervals, resolveRtuPollInterval, type PollIntervalLevel } from "./poll-interval.js";
+import {
+  configFingerprint,
+  credentialFingerprint,
+  credentialMark,
+  decoderFingerprint,
+  type ResolvedPayloadFormat,
+} from "./plan-fingerprints.js";
 
 /**
  * Turning database rows into endpoint plans (ADR 0016 §3, §4).
@@ -86,6 +93,12 @@ export type BindingRow = {
    * filtered: `planEndpoints` turns `false` into a named skip.
    */
   readonly organization_ingest_enabled: boolean;
+  /**
+   * `organizations.default_poll_interval_ms` (ADR 0141 decision 10, migration
+   * `0164`): the organization's poll interval, `null` when it sets none. Read
+   * for poll protocols only; `resolveRtuPollInterval` bounds it again.
+   */
+  readonly organization_default_poll_interval_ms: number | null;
   /**
    * `mqtt_payload_formats.code` joined on `config->>'payloadFormat'` (ADR 0116
    * decision 4). `null` when the config names no format **or** names one with
@@ -187,6 +200,7 @@ export const BINDING_QUERY = `
     c.key_version,
     o.code AS organization_code,
     o.ingest_enabled AS organization_ingest_enabled,
+    o.default_poll_interval_ms AS organization_default_poll_interval_ms,
     f.code AS payload_format_code,
     f.definition AS payload_format_definition
   FROM bms.rtus r
@@ -245,6 +259,20 @@ export type EndpointPlan = {
    * edge plan, which never reloads, carries `""`.
    */
   readonly credentialFingerprint: string;
+  /**
+   * `F1.2` (ADR 0016 Amendment 10 (a)): the shortest interval any RTU on this
+   * poll endpoint resolved to (`config.pollIntervalMs`, else the
+   * organization's); `null` when none did, and on every push plan. The
+   * supervisor sleeps `pollSleepMs(plan, adapter.defaultPollIntervalMs)`.
+   */
+  readonly pollIntervalMs: number | null;
+  /** True when at least one RTU here resolved to the adapter default (P9 then takes the shorter). */
+  readonly pollIntervalUsesDefault: boolean;
+  /**
+   * `F1.2`: `configFingerprint` of the connection slice and every device slice;
+   * `""` for MQTT and on the edge. A move is a `device-config-changed` replace.
+   */
+  readonly configFingerprint: string;
 };
 
 /**
@@ -261,7 +289,12 @@ export type PlanWarning = {
   readonly rtuId: string;
   /** `string | null` to match `SkippedBinding`; non-null on every current path. */
   readonly rtuCode: string | null;
-  readonly reason: "credential-env-fallback";
+  readonly reason: "credential-env-fallback" | "poll-interval-out-of-bounds";
+  /**
+   * `poll-interval-out-of-bounds` only: which stored value was replaced by the
+   * next level down (ADR 0016 Amendment 10 (a)). Never the value itself.
+   */
+  readonly detail?: PollIntervalLevel;
 };
 
 export type PlanResult = {
@@ -337,6 +370,8 @@ export type PlanOptions = {
    * set — fail closed: no `tls: false` RTU is served.
    */
   readonly mqttPlaintextHosts?: ReadonlySet<string>;
+  /** `MODBUS_TCP_HOSTS`, parsed (ADR 0141 decision 22). Absent dials no Modbus host — fail closed. */
+  readonly modbusTcpHosts?: ModbusTcpHostAllowList;
 };
 
 /**
@@ -357,54 +392,10 @@ export function endpointGroupKey(protocol: IngestProtocol, endpointKey: string):
   return `${protocol}\u0000${endpointKey}`;
 }
 
+const NO_HOSTS: ModbusTcpHostAllowList = { names: new Set(), ipv4Cidrs: [] };
+
 function isIngestProtocol(value: string): value is IngestProtocol {
   return (INGEST_PROTOCOLS as readonly string[]).includes(value);
-}
-
-/**
- * Keeps only string-valued entries.
- *
- * `decryptCredentials` ends in `JSON.parse`, so the plaintext can hold anything
- * the API wrote. `AdapterContext.credentials` is `Record<string, string>`, and
- * a number leaking through as a `string` at the type level is the kind of lie
- * that surfaces as an unreadable protocol error three layers down. Dropped keys
- * are reported by name; **values never appear anywhere** (AGENTS.md §9.6).
- */
-function narrowCredentials(raw: Record<string, unknown>): {
-  credentials: Record<string, string>;
-  droppedKeys: string[];
-} {
-  const credentials: Record<string, string> = {};
-  const droppedKeys: string[] = [];
-  for (const [key, value] of Object.entries(raw)) {
-    if (typeof value === "string") {
-      credentials[key] = value;
-    } else {
-      droppedKeys.push(key);
-    }
-  }
-  return { credentials, droppedKeys };
-}
-
-/**
- * The one credential-failure cause worth naming to an operator: the row was
- * encrypted under a key this process does not hold (ADR 0062 decision 4).
- *
- * **A constant, never `err.message`.** §9.6 keeps crypto text out of the skip
- * report because it can carry key material or ciphertext framing, and the
- * report is served on the health endpoint. A fixed token also keeps the
- * vocabulary closed, so an operator can grep for it. Every other failure — a
- * wrong-length IV, a bad tag, a truncated ciphertext — carries no detail at
- * all, which is why this returns an empty object rather than a second string.
- *
- * Matched on `name` rather than `instanceof`: vitest can load two module
- * instances of `@bms/shared` (`F4.108`), and the ingest host loads the built
- * `dist` while a spec may load the source.
- */
-function keyVersionDetail(error: unknown): { detail?: string } {
-  const name =
-    typeof error === "object" && error !== null ? (error as { name?: unknown }).name : undefined;
-  return name === "CredentialKeyVersionError" ? { detail: "key-version-not-loaded" } : {};
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -417,7 +408,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 function sameConnection(a: unknown, b: unknown): boolean {
   const x = asRecord(a);
   const y = asRecord(b);
-  return x.host === y.host && x.port === y.port && x.tls === y.tls;
+  // F1.2: a Modbus gateway's request settings are one per socket, so they must agree too.
+  return ["host", "port", "tls", "timeoutMs", "interRequestDelayMs"].every((key) => x[key] === y[key]);
 }
 
 /**
@@ -436,9 +428,6 @@ function splitConfig(raw: unknown): {
   const { device, ...connection } = all;
   return { connection, device: asRecord(device) };
 }
-
-/** The payload format one MQTT binding decodes with; `undefined` is the built-in. */
-type ResolvedPayloadFormat = { code: string; definition: MqttPayloadFormatDefinition } | undefined;
 
 /**
  * Resolves the format an MQTT RTU's config names against the catalog join
@@ -461,42 +450,6 @@ function resolvePayloadFormat(
     return { skip: "payload-format-invalid", code };
   }
   return { format: { code: head.payload_format_code, definition: parsed.data } };
-}
-
-/**
- * `F4.333`: one bound RTU's part of `credentialFingerprint` — the id, the key
- * version, the IV and whether a ciphertext is present (security review I1: no
- * CHECK ties the two columns together). Never the ciphertext itself.
- */
-function credentialMark(
-  rtuId: string,
-  row: Pick<BindingRow, "key_version" | "credentials_iv" | "credentials_ciphertext">,
-): string {
-  const iv = row.credentials_iv === null ? "-" : row.credentials_iv.toString("base64");
-  const present = row.credentials_ciphertext === null ? "0" : "1";
-  return [rtuId, String(row.key_version ?? "-"), iv, present].join("\u0000");
-}
-
-/** `F4.333` (ADR 0129 decision 4): `credentialFingerprint` from the bound RTUs' marks. */
-function credentialFingerprint(marks: readonly string[]): string {
-  return createHash("sha256").update([...marks].sort().join("\n")).digest("hex");
-}
-
-/** `decoderFingerprint` for one endpoint's bindings (plan R8). */
-function decoderFingerprint(protocol: IngestProtocol, bindings: readonly RtuBinding<unknown>[]): string {
-  const parts =
-    protocol === "mqtt"
-      ? bindings.map((binding) => {
-          const device = asRecord(binding.device);
-          const format = device.payloadFormat as ResolvedPayloadFormat;
-          return [
-            String(device.topic),
-            format?.code ?? MQTT_BUILTIN_PAYLOAD_FORMAT_CODE,
-            JSON.stringify(format?.definition ?? MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION),
-          ].join("\u0000");
-        })
-      : [];
-  return createHash("sha256").update([...new Set(parts)].sort().join("\n")).digest("hex");
 }
 
 /**
@@ -530,6 +483,10 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
     formatByTopic: Map<string, string>;
     /** `F4.333`: one `credentialMark` per bound RTU. */
     credentialMarks: string[];
+    /** `F1.2`: each bound RTU's resolved poll interval (`null` = the adapter default). */
+    pollIntervals: (number | null)[];
+    /** `F1.2` (ADR 0141 Amendment 2 (a)): the organization a poll endpoint serves. */
+    organizationCode: string;
   };
   const endpoints = new Map<string, Accumulator>();
 
@@ -814,6 +771,16 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       }
     }
 
+    // F1.2 (ADR 0016 Amendment 10 (a)): `pollIntervalMs` is the host's, for
+    // every poll protocol. It is removed before the adapter's schema sees the
+    // slice, so no adapter declares it. Push plans keep the slice untouched.
+    let rtuPollInterval: ReturnType<typeof resolveRtuPollInterval> = { value: null, warnings: [] };
+    if (factory.mode === "poll") {
+      const { pollIntervalMs, ...withoutInterval } = connectionSlice;
+      connectionSlice = withoutInterval;
+      rtuPollInterval = resolveRtuPollInterval(pollIntervalMs, head.organization_default_poll_interval_ms);
+    }
+
     const configParsed = factory.configSchema.safeParse(connectionSlice);
     if (!configParsed.success) {
       skipped.push({
@@ -824,6 +791,14 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         // config is one field away from a credential.
         detail: configParsed.error.issues.map((i) => i.path.join(".") || "(root)").join(","),
       });
+      continue;
+    }
+
+    // ADR 0141 decision 22 (P6): the cloud host dials only a listed Modbus host.
+    // The configured string is matched, never resolved; the edge does not plan here.
+    const modbusHost = (configParsed.data as { host?: unknown }).host;
+    if (protocol === "modbus_tcp" && !modbusTcpHostAllowed(String(modbusHost), options.modbusTcpHosts ?? NO_HOSTS)) {
+      skipped.push({ rtuId, rtuCode: deviceKey, reason: "modbus-host-not-allowed" });
       continue;
     }
 
@@ -878,8 +853,15 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         index: new Map(),
         formatByTopic: new Map(),
         credentialMarks: [],
+        pollIntervals: [],
+        organizationCode: head.organization_code,
       };
       endpoints.set(groupKey, group);
+    } else if (factory.mode === "poll" && group.organizationCode !== head.organization_code) {
+      // ADR 0141 Amendment 2 (a): one poll endpoint, one organization. Another
+      // organization's RTU on this host:port would share its socket and cadence.
+      skipped.push({ rtuId, rtuCode: deviceKey, reason: "endpoint-organization-conflict", detail: endpointKey });
+      continue;
     } else if (!sameConnection(group.config, configParsed.data)) {
       // F4.326 security review M1, defence in depth: one endpoint key must mean
       // one connection. A row whose host, port or TLS choice differs from the
@@ -930,6 +912,10 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
 
     const sourceKeys = [...new Set(pointRows.map((row) => row.source_data_key))];
     group.credentialMarks.push(credentialMark(rtuId, head));
+    group.pollIntervals.push(rtuPollInterval.value);
+    for (const level of rtuPollInterval.warnings) {
+      warnings.push({ rtuId, rtuCode: deviceKey, reason: "poll-interval-out-of-bounds", detail: level });
+    }
     group.bindings.push({
       rtuId,
       rtuCode: deviceKey,
@@ -951,6 +937,8 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       pointIndex: group.index,
       decoderFingerprint: decoderFingerprint(group.protocol, group.bindings),
       credentialFingerprint: credentialFingerprint(group.credentialMarks),
+      ...combineEndpointPollIntervals(group.pollIntervals),
+      configFingerprint: configFingerprint(group.protocol, group.config, group.bindings),
     })),
     skipped,
     warnings,

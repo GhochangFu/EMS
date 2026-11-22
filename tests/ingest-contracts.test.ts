@@ -92,6 +92,17 @@ describe("ADR 0016 ingest contracts", () => {
     );
   });
 
+  it("publishes the Modbus TCP host allow-list parser and predicate through ./ingest", () => {
+    // `F1.2` (ADR 0141 decision 22): the ingest host loads `dist/ingest.js`, so
+    // a parser the source exports but the built subpath does not would leave
+    // the cloud host with no Modbus allow-list check at all.
+    const ingest = require_("@bms/shared/ingest") as Record<string, unknown>;
+    for (const name of ["parseModbusTcpHosts", "modbusTcpHostAllowed"]) {
+      expect(typeof ingest[name], `${name} is not exported by @bms/shared/ingest`).toBe("function");
+    }
+    expect(ingest.MODBUS_TCP_HOSTS_ENV).toBe("MODBUS_TCP_HOSTS");
+  });
+
   it("publishes the payload format decoder and schema through ./ingest", () => {
     // `F4.334` (ADR 0116 decision 3): the ingest host and the worker load the
     // built subpath, so the decoder must be in `dist/ingest.js`, not only in source.

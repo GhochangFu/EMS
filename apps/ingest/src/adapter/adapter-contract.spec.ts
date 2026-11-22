@@ -40,6 +40,13 @@ export type AdapterUnderTest<TConfig, TDevice> = {
   deliverSamples?(deviceKey: string): void;
   /** Makes the next `connect()` fail, so the no-`process.exit` rule can be checked. */
   failNextConnect?(): void;
+  /**
+   * Drops the fake transport (the peer closes the socket). **Required of every
+   * poll adapter** (ADR 0016 Amendment 10 (c)): the suite checks that the next
+   * `poll()` rejects and `health().state` reads `disconnected`, which is what
+   * lets the host restart it through the §5 backoff.
+   */
+  loseTransport?(): void;
 };
 
 /** What an adapter's `.test.ts` supplies. */
@@ -393,6 +400,26 @@ export async function runAdapterContractTests<TConfig, TDevice>(
           `carried two bindings. One complete read cycle covers every binding (§1).`,
       );
     }
+
+    // ADR 0016 Amendment 10 (c): a lost transport rejects poll() and reads
+    // `disconnected`, or the host's restart rule (P10) never fires for it.
+    assert(
+      under.loseTransport !== undefined,
+      `${label} a poll adapter's fixtures must provide loseTransport (ADR 0016 Amendment 10 (c))`,
+    );
+    under.loseTransport?.();
+    let rejected = false;
+    try {
+      await adapter.poll();
+    } catch {
+      rejected = true;
+    }
+    assert(rejected, `${label} poll() must reject once the transport is lost (ADR 0016 Amendment 10 (c))`);
+    assert(
+      adapter.health().state === "disconnected",
+      `${label} health().state must be "disconnected" once the transport is lost, got ` +
+        `"${adapter.health().state}"; the host restarts a poll adapter only on that state`,
+    );
 
     await adapter.disconnect();
     assertNoSecrets(lines, adapter.health().detail, label);

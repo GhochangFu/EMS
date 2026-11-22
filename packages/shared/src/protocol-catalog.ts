@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { OnboardingProtocol } from "./index";
 import { mqttDraftConfigSchema } from "./ingest-adapters/mqtt";
+import { modbusDraftConfigSchema } from "./ingest-modbus";
 
 /**
  * The onboarding protocol catalog (ADR 0093 decisions 2 and 3, `F3.24a`).
@@ -26,7 +27,7 @@ import { mqttDraftConfigSchema } from "./ingest-adapters/mqtt";
  * Protocols an ingest adapter serves today. An adapter PR (`F1.2`–`F1.6`) adds
  * its code here and its factory to the registry in the same change.
  */
-export const INGEST_WIRED_PROTOCOLS = ["mqtt"] as const;
+export const INGEST_WIRED_PROTOCOLS = ["mqtt", "modbus_tcp"] as const;
 
 export type IngestWiredProtocol = (typeof INGEST_WIRED_PROTOCOLS)[number];
 
@@ -102,12 +103,13 @@ const PROTOCOL_CATALOG_BY_CODE: Readonly<Record<OnboardingProtocol, ProtocolCata
   modbus_tcp: entry({
     code: "modbus_tcp",
     label: "Modbus TCP",
-    description: "Polls holding and input registers over TCP. Adapter F1.2 is not wired yet: config only.",
+    description:
+      "Reads coils, discrete inputs, holding and input registers over TCP, read only. The unit id goes under device; bind a device profile on the RTUs page to name the registers.",
     supportsDiscovery: false,
-    requiredFields: [],
-    optionalFields: ["host", "port", "unitId", "pollIntervalMs"],
-    exampleConfig: { host: "127.0.0.1", port: 502, unitId: 1, pollIntervalMs: 5000 },
-    draftConfigSchema: anyConfig,
+    requiredFields: ["host"],
+    optionalFields: ["port", "timeoutMs", "interRequestDelayMs", "pollIntervalMs", "device"],
+    exampleConfig: { host: "192.168.1.20", port: 502, pollIntervalMs: 10000, device: { unitId: 1 } },
+    draftConfigSchema: modbusDraftConfigSchema,
   }),
   bacnet: entry({
     code: "bacnet",

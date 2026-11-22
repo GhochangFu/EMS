@@ -61,6 +61,8 @@ export * from "./ingest-adapters/modbus-codec";
 // `./ingest` (node10) and a new subpath is a package.json change. Empty until
 // plan PR 9; that PR re-measures the web bundle once the meter files land.
 export { STOCK_MODBUS_PROFILES } from "./device-profiles/modbus";
+// `F1.2` (ADR 0141 decision 22): the MODBUS_TCP_HOSTS allow-list parser and predicate. Node-free.
+export * from "./ingest-adapters/modbus-tcp-hosts";
 
 /**
  * Compile-time drift guard: every ingest protocol must be expressible in

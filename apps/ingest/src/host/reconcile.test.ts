@@ -2,6 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   runDiffChangedDeviceSetReplacesTests,
+  runDiffDeviceConfigReplacesTests,
+  runDiffPollIntervalReplacesTests,
+  runDiffPollReasonOrderTests,
   runDiffCredentialFingerprintReplacesTests,
   runDiffFingerprintChangeReplacesTests,
   runDiffGoneEndpointStopsTests,
@@ -16,6 +19,7 @@ import {
   runRegistryFingerprintReplaceLogsReasonTests,
   runRegistryLogsNoCredentialsTests,
   runRegistryNoOverlapTests,
+  runRegistryPollReplaceTests,
   runRegistryRejectedApplyClearsBusyTests,
   runRegistryReplaceAwaitsStopTests,
   runRegistryScannedBacklogTests,
@@ -134,5 +138,24 @@ describe("reload reconciliation — the credential fingerprint (ADR 0129 decisio
 
   it("rebuilds with the new credential and logs no secret or fingerprint", async () => {
     await runRegistryCredentialReplaceTests();
+  });
+
+});
+
+describe("reload reconciliation — poll endpoints (ADR 0016 Amendment 10 (a), F1.2)", () => {
+  it("replaces a poll endpoint whose interval moved (poll-interval-changed)", () => {
+    runDiffPollIntervalReplacesTests();
+  });
+
+  it("replaces a poll endpoint whose config fingerprint moved (device-config-changed)", () => {
+    runDiffDeviceConfigReplacesTests();
+  });
+
+  it("checks devices, decoder, config, credentials, then interval", () => {
+    runDiffPollReasonOrderTests();
+  });
+
+  it("records the interval and the config fingerprint, so an unchanged save replaces nothing", async () => {
+    await runRegistryPollReplaceTests();
   });
 });

@@ -50,7 +50,7 @@ const RTU = {
   ok: "00000000-0000-4000-8000-000000000c01",
   ok2: "00000000-0000-4000-8000-000000000c02",
   noCode: "00000000-0000-4000-8000-000000000c03",
-  modbus: "00000000-0000-4000-8000-000000000c04",
+  noAdapter: "00000000-0000-4000-8000-000000000c04",
   simFed: "00000000-0000-4000-8000-000000000c05",
   elsewhere: "00000000-0000-4000-8000-000000000c06",
   foreign: "00000000-0000-4000-8000-000000000c07",
@@ -140,7 +140,8 @@ export class FakeFleet {
       rtu(RTU.ok),
       rtu(RTU.ok2),
       rtu(RTU.noCode, { rtu_code: null }),
-      rtu(RTU.modbus, { protocol: "modbus_tcp" }),
+      // F1.2 wired Modbus TCP, so SNMP stands for "a protocol with no adapter" now.
+      rtu(RTU.noAdapter, { protocol: "snmp" }),
       rtu(RTU.simFed, { simulator_fed: true }),
       rtu(RTU.elsewhere, { edge_gateway_id: GW_OTHER }),
       rtu(RTU.foreign, { organization_id: ORG_B }),
@@ -502,7 +503,7 @@ export async function theAssignmentRules(): Promise<void> {
 
   for (const [rtuId, message] of [
     [RTU.noCode, RTU_NO_CODE_MESSAGE],
-    [RTU.modbus, RTU_NO_ADAPTER_MESSAGE],
+    [RTU.noAdapter, RTU_NO_ADAPTER_MESSAGE],
     [RTU.simFed, RTU_SIMULATOR_FED_MESSAGE],
     [RTU.elsewhere, RTU_OTHER_GATEWAY_MESSAGE],
     // What `bindings.ts` plans: `r.active AND r.ingest_enabled`, and the organization's switch on.
