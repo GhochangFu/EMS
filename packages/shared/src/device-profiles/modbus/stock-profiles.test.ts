@@ -22,11 +22,11 @@ describe("F1.2 — stock Modbus profiles (ADR 0141 decisions 12, 14)", () => {
     assertTheCheckRefusesAnUncitedOrRepeatedProfile();
   });
 
-  it("S4 Elmeasure LG+ 5310: three registers match the manual's table", () => {
+  it("S4 Elmeasure LG+ 5310: every register matches the manual's table", () => {
     assertTheElmeasureLgPlus5310PinsMatchTheManual();
   });
 
-  it("S5 Selec MFM384-C-CE: three registers match the manual's table", () => {
+  it("S5 Selec MFM384-C-CE: every register matches the manual's table", () => {
     assertTheSelecMfm384PinsMatchTheManual();
   });
 });
