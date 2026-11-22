@@ -321,6 +321,39 @@ export async function assertEveryRowCarriesTheOrganizationSwitch(pool: pg.Pool):
 }
 
 /**
+ * `F1.2` (ADR 0141 decision 10, migration `0164`) — every row carries its
+ * organization's `default_poll_interval_ms` as a JS `number`, or `null` when
+ * the organization sets none. `pg` returns `integer` as a number; a string
+ * would fail the shared bound and read as out of bounds on every reload.
+ * Inside `BEGIN … ROLLBACK` on one client.
+ */
+export async function assertEveryRowCarriesTheOrganizationPollInterval(pool: pg.Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const { rows: candidates } = await client.query<{ rtu_id: string; organization_id: string }>(
+      ORGANIZATION_RTU_QUERY,
+    );
+    expect(candidates.length, "no ingest-bound RTU to set the organization interval of").toBe(1);
+    const { rtu_id: rtuId, organization_id: organizationId } = candidates[0];
+    await client.query("BEGIN");
+    try {
+      await client.query("UPDATE bms.organizations SET default_poll_interval_ms = NULL WHERE id = $1", [organizationId]);
+      const unset = (await bindingRows(client)).filter((r) => r.rtu_id === rtuId);
+      expect(unset.length, "the chosen RTU is missing from the binding query").toBeGreaterThan(0);
+      expect(unset.every((r) => r.organization_default_poll_interval_ms === null)).toBe(true);
+
+      await client.query("UPDATE bms.organizations SET default_poll_interval_ms = 60000 WHERE id = $1", [organizationId]);
+      const set = (await bindingRows(client)).filter((r) => r.rtu_id === rtuId);
+      expect(set.map((r) => r.organization_default_poll_interval_ms)).toEqual(set.map(() => 60_000));
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Switching the organization off is **selected, not filtered**: the RTU's rows
  * stay in the result reading `false`, so the host can report the skip. Inside
  * `BEGIN … ROLLBACK` on one client, like the functions above.

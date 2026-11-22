@@ -204,6 +204,9 @@ export function makePlan(): EndpointPlan {
     pointIndex: new Map(),
     decoderFingerprint: "fp-0",
     credentialFingerprint: "cred-0",
+    pollIntervalMs: null,
+    pollIntervalUsesDefault: true,
+    configFingerprint: "",
   };
 }
 
@@ -634,7 +637,7 @@ export async function runSupervisorTests(): Promise<void> {
     assert(scripted.pollCalls === 2, "the next read starts only after the first settles");
     assert(
       fake.delays.includes(5_000),
-      `the poll cadence must come from defaultPollIntervalMs, saw ${fake.delays.join(",")}`,
+      `a plan with no interval must sleep the adapter's defaultPollIntervalMs, saw ${fake.delays.join(",")}`,
     );
     await stopSupervisor(supervisor, fake);
   }

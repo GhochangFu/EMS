@@ -1,5 +1,6 @@
 import type { IngestProtocol, IngestWiredProtocol } from "@bms/shared/ingest";
 
+import { modbusTcpAdapterFactory } from "../adapters/modbus-tcp.js";
 import { mqttAdapterFactory } from "../adapters/mqtt.js";
 import type { IngestAdapterFactory } from "./types.js";
 
@@ -29,8 +30,9 @@ import type { IngestAdapterFactory } from "./types.js";
  * `INGEST_WIRED_PROTOCOLS` and its line here together.
  */
 const ADAPTERS = {
+  modbus_tcp: modbusTcpAdapterFactory,
   mqtt: mqttAdapterFactory,
-  // F1.2 adds `modbus_tcp:`, F1.3 `bacnet:`, F1.4 `opc_ua:`, F1.5 `snmp:` and
+  // F1.3 adds `bacnet:`, F1.4 `opc_ua:`, F1.5 `snmp:` and
   // `rest_poller:`, F1.6 its own. One line and one import each — nothing else
   // in this file changes.
 } satisfies Record<IngestWiredProtocol, IngestAdapterFactory>;

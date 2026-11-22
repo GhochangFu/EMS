@@ -101,8 +101,9 @@ export async function assertAddRtuAcceptsAnEmptyMqttTopic(): Promise<void> {
 /** T4 — an unwired protocol is config only in the action line. */
 export async function assertAnUnwiredProtocolIsConfigOnlyInTheActionLine(): Promise<void> {
   const state: ToolState = { working: {} };
-  const out = await runTool(addRtu("modbus_tcp", { port: "not a number", anything: { deep: true } }), state, context());
-  assert(out.ok && out.actionLine === "Added RTU RTU-1 (modbus_tcp) (config only, not ingested)", `the action line: ${JSON.stringify(out)}`);
+  // F1.2 wired Modbus TCP, so SNMP stands for "a protocol with no adapter" now.
+  const out = await runTool(addRtu("snmp", { port: "not a number", anything: { deep: true } }), state, context());
+  assert(out.ok && out.actionLine === "Added RTU RTU-1 (snmp) (config only, not ingested)", `the action line: ${JSON.stringify(out)}`);
 }
 
 /** T4's adjacent negative — an MQTT line carries no config-only tail. */

@@ -5,6 +5,7 @@ import {
   assertAnInactiveRtuIsNotPlanned,
   assertCoalescePicksEachSidePerColumn,
   assertEveryRowCarriesResolvedMetadata,
+  assertEveryRowCarriesTheOrganizationPollInterval,
   assertEveryRowCarriesTheOrganizationSwitch,
   assertKeyVersionArrivesAsAnInteger,
   assertTheEdgeGatewayIsSelectedNotFiltered,
@@ -65,6 +66,11 @@ describe.skipIf(!connectionString)("F2.7 — resolved point metadata on the bind
 
   it("selects a switched-off organization's rows rather than filtering them", async () => {
     await assertTheOrganizationSwitchIsSelectedNotFiltered(pool as pg.Pool);
+  });
+
+  // `F1.2` / ADR 0141 decision 10 (migration `0164`).
+  it("returns the organization's poll interval as a number, or null when unset", async () => {
+    await assertEveryRowCarriesTheOrganizationPollInterval(pool as pg.Pool);
   });
 
   // `F4.334` / ADR 0116 decision 4.

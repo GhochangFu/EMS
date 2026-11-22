@@ -1,0 +1,145 @@
+{
+  "code": "elmeasure-lg-plus-5310",
+  "version": 1,
+  "vendor": "Elmeasure",
+  "model": "LG+ 5310",
+  "source": {
+    "document": "Modbus Register Map, Multifunction Meters - Little Genius Plus",
+    "revision": "ELM/MOD-R/MFM/V1.0 - 1117",
+    "pages": "1"
+  },
+  "verified": false,
+  "registers": [
+    {
+      "sourceKey": "kw",
+      "table": "holding",
+      "address": 100,
+      "type": "float32",
+      "wordOrder": "big",
+      "scale": 0.001,
+      "unit": "kW"
+    },
+    {
+      "sourceKey": "pf",
+      "table": "holding",
+      "address": 116,
+      "type": "float32",
+      "wordOrder": "big"
+    },
+    {
+      "sourceKey": "kva",
+      "table": "holding",
+      "address": 124,
+      "type": "float32",
+      "wordOrder": "big",
+      "scale": 0.001,
+      "unit": "kVA"
+    },
+    {
+      "sourceKey": "voltage_vry",
+      "table": "holding",
+      "address": 134,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "V"
+    },
+    {
+      "sourceKey": "voltage_vyb",
+      "table": "holding",
+      "address": 136,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "V"
+    },
+    {
+      "sourceKey": "voltage_vbr",
+      "table": "holding",
+      "address": 138,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "V"
+    },
+    {
+      "sourceKey": "voltage_vrn",
+      "table": "holding",
+      "address": 142,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "V"
+    },
+    {
+      "sourceKey": "voltage_vyn",
+      "table": "holding",
+      "address": 144,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "V"
+    },
+    {
+      "sourceKey": "voltage_vbn",
+      "table": "holding",
+      "address": 146,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "V"
+    },
+    {
+      "sourceKey": "current_a",
+      "table": "holding",
+      "address": 148,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "A"
+    },
+    {
+      "sourceKey": "current_ir",
+      "table": "holding",
+      "address": 150,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "A"
+    },
+    {
+      "sourceKey": "current_iy",
+      "table": "holding",
+      "address": 152,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "A"
+    },
+    {
+      "sourceKey": "current_ib",
+      "table": "holding",
+      "address": 154,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "A"
+    },
+    {
+      "sourceKey": "frequency_hz",
+      "table": "holding",
+      "address": 156,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "Hz"
+    },
+    {
+      "sourceKey": "kwh_total",
+      "table": "holding",
+      "address": 158,
+      "type": "float32",
+      "wordOrder": "big",
+      "scale": 0.001,
+      "unit": "kWh"
+    },
+    {
+      "sourceKey": "kvah_total",
+      "table": "holding",
+      "address": 160,
+      "type": "float32",
+      "wordOrder": "big",
+      "scale": 0.001,
+      "unit": "kVAh"
+    }
+  ]
+}

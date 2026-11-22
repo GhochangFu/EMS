@@ -145,7 +145,8 @@ export async function assertAProtocolFormIsDetected(word: string, protocol: stri
 export async function assertANamedProtocolAnswersItsActionLine(): Promise<void> {
   const { result } = await runTurn("modbus please");
   assert(
-    JSON.stringify(result.actionLines) === JSON.stringify(["Added RTU RTU-1 (modbus_tcp) (config only, not ingested)"]),
+    // F1.2: Modbus TCP is wired, so its action line carries no "config only" tail.
+    JSON.stringify(result.actionLines) === JSON.stringify(["Added RTU RTU-1 (modbus_tcp)"]),
     `the add_rtu action line, got ${JSON.stringify(result.actionLines)}`,
   );
 }
