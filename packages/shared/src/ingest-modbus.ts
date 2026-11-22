@@ -70,7 +70,11 @@ export const MODBUS_UNIT_ID_DIRECT = 255;
 export const modbusRegisterSchema = z
   .object({
     /** The `bms.asset_points.source_data_key` this register feeds. */
-    sourceKey: mqttPayloadReadingKeySchema,
+    // `.describe()` after each refinement (ADR 0029 Amendment 1 fact F): the profiles API
+    // registers bodies that carry this schema, and the document must say what it cannot check.
+    sourceKey: mqttPayloadReadingKeySchema.describe(
+      "1 to 128 characters; not a prototype property name (__proto__, constructor, prototype)",
+    ),
     table: z.enum(MODBUS_TABLES, {
       errorMap: () => ({ message: "a register table is coil, discrete, holding or input" }),
     }),
@@ -109,7 +113,10 @@ export const modbusRegisterSchema = z
         message: "the register's words run past address 65535",
       });
     }
-  });
+  })
+  .describe(
+    "A coil or discrete input register has type bool; a register's words may not run past address 65535",
+  );
 
 export type ModbusRegister = z.infer<typeof modbusRegisterSchema>;
 
@@ -130,7 +137,8 @@ export const modbusRegistersSchema = z
       }
       seen.add(entry.sourceKey);
     });
-  });
+  })
+  .describe("No two registers of one device share a sourceKey");
 
 /**
  * A host name or IP literal: no scheme, no path, no port, no whitespace, at
@@ -175,7 +183,8 @@ export const modbusUnitIdSchema = z
     message: "a Modbus unit id is 0 to 247, or 255 for a device addressed directly over TCP",
   });
 
-const deviceProfileCodeSchema = z.string().min(1).max(64).regex(CATALOG_CODE_PATTERN);
+/** A profile code: the `bms.device_profiles.code` CHECK class, at most 64. The profiles API's bodies use it too. */
+export const deviceProfileCodeSchema = z.string().min(1).max(64).regex(CATALOG_CODE_PATTERN);
 
 /** Provenance only: the profile a device's registers were copied from (decision 15). */
 export const modbusProfileReferenceSchema = z

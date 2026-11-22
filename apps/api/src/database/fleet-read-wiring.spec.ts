@@ -6,6 +6,7 @@ import { AlarmNotifyService } from "../alarms/alarm-notify.service";
 import { AlarmRaiser } from "../alarms/alarm-raise.service";
 import { AlarmRootCauseService } from "../alarms/alarm-root-cause.service";
 import { AlarmsService } from "../alarms/alarms.service";
+import { DeviceProfilesAdminService } from "../admin/device-profiles/device-profiles.service";
 import { LocationsAdminService } from "../admin/locations/locations.service";
 import { TelemetryImportService } from "../admin/telemetry-import/telemetry-import.service";
 import { HealthInputsService } from "../asset-health/health-inputs.service";
@@ -424,4 +425,16 @@ export function assertDegradationServiceSlots(): void {
   expect(injectedToken(DegradationService, 0)).toBe(TENANT_DRIZZLE);
   expect(injectedToken(DegradationService, 1)).toBe(FLEET_DRIZZLE);
   expect(injectedToken(DegradationService, 2)).toBe(FLEET_POOL);
+}
+
+/**
+ * `F1.2` — `DeviceProfilesAdminService(tenantDb, fleetDb, …)` (ADR 0141 decision 13, plan T5.2):
+ * every profile read and write runs under `withTenant` on slot 0; slot 1 maps a `:id` to its
+ * organization before the tenant transaction opens. A swap would write on the BYPASSRLS pool,
+ * which holds no INSERT on `bms.device_profiles` (migration `0164`), and the integration pair
+ * constructs the service with explicit pools, so only this catches it.
+ */
+export function assertDeviceProfilesServiceSlots(): void {
+  expect(injectedToken(DeviceProfilesAdminService, 0)).toBe(TENANT_DRIZZLE);
+  expect(injectedToken(DeviceProfilesAdminService, 1)).toBe(FLEET_DRIZZLE);
 }

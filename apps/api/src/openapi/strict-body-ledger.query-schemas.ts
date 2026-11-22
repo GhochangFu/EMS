@@ -15,6 +15,7 @@ import {
   tariffCategoriesQuerySchema,
   tariffLineVersionsQuerySchema,
   deleteTariffVersionQuerySchema,
+  listDeviceProfilesQuerySchema,
 } from "@bms/shared";
 import { locationEnergyBillQuerySchema } from "../tariffs/tariffs.schema";
 import {
@@ -241,4 +242,7 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // (`GET /degradation?organizationId=&locationId=`): the advisories' two optional scope uuids that
   // only narrow — `.strict()`, no body, no ledger entry. The asset route takes no query.
   degradationQuerySchema,
+  // 49 -> 50 (2026-11-22): `F1.2` (ADR 0141 decision 13) registered `listDeviceProfilesQuerySchema`
+  // (`GET /admin/device-profiles?organizationId=`): one required uuid, `.strict()`, no body.
+  listDeviceProfilesQuerySchema,
 };
