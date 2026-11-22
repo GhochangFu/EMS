@@ -16,7 +16,7 @@ describe("F3.24a — the protocol catalog (ADR 0093 decisions 2, 3)", () => {
     assertOneEntryPerOnboardingProtocolInDeclarationOrder();
   });
 
-  it("C2 derives ingestWired from INGEST_WIRED_PROTOCOLS, which is MQTT alone", () => {
+  it("C2 derives ingestWired from INGEST_WIRED_PROTOCOLS, which is MQTT and Modbus TCP", () => {
     assertIngestWiredIsDerivedFromTheWiredList();
   });
 
@@ -28,7 +28,7 @@ describe("F3.24a — the protocol catalog (ADR 0093 decisions 2, 3)", () => {
     assertNoCatalogKeyIsACredentialKey();
   });
 
-  it("C5 gives MQTT the shared draft schema and every other protocol an open one", () => {
+  it("C5 gives MQTT and Modbus TCP their shared draft schemas and every other protocol an open one", () => {
     assertTheMqttEntryCarriesTheDraftSchema();
   });
 
@@ -36,7 +36,7 @@ describe("F3.24a — the protocol catalog (ADR 0093 decisions 2, 3)", () => {
     assertDescribeProtocolIsJsonSafe();
   });
 
-  it("C7 requires topic for MQTT and nothing for an unwired protocol", () => {
+  it("C7 requires topic for MQTT, host for Modbus TCP and nothing for an unwired protocol", () => {
     assertRequiredFieldsAreRequiredByTheDraftSchemaOnlyWhereItSaysSo();
   });
 });

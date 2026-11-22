@@ -16,8 +16,8 @@ import { describe, expect, it } from "vitest";
  * It also holds plan M16: everything reachable from `@bms/shared/ingest` loads
  * in the web bundle, so the codec and the schemas import nothing from Node.
  *
- * Plan PR 4 adds the three adapter files (`apps/ingest/src/adapters/modbus-*`)
- * to `READ_ONLY_SCAN` by name. Inline assertions are the `tests/` carve-out in
+ * Plan PR 4 added the three adapter files (`apps/ingest/src/adapters/modbus-*`)
+ * to `READ_ONLY_SCAN` by name, and the no-timer case below. Inline assertions are the `tests/` carve-out in
  * AGENTS.md §4.6.
  */
 
@@ -25,7 +25,12 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const read = (relative: string) => readFileSync(join(repoRoot, relative), "utf8");
 
 /** Every file that builds or sends a Modbus request. Asserted by name, not by count. */
-const READ_ONLY_SCAN = ["packages/shared/src/ingest-adapters/modbus-codec.ts"] as const;
+const READ_ONLY_SCAN = [
+  "packages/shared/src/ingest-adapters/modbus-codec.ts",
+  "apps/ingest/src/adapters/modbus-tcp.ts",
+  "apps/ingest/src/adapters/modbus-transport.ts",
+  "apps/ingest/src/adapters/modbus-read-plan.ts",
+] as const;
 
 /** The files reachable from `./ingest` that this row adds. */
 const NODE_FREE = [
@@ -97,7 +102,12 @@ const namesAWriteCode = (line: string) =>
 
 describe("F1.2 — the Modbus client is read only (ADR 0141 decision 2)", () => {
   it("scans exactly the files that build Modbus requests, and each exists", () => {
-    expect([...READ_ONLY_SCAN]).toEqual(["packages/shared/src/ingest-adapters/modbus-codec.ts"]);
+    expect([...READ_ONLY_SCAN]).toEqual([
+      "packages/shared/src/ingest-adapters/modbus-codec.ts",
+      "apps/ingest/src/adapters/modbus-tcp.ts",
+      "apps/ingest/src/adapters/modbus-transport.ts",
+      "apps/ingest/src/adapters/modbus-read-plan.ts",
+    ]);
     for (const file of READ_ONLY_SCAN) {
       expect(existsSync(join(repoRoot, file)), `${file} is in the scan but does not exist`).toBe(true);
     }
@@ -177,6 +187,15 @@ describe("F1.2 — the Modbus client is read only (ADR 0141 decision 2)", () => 
     expect(codecImports.length, "the codec's import lines were not found; this check is vacuous").toBeGreaterThan(0);
     for (const line of codecImports) {
       expect(line, "the codec has a runtime import").toMatch(/^\s*import type\b/);
+    }
+  });
+
+  it("the adapter files own no repeating timer and no endless loop (ADR 0016 §5 rule 4, plan C4)", () => {
+    for (const file of READ_ONLY_SCAN.filter((f) => f.startsWith("apps/ingest/"))) {
+      const source = stripComments(read(file));
+      expect(source, file).not.toMatch(/\bsetInterval\s*\(/);
+      expect(source, file).not.toMatch(/\bwhile\s*\(\s*true\s*\)/);
+      expect(source, file).not.toMatch(/\bfor\s*\(\s*;\s*;\s*\)/);
     }
   });
 });

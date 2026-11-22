@@ -2,8 +2,10 @@ import {
   INGEST_PROTOCOLS,
   MQTT_BUILTIN_PAYLOAD_FORMAT_CODE,
   mqttPayloadFormatDefinitionSchema,
+  modbusTcpHostAllowed,
   mqttPlaintextDecision,
   type IngestProtocol,
+  type ModbusTcpHostAllowList,
 } from "@bms/shared/ingest";
 
 import type { IngestAdapterFactory, RtuBinding } from "../adapter/types.js";
@@ -367,6 +369,8 @@ export type PlanOptions = {
    * set — fail closed: no `tls: false` RTU is served.
    */
   readonly mqttPlaintextHosts?: ReadonlySet<string>;
+  /** `MODBUS_TCP_HOSTS`, parsed (ADR 0141 decision 22). Absent dials no Modbus host — fail closed. */
+  readonly modbusTcpHosts?: ModbusTcpHostAllowList;
 };
 
 /**
@@ -386,6 +390,8 @@ export type PlanOptions = {
 export function endpointGroupKey(protocol: IngestProtocol, endpointKey: string): string {
   return `${protocol}\u0000${endpointKey}`;
 }
+
+const NO_HOSTS: ModbusTcpHostAllowList = { names: new Set(), ipv4Cidrs: [] };
 
 function isIngestProtocol(value: string): value is IngestProtocol {
   return (INGEST_PROTOCOLS as readonly string[]).includes(value);
@@ -827,6 +833,14 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         // config is one field away from a credential.
         detail: configParsed.error.issues.map((i) => i.path.join(".") || "(root)").join(","),
       });
+      continue;
+    }
+
+    // ADR 0141 decision 22 (P6): the cloud host dials only a listed Modbus host.
+    // The configured string is matched, never resolved; the edge does not plan here.
+    const modbusHost = (configParsed.data as { host?: unknown }).host;
+    if (protocol === "modbus_tcp" && !modbusTcpHostAllowed(String(modbusHost), options.modbusTcpHosts ?? NO_HOSTS)) {
+      skipped.push({ rtuId, rtuCode: deviceKey, reason: "modbus-host-not-allowed" });
       continue;
     }
 

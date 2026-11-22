@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import { runAdapterContractTests } from "../adapter/adapter-contract.spec.js";
+import { lookupAdapter } from "../adapter/registry.js";
 import { modbusTcpAdapterFactory } from "./modbus-tcp.js";
 import {
   assertALostSocketRejectsAndReadsDisconnected,
@@ -18,6 +19,12 @@ import {
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("modbus_tcp adapter (F1.2)", () => {
+  it("is the factory the registry serves for `modbus_tcp`", () => {
+    if (lookupAdapter("modbus_tcp") !== modbusTcpAdapterFactory) {
+      throw new Error("registry.modbus_tcp does not resolve to modbusTcpAdapterFactory");
+    }
+  });
+
   it("satisfies the shared adapter contract", async () => {
     await runAdapterContractTests(modbusTcpAdapterFactory, modbusContractFixtures);
   });

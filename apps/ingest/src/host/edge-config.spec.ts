@@ -167,8 +167,9 @@ export function aGoodFileParses(): void {
 export function aBadProtocolOrAdapterConfigIsReportedByPath(): void {
   const unknown = thrownMessage(() => parse(file([{ ...MQTT_ENDPOINT, protocol: "zigbee" }])), "unknown protocol");
   assert(unknown.includes("endpoints[0].protocol") && unknown.includes("zigbee"), `unknown protocol: ${unknown}`);
-  const unwired = thrownMessage(() => parse(file([{ ...MQTT_ENDPOINT, protocol: "modbus_tcp" }])), "no adapter");
-  assert(unwired.includes("modbus_tcp"), `a protocol with no adapter is named: ${unwired}`);
+  // F1.2 wired Modbus TCP, so SNMP stands for "a protocol with no adapter" now.
+  const unwired = thrownMessage(() => parse(file([{ ...MQTT_ENDPOINT, protocol: "snmp" }])), "no adapter");
+  assert(unwired.includes("snmp"), `a protocol with no adapter is named: ${unwired}`);
 
   const badPort = { ...MQTT_ENDPOINT, config: { host: "broker.site.local", port: "SECRET-PORT-VALUE" } };
   const message = thrownMessage(() => parse(file([badPort])), "a bad port");

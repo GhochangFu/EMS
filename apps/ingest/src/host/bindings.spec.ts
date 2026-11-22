@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { IngestProtocol, MqttDevice } from "@bms/shared/ingest";
+import { parseModbusTcpHosts, type IngestProtocol, type MqttDevice } from "@bms/shared/ingest";
 
 import type { IngestAdapterFactory } from "../adapter/types.js";
 import { mqttAdapterFactory } from "../adapters/mqtt.js";
@@ -71,6 +71,8 @@ export function makeOptions(overrides: Partial<PlanOptions> = {}): PlanOptions {
       credentialSource: "env",
     }),
     credentialKeyConfigured: true,
+    // ADR 0141 decision 22: the fixtures' Modbus gateway is listed; absent would dial none.
+    modbusTcpHosts: parseModbusTcpHosts("10.0.0.5"),
     ...overrides,
   };
 }
