@@ -33,3 +33,9 @@ export function thePromptLetsAProposeToolDelete(): void {
   expect(COPILOT_SYSTEM_PROMPT).not.toContain("Nothing can be deleted, and");
   expect(COPILOT_SYSTEM_PROMPT).toContain("Nothing can be deleted except through a propose_ tool that offers it");
 }
+
+/** `F4.398` (ADR 0142, plan OQ4) — the first sentence names `Verve`; no line names `IONSiTE NEXUS` or `TRINETRA`. */
+export function thePromptOpensAsTheVerveCopilot(): void {
+  expect(COPILOT_SYSTEM_PROMPT.startsWith("You are the Verve administrator copilot. ")).toBe(true);
+  expect(COPILOT_SYSTEM_PROMPT).not.toMatch(/trinetra|\bion\s?site|nexus/i);
+}
