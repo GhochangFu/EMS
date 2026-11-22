@@ -1694,3 +1694,118 @@ modules (`host/edge-config.ts`, `edge-plan.ts`, `edge-clock.ts`,
 `uplink-client.ts`). `start` stays `node dist/main.js`. A `start:edge` script
 is owed to the owner (an agent may not edit a `package.json`); until then
 `deploy/edge/docker-compose.yml` runs `node dist/edge-main.js` directly.
+
+## Amendment 10 — poll interval, reload and reconnect for poll adapters (`F1.2`, 2026-11-22)
+
+**Status:** Accepted 2026-11-22 (owner, in chat: "Accept both, open PR";
+proposed the same day). [ADR 0141](./0141-modbus-tcp-adapter-and-device-profiles.md)
+(the Modbus TCP adapter, `F1.2`) decision 10 and the owner's plan rulings
+P5, P9 and P10 (2026-11-22, asked one at a time; plan
+[`docs/plans/f1.2-modbus-tcp-adapter-and-device-profiles.md`](../plans/f1.2-modbus-tcp-adapter-and-device-profiles.md)
+§12) change this record. `F1.2` brings the first poll adapter, so the poll
+half of §B3 runs for the first time. Part (a) and part (c) are plan PR 3;
+part (b) is plan PR 8. Neither PR starts before this amendment is accepted.
+
+**(a) The host resolves the poll interval (ADR 0141 decision 10, P9).**
+
+§1 and §B3 say the host sleeps `adapter.defaultPollIntervalMs` between polls,
+and `host/supervisor.ts:548` does exactly that. Now:
+
+```
+interval := config.pollIntervalMs                     -- the endpoint
+         ?? organizations.default_poll_interval_ms   -- the organization
+         ?? adapter.defaultPollIntervalMs            -- the adapter
+```
+
+- `pollIntervalMs` is one optional field in the connection slice of **every
+  poll protocol**. The host reads it and removes it before the adapter's
+  `configSchema` sees the slice, so no adapter declares it and no adapter
+  can disagree about it *(drafter)*. Push endpoints ignore it: MQTT stays device-paced
+  and its plan is unchanged byte for byte.
+- `defaultPollIntervalMs` stays on the factory and becomes what its name
+  says: the last fallback.
+- Both stored values are bounded 1,000–3,600,000 ms (ADR 0141 decision 10)
+  by one schema in `@bms/shared` (`ingest-poll-interval.ts` *(drafter)*). A
+  stored value outside the bounds is logged once and replaced by the next
+  level down (decision 10). *(drafter)* The log is a plan warning
+  `poll-interval-out-of-bounds` naming the level (`endpoint` or
+  `organization`), never the number, once per RTU per process. On the edge
+  an out-of-bounds value refuses the file, as every other bad key does
+  *(drafter)*.
+- **One endpoint, several RTUs (P9).** RTUs behind one gateway share one
+  endpoint and one poll loop but each has its own configuration row (§3).
+  The endpoint uses **the shortest interval any of its RTUs resolves to**, so
+  no device is read more slowly than its own setting.
+- **The host still owns the timer.** §5 rule 4 stands: an adapter owns no
+  timer, and the host sleeps the resolved interval after `poll()` settles.
+- **Reload.** §3's reload diff (`host/reconcile.ts`) gains two `replace`
+  reasons, checked after the device set and the decoder fingerprint:
+  `poll-interval-changed` (decision 10: "takes effect at the next binding
+  reload") and `device-config-changed` (a fingerprint of the connection
+  slice and every device slice) *(drafter: without it, a re-bind to a new
+  profile version would reach a running endpoint only at a restart, which
+  ADR 0141 decision 15's bind does not intend)*. The sentence at
+  `reconcile.ts:24-27` — a connection-config change on a running endpoint
+  "still needs a restart" — no longer holds for these two cases: a new
+  interval or new registers reach the running endpoint at the next binding
+  reload, as the organization ingest switch does (ADR 0115). A save with
+  unchanged values replaces nothing.
+
+**(b) A network for the Modbus simulator (P5) — amends Amendment 8
+decision 2.** Amendment 8 decision 2, as Amendment 9 (b) widened it, puts
+the `ingest` service on the `ingest` network (shared with `postgres`) and the
+`edge-uplink` network (shared with `web`) and nothing else
+(`docker-compose.yml:759-764`, `:914-917`). A Modbus simulator reachable from
+the cloud host must not join either, because `ingest` reaches `postgres`.
+
+- A third user-defined bridge, `modbus-sim`. **`ingest` and the new
+  `modbus-sim` service join it, and nothing else.** `postgres` and `web`
+  never join it.
+- The `modbus-sim` service exists only under the compose profile `modbus`,
+  publishes no `ports:`, carries no `DATABASE_URL`, and runs
+  `apps/sim/src/modbus-sim.js`.
+- `tests/f4.61-ingest-network-isolation.test.ts` changes from "`ingest` joins
+  exactly `ingest` and `edge-uplink`" to "exactly `ingest`, `edge-uplink` and
+  `modbus-sim`", and gains the `modbus-sim` service's own checks. Its rule
+  that no other service declares `networks:` widens by one service name.
+- **Why Amendment 8 still holds.** Amendment 8 rests on one claim: nothing
+  new can reach `GET ingest:9102`. That stays true for the same reason it
+  stayed true under Amendment 9 (b): the health listener binds to loopback
+  (`startHealthServer`; `docker-compose.yml:760-761`), so no bridge network
+  reaches it. On `modbus-sim` the simulator can reach only the ingest
+  container's non-loopback listeners — today the uplink receiver
+  (`INGEST_UPLINK_PORT`, when set), which refuses any request without a
+  gateway's bearer token (ADR 0123 decision 5). The ingest host reaches the
+  simulator's Modbus port, which is the purpose.
+- `modbus-sim` is declared `internal: true` *(drafter)*: neither member
+  needs the internet through it, because `ingest` keeps its egress on the
+  `ingest` network.
+- Decisions 1 and 3 of Amendment 8 (the request shape of the health
+  endpoint; no published port) are untouched.
+
+**(c) A poll adapter that lost its connection is restarted (P10).**
+
+Today a rejected `poll()` is counted, marks the endpoint `degraded` after
+`pollFailuresBeforeDegraded` failures, and is called again after the
+interval (`host/supervisor.ts:530-545`). It never reconnects: only a throw
+out of the poll loop reaches the reconnect and backoff path (`:594-623`).
+That was the right rule for a device that is merely slow, and it stays — a
+flapping sensor must not become a reconnect storm. But a poll adapter whose
+socket is gone can never recover under it.
+
+- **After a rejected `poll()`, the host reads `adapter.health()`. If the
+  state is `disconnected`, the poll loop throws, and the existing §5 backoff
+  disconnects, waits and reconnects the adapter** — the same path a push
+  adapter takes (`:506-509`). If the state is `connected` or `degraded`,
+  today's behaviour holds unchanged.
+- The rule applies to **every poll protocol**, so `F1.3`, `F1.5` and `E6.1`
+  inherit it with no further work.
+- **Adapter obligation, added to §7's checklist:** a poll adapter whose
+  transport is lost reports `disconnected` from `health()` until `connect()`
+  succeeds again. The conformance suite gains one case for poll adapters: a
+  lost transport rejects `poll()` and `health().state` is `disconnected`.
+
+**What this does not change.** The `IngestAdapter` types (one docblock on
+`defaultPollIntervalMs` aside), the push path, the MQTT adapter, the
+normaliser, the `F1.10` disk buffer, the uplink and `notify` rules of
+Amendment 9, and the health endpoint's request shape.
