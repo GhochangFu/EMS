@@ -6,6 +6,7 @@ import { fetchCurrentUser, loginRequest } from "../api/login";
 import { isOidcEnabled, startOidcLogin } from "../api/oidc";
 import { applyPortalAppearance, fetchPublicAppearance } from "../api/public-appearance";
 import { apiErrorMessage } from "../lib/api-error-message";
+import { PRODUCT_NAME, PRODUCT_TAGLINE } from "../lib/brand";
 import { peekReturnPath, takeReturnPath } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
 import { Wordmark } from "../components/wordmark";
@@ -89,7 +90,7 @@ export function LoginPage() {
               <Wordmark variant="hero" />
             </div>
             <h1 className="mt-8 max-w-xl font-condensed text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-              Integrated <span className="text-accent-on-chrome">Building, Energy, Water &amp; Utility</span> Management · Smart insight, always on.
+              {PRODUCT_TAGLINE}
             </h1>
             <p className="mt-4 max-w-lg text-sm leading-6 text-on-dark/70">
               Unified enterprise EMS for power, HVAC, water, utilities, alarms,
@@ -127,10 +128,10 @@ export function LoginPage() {
                   Secure access
                 </div>
                 <h2 className="mt-2 font-condensed text-3xl font-bold text-ink">
-                  Sign in to IONSiTE NEXUS
+                  Sign in to {PRODUCT_NAME}
                 </h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Enterprise SSO and local pilot access for the Integrated Building, Energy, Water &amp; Utility Management Platform.
+                  Enterprise SSO and local pilot access.
                 </p>
               </div>
               <div className="flex flex-col items-end gap-2">
@@ -212,7 +213,7 @@ export function LoginPage() {
                 Access profile
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-                {["NEXUS Admin", "IBMS Operator", "Energy Manager"].map((role) => (
+                {[`${PRODUCT_NAME} Admin`, "IBMS Operator", "Energy Manager"].map((role) => (
                   <span
                     key={role}
                     className="surface-raised-sm rounded-full px-2 py-1 text-center font-semibold text-ink-muted"
@@ -238,7 +239,7 @@ export function LoginPage() {
           </form>
         )}
             <div className="mt-6 border-t border-well-deep pt-4 text-center text-2xs leading-5 text-ink-muted">
-              IONSiTE NEXUS v0.1<br />
+              {PRODUCT_NAME} v0.1<br />
               Powered By:{" "}
               <b className="text-ink">Euphoria Infotech India Limited</b>
             </div>

@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { completeOidcLogin } from "../api/oidc";
 import { fetchCurrentUser } from "../api/login";
 import { apiErrorMessage } from "../lib/api-error-message";
+import { PRODUCT_NAME } from "../lib/brand";
 import { takeReturnPath } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
 
@@ -64,7 +65,7 @@ export function AuthCallbackPage() {
           </p>
         ) : (
           <p className="mt-4 text-sm text-ink-muted">
-            Please wait while Keycloak returns you to IONSiTE NEXUS.
+            Please wait while Keycloak returns you to {PRODUCT_NAME}.
           </p>
         )}
       </div>
