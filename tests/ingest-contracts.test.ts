@@ -143,6 +143,39 @@ describe("ADR 0016 ingest contracts", () => {
     expect(String(ingest.EDGE_CREDENTIAL_ENV_PATTERN)).toBe("/^EDGE_CRED_[A-Z0-9_]+$/");
   });
 
+  it("publishes the Modbus schemas, codec and poll interval bound through ./ingest", () => {
+    // `F1.2` (ADR 0141 decisions 2, 7, 10): the ingest host, the edge, the API
+    // and the simulator load the built subpath, so a schema or codec function
+    // only the source exports would leave the adapter with nothing to parse
+    // or encode with.
+    const ingest = require_("@bms/shared/ingest") as Record<string, unknown>;
+    for (const name of [
+      "modbusRegisterSchema",
+      "modbusRegistersSchema",
+      "modbusConfigSchema",
+      "modbusDeviceSchema",
+      "modbusDraftConfigSchema",
+      "deviceProfileSchema",
+      "pollIntervalMsSchema",
+    ]) {
+      const schema = ingest[name] as { safeParse?: unknown } | undefined;
+      expect(typeof schema?.safeParse, `${name} is not exported by @bms/shared/ingest`).toBe("function");
+    }
+    for (const name of [
+      "encodeReadRequest",
+      "decodeReadResponse",
+      "decodeRegisterValue",
+      "createMbapFrameAssembler",
+      "serveModbusFrame",
+    ]) {
+      expect(typeof ingest[name], `${name} is not exported by @bms/shared/ingest`).toBe("function");
+    }
+    expect(ingest.POLL_INTERVAL_MIN_MS).toBe(1_000);
+    expect(ingest.POLL_INTERVAL_MAX_MS).toBe(3_600_000);
+    expect(ingest.MODBUS_REGISTERS_MAX).toBe(256);
+    expect([...(ingest.MODBUS_READ_FUNCTION_CODES as readonly number[])]).toEqual([1, 2, 3, 4]);
+  });
+
   it("publishes the notify live window through ./ingest", () => {
     // `E7.2` (ADR 0123 decision 10): the API's manual-entry write and the
     // ingest host's `writeResolved` gate `pg_notify` on one constant.
