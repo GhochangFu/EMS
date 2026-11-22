@@ -10,6 +10,7 @@ import type { AuthUser } from "../../stores/auth-store";
 import { SurfaceSwitch } from "../../components/surface-switch";
 import { ThemeSwitch } from "../../components/theme-switch";
 import { Wordmark } from "../../components/wordmark";
+import { PRODUCT_TAGLINE } from "../../lib/brand";
 import { SETTINGS_LOCKED_REASON, SHELL_RAIL_MAX_WIDTH, topNav, useOverlayClosesOnNavigation } from "./navigation-model";
 
 /**
@@ -29,7 +30,7 @@ const HEADER_BUTTON =
   "rounded border border-on-dark/20 px-3 py-1.5 text-xs font-semibold text-on-dark/85 transition hover:border-on-dark/40 hover:bg-on-dark/10 hover:text-on-dark";
 
 /**
- * `F4.341` PR 5 — the chrome header every shell carries (the wordmark, ADR 0083, the user, the
+ * `F4.341` PR 5 — the chrome header every shell carries (the Verve logo, ADR 0142, the user, the
  * theme and surface switches, logout), moved verbatim from `app-shell.tsx`.
  */
 export function ShellHeader({
@@ -51,9 +52,7 @@ export function ShellHeader({
       <div className="flex items-center gap-3">
         <Wordmark variant="header" />
         {/* F4.347 — the subtitle needs about 430 px; below `xl` it would push the controls off. */}
-        <span className="hidden text-on-dark/70 xl:inline">
-          Integrated Building, Energy, Water & Utility Management Platform
-        </span>
+        <span className="hidden text-on-dark/70 xl:inline">{PRODUCT_TAGLINE}</span>
       </div>
       {folded ? (
         <HeaderMenu user={user} locationScopeLabel={locationScopeLabel} onLogout={onLogout} pathname={pathname} />
