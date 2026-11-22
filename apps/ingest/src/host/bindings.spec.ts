@@ -106,6 +106,8 @@ export function row(overrides: Partial<BindingRow> = {}): BindingRow {
     // On by default, so every existing claim reads an organization that ingests.
     organization_code: "PHEWB",
     organization_ingest_enabled: true,
+    // F1.2 (ADR 0141 decision 10): the organization sets no poll interval.
+    organization_default_poll_interval_ms: null,
     // ADR 0116 decision 4: no format named, so the join is null.
     payload_format_code: null,
     payload_format_definition: null,

@@ -12,7 +12,6 @@ import {
   type EndpointPlan,
   planEndpoints,
   type PlanOptions,
-  type PlanWarning,
   type SkippedBinding,
 } from "./host/bindings.js";
 import { readHostConfig } from "./host/config.js";
@@ -23,6 +22,7 @@ import { startHealthServer } from "./host/health-server.js";
 import { createHostLogger, errorKind } from "./host/logger.js";
 import type { PointIndex, WriteResult } from "./host/normaliser.js";
 import { droppedCount, resolveSamples, writeResolved } from "./host/normaliser.js";
+import { createPlanWarningReporter } from "./host/once-per-key.js";
 import { createEndpointRegistry } from "./host/reconcile.js";
 import { createSupervisor, realScheduler, type Supervisor } from "./host/supervisor.js";
 import { authenticate, gatewayHealth, type GatewaySnapshot, loadGateways } from "./host/uplink-gateways.js";
@@ -152,46 +152,13 @@ async function main(): Promise<void> {
     });
   }
 
-  // ADR 0062 decision 9. Once per RTU per process — which is what this now
-  // delivers, and what the first draft only claimed. That draft read
-  // `initial.warnings` alone, so an RTU that entered the fallback at a *reload*
-  // was never named at all, while this comment promised the per-process
-  // guarantee. The 2026-09-11 security review found it: the ordinary sequence
-  // is that an operator onboards an RTU into a running host, which is exactly
-  // the path the boot-only loop could not see.
-  //
-  // The set keeps the guarantee honest in both directions. An unchanged
-  // fallback is still not repeated every `INGEST_RELOAD_MS` — a line per RTU
-  // per cycle is how a real signal gets buried — but a new one is reported the
-  // first time this process sees it.
-  //
-  // Nothing is dropped here (the endpoint runs), so it is a warning and not a
-  // skip, and it is the one line that tells an operator that the credential
-  // they entered is not the one the broker sees.
-  //
-  // **No unit test holds this dedupe.** `main.ts` is wiring and has none — the
-  // endpoint reconciliation moved to the tested `host/reconcile.ts` (ADR 0115),
-  // but this set did not, which is the same condition that let the boot-only
-  // defect through in the first place. The layer that stands in for it is
-  // the ingest step of `docs/plans/e8.4-credential-key-rotation.md` §14: plant
-  // an `rtu_connection_configs` row with no readable credential against a
-  // *running* host and read the line out of `docker compose logs ingest`. If
-  // that step is skipped, this path is unverified. (AGENTS.md §4.6.)
-  const warnedCredentialFallback = new Set<string>();
-  const reportCredentialFallbacks = (warnings: readonly PlanWarning[]): void => {
-    for (const warning of warnings) {
-      if (warnedCredentialFallback.has(warning.rtuId)) {
-        continue;
-      }
-      warnedCredentialFallback.add(warning.rtuId);
-      logger.warn("rtu credential fallback", {
-        rtuCode: warning.rtuCode,
-        rtuId: warning.rtuId,
-        reason: warning.reason,
-      });
-    }
-  };
-  reportCredentialFallbacks(initial.warnings);
+  // ADR 0062 decision 9 and ADR 0016 Amendment 10 (a): each plan warning —
+  // a credential fallback, a poll interval out of bounds — is reported once per
+  // RTU per process, at boot or at the first reload that produces it, and not
+  // again every INGEST_RELOAD_MS. The dedupe is `host/once-per-key.ts`, tested
+  // there (F1.2 plan T3.7); it was an untested set here.
+  const reportPlanWarnings = createPlanWarningReporter(logger);
+  reportPlanWarnings(initial.warnings);
 
   /**
    * Builds — does not start — one endpoint's supervisor. The registry calls it
@@ -436,9 +403,9 @@ async function main(): Promise<void> {
         const next = planEndpoints(await loadBindingRows(pool), planOptions);
         skipped = next.skipped;
         edgeServed = next.edgeServed;
-        // An RTU onboarded into a running host reaches the fallback here, not
-        // at boot. Deduplicated per process by the set above.
-        reportCredentialFallbacks(next.warnings);
+        // An RTU onboarded into a running host reaches a warning here, not at
+        // boot. Deduplicated per process by the reporter above.
+        reportPlanWarnings(next.warnings);
         const nextEdgeCounts = edgeServedCounts(next.edgeServed);
         if (
           nextEdgeCounts.edgeGateways !== edgeCounts.edgeGateways ||

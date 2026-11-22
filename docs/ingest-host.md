@@ -305,9 +305,11 @@ re-plans, and reconciles the running endpoints with the plan
 | In the plan, not running | build and start a supervisor | `endpoint started` |
 | Running, device set changed | `stop()` the old supervisor, **then** build and start a new one | `endpoint replaced` with `added`/`removed` device keys |
 | Running, same device set, decoder fingerprint changed (ADR 0116 decision 6) | the same replace | `endpoint replaced` with `reason=payload-format-changed` |
-| Running, same device set and decoder, credential fingerprint changed (ADR 0129 decision 4) | the same replace | `endpoint replaced` with `reason=credentials-changed` |
+| Running, same device set and decoder, config fingerprint changed (poll endpoints; ADR 0016 Amendment 10 (a)) | the same replace | `endpoint replaced` with `reason=device-config-changed` |
+| Running, same device set, decoder and config, credential fingerprint changed (ADR 0129 decision 4) | the same replace | `endpoint replaced` with `reason=credentials-changed` |
+| Running, all of the above unchanged, resolved poll interval changed (ADR 0016 Amendment 10 (a)) | the same replace | `endpoint replaced` with `reason=poll-interval-changed` |
 | Running, not in the plan (no enabled RTU left) | `stop()` it — the broker connection closes and the endpoint leaves the roster | `endpoint stopped` |
-| Running, same device set, decoder and credential fingerprint | swap the point index only | none |
+| Running, nothing above changed | swap the point index only | none |
 
 - **Stops and replaces run before starts**, and a replace waits for the old
   `stop()` before it dials — up to about 15 s (the adapter's 5 s disconnect
@@ -349,8 +351,33 @@ re-plans, and reconciles the running endpoints with the plan
   a reload tick). An
   edge-served RTU's credential lives in the gateway's own file and is not
   covered.
-- **Still restart-only:** a change of connection config on an endpoint whose
-  device set is unchanged is a point-index swap, not a replace (ADR 0115
+- **A poll endpoint's interval and device config reach it without a restart**
+  (ADR 0016 Amendment 10 (a), `F1.2`). The host sleeps, between two reads,
+  the endpoint's `config.pollIntervalMs`, else the organization's
+  `default_poll_interval_ms`, else the adapter's `defaultPollIntervalMs`.
+  Both stored values are bounded 1,000–3,600,000 ms by `pollIntervalMsSchema`
+  (`@bms/shared/ingest`); one outside the bound is replaced by the next level
+  down and logged once per RTU per process as `warn` `rtu poll interval out
+  of bounds level=<endpoint|organization>` — never the value. RTUs behind one
+  gateway share one endpoint and one loop, and the **shortest** interval any of
+  them resolves to wins (ruling P9). `pollIntervalMs` is removed from the
+  connection slice before the adapter's schema sees it. Each poll plan also
+  carries a `configFingerprint` (sha256 over the canonical connection slice and
+  each device slice — no secret): new registers, a new unit id, or a new
+  timeout on the endpoint's connection (the first bound RTU's, as for every
+  shared endpoint) replace the endpoint with `reason=device-config-changed`; a new resolved
+  interval with `reason=poll-interval-changed`. Saving the same values replaces
+  nothing. The `endpoint connected` line of a poll endpoint carries
+  `pollIntervalMs`, the interval it sleeps. MQTT is push and unaffected.
+- **A poll adapter that lost its connection is restarted** (ADR 0016
+  Amendment 10 (c), ruling P10). After a rejected `poll()` the host reads the
+  adapter's health: `disconnected` ends the poll loop, and the §5 backoff
+  disconnects, waits and reconnects it (`endpoint failed`, then `endpoint
+  restarting`). A device that merely fails to answer (`connected` or
+  `degraded`) is polled again, and marked `degraded` after three failures, as
+  before. Every poll protocol inherits the rule.
+- **Still restart-only:** a change of MQTT connection config on an endpoint
+  whose device set is unchanged is a point-index swap, not a replace (ADR 0115
   decision 6, plan R5). A committed RTU's host, port and TLS have no write
   route (ADR 0129 context 3), and changing them moves the endpoint key anyway.
   An environment-variable credential (the pilot fallback) changes
