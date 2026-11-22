@@ -71,12 +71,20 @@ export const modbusRegisterSchema = z
   .object({
     /** The `bms.asset_points.source_data_key` this register feeds. */
     sourceKey: mqttPayloadReadingKeySchema,
-    table: z.enum(MODBUS_TABLES),
+    table: z.enum(MODBUS_TABLES, {
+      errorMap: () => ({ message: "a register table is coil, discrete, holding or input" }),
+    }),
     /** Zero-based protocol address, as on the wire. */
     address: z.number().int().min(0).max(MODBUS_ADDRESS_MAX),
-    type: z.enum(MODBUS_VALUE_TYPES),
+    type: z.enum(MODBUS_VALUE_TYPES, {
+      errorMap: () => ({
+        message: "a register type is bool, int16, uint16, int32, uint32, int64, uint64, float32 or float64",
+      }),
+    }),
     /** `big`: the most significant word first. Ignored for one-word types. */
-    wordOrder: z.enum(MODBUS_WORD_ORDERS).default("big"),
+    wordOrder: z
+      .enum(MODBUS_WORD_ORDERS, { errorMap: () => ({ message: "a word order is big or little" }) })
+      .default("big"),
     /** Swap the two bytes inside each word before reading. */
     byteSwap: z.boolean().default(false),
     scale: z.number().finite().default(1),

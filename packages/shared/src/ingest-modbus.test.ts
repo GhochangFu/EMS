@@ -19,6 +19,7 @@ import {
   assertTheHostIsOneLowerCasedName,
   assertTheListHoldsOneTo256Registers,
   assertUnitIdIsZeroTo247Or255,
+  assertNoMessageEchoesTheRefusedValue,
   assertUnknownKeysAreRefused,
 } from "./ingest-modbus.spec";
 
@@ -44,4 +45,5 @@ describe("F1.2 — Modbus schemas (ADR 0141 decisions 5, 6, 7, 12)", () => {
   it("M15 parses a device profile", () => assertADeviceProfileParses());
   it("M16 requires the profile's source document, revision and pages", () => assertADeviceProfileNamesItsSource());
   it("M17 bounds a profile's code and version", () => assertADeviceProfileCodeAndVersionAreBounded());
+  it("M20 echoes no refused value in an issue message", () => assertNoMessageEchoesTheRefusedValue());
 });
