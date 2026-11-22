@@ -454,6 +454,7 @@ export class OrganizationsAdminService {
       // F4.364 (plan D3): an out-of-list value (a CHECK forbids it) reads as `auto`, never a 500.
       energyFeatures: energyFeaturesSchema.safeParse(row.energyFeatures).data ?? "auto",
       cardPrimaryMetric: cardPrimaryMetricSchema.safeParse(row.cardPrimaryMetric).data ?? "auto",
+      defaultPollIntervalMs: row.defaultPollIntervalMs,
       meta: (row.meta as Record<string, unknown> | null) ?? null,
       createdAt: row.createdAt.toISOString(),
     };

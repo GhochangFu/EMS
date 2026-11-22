@@ -28,6 +28,7 @@ const ROW = {
   ingestEnabled: true,
   energyFeatures: "auto",
   cardPrimaryMetric: "auto",
+  defaultPollIntervalMs: null,
   createdAt: new Date(0),
 };
 

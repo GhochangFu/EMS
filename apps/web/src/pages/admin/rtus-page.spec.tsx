@@ -65,6 +65,8 @@ function rtu(overrides: Partial<AdminRtuDto>): AdminRtuDto {
     tls: true,
     payloadFormat: null,
     credentialsSet: null,
+    modbus: null,
+    organizationDefaultPollIntervalMs: null,
     ...overrides,
   };
 }

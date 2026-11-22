@@ -81,6 +81,7 @@ export function runTheDtoRequiresBothSettings(): void {
     colourProfile: null,
     designSystem: null,
     ingestEnabled: true,
+    defaultPollIntervalMs: null,
     meta: null,
     createdAt: "2026-11-14T00:00:00.000Z",
   };
@@ -109,6 +110,7 @@ export async function runAnOutOfListStoredValueReadsAsAuto(): Promise<void> {
     ingestEnabled: true,
     energyFeatures: "maybe",
     cardPrimaryMetric: "teal",
+    defaultPollIntervalMs: null,
     createdAt: new Date(0),
   };
   const tenantDb = {
