@@ -9,6 +9,8 @@ import {
   assertLatestPointValuesPlansOnlyItsWindow,
   assertLivePuePlansOnlyItsWindow,
   assertPueAtAnInstantPlansOnlyItsWindow,
+  assertReadInputTimesPlansOnlyItsDay,
+  assertReadSamplesPlanOnlyTheirEnvelope,
   assertRecentForPointPlansOnlyItsWindow,
   assertRegisterProbesPlanOnlyTheirEnvelope,
   assertRollupLatestAtPlansOnlyItsWindow,
@@ -63,4 +65,8 @@ describe.skipIf(!connectionString)("F4.393 — point_values readers plan only th
   it("the register probes plan only their envelope", run(assertRegisterProbesPlanOnlyTheirEnvelope));
 
   it("the delta probes plan only their envelope", run(assertDeltaProbesPlanOnlyTheirEnvelope));
+
+  it("readSamples plans only its envelope", run(assertReadSamplesPlanOnlyTheirEnvelope));
+
+  it("readInputTimes plans only its day (pin)", run(assertReadInputTimesPlansOnlyItsDay));
 });

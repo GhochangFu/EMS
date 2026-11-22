@@ -55,6 +55,14 @@ export class CalcBackfillReads {
    * `10.000500` yields the instant `10.000`, and `≤ 10.000` would drop the
    * very sample that produced it. Its JS `timeMs` is `10.000` again, so
    * `asOfIndex` serves it at that instant.
+   *
+   * **The envelope** (`F4.393`, plan D5): `v.time >= $6 AND v.time < $7`,
+   * from `min(instants) − maxInputAgeSeconds` to `max(instants) + 1 ms`. The
+   * per-row bound names a column of the `unnest` row, usable only per loop at
+   * run time after every chunk of the hypertable was planned; a bound parameter
+   * compared to `time` directly is planned away. Each row's range lies inside
+   * the envelope — it can only ever be wider than the union of them, never
+   * narrower — so the rows returned are identical.
    */
   async readSamples(
     pairs: readonly BackfillPair[],
@@ -70,6 +78,14 @@ export class CalcBackfillReads {
       return out;
     }
     const wanted = [...distinct.values()];
+    // The envelope's ends, by a loop: `Math.min(...instants)` throws past the argument limit on a
+    // long chunk.
+    let lowest = Number.POSITIVE_INFINITY;
+    let highest = Number.NEGATIVE_INFINITY;
+    for (const t of instants) {
+      if (t < lowest) lowest = t;
+      if (t > highest) highest = t;
+    }
     const { rows } = await this.pool.query<{ asset_id: string; point_key: string; value: number; time: Date }>(
       `SELECT DISTINCT p.asset_id, p.point_key, s.value, s.time
          FROM unnest($1::uuid[], $2::varchar[]) AS p(asset_id, point_key)
@@ -81,6 +97,7 @@ export class CalcBackfillReads {
               AND v.point_key = p.point_key
               AND v.time >= i.t - make_interval(secs => $4::double precision)
               AND v.time < i.t + interval '1 millisecond'
+              AND v.time >= $6::timestamptz AND v.time < $7::timestamptz
             ORDER BY v.time DESC
             LIMIT 1
          ) s
@@ -92,6 +109,8 @@ export class CalcBackfillReads {
         instants.map((t) => new Date(t)),
         maxInputAgeSeconds,
         BACKFILL_MAX_SAMPLE_ROWS + 1,
+        new Date(Math.floor(lowest - maxInputAgeSeconds * 1000)),
+        new Date(highest + 1),
       ],
     );
     if (rows.length > BACKFILL_MAX_SAMPLE_ROWS) {

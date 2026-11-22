@@ -108,6 +108,12 @@ const PINNED_BOUNDS: Record<string, readonly (readonly [string, number])[]> = {
   // `F4.393` PR 2: the batch's envelope as bound parameters, in both laterals.
   "tariffs/register-read.ts": [["AND v.time >= $6 AND v.time < $7", 2]],
   "calc/calc-windows.service.ts": [["AND v.time >= $6 AND v.time < $7", 2]],
+  "calc-backfill/calc-backfill-reads.ts": [
+    ["AND v.time >= $6::timestamptz AND v.time < $7::timestamptz", 1],
+    // `readInputTimes`: a parameter range, planned away — pinned.
+    ["AND time >= $3::timestamptz", 1],
+    ["AND time < $4::timestamptz", 1],
+  ],
 };
 
 /** The files whose `now()` bound must be one interval literal, never a multiplied unit interval. */
