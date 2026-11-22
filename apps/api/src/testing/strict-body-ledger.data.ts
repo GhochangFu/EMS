@@ -555,6 +555,18 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   createEdgeGatewayBodySchema: STRICT(CALLER_ERROR),
   updateEdgeGatewayBodySchema: STRICT(CALLER_ERROR),
   putEdgeGatewayRtusBodySchema: STRICT(CALLER_ERROR),
+  // `F1.2` (ADR 0141 decisions 12-14, plan C12): every field named, no `z.record` escape. The keys a
+  // client would try — `version`, `verified`, `createdBy`, `stockCode` — are the server's (plan P2);
+  // dropped at 201 they would read as a verified profile that is not. `source` is the manual's
+  // three fields, and a register is ADR 0141 decision 7's closed shape (`modbusRegisterSchema`).
+  createDeviceProfileBodySchema: STRICT(CALLER_ERROR),
+  "createDeviceProfileBodySchema/source": STRICT(CALLER_ERROR),
+  "createDeviceProfileBodySchema/registers[]": STRICT(CALLER_ERROR),
+  saveDeviceProfileVersionBodySchema: STRICT(CALLER_ERROR),
+  "saveDeviceProfileVersionBodySchema/source": STRICT(CALLER_ERROR),
+  "saveDeviceProfileVersionBodySchema/registers[]": STRICT(CALLER_ERROR),
+  copyDeviceProfileBodySchema: STRICT(CALLER_ERROR),
+  importStockDeviceProfileBodySchema: STRICT(CALLER_ERROR),
   // `F4.359` (ADR 0131, plan D1): the window's organization is its targets'; an `organizationId`, a
   // `createdBy` or a second id on a target arm has nowhere to land and must be a 400, never dropped.
   createMaintenanceWindowBodySchema: STRICT(CALLER_ERROR),

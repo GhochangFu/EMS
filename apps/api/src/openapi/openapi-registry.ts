@@ -75,6 +75,12 @@ import {
   createEdgeGatewayBodySchema,
   putEdgeGatewayRtusBodySchema,
   updateEdgeGatewayBodySchema,
+  // `F1.2` (ADR 0141 decisions 12-14): the device profile bodies and the list query.
+  copyDeviceProfileBodySchema,
+  createDeviceProfileBodySchema,
+  importStockDeviceProfileBodySchema,
+  listDeviceProfilesQuerySchema,
+  saveDeviceProfileVersionBodySchema,
   // `F4.365` (ADR 0134): the tariff reads and the location mapping bodies.
   createLocationTariffBodySchema,
   createTariffVersionBodySchema,
@@ -364,6 +370,12 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   EdgeGatewaysAdminController_create: createEdgeGatewayBodySchema,
   EdgeGatewaysAdminController_replaceRtus: putEdgeGatewayRtusBodySchema,
   EdgeGatewaysAdminController_update: updateEdgeGatewayBodySchema,
+  // `F1.2` (ADR 0141 decisions 12-14): `getById` and `listStock` carry no body and no query.
+  DeviceProfilesAdminController_list: listDeviceProfilesQuerySchema,
+  DeviceProfilesAdminController_create: createDeviceProfileBodySchema,
+  DeviceProfilesAdminController_saveVersion: saveDeviceProfileVersionBodySchema,
+  DeviceProfilesAdminController_copy: copyDeviceProfileBodySchema,
+  DeviceProfilesAdminController_importStock: importStockDeviceProfileBodySchema,
   LocationsAdminController_create: createLocationBodySchema,
   LocationsAdminController_update: updateLocationBodySchema,
   // `F4.162` (ADR 0077 Amendment 1, plan D1/D4) — the two `.strict()` bodies
