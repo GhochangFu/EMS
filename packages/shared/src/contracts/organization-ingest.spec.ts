@@ -35,6 +35,7 @@ export function runTheResponsesRequireTheSwitch(): void {
     designSystem: null,
     energyFeatures: "auto",
     cardPrimaryMetric: "auto",
+    defaultPollIntervalMs: null,
     meta: null,
     createdAt: "2026-11-07T00:00:00.000Z",
   };
@@ -69,6 +70,8 @@ export function runTheResponsesRequireTheSwitch(): void {
     tls: null,
     payloadFormat: null,
     credentialsSet: null,
+    modbus: null,
+    organizationDefaultPollIntervalMs: null,
   };
   const parsed = adminRtuDtoSchema.safeParse({ ...rtu, organizationIngestEnabled: false });
   expect(parsed.success).toBe(true);

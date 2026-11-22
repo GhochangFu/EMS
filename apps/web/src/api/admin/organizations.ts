@@ -11,6 +11,7 @@ import type {
   MasterDataActiveFilter,
   OrganizationsListResponse,
 } from "@bms/shared";
+import type { SetOrganizationPollIntervalBody } from "@bms/shared/contracts";
 
 import { activeQuery, adminFetch } from "./client";
 
@@ -120,5 +121,21 @@ export async function setOrganizationIngest(
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ingestEnabled }),
+  });
+}
+
+/**
+ * `F1.2` (ADR 0141 decision 10, Amendment 1 (c)) — `PUT /admin/organizations/:id/poll-interval`: the
+ * organization's default poll interval, `null` for each adapter's own. The global admin may set any
+ * organization; an organization admin one they administer (else 403).
+ */
+export async function setOrganizationPollInterval(
+  id: string,
+  body: SetOrganizationPollIntervalBody,
+): Promise<AdminOrganizationDto> {
+  return adminFetch(`/admin/organizations/${id}/poll-interval`, adminOrganizationDtoSchema, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
 }

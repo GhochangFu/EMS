@@ -160,6 +160,9 @@ describe("admin-access", () => {
   it("canEditOrganizationEnergySettings admits the global and organization admins (F4.375)", () => {
     spec.runCanEditOrganizationEnergySettingsTruthTableTest();
   });
+  it("canEditOrganizationPollInterval admits the global and organization admins (F1.2, P12a)", () => {
+    spec.runCanEditOrganizationPollIntervalTruthTableTest();
+  });
   it("canManageDeviceProfiles admits the global and organization admins (F1.2)", () => {
     spec.runCanManageDeviceProfilesTruthTableTest();
   });

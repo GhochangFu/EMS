@@ -69,6 +69,7 @@ export function theDtoContractRequiresTimezone(): void {
     ingestEnabled: true,
     energyFeatures: "auto",
     cardPrimaryMetric: "auto",
+    defaultPollIntervalMs: null,
     meta: null,
     createdAt: new Date(0).toISOString(),
   };

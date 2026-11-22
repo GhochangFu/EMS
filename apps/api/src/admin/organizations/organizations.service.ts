@@ -18,6 +18,7 @@ import type {
   JwtPayload,
   SetOrganizationAppearanceBody,
   SetOrganizationEnergySettingsBody,
+  SetOrganizationPollIntervalBody,
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
@@ -272,6 +273,60 @@ export class OrganizationsAdminService {
   }
 
   /**
+   * `F1.2` (ADR 0141 decision 10, Amendment 1 (c), plan T7.3) — the organization's default poll
+   * interval, between an endpoint's own `pollIntervalMs` and the adapter default, for every poll
+   * protocol. Ruling P12a: the energy-settings gate — the global `admin` may set any organization,
+   * an `organization_admin` only one they hold a **direct** grant on (`isOrganizationLevelAdmin`);
+   * every other role, and an `organization_admin` without that grant, is a 403 before any read.
+   *
+   * The `setEnergySettings` shape: the write and its audit row
+   * (`master.organization.poll_interval.update`, the organization's id, `{ from, to }`) in one
+   * `withTenant` transaction, the row locked so two saves audit a true `from`; the stored value
+   * again writes nothing (`setIngestEnabled`'s rule). The ingest host reads the column at its next
+   * binding reload (ADR 0141 decision 10); MQTT is not affected.
+   */
+  async setPollInterval(
+    jwt: JwtPayload,
+    id: string,
+    body: SetOrganizationPollIntervalBody,
+  ): Promise<AdminOrganizationDto> {
+    await this.accessControl.requireMasterDataUser(jwt);
+    if (!(await this.accessControl.isOrganizationLevelAdmin(jwt, id))) {
+      throw new ForbiddenException("Only an administrator of this organization can change its poll interval");
+    }
+
+    return withTenant(this.tenantDb, id, async (tx) => {
+      const [existing] = await tx.select().from(organizations).where(eq(organizations.id, id)).limit(1).for("update");
+      if (!existing) {
+        throw new NotFoundException("Organization not found");
+      }
+      if (existing.defaultPollIntervalMs === body.defaultPollIntervalMs) {
+        return this.mapRow(existing);
+      }
+
+      const [updated] = await tx
+        .update(organizations)
+        .set({ defaultPollIntervalMs: body.defaultPollIntervalMs })
+        .where(eq(organizations.id, id))
+        .returning();
+
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.organization.poll_interval.update",
+          entityType: "organization",
+          entityId: id,
+          organizationId: id,
+          payload: { from: existing.defaultPollIntervalMs, to: body.defaultPollIntervalMs },
+        },
+        tx,
+      );
+
+      return this.mapRow(updated);
+    });
+  }
+
+  /**
    * `F4.310` (ADR 0110 decision 7) — `PUT …/colour-profile`, kept as an alias of
    * {@link setAppearance} until `F4.342` removes it (ADR 0118 Amendment 2 P5). It writes the
    * profile only (the design system is left as it is) and keeps its own audit action, so an audit
@@ -454,6 +509,7 @@ export class OrganizationsAdminService {
       // F4.364 (plan D3): an out-of-list value (a CHECK forbids it) reads as `auto`, never a 500.
       energyFeatures: energyFeaturesSchema.safeParse(row.energyFeatures).data ?? "auto",
       cardPrimaryMetric: cardPrimaryMetricSchema.safeParse(row.cardPrimaryMetric).data ?? "auto",
+      defaultPollIntervalMs: row.defaultPollIntervalMs,
       meta: (row.meta as Record<string, unknown> | null) ?? null,
       createdAt: row.createdAt.toISOString(),
     };

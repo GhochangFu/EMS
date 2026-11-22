@@ -310,6 +310,8 @@ function rtu(id: string, code: string, active: boolean): AdminRtuDto {
     tls: null,
     payloadFormat: null,
     credentialsSet: null,
+    modbus: null,
+    organizationDefaultPollIntervalMs: null,
   };
 }
 

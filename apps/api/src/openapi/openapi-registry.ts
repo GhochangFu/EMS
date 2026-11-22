@@ -81,6 +81,9 @@ import {
   importStockDeviceProfileBodySchema,
   listDeviceProfilesQuerySchema,
   saveDeviceProfileVersionBodySchema,
+  // `F1.2` (ADR 0141 decisions 10, 15): the RTU Modbus bind and the organization default interval.
+  setOrganizationPollIntervalBodySchema,
+  setRtuModbusBodySchema,
   // `F4.365` (ADR 0134): the tariff reads and the location mapping bodies.
   createLocationTariffBodySchema,
   createTariffVersionBodySchema,
@@ -446,6 +449,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   OrganizationsAdminController_setAppearance: setOrganizationAppearanceBodySchema,
   // `F4.375` (ADR 0133 Amendment 2 ruling 3): the energy settings' one write path, `.strict()`.
   OrganizationsAdminController_setEnergySettings: setOrganizationEnergySettingsBodySchema,
+  // `F1.2` (ADR 0141 decision 10, Amendment 1 (c), plan T7.3): the organization default interval.
+  OrganizationsAdminController_setPollInterval: setOrganizationPollIntervalBodySchema,
   PortalSettingsController_setAppearance: setPortalAppearanceBodySchema,
   MeController_setAppearance: setMyAppearanceBodySchema,
   // `F4.300` (ADR 0108 decision 3.7). `_forOrganization` and `SiteTrendPointsController_forSite`
@@ -503,6 +508,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   RtusAdminController_update: updateRtuBodySchema,
   // `F4.333` (ADR 0129 decision 2): the write-only credential replace.
   RtusAdminController_replaceCredentials: replaceRtuCredentialsBodySchema,
+  // `F1.2` (ADR 0141 decision 15, plan T7.2): the Modbus bind; the service parses it.
+  RtusAdminController_setModbus: setRtuModbusBodySchema,
   RulesController_archiveRule: ruleLifecycleBodySchema,
   RulesController_createDraft: ruleDraftBodySchema,
   // `F4.289`: `POST /rules/batch` (excluded from the copilot catalog until PR 2).

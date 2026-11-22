@@ -14,6 +14,7 @@ import type {
   RtusListResponse,
   UpdateRtuBody,
 } from "@bms/shared";
+import type { SetRtuModbusBody } from "@bms/shared/contracts";
 
 import { adminFetch } from "./client";
 
@@ -79,5 +80,18 @@ export async function replaceRtuCredentials(id: string, input: ReplaceRtuCredent
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
+  });
+}
+
+/**
+ * `F1.2` (ADR 0141 decision 15, plan T7.2) — `PUT /admin/rtus/:id/modbus`: binds the RTU to a device
+ * profile of its organization and sets its Modbus TCP connection. The server copies the profile's
+ * registers; the body never carries them. The answer is the RTU row.
+ */
+export async function setRtuModbus(id: string, body: SetRtuModbusBody): Promise<AdminRtuDto> {
+  return adminFetch(`/admin/rtus/${id}/modbus`, adminRtuDtoSchema, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
 }

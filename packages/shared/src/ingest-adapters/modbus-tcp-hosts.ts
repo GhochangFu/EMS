@@ -84,7 +84,7 @@ function isHostName(text: string): boolean {
  * every equivalent input. A trailing dotted IPv4 part is accepted. `null` if
  * the text is not one.
  */
-function normalizeIpv6(text: string): string | null {
+export function normalizeIpv6(text: string): string | null {
   if (!text.includes(":")) {
     return null;
   }
@@ -130,6 +130,21 @@ function normalizeIpv6(text: string): string | null {
     groups = [...head, ...new Array<number>(8 - head.length - tail.length).fill(0), ...tail];
   }
   return groups.map((group) => group.toString(16)).join(":");
+}
+
+/**
+ * `F1.2` PR 7 security review M1 — the one spelling of a Modbus host, so the stored host, the API's
+ * one-organization-per-endpoint check, the adapter's `endpointKey` and this allow-list agree: lower
+ * case; an IPv6 literal in {@link normalizeIpv6}'s form; one trailing dot dropped from a name
+ * (`meter.local.` is `meter.local`). A name and an address that resolve to one device stay two
+ * spellings: closing that needs DNS, which nothing here does.
+ */
+export function canonicalModbusHost(host: string): string {
+  const lower = host.trim().toLowerCase();
+  if (lower.includes(":")) {
+    return normalizeIpv6(lower) ?? lower;
+  }
+  return lower.length > 1 && lower.endsWith(".") ? lower.slice(0, -1) : lower;
 }
 
 /** The network mask of a prefix length, as an unsigned 32-bit number. */

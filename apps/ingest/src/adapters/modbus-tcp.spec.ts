@@ -169,7 +169,14 @@ export function assertTheEndpointKeyIsHostAndPort(): void {
   expect(modbusTcpAdapterFactory.endpointKey(config, "rtu-a")).toBe("modbus_tcp://gw.site:1502");
   expect(modbusTcpAdapterFactory.endpointKey(config, "rtu-b")).toBe("modbus_tcp://gw.site:1502");
   const v6 = modbusTcpAdapterFactory.configSchema.parse({ host: "fe80::1" });
-  expect(modbusTcpAdapterFactory.endpointKey(v6, "rtu-a")).toBe("modbus_tcp://[fe80::1]:502");
+  // PR 7 review M1: one canonical spelling, so every spelling of one address is one endpoint.
+  expect(modbusTcpAdapterFactory.endpointKey(v6, "rtu-a")).toBe("modbus_tcp://[fe80:0:0:0:0:0:0:1]:502");
+  for (const spelling of ["FE80:0::1", "fe80:0:0:0:0:0:0:0001"]) {
+    const again = modbusTcpAdapterFactory.configSchema.parse({ host: spelling });
+    expect(modbusTcpAdapterFactory.endpointKey(again, "rtu-a")).toBe("modbus_tcp://[fe80:0:0:0:0:0:0:1]:502");
+  }
+  const dotted = modbusTcpAdapterFactory.configSchema.parse({ host: "GW.Site.", port: 1502 });
+  expect(modbusTcpAdapterFactory.endpointKey(dotted, "rtu-a")).toBe("modbus_tcp://gw.site:1502");
 }
 
 export async function assertValuesAreScaledAndCarryTheDeviceKeyAndNoTime(): Promise<void> {

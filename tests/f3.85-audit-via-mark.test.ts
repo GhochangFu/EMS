@@ -179,6 +179,12 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     route: { method: "PUT", path: "/admin/rtus/:id/credentials" },
     auditMethods: ["replace"],
   },
+  // `F1.2` (ADR 0141 decision 15, plan M18): the Modbus bind has no catalog entry in F1.2.
+  {
+    file: "apps/api/src/admin/rtus/rtus-modbus.service.ts",
+    route: { method: "PUT", path: "/admin/rtus/:id/modbus" },
+    auditMethods: ["bind"],
+  },
   // `E3.1` (ADR 0122 decision 10): a checklist item is added and ticked on the ticket, by hand.
   {
     file: "apps/api/src/work-orders/work-order-task-add.service.ts",

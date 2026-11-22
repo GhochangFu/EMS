@@ -53,6 +53,8 @@ const RTU: AdminRtuDto = {
   tls: true,
   payloadFormat: null,
   credentialsSet: null,
+  modbus: null,
+  organizationDefaultPollIntervalMs: null,
 };
 
 function stubApi(rows: AdminRtuDto[] = [RTU]): void {

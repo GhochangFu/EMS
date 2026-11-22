@@ -62,6 +62,7 @@ export function runTheOrganizationDtoRequiresAProfile(): void {
     ingestEnabled: true,
     energyFeatures: "auto",
     cardPrimaryMetric: "auto",
+    defaultPollIntervalMs: null,
     meta: null,
     createdAt: "2026-11-05T00:00:00.000Z",
     designSystem: null,

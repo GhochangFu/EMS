@@ -28,6 +28,7 @@ import { DeviceHealthTiles } from "../../components/admin/device-health-tiles";
 import { IngestHostBanner } from "../../components/admin/ingest-host-banner";
 import { RtuHealthCells } from "../../components/admin/rtu-health-cells";
 import { RtuCredentialsDialog } from "../../components/admin/rtu-credentials-dialog";
+import { RtuModbusDialog } from "../../components/admin/rtu-modbus-dialog";
 import { RtuPayloadFormatWizard } from "../../components/admin/rtu-payload-format-wizard";
 import { RtuStatusWizard, RtuWizard } from "../../components/admin/rtu-wizards";
 import { UnregisteredDevicesSection } from "../../components/admin/unregistered-devices-section";
@@ -35,7 +36,7 @@ import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import { useDeviceHealth } from "../../hooks/use-device-health";
-import { isGlobalAdmin } from "../../lib/admin-access";
+import { isGlobalAdmin, isMasterDataAdmin } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -83,6 +84,9 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
   /** `F4.333` (ADR 0129 decisions 3 and 6) — the MQTT RTU whose credential replace is open. */
   const [credentialsTarget, setCredentialsTarget] = useState<AdminRtuDto | null>(null);
   const canReplaceCredentials = user.role === "admin" || user.role === "organization_admin";
+  /** `F1.2` (ADR 0141 decision 15, plan T7.4) — the RTU whose Modbus settings dialog is open. */
+  const [modbusTarget, setModbusTarget] = useState<AdminRtuDto | null>(null);
+  const canBindModbus = isMasterDataAdmin(user.role);
   /** `F3.16` — the RTU whose drop history drawer is open. */
   const [dropsTarget, setDropsTarget] = useState<AdminRtuDto | null>(null);
 
@@ -233,6 +237,10 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                     {item.tls !== null ? (
                       <StatusPill label={`Payload format: ${item.payloadFormat ?? "thinkiot-envelope"}`} tone="info" />
                     ) : null}
+                    {/* F1.2: the profile version a Modbus RTU's registers were copied from. */}
+                    {item.modbus?.profile ? (
+                      <StatusPill label={`Modbus: ${item.modbus.profile.code} v${item.modbus.profile.version}`} tone="info" />
+                    ) : null}
                     {/* F4.333: whether a credential is stored — never the value. */}
                     {item.credentialsSet === true ? <StatusPill label="Credentials set" tone="ok" /> : null}
                   </div>
@@ -273,6 +281,20 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                         onClick={() => setFormatTarget(item)}
                       >
                         Payload format
+                      </button>
+                    ) : null}
+                    {/* F1.2: a Modbus row, or no connection row yet (`tls` and `credentialsSet` both null) on
+                        an RTU that is not MQTT by its own source type (review H1: the host reads
+                        `protocol ?? source_type`, so that RTU is a live MQTT one; the API 409s it). */}
+                    {canBindModbus &&
+                    (item.modbus !== null ||
+                      (item.tls === null && item.credentialsSet === null && item.sourceType !== "mqtt")) ? (
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-ink-muted"
+                        onClick={() => setModbusTarget(item)}
+                      >
+                        Modbus settings
                       </button>
                     ) : null}
                     {item.tls !== null && canReplaceCredentials ? (
@@ -319,6 +341,8 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
       ) : null}
 
       {formatTarget ? <RtuPayloadFormatWizard rtu={formatTarget} onDone={() => setFormatTarget(null)} /> : null}
+
+      {modbusTarget ? <RtuModbusDialog rtu={modbusTarget} onDone={() => setModbusTarget(null)} /> : null}
 
       {credentialsTarget ? (
         <RtuCredentialsDialog rtu={credentialsTarget} onDone={() => setCredentialsTarget(null)} />

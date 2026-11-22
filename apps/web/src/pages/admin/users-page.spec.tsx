@@ -67,7 +67,7 @@ export const USERS = {
 };
 
 const ORGS = {
-  items: [{ id: ORG_ID, code: "ACME", name: "Acme Works", active: true, currency: "INR", timezone: "Asia/Kolkata", colourProfile: "nexus", designSystem: null, ingestEnabled: true, energyFeatures: "auto" as const, cardPrimaryMetric: "auto" as const, meta: null, createdAt: new Date(0).toISOString() }],
+  items: [{ id: ORG_ID, code: "ACME", name: "Acme Works", active: true, currency: "INR", timezone: "Asia/Kolkata", colourProfile: "nexus", designSystem: null, ingestEnabled: true, energyFeatures: "auto" as const, cardPrimaryMetric: "auto" as const, defaultPollIntervalMs: null, meta: null, createdAt: new Date(0).toISOString() }],
 };
 
 function grant(id: string, targetName: string, effective: boolean) {

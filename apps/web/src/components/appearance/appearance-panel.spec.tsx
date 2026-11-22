@@ -124,6 +124,7 @@ export async function theOrganizationDialogWritesItsRowAndInheritsThePortal(): P
     ingestEnabled: true,
     energyFeatures: "auto" as const,
     cardPrimaryMetric: "auto" as const,
+    defaultPollIntervalMs: null,
     meta: null,
     createdAt: new Date(0).toISOString(),
   };

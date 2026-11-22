@@ -3,6 +3,7 @@ import type { UserRole } from "@bms/shared";
 import {
   canAcknowledgeAlarms,
   canEditOrganizationEnergySettings,
+  canEditOrganizationPollInterval,
   canManageDeviceProfiles,
   canApproveWorkOrders,
   canManageMaintenanceWindows,
@@ -729,4 +730,25 @@ export function runDeviceProfilesTabFollowsThePredicateTest(): void {
   assert(!located.includes(PROFILES), "location_admin must not see the Device Profiles tab");
   const tab = masterDataTabs.find((entry) => entry.path === PROFILES);
   assert(tab?.label === "Device Profiles" && tab.area === "reference", "the tab is Device Profiles, in Reference Data");
+}
+
+/**
+ * `F1.2` (ADR 0141 Amendment 1 (c), ruling P12a) — who sees an organization's Poll interval action:
+ * the global and organization admins; a location- or asset-group-scoped user never does.
+ */
+export function runCanEditOrganizationPollIntervalTruthTableTest(): void {
+  const table: Record<UserRole, boolean> = {
+    admin: true,
+    organization_admin: true,
+    location_admin: false,
+    asset_group_admin: false,
+    operator: false,
+    viewer: false,
+  };
+  for (const [role, expected] of Object.entries(table) as Array<[UserRole, boolean]>) {
+    assert(
+      canEditOrganizationPollInterval(role) === expected,
+      `${role} must ${expected ? "" : "not "}edit an organization's default poll interval`,
+    );
+  }
 }

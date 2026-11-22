@@ -1,5 +1,6 @@
 import {
   decodeRegisterValue,
+  MODBUS_DEFAULT_POLL_INTERVAL_MS,
   MODBUS_TYPE_WORDS,
   modbusConfigSchema,
   modbusDeviceSchema,
@@ -48,8 +49,12 @@ import {
  * between polls, and the transport's deadline is one-shot per request.
  */
 
-/** Decision 10: the adapter's own interval, the last fallback after the endpoint's and the organization's. */
-export const MODBUS_DEFAULT_POLL_INTERVAL_MS = 10_000;
+/**
+ * Decision 10: the adapter's own interval, the last fallback after the endpoint's and the
+ * organization's. Defined in `@bms/shared` (`ingest-poll-interval.ts`) since `F1.2` PR 7, so the edge
+ * export and the bind dialog read the same number.
+ */
+export { MODBUS_DEFAULT_POLL_INTERVAL_MS };
 
 export type ModbusAdapterDeps = {
   readonly socketFactory: ModbusSocketFactory;

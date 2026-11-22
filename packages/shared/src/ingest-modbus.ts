@@ -4,6 +4,7 @@ import { CATALOG_CODE_PATTERN } from "./constants";
 // Leaf modules, not `./ingest`: that module re-exports this one, and a runtime
 // import back from it would make the schemas depend on entry order.
 import { MODBUS_TYPE_WORDS } from "./ingest-adapters/modbus-codec";
+import { canonicalModbusHost } from "./ingest-adapters/modbus-tcp-hosts";
 import { mqttPayloadReadingKeySchema } from "./ingest-adapters/mqtt-payload-keys";
 import { pollIntervalMsSchema } from "./ingest-poll-interval";
 
@@ -154,7 +155,13 @@ const modbusHostSchema = z
   .refine((host) => !/[\s/]/.test(host) && (host.match(/:/g) ?? []).length !== 1, {
     message: "a Modbus host is a host name or an IP address, with no port, no slash and no whitespace",
   })
-  .transform((host) => host.toLowerCase());
+  // `.describe()` after the refinement (ADR 0029 Amendment 1 fact F): `F1.2`'s RTU Modbus bind
+  // body registers this field, and the document must say what it cannot check.
+  .describe(
+    "A host name or an IP address: no port (one colon), no slash, no whitespace; stored lower-cased, an IPv6 literal in full, a trailing dot dropped",
+  )
+  // PR 7 review M1: one canonical spelling (lower case, IPv6 normalized, no trailing dot).
+  .transform((host) => canonicalModbusHost(host));
 
 /**
  * The connection slice (decision 5). Strict: the host removes `pollIntervalMs`

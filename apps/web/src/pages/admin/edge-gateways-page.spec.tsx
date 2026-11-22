@@ -94,6 +94,8 @@ function rtu(id: string, code: string, organizationCode: string): AdminRtuDto {
     tls: true,
     payloadFormat: null,
     credentialsSet: null,
+    modbus: null,
+    organizationDefaultPollIntervalMs: null,
   };
 }
 

@@ -22,6 +22,7 @@ import { assertLocationActive } from "../locations/assert-location-active";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { emptyTopicAsNull } from "../rtu-topic";
 import { resolveTelemetrySource } from "../telemetry-source";
+import { connectionModbusOf } from "./rtu-connection-modbus";
 import { connectionPayloadFormatOf, connectionTlsOf } from "./rtu-connection-tls";
 import { translateRtuUniqueConflict } from "./rtus-conflict";
 import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
@@ -90,6 +91,8 @@ export class RtusAdminService {
         organizationCode: organizations.code,
         // F4.330 (ADR 0115 decision 4): the owning organization's ingest switch.
         organizationIngestEnabled: organizations.ingestEnabled,
+        // F1.2 (ADR 0141 decision 10): what an RTU with no interval of its own inherits.
+        organizationDefaultPollIntervalMs: organizations.defaultPollIntervalMs,
         connectionProtocol: rtuConnectionConfigs.protocol,
         connectionConfig: rtuConnectionConfigs.config,
         // F4.333 (ADR 0129 decision 2): whether a blob is stored — never the column itself.
@@ -649,11 +652,12 @@ export class RtusAdminService {
    * line; it names the RTU only (§9.6) — both org ids are one query away.
    *
    * Called after `canManageLocation`, so a caller without the grant keeps its
-   * 403 and `resolveLocationOrg`'s precondition holds. It replaces
+   * 403 and `resolveLocationOrg`'s precondition holds (`F1.2`'s `RtusModbusService` calls it after
+   * the same gate). It replaces
    * `existing.organizationId ?? resolveLocationOrg(...)`, whose fallback never
    * ran: `rtus.organization_id` is `NOT NULL`.
    */
-  private async resolveAgreedOrg(
+  async resolveAgreedOrg(
     existing: Pick<typeof rtus.$inferSelect, "id" | "locationId" | "organizationId">,
   ): Promise<string> {
     const locationOrgId = await this.resolveLocationOrg(existing.locationId);
@@ -678,6 +682,8 @@ export class RtusAdminService {
         organizationCode: organizations.code,
         // F4.330 (ADR 0115 decision 4): the owning organization's ingest switch.
         organizationIngestEnabled: organizations.ingestEnabled,
+        // F1.2 (ADR 0141 decision 10): what an RTU with no interval of its own inherits.
+        organizationDefaultPollIntervalMs: organizations.defaultPollIntervalMs,
         connectionProtocol: rtuConnectionConfigs.protocol,
         connectionConfig: rtuConnectionConfigs.config,
         // F4.333 (ADR 0129 decision 2): whether a blob is stored — never the column itself.
@@ -706,6 +712,7 @@ export class RtusAdminService {
     locationName: string;
     organizationCode: string;
     organizationIngestEnabled: boolean;
+    organizationDefaultPollIntervalMs: number | null;
     connectionProtocol: string | null;
     connectionConfig: unknown;
     connectionHasCredential: boolean | null;
@@ -735,6 +742,8 @@ export class RtusAdminService {
       tls: connectionTlsOf(row.connectionProtocol, row.connectionConfig),
       payloadFormat: connectionPayloadFormatOf(row.connectionProtocol, row.connectionConfig),
       credentialsSet: row.connectionHasCredential,
+      modbus: connectionModbusOf(row.connectionProtocol, row.connectionConfig),
+      organizationDefaultPollIntervalMs: row.organizationDefaultPollIntervalMs,
     };
   }
 }

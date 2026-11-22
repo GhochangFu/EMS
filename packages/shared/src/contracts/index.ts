@@ -165,3 +165,6 @@ export * from "./advisories";
 export * from "./degradation";
 // `F1.2` (ADR 0141 decisions 12–14): the device profile bodies and responses and their types.
 export * from "./device-profiles";
+// `F1.2` (ADR 0141 decisions 10, 15): the RTU Modbus bind and the organization default poll interval.
+export * from "./rtu-modbus";
+export * from "./organization-poll-interval";

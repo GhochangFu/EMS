@@ -19,6 +19,7 @@ import {
   setOrganizationEnergySettingsBodySchema,
   setOrganizationColourProfileBodySchema,
   setOrganizationIngestBodySchema,
+  setOrganizationPollIntervalBodySchema,
 } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
@@ -132,6 +133,26 @@ export class OrganizationsAdminController {
     try {
       const parsed = setOrganizationColourProfileBodySchema.parse(body);
       return await this.service.setColourProfile(user, idParamSchema.parse(id), parsed.colourProfile);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F1.2` (ADR 0141 decision 10, Amendment 1 (c), plan T7.3) — `PUT
+   * /api/v1/admin/organizations/:id/poll-interval`, the organization's default poll interval for
+   * every poll protocol. The energy-settings gate: the global admin, or an `organization_admin`
+   * with a direct grant on this organization. The ingest host applies it at its next reload. A body
+   * other than `{ defaultPollIntervalMs: 1000..3600000 | null }` is a 400.
+   */
+  @Put(":id/poll-interval")
+  async setPollInterval(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    try {
+      const parsed = setOrganizationPollIntervalBodySchema.parse(body);
+      return await this.service.setPollInterval(user, idParamSchema.parse(id), parsed);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
