@@ -3,6 +3,7 @@ import type { UserRole } from "@bms/shared";
 import {
   canAcknowledgeAlarms,
   canEditOrganizationEnergySettings,
+  canManageDeviceProfiles,
   canApproveWorkOrders,
   canManageMaintenanceWindows,
   canManageAssetDomains,
@@ -132,6 +133,8 @@ export function runAssetTemplateTabTests(): void {
         "/admin/work-order-settings/checklist-templates",
         // `F4.334` (ADR 0116 decision 5) — Payload Formats, `globalAdminOnly` like Location Types.
         "/admin/payload-formats",
+        // `F1.2` (ADR 0141 decision 13, plan T6.1) — Device Profiles, `deviceProfilesAdmin`.
+        "/admin/device-profiles",
         "/admin/calc-parameters",
         // `F4.365` (ADR 0134 decision 8) — Tariffs, ungated like Calc Parameters: the write
         // controls are hidden inside the page by `canManageOrgTariffs`.
@@ -207,7 +210,9 @@ export function runAssetTemplateTabTests(): void {
     // `location_admin` stays at 11.
     // `F4.359` added Maintenance Windows ungated: 29 -> 30, 22 -> 23 and 11 -> 12.
     // `F4.365` added Tariffs ungated: 30 -> 31, 23 -> 24 and 12 -> 13.
-    const expected = role === "location_admin" ? 13 : role === "admin" ? 31 : 24;
+    // `F1.2` added Device Profiles as `deviceProfilesAdmin` (admin and organization_admin only):
+    // 31 -> 32 and 24 -> 25; `location_admin` stays at 13.
+    const expected = role === "location_admin" ? 13 : role === "admin" ? 32 : 25;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
@@ -688,4 +693,40 @@ export function runCanEditOrganizationEnergySettingsTruthTableTest(): void {
       `${role} must ${expected ? "" : "not "}edit an organization's energy settings`,
     );
   }
+}
+
+/**
+ * `F1.2` (ADR 0141 decisions 13–14, plan T6.1) — who manages device profiles: the API's write gate,
+ * `isOrganizationLevelAdmin` (the global admin, and an organization admin for its own
+ * organization). A `Record<UserRole, boolean>`, so a new role fails the build until it is placed.
+ */
+export function runCanManageDeviceProfilesTruthTableTest(): void {
+  const table: Record<UserRole, boolean> = {
+    admin: true,
+    organization_admin: true,
+    location_admin: false,
+    asset_group_admin: false,
+    operator: false,
+    viewer: false,
+  };
+  for (const [role, expected] of Object.entries(table) as Array<[UserRole, boolean]>) {
+    assert(
+      canManageDeviceProfiles(role) === expected,
+      `${role} must ${expected ? "" : "not "}manage device profiles`,
+    );
+  }
+}
+
+/** `F1.2` — the Device Profiles tab follows the predicate: shown to both admins, hidden from a `location_admin`. */
+export function runDeviceProfilesTabFollowsThePredicateTest(): void {
+  const PROFILES = "/admin/device-profiles";
+  for (const role of ["admin", "organization_admin"] as const) {
+    const paths = visibleMasterDataTabs(role).map((tab) => tab.path);
+    assert(paths.includes(PROFILES), `${role} must see the Device Profiles tab`);
+  }
+  const located = visibleMasterDataTabs("location_admin").map((tab) => tab.path);
+  assert(located.includes("/admin/asset-groups"), "location_admin sees the Asset Groups tab (control)");
+  assert(!located.includes(PROFILES), "location_admin must not see the Device Profiles tab");
+  const tab = masterDataTabs.find((entry) => entry.path === PROFILES);
+  assert(tab?.label === "Device Profiles" && tab.area === "reference", "the tab is Device Profiles, in Reference Data");
 }
