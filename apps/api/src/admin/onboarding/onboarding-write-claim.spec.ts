@@ -18,7 +18,7 @@ export const CODE_WRITTEN_LINES: readonly string[] = [
   "Set location SIVSAGAR (smoc_campus) as a top-level location",
   "Set location LAL (type not set) under BCPL",
   "Added RTU RTU-1 (mqtt)",
-  "Added RTU RTU-2 (modbus_tcp) (config only, not ingested)",
+  "Added RTU RTU-2 (snmp) (config only, not ingested)",
   "Updated RTU RTU-1: config.topic",
   "Removed RTU RTU-1",
   "Added point key 'kw'",

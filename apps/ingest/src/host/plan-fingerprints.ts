@@ -92,8 +92,10 @@ export function canonicalJson(value: unknown): string {
 
 /**
  * `F1.2` (ADR 0016 Amendment 10 (a)): sha256 over the canonical connection
- * slice and each `deviceKey` with its canonical device slice, sorted by device
- * key. A new register list, a new unit id or a new timeout on a running poll
+ * slice and each `deviceKey` with its canonical device slice and its sorted
+ * `sourceKeys`, sorted by device key. A poll adapter plans its reads from
+ * `sourceKeys` at connect, so a point mapped or unmapped on a running RTU must
+ * replace the endpoint too (PR 4 code review 1). A new register list, a new unit id or a new timeout on a running poll
  * endpoint is a `replace` with `reason: "device-config-changed"`.
  *
  * `""` for MQTT: its connection is keyed and replaced by the decoder and
@@ -110,7 +112,10 @@ export function configFingerprint(
     return "";
   }
   const devices = bindings
-    .map((binding) => `${binding.deviceKey}\u0000${canonicalJson(binding.device)}`)
+    .map(
+      (binding) =>
+        `${binding.deviceKey}\u0000${canonicalJson(binding.device)}\u0000${[...new Set(binding.sourceKeys)].sort().join(",")}`,
+    )
     .sort();
   return sha256([canonicalJson(config), ...devices].join("\n"));
 }

@@ -202,3 +202,19 @@ export function assertADeviceProfileCodeAndVersionAreBounded(): void {
   expect(deviceProfileSchema.safeParse(profile({ code: "a".repeat(65) })).success).toBe(false);
   expect(deviceProfileSchema.safeParse(profile({ extra: true })).success).toBe(false);
 }
+
+/** F1.2 security review L1: no issue message echoes the value it refused (§9.6). */
+export function assertNoMessageEchoesTheRefusedValue(): void {
+  const SENTINEL = "s3ntinel-modbus-value";
+  const result = modbusDraftConfigSchema.safeParse({
+    host: "meter",
+    device: {
+      unitId: 1,
+      registers: [register({ table: SENTINEL, type: SENTINEL, wordOrder: SENTINEL })],
+    },
+  });
+  expect(result.success).toBe(false);
+  const messages = result.success ? [] : result.error.issues.map((issue) => issue.message);
+  expect(messages.length).toBeGreaterThanOrEqual(3);
+  for (const message of messages) expect(message).not.toContain(SENTINEL);
+}

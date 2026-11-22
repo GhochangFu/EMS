@@ -56,6 +56,8 @@ export * from "./ingest-modbus";
 // `F1.2` (ADR 0141 decisions 2, 4): the Modbus TCP wire codec. Zod-free and
 // Node-free, so this subpath still loads in the web bundle (plan M16).
 export * from "./ingest-adapters/modbus-codec";
+// `F1.2` (ADR 0141 decision 22): the MODBUS_TCP_HOSTS allow-list parser and predicate. Node-free.
+export * from "./ingest-adapters/modbus-tcp-hosts";
 
 /**
  * Compile-time drift guard: every ingest protocol must be expressible in

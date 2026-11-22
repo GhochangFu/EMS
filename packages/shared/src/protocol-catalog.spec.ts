@@ -2,6 +2,7 @@ import { expect } from "vitest";
 
 import { onboardingProtocolSchema } from "./contracts/onboarding";
 import { mqttDraftConfigSchema } from "./ingest-adapters/mqtt";
+import { modbusDraftConfigSchema } from "./ingest-modbus";
 // Entered at the module itself, not through `./ingest`: no runtime import cycle
 // remains (`F3.24a` review), so the catalog builds in any entry order.
 import { INGEST_WIRED_PROTOCOLS, PROTOCOL_CATALOG, describeProtocol, protocolCatalogEntry } from "./protocol-catalog";
@@ -96,12 +97,12 @@ export function assertOneEntryPerOnboardingProtocolInDeclarationOrder(): void {
   expect(codes).toEqual(["mqtt", "simulator", "catalog", "modbus_tcp", "bacnet", "opc_ua", "snmp", "rest_poller"]);
 }
 
-/** C2 — `ingestWired` is derived from the wired list, and the list is MQTT alone today. */
+/** C2 — `ingestWired` is derived from the wired list: MQTT and, since `F1.2`, Modbus TCP. */
 export function assertIngestWiredIsDerivedFromTheWiredList(): void {
   for (const e of PROTOCOL_CATALOG) {
     expect(e.ingestWired, e.code).toBe((INGEST_WIRED_PROTOCOLS as readonly string[]).includes(e.code));
   }
-  expect([...INGEST_WIRED_PROTOCOLS]).toEqual(["mqtt"]);
+  expect([...INGEST_WIRED_PROTOCOLS]).toEqual(["mqtt", "modbus_tcp"]);
 }
 
 /** C3 — no protocol supports discovery until `F1.4` or `F1.5` flips one. */
@@ -128,10 +129,18 @@ export function assertNoCatalogKeyIsACredentialKey(): void {
   }
 }
 
-/** C5 — MQTT carries the shared draft schema by identity; every other protocol accepts any config. */
+/**
+ * C5 — MQTT and Modbus TCP carry their shared draft schemas by identity; every
+ * other protocol accepts any config.
+ */
 export function assertTheMqttEntryCarriesTheDraftSchema(): void {
   expect(protocolCatalogEntry("mqtt").draftConfigSchema).toBe(mqttDraftConfigSchema);
-  for (const e of PROTOCOL_CATALOG.filter((x) => x.code !== "mqtt")) {
+  const modbus = protocolCatalogEntry("modbus_tcp");
+  expect(modbus.draftConfigSchema).toBe(modbusDraftConfigSchema);
+  // F1.2: the example parses, and the old flat shape (unitId at the top) does not.
+  expect(modbus.draftConfigSchema.safeParse(modbus.exampleConfig).success).toBe(true);
+  expect(modbus.draftConfigSchema.safeParse({ host: "127.0.0.1", port: 502, unitId: 1 }).success).toBe(false);
+  for (const e of PROTOCOL_CATALOG.filter((x) => x.code !== "mqtt" && x.code !== "modbus_tcp")) {
     expect(e.draftConfigSchema.safeParse({ anything: 1 }).success, e.code).toBe(true);
   }
 }
@@ -150,6 +159,9 @@ export function assertRequiredFieldsAreRequiredByTheDraftSchemaOnlyWhereItSaysSo
   const mqtt = protocolCatalogEntry("mqtt");
   expect(mqtt.requiredFields).toEqual(["topic"]);
   expect(mqtt.optionalFields).toEqual(["host", "port"]);
+  const modbus = protocolCatalogEntry("modbus_tcp");
+  expect(modbus.requiredFields).toEqual(["host"]);
+  expect(modbus.draftConfigSchema.safeParse({ port: 502 }).success).toBe(false);
   for (const e of PROTOCOL_CATALOG.filter((x) => !x.ingestWired)) {
     expect(e.requiredFields, e.code).toEqual([]);
   }

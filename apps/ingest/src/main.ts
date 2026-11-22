@@ -22,7 +22,7 @@ import { startHealthServer } from "./host/health-server.js";
 import { createHostLogger, errorKind } from "./host/logger.js";
 import type { PointIndex, WriteResult } from "./host/normaliser.js";
 import { droppedCount, resolveSamples, writeResolved } from "./host/normaliser.js";
-import { createPlanWarningReporter } from "./host/once-per-key.js";
+import { createPlanWarningReporter, createReloadSkipReporter } from "./host/once-per-key.js";
 import { createEndpointRegistry } from "./host/reconcile.js";
 import { createSupervisor, realScheduler, type Supervisor } from "./host/supervisor.js";
 import { authenticate, gatewayHealth, type GatewaySnapshot, loadGateways } from "./host/uplink-gateways.js";
@@ -129,6 +129,7 @@ async function main(): Promise<void> {
     mqttConnectionDefaults: hostConfig.mqttConnectionDefaults,
     // ADR 0114 decision 3: the host, not the adapter, applies the plain-MQTT rule.
     mqttPlaintextHosts: hostConfig.mqttPlaintextHosts,
+    modbusTcpHosts: hostConfig.modbusTcpHosts,
   };
 
   let skipped: readonly SkippedBinding[] = [];
@@ -142,6 +143,10 @@ async function main(): Promise<void> {
   let edgeServed: EdgeServed = initial.edgeServed;
   deviceHealth.planChanged(monitoredRtuIds(initial.endpoints, initial.edgeServed), initial.endpoints.length);
   let gatewaySnapshot: GatewaySnapshot = await loadGateways(pool);
+  // ADR 0141 decision 22: an RTU whose Modbus host is not on MODBUS_TCP_HOSTS is
+  // logged once per RTU per process, at boot or at the reload that first plans it.
+  const reloadSkips = createReloadSkipReporter(logger, new Set(["modbus-host-not-allowed"]));
+  reloadSkips.boot(initial.skipped);
   for (const skip of initial.skipped) {
     // Once per RTU per process (§3) — this is the only place it is logged.
     logger.warn("rtu skipped", {
@@ -402,6 +407,7 @@ async function main(): Promise<void> {
         }
         const next = planEndpoints(await loadBindingRows(pool), planOptions);
         skipped = next.skipped;
+        reloadSkips.reload(next.skipped);
         edgeServed = next.edgeServed;
         // An RTU onboarded into a running host reaches a warning here, not at
         // boot. Deduplicated per process by the reporter above.

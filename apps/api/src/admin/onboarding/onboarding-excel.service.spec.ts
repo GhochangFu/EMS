@@ -2,6 +2,7 @@ import {
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_RTUS,
   ONBOARDING_DRAFT_STRING_MAX,
+  protocolCatalogEntry,
 } from "@bms/shared";
 import { BadRequestException } from "@nestjs/common";
 import * as XLSX from "xlsx";
@@ -881,6 +882,13 @@ export function assertUnknownRtuProtocolIsRefused(): void {
   assert(
     parsed.rtus[1].ingestEnabled === false,
     "a non-mqtt RTU arrives with ingest disabled, as it did before the guard",
+  );
+  // F1.2 (PR 4 code review 3): the imported Modbus config passes the draft
+  // schema the commit validates with, so a workbook with a Modbus row commits.
+  const modbusDraft = protocolCatalogEntry("modbus_tcp").draftConfigSchema.safeParse(parsed.rtus[1].config);
+  assert(
+    modbusDraft.success,
+    `an imported Modbus row passes modbusDraftConfigSchema, got ${JSON.stringify(parsed.rtus[1].config)}`,
   );
 
   // A blank cell is not an unknown protocol — it is the `mqtt` default, and the

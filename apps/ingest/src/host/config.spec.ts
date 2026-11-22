@@ -551,6 +551,41 @@ export function runMqttPlaintextHostsConfigTests(): void {
 }
 
 /**
+ * `F1.2` / ADR 0141 decision 22 — `MODBUS_TCP_HOSTS` is parsed here with the
+ * shared parser.
+ *
+ * Unset is the empty list, so the cloud host dials no Modbus endpoint; a bad
+ * entry escapes `readHostConfig` so the host refuses to start, with a message
+ * that names the entry's position and not its text. Reddens if the parse is
+ * wrapped in a swallowing `try/catch` or reads the wrong variable.
+ */
+export function runModbusTcpHostsConfigTests(): void {
+  const unset = readHostConfig({ ...BASE }).modbusTcpHosts;
+  assert(
+    unset.names.size === 0 && unset.ipv4Cidrs.length === 0,
+    "an unset MODBUS_TCP_HOSTS allows the cloud host to dial no Modbus endpoint",
+  );
+  const listed = readHostConfig({ ...BASE, MODBUS_TCP_HOSTS: " Meter.Site , 10.0.0.7/24" }).modbusTcpHosts;
+  assert(
+    [...listed.names].join(",") === "meter.site" &&
+      listed.ipv4Cidrs.length === 1 &&
+      listed.ipv4Cidrs[0]!.base === 0x0a000000 &&
+      listed.ipv4Cidrs[0]!.prefix === 24,
+    `the list is trimmed, lower-cased and normalized, got ${[...listed.names].join(",")}`,
+  );
+  const err = thrownBy(
+    () => readHostConfig({ ...BASE, MODBUS_TCP_HOSTS: "ok.site,secret.site:502" }),
+    "a bad MODBUS_TCP_HOSTS entry",
+  );
+  assert(nameOf(err) === "ModbusTcpHostsConfigError", `wrong error: ${nameOf(err)}`);
+  assert(
+    messageOf(err) === "MODBUS_TCP_HOSTS entry 2 is not a host name, an IP address or an IPv4 CIDR block",
+    `the refusal names the position: ${messageOf(err)}`,
+  );
+  assert(!messageOf(err).includes("secret.site"), "the refusal never echoes the entry");
+}
+
+/**
  * `E7.2` / ADR 0123 decision 10 — `INGEST_NOTIFY_LIVE_WINDOW_MS`, the window
  * inside which `writeResolved` notifies a row.
  *

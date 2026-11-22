@@ -166,18 +166,42 @@ export function assertRejectUnauthorizedIsRefused(): void {
   );
 }
 
-/** V6 — a protocol with no adapter accepts any config (decision 6). */
+/**
+ * V6 — a protocol with no adapter accepts any config (decision 6). SNMP stands
+ * for it since F1.2 wired Modbus TCP.
+ */
 export function assertAModbusRtuAcceptsAnyConfig(): void {
   const errors = configErrors(
     errorsOf(
       mqttRtu(
         { port: "not a number", anything: { deep: true } },
+        { protocol: "snmp", ingestEnabled: false, credentialsSet: false },
+      ),
+    ),
+    0,
+  );
+  assert(errors.length === 0, `no rtus.0.config.* error for snmp, got ${JSON.stringify(errors)}`);
+  // F1.2: a Modbus TCP config is checked against modbusDraftConfigSchema now.
+  const modbus = configErrors(
+    errorsOf(
+      mqttRtu(
+        { host: "127.0.0.1", port: 502, unitId: 1 },
         { protocol: "modbus_tcp", ingestEnabled: false, credentialsSet: false },
       ),
     ),
     0,
   );
-  assert(errors.length === 0, `no rtus.0.config.* error for modbus_tcp, got ${JSON.stringify(errors)}`);
+  assert(modbus.length > 0, `the old flat Modbus config is refused, got ${JSON.stringify(modbus)}`);
+  const nested = configErrors(
+    errorsOf(
+      mqttRtu(
+        { host: "127.0.0.1", port: 502, device: { unitId: 1 } },
+        { protocol: "modbus_tcp", ingestEnabled: false, credentialsSet: false },
+      ),
+    ),
+    0,
+  );
+  assert(nested.length === 0, `a nested Modbus config passes, got ${JSON.stringify(nested)}`);
 }
 
 /** V6 — a simulator RTU with an empty config has no config error. */

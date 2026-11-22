@@ -41,7 +41,7 @@ describe("validate — rtus[].config against the protocol's draft schema (F3.24a
   it("keeps the schema row for a mqttTopic wildcard that topic shadows", () =>
     assertAShadowedFallbackWildcardKeepsItsSchemaRow());
   it("refuses rejectUnauthorized", () => assertRejectUnauthorizedIsRefused());
-  it("accepts any config on modbus_tcp", () => assertAModbusRtuAcceptsAnyConfig());
+  it("accepts any config on an unwired protocol and checks a Modbus TCP config", () => assertAModbusRtuAcceptsAnyConfig());
   it("accepts an empty config on simulator", () => assertASimulatorRtuAcceptsAnEmptyConfig());
   it("keeps the over-long topic row", () => assertTheOverLongTopicRowStays());
   it("keeps the topic-required row", () => assertTheTopicRequiredRowStays());

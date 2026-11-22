@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertAMovedDeviceMovesTheConfigFingerprint,
   assertCanonicalJsonSortsKeysAtEveryDepth,
+  assertAMappedKeyMovesTheConfigFingerprint,
   assertKeyOrderDoesNotMoveTheConfigFingerprint,
   assertMqttHasNoConfigFingerprint,
   assertOneChangedRegisterMovesTheConfigFingerprint,
@@ -17,6 +18,7 @@ describe("F1.2 — plan fingerprints (ADR 0016 Amendment 10 (a))", () => {
   it("F3 a changed connection slice moves it", () => assertTheConnectionSliceMovesTheConfigFingerprint());
   it("F4 a slice moved to another device moves it", () => assertAMovedDeviceMovesTheConfigFingerprint());
   it("F5 MQTT has none", () => assertMqttHasNoConfigFingerprint());
+  it("F8 a newly mapped source key moves it, in any order", () => assertAMappedKeyMovesTheConfigFingerprint());
   it("F6 canonical JSON sorts keys at every depth", () => assertCanonicalJsonSortsKeysAtEveryDepth());
   it("F7 the moved fingerprints keep their shape", () => assertTheMovedFingerprintsKeepTheirShape());
 });

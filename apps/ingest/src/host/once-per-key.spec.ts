@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 
 import type { PlanWarning } from "./bindings.js";
-import { createPlanWarningReporter, oncePerKey } from "./once-per-key.js";
+import { createPlanWarningReporter, createReloadSkipReporter, oncePerKey } from "./once-per-key.js";
 
 /**
  * `F1.2` plan T3.7 — the once-per-process warning report `main.ts` uses at
@@ -75,3 +75,22 @@ export function assertAnIntervalLineNamesTheLevelAndNoValue(): void {
     level: "organization",
   });
 }
+
+/** ADR 0141 decision 22: a named skip first seen at a reload is logged once; one seen at boot is not repeated. */
+export function assertANamedReloadSkipIsLoggedOnce(): void {
+  const lines: Line[] = [];
+  const logger = {
+    info: () => undefined,
+    warn: (message: string, fields?: Record<string, unknown>) => lines.push(fields === undefined ? { message } : { message, fields }),
+    error: () => undefined,
+  };
+  const skips = createReloadSkipReporter(logger, new Set(["modbus-host-not-allowed"]));
+  const skip = (rtuId: string, reason: string) => ({ rtuId, rtuCode: rtuId.toUpperCase(), reason });
+  skips.boot([skip("r1", "modbus-host-not-allowed")]);
+  skips.reload([skip("r1", "modbus-host-not-allowed"), skip("r2", "modbus-host-not-allowed"), skip("r3", "no-adapter")]);
+  skips.reload([skip("r2", "modbus-host-not-allowed")]);
+  expect(lines).toEqual([
+    { message: "rtu skipped", fields: { rtuCode: "R2", rtuId: "r2", reason: "modbus-host-not-allowed" } },
+  ]);
+}
+

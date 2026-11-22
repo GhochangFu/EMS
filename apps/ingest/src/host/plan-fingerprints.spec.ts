@@ -70,6 +70,14 @@ export function assertAMovedDeviceMovesTheConfigFingerprint(): void {
   expect(configFingerprint("modbus_tcp", config, swapped)).not.toBe(configFingerprint("modbus_tcp", config, devices()));
 }
 
+export function assertAMappedKeyMovesTheConfigFingerprint(): void {
+  // F1.2 PR 4 code review 1: the adapter plans its reads from sourceKeys, so
+  // mapping a point on a running RTU must replace the endpoint.
+  const keyed = (keys: string[]) => devices().map((b) => ({ ...b, sourceKeys: keys }));
+  expect(configFingerprint("modbus_tcp", config, keyed(["kw"]))).not.toBe(configFingerprint("modbus_tcp", config, keyed(["kw", "kvar"])));
+  expect(configFingerprint("modbus_tcp", config, keyed(["kvar", "kw"]))).toBe(configFingerprint("modbus_tcp", config, keyed(["kw", "kvar"])));
+}
+
 export function assertMqttHasNoConfigFingerprint(): void {
   expect(configFingerprint("mqtt", { host: "broker", port: 8883 }, [binding("R1", { topic: "a/b" })])).toBe("");
 }
