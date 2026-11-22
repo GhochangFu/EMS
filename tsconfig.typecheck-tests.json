@@ -387,6 +387,7 @@
     "tests/f1.2-modbus-read-only.test.ts",
     "tests/f1.2-device-profiles-schema.test.ts",
     "tests/f1.2-device-profiles-schema.integration.test.ts",
-    "tests/f1.2-device-profiles-admin-reachable.test.ts"
+    "tests/f1.2-device-profiles-admin-reachable.test.ts",
+    "tests/f1.2-edge-export-loads-on-the-edge.test.ts"
   ]
 }
