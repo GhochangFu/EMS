@@ -53,6 +53,7 @@ export const DISCOVERY_BLOCKED_HOSTNAMES: readonly string[] = [
   "worker",
   "web",
   "sim",
+  "modbus-sim",
   "ingest",
   "prometheus",
   "loki",

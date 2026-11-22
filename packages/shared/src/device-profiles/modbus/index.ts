@@ -15,6 +15,9 @@ import selecMfm384CCe from "./selec-mfm384-c-ce.json";
  * `stock-profiles.spec.ts` validates every entry; the parse below also means
  * a malformed file fails at import rather than reaching an organization.
  */
+// Append-only; the simulator's unit ids follow this order (unit n = entry n,
+// `apps/sim/src/modbus-sim.js`, `docs/local-setup.md`). S6 in
+// `stock-profiles.spec.ts` pins the first two.
 const STOCK_FILES: readonly unknown[] = [elmeasureLgPlus5310, selecMfm384CCe];
 
 export const STOCK_MODBUS_PROFILES: readonly DeviceProfile[] = STOCK_FILES.map((file) =>

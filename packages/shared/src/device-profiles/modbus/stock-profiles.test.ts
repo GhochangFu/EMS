@@ -6,6 +6,7 @@ import {
   assertTheCheckRefusesAnUncitedOrRepeatedProfile,
   assertTheElmeasureLgPlus5310PinsMatchTheManual,
   assertTheSelecMfm384PinsMatchTheManual,
+  assertTheStockOrderIsAppendOnly,
 } from "./stock-profiles.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -28,5 +29,9 @@ describe("F1.2 — stock Modbus profiles (ADR 0141 decisions 12, 14)", () => {
 
   it("S5 Selec MFM384-C-CE: every register matches the manual's table", () => {
     assertTheSelecMfm384PinsMatchTheManual();
+  });
+
+  it("S6 the stock order is append-only: the simulator's unit ids follow it", () => {
+    assertTheStockOrderIsAppendOnly();
   });
 });
