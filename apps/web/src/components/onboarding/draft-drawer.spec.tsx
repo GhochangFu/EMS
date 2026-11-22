@@ -123,6 +123,9 @@ const COMMITTED_RTU = {
   payloadFormat: null,
   // F4.333 (ADR 0129 decision 2): the list's parse requires it.
   credentialsSet: true,
+  // F1.2 (ADR 0141, plan T7.1): so do these two.
+  modbus: null,
+  organizationDefaultPollIntervalMs: null,
 };
 
 type Sent = { url: string; method: string; body: string };
