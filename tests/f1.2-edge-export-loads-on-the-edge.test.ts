@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { lookupAdapter } from "../apps/ingest/src/adapter/registry.js";
-import { MODBUS_DEFAULT_POLL_INTERVAL_MS } from "../apps/ingest/src/adapters/modbus-tcp.js";
+import type { IngestAdapterFactory } from "../apps/ingest/src/adapter/types.js";
+import { MODBUS_DEFAULT_POLL_INTERVAL_MS, modbusTcpAdapterFactory } from "../apps/ingest/src/adapters/modbus-tcp.js";
 import { parseEdgeConfigFile } from "../apps/ingest/src/host/edge-config.js";
 import {
   buildEdgeConfigExport,
@@ -11,8 +11,10 @@ import {
 
 /**
  * `F1.2` (ADR 0141 decision 17, plan T7.5) — the edge export's file, read by the edge host's own
- * loader (`parseEdgeConfigFile`, with the real adapter registry): what the export writes is what an
- * edge box accepts, through the Modbus adapter's own `configSchema` and `deviceSchema`. And the
+ * loader (`parseEdgeConfigFile`, with the real Modbus adapter factory): what the export writes is
+ * what an edge box accepts, through the adapter's own `configSchema` and `deviceSchema`. The lookup
+ * names that one factory rather than the registry, which would pull the MQTT adapter into this
+ * non-strict type-check program (`tsconfig.typecheck-tests.json`). And the
  * export's copy of the adapter default (it cannot import `apps/ingest`) is held equal to the
  * adapter's. Assertions inline (§4.6 carves out `tests/`).
  */
@@ -41,7 +43,7 @@ function rtu(code: string, unitId: number, config: Record<string, unknown> = {})
 }
 
 describe("F1.2 — the edge export loads on the edge host", () => {
-  it("is accepted by the edge loader with the real registry, one endpoint, the resolved interval", () => {
+  it("is accepted by the edge loader with the real Modbus factory, one endpoint, the resolved interval", () => {
     const { file } = buildEdgeConfigExport({
       organizationDefaultPollIntervalMs: 60_000,
       rtus: [rtu("A", 1, { pollIntervalMs: 20_000 }), rtu("B", 2)],
@@ -49,7 +51,8 @@ describe("F1.2 — the edge export loads on the edge host", () => {
     expect(file).not.toBeNull();
     const endpoints = parseEdgeConfigFile(JSON.stringify(file), {
       env: {},
-      lookup: lookupAdapter,
+      lookup: (protocol) =>
+        protocol === "modbus_tcp" ? (modbusTcpAdapterFactory as unknown as IngestAdapterFactory) : undefined,
       mqttPlaintextHosts: new Set(),
     });
     expect(endpoints).toHaveLength(1);
