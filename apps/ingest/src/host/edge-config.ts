@@ -13,6 +13,9 @@ import {
   type IngestProtocol,
   MQTT_PLAINTEXT_HOSTS_ENV,
   mqttPlaintextDecision,
+  POLL_INTERVAL_MAX_MS,
+  POLL_INTERVAL_MIN_MS,
+  pollIntervalMsSchema,
   UPLINK_TOKEN_PATTERN,
 } from "@bms/shared/ingest";
 import type { ZodIssue } from "zod";
@@ -271,7 +274,11 @@ function isProtocol(value: string): value is IngestProtocol {
  * - an MQTT endpoint may not name a catalog `payloadFormat` — there is no
  *   catalog on the box; a format is written inline on the device (C11);
  * - an MQTT device must list its `sourceKeys`: the adapter emits only listed
- *   keys, so a device with none would report nothing, silently, for ever.
+ *   keys, so a device with none would report nothing, silently, for ever;
+ * - a poll endpoint's `config.pollIntervalMs` is the host's (ADR 0016
+ *   Amendment 10 (a)): checked against the shared bound — an out-of-bounds
+ *   value refuses the file — and removed before the adapter's schema sees the
+ *   config. A push endpoint's config is passed through untouched.
  */
 export function parseEdgeConfigFile(text: string, deps: EdgeFileDeps): readonly EdgeEndpoint[] {
   let json: unknown;
@@ -299,7 +306,23 @@ export function parseEdgeConfigFile(text: string, deps: EdgeFileDeps): readonly 
     if (Object.prototype.hasOwnProperty.call(entry.config, "rejectUnauthorized")) {
       problems.push(`${at}.config.rejectUnauthorized: refused; certificate verification cannot be changed at the edge`);
     }
-    const config = factory.configSchema.safeParse(entry.config);
+    let rawConfig: Record<string, unknown> = entry.config;
+    let pollIntervalMs: number | null = null;
+    if (factory.mode === "poll") {
+      const { pollIntervalMs: interval, ...withoutInterval } = entry.config;
+      rawConfig = withoutInterval;
+      if (interval !== undefined && interval !== null) {
+        const bounded = pollIntervalMsSchema.safeParse(interval);
+        if (bounded.success) {
+          pollIntervalMs = bounded.data;
+        } else {
+          problems.push(
+            `${at}.config.pollIntervalMs: must be a whole number of milliseconds from ${POLL_INTERVAL_MIN_MS} to ${POLL_INTERVAL_MAX_MS}`,
+          );
+        }
+      }
+    }
+    const config = factory.configSchema.safeParse(rawConfig);
     if (!config.success) {
       problems.push(...config.error.issues.map((issue) => describeIssue(`${at}.config`, issue)));
     }
@@ -345,7 +368,7 @@ export function parseEdgeConfigFile(text: string, deps: EdgeFileDeps): readonly 
     });
 
     if (config.success) {
-      endpoints.push({ protocol: entry.protocol, factory, config: config.data, credentials, devices, pollIntervalMs: null });
+      endpoints.push({ protocol: entry.protocol, factory, config: config.data, credentials, devices, pollIntervalMs });
     }
   });
 
