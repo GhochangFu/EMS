@@ -14,7 +14,9 @@ import {
   type EdgeServedAccumulator,
 } from "./binding-targets.js";
 import type { PointIndex, PointTarget } from "./normaliser.js";
+import { combineEndpointPollIntervals, resolveRtuPollInterval, type PollIntervalLevel } from "./poll-interval.js";
 import {
+  configFingerprint,
   credentialFingerprint,
   credentialMark,
   decoderFingerprint,
@@ -88,6 +90,12 @@ export type BindingRow = {
    * filtered: `planEndpoints` turns `false` into a named skip.
    */
   readonly organization_ingest_enabled: boolean;
+  /**
+   * `organizations.default_poll_interval_ms` (ADR 0141 decision 10, migration
+   * `0164`): the organization's poll interval, `null` when it sets none. Read
+   * for poll protocols only; `resolveRtuPollInterval` bounds it again.
+   */
+  readonly organization_default_poll_interval_ms: number | null;
   /**
    * `mqtt_payload_formats.code` joined on `config->>'payloadFormat'` (ADR 0116
    * decision 4). `null` when the config names no format **or** names one with
@@ -189,6 +197,7 @@ export const BINDING_QUERY = `
     c.key_version,
     o.code AS organization_code,
     o.ingest_enabled AS organization_ingest_enabled,
+    o.default_poll_interval_ms AS organization_default_poll_interval_ms,
     f.code AS payload_format_code,
     f.definition AS payload_format_definition
   FROM bms.rtus r
@@ -247,6 +256,20 @@ export type EndpointPlan = {
    * edge plan, which never reloads, carries `""`.
    */
   readonly credentialFingerprint: string;
+  /**
+   * `F1.2` (ADR 0016 Amendment 10 (a)): the shortest interval any RTU on this
+   * poll endpoint resolved to (`config.pollIntervalMs`, else the
+   * organization's); `null` when none did, and on every push plan. The
+   * supervisor sleeps `pollSleepMs(plan, adapter.defaultPollIntervalMs)`.
+   */
+  readonly pollIntervalMs: number | null;
+  /** True when at least one RTU here resolved to the adapter default (P9 then takes the shorter). */
+  readonly pollIntervalUsesDefault: boolean;
+  /**
+   * `F1.2`: `configFingerprint` of the connection slice and every device slice;
+   * `""` for MQTT and on the edge. A move is a `device-config-changed` replace.
+   */
+  readonly configFingerprint: string;
 };
 
 /**
@@ -263,7 +286,12 @@ export type PlanWarning = {
   readonly rtuId: string;
   /** `string | null` to match `SkippedBinding`; non-null on every current path. */
   readonly rtuCode: string | null;
-  readonly reason: "credential-env-fallback";
+  readonly reason: "credential-env-fallback" | "poll-interval-out-of-bounds";
+  /**
+   * `poll-interval-out-of-bounds` only: which stored value was replaced by the
+   * next level down (ADR 0016 Amendment 10 (a)). Never the value itself.
+   */
+  readonly detail?: PollIntervalLevel;
 };
 
 export type PlanResult = {
@@ -493,6 +521,8 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
     formatByTopic: Map<string, string>;
     /** `F4.333`: one `credentialMark` per bound RTU. */
     credentialMarks: string[];
+    /** `F1.2`: each bound RTU's resolved poll interval (`null` = the adapter default). */
+    pollIntervals: (number | null)[];
   };
   const endpoints = new Map<string, Accumulator>();
 
@@ -777,6 +807,16 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       }
     }
 
+    // F1.2 (ADR 0016 Amendment 10 (a)): `pollIntervalMs` is the host's, for
+    // every poll protocol. It is removed before the adapter's schema sees the
+    // slice, so no adapter declares it. Push plans keep the slice untouched.
+    let rtuPollInterval: ReturnType<typeof resolveRtuPollInterval> = { value: null, warnings: [] };
+    if (factory.mode === "poll") {
+      const { pollIntervalMs, ...withoutInterval } = connectionSlice;
+      connectionSlice = withoutInterval;
+      rtuPollInterval = resolveRtuPollInterval(pollIntervalMs, head.organization_default_poll_interval_ms);
+    }
+
     const configParsed = factory.configSchema.safeParse(connectionSlice);
     if (!configParsed.success) {
       skipped.push({
@@ -841,6 +881,7 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         index: new Map(),
         formatByTopic: new Map(),
         credentialMarks: [],
+        pollIntervals: [],
       };
       endpoints.set(groupKey, group);
     } else if (!sameConnection(group.config, configParsed.data)) {
@@ -893,6 +934,10 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
 
     const sourceKeys = [...new Set(pointRows.map((row) => row.source_data_key))];
     group.credentialMarks.push(credentialMark(rtuId, head));
+    group.pollIntervals.push(rtuPollInterval.value);
+    for (const level of rtuPollInterval.warnings) {
+      warnings.push({ rtuId, rtuCode: deviceKey, reason: "poll-interval-out-of-bounds", detail: level });
+    }
     group.bindings.push({
       rtuId,
       rtuCode: deviceKey,
@@ -914,6 +959,8 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       pointIndex: group.index,
       decoderFingerprint: decoderFingerprint(group.protocol, group.bindings),
       credentialFingerprint: credentialFingerprint(group.credentialMarks),
+      ...combineEndpointPollIntervals(group.pollIntervals),
+      configFingerprint: configFingerprint(group.protocol, group.config, group.bindings),
     })),
     skipped,
     warnings,

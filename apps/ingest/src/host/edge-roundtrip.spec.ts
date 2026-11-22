@@ -120,7 +120,7 @@ export async function startEdge(deps: {
     sink = emit;
   });
   const [{ plan }] = planEdgeEndpoints([
-    { protocol: "mqtt", factory, config: {}, credentials: {}, devices: [{ deviceKey: EDGE_DEVICE, device: {}, sourceKeys: [] }] },
+    { protocol: "mqtt", factory, config: {}, credentials: {}, devices: [{ deviceKey: EDGE_DEVICE, device: {}, sourceKeys: [] }], pollIntervalMs: null },
   ]);
   const buffer = store.handle(plan.protocol, plan.endpointKey);
   if (deps.preload !== undefined) {

@@ -36,6 +36,9 @@ function plan(endpointKey: string, devices: readonly string[], protocol: IngestP
     pointIndex: new Map(devices.map((d) => [d, new Map()])),
     decoderFingerprint: "fp-0",
     credentialFingerprint: "cred-0",
+    pollIntervalMs: null,
+    pollIntervalUsesDefault: true,
+    configFingerprint: "",
   };
 }
 

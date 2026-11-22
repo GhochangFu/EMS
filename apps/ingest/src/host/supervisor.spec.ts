@@ -204,6 +204,9 @@ export function makePlan(): EndpointPlan {
     pointIndex: new Map(),
     decoderFingerprint: "fp-0",
     credentialFingerprint: "cred-0",
+    pollIntervalMs: null,
+    pollIntervalUsesDefault: true,
+    configFingerprint: "",
   };
 }
 

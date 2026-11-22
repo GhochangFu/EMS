@@ -186,6 +186,11 @@ export type EdgeEndpoint = {
   /** Plaintext, from the box's environment. Never log, never echo, never persist. */
   readonly credentials: Readonly<Record<string, string>>;
   readonly devices: readonly EdgeDevice[];
+  /**
+   * `F1.2` (ADR 0016 Amendment 10 (a)): the endpoint's `config.pollIntervalMs`,
+   * already bounded; `null` when the file sets none, and for every push endpoint.
+   */
+  readonly pollIntervalMs: number | null;
 };
 
 export type EdgeFileDeps = {
@@ -340,7 +345,7 @@ export function parseEdgeConfigFile(text: string, deps: EdgeFileDeps): readonly 
     });
 
     if (config.success) {
-      endpoints.push({ protocol: entry.protocol, factory, config: config.data, credentials, devices });
+      endpoints.push({ protocol: entry.protocol, factory, config: config.data, credentials, devices, pollIntervalMs: null });
     }
   });
 
