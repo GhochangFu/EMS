@@ -36,7 +36,7 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import { CREDENTIALS_RTU_MOVED, credentialsSetAudit } from "./onboarding-credentials-audit";
 import { OnboardingCommitService } from "./onboarding-commit.service";
-import { deviceProfileLookup } from "./onboarding-device-profiles";
+import { applyWorkbookProfiles, deviceProfileLookup, newestDeviceProfilesByCode } from "./onboarding-device-profiles";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { OnboardingExcelService } from "./onboarding-excel.service";
@@ -743,6 +743,7 @@ export class OnboardingService {
     // live vocabulary, read here so the parser itself stays free of the database.
     const locationTypeCodes = await this.activeLocationTypeCodes();
     const parsed = this.excelService.parseUpload(buffer, locationTypeCodes);
+    await applyWorkbookProfiles(parsed, (codes) => newestDeviceProfilesByCode(this.tenantDb, session.organizationId, codes)); // F1.2 PR 11.
     const orgPointKeys = await this.catalogService.listPointKeys(session.organizationId);
     const useExistingPointKeys = orgPointKeys.length > 0;
     const patch = this.excelService.toDraftPatch(parsed, draft, { useExistingPointKeys });
