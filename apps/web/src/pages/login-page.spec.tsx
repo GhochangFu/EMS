@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -7,7 +7,7 @@ import * as loginApi from "../api/login";
 import * as oidcApi from "../api/oidc";
 import { RETURN_PATH_KEY } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
-import { LoginPage } from "./login-page";
+import { LOGIN_DESCRIPTION, LoginPage } from "./login-page";
 
 /**
  * `F4.398` U4 (ADR 0142 decisions 1 and 4; plan OQ1, OQ2) — the login page reads `Verve`: the
@@ -312,4 +312,62 @@ export async function paintsThePortalAppearance(): Promise<void> {
   expect(JSON.parse(localStorage.getItem("bms.portal-appearance") ?? "null")).toEqual({ designSystem: "swiss-grid", colourProfile: "forest" });
   expect(localStorage.getItem("bms.design")).toBeNull();
   expect(localStorage.getItem("bms.profile")).toBeNull();
+}
+
+/**
+ * LH1 (ADR 0142 Amendment 3 item 2) — the login page names no client: the description is the new
+ * sentence and nothing on the page reads "Ion Exchange". The lookup of the sentence is the
+ * positive control.
+ */
+export function namesNoClient(): void {
+  renderLogin();
+  expect(LOGIN_DESCRIPTION).toBe(
+    "One operator console for power, HVAC, water, utilities, alarms and work orders, across every site you run.",
+  );
+  expect(screen.getByText(LOGIN_DESCRIPTION)).toBeTruthy();
+  expect(document.body.textContent ?? "").not.toMatch(/ion\s*exchange/i);
+}
+
+/**
+ * LH2 (Amendment 3 item 3) — the panel says what the product does: five domains, three feature
+ * tiles, and none of the three fixed numbers the page used to show.
+ */
+export function listsDomainsAndFeaturesNotNumbers(): void {
+  renderLogin();
+  const domains = within(screen.getByRole("list", { name: "What Verve monitors" })).getAllByRole("listitem");
+  expect(domains.map(normalised)).toEqual(["Power", "HVAC", "UPS", "Water", "Environment"]);
+  const features = within(screen.getByRole("list", { name: "What Verve does" })).getAllByRole("listitem");
+  expect(features.map(normalised)).toEqual([
+    "Real-time telemetryEach reading, as it arrives",
+    "Alarms that reach peopleRouted, tracked, closed",
+    "Energy insightUse, cost and trends",
+  ]);
+  const text = document.body.textContent ?? "";
+  expect(text).not.toContain("99.98%");
+  expect(text).not.toMatch(/Uptime/i);
+  expect(screen.queryByText("10")).toBeNull();
+}
+
+/**
+ * LH3 (Amendment 3 items 1, 4 and 5) — the hero is centred over the site network, the network is
+ * decoration behind it, and the tiles that sit over the network are opaque (`bg-chrome`, no
+ * opacity suffix), so nothing shows through their text.
+ */
+export function centresTheHeroOverTheNetwork(): void {
+  renderLogin();
+  const headline = screen.getByRole("heading", { level: 1 });
+  const hero = headline.closest("section");
+  const heroClasses = hero?.getAttribute("class")?.split(" ") ?? [];
+  expect(heroClasses).toContain("items-center");
+  expect(heroClasses).toContain("text-center");
+  const network = hero?.querySelector("[data-part='site-network']");
+  expect(network?.getAttribute("aria-hidden")).toBe("true");
+  expect(network?.contains(headline)).toBe(false);
+  expect(hero?.firstElementChild).toBe(network);
+  for (const tile of within(screen.getByRole("list", { name: "What Verve does" })).getAllByRole("listitem")) {
+    expect(tile.getAttribute("class")?.split(" ")).toContain("bg-chrome");
+  }
+  for (const chip of within(screen.getByRole("list", { name: "What Verve monitors" })).getAllByRole("listitem")) {
+    expect(chip.getAttribute("class")?.split(" ")).toContain("bg-chrome");
+  }
 }

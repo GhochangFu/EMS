@@ -9,6 +9,9 @@ import {
   anOidcSignInAttemptClearsTheReason,
   aPlain401ShowsNothing,
   aSignInConsumesTheReason,
+  centresTheHeroOverTheNetwork,
+  listsDomainsAndFeaturesNotNumbers,
+  namesNoClient,
   showsTheDeactivatedSentence,
   showsTheDeactivatedSentenceInOidcMode,
   drawsNoImgElement,
@@ -70,6 +73,18 @@ describe("F4.398 the login page reads Verve", () => {
 
   it("L8 reads no TRINETRA and no IONSiTE NEXUS", () => {
     readsNoOldName();
+  });
+
+  it("LH1 names no client", () => {
+    namesNoClient();
+  });
+
+  it("LH2 lists domains and features, not fixed numbers", () => {
+    listsDomainsAndFeaturesNotNumbers();
+  });
+
+  it("LH3 centres the hero over the site network, with opaque tiles and chips", () => {
+    centresTheHeroOverTheNetwork();
   });
 });
 

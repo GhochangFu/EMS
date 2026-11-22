@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useState } from "react";
+import { type CSSProperties, type FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { fetchCurrentUser, loginRequest } from "../api/login";
@@ -9,7 +9,35 @@ import { apiErrorMessage } from "../lib/api-error-message";
 import { PRODUCT_NAME, PRODUCT_TAGLINE } from "../lib/brand";
 import { peekReturnPath, takeReturnPath } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
+import { LoginSiteNetwork } from "../components/login-site-network";
 import { Wordmark } from "../components/wordmark";
+
+/**
+ * `F4.398` (ADR 0142 Amendment 3) — the login hero's words. The page names no client (item 2), and
+ * the panel says what the product does instead of showing fixed numbers (item 3).
+ */
+export const LOGIN_DESCRIPTION =
+  "One operator console for power, HVAC, water, utilities, alarms and work orders, across every site you run.";
+
+/** The monitored domains, each with the `d` of a 16 x 16 line icon. */
+export const LOGIN_DOMAINS: ReadonlyArray<readonly [string, string]> = [
+  ["Power", "M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z"],
+  ["HVAC", "M2 5h7.5a2 2 0 1 0-2-2M2 8h10.5a2 2 0 1 1-2 2M2 11h5.5a2 2 0 1 1-2 2"],
+  ["UPS", "M2.5 4.5h10v7h-10zM12.5 6.5H14v3h-1.5M5 7v2M7.5 7v2"],
+  ["Water", "M8 1.5C5.5 5 4 7 4 9.5a4 4 0 0 0 8 0C12 7 10.5 5 8 1.5z"],
+  ["Environment", "M7 2.5a1.5 1.5 0 0 1 3 0v6.5a3 3 0 1 1-3 0zM8.5 6v5"],
+];
+
+export const LOGIN_FEATURES: ReadonlyArray<readonly [string, string]> = [
+  ["Real-time telemetry", "Each reading, as it arrives"],
+  ["Alarms that reach people", "Routed, tracked, closed"],
+  ["Energy insight", "Use, cost and trends"],
+];
+
+/** The delay of one `login-rise`, read by the rule in `index.css`. */
+function riseAfter(seconds: number): CSSProperties {
+  return { "--login-rise-delay": `${seconds.toFixed(2)}s` } as CSSProperties;
+}
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -82,42 +110,57 @@ export function LoginPage() {
         </p>
       ) : null}
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl overflow-hidden rounded-2xl border border-on-dark/10 bg-on-dark/5 shadow-2xl lg:grid-cols-[1.12fr_0.88fr]">
-        <section className="relative flex flex-col justify-between overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgb(var(--accent)_/_0.34),_transparent_32%),linear-gradient(135deg,rgb(var(--chrome))_0%,rgb(var(--chrome))_54%,rgb(var(--chrome-nav)_/_0.35)_100%)] p-8 lg:p-10">
-          <div className="absolute right-8 top-8 h-36 w-36 rounded-full border border-accent/30 bg-accent/10 blur-sm" />
-          <div className="absolute bottom-12 left-10 h-24 w-24 rounded-full border border-on-dark/10 bg-on-dark/5" />
-          <div className="relative">
-            <div className="flex justify-center">
-              <Wordmark variant="hero" animated />
-            </div>
-            <h1 className="mt-8 max-w-xl font-condensed text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
+        <section className="relative flex flex-col items-center justify-between overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgb(var(--accent)_/_0.34),_transparent_32%),linear-gradient(135deg,rgb(var(--chrome))_0%,rgb(var(--chrome))_54%,rgb(var(--chrome-nav)_/_0.35)_100%)] p-8 text-center lg:p-10">
+          <LoginSiteNetwork />
+          <div className="relative flex w-full flex-1 flex-col items-center justify-center">
+            <Wordmark variant="hero" animated />
+            <h1
+              className="login-rise mt-8 max-w-xl font-condensed text-4xl font-bold leading-tight tracking-tight sm:text-5xl"
+              style={riseAfter(0.55)}
+            >
               {PRODUCT_TAGLINE}
             </h1>
-            <p className="mt-4 max-w-lg text-sm leading-6 text-on-dark/70">
-              Unified enterprise EMS for power, HVAC, water, utilities, alarms,
-              and work orders in one operator console for Ion Exchange (India)
-              Ltd. operations.
+            <p className="login-rise mt-4 max-w-lg text-sm leading-6 text-on-dark/70" style={riseAfter(0.7)}>
+              {LOGIN_DESCRIPTION}
             </p>
+            <ul aria-label={`What ${PRODUCT_NAME} monitors`} className="mt-6 flex flex-wrap justify-center gap-2">
+              {LOGIN_DOMAINS.map(([name, icon], index) => (
+                <li
+                  key={name}
+                  className="login-rise inline-flex items-center gap-1.5 rounded-full border border-on-dark/20 bg-chrome px-3 py-1 text-xs text-on-dark/80"
+                  style={riseAfter(0.9 + index * 0.07)}
+                >
+                  <svg
+                    aria-hidden="true"
+                    focusable="false"
+                    viewBox="0 0 16 16"
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.4}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d={icon} />
+                  </svg>
+                  {name}
+                </li>
+              ))}
+            </ul>
           </div>
 
-          <div className="relative mt-10 grid gap-3 sm:grid-cols-3">
-            {[
-              ["10", "Sites"],
-              ["Live", "Telemetry"],
-              ["99.98%", "Uptime"],
-            ].map(([value, label]) => (
-              <div
-                key={label}
-                className="rounded-xl border border-on-dark/10 bg-on-dark/10 p-4 backdrop-blur"
+          <ul aria-label={`What ${PRODUCT_NAME} does`} className="relative mt-10 grid w-full gap-3 text-left sm:grid-cols-3">
+            {LOGIN_FEATURES.map(([title, line], index) => (
+              <li
+                key={title}
+                className="login-rise rounded-xl border border-on-dark/10 bg-chrome p-4"
+                style={riseAfter(1.3 + index * 0.12)}
               >
-                <div className="font-condensed text-2xl font-bold text-on-dark">
-                  {value}
-                </div>
-                <div className="mt-1 text-2xs uppercase tracking-wide text-on-dark/60">
-                  {label}
-                </div>
-              </div>
+                <div className="font-condensed text-base font-bold text-on-dark">{title}</div>
+                <div className="mt-1 text-xs leading-5 text-on-dark/60">{line}</div>
+              </li>
             ))}
-          </div>
+          </ul>
         </section>
 
         <section className="flex items-center justify-center bg-canvas p-6 text-ink sm:p-8">
