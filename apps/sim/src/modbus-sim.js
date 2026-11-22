@@ -38,21 +38,16 @@
  */
 import { createServer } from "node:net";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
 
 const require = createRequire(import.meta.url);
-const { MODBUS_TYPE_WORDS, createMbapFrameAssembler, encodeRegisterValue, serveModbusFrame } =
-  require("@bms/shared/ingest");
-
-// **Temporary.** `STOCK_MODBUS_PROFILES` is built into `@bms/shared`'s `dist/`
-// but `./ingest` does not re-export it yet; plan PR 5 adds that re-export to
-// `packages/shared/src/ingest.ts`. Until it lands, the module is loaded by
-// file path beside the resolved `./ingest` entry (a file path, unlike a bare
-// specifier, is not bound by the `exports` map). Replace this with the named
-// import from `@bms/shared/ingest` once PR 5 is on the branch.
-const { STOCK_MODBUS_PROFILES } = require(
-  join(dirname(require.resolve("@bms/shared/ingest")), "device-profiles", "modbus", "index.js"),
-);
+// `STOCK_MODBUS_PROFILES` is re-exported from `./ingest` (plan PR 5).
+const {
+  MODBUS_TYPE_WORDS,
+  STOCK_MODBUS_PROFILES,
+  createMbapFrameAssembler,
+  encodeRegisterValue,
+  serveModbusFrame,
+} = require("@bms/shared/ingest");
 
 const host = process.env.MODBUS_SIM_HOST || "127.0.0.1";
 const port = Number(process.env.MODBUS_SIM_PORT || "1502");
