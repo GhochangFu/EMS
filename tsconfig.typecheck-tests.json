@@ -383,6 +383,7 @@
     "tests/f4.17-heavy-route-classes.test.ts",
     "tests/f4.17-service-accounts-schema.test.ts",
     "tests/f4.17-service-accounts-schema.integration.test.ts",
-    "tests/f4.17-service-token-wiring.test.ts"
+    "tests/f4.17-service-token-wiring.test.ts",
+    "tests/f1.2-modbus-read-only.test.ts"
   ]
 }

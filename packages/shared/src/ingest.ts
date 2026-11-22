@@ -47,6 +47,15 @@ export * from "./ingest-edge-config";
 // the same list migration `0149`'s CHECKs hold, and the host-stale bound its
 // missed-beat rule shares with the API. A leaf module with no zod.
 export { DROP_REASONS, type DropReason, INGEST_HOST_STALE_SECONDS } from "./device-health";
+// `F1.2` (ADR 0141 decision 10): the one poll interval bound, for the host,
+// the API bodies and the web forms. A leaf module with zod only.
+export * from "./ingest-poll-interval";
+// `F1.2` (ADR 0141 decisions 5, 6, 7, 12): the Modbus register, connection,
+// device, draft and profile schemas.
+export * from "./ingest-modbus";
+// `F1.2` (ADR 0141 decisions 2, 4): the Modbus TCP wire codec. Zod-free and
+// Node-free, so this subpath still loads in the web bundle (plan M16).
+export * from "./ingest-adapters/modbus-codec";
 
 /**
  * Compile-time drift guard: every ingest protocol must be expressible in
