@@ -6,7 +6,10 @@ import { modbusConfigSchema, modbusDeviceSchema, type JwtPayload, type Onboardin
 
 import { RTU_MODBUS_ENDPOINT_OTHER_ORGANIZATION_MESSAGE } from "../rtus/rtu-modbus-endpoint";
 import { RTU_MODBUS_PROFILE_NOT_FOUND_MESSAGE } from "../rtus/rtus-modbus.service";
+import type { BmsDb } from "@bms/db";
+
 import type { OnboardingCommitService } from "./onboarding-commit.service";
+import { newestDeviceProfilesByCode } from "./onboarding-device-profiles";
 
 /**
  * `F1.2` plan PR 11 (ADR 0141 Amendment 1 (f), decision 23; Amendment 2 (a)) — the onboarding
@@ -19,6 +22,8 @@ import type { OnboardingCommitService } from "./onboarding-commit.service";
 
 export type OnboardingModbusFixtures = {
   commit: OnboardingCommitService;
+  /** `bms_tenant`: the profile-code lookup the chat and the workbook use. */
+  tenantDb: BmsDb;
   /** `bms_fleet` (BYPASSRLS): reads rows back and seeds sessions. */
   observer: pg.Pool;
   /** The superuser: profile rows (append-only by privilege) and the other organization's RTU. */
@@ -228,4 +233,17 @@ export async function assertTheAuditNamesTheProfileAndNoRegister(ctx: Onboarding
     { rtuCode: `F12O-${ctx.stamp}-OM6-RTU`.toUpperCase(), profile: { code: p.code, version: 2 }, registerCount: 3, ingestEnabled: true },
   ]);
   expect(JSON.stringify(rows[0]?.payload)).not.toContain("kw_1");
+}
+
+/**
+ * OM7 — the chat's and the workbook's code lookup (`newestDeviceProfilesByCode`): the newest
+ * version of a code the organization holds; a code only another organization holds, an unknown
+ * code and one outside the code class resolve to nothing.
+ */
+export async function assertACodeResolvesToTheOrganizationsNewestVersion(ctx: OnboardingModbusFixtures): Promise<void> {
+  await profile(ctx, ctx.orgA, "om7", 1);
+  const newest = await profile(ctx, ctx.orgA, "om7", 2);
+  const foreign = await profile(ctx, ctx.orgB, "om7b", 1);
+  const found = await newestDeviceProfilesByCode(ctx.tenantDb, ctx.orgA, [newest.code, foreign.code, "no-such-code", "not a code!"]);
+  expect([...found.entries()]).toEqual([[newest.code, { id: newest.id, code: newest.code, version: 2 }]]);
 }

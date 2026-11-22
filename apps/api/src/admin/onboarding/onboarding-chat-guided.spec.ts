@@ -106,14 +106,14 @@ export async function assertYesBeforeReviewDoesNotSayInReview(): Promise<void> {
 
 /**
  * B2 — the non-MQTT RTU reply names the one label the point-key step parses.
- * Since F1.2 Modbus TCP is wired: its reply sends the operator to the RTUs page
- * to bind a device profile (plan T4.6, ruling P11).
+ * Since F1.2 Modbus TCP is wired: its reply offers the `profile: <code>` turn
+ * (plan PR 11, ADR 0141 decision 23) and keeps the RTUs page for later (T4.6, P11).
  */
 export async function assertTheNonMqttRtuReplyNamesTheKwLabel(): Promise<void> {
   const result = await ruleBasedTurn("modbus", draftAt("rtu"), "rtu");
   assert(
     result.assistantMessage ===
-      "Added modbus_tcp RTU. It is committed with ingest off: bind a device profile on the RTUs page to start reading. Say **kw** to add the catalog key **kw**.",
+      "Added modbus_tcp RTU. Say **profile: <code>** to name one of this organization's device profiles: its registers are copied at commit and ingest can be switched on. Without one it is committed with ingest off, and a profile can be bound on the RTUs page later. Say **kw** to add the catalog key **kw**.",
     `got ${result.assistantMessage}`,
   );
 }

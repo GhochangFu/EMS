@@ -13,6 +13,7 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   assertABoundRtuKeepsIngestOn,
+  assertACodeResolvesToTheOrganizationsNewestVersion,
   assertAnotherOrganizationsEndpointIs409,
   assertAnotherOrganizationsProfileIsNotFound,
   assertAnUnboundRtuIsCommittedWithIngestOff,
@@ -104,6 +105,7 @@ describe.skipIf(!connectionString || !superuserConnectionString)(
           {} as never,
           { listParentCandidates: async () => [] } as never,
         ),
+        tenantDb,
         observer,
         superPool,
         admin: jwtFor("admin@bms.local", "admin"),
@@ -146,6 +148,9 @@ describe.skipIf(!connectionString || !superuserConnectionString)(
     });
     it("OM5 answers 409 for an endpoint another organization's RTU uses (Amendment 2 (a))", async () => {
       await assertAnotherOrganizationsEndpointIs409(ctx);
+    });
+    it("OM7 resolves a code to the organization's newest version only", async () => {
+      await assertACodeResolvesToTheOrganizationsNewestVersion(ctx);
     });
     it("OM6 audits the profile by code and version, never a register", async () => {
       await assertTheAuditNamesTheProfileAndNoRegister(ctx);
