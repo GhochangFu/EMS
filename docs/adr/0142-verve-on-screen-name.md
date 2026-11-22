@@ -148,11 +148,12 @@ None. No npm package and no web font: the logo is path data.
 
 ## Amendment 1 — the pulse and the letters are traced from brand board 1; the pulse is a filled shape (`F4.398`) (owner, 2026-11-22)
 
-**Status: Proposed — 2026-11-22.** After the ADR merged, the final SVG files
-were drawn and shown to the owner, who answered with a crop of brand board 1
-and "Follow this". The files were redrawn to that reference the same day. This
-amendment records what changed against decisions 2 and 7. It becomes Accepted
-when the owner approves it in review.
+**Status: Accepted — 2026-11-22** (owner, in chat: "Accept"; proposed the
+same day). After the ADR merged, the final SVG files were drawn and shown to
+the owner, who answered with a crop of brand board 1 and "Follow this". The
+files were redrawn to that reference twice the same day; the owner approved
+the traced version (A3). This amendment records what changed against
+decisions 2, 3, 5, 6 and 7.
 
 1. **The pulse is one filled shape, not a stroked line** (amends decision 2).
    As on board 1: a wedge-shaped lead-in, a first rise that starts the V's
