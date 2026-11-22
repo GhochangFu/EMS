@@ -155,7 +155,14 @@ function DeviceProfilesWorkspace() {
         </p>
       ) : null}
 
-      {importOpen && organizationId !== "" ? <StockPanel organizationId={organizationId} /> : null}
+      {importOpen && organizationId !== "" ? (
+        // Keyed by organization: an import's message or a pending confirmation belongs to one.
+        <StockPanel
+          key={organizationId}
+          organizationId={organizationId}
+          held={new Map(entries.map(({ newest }) => [newest.code, newest.version]))}
+        />
+      ) : null}
 
       {editing.kind !== "none" ? (
         <DeviceProfileEditor
@@ -286,9 +293,10 @@ function CopyForm({ source, onClose }: { source: DeviceProfileDto; onClose: () =
           type="button"
           className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-60"
           disabled={copyM.isPending}
+          aria-busy={copyM.isPending}
           onClick={submit}
         >
-          Create copy
+          {copyM.isPending ? "Copying…" : "Create copy"}
         </button>
         <button type="button" className="surface-button px-3 py-2 text-xs font-semibold" onClick={onClose}>
           Cancel
@@ -303,12 +311,38 @@ function CopyForm({ source, onClose }: { source: DeviceProfileDto; onClose: () =
   );
 }
 
-/** The stock profiles the repository ships; Import copies one into the organization's own rows. */
-function StockPanel({ organizationId }: { organizationId: string }) {
+type StockPanelProps = {
+  organizationId: string;
+  /** The organization's codes, each at its newest version. */
+  held: ReadonlyMap<string, number>;
+};
+
+/**
+ * The stock profiles the repository ships; Import copies one into the organization's own rows.
+ * A code the organization already holds imports as its next version (the API's `max + 1`), so
+ * that row says "held at vN" and its Import asks before it posts.
+ */
+function StockPanel({ organizationId, held }: StockPanelProps) {
   const stockQ = useStockDeviceProfiles(true);
   const importM = useImportStockDeviceProfile();
   const [error, setError] = useState<string | null>(null);
   const [imported, setImported] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  function runImport(code: string): void {
+    setError(null);
+    setImported(null);
+    setConfirming(null);
+    importM.mutate(
+      { code, organizationId },
+      {
+        onSuccess: (row) => setImported(`Imported ${row.code} as v${row.version}.`),
+        onError: (cause: unknown) => setError(apiErrorMessage(cause)),
+      },
+    );
+  }
+
+  const heldAt = confirming === null ? undefined : held.get(confirming);
   const stock = stockQ.data ?? [];
   const action = "text-xs font-semibold text-accent-strong disabled:opacity-60";
 
@@ -341,7 +375,12 @@ function StockPanel({ organizationId }: { organizationId: string }) {
             <tbody>
               {stock.map((entry) => (
                 <tr key={entry.code} className="border-b border-well-deep">
-                  <td className="px-2 py-2 font-mono">{entry.code}</td>
+                  <td className="px-2 py-2 font-mono">
+                    {entry.code}
+                    {held.has(entry.code) ? (
+                      <span className="ml-2 text-xs text-ink-muted">held at v{held.get(entry.code)}</span>
+                    ) : null}
+                  </td>
                   <td className="px-2 py-2 font-mono">v{entry.version}</td>
                   <td className="px-2 py-2">{entry.vendor}</td>
                   <td className="px-2 py-2">{entry.model}</td>
@@ -356,28 +395,42 @@ function StockPanel({ organizationId }: { organizationId: string }) {
                   <td className="px-2 py-2">
                     <button
                       type="button"
-                      aria-label={`Import ${entry.code}`}
+                      aria-label={
+                        importM.isPending && importM.variables?.code === entry.code
+                          ? `Importing ${entry.code}`
+                          : `Import ${entry.code}`
+                      }
                       className={action}
                       disabled={importM.isPending}
-                      onClick={() => {
-                        setError(null);
-                        setImported(null);
-                        importM.mutate(
-                          { code: entry.code, organizationId },
-                          {
-                            onSuccess: (row) => setImported(`Imported ${row.code} as v${row.version}.`),
-                            onError: (cause: unknown) => setError(apiErrorMessage(cause)),
-                          },
-                        );
-                      }}
+                      aria-busy={importM.isPending && importM.variables?.code === entry.code}
+                      onClick={() => (held.has(entry.code) ? setConfirming(entry.code) : runImport(entry.code))}
                     >
-                      Import
+                      {importM.isPending && importM.variables?.code === entry.code ? "Importing…" : "Import"}
                     </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        ) : null}
+        {confirming !== null && heldAt !== undefined ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+            <span>
+              This organization holds {confirming} at v{heldAt}. Importing saves the stock file as v{heldAt + 1}.
+            </span>
+            <button
+              type="button"
+              className="surface-button px-3 py-1 text-xs font-semibold"
+              disabled={importM.isPending}
+              aria-busy={importM.isPending}
+              onClick={() => runImport(confirming)}
+            >
+              {importM.isPending ? "Importing…" : `Import as v${heldAt + 1}`}
+            </button>
+            <button type="button" className="text-xs font-semibold text-ink-muted" onClick={() => setConfirming(null)}>
+              Cancel
+            </button>
+          </div>
         ) : null}
         {imported ? (
           <p role="status" className="mt-2 text-sm text-ok-ink">

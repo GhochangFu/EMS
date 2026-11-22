@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   deviceProfileCodeSchema,
   deviceProfileSchema,
+  MODBUS_REGISTERS_MAX,
   MODBUS_TABLES,
   MODBUS_VALUE_TYPES,
   MODBUS_WORD_ORDERS,
@@ -48,6 +49,9 @@ type RowDraft = {
 };
 
 type Fields = { code: string; vendor: string; model: string; document: string; revision: string; pages: string };
+
+/** The code rule in words; the page's Copy form says the same. */
+const CODE_RULE = "A code is letters, digits, _ and -, at most 64 characters.";
 
 const STALE_SAVE_SENTENCE =
   "Someone saved a newer version of this profile while you were editing it. Reload to open the newest version, then make your change again.";
@@ -119,7 +123,12 @@ const FIELD_LABELS: Record<string, string> = {
   unit: "Unit",
 };
 
-type Checked = { registers: ModbusRegister[] | null; rowMessages: string[][] };
+type Checked = {
+  registers: ModbusRegister[] | null;
+  rowMessages: string[][];
+  /** An issue of the list as a whole (none, or more than 256 rows): no row to mark. */
+  listMessage: string | null;
+};
 
 /**
  * Checks each row with the shared `modbusRegisterSchema`, then the rows that
@@ -141,16 +150,26 @@ function check(rows: readonly RowDraft[]): Checked {
       rowMessages[index]?.push(field ? `${field}: ${issue.message}` : issue.message);
     }
   });
+  // Counted on the rows on screen, not on the rows that passed: 257 rows with one bad row are
+  // still too many, and the list check below sees only the passing ones.
+  let listMessage: string | null =
+    rows.length === 0
+      ? "A profile needs at least one register."
+      : rows.length > MODBUS_REGISTERS_MAX
+        ? `A profile holds at most ${MODBUS_REGISTERS_MAX} registers.`
+        : null;
   const list = modbusRegistersSchema.safeParse(valid.map((item) => item.entry));
   if (!list.success) {
     for (const issue of list.error.issues) {
       const at = issue.path[0];
       const row = typeof at === "number" ? valid[at] : undefined;
       if (row) rowMessages[row.index]?.push(`Source key: ${issue.message}`);
+      else listMessage ??= issue.message;
     }
   }
-  const clean = rowMessages.every((messages) => messages.length === 0) && rows.length > 0 && list.success;
-  return { registers: clean ? valid.map((item) => item.entry) : null, rowMessages };
+  const clean =
+    rowMessages.every((messages) => messages.length === 0) && listMessage === null && list.success;
+  return { registers: clean ? valid.map((item) => item.entry) : null, rowMessages, listMessage };
 }
 
 /** The first message the shared field schema gives, or `null`. */
@@ -192,7 +211,7 @@ export function DeviceProfileEditor({ organizationId, base, onClose, onReload }:
 
   const checked = check(rows);
   const fieldErrors: Partial<Record<keyof Fields, string | null>> = {
-    code: base ? null : fieldMessage(deviceProfileCodeSchema, fields.code),
+    code: base || deviceProfileCodeSchema.safeParse(fields.code.trim()).success ? null : CODE_RULE,
     vendor: fieldMessage(deviceProfileSchema.shape.vendor, fields.vendor),
     model: fieldMessage(deviceProfileSchema.shape.model, fields.model),
     document: fieldMessage(sourceShape.document, fields.document),
@@ -368,9 +387,6 @@ export function DeviceProfileEditor({ organizationId, base, onClose, onReload }:
             })}
           </table>
         </div>
-        {submitted && rows.length === 0 ? (
-          <p className="text-xs text-critical-ink">A profile needs at least one register.</p>
-        ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className="surface-button px-3 py-2 text-xs font-semibold" onClick={() => setRows((current) => [...current, emptyRow()])}>
@@ -384,15 +400,18 @@ export function DeviceProfileEditor({ organizationId, base, onClose, onReload }:
             type="button"
             className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-60"
             disabled={pending}
+            aria-busy={pending}
             onClick={save}
           >
-            {base ? "Save new version" : "Create profile"}
+            {pending ? "Saving…" : base ? "Save new version" : "Create profile"}
           </button>
         </div>
 
         {submitted && (!fieldsValid || checked.registers === null) ? (
           <p role="status" className="text-xs text-critical-ink">
-            {checked.registers === null ? "Fix the marked rows before saving." : "Fix the marked fields before saving."}
+            {checked.rowMessages.some((messages) => messages.length > 0)
+              ? "Fix the marked rows before saving."
+              : (checked.listMessage ?? "Fix the marked fields before saving.")}
           </p>
         ) : null}
         {failure ? (

@@ -227,3 +227,102 @@ export async function aConflictShowsTheStaleMessage(): Promise<void> {
   expect(onReload).toHaveBeenCalledTimes(1);
   expect(writes(calls)).toHaveLength(1);
 }
+
+/**
+ * E7 — the duplicate message lands on the row ON SCREEN, not on its index among the rows that
+ * passed: row 1 fails on its own (blank address), so rows 2 and 3 are entries 0 and 1 of the
+ * list check, and the message belongs on row 3.
+ */
+export async function aDuplicateAfterAFailingRowMarksTheRowOnScreen(): Promise<void> {
+  const calls = stubWire(savedReply);
+  const user = userEvent.setup();
+  renderEditor(
+    profile({
+      id: PROFILE_ID,
+      code: "spec_meter",
+      version: 3,
+      registers: [
+        register({ sourceKey: "first", address: 0 }),
+        register({ sourceKey: "kw", address: 2 }),
+        register({ sourceKey: "kw", address: 4 }),
+      ],
+    }),
+  );
+  await user.clear(within(row(1)).getByRole("spinbutton", { name: "Address, row 1" }));
+  await user.click(screen.getByRole("button", { name: "Save new version" }));
+
+  expect(await within(row(3)).findByText(DUPLICATE_MESSAGE, { exact: false })).toBeInTheDocument();
+  expect(within(row(2)).queryByText(DUPLICATE_MESSAGE, { exact: false })).toBeNull();
+  expect(row(1)).toHaveAttribute("data-invalid", "true");
+  expect(row(2)).not.toHaveAttribute("data-invalid");
+  expect(writes(calls)).toHaveLength(0);
+}
+
+/** E8 — a 409 on CREATE is the server's sentence (a code taken), not the stale message, and offers no Reload. */
+export async function aConflictOnCreateShowsTheServersSentence(): Promise<void> {
+  stubWire((call) =>
+    call.method === "POST"
+      ? { status: 409, body: { statusCode: 409, message: 'A device profile with code "new_meter" already exists' } }
+      : undefined,
+  );
+  const user = userEvent.setup();
+  renderEditor(null);
+  await user.type(screen.getByRole("textbox", { name: "Code" }), "new_meter");
+  await user.type(screen.getByRole("textbox", { name: "Vendor" }), "Acme");
+  await user.type(screen.getByRole("textbox", { name: "Model" }), "A-1");
+  await user.type(screen.getByRole("textbox", { name: "Manual" }), "A-1 manual");
+  await user.type(screen.getByRole("textbox", { name: "Revision" }), "1");
+  await user.type(screen.getByRole("textbox", { name: "Pages" }), "4");
+  await user.type(within(row(1)).getByRole("textbox", { name: "Source key, row 1" }), "kwh_total");
+  await user.type(within(row(1)).getByRole("spinbutton", { name: "Address, row 1" }), "0");
+  await user.click(screen.getByRole("button", { name: "Create profile" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent('A device profile with code "new_meter" already exists');
+  expect(alert).not.toHaveTextContent("Someone saved a newer version");
+  expect(within(alert).queryByRole("button", { name: "Reload" })).toBeNull();
+}
+
+/** E9 — a list-level issue (more than 256 rows) shows a list-level message, not "Fix the marked rows" with none marked. */
+export async function aListLevelIssueShowsAListMessage(): Promise<void> {
+  const calls = stubWire(savedReply);
+  const user = userEvent.setup();
+  renderEditor(
+    profile({
+      id: PROFILE_ID,
+      code: "spec_meter",
+      version: 3,
+      registers: Array.from({ length: 257 }, (_, index) => register({ sourceKey: `k${index}`, address: index })),
+    }),
+  );
+  await user.click(screen.getByRole("button", { name: "Save new version" }));
+  expect(await screen.findByText("A profile holds at most 256 registers.")).toBeInTheDocument();
+  expect(screen.queryByText("Fix the marked rows before saving.")).toBeNull();
+  expect(document.querySelectorAll('[data-invalid="true"]')).toHaveLength(0);
+  expect(writes(calls)).toHaveLength(0);
+}
+
+/** E10 — a new profile's Code is checked trimmed, and a refused code shows the code rule, not zod's "Invalid". */
+export async function theNewCodeIsCheckedTrimmedWithTheCodeRule(): Promise<void> {
+  const calls = stubWire(savedReply);
+  const user = userEvent.setup();
+  renderEditor(null);
+  const code = screen.getByRole("textbox", { name: "Code" });
+  await user.type(code, "has space");
+  await user.click(screen.getByRole("button", { name: "Create profile" }));
+  expect(await screen.findByText("A code is letters, digits, _ and -, at most 64 characters.")).toBeInTheDocument();
+  expect(screen.queryByText("Invalid")).toBeNull();
+
+  await user.clear(code);
+  await user.type(code, "  new_meter  ");
+  await user.type(screen.getByRole("textbox", { name: "Vendor" }), "Acme");
+  await user.type(screen.getByRole("textbox", { name: "Model" }), "A-1");
+  await user.type(screen.getByRole("textbox", { name: "Manual" }), "A-1 manual");
+  await user.type(screen.getByRole("textbox", { name: "Revision" }), "1");
+  await user.type(screen.getByRole("textbox", { name: "Pages" }), "4");
+  await user.type(within(row(1)).getByRole("textbox", { name: "Source key, row 1" }), "kwh_total");
+  await user.type(within(row(1)).getByRole("spinbutton", { name: "Address, row 1" }), "0");
+  await user.click(screen.getByRole("button", { name: "Create profile" }));
+  await waitFor(() => expect(writes(calls)).toHaveLength(1));
+  expect((writes(calls)[0]?.body as { code: string }).code).toBe("new_meter");
+}

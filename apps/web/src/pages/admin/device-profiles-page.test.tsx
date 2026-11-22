@@ -6,7 +6,9 @@ import {
   aStaleSaveShowsTheReloadMessage,
   copyAsksForANewCode,
   editOpensAndSavesTheNewestVersion,
+  anOrganizationSwitchClearsTheImportMessages,
   failsClosedForALocationAdmin,
+  importingAHeldCodeAsksFirst,
   importListsTheStockEntries,
   listsOneRowPerCodeAtItsNewestVersion,
 } from "./device-profiles-page.spec";
@@ -28,5 +30,9 @@ describe("F1.2 Device Profiles admin page", () => {
   it("P4 Import lists the stock entries and posts the chosen code with the organization", () =>
     importListsTheStockEntries());
   it("P5 Copy asks for a new code and posts the newest row's id", () => copyAsksForANewCode());
+  it("P7 a stock code the organization holds says so, and its Import asks first", () =>
+    importingAHeldCodeAsksFirst());
+  it("P8 an organization switch clears the import panel's messages", () =>
+    anOrganizationSwitchClearsTheImportMessages());
   it("P6 fails closed for a location_admin: the sentence, no list, no request", () => failsClosedForALocationAdmin());
 });

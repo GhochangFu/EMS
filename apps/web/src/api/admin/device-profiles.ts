@@ -30,6 +30,7 @@ const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 /** Every query this module owns starts here, so one invalidation refreshes them all. */
 const ROOT_KEY = ["admin", "device-profiles"] as const;
 
+/** The query key of one organization's profile list. */
 export function deviceProfilesKey(organizationId: string) {
   return [...ROOT_KEY, "organization", organizationId] as const;
 }
@@ -108,11 +109,13 @@ function useInvalidateProfiles() {
   return () => queryClient.invalidateQueries({ queryKey: ROOT_KEY });
 }
 
+/** Creates a profile at version 1, then refreshes the profile queries. */
 export function useCreateDeviceProfile() {
   const invalidate = useInvalidateProfiles();
   return useMutation({ mutationFn: createDeviceProfile, onSuccess: invalidate });
 }
 
+/** Saves the next version of a profile from `body.baseVersion`, then refreshes the profile queries. */
 export function useSaveDeviceProfileVersion() {
   const invalidate = useInvalidateProfiles();
   return useMutation({
@@ -122,6 +125,7 @@ export function useSaveDeviceProfileVersion() {
   });
 }
 
+/** Copies a profile under a new code at version 1, then refreshes the profile queries. */
 export function useCopyDeviceProfile() {
   const invalidate = useInvalidateProfiles();
   return useMutation({
@@ -130,6 +134,7 @@ export function useCopyDeviceProfile() {
   });
 }
 
+/** Imports a stock profile into an organization, then refreshes the profile queries. */
 export function useImportStockDeviceProfile() {
   const invalidate = useInvalidateProfiles();
   return useMutation({

@@ -8,11 +8,13 @@ import type { DeviceProfileDto, StockDeviceProfileDto } from "@bms/shared/contra
  * Not a test itself; nothing in the app imports it.
  */
 
+/** The organization every fixture row belongs to. */
 export const ORG_ID = "11111111-1111-4111-8111-111111111111";
 const USER_ID = "22222222-2222-4222-8222-222222222222";
 
 type Register = DeviceProfileDto["registers"][number];
 
+/** A holding-register `uint16` entry with the defaults filled, as a response carries it. */
 export function register(overrides: Partial<Register> & Pick<Register, "sourceKey" | "address">): Register {
   return {
     table: "holding",
@@ -25,6 +27,7 @@ export function register(overrides: Partial<Register> & Pick<Register, "sourceKe
   };
 }
 
+/** One unverified `bms.device_profiles` row of `ORG_ID`, as the API returns it. */
 export function profile(
   overrides: Partial<DeviceProfileDto> & Pick<DeviceProfileDto, "id" | "code" | "version">,
 ): DeviceProfileDto {
@@ -44,6 +47,7 @@ export function profile(
   };
 }
 
+/** One verified stock profile, as `GET /admin/device-profiles/stock` returns it. */
 export function stockProfile(overrides: Partial<StockDeviceProfileDto> & Pick<StockDeviceProfileDto, "code">) {
   return {
     version: 1,
@@ -59,6 +63,7 @@ export function stockProfile(overrides: Partial<StockDeviceProfileDto> & Pick<St
 /** One request as it left the client: the path after `/api/v1`, the method and the parsed body. */
 export type WireCall = { path: string; method: string; body: unknown };
 
+/** The status and JSON body `stubWire` answers a request with. */
 export type WireReply = { status: number; body: unknown };
 
 /**
