@@ -163,3 +163,5 @@ export * from "./alarm-root-cause";
 export * from "./advisories";
 // `E1.5a` (ADR 0138): the degradation-trends response and its types.
 export * from "./degradation";
+// `F1.2` (ADR 0141 decisions 12–14): the device profile bodies and responses and their types.
+export * from "./device-profiles";
