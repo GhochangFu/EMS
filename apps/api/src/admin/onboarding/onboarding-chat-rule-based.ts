@@ -567,7 +567,11 @@ export async function handleRuleBasedTurn(
     const result = deps.finalizeTurn(
       protocol === "mqtt"
         ? MQTT_RTU_ADDED_REPLY
-        : `Added ${protocol} RTU. Ingest adapter is not connected yet — config will be stored. Say **kw** to add the catalog key **kw**.`,
+        : protocolCatalogEntry(protocol).ingestWired
+          ? // F1.2 (plan T4.6, ruling P11): a wired poll protocol is committed with
+            // ingest off; the operator binds a device profile on the RTUs page.
+            `Added ${protocol} RTU. It is committed with ingest off: bind a device profile on the RTUs page to start reading. Say **kw** to add the catalog key **kw**.`
+          : `Added ${protocol} RTU. Ingest adapter is not connected yet — config will be stored. Say **kw** to add the catalog key **kw**.`,
       patch,
       "point_keys",
       addedRtuReplies(deps, state.working, turn),

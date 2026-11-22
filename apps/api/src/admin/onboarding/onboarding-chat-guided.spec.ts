@@ -28,7 +28,7 @@ function assert(condition: boolean, message: string): void {
  * which is at AGENTS.md §4.5's line ceiling.
  */
 const PLACE = { name: "Berhampur", slug: "berhampur", code: "BERHAMPUR", type: "smoc_campus", latitude: 22.3, longitude: 87.3 };
-const RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "modbus_tcp", config: { host: "127.0.0.1", port: 502, unitId: 1, pollIntervalMs: 5000 }, credentialsSet: false, ingestEnabled: false };
+const RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "modbus_tcp", config: { host: "192.168.1.20", port: 502, pollIntervalMs: 10000, device: { unitId: 1 } }, credentialsSet: false, ingestEnabled: false };
 const KW = { code: "kw", name: "Active Power", domain: "electrical", unit: "kW" };
 const ASSET = { rtuIndex: 0, code: "BERHAMPUR-ASSET-1", name: "Primary Device", siteName: "Berhampur", domain: "electrical" };
 const POINT = { assetIndex: 0, pointKey: "kw", sourceDataKey: "s09_r01", unit: "kW" };
@@ -104,12 +104,16 @@ export async function assertYesBeforeReviewDoesNotSayInReview(): Promise<void> {
   }
 }
 
-/** B2 — the non-MQTT RTU reply names the one label the point-key step parses. */
+/**
+ * B2 — the non-MQTT RTU reply names the one label the point-key step parses.
+ * Since F1.2 Modbus TCP is wired: its reply sends the operator to the RTUs page
+ * to bind a device profile (plan T4.6, ruling P11).
+ */
 export async function assertTheNonMqttRtuReplyNamesTheKwLabel(): Promise<void> {
   const result = await ruleBasedTurn("modbus", draftAt("rtu"), "rtu");
   assert(
     result.assistantMessage ===
-      "Added modbus_tcp RTU. Ingest adapter is not connected yet — config will be stored. Say **kw** to add the catalog key **kw**.",
+      "Added modbus_tcp RTU. It is committed with ingest off: bind a device profile on the RTUs page to start reading. Say **kw** to add the catalog key **kw**.",
     `got ${result.assistantMessage}`,
   );
 }
@@ -307,6 +311,7 @@ export async function assertAGuidedTurnStoresItsActionMessage(): Promise<void> {
     const messages = (record.updates[0]?.messages ?? []) as { role: string; content: string }[];
     const roles = messages.map((m) => m.role);
     assert(JSON.stringify(roles) === JSON.stringify(["user", "action", "assistant"]), `the stored roles, got ${JSON.stringify(roles)}`);
-    assert(messages[1]?.content === "Added RTU RTU-1 (modbus_tcp) (config only, not ingested)", `the action text, got ${messages[1]?.content}`);
+    // F1.2: Modbus TCP is wired, so its action line carries no "config only" tail.
+    assert(messages[1]?.content === "Added RTU RTU-1 (modbus_tcp)", `the action text, got ${messages[1]?.content}`);
   });
 }
