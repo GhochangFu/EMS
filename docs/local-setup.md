@@ -673,12 +673,17 @@ add this to the repo-root `.env`:
 MODBUS_TCP_HOSTS=modbus-sim
 ```
 
-Then start it with the ingest host:
+Then start it with the ingest host and the stack the walkthrough below needs
+(`core` brings `postgres`, `migrate`, `api`, `worker` and `web`; `ingest`
+alone does not resolve, because it depends on `migrate`):
 
 ```bash
-docker compose --profile modbus --profile ingest up -d --build
+docker compose --profile core --profile ingest --profile modbus up -d --build
 docker compose logs modbus-sim        # "unit 1: elmeasure-lg-plus-5310 v1 ..."
 ```
+
+`--profile pilot --profile modbus` also works, and adds the database
+simulator (`sim`).
 
 **Bind a demo RTU.** Import the stock profile into the RTU's organization
 (Admin → Device profiles), then bind the RTU to it from its row on the RTUs
@@ -702,7 +707,9 @@ A skip reason of `modbus-host-not-allowed` on the health body means
 `MODBUS_TCP_HOSTS` was not set when the ingest container started. Without
 `--profile modbus` the `modbus-sim` service does not exist and the ingest host
 starts as before; an RTU bound to `modbus-sim` then fails to connect and backs
-off.
+off. When you run without the `modbus` profile, take `modbus-sim` back out of
+`MODBUS_TCP_HOSTS` in `.env`, so the allow-list names no host that is not
+there.
 
 To run the simulator natively (it needs only `@bms/shared` built; it binds
 `127.0.0.1:1502` by default, and nothing in compose can reach it there):
@@ -712,7 +719,10 @@ pnpm --filter sim exec node src/modbus-sim.js
 ```
 
 `MODBUS_SIM_HOST`, `MODBUS_SIM_PORT` and `MODBUS_SIM_STEP_MS` (how often the
-values move, default 1000) are its only settings.
+values move, default 1000) are its only settings; a value that is not a number
+refuses the start. Values follow wall-clock time, so the energy counters keep
+growing across a restart. It accepts at most 8 connections and closes one idle
+for 61 minutes (one minute past the longest poll interval).
 
 To watch notification email (`F3.8`, ADR 0041), start the Mailpit catcher in its
 own profile:

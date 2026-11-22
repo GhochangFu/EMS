@@ -185,3 +185,16 @@ export function assertTheSelecMfm384PinsMatchTheManual(): void {
     float("current_in", "input", 0x7a), // Neutral Current
   ]);
 }
+
+/**
+ * `F1.2` plan PR 8: `apps/sim/src/modbus-sim.js` serves the `n`-th stock
+ * profile as unit id `n`, and `docs/local-setup.md` documents the table, so
+ * `STOCK_FILES` is append-only. A reorder or an insert renumbers the demo
+ * device under every bound RTU.
+ */
+export function assertTheStockOrderIsAppendOnly(): void {
+  expect(STOCK_MODBUS_PROFILES.slice(0, 2).map((profile) => profile.code)).toEqual([
+    "elmeasure-lg-plus-5310",
+    "selec-mfm384-c-ce",
+  ]);
+}

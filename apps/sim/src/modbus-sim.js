@@ -25,30 +25,53 @@
  *
  * Environment: `MODBUS_SIM_HOST` (default `127.0.0.1`; compose sets
  * `0.0.0.0`), `MODBUS_SIM_PORT` (default 1502; compose sets 502),
- * `MODBUS_SIM_STEP_MS` (how often values move, default 1000).
+ * `MODBUS_SIM_STEP_MS` (how often values move, default 1000, at least 100).
+ * A port or step that is not a finite number refuses the start.
+ *
+ * **Connection limits.** At most `MAX_CONNECTIONS` sockets (the ingest host
+ * holds one per endpoint; the rest is room for a hand-run Modbus tool). A
+ * socket idle for `IDLE_TIMEOUT_MS` is closed: one minute past the longest
+ * poll interval (ADR 0141 decision 10's 3,600,000 ms bound), so a poller at
+ * any legal interval is never dropped between polls. A client that does not
+ * read its replies stalls its own socket (the read side pauses until the
+ * write side drains) rather than growing this process's memory.
  */
 import { createServer } from "node:net";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
 const require = createRequire(import.meta.url);
-const { createMbapFrameAssembler, encodeRegisterValue, serveModbusFrame } = require("@bms/shared/ingest");
+const { MODBUS_TYPE_WORDS, createMbapFrameAssembler, encodeRegisterValue, serveModbusFrame } =
+  require("@bms/shared/ingest");
 
-// `STOCK_MODBUS_PROFILES` is built into `@bms/shared`'s `dist/` but exported
-// from no subpath yet, and a new subpath is a package.json change. A file path
-// (unlike a bare specifier) is not bound by the `exports` map, so it is loaded
-// beside the resolved `./ingest` entry. Switch to the named export once
-// `./ingest` re-exports it.
+// **Temporary.** `STOCK_MODBUS_PROFILES` is built into `@bms/shared`'s `dist/`
+// but `./ingest` does not re-export it yet; plan PR 5 adds that re-export to
+// `packages/shared/src/ingest.ts`. Until it lands, the module is loaded by
+// file path beside the resolved `./ingest` entry (a file path, unlike a bare
+// specifier, is not bound by the `exports` map). Replace this with the named
+// import from `@bms/shared/ingest` once PR 5 is on the branch.
 const { STOCK_MODBUS_PROFILES } = require(
   join(dirname(require.resolve("@bms/shared/ingest")), "device-profiles", "modbus", "index.js"),
 );
 
 const host = process.env.MODBUS_SIM_HOST || "127.0.0.1";
 const port = Number(process.env.MODBUS_SIM_PORT || "1502");
-const stepMs = Math.max(100, Number(process.env.MODBUS_SIM_STEP_MS || "1000"));
+const stepRaw = Number(process.env.MODBUS_SIM_STEP_MS || "1000");
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error(`MODBUS_SIM_PORT must be 1-65535, got ${process.env.MODBUS_SIM_PORT}`);
 }
+if (!Number.isFinite(stepRaw)) {
+  throw new Error(`MODBUS_SIM_STEP_MS must be a number of milliseconds, got ${process.env.MODBUS_SIM_STEP_MS}`);
+}
+const stepMs = Math.max(100, stepRaw);
+
+const MAX_CONNECTIONS = 8;
+const IDLE_TIMEOUT_MS = 3_660_000;
+/**
+ * The curves run on wall-clock time from a fixed epoch, not from process
+ * start, so a restart neither jumps the waves back nor lowers a counter.
+ */
+const EPOCH_MS = Date.UTC(2026, 0, 1);
 
 /** Unit id → { profile, image }. */
 const units = new Map(
@@ -60,7 +83,8 @@ const units = new Map(
 
 /**
  * A plausible engineering value for a register, by its `sourceKey` and unit,
- * moving on a slow sine. Counters (`*_total`) only grow.
+ * moving on a slow sine. Counters (`*_total`) grow at 25 per hour from the
+ * epoch, so they only grow, across restarts too.
  */
 function curve(register, seconds, phase) {
   const key = register.sourceKey;
@@ -91,20 +115,23 @@ function refresh(seconds) {
       try {
         words = encodeRegisterValue(value, register);
       } catch {
-        // A value the register's type cannot hold: serve the raw 0 instead.
-        words = encodeRegisterValue(register.offset, register);
+        // A value the register's type cannot hold: serve zero words, built
+        // here so this path cannot throw.
+        words = new Array(MODBUS_TYPE_WORDS[register.type]).fill(0);
       }
       words.forEach((word, i) => image[register.table].set(register.address + i, word));
     });
   }
 }
 
-const started = Date.now();
-refresh(0);
-setInterval(() => refresh((Date.now() - started) / 1000), stepMs).unref();
+const now = () => (Date.now() - EPOCH_MS) / 1000;
+refresh(now());
+setInterval(() => refresh(now()), stepMs).unref();
 
 const server = createServer((socket) => {
   socket.on("error", () => undefined);
+  socket.setTimeout(IDLE_TIMEOUT_MS, () => socket.destroy());
+  socket.on("drain", () => socket.resume());
   const assembler = createMbapFrameAssembler();
   socket.on("data", (chunk) => {
     let frames;
@@ -119,16 +146,18 @@ const server = createServer((socket) => {
       // gateway answers for a unit that is not there.
       const unit = units.get(frame[6]);
       const reply = serveModbusFrame(frame, unit === undefined ? {} : unit.image);
-      if (reply !== null) socket.write(reply);
+      // Backpressure: stop reading until the client takes what was written.
+      if (reply !== null && !socket.write(reply)) socket.pause();
     }
   });
 });
+server.maxConnections = MAX_CONNECTIONS;
 
 server.listen(port, host, () => {
-  console.log(`[modbus-sim] listening on ${host}:${port}`);
+  process.stdout.write(`[modbus-sim] listening on ${host}:${port}\n`);
   for (const [unitId, { profile }] of units) {
-    console.log(
-      `[modbus-sim] unit ${unitId}: ${profile.code} v${profile.version} (${profile.vendor} ${profile.model}, ${profile.registers.length} registers)`,
+    process.stdout.write(
+      `[modbus-sim] unit ${unitId}: ${profile.code} v${profile.version} (${profile.vendor} ${profile.model}, ${profile.registers.length} registers)\n`,
     );
   }
 });

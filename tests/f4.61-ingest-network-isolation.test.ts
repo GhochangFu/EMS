@@ -316,6 +316,19 @@ describe("F1.2 — the Modbus simulator service (ADR 0016 Amendment 10 (b), ADR 
     expect(source).toMatch(/\bserveModbusFrame\(/);
   });
 
+  it("the entry file answers only with what `serveModbusFrame` returns", () => {
+    // M7 — PR 8 security review: no second handler can build a reply (a write
+    // acknowledgement, say) beside the shared server half. One socket write,
+    // of `reply`, and `reply` is assigned once, from `serveModbusFrame`.
+    const source = withoutJsComments(readFileSync(modbusSimPath, "utf8"));
+    // Any `.write(`/`.end(` but the start-up log's `process.stdout.write(`.
+    const writes = (source.match(/\b\w+\.(?:write|end)\(/g) ?? []).filter((call) => call !== "stdout.write(");
+    expect(writes).toEqual(["socket.write("]);
+    expect(source).toMatch(/\bsocket\.write\(reply\)/);
+    expect(source.match(/\breply\s*=(?!=)/g) ?? []).toHaveLength(1);
+    expect(source).toMatch(/\bconst reply = serveModbusFrame\(/);
+  });
+
   it("the entry file binds exactly one listener, a TCP one, and opens no database", () => {
     // M6 — no metrics, health or HTTP port beside the Modbus one, and no
     // database client (the service has no URL to give it).
