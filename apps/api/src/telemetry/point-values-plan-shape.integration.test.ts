@@ -9,6 +9,7 @@ import {
   assertLivePuePlansOnlyItsWindow,
   assertPueAtAnInstantPlansOnlyItsWindow,
   assertRecentForPointPlansOnlyItsWindow,
+  assertRegisterProbesPlanOnlyTheirEnvelope,
   assertRollupLatestAtPlansOnlyItsWindow,
   assertRollupLatestLivePlansOnlyItsWindow,
   assertTheDetectorSeesStartupOnlyPruning,
@@ -57,4 +58,6 @@ describe.skipIf(!connectionString)("F4.393 — point_values readers plan only th
   it("the roll-up's latest read, live, plans only its window", run(assertRollupLatestLivePlansOnlyItsWindow));
 
   it("the roll-up's latest read at an instant plans only its window", run(assertRollupLatestAtPlansOnlyItsWindow));
+
+  it("the register probes plan only their envelope", run(assertRegisterProbesPlanOnlyTheirEnvelope));
 });

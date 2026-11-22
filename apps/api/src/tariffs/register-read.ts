@@ -7,6 +7,15 @@ import type { Pool } from "pg";
  * statement. The shape of `CalcWindowsService.readDeltas`: two `LIMIT 1`
  * laterals over `telemetry.point_values`, so the read is two index probes per
  * request whatever the month's sample count.
+ *
+ * **Each probe also carries the batch's envelope** (`F4.393`, plan D5):
+ * `v.time >= $6 AND v.time < $7`, the earliest `from` and the latest `to`. The
+ * per-request bound names a column of the `unnest` row, so the planner cannot
+ * use it before it runs and plans every chunk of the hypertable, twice; a bound
+ * parameter compared to `time` directly is planned away. Every request's range
+ * lies inside the envelope, so each row either passes both bounds or was
+ * excluded by its own: the answers are identical, and only the chunks planned
+ * change. Left uncast on purpose, as in `CalcWindowsService.readDeltas`.
  */
 export interface Sample {
   timeMs: number;
@@ -40,6 +49,7 @@ export async function readRegisterProbes(
            FROM telemetry.point_values v
           WHERE v.asset_id = p.asset_id AND v.point_key = p.point_key
             AND v.time >= p.from_t AND v.time < p.to_t
+            AND v.time >= $6 AND v.time < $7
           ORDER BY v.time ASC
           LIMIT 1
        ) f ON true
@@ -48,6 +58,7 @@ export async function readRegisterProbes(
            FROM telemetry.point_values v
           WHERE v.asset_id = p.asset_id AND v.point_key = p.point_key
             AND v.time >= p.from_t AND v.time < p.to_t
+            AND v.time >= $6 AND v.time < $7
           ORDER BY v.time DESC
           LIMIT 1
        ) l ON true`,
@@ -57,6 +68,8 @@ export async function readRegisterProbes(
       requests.map((r) => r.pointKey),
       requests.map((r) => r.from.toISOString()),
       requests.map((r) => r.to.toISOString()),
+      new Date(Math.min(...requests.map((r) => r.from.getTime()))).toISOString(),
+      new Date(Math.max(...requests.map((r) => r.to.getTime()))).toISOString(),
     ],
   );
   const out: { first: Sample | null; last: Sample | null }[] = requests.map(() => ({ first: null, last: null }));

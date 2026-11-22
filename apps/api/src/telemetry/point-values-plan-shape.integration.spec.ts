@@ -7,6 +7,7 @@ import { MEASURED_ROLLUP_FRESH_MS, readLatestWithinBounds } from "../dashboard-b
 import type { BmsTx } from "../database/tenant-context";
 import { planShape, recordingClient, seedDayChunks } from "../testing/plan-shape";
 import type { Recorded } from "../testing/recording-pool";
+import { readRegisterProbes } from "../tariffs/register-read";
 import { latestPueRatio } from "./pue-ratio";
 import { TelemetryService } from "./telemetry.service";
 
@@ -167,4 +168,18 @@ export async function assertRollupLatestAtPlansOnlyItsWindow(client: pg.PoolClie
   // As for the PUE `at` arm: assert plan-time pruning, not only the surviving chunk count.
   assert(shape.excludedAtStartup === 0, `roll-up latest at: ${shape.excludedAtStartup} excluded at startup`);
   assert(shape.chunks <= 2, `roll-up latest at: ${shape.chunks} chunks in the plan of ${fixture.total}`);
+}
+
+/** `readRegisterProbes` (plan §5, Task 2.1): two requests inside `[now − 12 d, now − 10 d)` plan only those days. */
+export async function assertRegisterProbesPlanOnlyTheirEnvelope(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedDayChunks(client);
+  const rec = recordingClient(client);
+  const from = new Date(Date.now() - 12 * DAY_MS);
+  const to = new Date(Date.now() - 10 * DAY_MS);
+  await readRegisterProbes(rec.pool, [
+    { assetId: fixture.assetId, pointKey: fixture.pointKey as "kwh_total", from, to },
+    { assetId: fixture.assetId, pointKey: fixture.pointKey as "kwh_total", from, to: new Date((from.getTime() + to.getTime()) / 2) },
+  ]);
+  const shape = await planShape(client, only(rec.statements, "register probes"));
+  assert(shape.chunks <= 4, `register probes: ${shape.chunks} chunks in the plan of ${fixture.total}`);
 }

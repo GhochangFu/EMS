@@ -105,6 +105,8 @@ const PINNED_BOUNDS: Record<string, readonly (readonly [string, number])[]> = {
     // `latestPointValues`: a bound `timestamptz` floor.
     ["AND pv.time > $3::timestamptz", 1],
   ],
+  // `F4.393` PR 2: the batch's envelope as bound parameters, in both laterals.
+  "tariffs/register-read.ts": [["AND v.time >= $6 AND v.time < $7", 2]],
 };
 
 /** The files whose `now()` bound must be one interval literal, never a multiplied unit interval. */
