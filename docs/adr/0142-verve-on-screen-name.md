@@ -145,3 +145,51 @@ None. No npm package and no web font: the logo is path data.
 | Q3 | Which tagline? | First: lead with pulse / live data (recommended) · energy first · keep board 1's line · board 3's "smart buildings". Then the exact line: "The pulse of every site" (recommended) · "The pulse of your operations" · "Every site. Every signal. Live." · "The pulse of intelligent energy" | **"The pulse of every site"** — decision 4 |
 | Q4 | Beyond the web screens, which surfaces does the rename cover? | All user-visible text, as ADR 0083 Q4 (recommended) · web screens only | **All user-visible text** — decision 5 |
 | Q5 | Does the login headline keep its tail "· Smart insight, always on."? | Tagline alone (recommended — two slogans compete) · tagline plus the old tail | **Tagline alone** — decision 4 |
+
+## Amendment 1 — the pulse is a filled, tapered shape; the letters are ExtraBold (`F4.398`) (owner, 2026-11-22)
+
+**Status: Proposed — 2026-11-22.** After the ADR merged, the final SVG files
+were drawn and shown to the owner, who answered with a crop of brand board 1
+and "Follow this". The files were redrawn to that reference the same day. This
+amendment records what changed against decisions 2 and 7. It becomes Accepted
+when the owner approves it in review.
+
+1. **The pulse is one filled shape, not a stroked line** (amends decision 2).
+   As on board 1: a wedge-shaped lead-in, a first rise that starts the V's
+   left arm above the small letters, a foot that drops below the baseline, a
+   peak about 2.3 x-heights above the baseline, and a thin wedge-shaped tail
+   that runs over the "e". The V is therefore larger than the letters beside
+   it. It is still one shape carrying one continuous gradient, foot to peak.
+2. **The pulse and the letters "erve" are traced from board 1**, not set in
+   Montserrat (amends decisions 2 and 3). A first redraw measured the pulse by
+   eye and set the letters in Montserrat ExtraBold; the owner rejected it
+   ("still not okay … compare with the pasted image"). A weight fit then
+   showed Montserrat is not the board's lettering at any weight (best overlap
+   0.74; the board's "e" and "r" are narrower), so the shapes and the spacing
+   are taken from the board itself: each shape's outline is traced from the
+   image, smoothed and written as path data. The letters remain outlines, with
+   no font and no package. Only the tagline is set from a font (Montserrat
+   Medium, outlined). The Montserrat licence note in *Consequences* now
+   applies to the tagline only.
+   The pulse's gradient stops are also the board's measured colours: `#16405C`
+   at the foot through `#18576C` and `#189E7F` to `#1DAF86` at the peak, on a
+   vertical axis. The dark form keeps decision 2's sky → teal → mint. The
+   letter ink stays navy `#0F172A`.
+3. **The gate asserts a fill** (amends decision 7's second assertion): the
+   wordmark's pulse path has exactly one `fill`, that fill is a gradient
+   reference, and the path has no `stroke`.
+4. **The tagline is unchanged.** The reference crop carries board 1's line
+   "Intelligent energy. Seamless control."; the owner was asked and kept
+   decision 4's **"The pulse of every site"**.
+5. **The asset home is `docs/brand/verve/`** — twelve SVG files: the full
+   logo on light and on dark, each with and without the tagline; the short
+   mark on a navy tile, on a white tile and with no tile; and flat navy and
+   flat white forms of the logo and of the mark. `build-logo.py` beside them
+   regenerates all twelve from the board image; the board image itself is the
+   owner's file and is not in the repository.
+
+| # | Question | Options put | Ruling |
+|---|---|---|---|
+| A1 | The owner's reference crop — follow it for what? | — (owner: "Follow this") | **The logo shape follows the crop** — items 1 and 2 |
+| A3 | Does the traced logo match the board? | — (shown as `docs/brand/verve/preview.html`) | **Approved** (owner: "Yes, this is perfect") — item 2 |
+| A2 | The crop's tagline differs from decision 4. Which is final? | "The pulse of every site" · "Intelligent energy. Seamless control." | **"The pulse of every site"** — item 4 |
