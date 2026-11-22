@@ -114,7 +114,8 @@ export function assertUnknownKeysAreRefused(): void {
 export function assertTheHostIsOneLowerCasedName(): void {
   expect(modbusConfigSchema.parse({ host: "Gateway.Local" }).host).toBe("gateway.local");
   expect(modbusConfigSchema.parse({ host: "192.168.1.20" }).host).toBe("192.168.1.20");
-  expect(modbusConfigSchema.parse({ host: "FE80::1" }).host).toBe("fe80::1");
+  // PR 7 review M1: an IPv6 literal is stored in `normalizeIpv6`'s one form (M21).
+  expect(modbusConfigSchema.parse({ host: "FE80::1" }).host).toBe("fe80:0:0:0:0:0:0:1");
   for (const host of ["", "meter/1", "http://meter", "meter:502", "tcp:meter", "meter one", " meter", "meter\t", "a".repeat(254)]) {
     expect(modbusConfigSchema.safeParse({ host }).success, JSON.stringify(host)).toBe(false);
   }
@@ -217,4 +218,23 @@ export function assertNoMessageEchoesTheRefusedValue(): void {
   const messages = result.success ? [] : result.error.issues.map((issue) => issue.message);
   expect(messages.length).toBeGreaterThanOrEqual(3);
   for (const message of messages) expect(message).not.toContain(SENTINEL);
+}
+
+/**
+ * M21 — `F1.2` PR 7 security review M1: the host has one canonical spelling, so the stored host, the
+ * API's other-organization check, the adapter's `endpointKey` and the allow-list agree. Lower case;
+ * one trailing dot dropped from a name; an IPv6 literal in `normalizeIpv6`'s form. The draft schema
+ * (onboarding) shares the field.
+ */
+export function assertTheHostHasOneCanonicalSpelling(): void {
+  const host = (value: string) => modbusConfigSchema.parse({ host: value }).host;
+  const v6 = host("fd00::10");
+  expect(v6).toBe("fd00:0:0:0:0:0:0:10");
+  expect(host("fd00:0::10")).toBe(v6);
+  expect(host("FD00:0:0:0:0:0:0:10")).toBe(v6);
+  expect(host("meter.local.")).toBe("meter.local");
+  expect(host("Meter.Local")).toBe("meter.local");
+  expect(host("10.0.0.5")).toBe("10.0.0.5");
+  expect(modbusDraftConfigSchema.parse({ host: "fd00:0::10" }).host).toBe(v6);
+  expect(modbusDraftConfigSchema.parse({ host: "Meter.Local." }).host).toBe("meter.local");
 }

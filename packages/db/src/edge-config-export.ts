@@ -1,4 +1,4 @@
-import { modbusConfigSchema, modbusDeviceSchema, pollIntervalMsSchema } from "@bms/shared";
+import { MODBUS_DEFAULT_POLL_INTERVAL_MS, modbusConfigSchema, modbusDeviceSchema, pollIntervalMsSchema } from "@bms/shared";
 import type { EdgeConfigFile, EdgeEndpointEntry, ModbusDevice } from "@bms/shared";
 
 /**
@@ -24,11 +24,11 @@ import type { EdgeConfigFile, EdgeEndpointEntry, ModbusDevice } from "@bms/share
 
 /**
  * The Modbus adapter's own default interval (ADR 0141 decision 10), needed when one RTU on an
- * endpoint falls through to it: an edge file that sets `pollIntervalMs` disables the default.
- * `packages/db` cannot import `apps/ingest`; `tests/f1.2-edge-export-loads-on-the-edge.test.ts`
- * holds this equal to `MODBUS_DEFAULT_POLL_INTERVAL_MS`.
+ * endpoint falls through to it: an edge file that sets `pollIntervalMs` disables the default. The
+ * shared constant the adapter itself uses (`@bms/shared`, since PR 7's review);
+ * `tests/f1.2-edge-export-loads-on-the-edge.test.ts` still holds the two equal.
  */
-export const EDGE_EXPORT_MODBUS_DEFAULT_POLL_INTERVAL_MS = 10_000;
+export const EDGE_EXPORT_MODBUS_DEFAULT_POLL_INTERVAL_MS = MODBUS_DEFAULT_POLL_INTERVAL_MS;
 
 /** One RTU assigned to the gateway, as the CLI reads it. */
 export type EdgeExportRtu = {
@@ -44,11 +44,13 @@ export type EdgeExportRtu = {
   readonly mappedSourceKeys: readonly string[];
 };
 
+/** What the export reads for one gateway: its organization's default interval and its RTUs. */
 export type EdgeExportInput = {
   readonly organizationDefaultPollIntervalMs: number | null;
   readonly rtus: readonly EdgeExportRtu[];
 };
 
+/** The file (or `null`), every RTU left out with its reason, and every register left out by `sourceKey`. */
 export type EdgeExportResult = {
   /** `null` when nothing can be exported (the file needs at least one endpoint). */
   readonly file: EdgeConfigFile | null;
@@ -87,6 +89,7 @@ function endpointInterval(intervals: readonly (number | null)[]): number | null 
   return set.length < intervals.length ? Math.min(shortest, EDGE_EXPORT_MODBUS_DEFAULT_POLL_INTERVAL_MS) : shortest;
 }
 
+/** Builds a gateway's `EDGE_CONFIG_FILE` from its RTUs (the rules are in the module comment above). */
 export function buildEdgeConfigExport(input: EdgeExportInput): EdgeExportResult {
   const notExported: { code: string; reason: string }[] = [];
   const omittedRegisters: { code: string; sourceKeys: string[] }[] = [];
@@ -166,19 +169,33 @@ export function buildEdgeConfigExport(input: EdgeExportInput): EdgeExportResult 
   return { file: entries.length === 0 ? null : { endpoints: entries }, notExported, omittedRegisters };
 }
 
+/** The parsed CLI arguments, or the usage line to print. */
 export type EdgeExportArgs =
-  | { readonly ok: true; readonly organization: string; readonly gateway: string; readonly out: string | null }
+  | {
+      readonly ok: true;
+      readonly organization: string;
+      readonly gateway: string;
+      readonly out: string | null;
+      readonly force: boolean;
+    }
   | { readonly ok: false; readonly message: string };
 
+/** The CLI's usage line, printed for any argument it refuses. */
 export const EDGE_EXPORT_USAGE =
-  "usage: edge-config-export --organization <organization code> --gateway <edge gateway code> [--out <file>]";
+  "usage: edge-config-export --organization <organization code> --gateway <edge gateway code> [--out <file> [--force]]" +
+  " (--out writes the file owner-only and refuses an existing one unless --force)";
 
-/** `--organization <code> --gateway <code> [--out <file>]`, in any order; anything else is refused. */
+/** `--organization <code> --gateway <code> [--out <file>] [--force]`, in any order; anything else is refused. */
 export function parseEdgeExportArgs(argv: readonly string[]): EdgeExportArgs {
   const values: Record<string, string> = {};
-  for (let i = 0; i < argv.length; i += 2) {
-    const flag = argv[i];
-    const value = argv[i + 1];
+  const rest = argv.filter((arg) => arg !== "--force");
+  const forces = argv.length - rest.length;
+  if (forces > 1) {
+    return { ok: false, message: EDGE_EXPORT_USAGE };
+  }
+  for (let i = 0; i < rest.length; i += 2) {
+    const flag = rest[i];
+    const value = rest[i + 1];
     if (
       flag === undefined ||
       !["--organization", "--gateway", "--out"].includes(flag) ||
@@ -195,5 +212,13 @@ export function parseEdgeExportArgs(argv: readonly string[]): EdgeExportArgs {
   if (!organization || !gateway) {
     return { ok: false, message: EDGE_EXPORT_USAGE };
   }
-  return { ok: true, organization, gateway, out: values["--out"] ?? null };
+  return { ok: true, organization, gateway, out: values["--out"] ?? null, force: forces === 1 };
+}
+
+/**
+ * PR 7 security review L4 — how `--out` writes: owner-only (`0600`; the file names the site's meter
+ * addresses), and `wx`, so an existing file is never overwritten unless `--force` was given.
+ */
+export function edgeExportWriteOptions(force: boolean): { readonly mode: number; readonly flag: "w" | "wx" } {
+  return { mode: 0o600, flag: force ? "w" : "wx" };
 }

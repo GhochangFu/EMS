@@ -319,7 +319,7 @@ export async function aReleasedTopicIsNamedOnTheRow(): Promise<void> {
  */
 export async function theModbusActionFollowsTheConnection(): Promise<void> {
   const mqtt = rtu({ code: "RM1-MQTT", tls: true, credentialsSet: false });
-  const bare = rtu({ id: "44444444-4444-4444-8444-444444444441", code: "RM1-BARE", tls: null, credentialsSet: null });
+  const bare = rtu({ id: "44444444-4444-4444-8444-444444444441", code: "RM1-BARE", sourceType: "catalog", tls: null, credentialsSet: null });
   const modbus = rtu({
     id: "44444444-4444-4444-8444-444444444442",
     code: "RM1-MB",
@@ -338,13 +338,37 @@ export async function theModbusActionFollowsTheConnection(): Promise<void> {
       registerCount: 4,
     },
   });
-  renderPage([mqtt, bare, modbus]);
+  // Review H1: a live MQTT RTU with no connection row (source type `mqtt`, `tls` null) is MQTT to the host.
+  const liveMqtt = rtu({ id: "44444444-4444-4444-8444-444444444443", code: "RM1-LIVE", sourceType: "mqtt", tls: null, credentialsSet: null });
+  renderPage([mqtt, bare, modbus, liveMqtt]);
   vi.spyOn(rtusApi, "fetchAdminRtuSummary").mockReturnValue(new Promise(() => undefined));
   expect(within(await rowOf("RM1-MQTT")).queryByRole("button", { name: "Modbus settings" })).toBeNull();
+  expect(within(await rowOf("RM1-LIVE")).queryByRole("button", { name: "Modbus settings" })).toBeNull();
   expect(within(await rowOf("RM1-BARE")).getByRole("button", { name: "Modbus settings" })).toBeInTheDocument();
   const row = await rowOf("RM1-MB");
   expect(within(row).getByText("Modbus: selec-mfm384 v2")).toBeInTheDocument();
   await userEvent.click(within(row).getByRole("button", { name: "Modbus settings" }));
   screen.getByRole("dialog", { name: "Modbus settings — Spec meter" });
   expect((screen.getByLabelText("Host") as HTMLInputElement).value).toBe("10.0.0.5");
+}
+
+/**
+ * RM2 (`F1.2` PR 7 review L3) — a role outside master data (here `operator`) sees no **Modbus
+ * settings** action, even on an RTU it would otherwise show on; the API would refuse it.
+ */
+export async function theModbusActionNeedsAMasterDataRole(): Promise<void> {
+  const bare = rtu({ id: "44444444-4444-4444-8444-444444444451", code: "RM2-BARE", sourceType: "catalog", tls: null, credentialsSet: null });
+  stubAll([bare]);
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/admin/rtus"]}>
+        <RtusAdminPage user={{ ...admin, role: "operator" } as AuthUser} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const row = await rowOf("RM2-BARE");
+  expect(within(row).getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  expect(within(row).queryByRole("button", { name: "Modbus settings" })).toBeNull();
 }

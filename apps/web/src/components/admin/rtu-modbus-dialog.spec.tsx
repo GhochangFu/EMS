@@ -151,7 +151,7 @@ export async function overSixMinutesWarnsAndTheAdapterDefaultIsNamed(): Promise<
   stub();
   renderDialog({ ...RTU, modbus: null, organizationDefaultPollIntervalMs: null });
   const dialog = screen.getByRole("dialog");
-  expect(dialog.textContent).toContain("Empty inherits the adapter default.");
+  expect(dialog.textContent).toContain("Empty inherits the adapter default, 10 s.");
   expect((screen.getByLabelText(INTERVAL) as HTMLInputElement).value).toBe("");
   expect((screen.getByLabelText("Port") as HTMLInputElement).value).toBe("502");
   expect(screen.queryByText(POLL_INTERVAL_SLOW_WARNING)).toBeNull();
@@ -184,4 +184,17 @@ export async function noProfileSaysWhereToMakeOne(): Promise<void> {
   renderDialog();
   expect(await screen.findByText(/has no device profiles yet/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+}
+
+/** R6 (PR 7 review L2) — a stored timeout and delay are prefilled and sent back on Save. */
+export async function storedTimeoutAndDelayAreSentBack(): Promise<void> {
+  stub();
+  const write = vi.spyOn(rtusApi, "setRtuModbus").mockResolvedValue(RTU);
+  const { onDone } = renderDialog({ ...RTU, modbus: { ...RTU.modbus!, timeoutMs: 2500, interRequestDelayMs: 25 } });
+  await screen.findByRole("option", { name: /selec-mfm384 v1/ });
+  expect((screen.getByLabelText("Timeout (ms)") as HTMLInputElement).value).toBe("2500");
+  expect((screen.getByLabelText("Delay between requests (ms)") as HTMLInputElement).value).toBe("25");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+  expect(write.mock.calls[0]?.[1]).toMatchObject({ timeoutMs: 2500, interRequestDelayMs: 25, pollIntervalMs: 30_000, profileId: P1 });
 }

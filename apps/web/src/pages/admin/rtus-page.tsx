@@ -283,8 +283,12 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                         Payload format
                       </button>
                     ) : null}
-                    {/* F1.2: a Modbus row, or no connection row yet (`tls` and `credentialsSet` both null). */}
-                    {canBindModbus && (item.modbus !== null || (item.tls === null && item.credentialsSet === null)) ? (
+                    {/* F1.2: a Modbus row, or no connection row yet (`tls` and `credentialsSet` both null) on
+                        an RTU that is not MQTT by its own source type (review H1: the host reads
+                        `protocol ?? source_type`, so that RTU is a live MQTT one; the API 409s it). */}
+                    {canBindModbus &&
+                    (item.modbus !== null ||
+                      (item.tls === null && item.credentialsSet === null && item.sourceType !== "mqtt")) ? (
                       <button
                         type="button"
                         className="text-xs font-semibold text-ink-muted"

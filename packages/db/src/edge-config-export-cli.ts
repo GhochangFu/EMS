@@ -2,7 +2,12 @@ import { writeFileSync } from "node:fs";
 
 import pg from "pg";
 
-import { buildEdgeConfigExport, parseEdgeExportArgs, type EdgeExportRtu } from "./edge-config-export";
+import {
+  buildEdgeConfigExport,
+  edgeExportWriteOptions,
+  parseEdgeExportArgs,
+  type EdgeExportRtu,
+} from "./edge-config-export";
 
 /**
  * `F1.2` (ADR 0141 decision 17, plan T7.5) — writes an edge box's `EDGE_CONFIG_FILE` for one edge
@@ -13,9 +18,13 @@ import { buildEdgeConfigExport, parseEdgeExportArgs, type EdgeExportRtu } from "
  * `node packages/db/dist/edge-config-export-cli.js …`.
  *
  * Read-only: three SELECTs in a READ ONLY transaction. Connects as `DATABASE_URL_FLEET`
- * (`bms_fleet`) and falls back to `DATABASE_URL`; either way it sets the organization GUC, so under
- * row-level security it reads exactly the organization it was asked for. Writes no credential:
- * Modbus carries none (decision 11).
+ * (`bms_fleet`), which **bypasses row-level security**: the isolation is the `WHERE` clauses, each
+ * of which names the organization (and the gateway) it was asked for. It falls back to
+ * `DATABASE_URL`; there the organization GUC set after the first lookup is what lets the RTU and
+ * gateway reads see that organization's rows. The first lookup runs before the GUC is set and
+ * cannot be hidden by it: `bms.organizations` carries no row-level policy (it is the tenant table
+ * itself). Writes no credential: Modbus carries none (decision 11). `--out` writes the file `0600`
+ * and refuses an existing file unless `--force`.
  */
 
 export const EXPORT_ORGANIZATION_SQL = `
@@ -106,7 +115,7 @@ async function main(): Promise<number> {
     if (args.out === null) {
       process.stdout.write(text);
     } else {
-      writeFileSync(args.out, text, { mode: 0o644 });
+      writeFileSync(args.out, text, edgeExportWriteOptions(args.force));
       const devices = result.file.endpoints.reduce((n, endpoint) => n + endpoint.devices.length, 0);
       process.stderr.write(`wrote ${args.out}: ${result.file.endpoints.length} endpoint(s), ${devices} device(s)\n`);
     }

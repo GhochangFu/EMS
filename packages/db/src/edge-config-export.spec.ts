@@ -5,6 +5,7 @@ import { edgeConfigFileSchema, modbusConfigSchema, modbusDeviceSchema } from "@b
 import {
   buildEdgeConfigExport,
   EDGE_EXPORT_MODBUS_DEFAULT_POLL_INTERVAL_MS,
+  edgeExportWriteOptions,
   parseEdgeExportArgs,
   type EdgeExportRtu,
 } from "./edge-config-export";
@@ -171,7 +172,15 @@ export function runTheArgumentsAreStrict(): void {
     organization: "ION",
     gateway: "GW-1",
     out: null,
+    force: false,
   });
+  // Review L4: `--force` is a bare flag, anywhere, at most once.
+  expect(parseEdgeExportArgs(["--force", "--organization", "ION", "--gateway", "GW-1", "--out", "e.json"])).toMatchObject({
+    ok: true,
+    out: "e.json",
+    force: true,
+  });
+  expect(parseEdgeExportArgs(["--organization", "ION", "--gateway", "GW-1", "--force", "--force"]).ok).toBe(false);
   expect(parseEdgeExportArgs(["--gateway", "GW-1", "--organization", "ION", "--out", "edge.json"])).toMatchObject({
     ok: true,
     out: "edge.json",
@@ -179,4 +188,13 @@ export function runTheArgumentsAreStrict(): void {
   for (const bad of [[], ["--organization", "ION"], ["--organization", "--gateway", "GW"], ["--organization", "ION", "--gateway", "GW", "--x", "1"], ["ION", "GW"]]) {
     expect(parseEdgeExportArgs(bad).ok, bad.join(" ")).toBe(false);
   }
+}
+
+/**
+ * E8 — PR 7 security review L4: the file is written owner-only (0600) and never over an existing
+ * file unless `--force` was given (`wx` fails on an existing path).
+ */
+export function runTheFileIsOwnerOnlyAndNotOverwritten(): void {
+  expect(edgeExportWriteOptions(false)).toEqual({ mode: 0o600, flag: "wx" });
+  expect(edgeExportWriteOptions(true)).toEqual({ mode: 0o600, flag: "w" });
 }

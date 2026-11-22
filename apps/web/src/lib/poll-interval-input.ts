@@ -21,8 +21,10 @@ export const POLL_INTERVAL_WARN_SECONDS = 360;
 export const POLL_INTERVAL_SLOW_WARNING =
   "Above 360 s a device shows as not live between polls: the freshness window is at most 900 s.";
 
+/** What either form says when the typed value is outside the shared bound or not a number of seconds. */
 export const POLL_INTERVAL_RANGE_MESSAGE = `Enter seconds from ${MIN_SECONDS} to ${MAX_SECONDS}, or leave it empty to inherit.`;
 
+/** A typed interval: milliseconds, or `null` to inherit; `ok: false` when it is not one. */
 export type ParsedPollInterval = { readonly ok: true; readonly ms: number | null } | { readonly ok: false };
 
 /** Empty is `null` (inherit); a number of seconds in the bound is milliseconds; anything else is refused. */

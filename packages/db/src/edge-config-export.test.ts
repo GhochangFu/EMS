@@ -6,6 +6,7 @@ import {
   runOneEndpointPerHostAndPort,
   runOnlyMappedRegistersAndNoSourceKeys,
   runTheArgumentsAreStrict,
+  runTheFileIsOwnerOnlyAndNotOverwritten,
   runTheFileParsesThroughEverySchema,
   runTheIntervalIsTheResolvedValue,
 } from "./edge-config-export.spec";
@@ -19,4 +20,5 @@ describe("F1.2 — the edge export (ADR 0141 decision 17, Amendment 1 (d))", () 
   it("E5 — an RTU not exported is listed with its reason", () => runAnRtuNotExportedIsListed());
   it("E6 — nothing to export is no file", () => runNothingToExportIsNoFile());
   it("E7 — the CLI arguments are strict", () => runTheArgumentsAreStrict());
+  it("E8 — the file is owner-only and not overwritten without --force", () => runTheFileIsOwnerOnlyAndNotOverwritten());
 });

@@ -9,6 +9,7 @@ import type { RtusModbusService } from "./rtus-modbus.service";
 import type { RtusAdminService } from "./rtus.service";
 import {
   RTU_MODBUS_ENDPOINT_OTHER_ORGANIZATION_MESSAGE,
+  RTU_MODBUS_INGEST_SOURCE_MESSAGE,
   RTU_MODBUS_OTHER_PROTOCOL_MESSAGE,
   RTU_MODBUS_PROFILE_NOT_FOUND_MESSAGE,
 } from "./rtus-modbus.service";
@@ -82,12 +83,13 @@ async function rtu(
   side: "A" | "B",
   name: string,
   ingestEnabled = false,
+  sourceType: "catalog" | "mqtt" | "simulator" = "catalog",
 ): Promise<string> {
   const created = await ctx.rtus.create(side === "A" ? ctx.adminA : ctx.adminB, {
     locationId: side === "A" ? ctx.locationA : ctx.locationB,
     code: `f12m-${ctx.stamp}-${name}`,
     displayName: `F1.2 Modbus ${name}`,
-    sourceType: "catalog",
+    sourceType,
     rtuCode: `F12M-${ctx.stamp}-${name}`.slice(0, 64),
     ingestEnabled,
   });
@@ -346,4 +348,109 @@ export async function assertTheGateIsTheLocations(ctx: RtuModbusFixtures): Promi
     NotFoundException,
   );
   expect(await storedRow(ctx, id)).toBeUndefined();
+}
+
+/**
+ * B4b — PR 7 review H1: an RTU whose own `source_type` is an ingest protocol (`mqtt`) and that has no
+ * connection row is a live MQTT RTU to the ingest host (`protocol ?? source_type`); a bind would
+ * turn it into Modbus. 409, and the row stays absent. A `simulator` RTU still binds.
+ */
+export async function assertALiveMqttSourceIs409(ctx: RtuModbusFixtures): Promise<void> {
+  const p = await profile(ctx, ctx.orgA, "b4b");
+  const id = await rtu(ctx, "A", "b4b", true, "mqtt");
+  const err = await rejection(ctx.svc.bind(ctx.adminA, id, { host: host(ctx, "b4b"), pollIntervalMs: null, unitId: 1, profileId: p.id }));
+  expect(err).toBeInstanceOf(ConflictException);
+  expect((err as ConflictException).message).toBe(RTU_MODBUS_INGEST_SOURCE_MESSAGE);
+  expect(await storedRow(ctx, id)).toBeUndefined();
+  const sim = await rtu(ctx, "A", "b4b-sim", false, "simulator");
+  await ctx.svc.bind(ctx.adminA, sim, { host: host(ctx, "b4b"), pollIntervalMs: null, unitId: 2, profileId: p.id });
+  expect((await storedRow(ctx, sim))?.protocol).toBe("modbus_tcp");
+}
+
+/** Puts `rtuId` on a fresh edge gateway of its organization (superuser: the composite FK). */
+async function edgeServe(ctx: RtuModbusFixtures, side: "A" | "B", rtuId: string, name: string): Promise<void> {
+  const { rows } = await ctx.superPool.query<{ id: string }>(
+    `INSERT INTO bms.edge_gateways (organization_id, location_id, code, name) VALUES ($1, $2, $3, $3) RETURNING id`,
+    [side === "A" ? ctx.orgA : ctx.orgB, side === "A" ? ctx.locationA : ctx.locationB, `F12M-${ctx.stamp}-${name}`],
+  );
+  await ctx.superPool.query("UPDATE bms.rtus SET edge_gateway_id = $1 WHERE id = $2", [rows[0]!.id, rtuId]);
+}
+
+/**
+ * B9b — PR 7 review H2: Amendment 2 (a) is a cloud-host rule. Another organization's RTU on the same
+ * endpoint blocks only when it is active and cloud-served; an edge-served or an inactive one does
+ * not; and binding an edge-served RTU is never blocked (the edge box serves one site).
+ */
+export async function assertOnlyACloudServedActiveRtuBlocks(ctx: RtuModbusFixtures): Promise<void> {
+  const pA = await profile(ctx, ctx.orgA, "b9ba");
+  const pB = await profile(ctx, ctx.orgB, "b9bb");
+  const body = (endpoint: string, profileId: string, unitId: number) => ({ host: host(ctx, endpoint), pollIntervalMs: null, unitId, profileId });
+
+  const edgeA = await rtu(ctx, "A", "b9b-edge");
+  await ctx.svc.bind(ctx.adminA, edgeA, body("b9b-edge", pA.id, 1));
+  await edgeServe(ctx, "A", edgeA, "b9b-gw-a");
+  const b1 = await rtu(ctx, "B", "b9b-b1");
+  expect((await ctx.svc.bind(ctx.adminB, b1, body("b9b-edge", pB.id, 2))).modbus).toMatchObject({ host: host(ctx, "b9b-edge") });
+
+  const offA = await rtu(ctx, "A", "b9b-off");
+  await ctx.svc.bind(ctx.adminA, offA, body("b9b-off", pA.id, 1));
+  await ctx.observer.query("UPDATE bms.rtus SET active = false WHERE id = $1", [offA]);
+  const b2 = await rtu(ctx, "B", "b9b-b2");
+  await ctx.svc.bind(ctx.adminB, b2, body("b9b-off", pB.id, 2));
+
+  // A cloud-served active RTU of A, and an edge-served RTU of B binding the same endpoint: not blocked.
+  const cloudA = await rtu(ctx, "A", "b9b-cloud");
+  await ctx.svc.bind(ctx.adminA, cloudA, body("b9b-cloud", pA.id, 1));
+  const b3 = await rtu(ctx, "B", "b9b-b3");
+  await edgeServe(ctx, "B", b3, "b9b-gw-b");
+  await ctx.svc.bind(ctx.adminB, b3, body("b9b-cloud", pB.id, 2));
+  // The control: a cloud-served RTU of B on that endpoint is still refused.
+  const b4 = await rtu(ctx, "B", "b9b-b4");
+  expect(await rejection(ctx.svc.bind(ctx.adminB, b4, body("b9b-cloud", pB.id, 3)))).toBeInstanceOf(ConflictException);
+}
+
+/** B9c — PR 7 review M1: another spelling of the same IPv6 address is the same endpoint. */
+export async function assertAnotherSpellingIsTheSameEndpoint(ctx: RtuModbusFixtures): Promise<void> {
+  const pA = await profile(ctx, ctx.orgA, "b9ca");
+  const pB = await profile(ctx, ctx.orgB, "b9cb");
+  // A stamp-derived group keeps the address unique to this run.
+  const group = parseInt(ctx.stamp.slice(0, 4), 16).toString(16);
+  const a = await rtu(ctx, "A", "b9c-a");
+  await ctx.svc.bind(ctx.adminA, a, { host: `fd00::${group}`, pollIntervalMs: null, unitId: 1, profileId: pA.id });
+  expect((await storedRow(ctx, a))!.config.host).toBe(`fd00:0:0:0:0:0:0:${group}`);
+  const b = await rtu(ctx, "B", "b9c-b");
+  const err = await rejection(
+    ctx.svc.bind(ctx.adminB, b, { host: `FD00:0:0:0:0:0:0:${group.toUpperCase()}`, pollIntervalMs: null, unitId: 2, profileId: pB.id }),
+  );
+  expect(err).toBeInstanceOf(ConflictException);
+  // A row stored before canonical hosts (`fd00:0::<g>`) is compared canonically too.
+  const legacy = await rtu(ctx, "A", "b9c-legacy");
+  await ctx.observer.query(
+    "INSERT INTO bms.rtu_connection_configs (organization_id, rtu_id, protocol, config) VALUES ($1, $2, 'modbus_tcp', $3::jsonb)",
+    [ctx.orgA, legacy, JSON.stringify({ host: `FD00:0::${group}`, port: 5022 })],
+  );
+  expect(
+    await rejection(ctx.svc.bind(ctx.adminB, b, { host: `fd00::${group}`, port: 5022, pollIntervalMs: null, unitId: 2, profileId: pB.id })),
+  ).toBeInstanceOf(ConflictException);
+}
+
+/**
+ * B11 — PR 7 review L1 (race): two organizations binding one endpoint at the same moment serialise on
+ * the endpoint lock, so exactly one wins and the other is the 409.
+ */
+export async function assertConcurrentBindsSerialise(ctx: RtuModbusFixtures): Promise<void> {
+  const pA = await profile(ctx, ctx.orgA, "b11a");
+  const pB = await profile(ctx, ctx.orgB, "b11b");
+  for (let round = 0; round < 5; round += 1) {
+    const a = await rtu(ctx, "A", `b11-a${round}`);
+    const b = await rtu(ctx, "B", `b11-b${round}`);
+    const endpoint = host(ctx, `b11-${round}`);
+    const results = await Promise.allSettled([
+      ctx.svc.bind(ctx.adminA, a, { host: endpoint, pollIntervalMs: null, unitId: 1, profileId: pA.id }),
+      ctx.svc.bind(ctx.adminB, b, { host: endpoint, pollIntervalMs: null, unitId: 1, profileId: pB.id }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled"), `round ${round}`).toHaveLength(1);
+    const refused = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    expect(refused.reason).toBeInstanceOf(ConflictException);
+  }
 }

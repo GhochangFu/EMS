@@ -18,6 +18,13 @@ import { z } from "zod";
 export const POLL_INTERVAL_MIN_MS = 1_000;
 export const POLL_INTERVAL_MAX_MS = 3_600_000;
 
+/**
+ * ADR 0141 decision 10: the Modbus TCP adapter's own interval, the last fallback after the
+ * endpoint's and the organization's. One constant for the adapter, the edge export (which must
+ * write it when one RTU on an endpoint falls through to it) and the bind dialog's inherit line.
+ */
+export const MODBUS_DEFAULT_POLL_INTERVAL_MS = 10_000;
+
 /** An integer number of milliseconds inside the bounds. No string, no null. */
 export const pollIntervalMsSchema = z.number().int().min(POLL_INTERVAL_MIN_MS).max(POLL_INTERVAL_MAX_MS);
 

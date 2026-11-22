@@ -7,6 +7,7 @@ import {
   anEmptyIntervalSendsNull,
   noProfileSaysWhereToMakeOne,
   overSixMinutesWarnsAndTheAdapterDefaultIsNamed,
+  storedTimeoutAndDelayAreSentBack,
   theDialogOpensOnTheStoredBind,
 } from "./rtu-modbus-dialog.spec";
 
@@ -35,5 +36,9 @@ describe("F1.2 — RtuModbusDialog", () => {
 
   it("R5 an organization with no profile says where to make one", async () => {
     await noProfileSaysWhereToMakeOne();
+  });
+
+  it("R6 a stored timeout and delay are prefilled and sent back (review L2)", async () => {
+    await storedTimeoutAndDelayAreSentBack();
   });
 });

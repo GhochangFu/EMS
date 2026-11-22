@@ -3,6 +3,9 @@ import { z } from "zod";
 import { modbusConfigSchema, modbusUnitIdSchema } from "../ingest-modbus";
 import { pollIntervalMsSchema } from "../ingest-poll-interval";
 
+/** `F1.2` (decision 10): the Modbus adapter's own interval, re-exported for the web's bind dialog. */
+export { MODBUS_DEFAULT_POLL_INTERVAL_MS } from "../ingest-poll-interval";
+
 /**
  * `F1.2` (ADR 0141 decisions 5, 6, 10 and 15, plan T7.1, builder call C10) — `PUT
  * /admin/rtus/:id/modbus`, the route that binds an RTU to a device profile and sets its Modbus
@@ -54,4 +57,5 @@ export const rtuModbusDtoSchema = z.object({
   registerCount: z.number().int().min(0),
 });
 
+/** `F1.2` — the RTU row's Modbus summary. Exported from here: `src/index.ts` sits at the 1000-line cap. */
 export type RtuModbusDto = z.infer<typeof rtuModbusDtoSchema>;

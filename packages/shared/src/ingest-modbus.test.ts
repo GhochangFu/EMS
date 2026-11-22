@@ -20,6 +20,7 @@ import {
   assertTheListHoldsOneTo256Registers,
   assertUnitIdIsZeroTo247Or255,
   assertNoMessageEchoesTheRefusedValue,
+  assertTheHostHasOneCanonicalSpelling,
   assertUnknownKeysAreRefused,
 } from "./ingest-modbus.spec";
 
@@ -46,4 +47,5 @@ describe("F1.2 — Modbus schemas (ADR 0141 decisions 5, 6, 7, 12)", () => {
   it("M16 requires the profile's source document, revision and pages", () => assertADeviceProfileNamesItsSource());
   it("M17 bounds a profile's code and version", () => assertADeviceProfileCodeAndVersionAreBounded());
   it("M20 echoes no refused value in an issue message", () => assertNoMessageEchoesTheRefusedValue());
+  it("M21 stores one canonical spelling of a host (PR 7 review M1)", () => assertTheHostHasOneCanonicalSpelling());
 });

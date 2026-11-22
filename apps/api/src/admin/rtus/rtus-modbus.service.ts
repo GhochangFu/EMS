@@ -8,11 +8,11 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 
 import { assets, deviceProfiles, rtuConnectionConfigs, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { setRtuModbusBodySchema } from "@bms/shared";
+import { canonicalModbusHost, INGEST_PROTOCOLS, setRtuModbusBodySchema } from "@bms/shared";
 import type { AdminRtuDto, JwtPayload, SetRtuModbusBody } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
@@ -29,10 +29,20 @@ import { RtusAdminService } from "./rtus.service";
 export const RTU_MODBUS_UPDATE_ACTION = "master.rtu.modbus.update";
 /** One 404 for an unknown profile and another organization's: it names neither (the profiles API's rule). */
 export const RTU_MODBUS_PROFILE_NOT_FOUND_MESSAGE = "Device profile not found";
+/** The 409 for an RTU whose connection row is another protocol (MQTT): a bind never re-protocols a row. */
 export const RTU_MODBUS_OTHER_PROTOCOL_MESSAGE =
   "This RTU's connection is another protocol; Modbus settings apply to an RTU with no connection or a Modbus TCP one";
+/**
+ * PR 7 review H1 — the 409 for an RTU with no connection row whose own `source_type` is another
+ * ingest protocol: the ingest host reads it as that protocol (`protocol ?? source_type`), so a bind
+ * would silently turn a live MQTT RTU into a Modbus one.
+ */
+export const RTU_MODBUS_INGEST_SOURCE_MESSAGE =
+  "This RTU is ingested as another protocol (its source type); change its source type before binding it to a Modbus profile";
+/** ADR 0141 Amendment 2 (a) — the 409 for an endpoint another organization's cloud-served RTU uses. Names neither organization. */
 export const RTU_MODBUS_ENDPOINT_OTHER_ORGANIZATION_MESSAGE =
   "This Modbus endpoint (host and port) is already used by an RTU of another organization; one endpoint serves one organization";
+/** The 409 when two first binds of one RTU race and the unique `rtu_id` refuses the second. */
 export const RTU_MODBUS_RACED_MESSAGE = "Another change to this RTU's connection landed first; reload and try again";
 
 /** The Modbus TCP port when a stored row names none (ADR 0141 decision 5). */
@@ -86,14 +96,19 @@ export class RtusModbusService {
       throw new ForbiddenException("RTU is outside your access scope");
     }
     const organizationId = await this.rtusService.resolveAgreedOrg(existing);
+    // The body schema already stored the host in its one canonical spelling (review M1).
     const port = body.port ?? MODBUS_DEFAULT_PORT;
-    if (await this.endpointUsedByAnotherOrganization(id, organizationId, body.host, port)) {
-      throw new ConflictException(RTU_MODBUS_ENDPOINT_OTHER_ORGANIZATION_MESSAGE);
-    }
 
     await translateConstraintErrors(
       () =>
         withTenant(this.tenantDb, organizationId, async (tx) => {
+          // Review L1: the row the rest of the write reads, re-read and share-locked inside the
+          // transaction, so a concurrent edit cannot change its source type, ingest switch or edge
+          // gateway between the checks and the write.
+          const [rtu] = await tx.select().from(rtus).where(eq(rtus.id, id)).limit(1).for("share");
+          if (!rtu) {
+            throw new NotFoundException("RTU not found");
+          }
           const [profile] = await tx
             .select({ id: deviceProfiles.id, code: deviceProfiles.code, version: deviceProfiles.version, registers: deviceProfiles.registers })
             .from(deviceProfiles)
@@ -117,6 +132,26 @@ export class RtusModbusService {
             .for("update");
           if (current && current.protocol !== "modbus_tcp") {
             throw new ConflictException(RTU_MODBUS_OTHER_PROTOCOL_MESSAGE);
+          }
+          // Review H1: no row, so the host reads the RTU's own source type; an ingest protocol other
+          // than Modbus TCP (today `mqtt`) is a live RTU of that protocol.
+          if (
+            !current &&
+            rtu.sourceType !== "modbus_tcp" &&
+            (INGEST_PROTOCOLS as readonly string[]).includes(rtu.sourceType)
+          ) {
+            throw new ConflictException(RTU_MODBUS_INGEST_SOURCE_MESSAGE);
+          }
+
+          // Review L1 (race): two binds of one endpoint serialise here, held to commit, so the check
+          // below sees the other's committed row. ADR 0141 Amendment 2 (a) is a cloud-host rule: an
+          // edge-served RTU is never blocked (its box serves one site).
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`modbus_tcp:${body.host}:${port}`}))`);
+          if (
+            rtu.edgeGatewayId === null &&
+            (await this.endpointUsedByAnotherOrganization(id, organizationId, body.host, port))
+          ) {
+            throw new ConflictException(RTU_MODBUS_ENDPOINT_OTHER_ORGANIZATION_MESSAGE);
           }
 
           let config: Record<string, unknown>;
@@ -144,8 +179,8 @@ export class RtusModbusService {
           // ingest-enabled RTU's assets go to the ingest host; with ingest off they stay on `catalog`.
           const telemetrySource = await resolveTelemetrySource(tx, {
             id,
-            ingestEnabled: existing.ingestEnabled,
-            sourceType: existing.sourceType,
+            ingestEnabled: rtu.ingestEnabled,
+            sourceType: rtu.sourceType,
           });
           const moved = await tx
             .update(assets)
@@ -187,11 +222,13 @@ export class RtusModbusService {
   }
 
   /**
-   * Whether an RTU of **another** organization holds a `modbus_tcp` row on this `host:port` (ADR
-   * 0141 Amendment 2 (a)). Read on `bms_fleet` because the tenant policy would hide exactly the
-   * rows it looks for; it answers a boolean, never a row or an organization. The host is compared
-   * lower-cased (the body schema lower-cases, a stored onboarding row may not) and a row with no
-   * `port` is 502. An inactive RTU counts: reactivating it would bring the conflict back.
+   * Whether an **active, cloud-served** RTU of another organization holds a `modbus_tcp` row on
+   * this `host:port` (ADR 0141 Amendment 2 (a), a cloud-host rule: an edge-served or inactive RTU is
+   * not polled by the cloud host, review H2). Read on `bms_fleet` because the tenant policy would
+   * hide exactly the rows it looks for; it answers a boolean, never a row or an organization. Each
+   * stored host is compared in its canonical spelling (`canonicalModbusHost`, review M1), so a row
+   * written before hosts were canonical still counts; a row with no `port` is 502. Called under the
+   * endpoint's advisory lock, on another connection, so it sees a racing bind's committed row.
    */
   private async endpointUsedByAnotherOrganization(
     rtuId: string,
@@ -199,21 +236,24 @@ export class RtusModbusService {
     host: string,
     port: number,
   ): Promise<boolean> {
-    const storedPort = sql`coalesce(CASE WHEN jsonb_typeof(${rtuConnectionConfigs.config}->'port') = 'number' THEN (${rtuConnectionConfigs.config}->>'port')::numeric END, ${MODBUS_DEFAULT_PORT})`;
-    const [hit] = await this.fleetDb
-      .select({ present: sql<number>`1` })
+    const rows = await this.fleetDb
+      .select({ host: sql<unknown>`${rtuConnectionConfigs.config}->'host'`, port: sql<unknown>`${rtuConnectionConfigs.config}->'port'` })
       .from(rtuConnectionConfigs)
       .innerJoin(rtus, eq(rtus.id, rtuConnectionConfigs.rtuId))
       .where(
         and(
           eq(rtuConnectionConfigs.protocol, "modbus_tcp"),
-          sql`lower(${rtuConnectionConfigs.config}->>'host') = ${host.toLowerCase()}`,
-          sql`${storedPort} = ${port}`,
           ne(rtus.organizationId, organizationId),
           ne(rtuConnectionConfigs.rtuId, rtuId),
+          eq(rtus.active, true),
+          isNull(rtus.edgeGatewayId),
         ),
-      )
-      .limit(1);
-    return hit !== undefined;
+      );
+    return rows.some(
+      (row) =>
+        typeof row.host === "string" &&
+        canonicalModbusHost(row.host) === host &&
+        (typeof row.port === "number" ? row.port : MODBUS_DEFAULT_PORT) === port,
+    );
   }
 }

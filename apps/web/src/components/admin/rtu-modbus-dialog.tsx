@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 
 import type { AdminRtuDto } from "@bms/shared";
-import { setRtuModbusBodySchema } from "@bms/shared/contracts";
+import { MODBUS_DEFAULT_POLL_INTERVAL_MS, setRtuModbusBodySchema } from "@bms/shared/contracts";
 
 import { deviceProfilesKey, fetchDeviceProfiles } from "../../api/admin/device-profiles";
 import { fetchAdminRtuSummary, setRtuModbus } from "../../api/admin/rtus";
@@ -125,7 +125,7 @@ export function RtuModbusDialog({ rtu, onDone }: { rtu: AdminRtuDto; onDone: () 
 
   const inherited =
     rtu.organizationDefaultPollIntervalMs === null
-      ? "Empty inherits the adapter default."
+      ? `Empty inherits the adapter default, ${inheritedPollIntervalText(MODBUS_DEFAULT_POLL_INTERVAL_MS, "")}.`
       : `Empty inherits the organization default: ${inheritedPollIntervalText(rtu.organizationDefaultPollIntervalMs, "")}.`;
 
   return (

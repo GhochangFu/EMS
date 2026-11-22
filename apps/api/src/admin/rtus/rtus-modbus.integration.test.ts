@@ -14,7 +14,11 @@ import {
   assertABadBodyIs400,
   assertABindCreatesTheRowAndCopiesTheRegisters,
   assertALaterProfileVersionLeavesTheBindAlone,
+  assertALiveMqttSourceIs409,
   assertAnMqttRowIs409,
+  assertAnotherSpellingIsTheSameEndpoint,
+  assertConcurrentBindsSerialise,
+  assertOnlyACloudServedActiveRtuBlocks,
   assertAnotherOrganizationsEndpointIs409,
   assertAnotherOrganizationsProfileIs404,
   assertARebindRewritesTheConfig,
@@ -132,6 +136,7 @@ describe.skipIf(!connectionString || !superuserConnectionString)("F1.2 — the R
       await superPool.query("DELETE FROM bms.assets WHERE organization_id = ANY($1::uuid[])", [organizationIds]);
       // `rtu_connection_configs` goes with its RTU (`ON DELETE CASCADE`).
       await superPool.query("DELETE FROM bms.rtus WHERE id = ANY($1::uuid[])", [createdRtuIds]);
+      await superPool.query("DELETE FROM bms.edge_gateways WHERE organization_id = ANY($1::uuid[])", [organizationIds]);
       await superPool.query("DELETE FROM bms.device_profiles WHERE organization_id = ANY($1::uuid[])", [organizationIds]);
       await superPool.query("DELETE FROM bms.user_organization_access WHERE user_id = ANY($1::uuid[])", [userIds]);
       await superPool.query("DELETE FROM bms.users WHERE id = ANY($1::uuid[])", [userIds]);
@@ -175,6 +180,22 @@ describe.skipIf(!connectionString || !superuserConnectionString)("F1.2 — the R
 
   it("B9 answers 409 for an endpoint another organization's RTU uses (Amendment 2 (a))", async () => {
     await assertAnotherOrganizationsEndpointIs409(ctx);
+  });
+
+  it("B4b answers 409 for a live MQTT RTU (source type mqtt, no row) and writes no row (review H1)", async () => {
+    await assertALiveMqttSourceIs409(ctx);
+  });
+
+  it("B9b blocks only on an active, cloud-served RTU of another organization (review H2)", async () => {
+    await assertOnlyACloudServedActiveRtuBlocks(ctx);
+  });
+
+  it("B9c treats another spelling of one IPv6 address as the same endpoint (review M1)", async () => {
+    await assertAnotherSpellingIsTheSameEndpoint(ctx);
+  });
+
+  it("B11 serialises two organizations' concurrent binds of one endpoint (review L1)", async () => {
+    await assertConcurrentBindsSerialise(ctx);
   });
 
   it("B10 answers 403 to another organization's admin and 404 for an unknown RTU", async () => {
