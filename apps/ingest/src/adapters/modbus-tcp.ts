@@ -135,7 +135,10 @@ export function createModbusTcpAdapter(deps: ModbusAdapterDeps = REAL_DEPS): Pol
     },
 
     async poll() {
-      if (transport === undefined || transport.closed) {
+      // Read once: a stop() during an await sets the field to undefined, and the
+      // loop must not dereference it then (PR 4 code review 4).
+      const link = transport;
+      if (link === undefined || link.closed) {
         return lost();
       }
       const samples: SourceSample[] = [];
@@ -145,13 +148,13 @@ export function createModbusTcpAdapter(deps: ModbusAdapterDeps = REAL_DEPS): Pol
           let reply: ModbusReadReply | undefined;
           let error: unknown;
           try {
-            reply = await transport.request(plan.unitId, {
+            reply = await link.request(plan.unitId, {
               functionCode: block.functionCode,
               address: block.address,
               quantity: block.quantity,
             });
           } catch (caught) {
-            if (caught instanceof ModbusTransportClosedError || transport.closed) {
+            if (caught instanceof ModbusTransportClosedError || link.closed) {
               return lost();
             }
             error = caught;

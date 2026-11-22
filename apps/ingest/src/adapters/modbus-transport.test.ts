@@ -12,6 +12,7 @@ import {
   assertRequestsNeverOverlap,
   assertTheErrorsCarryNoBytesOrHost,
   assertTheInterRequestDelayIsWaitedBetweenRequests,
+  assertTheTransactionIdWraps,
   assertTransactionIdsAdvance,
 } from "./modbus-transport.spec.js";
 
@@ -63,5 +64,8 @@ describe("F1.2 — the Modbus TCP transport (plan T4.2)", () => {
 
   it("T12 the errors carry no bytes or host", async () => {
     await assertTheErrorsCarryNoBytesOrHost();
+  });
+  it("T13 the transaction id wraps to 0 after 65535", async () => {
+    await assertTheTransactionIdWraps();
   });
 });

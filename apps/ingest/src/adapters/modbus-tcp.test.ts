@@ -5,6 +5,7 @@ import { lookupAdapter } from "../adapter/registry.js";
 import { modbusTcpAdapterFactory } from "./modbus-tcp.js";
 import {
   assertALostSocketRejectsAndReadsDisconnected,
+  assertASocketLostMidPollRejects,
   assertARecoveredBlockLogsOnce,
   assertATimeoutFailsOnlyItsUnit,
   assertAnExceptionFailsOnlyItsBlock,
@@ -67,5 +68,8 @@ describe("modbus_tcp adapter (F1.2)", () => {
 
   it("A10 a recovered block logs once", async () => {
     await assertARecoveredBlockLogsOnce();
+  });
+  it("A12 a socket lost between two blocks rejects the poll", async () => {
+    await assertASocketLostMidPollRejects();
   });
 });

@@ -78,6 +78,8 @@ export type ModbusTransportOptions = {
   readonly socketFactory: ModbusSocketFactory;
   readonly deadline: ModbusDeadline;
   readonly delay: ModbusDelay;
+  /** The first transaction id; tests start near the 16-bit wrap. Default 1. */
+  readonly firstTransactionId?: number;
 };
 
 type Pending = {
@@ -93,7 +95,7 @@ export async function openModbusTransport(options: ModbusTransportOptions): Prom
   const assembler = createMbapFrameAssembler();
   let closed = false;
   let pending: Pending | undefined;
-  let nextTransactionId = 1;
+  let nextTransactionId = options.firstTransactionId ?? 1;
   let chain: Promise<unknown> = Promise.resolve();
   let requestsSent = 0;
 

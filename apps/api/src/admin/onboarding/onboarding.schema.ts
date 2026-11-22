@@ -306,12 +306,13 @@ export const onboardingDraftMetaSchema = z
  * **Three numbers, because a bound without its neighbours is just a magic
  * number:**
  *
- * - **Floor — 5.** The deepest shape any shipped producer writes:
- *   `draft` (1) → `rtus` (2) → `rtus[i]` (3) → `config` (4) → `config.host`
- *   (5). `OnboardingExcelService.parseRtus` writes
- *   `config: { host, port, tls, topic }`; `OnboardingChatService.defaultConfig`
- *   writes `{host,port,tls,topic}`, `{host,port,unitId,pollIntervalMs}` or
- *   `{}`; `buildTemplateBuffer`'s template rows become the same flat object.
+ * - **Floor — 6.** The deepest shape any shipped producer writes:
+ *   `draft` (1) → `rtus` (2) → `rtus[i]` (3) → `config` (4) → `config.device`
+ *   (5) → `config.device.unitId` (6). `OnboardingExcelService.parseRtus`
+ *   writes `config: { host, port, tls, topic }`, or `{ host, port }` for a
+ *   Modbus row; `OnboardingChatService.defaultConfig` writes
+ *   `{host,port,tls,topic}`, the Modbus catalog example
+ *   `{host,port,pollIntervalMs,device:{unitId}}` (F1.2) or `{}`; `buildTemplateBuffer`'s template rows become the same flat object.
  *   Nothing in this repository writes a nested `meta` at all, and the other
  *   draft branches are shallower — `_secrets` and `assetPoints` reach 4.
  * - **Bound — 10.** The draft skeleton consumes four levels before the first
@@ -478,7 +479,7 @@ export const DRAFT_TOO_DEEP_MESSAGE =
  * - `chat` — the model's `draftPatch`, which **does** parse this schema
  *   (producer 3 above) and is why the refinement is attached here. Its other
  *   branch, `handleRuleBasedTurn`, parses nothing: `defaultConfig` returns
- *   `{host,port,tls,topic}`, `{host,port,unitId,pollIntervalMs}` or `{}`, and
+ *   `{host,port,tls,topic}`, `{host,port,pollIntervalMs,device:{unitId}}` or `{}`, and
  *   writes no `meta`.
  * - `patchDraft` — the HTTP caller, through `patchDraftBodySchema` (producer 1).
  * - `uploadExcel` — parses nothing here: `parseRtus` writes

@@ -56,6 +56,36 @@ export function assertNoListDialsNothing(): void {
   }
 }
 
+/** PR 4 code review 2: one socket, one set of request settings; a second RTU that differs is skipped by name. */
+export function assertDifferentRequestSettingsOnOneGatewayConflict(): void {
+  const slow = row({
+    ...modbusRow("10.0.0.5"),
+    rtu_id: "rtu-slow",
+    rtu_code: "M-slow",
+    connection_config: {
+      host: "10.0.0.5",
+      port: 502,
+      timeoutMs: 5_000,
+      interRequestDelayMs: 200,
+      device: { unitId: 2, registers: [{ sourceKey: "flow", table: "holding", address: 0, type: "uint16" }] },
+    },
+  });
+  const result = plan([modbusRow("10.0.0.5"), slow], "10.0.0.5");
+  expect(result.endpoints).toHaveLength(1);
+  expect(result.endpoints[0]?.bindings.map((b) => b.deviceKey)).toEqual(["M-10.0.0.5"]);
+  expect(result.skipped).toEqual([
+    { rtuId: "rtu-slow", rtuCode: "M-slow", reason: "endpoint-config-conflict", detail: "modbus_tcp://10.0.0.5:502" },
+  ]);
+}
+
+/** PR 4 code review 8: the allow-list is the cloud's; an edge-served Modbus RTU is not checked against it. */
+export function assertAnEdgeServedRtuIsNotChecked(): void {
+  const result = plan([row({ ...modbusRow("10.9.9.9"), edge_gateway_id: "gw-1" })], "");
+  expect(result.skipped).toEqual([]);
+  expect(result.endpoints).toEqual([]);
+  expect(result.edgeServed.size).toBe(1);
+}
+
 export function assertMqttIsNotAffected(): void {
   const result = plan([row()], undefined);
   expect(result.endpoints).toHaveLength(1);

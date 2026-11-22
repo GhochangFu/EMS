@@ -79,7 +79,7 @@ function manualDeadlines(): { deadline: ModbusDeadline; fire(): void; armed(): n
 const IMAGE: ModbusImage = { holding: new Map([[0, 11], [1, 22], [2, 33]]) };
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
-async function open(options: { interRequestDelayMs?: number } = {}) {
+async function open(options: { interRequestDelayMs?: number; firstTransactionId?: number } = {}) {
   const socket = fakeSocket();
   const deadlines = manualDeadlines();
   const delays: number[] = [];
@@ -96,6 +96,7 @@ async function open(options: { interRequestDelayMs?: number } = {}) {
     delay: async (ms) => {
       delays.push(ms);
     },
+    ...(options.firstTransactionId === undefined ? {} : { firstTransactionId: options.firstTransactionId }),
   });
   return { socket, deadlines, delays, controller, transport };
 }
@@ -132,6 +133,18 @@ export async function assertTransactionIdsAdvance(): Promise<void> {
   await second;
   const ids = socket.written.map((frame) => decodeAdu(frame).transactionId);
   expect(ids[1]).toBe(((ids[0] as number) + 1) & 0xffff);
+}
+
+/** PR 4 code review 5: the 16-bit transaction id wraps to 0 rather than overflowing the MBAP field. */
+export async function assertTheTransactionIdWraps(): Promise<void> {
+  const { socket, transport } = await open({ firstTransactionId: 0xffff });
+  for (const address of [0, 1]) {
+    const reading = transport.request(1, { functionCode: 3, address, quantity: 1 });
+    await tick();
+    answer(socket);
+    await expect(reading).resolves.toMatchObject({ kind: "registers" });
+  }
+  expect(socket.written.map((frame) => decodeAdu(frame).transactionId)).toEqual([0xffff, 0]);
 }
 
 export async function assertAReplyForAnOldIdIsDroppedAndTheNextStillResolves(): Promise<void> {

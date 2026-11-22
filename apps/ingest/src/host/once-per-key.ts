@@ -1,5 +1,5 @@
 import type { AdapterLogger } from "../adapter/types.js";
-import type { PlanWarning } from "./bindings.js";
+import type { PlanWarning, SkippedBinding } from "./bindings.js";
 
 /**
  * Once per key per process (`F1.2` plan T3.7, ADR 0016 Amendment 10 (a)).
@@ -59,5 +59,34 @@ export function createPlanWarningReporter(logger: AdapterLogger): (warnings: rea
         }
       }
     }
+  };
+}
+
+/**
+ * Skips first seen at a **reload**, for the reasons named (ADR 0141 decision
+ * 22: `modbus-host-not-allowed`). `main.ts` logs every boot-time skip itself;
+ * `boot` only marks those, so a reload never repeats them, and `reload` logs a
+ * named reason the first time an RTU reaches it. Other reasons keep today's
+ * boot-only line (the health body still lists them).
+ */
+export function createReloadSkipReporter(
+  logger: AdapterLogger,
+  reasons: ReadonlySet<string>,
+): { boot(skips: readonly SkippedBinding[]): void; reload(skips: readonly SkippedBinding[]): void } {
+  const first = oncePerKey();
+  const key = (skip: SkippedBinding) => `${skip.reason}\u0000${skip.rtuId}`;
+  return {
+    boot(skips) {
+      for (const skip of skips) {
+        if (reasons.has(skip.reason)) first(key(skip));
+      }
+    },
+    reload(skips) {
+      for (const skip of skips) {
+        if (reasons.has(skip.reason) && first(key(skip))) {
+          logger.warn("rtu skipped", { rtuCode: skip.rtuCode, rtuId: skip.rtuId, reason: skip.reason });
+        }
+      }
+    },
   };
 }

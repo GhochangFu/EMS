@@ -23,6 +23,8 @@ type Fake = {
   silentUnits: Set<number>;
   failConnect: boolean;
   written: Uint8Array[];
+  /** The peer closes the socket instead of answering the write with this 1-based number. */
+  loseOnWrite?: number;
   lose(): void;
 };
 
@@ -51,6 +53,10 @@ function fakeDeps(): Fake {
         const socket: ModbusSocket = {
           write(frame) {
             fake.written.push(frame);
+            if (fake.loseOnWrite === fake.written.length) {
+              fake.lose();
+              return;
+            }
             const unitId = decodeAdu(frame).unitId;
             if (!alive || fake.silentUnits.has(unitId)) return;
             const reply = serveModbusFrame(frame, fake.images.get(unitId) ?? {});
@@ -254,6 +260,19 @@ export async function assertALostSocketRejectsAndReadsDisconnected(): Promise<vo
   await expect(adapter.mode === "poll" ? adapter.poll() : Promise.resolve([])).rejects.toThrow();
   expect(adapter.health().state).toBe("disconnected");
   expect(adapter.health().detail).toBe("connection closed");
+}
+
+/** PR 4 code review 6: a socket lost between two blocks of one poll rejects that poll. */
+export async function assertASocketLostMidPollRejects(): Promise<void> {
+  const fake = fakeDeps();
+  fake.images.set(1, { holding: new Map([[0, 1], [10, 2]]) });
+  const { adapter } = await connected(fake, [binding("M1", { unitId: 1, registers: [register("a", 0), register("b", 10)] })]);
+  // The first block is answered; the peer drops the socket on the second block's request.
+  fake.loseOnWrite = fake.written.length + 2;
+  const poll = adapter.mode === "poll" ? adapter.poll() : Promise.resolve([]);
+  await expect(poll).rejects.toThrow();
+  expect(fake.written).toHaveLength(2);
+  expect(adapter.health().state).toBe("disconnected");
 }
 
 export async function assertBitsAreRead(): Promise<void> {

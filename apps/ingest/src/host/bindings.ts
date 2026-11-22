@@ -453,7 +453,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 function sameConnection(a: unknown, b: unknown): boolean {
   const x = asRecord(a);
   const y = asRecord(b);
-  return x.host === y.host && x.port === y.port && x.tls === y.tls;
+  // F1.2: a Modbus gateway's request settings are one per socket, so they must agree too.
+  return ["host", "port", "tls", "timeoutMs", "interRequestDelayMs"].every((key) => x[key] === y[key]);
 }
 
 /**
