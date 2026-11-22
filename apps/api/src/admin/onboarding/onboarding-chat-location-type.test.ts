@@ -11,7 +11,7 @@ import {
   assertNameWithoutTypeAsksForTheType,
   assertAgentTurnValidatesTheMergedDraft,
   assertAgentPromptListsTheActiveCodes,
-  assertAgentSystemPromptNamesIonsiteNexus,
+  assertAgentSystemPromptNamesVerve,
   assertStoredInactiveTypeIsAskedFor,
   assertStoredInactiveTypeIsNotPatched,
   assertStoredInactiveTypeTurnHasNoActionLine,
@@ -145,8 +145,8 @@ describe("OnboardingChatService.handleTurn — the location type (F4.157), agent
     await assertAgentPromptListsTheActiveCodes();
   });
 
-  it("names IONSiTE NEXUS, not TRINETRA, in the system prompt (F3.33)", async () => {
-    await assertAgentSystemPromptNamesIonsiteNexus();
+  it("names Verve, not IONSiTE NEXUS or TRINETRA, in the system prompt (F4.398)", async () => {
+    await assertAgentSystemPromptNamesVerve();
   });
 });
 

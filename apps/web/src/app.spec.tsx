@@ -245,7 +245,7 @@ export async function aPlainMeOnLoadShowsNothing(): Promise<void> {
   await waitFor(() => {
     expect(useAuthStore.getState().accessToken).toBeNull();
   });
-  expect(screen.getByRole("heading", { level: 2, name: "Sign in to IONSiTE NEXUS" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { level: 2, name: "Sign in to Verve" })).toBeInTheDocument();
   expect(useAuthStore.getState().authFailureReason).toBeNull();
   expect(screen.queryByText(DEACTIVATED_SENTENCE)).toBeNull();
 }
