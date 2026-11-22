@@ -6,6 +6,7 @@ import {
   assertADeviceProfileNamesItsSource,
   assertADeviceProfileParses,
   assertADuplicateSourceKeyIsRefusedAtTheSecondIndex,
+  assertAMultiWordRegisterEndsByAddress65535,
   assertAddressIsZeroTo65535,
   assertConnectionBounds,
   assertConnectionDefaults,
@@ -38,6 +39,7 @@ describe("F1.2 — Modbus schemas (ADR 0141 decisions 5, 6, 7, 12)", () => {
   it("M12 accepts unit id 0-247 or 255 (Amendment 1 (a))", () => assertUnitIdIsZeroTo247Or255());
   it("M13 carries profile provenance on the device", () => assertTheDeviceCarriesProfileProvenance());
   it("M14 lets a draft carry an interval and no registers", () => assertTheDraftAllowsAnIntervalAndNoRegisters());
+  it("M19 refuses a register whose words run past address 65535", () => assertAMultiWordRegisterEndsByAddress65535());
   it("M18 applies the ingest rules to a draft", () => assertTheDraftAppliesTheIngestRules());
   it("M15 parses a device profile", () => assertADeviceProfileParses());
   it("M16 requires the profile's source document, revision and pages", () => assertADeviceProfileNamesItsSource());

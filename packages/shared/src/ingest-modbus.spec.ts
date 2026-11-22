@@ -52,10 +52,21 @@ export function assertConnectionDefaults(): void {
 
 export function assertAddressIsZeroTo65535(): void {
   expect(modbusRegisterSchema.safeParse(register({ address: 0 })).success).toBe(true);
-  expect(modbusRegisterSchema.safeParse(register({ address: 65_535 })).success).toBe(true);
+  expect(modbusRegisterSchema.safeParse(register({ address: 65_535, type: "uint16" })).success).toBe(true);
   expect(modbusRegisterSchema.safeParse(register({ address: 65_536 })).success).toBe(false);
   expect(modbusRegisterSchema.safeParse(register({ address: -1 })).success).toBe(false);
   expect(modbusRegisterSchema.safeParse(register({ address: 1.5 })).success).toBe(false);
+}
+
+export function assertAMultiWordRegisterEndsByAddress65535(): void {
+  const ok = (address: number, type: string) => modbusRegisterSchema.safeParse(register({ address, type })).success;
+  expect(ok(65_535, "uint16")).toBe(true);
+  expect(ok(65_534, "float32")).toBe(true);
+  expect(ok(65_532, "float64")).toBe(true);
+  const past = modbusRegisterSchema.safeParse(register({ address: 65_535, type: "float32" }));
+  expect(past.success).toBe(false);
+  expect(issuePaths(past)).toEqual(["address"]);
+  expect(ok(65_533, "float64")).toBe(false);
 }
 
 export function assertABitTableTakesBoolOnly(): void {
@@ -103,7 +114,8 @@ export function assertUnknownKeysAreRefused(): void {
 export function assertTheHostIsOneLowerCasedName(): void {
   expect(modbusConfigSchema.parse({ host: "Gateway.Local" }).host).toBe("gateway.local");
   expect(modbusConfigSchema.parse({ host: "192.168.1.20" }).host).toBe("192.168.1.20");
-  for (const host of ["", "meter/1", "http://meter", "meter one", " meter", "meter\t", "a".repeat(254)]) {
+  expect(modbusConfigSchema.parse({ host: "FE80::1" }).host).toBe("fe80::1");
+  for (const host of ["", "meter/1", "http://meter", "meter:502", "tcp:meter", "meter one", " meter", "meter\t", "a".repeat(254)]) {
     expect(modbusConfigSchema.safeParse({ host }).success, JSON.stringify(host)).toBe(false);
   }
   expect(modbusConfigSchema.safeParse({ host: "a".repeat(253) }).success).toBe(true);

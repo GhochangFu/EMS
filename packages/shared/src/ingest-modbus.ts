@@ -3,6 +3,7 @@ import { z } from "zod";
 import { CATALOG_CODE_PATTERN } from "./constants";
 // Leaf modules, not `./ingest`: that module re-exports this one, and a runtime
 // import back from it would make the schemas depend on entry order.
+import { MODBUS_TYPE_WORDS } from "./ingest-adapters/modbus-codec";
 import { mqttPayloadReadingKeySchema } from "./ingest-adapters/mqtt-payload-keys";
 import { pollIntervalMsSchema } from "./ingest-poll-interval";
 
@@ -17,7 +18,8 @@ import { pollIntervalMsSchema } from "./ingest-poll-interval";
  * none of them can disagree on what a register is.
  *
  * The wire codec (`./ingest-adapters/modbus-codec.ts`) is zod-free and reads
- * only the types below, never this module at runtime.
+ * only the types below, never this module at runtime; this module reads the
+ * codec's word counts, so the import runs one way only.
  *
  * Every issue message is fixed text: none echoes the offending value (§9.6),
  * because the onboarding validator forwards these messages.
@@ -91,6 +93,14 @@ export const modbusRegisterSchema = z
         message: "a coil or discrete input register holds one bit; its type must be bool",
       });
     }
+    // A float32 at 65535 would need register 65536, which no request can read.
+    if (entry.address + MODBUS_TYPE_WORDS[entry.type] - 1 > MODBUS_ADDRESS_MAX) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["address"],
+        message: "the register's words run past address 65535",
+      });
+    }
   });
 
 export type ModbusRegister = z.infer<typeof modbusRegisterSchema>;
@@ -117,14 +127,16 @@ export const modbusRegistersSchema = z
 /**
  * A host name or IP literal: no scheme, no path, no port, no whitespace, at
  * most 253 characters (a DNS name's limit). Lower-cased, so `endpointKey` is
- * one string for one gateway however it was typed.
+ * one string for one gateway however it was typed. One colon is a port or a
+ * scheme (`meter:502`, `tcp:meter`) and is refused; an IPv6 literal has two or
+ * more and is accepted.
  */
 const modbusHostSchema = z
   .string()
   .min(1)
   .max(253)
-  .refine((host) => !/[\s/]/.test(host), {
-    message: "a Modbus host is a host name or an IP address, with no slash and no whitespace",
+  .refine((host) => !/[\s/]/.test(host) && (host.match(/:/g) ?? []).length !== 1, {
+    message: "a Modbus host is a host name or an IP address, with no port, no slash and no whitespace",
   })
   .transform((host) => host.toLowerCase());
 
