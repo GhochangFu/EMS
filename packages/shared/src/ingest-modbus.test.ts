@@ -22,6 +22,10 @@ import {
   assertNoMessageEchoesTheRefusedValue,
   assertTheHostHasOneCanonicalSpelling,
   assertUnknownKeysAreRefused,
+  assertTheDraftMayNameAProfileById,
+  assertAProfileNeedsAUnitId,
+  assertAProfileExcludesRegistersAndProvenance,
+  assertTheProfileIssuesEchoNoValue,
 } from "./ingest-modbus.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -48,4 +52,9 @@ describe("F1.2 — Modbus schemas (ADR 0141 decisions 5, 6, 7, 12)", () => {
   it("M17 bounds a profile's code and version", () => assertADeviceProfileCodeAndVersionAreBounded());
   it("M20 echoes no refused value in an issue message", () => assertNoMessageEchoesTheRefusedValue());
   it("M21 stores one canonical spelling of a host (PR 7 review M1)", () => assertTheHostHasOneCanonicalSpelling());
+  // Plan PR 11 (ADR 0141 Amendment 1 (f), decision 23): onboarding binds a profile.
+  it("M22 lets a draft name a device profile by id", () => assertTheDraftMayNameAProfileById());
+  it("M23 requires a unit id beside a profile", () => assertAProfileNeedsAUnitId());
+  it("M24 refuses a profile beside registers or a provenance", () => assertAProfileExcludesRegistersAndProvenance());
+  it("M25 echoes no value in a profile issue", () => assertTheProfileIssuesEchoNoValue());
 });

@@ -212,11 +212,25 @@ export const modbusDeviceSchema = z
 
 export type ModbusDevice = z.infer<typeof modbusDeviceSchema>;
 
+/** Plan PR 11: a draft that names a profile carries neither registers nor a provenance of its own. */
+export const MODBUS_DRAFT_PROFILE_EXCLUDES_REGISTERS_MESSAGE =
+  "a Modbus draft names a device profile or lists its own registers, not both";
+/** Plan PR 11: the commit binds the profile to one unit id, so the draft must name it. */
+export const MODBUS_DRAFT_PROFILE_NEEDS_UNIT_ID_MESSAGE =
+  "a Modbus draft that names a device profile needs the device's unit id";
+
 /**
  * What onboarding stores for a Modbus RTU before it is bound to a profile:
  * the connection, an optional endpoint interval, and a device whose
  * `registers` may still be absent. Every present field is checked with the
  * ingest schema's own field.
+ *
+ * `profileId` (ADR 0141 Amendment 1 (f), decision 23; plan PR 11): one of the
+ * organization's device profiles, by id. The commit copies that profile's
+ * registers and records `profile: { code, version }` with the RTUs page bind's
+ * helper, so a draft that names one lists no registers and no provenance and
+ * names the unit id. Whether the id is the organization's is the commit's
+ * check (it reads the row under the tenant); this schema checks the shape.
  */
 export const modbusDraftConfigSchema = z
   .object({
@@ -225,6 +239,7 @@ export const modbusDraftConfigSchema = z
     timeoutMs: modbusConfigSchema.shape.timeoutMs.optional(),
     interRequestDelayMs: modbusConfigSchema.shape.interRequestDelayMs.optional(),
     pollIntervalMs: pollIntervalMsSchema.optional(),
+    profileId: z.string().uuid().optional(),
     device: z
       .object({
         unitId: modbusUnitIdSchema,
@@ -234,7 +249,30 @@ export const modbusDraftConfigSchema = z
       .strict()
       .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((draft, ctx) => {
+    if (draft.profileId === undefined) {
+      return;
+    }
+    if (draft.device === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["device", "unitId"],
+        message: MODBUS_DRAFT_PROFILE_NEEDS_UNIT_ID_MESSAGE,
+      });
+      return;
+    }
+    if (draft.device.registers !== undefined || draft.device.profile !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["profileId"],
+        message: MODBUS_DRAFT_PROFILE_EXCLUDES_REGISTERS_MESSAGE,
+      });
+    }
+  })
+  .describe(
+    "A draft that names a device profile (profileId) also names device.unitId and lists no device.registers or device.profile",
+  );
 
 export type ModbusDraftConfig = z.infer<typeof modbusDraftConfigSchema>;
 
