@@ -112,7 +112,7 @@ export function LoginPage() {
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl overflow-hidden rounded-2xl border border-on-dark/10 bg-on-dark/5 shadow-2xl lg:grid-cols-[1.12fr_0.88fr]">
         <section className="relative flex flex-col items-center justify-between overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgb(var(--accent)_/_0.34),_transparent_32%),linear-gradient(135deg,rgb(var(--chrome))_0%,rgb(var(--chrome))_54%,rgb(var(--chrome-nav)_/_0.35)_100%)] p-8 text-center lg:p-10">
           <LoginSiteNetwork />
-          <div className="relative flex w-full flex-1 flex-col items-center justify-center">
+          <div data-network-clear className="relative flex w-full flex-1 flex-col items-center justify-center">
             <Wordmark variant="hero" animated />
             <h1
               className="login-rise mt-8 max-w-xl font-condensed text-4xl font-bold leading-tight tracking-tight sm:text-5xl"
@@ -149,7 +149,7 @@ export function LoginPage() {
             </ul>
           </div>
 
-          <ul aria-label={`What ${PRODUCT_NAME} does`} className="relative mt-10 grid w-full gap-3 text-left sm:grid-cols-3">
+          <ul data-network-clear aria-label={`What ${PRODUCT_NAME} does`} className="relative mt-10 grid w-full gap-3 text-left sm:grid-cols-3">
             {LOGIN_FEATURES.map(([title, line], index) => (
               <li
                 key={title}

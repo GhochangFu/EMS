@@ -317,3 +317,55 @@ it does not obstruct any text". This amendment covers the login page only.
 | C1 | Which layout for the login page? | A left-aligned stack with a pulse band (recommended) · B centred hero · C product preview | **B, the centred hero** — item 1 |
 | C2 | Which variation of B, with motion? | B1 pulse band (recommended) · B2 heartbeat rings · B3 site network · B4 minimal | **B3, the site network — "make sure it does not obstruct any text"** — items 4, 5 and 6 |
 | C3 | The login text names Ion Exchange. | — (owner: "this product is not for Ion Exchange anymore … that particular wording has to be removed") | **Removed from the login page** — item 2 |
+
+## Amendment 4 — the site network is spread evenly; the client name leaves the places people can see (`F4.398`) (owner, 2026-11-23)
+
+**Status: Accepted — 2026-11-23** (owner approved the plan in session). With
+Amendment 3 on the demo host, the owner looked at the login page and gave two
+rulings. On the site network: it "is kinda like a border right now, make it
+more natural and evenly spread on the background". Amendment 3 item 5 kept all
+the sites outside one large ellipse, so they stood only along the edges of the
+panel. On the client name: "Remove the name Ion Exchange from every other
+place". Asked how far that reaches, the owner chose the places people can see,
+not history, tests or comments.
+
+1. **The site network is spread evenly over the whole login hero panel**, in a
+   natural arrangement: irregular, not a grid and not a ring. Sites stand
+   between and beside the text blocks and across the centre of the panel, as
+   well as at its edges. The positions stay a fixed list, so the page looks
+   the same on every load. This replaces the single clear ellipse of
+   Amendment 3 item 5.
+2. **The network still never sits under text** (the owner's condition from
+   Amendment 3 stays). The clear area is now a tight box around each text
+   block, not one ellipse. The blocks are the logo, the headline, the
+   description, the chip row and each of the three feature tiles; the tiles
+   stay opaque.
+   - No site is drawn inside such a box or within a margin around it.
+   - No line crosses such a box or its margin.
+   - The blocks move with the size of the window, so the page measures them
+     and draws only the sites and the lines that are clear. It measures before
+     the first paint and again when the panel or a block changes size. Where
+     nothing can be measured, nothing is drawn.
+   - Tests hold both rules against the list of sites and lines.
+3. **Unchanged from Amendment 3:** the motion (item 6) and its stillness with
+   reduced motion; the colours, which are ADR 0078 roles through
+   `currentColor`; the network is hidden from assistive technology and never
+   focusable; it shows only at the `lg` breakpoint and wider.
+4. **The client name Ion Exchange is removed from the places people can see**
+   (amends decision 1 and Amendment 3 item 2). Decision 1's "every existing
+   mention of Ion Exchange (India) Ltd. as the client stays" no longer holds
+   for those places: the README, the product description, the demo names in
+   the Keycloak realm file, the simulator's site names, and the demo
+   organization command with its display names.
+   - These stay as they are: history (accepted ADR text, plans, dated
+     documents), frozen migrations, test fixtures, code comments, and the
+     chemistry term "ion-exchange softener".
+   - A database or a Keycloak realm that already holds the old names is live
+     data; this amendment does not change it.
+
+Item 4 is built in its own pull request, apart from items 1 to 3.
+
+| # | Question | Options put | Ruling |
+|---|---|---|---|
+| D1 | The site network on the live login page. | — (owner: it "is kinda like a border right now, make it more natural and evenly spread on the background") | **Spread evenly over the whole panel, clear of each text block** — items 1, 2 and 3 |
+| D2 | "Remove the name Ion Exchange from every other place" — how far? | — (the owner chose the scope when asked) | **The places people can see; not history, tests or comments** — item 4 |

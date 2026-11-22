@@ -2209,19 +2209,13 @@ body {
 }
 
 /*
- * F4.398 (ADR 0142 Amendment 3 items 4-6) - the login hero. `login-network-lines` fades the site
- * network's lines out before they reach the clear zone that holds the hero's text: the ellipse is
- * `CLEAR_ZONE` of `login-site-network.tsx`, and `login-site-network.spec.tsx` SN4 holds the two
- * equal. `login-site` brightens one site every 5 s; `login-rise` brings the hero's content in once,
- * after `--login-rise-delay`. Transform and opacity only. Plain CSS, not Tailwind animations (MG1
- * pins those to the mimic four), and only inside `prefers-reduced-motion: no-preference`: with
- * reduced motion the page is still.
+ * F4.398 (ADR 0142 Amendment 3 item 6, Amendment 4) - the login hero. `login-site` brightens one
+ * site of the network every 5 s; `login-rise` brings the hero's content in once, after
+ * `--login-rise-delay`. Transform and opacity only. Plain CSS, not Tailwind animations (MG1 pins
+ * those to the mimic four), and only inside `prefers-reduced-motion: no-preference`: with reduced
+ * motion the page is still. What keeps the network out from under text is not here: it is
+ * `drawnNetwork` of `login-site-network.tsx`.
  */
-.login-network-lines {
-  -webkit-mask-image: radial-gradient(ellipse 44% 36% at 50% 44%, transparent 100%, black 140%);
-  mask-image: radial-gradient(ellipse 44% 36% at 50% 44%, transparent 100%, black 140%);
-}
-
 @keyframes login-site {
   0%,
   100% {
