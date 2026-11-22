@@ -440,3 +440,104 @@ the `migration-reviewer` and the ADR 0045 grants.
     narrowed so it no longer covers `F1.2` (`F1.14` at ~448 cites the `F1.2`
     park and needs the same edit).
   - ADR 0123 Q14 — a one-line note that `F1.2` no longer waits on A4.
+
+## Amendment 1 — the plan rulings (`F1.2`, 2026-11-22)
+
+**Status:** Accepted 2026-11-22 (owner, in chat: "Accept both, open PR";
+proposed the same day). The owner ruled the step-3 plan's
+questions P1–P12 on 2026-11-22, one at a time in chat, and approved the plan
+([`docs/plans/f1.2-modbus-tcp-adapter-and-device-profiles.md`](../plans/f1.2-modbus-tcp-adapter-and-device-profiles.md)
+§12). Five rulings change a decision of this record; this amendment states
+them. P5, P9 and P10 change the host and are recorded in
+[ADR 0016 Amendment 10](./0016-ingest-adapter-framework.md). P2, P4 and P12b
+confirm a decision as written and change nothing here. P7 confirms decision
+9 too; part (b) only states the placeholder value it implies. Lines marked
+*(drafter)* are drafter calls the build may refine. No code PR that depends
+on a part below starts before this amendment is accepted.
+
+**(a) Decision 6 — unit id 255 is accepted (P1).** The device slice's
+`unitId` is `0–247` **or `255`**. The Modbus TCP implementation guide names
+255 for a device addressed directly over TCP, and some Ethernet meters
+answer to no other value. `modbusDeviceSchema` refuses 248–254 and anything
+above 255. PR 1 confirms the guide's wording from the document and cites the
+section in the fixture file.
+
+**(b) Decision 9 — the value of a failed read (P7, a clarification).** A
+sample from a failed block, an out-of-range 64-bit value and a non-finite
+float are emitted as `{ value: 0, good: false }`. ADR 0016's conformance
+suite requires a finite `value` on every sample, so the `0` is a placeholder,
+never a reading. Under the default `discard_bad` the host drops and counts
+it. `docs/modbus-device-profiles.md` says not to set `accept_bad` on a Modbus
+point, because that policy would store the `0`.
+
+**(c) Decision 10 — who edits the organization default (P12a).** The
+*(drafter)* line "global `admin`, as for the ingest switch" is replaced:
+**the global `admin`, and an `organization_admin` with a direct grant on
+that organization**, through the gate the organization's
+energy settings use (`AccessControlService.isOrganizationLevelAdmin`,
+`apps/api/src/auth/access-control.service.ts:299`, called at
+`apps/api/src/admin/organizations/organizations.service.ts:232`). A
+location-scoped or asset-group-scoped user cannot set it. The endpoint
+override stays with whoever may manage the RTU's location.
+
+**(d) Decision 17 — the edge export writes mapped registers only (P8).** The
+export writes, for each device, only the registers whose `sourceKey` is
+mapped to an active asset point of that RTU. It still writes no
+`sourceKeys` key. A register that no point maps is not read on the edge, so
+the cloud receiver does not count it as unmapped on every batch. A new
+mapping needs a new export to the box; the export script lists the
+registers it left out, by `sourceKey`, so the operator can see why.
+
+**(e) New decision 22 — the cloud host dials only allow-listed Modbus hosts
+(P6).** This replaces the *Consequences* line "Nothing in the code prevents a
+public `host` … A guard is a possible follow-up, not v1."
+
+- `MODBUS_TCP_HOSTS` is read by `apps/ingest` in `host/config.ts` (an adapter
+  may not read the environment, ADR 0016 §4). **Unset or empty means the
+  cloud host dials no Modbus endpoint** — fail closed. This follows the
+  parsing and fail-closed half of ADR 0114's `MQTT_PLAINTEXT_HOSTS`, not its
+  API half (see the last bullet).
+- A comma-separated list. Each entry is trimmed and lower-cased, and is one
+  of: a host name (exact match, no wildcard), an IPv4 or IPv6 literal, or an
+  IPv4 CIDR block *(drafter: CIDR because meters are usually addressed by IP
+  on a site subnet)*. No port. An entry that parses as none of these refuses
+  the host's start with a fixed message. One parser in `@bms/shared`.
+- The check runs in the binding plan of `main.ts` only. An RTU whose Modbus
+  `host` is not on the list is skipped with the reason
+  `modbus-host-not-allowed`, logged once per RTU per process and shown on the
+  health body. It never dials. The match is on the configured `host` string;
+  a name is not resolved to check it against a CIDR block *(drafter)*.
+- **The edge is not affected.** The edge box sits on the site LAN by design
+  (decision 1), and its configuration is a local file the site owns.
+- The API does not refuse a bind for a host that is not listed *(drafter)*:
+  the API cannot know whether the RTU will be polled by the cloud or by an
+  edge box. The skip reason is visible on the health body. This is where it
+  differs from ADR 0114, whose API also reads the list and refuses at
+  onboarding validation and discovery.
+
+**(f) New decision 23 — onboarding binds a profile (P11).** The onboarding
+draft of a `modbus_tcp` RTU may name one of the organization's device
+profiles (`profileId`). At commit, the API copies that profile's registers
+into the device slice with the same helper as the RTUs page bind (decision
+15) — one code path, not two — and records `profile: { code, version }`.
+For a Modbus RTU committed **with** a profile, the operator may switch
+ingest on at commit; without a profile it is committed with ingest off, as
+every non-MQTT RTU is today
+(`apps/api/src/admin/onboarding/onboarding-commit.service.ts:591-592`). The
+guided chat and the Excel import path accept the profile reference. A
+profile of another organization is refused as not found. This is plan PR
+11.
+
+**What this amendment does not change.** Decisions 1–5, 7, 8, 11–16, 18–21
+stand as written. P3 (five stock meters, manuals fetched by the build agent)
+and P4 (keep the 1 h bound and warn above 360 s) are plan scope, not ADR
+decisions.
+
+**Owed after acceptance, added to this record's *Consequences* list** (the
+separate `chore(agents):` sweep, §9.10, §10.1): AGENTS.md's ingest stack row
+(~2250) says the reload "swaps point mappings only" — it now also replaces a
+poll endpoint on `device-config-changed` and `poll-interval-changed` (ADR 0016
+Amendment 10 (a)); the same row lists `MQTT_PLAINTEXT_HOSTS` and must list
+`MODBUS_TCP_HOSTS`; the compose topology (the `modbus-sim` network and the
+`modbus` profile, ADR 0016 Amendment 10 (b)) and the poll-adapter restart
+rule (Amendment 10 (c)) are new. Re-measure the line numbers at sweep time.
