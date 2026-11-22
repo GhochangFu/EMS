@@ -21,10 +21,17 @@ import type { Supervisor, SupervisorHealth } from "./supervisor.js";
  *   running supervisors and the point index each one reads, and is the only
  *   thing `main.ts` asks for the health roster.
  *
- * **What is not detected.** A connection-config change on a running endpoint
- * whose device set is unchanged is a `swap-index`, so it still needs a restart
- * (plan R5). A committed RTU's host, port and TLS have no write route
+ * **What is not detected.** An MQTT connection-config change on a running
+ * endpoint whose device set is unchanged is a `swap-index`, so it still needs a
+ * restart (plan R5). A committed RTU's host, port and TLS have no write route
  * (ADR 0129 context 3), and a change to them moves the endpoint key anyway.
+ *
+ * **Poll endpoints (ADR 0016 Amendment 10 (a), `F1.2`).** A moved
+ * `EndpointPlan.configFingerprint` — new registers, a new unit id or a new
+ * timeout on an unchanged device set — is a `replace` with
+ * `reason: "device-config-changed"`; a moved resolved interval is a `replace`
+ * with `reason: "poll-interval-changed"`. Both reach a running endpoint at the
+ * next reload, with no restart. A save with unchanged values replaces nothing.
  *
  * **Credentials are (ADR 0129 decision 4, `F4.333`).** A stored credential write
  * — a replace, a copy, a key rotation — moves `EndpointPlan.credentialFingerprint`
@@ -47,10 +54,11 @@ export type ReconcileAction =
       readonly added: readonly string[];
       readonly removed: readonly string[];
       /**
-       * Set when the device set is unchanged: the decoder fingerprint moved, or
-       * only the credential fingerprint did (`F4.333`).
+       * Set when the device set is unchanged: the decoder fingerprint moved,
+       * the config fingerprint (`F1.2`), the credential fingerprint (`F4.333`),
+       * or the resolved poll interval (`F1.2`) — checked in that order.
        */
-      readonly reason?: "payload-format-changed" | "credentials-changed";
+      readonly reason?: "payload-format-changed" | "device-config-changed" | "credentials-changed" | "poll-interval-changed";
     }
   | { readonly kind: "stop"; readonly key: string }
   | { readonly kind: "swap-index"; readonly key: string; readonly pointIndex: PointIndex };
@@ -77,6 +85,11 @@ export type RunningEndpoint = {
   readonly fingerprint: string;
   /** `F4.333`: the plan's `credentialFingerprint` when it was launched. */
   readonly credentialFingerprint: string;
+  /** `F1.2`: the plan's `configFingerprint` when it was launched. */
+  readonly configFingerprint: string;
+  /** `F1.2`: the plan's resolved interval when it was launched. */
+  readonly pollIntervalMs: number | null;
+  readonly pollIntervalUsesDefault: boolean;
 };
 
 export function diffEndpoints(
@@ -111,8 +124,15 @@ export function diffEndpoints(
       closing.push({ kind: "replace", key, plan, added, removed });
     } else if (current.fingerprint !== plan.decoderFingerprint) {
       closing.push({ kind: "replace", key, plan, added, removed, reason: "payload-format-changed" });
+    } else if (current.configFingerprint !== plan.configFingerprint) {
+      closing.push({ kind: "replace", key, plan, added, removed, reason: "device-config-changed" });
     } else if (current.credentialFingerprint !== plan.credentialFingerprint) {
       closing.push({ kind: "replace", key, plan, added, removed, reason: "credentials-changed" });
+    } else if (
+      current.pollIntervalMs !== plan.pollIntervalMs ||
+      current.pollIntervalUsesDefault !== plan.pollIntervalUsesDefault
+    ) {
+      closing.push({ kind: "replace", key, plan, added, removed, reason: "poll-interval-changed" });
     } else {
       swaps.push({ kind: "swap-index", key, pointIndex: plan.pointIndex });
     }
@@ -239,6 +259,9 @@ export function createEndpointRegistry(deps: EndpointRegistryDeps): EndpointRegi
         devices: entry.devices,
         fingerprint: entry.plan.decoderFingerprint,
         credentialFingerprint: entry.plan.credentialFingerprint,
+        configFingerprint: entry.plan.configFingerprint,
+        pollIntervalMs: entry.plan.pollIntervalMs,
+        pollIntervalUsesDefault: entry.plan.pollIntervalUsesDefault,
       });
     }
     for (const action of diffEndpoints(served, next)) {

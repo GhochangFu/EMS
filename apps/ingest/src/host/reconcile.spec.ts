@@ -54,7 +54,14 @@ function running(
   return new Map(
     Object.entries(entries).map(([k, devices]) => [
       key(k),
-      { devices: new Set(devices), fingerprint, credentialFingerprint },
+      {
+        devices: new Set(devices),
+        fingerprint,
+        credentialFingerprint,
+        configFingerprint: "",
+        pollIntervalMs: null,
+        pollIntervalUsesDefault: true,
+      },
     ]),
   );
 }
@@ -634,4 +641,96 @@ export async function runRegistryCredentialReplaceTests(): Promise<void> {
   }
   await w.registry.reload([withCredentials(plan("a:1", ["R1"]), "cred-B", "new-secret")]);
   assert(w.builds() === 2, "the new fingerprint is what the registry now compares against");
+}
+
+// ---- poll endpoints (ADR 0016 Amendment 10 (a), F1.2 plan T3.5) -------------
+
+/** One running Modbus endpoint, as the registry records it. */
+function runningPoll(over: Partial<RunningEndpoint> = {}): ReadonlyMap<string, RunningEndpoint> {
+  return new Map([
+    [
+      key("gw:502", "modbus_tcp"),
+      {
+        devices: new Set(["M1"]),
+        fingerprint: "fp-0",
+        credentialFingerprint: "cred-0",
+        configFingerprint: "cfg-A",
+        pollIntervalMs: 10_000,
+        pollIntervalUsesDefault: false,
+        ...over,
+      },
+    ],
+  ]);
+}
+
+function pollPlan(over: Partial<EndpointPlan> = {}): EndpointPlan {
+  return {
+    ...plan("gw:502", ["M1"], "modbus_tcp"),
+    configFingerprint: "cfg-A",
+    pollIntervalMs: 10_000,
+    pollIntervalUsesDefault: false,
+    ...over,
+  };
+}
+
+const reasonOf = (actions: readonly ReconcileAction[]): string =>
+  actions.map((a) => (a.kind === "replace" ? `replace:${a.reason ?? "devices"}` : a.kind)).join(",");
+
+/** Same devices, new interval → replace with poll-interval-changed; unchanged → swap-index. */
+export function runDiffPollIntervalReplacesTests(): void {
+  assert(reasonOf(diffEndpoints(runningPoll(), [pollPlan()])) === "swap-index", "unchanged values must replace nothing");
+  const moved = diffEndpoints(runningPoll(), [pollPlan({ pollIntervalMs: 2_000 })]);
+  assert(reasonOf(moved) === "replace:poll-interval-changed", `a new interval: ${reasonOf(moved)}`);
+  const toDefault = diffEndpoints(runningPoll(), [pollPlan({ pollIntervalUsesDefault: true })]);
+  assert(reasonOf(toDefault) === "replace:poll-interval-changed", `an RTU now on the default: ${reasonOf(toDefault)}`);
+  const cleared = diffEndpoints(runningPoll(), [pollPlan({ pollIntervalMs: null, pollIntervalUsesDefault: true })]);
+  assert(reasonOf(cleared) === "replace:poll-interval-changed", `a cleared interval: ${reasonOf(cleared)}`);
+}
+
+/** Same devices, new config fingerprint → replace with device-config-changed. */
+export function runDiffDeviceConfigReplacesTests(): void {
+  const moved = diffEndpoints(runningPoll(), [pollPlan({ configFingerprint: "cfg-B" })]);
+  assert(reasonOf(moved) === "replace:device-config-changed", `new registers: ${reasonOf(moved)}`);
+}
+
+/** The order of reasons: devices, decoder, config, credentials, interval. */
+export function runDiffPollReasonOrderTests(): void {
+  const everything = pollPlan({
+    configFingerprint: "cfg-B",
+    credentialFingerprint: "cred-B",
+    pollIntervalMs: 2_000,
+    decoderFingerprint: "fp-B",
+  });
+  assert(
+    reasonOf(diffEndpoints(runningPoll(), [{ ...everything, bindings: [...everything.bindings, { rtuId: "id-M2", rtuCode: "M2", deviceKey: "M2", device: {}, sourceKeys: [] }] }])) ===
+      "replace:devices",
+    "the device set wins",
+  );
+  assert(reasonOf(diffEndpoints(runningPoll(), [everything])) === "replace:payload-format-changed", "the decoder is next");
+  const noDecoder = { ...everything, decoderFingerprint: "fp-0" };
+  assert(reasonOf(diffEndpoints(runningPoll(), [noDecoder])) === "replace:device-config-changed", "then the config");
+  const noConfig = { ...noDecoder, configFingerprint: "cfg-A" };
+  assert(reasonOf(diffEndpoints(runningPoll(), [noConfig])) === "replace:credentials-changed", "then the credentials");
+  const noCredentials = { ...noConfig, credentialFingerprint: "cred-0" };
+  assert(reasonOf(diffEndpoints(runningPoll(), [noCredentials])) === "replace:poll-interval-changed", "then the interval");
+}
+
+/** The registry records the new fields, so a second reload with the same plan replaces nothing. */
+export async function runRegistryPollReplaceTests(): Promise<void> {
+  const w = world();
+  await w.registry.reload([pollPlan()]);
+  await w.registry.reload([pollPlan({ pollIntervalMs: 2_000 })]);
+  assert(w.builds() === 2, "a new interval rebuilds the endpoint");
+  assert(w.lastBuilt()?.pollIntervalMs === 2_000, "the replacement runs the new interval");
+  assert(
+    w.logged("endpoint replaced")[0]?.fields?.reason === "poll-interval-changed",
+    `the replace names its reason: ${JSON.stringify(w.logged("endpoint replaced")[0]?.fields)}`,
+  );
+  await w.registry.reload([pollPlan({ pollIntervalMs: 2_000 })]);
+  assert(w.builds() === 2, "the same interval again replaces nothing");
+  await w.registry.reload([pollPlan({ pollIntervalMs: 2_000, configFingerprint: "cfg-B" })]);
+  assert(w.builds() === 3, "new registers rebuild the endpoint");
+  assert(w.logged("endpoint replaced")[1]?.fields?.reason === "device-config-changed", "and name their reason");
+  await w.registry.reload([pollPlan({ pollIntervalMs: 2_000, configFingerprint: "cfg-B" })]);
+  assert(w.builds() === 3, "the new config fingerprint is what the registry now compares against");
 }
