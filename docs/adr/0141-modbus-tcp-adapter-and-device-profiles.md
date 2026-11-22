@@ -544,11 +544,11 @@ rule (Amendment 10 (c)) are new. Re-measure the line numbers at sweep time.
 
 ## Amendment 2 — build rulings from PRs 2–4 (`F1.2`, 2026-11-22)
 
-**Status:** Proposed 2026-11-22. The owner ruled three questions in chat the
-same day, one at a time, each as recommended ("Keep REVOKE", "Refuse 2nd
-organization", "Fold into Amendment 2"). They came out of the reviews of plan
-PRs 2–4 (#1487, #1488, #1490). No code that depends on part (a) is pushed
-before this amendment is accepted.
+**Status:** Accepted 2026-11-22 (owner, in chat: "I'm giving you permission
+to merge 1492"; proposed the same day). The owner ruled the three questions
+in chat the same day, one at a time, each as recommended ("Keep REVOKE",
+"Refuse 2nd organization", "Fold into Amendment 2"). They came out of the
+reviews of plan PRs 2–4 (#1487, #1488, #1490).
 
 **(a) Decision 5 — one poll endpoint serves one organization.** Decision 5
 keys a Modbus endpoint `modbus_tcp://<host>:<port>`, with no organization, so
