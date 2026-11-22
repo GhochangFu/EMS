@@ -11,3 +11,7 @@ describe("F4.334 PR 5 — the system prompt's payload-format rule (ADR 0099 Amen
   it("names a read tool the model is given", () => spec.theToolTheRuleNamesExists());
   it("lets a propose_ tool delete instead of saying nothing can be deleted", () => spec.thePromptLetsAProposeToolDelete());
 });
+
+describe("F4.398 the copilot system prompt names Verve (ADR 0142, plan OQ4)", () => {
+  it("opens as the Verve administrator copilot and names no older product", () => spec.thePromptOpensAsTheVerveCopilot());
+});

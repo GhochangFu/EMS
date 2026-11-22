@@ -8,6 +8,7 @@ import {
   myDialogStartsFromMeAndWritesMyRow,
   saveWritesReReadsMeAndCloses,
   theOrganizationDialogWritesItsRowAndInheritsThePortal,
+  theDefaultChoicesAreNamedVerve,
   thePortalLevelHasNoInherit,
 } from "./appearance-panel.spec";
 
@@ -25,6 +26,7 @@ describe("F4.341 the Appearance panel (ADR 0118 decision 11)", () => {
   it("AP2 Save writes the values, re-reads /auth/me and closes", () => saveWritesReReadsMeAndCloses());
   it("AP3 Inherit writes null and previews the inherited value", () => inheritWritesNullAndPreviewsTheInheritedValue());
   it("AP4 the portal level has no Inherit", () => thePortalLevelHasNoInherit());
+  it("AP7 the two default choices are named Verve, on the kept keys", () => theDefaultChoicesAreNamedVerve());
   it("AP5 the organization dialog inherits the portal default and writes its row", () => theOrganizationDialogWritesItsRowAndInheritsThePortal());
   it("AP6 my dialog starts from /auth/me and writes my row", () => myDialogStartsFromMeAndWritesMyRow());
 });

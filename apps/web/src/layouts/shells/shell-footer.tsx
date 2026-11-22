@@ -4,6 +4,7 @@ import type { AccessibleScope } from "@bms/shared";
 
 import { StatusBarClock } from "../../components/status-bar-clock";
 import { SystemStatusIndicator } from "../../components/system-status-indicator";
+import { PRODUCT_NAME } from "../../lib/brand";
 
 /** `F4.341` PR 5 — the page area under the shell: the KPI ribbon and the body, moved verbatim. */
 export function ShellMain({
@@ -38,7 +39,7 @@ export function ShellFooter() {
   return (
     <footer className="flex h-8 shrink-0 items-center justify-between bg-chrome px-4 text-xs text-on-dark/70">
       <span className="flex items-center gap-2">
-        <span>IONSiTE NEXUS · telemetry-driven</span>
+        <span>{PRODUCT_NAME} · telemetry-driven</span>
         <StatusBarClock />
         <SystemStatusIndicator />
       </span>

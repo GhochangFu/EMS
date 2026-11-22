@@ -1,8 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
-  assertTheTestNotificationBodyNamesIonsiteNexus,
-  assertTheTestNotificationSubjectNamesIonsiteNexus,
+  assertTheTestNotificationBodyNamesVerve,
+  assertTheTestNotificationSubjectNamesVerve,
   runNotificationsServiceTests,
 } from "./notifications.service.spec";
 
@@ -13,12 +13,12 @@ describe("F3.8 notifications service", () => {
   });
 });
 
-describe("F3.33 the test notification names IONSiTE NEXUS", () => {
-  it("puts IONSiTE NEXUS and the channel code in the subject", async () => {
-    await assertTheTestNotificationSubjectNamesIonsiteNexus();
+describe("F4.398 the test notification names Verve", () => {
+  it("puts Verve and the channel code in the subject", async () => {
+    await assertTheTestNotificationSubjectNamesVerve();
   });
 
-  it("puts IONSiTE NEXUS in the body", async () => {
-    await assertTheTestNotificationBodyNamesIonsiteNexus();
+  it("puts Verve in the body", async () => {
+    await assertTheTestNotificationBodyNamesVerve();
   });
 });

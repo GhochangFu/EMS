@@ -29,7 +29,7 @@ afterEach(() => {
   useAuthStore.setState({ authFailureReason: null });
 });
 
-describe("F3.33 the auth callback names IONSiTE NEXUS", () => {
+describe("F4.398 the auth callback names Verve", () => {
   it("A1 reads the waiting sentence", () => {
     readsTheWaitingSentence();
   });

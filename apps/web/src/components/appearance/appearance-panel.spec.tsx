@@ -85,6 +85,19 @@ export async function inheritWritesNullAndPreviewsTheInheritedValue(): Promise<v
   await waitFor(() => expect(save).toHaveBeenCalledWith({ designSystem: null, colourProfile: null }));
 }
 
+/** `F4.398` (ADR 0142 Amendment 1 item 7) — the two default choices read Verve; the stored keys stay `nexus-soft` and `nexus`. */
+export function theDefaultChoicesAreNamedVerve(): void {
+  signedInOnNexus();
+  withClient(
+    <AppearancePanel levelLabel="Portal" initial={{ designSystem: "nexus-soft", colourProfile: "nexus" }} allowInherit={false} save={vi.fn()} onDone={vi.fn()} />,
+  );
+  expect(screen.getByText("Verve Soft (default)")).toBeInTheDocument();
+  expect(screen.getByText("Verve (default)")).toBeInTheDocument();
+  expect(screen.getByText("The default colours: the green accent.")).toBeInTheDocument();
+  expect((screen.getByRole("radio", { name: /Verve Soft \(default\)/ }) as HTMLInputElement).value).toBe("nexus-soft");
+  expect(screen.queryAllByText(/\bion\s?site|nexus/i)).toEqual([]);
+}
+
 export function thePortalLevelHasNoInherit(): void {
   signedInOnNexus();
   withClient(

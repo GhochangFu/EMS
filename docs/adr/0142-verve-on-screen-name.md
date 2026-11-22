@@ -219,3 +219,101 @@ decisions 2, 3, 5, 6 and 7.
 | A2 | The crop's tagline differs from decision 4. Which is final? | "The pulse of every site" · "Intelligent energy. Seamless control." | **"The pulse of every site"** — item 4 |
 | A4 | "Nexus Soft (default)" on the Appearance screen — rename it? | Rename the label, keep the keys (recommended) · keep "Nexus Soft" | **Rename the label** — item 7 |
 | A5 | The colour gate permits no fixed colour; the logo needs twelve. | One exact exception (recommended) · the logo follows the theme. Put again with the consequence: keep the approved colours · follow the theme · fixed by default, themed on request | First "the logo follows the theme"; on the second asking **"Fixed by default, themed on request"** — item 8, `F4.399` |
+
+## Amendment 2 — the header logo sits by its letters; the login logo is animated (`F4.398`) (owner, 2026-11-22)
+
+**Status: Accepted — 2026-11-22** (owner, in chat: "Accept"; proposed the
+same day). After `F4.398` deployed to the demo host, the owner looked at the
+header and said "this alignment looks a bit off", then asked for the logo to
+be animated, "specially the first letter, the pulse V". Four animations were
+shown on a preview page (draw-on · travelling pulse · heartbeat · draw-on then
+travelling pulse); the owner chose the fourth. This amendment records both
+changes against decision 3.
+
+1. **In a header the logo is placed by its letters, not by its box** (amends
+   decision 3). The tall peak of the pulse puts the centre of the letters
+   "erve" 21 % of the logo's height below the centre of the logo's box, so a
+   logo centred by its box showed the letters about 7 px below the header text
+   beside it. The header logo is lifted by 21 % of its own height: the letters
+   sit on the header's centre line and the peak rises above it. The 48 px
+   sidebar-shell header keeps the 32 px logo. The 40 px rail-shell header
+   takes a 28 px logo, because a lifted 32 px logo would put the peak above
+   the header. The login hero is not lifted.
+2. **The login page's logo is animated; every other logo is static** (amends
+   decision 3, which described a static mark).
+   - *On load, once*: the pulse draws from left to right in about 1.1 s, and
+     the letters fade in behind it.
+   - *Then, every 6 s*: a soft light travels along the pulse, as a trace
+     crosses a monitor. The shape of the pulse does not move.
+   - The header and rail logos, the favicon and the asset files stay static.
+     An operator looks at the header for hours; motion there competes with the
+     alarm bar (ADR 0130).
+3. **How it is built.** CSS keyframes only — no package, no script timer. The
+   drawing does not change: the animated logo adds a clip for the draw-on and
+   a masked, lighter copy of the same pulse path for the travelling light, and
+   the pulse keeps its one fill and one gradient (Amendment 1 item 3). The
+   light takes the logo's own white from the logo data file, so the twelve
+   pinned colours of Amendment 1 item 8 stay twelve.
+4. **Reduced motion.** A user whose device asks for reduced motion
+   (`prefers-reduced-motion: reduce`) gets the static logo: no draw-on and no
+   travelling light.
+
+| # | Question | Options put | Ruling |
+|---|---|---|---|
+| B1 | The header logo's alignment "looks a bit off" — what is the fix? | — (owner's screenshot of the demo host; measured: letters 6.7 px below the header's centre line) | **Place the logo by its letters** — item 1 |
+| B2 | Which animation? | A draw-on · B travelling pulse · C heartbeat · D draw-on, then travelling pulse (recommended, on the login page only) | **D** — item 2 |
+
+## Amendment 3 — the login page: a centred hero over a site network, and no client name (`F4.398`) (owner, 2026-11-22)
+
+**Status: Accepted — 2026-11-22** (owner, in chat: "Accept, build it"; proposed
+the same day). With Amendment 2 on the demo host, the
+owner looked at the login page and named three faults: the left panel "is
+looking very blank"; the logo is centred while the headline and the text start
+at the left edge; and the text names a client — "this product is not for Ion
+Exchange anymore". The owner asked for a layout before any change. Three
+layouts were drawn (left-aligned stack · centred hero · product preview); the
+owner chose the centred hero and asked for variations with motion. Four were
+shown on a preview page (pulse band · heartbeat rings · site network ·
+minimal); the owner chose the **site network**, with one condition: "make sure
+it does not obstruct any text". This amendment covers the login page only.
+
+1. **The login hero is centred.** The logo, the headline, the description and
+   the rows under them share the centre line of the left panel. The sign-in
+   card on the right does not change.
+2. **The login page names no client** (amends decision 1 for this page only).
+   The description becomes *One operator console for power, HVAC, water,
+   utilities, alarms and work orders, across every site you run.* Decision 1's
+   "every existing mention of Ion Exchange (India) Ltd. as the client stays"
+   still holds everywhere else until the owner rules on those places;
+   "Powered By: Euphoria Infotech India Limited" stays.
+3. **The panel is filled with what the product does, not with numbers.**
+   Under the description: five domain chips — Power, HVAC, UPS, Water,
+   Environment — and, at the foot, three feature tiles: *Real-time telemetry*,
+   *Alarms that reach people*, *Energy insight*. The three tiles the page had
+   — "10 Sites", "Live Telemetry", "99.98% Uptime" — were fixed text, not
+   measured values, and are removed.
+4. **A site network sits behind the hero.** A faint drawing of sites joined by
+   lines fills the panel, and single sites brighten in turn. It is decoration:
+   hidden from assistive technology, never focusable, drawn from the ADR 0078
+   colour roles (it is not the logo, so decision 3's fixed colours do not
+   apply).
+5. **The network never sits under text** (the owner's condition).
+   - No site is drawn inside the *clear zone*, the ellipse that holds the
+     logo, the headline, the description and the chips; the lines fade out
+     before they reach it.
+   - The feature tiles are opaque, so nothing shows through them.
+   - The network shows only where the hero is a side-by-side column (the `lg`
+     breakpoint and wider). On a narrower screen the text reflows and fills
+     the panel, and the network is not drawn.
+   - A test holds the first rule against the list of sites.
+6. **Motion.** The content rises in, one piece after the other, once on load;
+   sites brighten in turn on a slow cycle; the logo keeps Amendment 2's
+   animation. Transform and opacity only, plain CSS keyframes, no package. As
+   in Amendment 2 item 4, a user whose device asks for reduced motion gets a
+   still page.
+
+| # | Question | Options put | Ruling |
+|---|---|---|---|
+| C1 | Which layout for the login page? | A left-aligned stack with a pulse band (recommended) · B centred hero · C product preview | **B, the centred hero** — item 1 |
+| C2 | Which variation of B, with motion? | B1 pulse band (recommended) · B2 heartbeat rings · B3 site network · B4 minimal | **B3, the site network — "make sure it does not obstruct any text"** — items 4, 5 and 6 |
+| C3 | The login text names Ion Exchange. | — (owner: "this product is not for Ion Exchange anymore … that particular wording has to be removed") | **Removed from the login page** — item 2 |

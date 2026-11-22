@@ -541,3 +541,61 @@ Amendment 10 (a)); the same row lists `MQTT_PLAINTEXT_HOSTS` and must list
 `MODBUS_TCP_HOSTS`; the compose topology (the `modbus-sim` network and the
 `modbus` profile, ADR 0016 Amendment 10 (b)) and the poll-adapter restart
 rule (Amendment 10 (c)) are new. Re-measure the line numbers at sweep time.
+
+## Amendment 2 — build rulings from PRs 2–4 (`F1.2`, 2026-11-22)
+
+**Status:** Accepted 2026-11-22 (owner, in chat: "I'm giving you permission
+to merge 1492"; proposed the same day). The owner ruled the three questions
+in chat the same day, one at a time, each as recommended ("Keep REVOKE",
+"Refuse 2nd organization", "Fold into Amendment 2"). They came out of the
+reviews of plan PRs 2–4 (#1487, #1488, #1490).
+
+**(a) Decision 5 — one poll endpoint serves one organization.** Decision 5
+keys a Modbus endpoint `modbus_tcp://<host>:<port>`, with no organization, so
+two organizations' RTUs behind one gateway shared one socket and one poll
+loop. Under ruling P9 (the shortest interval wins), organization A's
+interval then set the rate at which B's meters were read, A's saves replaced
+the endpoint B used, and A's RTU could name B's unit id and read B's
+registers (PR 3 security review M2).
+
+- For every **poll** protocol, the cloud host's binding plan serves an
+  endpoint for the organization of the **first** RTU planned on it (the
+  binding query's `ORDER BY r.id`). An RTU of another organization on the same
+  `(protocol, endpointKey)` is skipped by name as
+  `endpoint-organization-conflict`, with the endpoint key as its detail, shown
+  on the health body like every other skip. It is never dialled.
+- The endpoint key is unchanged; nothing in the stored data changes. MQTT,
+  which is push and where one broker legitimately serves many organizations,
+  is not affected. The edge is not affected: one box serves one site.
+- A gateway genuinely shared across organizations would need its own row and
+  ADR; none is known.
+- Built as a commit on plan PR 4 (#1490), after this amendment is accepted.
+
+**(b) Decision 13 — profile rows are append-only by privilege.** The
+*Status* section's "the migration grants on the new table to the existing
+roles" and plan §5's "no GRANT line" are refined: migration `0164` writes no
+GRANT, and it **revokes** `UPDATE, DELETE` from `bms_tenant` and
+`INSERT, UPDATE, DELETE` from `bms_fleet` (the `0144` / `0162` shape), with a
+proof block. Ruling P2 — every save is a new row and a row is never edited —
+is then held by Postgres, not by API code alone, and a bound device's
+`{ code, version }` always names what was copied. A concurrent save from the
+same base version is settled by the unique key (`23505` → 409), not by
+`SELECT … FOR UPDATE`, which needs `UPDATE`. Deleting a profile, if ever
+wanted, needs a migration. Built in plan PR 2 (#1487).
+
+**(c) A correction to ADR 0016 Amendment 10 (a).** That text says
+"`defaultPollIntervalMs` stays on the factory". In the code it is a property
+of the **adapter instance** (`PollIngestAdapter`, `apps/ingest/src/adapter/types.ts`),
+not of the factory, so the binding plan cannot read it. Plan PR 3 therefore
+carries two fields on `EndpointPlan`: `pollIntervalMs` (the shortest value
+any RTU on the endpoint resolved from its own or its organization's setting,
+`null` when none did) and `pollIntervalUsesDefault` (true when at least one
+RTU fell through to the adapter default). The supervisor, which holds the
+adapter, sleeps `pollSleepMs(plan, adapter.defaultPollIntervalMs)`: the
+plan's value, the adapter default when there is none, and the shorter of the
+two when an RTU on the endpoint uses the default — so ruling P9 ("no device is
+read more slowly than its own setting") holds for an RTU with no setting too.
+The reload compares both fields. Nothing else in Amendment 10 changes.
+
+**What this amendment does not change.** Decisions 1–4 and 6–23 stand, and so
+do Amendment 1 and ADR 0016 Amendment 10 apart from the one sentence in (c).
