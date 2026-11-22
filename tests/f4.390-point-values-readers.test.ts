@@ -62,10 +62,10 @@ const READERS: Record<string, number> = {
   "alarms/alarm-details.service.ts": 1,
   // `F4.393`: live `now() - ${PUE_LATEST_WINDOW_SQL}`; `at` `(at − 900 s, at]` from a parameter.
   "telemetry/pue-ratio.ts": 1,
-  // `F4.393` PR 2: per-row lateral bounds, all chunks planned twice — envelope owed.
+  // `F4.393` PR 2: per-row lateral bounds, plus the batch's `$6`/`$7` envelope (delivered).
   "calc/calc-windows.service.ts": 2,
   "tariffs/register-read.ts": 2,
-  // `F4.393`: `readSamples` per-row (PR 2, envelope owed); `readInputTimes` a parameter range.
+  // `F4.393`: `readSamples` per-row plus its `$6`/`$7` envelope (PR 2, delivered); `readInputTimes` a parameter range.
   "calc-backfill/calc-backfill-reads.ts": 2,
   // `F4.393`: the per-asset bound plus the widest bound as a literal envelope.
   "dashboard-builder/sustainability-rollup.ts": 1,
@@ -104,6 +104,15 @@ const PINNED_BOUNDS: Record<string, readonly (readonly [string, number])[]> = {
     ["sql.raw(`interval '${n} ${unit === \"m\" ? \"minutes\" : \"hours\"}'`)", 1],
     // `latestPointValues`: a bound `timestamptz` floor.
     ["AND pv.time > $3::timestamptz", 1],
+  ],
+  // `F4.393` PR 2: the batch's envelope as bound parameters, in both laterals.
+  "tariffs/register-read.ts": [["AND v.time >= $6 AND v.time < $7", 2]],
+  "calc/calc-windows.service.ts": [["AND v.time >= $6 AND v.time < $7", 2]],
+  "calc-backfill/calc-backfill-reads.ts": [
+    ["AND v.time >= $6::timestamptz AND v.time < $7::timestamptz", 1],
+    // `readInputTimes`: a parameter range, planned away — pinned.
+    ["AND time >= $3::timestamptz", 1],
+    ["AND time < $4::timestamptz", 1],
   ],
 };
 

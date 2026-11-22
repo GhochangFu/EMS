@@ -3,8 +3,11 @@ import type pg from "pg";
 import { createDb } from "@bms/db";
 import { encodePointRef } from "@bms/shared";
 
+import { CalcBackfillReads } from "../calc-backfill/calc-backfill-reads";
+import { CalcWindowsService, type WindowReadRequest } from "../calc/calc-windows.service";
 import { MEASURED_ROLLUP_FRESH_MS, readLatestWithinBounds } from "../dashboard-builder/sustainability-rollup";
 import type { BmsTx } from "../database/tenant-context";
+import { readRegisterProbes } from "../tariffs/register-read";
 import { planShape, recordingClient, seedDayChunks } from "../testing/plan-shape";
 import type { Recorded } from "../testing/recording-pool";
 import { latestPueRatio } from "./pue-ratio";
@@ -167,4 +170,67 @@ export async function assertRollupLatestAtPlansOnlyItsWindow(client: pg.PoolClie
   // As for the PUE `at` arm: assert plan-time pruning, not only the surviving chunk count.
   assert(shape.excludedAtStartup === 0, `roll-up latest at: ${shape.excludedAtStartup} excluded at startup`);
   assert(shape.chunks <= 2, `roll-up latest at: ${shape.chunks} chunks in the plan of ${fixture.total}`);
+}
+
+/** `readRegisterProbes` (plan §5, Task 2.1): two requests inside `[now − 12 d, now − 10 d)` plan only those days. */
+export async function assertRegisterProbesPlanOnlyTheirEnvelope(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedDayChunks(client);
+  const rec = recordingClient(client);
+  const from = new Date(Date.now() - 12 * DAY_MS);
+  const to = new Date(Date.now() - 10 * DAY_MS);
+  await readRegisterProbes(rec.pool, [
+    { assetId: fixture.assetId, pointKey: fixture.pointKey as "kwh_total", from, to },
+    { assetId: fixture.assetId, pointKey: fixture.pointKey as "kwh_total", from, to: new Date((from.getTime() + to.getTime()) / 2) },
+  ]);
+  const shape = await planShape(client, only(rec.statements, "register probes"));
+  assert(shape.chunks <= 4, `register probes: ${shape.chunks} chunks in the plan of ${fixture.total}`);
+}
+
+/** `CalcWindowsService.readDeltas` (plan §5, Task 2.2): two rolling deltas ending `now − 10 d` plan only those days. */
+export async function assertDeltaProbesPlanOnlyTheirEnvelope(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedDayChunks(client);
+  const rec = recordingClient(client);
+  const endMs = Date.now() - 10 * DAY_MS;
+  const request = (minutes: number): WindowReadRequest => ({
+    ownerAssetId: fixture.assetId,
+    readAssetId: fixture.assetId,
+    node: {
+      kind: "window",
+      fn: "delta",
+      ref: { kind: "ref", pointKey: fixture.pointKey, position: 0 },
+      window: { kind: "rolling", minutes },
+      position: 0,
+    },
+    endMs,
+  });
+  await new CalcWindowsService(rec.pool, createDb(rec.pool)).resolveReads([request(60), request(1440)]);
+  const probes = rec.statements.filter((s) => /FROM telemetry\.point_values v/.test(s.text));
+  assert(probes.length === 1, `delta probes: expected one statement, saw ${probes.length}`);
+  const shape = await planShape(client, probes[0] as Recorded);
+  assert(shape.chunks <= 4, `delta probes: ${shape.chunks} chunks in the plan of ${fixture.total}`);
+}
+
+/** `CalcBackfillReads.readSamples` (plan §5, Task 2.3): instants on day −10 plan only that day's chunks. */
+export async function assertReadSamplesPlanOnlyTheirEnvelope(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedDayChunks(client);
+  const rec = recordingClient(client);
+  const t = Date.now() - 10 * DAY_MS;
+  await new CalcBackfillReads(rec.pool).readSamples(
+    [{ assetId: fixture.assetId, pointKey: fixture.pointKey }],
+    [t, t + 300_000],
+    900,
+  );
+  const shape = await planShape(client, only(rec.statements, "readSamples"));
+  assert(shape.chunks <= 3, `readSamples: ${shape.chunks} chunks in the plan of ${fixture.total}`);
+}
+
+/** `CalcBackfillReads.readInputTimes` (pin): a parameter range over day −10, planned away. */
+export async function assertReadInputTimesPlansOnlyItsDay(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedDayChunks(client);
+  const rec = recordingClient(client);
+  const t = Date.now() - 10 * DAY_MS;
+  await new CalcBackfillReads(rec.pool).readInputTimes(fixture.assetId, [fixture.pointKey], t, t + DAY_MS, 1000);
+  const shape = await planShape(client, only(rec.statements, "readInputTimes"));
+  assert(shape.excludedAtStartup === 0, `readInputTimes: ${shape.excludedAtStartup} excluded at startup`);
+  assert(shape.chunks <= 3, `readInputTimes: ${shape.chunks} chunks in the plan of ${fixture.total}`);
 }
