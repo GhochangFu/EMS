@@ -71,6 +71,11 @@ export const organizations = bmsSchema.table("organizations", {
   // either; `PATCH /admin/organizations/:id` (global admin) is the writer.
   energyFeatures: varchar("energy_features", { length: 8 }).notNull().default("auto"),
   cardPrimaryMetric: varchar("card_primary_metric", { length: 16 }).notNull().default("auto"),
+  // F1.2 / ADR 0141 decision 10 (migration 0164): the organization's default
+  // poll interval for every poll protocol, between an endpoint's own
+  // `pollIntervalMs` and the adapter default. Nullable, no default; a CHECK
+  // holds it to `pollIntervalMsSchema`'s bounds (1,000-3,600,000 ms).
+  defaultPollIntervalMs: integer("default_poll_interval_ms"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
