@@ -14,6 +14,7 @@ import {
   editingATlsRtuShowsNoTlsLine,
   onlyAPlainRtuShowsThePlainMqttPill,
   aReleasedTopicIsNamedOnTheRow,
+  theModbusActionFollowsTheConnection,
 } from "./rtus-page.spec";
 
 /** `F3.86` PR 3a: the form is a wizard, and a walk through its steps takes seconds under jsdom. */
@@ -72,5 +73,9 @@ describe("F4.182 RTUs admin page — device ID (rtu_code)", () => {
 
   it("F4.339 names a released topic on the row", async () => {
     await aReleasedTopicIsNamedOnTheRow();
+  });
+
+  it("RM1 Modbus settings shows on an unconnected or Modbus RTU, never an MQTT one (F1.2)", async () => {
+    await theModbusActionFollowsTheConnection();
   });
 }, WIZARD_WALK_MS);

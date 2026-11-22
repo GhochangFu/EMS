@@ -782,3 +782,32 @@ export async function theEnergySettingsActionFollowsTheRole(): Promise<void> {
   const other = (await screen.findByText("Rupee organization")).closest("tr")!;
   expect(within(other).queryByRole("button", { name: "Energy settings" })).toBeNull();
 }
+
+/**
+ * PI1 (`F1.2`, ADR 0141 Amendment 1 (c), ruling P12a, plan T7.4) — the global admin and an
+ * `organization_admin` see **Poll interval** on each row, and it opens that row's dialog on the
+ * stored default in seconds; a `location_admin`, whom the API would refuse, sees no such action.
+ */
+export async function thePollIntervalActionFollowsTheRole(): Promise<void> {
+  for (const role of ["admin", "organization_admin"] as const) {
+    stubApi();
+    vi.spyOn(api, "fetchAdminOrganizations").mockResolvedValue({
+      items: ORGANIZATIONS.items.map((item) => ({ ...item, defaultPollIntervalMs: 120_000 })),
+    });
+    renderPageAs(role);
+    const row = (await screen.findByText("Rupee organization")).closest("tr")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Poll interval" }));
+    screen.getByRole("dialog", { name: "Poll interval — Rupee organization" });
+    expect((screen.getByLabelText("Default poll interval (seconds)") as HTMLInputElement).value).toBe("120");
+    cleanup();
+    vi.restoreAllMocks();
+  }
+  for (const role of ["location_admin", "asset_group_admin"] as const) {
+    stubApi();
+    renderPageAs(role);
+    const row = (await screen.findByText("Rupee organization")).closest("tr")!;
+    expect(within(row).queryByRole("button", { name: "Poll interval" })).toBeNull();
+    cleanup();
+    vi.restoreAllMocks();
+  }
+}
