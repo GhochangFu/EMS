@@ -32,6 +32,7 @@ const NODE_FREE = [
   "packages/shared/src/ingest-adapters/modbus-codec.ts",
   "packages/shared/src/ingest-modbus.ts",
   "packages/shared/src/ingest-poll-interval.ts",
+  "packages/shared/src/ingest-adapters/modbus-tcp-hosts.ts",
 ] as const;
 
 /**

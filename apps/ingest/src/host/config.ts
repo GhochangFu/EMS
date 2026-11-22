@@ -20,7 +20,9 @@ import {
   MAX_NOTIFY_LIVE_WINDOW_MS,
   MIN_NOTIFY_LIVE_WINDOW_MS,
   NOTIFY_LIVE_WINDOW_MS,
+  parseModbusTcpHosts,
   parseMqttPlaintextHosts,
+  type ModbusTcpHostAllowList,
 } from "@bms/shared/ingest";
 
 export type HostConfig = {
@@ -102,6 +104,13 @@ export type HostConfig = {
    * reaches this field: the shared parser throws and the host refuses to start.
    */
   readonly mqttPlaintextHosts: ReadonlySet<string>;
+  /**
+   * The Modbus hosts the cloud host may dial (`MODBUS_TCP_HOSTS`, ADR 0141
+   * decision 22): host names, IP literals and IPv4 CIDR blocks. Empty — the
+   * default — means the cloud host dials no Modbus endpoint. A bad entry never
+   * reaches this field: the shared parser throws and the host refuses to start.
+   */
+  readonly modbusTcpHosts: ModbusTcpHostAllowList;
   /**
    * How old a written row's `time` may be and still be sent on `bms_telemetry`
    * (`INGEST_NOTIFY_LIVE_WINDOW_MS`, ADR 0123 decision 10). Defaults to the
@@ -337,6 +346,15 @@ export function readMqttPlaintextHosts(env: NodeJS.ProcessEnv): ReadonlySet<stri
   return parseMqttPlaintextHosts(env.MQTT_PLAINTEXT_HOSTS);
 }
 
+/**
+ * The Modbus host allow-list (ADR 0141 decision 22). Unset means the cloud host
+ * dials no Modbus endpoint. A bad entry throws, and the process refuses to
+ * start. The edge does not read it: its devices are on the site LAN by design.
+ */
+export function readModbusTcpHosts(env: NodeJS.ProcessEnv): ModbusTcpHostAllowList {
+  return parseModbusTcpHosts(env.MODBUS_TCP_HOSTS);
+}
+
 /** Pure over its input, so the parsing rules are testable without mutating `process.env`. */
 export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   const databaseUrl = env.DATABASE_URL;
@@ -420,6 +438,8 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
     // ADR 0114 decision 1: not wrapped, so a bad entry escapes to `main().catch`
     // and the host refuses to start, like the credential-key refusal above.
     mqttPlaintextHosts: readMqttPlaintextHosts(env),
+    // ADR 0141 decision 22: not wrapped either, so a bad entry refuses start.
+    modbusTcpHosts: readModbusTcpHosts(env),
     notifyLiveWindowMs: readNotifyLiveWindowMs(env.INGEST_NOTIFY_LIVE_WINDOW_MS),
     uplinkPort: readUplinkPort(env.INGEST_UPLINK_PORT, healthPort),
     uplinkMaxSamplesPerS: readUplinkRate(env.INGEST_UPLINK_MAX_SAMPLES_PER_S),
