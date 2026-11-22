@@ -99,6 +99,7 @@ export function assertW12AnUploadKeepsTemplatesAndReplacesAssets(): void {
     rtus: [],
     assets: [UPLOADED_ASSET],
     rtuCredentials: [],
+    rtuProfileCodes: [],
     displayNameFixes: [],
   };
   const patch = new OnboardingExcelService().toDraftPatch(parsed, stored);

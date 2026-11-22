@@ -425,7 +425,7 @@ const FOUR = [
  * service throws — an accidental protocol-question intercept reddens the case.
  * The vocabulary is the four seeded `bms.location_types` rows (`F4.157`, `F4.162`).
  */
-function ruleBasedChatService(): OnboardingChatService {
+export function ruleBasedChatService(): OnboardingChatService {
   const intercepted = (): never => {
     throw new Error("the protocol-question intercept answered a guided-mode case");
   };

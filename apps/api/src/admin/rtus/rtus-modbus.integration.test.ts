@@ -19,6 +19,7 @@ import {
   assertAnotherSpellingIsTheSameEndpoint,
   assertConcurrentBindsSerialise,
   assertOnlyACloudServedActiveRtuBlocks,
+  assertReactivationKeepsOneOrganizationPerEndpoint,
   assertAnotherOrganizationsEndpointIs409,
   assertAnotherOrganizationsProfileIs404,
   assertARebindRewritesTheConfig,
@@ -192,6 +193,10 @@ describe.skipIf(!connectionString || !superuserConnectionString)("F1.2 — the R
 
   it("B9c treats another spelling of one IPv6 address as the same endpoint (review M1)", async () => {
     await assertAnotherSpellingIsTheSameEndpoint(ctx);
+  });
+
+  it("B12 refuses to reactivate a Modbus RTU onto another organization's endpoint (PR 11 review L1)", async () => {
+    await assertReactivationKeepsOneOrganizationPerEndpoint(ctx);
   });
 
   it("B11 serialises two organizations' concurrent binds of one endpoint (review L1)", async () => {

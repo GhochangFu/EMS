@@ -238,3 +238,64 @@ export function assertTheHostHasOneCanonicalSpelling(): void {
   expect(modbusDraftConfigSchema.parse({ host: "fd00:0::10" }).host).toBe(v6);
   expect(modbusDraftConfigSchema.parse({ host: "Meter.Local." }).host).toBe("meter.local");
 }
+
+const PROFILE_ID = "6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b";
+
+/**
+ * M22 — `F1.2` plan PR 11 (ADR 0141 Amendment 1 (f), decision 23): a Modbus draft may name one of
+ * its organization's device profiles by id. The commit copies that profile's registers, so the
+ * draft names a profile beside a unit id and lists no registers and no provenance of its own.
+ */
+export function assertTheDraftMayNameAProfileById(): void {
+  const draft = modbusDraftConfigSchema.parse({ host: "meter", profileId: PROFILE_ID, device: { unitId: 1 } });
+  expect(draft).toEqual({ host: "meter", profileId: PROFILE_ID, device: { unitId: 1 } });
+  expect(modbusDraftConfigSchema.safeParse({ host: "meter", profileId: "not-a-uuid", device: { unitId: 1 } }).success).toBe(
+    false,
+  );
+}
+
+/** M23 — a profile needs the device's unit id: the commit cannot bind without one. */
+export function assertAProfileNeedsAUnitId(): void {
+  const result = modbusDraftConfigSchema.safeParse({ host: "meter", profileId: PROFILE_ID });
+  expect(result.success).toBe(false);
+  expect(issuePaths(result)).toEqual(["device.unitId"]);
+}
+
+/** M24 — a draft names a profile or lists registers (or a provenance), never both. */
+export function assertAProfileExcludesRegistersAndProvenance(): void {
+  const withRegisters = modbusDraftConfigSchema.safeParse({
+    host: "meter",
+    profileId: PROFILE_ID,
+    device: { unitId: 1, registers: registers(1) },
+  });
+  expect(withRegisters.success).toBe(false);
+  expect(issuePaths(withRegisters)).toEqual(["profileId"]);
+  const withProvenance = modbusDraftConfigSchema.safeParse({
+    host: "meter",
+    profileId: PROFILE_ID,
+    device: { unitId: 1, profile: { code: "pm5110", version: 1 } },
+  });
+  expect(withProvenance.success).toBe(false);
+  expect(issuePaths(withProvenance)).toEqual(["profileId"]);
+}
+
+/** M25 — §9.6: the profile issues are fixed text; none repeats the refused value. */
+export function assertTheProfileIssuesEchoNoValue(): void {
+  const SENTINEL = "s3ntinel-profile-id";
+  const results = [
+    modbusDraftConfigSchema.safeParse({ host: "meter", profileId: SENTINEL, device: { unitId: 1 } }),
+    modbusDraftConfigSchema.safeParse({ host: "meter", profileId: PROFILE_ID }),
+    modbusDraftConfigSchema.safeParse({
+      host: "meter",
+      profileId: PROFILE_ID,
+      device: { unitId: 1, registers: [register({ sourceKey: SENTINEL })] },
+    }),
+  ];
+  for (const result of results) {
+    expect(result.success).toBe(false);
+    for (const issue of result.success ? [] : result.error.issues) {
+      expect(issue.message).not.toContain(SENTINEL);
+      expect(issue.message).not.toContain(PROFILE_ID);
+    }
+  }
+}

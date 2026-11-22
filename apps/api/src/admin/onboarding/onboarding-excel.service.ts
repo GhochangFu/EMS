@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 // rather than restated. `@bms/shared` and not `@bms/shared/contracts` — apps/api
 // compiles with moduleResolution "node" and ignores the exports map (ADR 0030
 // Amendment 2).
-import { floorAreaUnitSchema, MAX_RTU_TOPIC_CHARS, ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
+import { deviceProfileCodeSchema, floorAreaUnitSchema, MAX_RTU_TOPIC_CHARS, ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
 import type { OnboardingDraft } from "@bms/shared";
 
 import { quoteCell, zipInflationProblem } from "../spreadsheet-guard";
@@ -49,8 +49,8 @@ import type { OnboardingDraftInput } from "./onboarding.schema";
  * without the credential they supplied. Refusing is the only answer that does
  * not invent a result.
  *
- * **The numbers.** The template's widest section is `RTU_HEADERS` at nine
- * columns, so {@link MAX_HEADER_COLUMNS} = 64 is roughly 7× the sheet this
+ * **The numbers.** The template's widest section is `RTU_HEADERS` at eleven
+ * columns (F1.2 PR 11), so {@link MAX_HEADER_COLUMNS} = 64 is roughly 6× the sheet this
  * system itself produces, and the worst case a workbook can still buy is
  * 20,101 × 64 = **1,286,464** cells. Not 20,102 × 64: the row test below is
  * `>=` and it runs *before* `sheet_to_json`, so the tallest range this parser
@@ -191,6 +191,12 @@ export type ParsedExcel = {
   rtus: NonNullable<OnboardingDraft["rtus"]>;
   assets: NonNullable<OnboardingDraft["assets"]>;
   rtuCredentials: { rtuIndex: number; credentials: Record<string, unknown> }[];
+  /**
+   * F1.2 plan PR 11 (ADR 0141 decision 23): each Modbus row's `profile_code`, checked against the
+   * code class but not yet resolved — the parser reads no database. `applyWorkbookProfiles`
+   * (`onboarding-device-profiles.ts`) resolves them for the session's organization.
+   */
+  rtuProfileCodes: { rtuIndex: number; code: string }[];
   displayNameFixes: string[];
 };
 
@@ -224,7 +230,14 @@ const RTU_HEADERS = [
   "tls",
   "username",
   "password",
+  // F1.2 plan PR 11 (ADR 0141 decision 23): a trailing pair for a Modbus TCP row, so a workbook
+  // built before them still reads — the device's unit id and a device profile, by code.
+  "unit_id",
+  "profile_code",
 ] as const;
+
+/** `F1.2` plan PR 11: a whole number of one to three digits; the draft schema bounds it to 0–247 or 255. */
+const UNIT_ID_CELL = /^\d{1,3}$/;
 
 const ASSET_HEADERS = [
   "asset_code",
@@ -276,6 +289,9 @@ export class OnboardingExcelService {
         "pheadmin",
         "",
       ],
+      // F1.2 PR 11 review L5: a Modbus TCP example. `profile_code` is left empty — a code is the
+      // organization's own (Device profiles page); with none the RTU is committed with ingest off.
+      [`${prefix}-RTU-3`, `${locationExample} RTU 3`, "modbus_tcp", "192.168.1.20", "502", "", "", "", "", "1", ""],
       [],
       ["ASSETS"],
       [...ASSET_HEADERS],
@@ -402,7 +418,7 @@ export class OnboardingExcelService {
     }
 
     const location = this.parseLocation(locationRows, activeLocationTypeCodes);
-    const { rtus: parsedRtus, rtuCredentials } = this.parseRtus(rtuRows);
+    const { rtus: parsedRtus, rtuCredentials, rtuProfileCodes } = this.parseRtus(rtuRows);
     const { rtus, displayNameFixes } = this.normalizeRtuDisplayNames(parsedRtus);
     const rtuCodeToIndex = new Map(rtus.map((rtu, index) => [rtu.code, index]));
     const parsedAssets = this.parseAssets(assetRows, location.name, rtuCodeToIndex);
@@ -412,6 +428,7 @@ export class OnboardingExcelService {
       rtus,
       assets: parsedAssets,
       rtuCredentials,
+      rtuProfileCodes,
       displayNameFixes,
     };
   }
@@ -614,9 +631,10 @@ export class OnboardingExcelService {
   private parseRtus(rows: string[][]): {
     rtus: NonNullable<OnboardingDraft["rtus"]>;
     rtuCredentials: ParsedExcel["rtuCredentials"];
+    rtuProfileCodes: ParsedExcel["rtuProfileCodes"];
   } {
     if (rows.length < 2) {
-      return { rtus: [], rtuCredentials: [] };
+      return { rtus: [], rtuCredentials: [], rtuProfileCodes: [] };
     }
     const headers = rows[0].map((h) => h.toLowerCase());
     const get = (values: string[], key: string): string => {
@@ -624,6 +642,7 @@ export class OnboardingExcelService {
       return idx >= 0 ? values[idx] ?? "" : "";
     };
     const rtuCredentials: ParsedExcel["rtuCredentials"] = [];
+    const rtuProfileCodes: ParsedExcel["rtuProfileCodes"] = [];
     const rtus = rows.slice(1).map((values, rtuIndex) => {
       // F4.104 — every bounded cell of this row, checked in `RTU_HEADERS`
       // column order: the leftmost broken column is the one the operator is
@@ -745,16 +764,50 @@ export class OnboardingExcelService {
           credentials: { username, password },
         });
       }
+      // F1.2 plan PR 11 (ADR 0141 decision 23): a Modbus row's unit id and profile code. Each cell
+      // is checked here and refused by row and column, never repeated (§4.3); the code is resolved
+      // for the session's organization by the upload, not here.
+      const unitIdCell = get(values, "unit_id").trim();
+      if (unitIdCell !== "" && !UNIT_ID_CELL.test(unitIdCell)) {
+        throw new BadRequestException(
+          `RTU row ${rtuIndex + 1} has a unit_id that is not a whole number; use 0 to 247, or 255, and upload the workbook again`,
+        );
+      }
+      // PR 11 review L4: a unit id on another protocol's row is refused, as a profile code is.
+      if (unitIdCell !== "" && protocol !== "modbus_tcp") {
+        throw new BadRequestException(
+          `RTU row ${rtuIndex + 1} names a unit_id, which applies to a Modbus TCP RTU only; clear it or set the protocol to modbus_tcp`,
+        );
+      }
+      const profileCode = get(values, "profile_code").trim();
+      if (profileCode !== "" && protocol !== "modbus_tcp") {
+        throw new BadRequestException(
+          `RTU row ${rtuIndex + 1} names a profile_code, which applies to a Modbus TCP RTU only; clear it or set the protocol to modbus_tcp`,
+        );
+      }
+      if (profileCode !== "" && !deviceProfileCodeSchema.safeParse(profileCode).success) {
+        throw new BadRequestException(
+          `RTU row ${rtuIndex + 1} has a profile_code that is not a device profile code (letters, digits, _ and -, at most 64); copy it from the Device profiles page and upload the workbook again`,
+        );
+      }
+      if (profileCode !== "") {
+        rtuProfileCodes.push({ rtuIndex, code: profileCode });
+      }
       return {
         code: rtuCode,
         displayName,
         protocol,
         // F1.2 (PR 4 code review 3): a Modbus TCP row carries only what
-        // `modbusDraftConfigSchema` accepts — host and port, 502 by default.
+        // `modbusDraftConfigSchema` accepts — host and port, 502 by default,
+        // and (plan PR 11) the unit id under `device`.
         // The MQTT columns (tls, topic) would refuse the whole workbook at commit.
         config:
           protocol === "modbus_tcp"
-            ? { host, port: Number.isFinite(port) ? port : 502 }
+            ? {
+                host,
+                port: Number.isFinite(port) ? port : 502,
+                ...(unitIdCell === "" ? {} : { device: { unitId: Number.parseInt(unitIdCell, 10) } }),
+              }
             : {
                 host,
                 port: Number.isFinite(port) ? port : 8883,
@@ -767,7 +820,7 @@ export class OnboardingExcelService {
         ...(protocol === "mqtt" ? { rtuCode } : {}),
       };
     });
-    return { rtus, rtuCredentials };
+    return { rtus, rtuCredentials, rtuProfileCodes };
   }
 
   /** Fixes duplicate or blank RTU display names using each RTU code. */

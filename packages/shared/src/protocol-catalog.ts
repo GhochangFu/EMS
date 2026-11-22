@@ -107,6 +107,8 @@ const PROTOCOL_CATALOG_BY_CODE: Readonly<Record<OnboardingProtocol, ProtocolCata
       "Reads coils, discrete inputs, holding and input registers over TCP, read only. The unit id goes under device; bind a device profile on the RTUs page to name the registers.",
     supportsDiscovery: false,
     requiredFields: ["host"],
+    // F1.2 PR 11 review L3: the draft schema accepts `profileId`, but it is not offered to the
+    // model, which has no way to resolve a profile id; the guided chat and the workbook set it.
     optionalFields: ["port", "timeoutMs", "interRequestDelayMs", "pollIntervalMs", "device"],
     exampleConfig: { host: "192.168.1.20", port: 502, pollIntervalMs: 10000, device: { unitId: 1 } },
     draftConfigSchema: modbusDraftConfigSchema,

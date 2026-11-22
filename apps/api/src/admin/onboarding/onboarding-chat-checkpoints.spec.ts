@@ -54,6 +54,8 @@ function echoDb(
     from: () => selectChain,
     where: () => selectChain,
     limit: () => Promise.resolve(queue.shift() ?? []),
+    // F1.2 PR 11: the device-profile code lookup ends in `orderBy`; it takes the next queued answer.
+    orderBy: () => Promise.resolve(queue.shift() ?? []),
     for: () => Promise.resolve([opts.locked ?? base]),
   };
   let written: Record<string, unknown> = {};

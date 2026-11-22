@@ -8,6 +8,7 @@ import {
   assertRequiredFieldsAreRequiredByTheDraftSchemaOnlyWhereItSaysSo,
   assertSupportsDiscoveryIsFalseEverywhereToday,
   assertTheMqttEntryCarriesTheDraftSchema,
+  assertTheModelIsNotOfferedAProfileId,
 } from "./protocol-catalog.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -30,6 +31,10 @@ describe("F3.24a — the protocol catalog (ADR 0093 decisions 2, 3)", () => {
 
   it("C5 gives MQTT and Modbus TCP their shared draft schemas and every other protocol an open one", () => {
     assertTheMqttEntryCarriesTheDraftSchema();
+  });
+
+  it("C8 offers the model no profileId (PR 11 review L3)", () => {
+    assertTheModelIsNotOfferedAProfileId();
   });
 
   it("C6 describes each protocol as JSON-safe data without the schema", () => {

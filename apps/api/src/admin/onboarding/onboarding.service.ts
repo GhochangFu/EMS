@@ -36,15 +36,13 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import { CREDENTIALS_RTU_MOVED, credentialsSetAudit } from "./onboarding-credentials-audit";
 import { OnboardingCommitService } from "./onboarding-commit.service";
+import { deviceProfileLookup, resolveWorkbookProfiles } from "./onboarding-device-profiles";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { OnboardingExcelService } from "./onboarding-excel.service";
 import { OnboardingInventoryService } from "./onboarding-inventory.service";
 import { looksLikeCredential } from "./onboarding-credential-detect";
-import {
-  attachCommitProposal,
-  draftHash,
-} from "./onboarding-commit-proposal";
+import { attachCommitProposal, draftHash } from "./onboarding-commit-proposal";
 import {
   NOTHING_TO_UNDO_REPLY,
   checkpointLabel,
@@ -64,9 +62,8 @@ import { withDiscoveryOf } from "./onboarding-discovery-state";
 import { applyDiscoveryTurn } from "./onboarding-discovery-tools";
 import { diffSections } from "./onboarding-draft-merge";
 import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
-import type { RollbackBody, SetCredentialsBody } from "./onboarding.schema";
+import type { OnboardingDraftInput, RollbackBody, SetCredentialsBody } from "./onboarding.schema";
 import { keepRedactedValues, redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
-import type { OnboardingDraftInput } from "./onboarding.schema";
 import { lockedByNameOf, mapSessionRow } from "./onboarding-session-dto";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import {
@@ -438,6 +435,7 @@ export class OnboardingService {
         history: session.messages as OnboardingChatMessage[],
         // F4.111 (ADR 0104 decisions 5 and 6): the early refusal's count, or the exemption.
         pointKeyQuota: await this.templateCatalog.pointKeyQuota(session.organizationId, await this.accessControl.isGlobalAdmin(jwt)),
+        deviceProfiles: deviceProfileLookup(this.tenantDb, session.organizationId),
       },
     );
 
@@ -745,6 +743,7 @@ export class OnboardingService {
     // live vocabulary, read here so the parser itself stays free of the database.
     const locationTypeCodes = await this.activeLocationTypeCodes();
     const parsed = this.excelService.parseUpload(buffer, locationTypeCodes);
+    await resolveWorkbookProfiles(this.tenantDb, session.organizationId, parsed);
     const orgPointKeys = await this.catalogService.listPointKeys(session.organizationId);
     const useExistingPointKeys = orgPointKeys.length > 0;
     const patch = this.excelService.toDraftPatch(parsed, draft, { useExistingPointKeys });

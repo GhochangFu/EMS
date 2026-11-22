@@ -309,8 +309,8 @@ export const onboardingDraftMetaSchema = z
  * - **Floor — 6.** The deepest shape any shipped producer writes:
  *   `draft` (1) → `rtus` (2) → `rtus[i]` (3) → `config` (4) → `config.device`
  *   (5) → `config.device.unitId` (6). `OnboardingExcelService.parseRtus`
- *   writes `config: { host, port, tls, topic }`, or `{ host, port }` for a
- *   Modbus row; `OnboardingChatService.defaultConfig` writes
+ *   writes `config: { host, port, tls, topic }`, or `{ host, port, device?:
+ *   { unitId } }` for a Modbus row (plus a resolved `profileId`, F1.2 PR 11); `OnboardingChatService.defaultConfig` writes
  *   `{host,port,tls,topic}`, the Modbus catalog example
  *   `{host,port,pollIntervalMs,device:{unitId}}` (F1.2) or `{}`; `buildTemplateBuffer`'s template rows become the same flat object.
  *   Nothing in this repository writes a nested `meta` at all, and the other

@@ -23,6 +23,7 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { emptyTopicAsNull } from "../rtu-topic";
 import { resolveTelemetrySource } from "../telemetry-source";
 import { connectionModbusOf } from "./rtu-connection-modbus";
+import { assertStoredModbusEndpointServesOneOrganization } from "./rtu-modbus-endpoint";
 import { connectionPayloadFormatOf, connectionTlsOf } from "./rtu-connection-tls";
 import { translateRtuUniqueConflict } from "./rtus-conflict";
 import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
@@ -511,6 +512,10 @@ export class RtusAdminService {
     await withTenant(this.tenantDb, organizationId, async (tx) => {
       // F2.10 / ADR 0098 ruling 15 — an RTU is not restored onto an inactive location.
       await assertLocationActive(tx, existing.locationId);
+      // F1.2 PR 11 security review L1 (ADR 0141 Amendment 2 (a)): a cloud-served Modbus RTU comes back
+      // only onto an endpoint no other organization's active RTU holds, checked under the bind's lock.
+      const rtu = { id, organizationId, edgeGatewayId: existing.edgeGatewayId };
+      await assertStoredModbusEndpointServesOneOrganization(tx, this.fleetDb, rtu);
       const released = existing.releasedMqttTopic;
       // F4.339 (ADR 0117 decision 8): the released topic comes back only while no RTU holds it. The
       // index is global, so the holder may be another tenant's: read on the fleet pool, as a count, and
