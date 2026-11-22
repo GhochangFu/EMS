@@ -8,11 +8,11 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { assets, deviceProfiles, rtuConnectionConfigs, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { canonicalModbusHost, INGEST_PROTOCOLS, setRtuModbusBodySchema } from "@bms/shared";
+import { INGEST_PROTOCOLS, setRtuModbusBodySchema } from "@bms/shared";
 import type { AdminRtuDto, JwtPayload, SetRtuModbusBody } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
@@ -23,6 +23,12 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { resolveTelemetrySource } from "../telemetry-source";
 import { connectionModbusOf } from "./rtu-connection-modbus";
 import { buildModbusConnectionConfig, StoredProfileRegistersInvalidError } from "./rtu-modbus-config";
+import {
+  assertModbusEndpointServesOneOrganization,
+  lockModbusEndpoints,
+  MODBUS_DEFAULT_PORT,
+  RTU_MODBUS_ENDPOINT_OTHER_ORGANIZATION_MESSAGE,
+} from "./rtu-modbus-endpoint";
 import { RtusAdminService } from "./rtus.service";
 
 /** The audit action of a bind (ADR 0141 decision 15, plan C10). */
@@ -39,14 +45,10 @@ export const RTU_MODBUS_OTHER_PROTOCOL_MESSAGE =
  */
 export const RTU_MODBUS_INGEST_SOURCE_MESSAGE =
   "This RTU is ingested as another protocol (its source type); change its source type before binding it to a Modbus profile";
-/** ADR 0141 Amendment 2 (a) — the 409 for an endpoint another organization's cloud-served RTU uses. Names neither organization. */
-export const RTU_MODBUS_ENDPOINT_OTHER_ORGANIZATION_MESSAGE =
-  "This Modbus endpoint (host and port) is already used by an RTU of another organization; one endpoint serves one organization";
+/** ADR 0141 Amendment 2 (a) — declared in `rtu-modbus-endpoint.ts` since plan PR 11 (the onboarding commit shares it). */
+export { RTU_MODBUS_ENDPOINT_OTHER_ORGANIZATION_MESSAGE };
 /** The 409 when two first binds of one RTU race and the unique `rtu_id` refuses the second. */
 export const RTU_MODBUS_RACED_MESSAGE = "Another change to this RTU's connection landed first; reload and try again";
-
-/** The Modbus TCP port when a stored row names none (ADR 0141 decision 5). */
-const MODBUS_DEFAULT_PORT = 502;
 
 /**
  * `F1.2` (ADR 0141 decisions 5, 6, 10 and 15, Amendment 2 (a); plan T7.2, builder call C10) —
@@ -146,12 +148,11 @@ export class RtusModbusService {
           // Review L1 (race): two binds of one endpoint serialise here, held to commit, so the check
           // below sees the other's committed row. ADR 0141 Amendment 2 (a) is a cloud-host rule: an
           // edge-served RTU is never blocked (its box serves one site).
-          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`modbus_tcp:${body.host}:${port}`}))`);
-          if (
-            rtu.edgeGatewayId === null &&
-            (await this.endpointUsedByAnotherOrganization(id, organizationId, body.host, port))
-          ) {
-            throw new ConflictException(RTU_MODBUS_ENDPOINT_OTHER_ORGANIZATION_MESSAGE);
+          // Plan PR 11: the lock and the check are `rtu-modbus-endpoint.ts`'s, shared with the
+          // onboarding commit.
+          await lockModbusEndpoints(tx, [{ host: body.host, port }]);
+          if (rtu.edgeGatewayId === null) {
+            await assertModbusEndpointServesOneOrganization(this.fleetDb, id, organizationId, { host: body.host, port });
           }
 
           let config: Record<string, unknown>;
@@ -219,41 +220,5 @@ export class RtusModbusService {
       { onUnique: () => new ConflictException(RTU_MODBUS_RACED_MESSAGE) },
     );
     return this.rtusService.fetchRow(id);
-  }
-
-  /**
-   * Whether an **active, cloud-served** RTU of another organization holds a `modbus_tcp` row on
-   * this `host:port` (ADR 0141 Amendment 2 (a), a cloud-host rule: an edge-served or inactive RTU is
-   * not polled by the cloud host, review H2). Read on `bms_fleet` because the tenant policy would
-   * hide exactly the rows it looks for; it answers a boolean, never a row or an organization. Each
-   * stored host is compared in its canonical spelling (`canonicalModbusHost`, review M1), so a row
-   * written before hosts were canonical still counts; a row with no `port` is 502. Called under the
-   * endpoint's advisory lock, on another connection, so it sees a racing bind's committed row.
-   */
-  private async endpointUsedByAnotherOrganization(
-    rtuId: string,
-    organizationId: string,
-    host: string,
-    port: number,
-  ): Promise<boolean> {
-    const rows = await this.fleetDb
-      .select({ host: sql<unknown>`${rtuConnectionConfigs.config}->'host'`, port: sql<unknown>`${rtuConnectionConfigs.config}->'port'` })
-      .from(rtuConnectionConfigs)
-      .innerJoin(rtus, eq(rtus.id, rtuConnectionConfigs.rtuId))
-      .where(
-        and(
-          eq(rtuConnectionConfigs.protocol, "modbus_tcp"),
-          ne(rtus.organizationId, organizationId),
-          ne(rtuConnectionConfigs.rtuId, rtuId),
-          eq(rtus.active, true),
-          isNull(rtus.edgeGatewayId),
-        ),
-      );
-    return rows.some(
-      (row) =>
-        typeof row.host === "string" &&
-        canonicalModbusHost(row.host) === host &&
-        (typeof row.port === "number" ? row.port : MODBUS_DEFAULT_PORT) === port,
-    );
   }
 }

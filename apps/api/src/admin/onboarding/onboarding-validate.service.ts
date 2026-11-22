@@ -56,6 +56,12 @@ export type ValidateResult = {
   suggestedPhase: OnboardingPhase;
 };
 
+/**
+ * `F1.2` plan PR 11 (ADR 0141 decision 23): a draft names a device profile on a Modbus TCP RTU only.
+ * The commit binds no other protocol's RTU (PR 7's rule: an MQTT RTU is never bound to a profile).
+ */
+export const ONBOARDING_PROFILE_MODBUS_ONLY_MESSAGE = "Only a Modbus TCP RTU can name a device profile";
+
 /** `F4.339` (plan R9): the fixed sentence for an MQTT RTU with no broker host. */
 export const MQTT_RTU_HOST_REQUIRED_MESSAGE = "An MQTT RTU needs a broker host";
 
@@ -234,6 +240,10 @@ export class OnboardingValidateService {
           for (const issue of r.error.issues) {
             errors.push({ path: `rtus.${i}.${issue.path.join(".")}`, message: issue.message });
           }
+        }
+        // F1.2 plan PR 11: before the schema pass, so the path carries this sentence alone.
+        if (rtu.protocol !== "modbus_tcp" && rtu.config !== null && typeof rtu.config === "object" && "profileId" in rtu.config) {
+          errors.push({ path: `rtus.${i}.config.profileId`, message: ONBOARDING_PROFILE_MODBUS_ONLY_MESSAGE });
         }
         if (rtu.protocol === "mqtt" && rtu.ingestEnabled && !rtu.credentialsSet) {
           errors.push({
