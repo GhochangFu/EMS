@@ -242,6 +242,32 @@ export async function assertDeltaTodayAcrossIstMidnight(pool: pg.Pool, fixture: 
   assert(result !== undefined && result.ok === true && result.value === 70, `W1: delta({kwh}, today) at an IST site is 70, got ${JSON.stringify(result)}`);
 }
 
+/**
+ * `F4.393` (plan §5, Task 2.2) — the delta probes also carry the batch's envelope
+ * `[min(start), max(end))`. Two deltas of different windows in ONE call must each still read their
+ * own window: K's `today` ending D−1 20:30Z is 70 (W1), K's rolling 1440 minutes ending D 00:00Z is
+ * 899 (W5's control). An envelope taken from the first read alone answers the second one 70.
+ */
+export async function assertTwoDeltasOfDifferentWindowsEachReadTheirOwn(pool: pg.Pool, fixture: WindowsFixture): Promise<void> {
+  const today: WindowReadRequest = {
+    ownerAssetId: fixture.k,
+    readAssetId: fixture.k,
+    node: windowFn("delta", KWH, calendar("today")),
+    endMs: at(fixture.dMs - DAY_MS, "20:30"),
+  };
+  const rollingDay: WindowReadRequest = {
+    ownerAssetId: fixture.k,
+    readAssetId: fixture.k,
+    node: windowFn("delta", KWH, rolling(1440)),
+    endMs: fixture.dMs,
+  };
+  const map = await new CalcWindowsService(pool, createDb(pool)).resolveReads([today, rollingDay]);
+  const first = map.get(windowRequestKey(today.ownerAssetId, today.node, today.endMs));
+  const second = map.get(windowRequestKey(rollingDay.ownerAssetId, rollingDay.node, rollingDay.endMs));
+  assert(first !== undefined && first.ok === true && first.value === 70, `two deltas: today is 70, got ${JSON.stringify(first)}`);
+  assert(second !== undefined && second.ok === true && second.value === 899, `two deltas: rolling 1440 is 899, got ${JSON.stringify(second)}`);
+}
+
 export async function assertHoursTodayAtIstSite(pool: pg.Pool, fixture: WindowsFixture): Promise<void> {
   const tick = at(fixture.dMs - DAY_MS, "20:30");
   const hours: CalcWindowRead = { kind: "hours", window: calendar("today"), position: 0 };

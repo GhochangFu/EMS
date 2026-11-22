@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { inRolledBackTransaction } from "../dashboard/kpi-prior.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
+  assertDeltaProbesPlanOnlyTheirEnvelope,
   assertLatestPointValuesPlansOnlyItsWindow,
   assertLivePuePlansOnlyItsWindow,
   assertPueAtAnInstantPlansOnlyItsWindow,
@@ -60,4 +61,6 @@ describe.skipIf(!connectionString)("F4.393 — point_values readers plan only th
   it("the roll-up's latest read at an instant plans only its window", run(assertRollupLatestAtPlansOnlyItsWindow));
 
   it("the register probes plan only their envelope", run(assertRegisterProbesPlanOnlyTheirEnvelope));
+
+  it("the delta probes plan only their envelope", run(assertDeltaProbesPlanOnlyTheirEnvelope));
 });

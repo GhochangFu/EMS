@@ -7,6 +7,7 @@ import { MEASURED_ROLLUP_FRESH_MS, readLatestWithinBounds } from "../dashboard-b
 import type { BmsTx } from "../database/tenant-context";
 import { planShape, recordingClient, seedDayChunks } from "../testing/plan-shape";
 import type { Recorded } from "../testing/recording-pool";
+import { CalcWindowsService, type WindowReadRequest } from "../calc/calc-windows.service";
 import { readRegisterProbes } from "../tariffs/register-read";
 import { latestPueRatio } from "./pue-ratio";
 import { TelemetryService } from "./telemetry.service";
@@ -182,4 +183,28 @@ export async function assertRegisterProbesPlanOnlyTheirEnvelope(client: pg.PoolC
   ]);
   const shape = await planShape(client, only(rec.statements, "register probes"));
   assert(shape.chunks <= 4, `register probes: ${shape.chunks} chunks in the plan of ${fixture.total}`);
+}
+
+/** `CalcWindowsService.readDeltas` (plan §5, Task 2.2): two rolling deltas ending `now − 10 d` plan only those days. */
+export async function assertDeltaProbesPlanOnlyTheirEnvelope(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedDayChunks(client);
+  const rec = recordingClient(client);
+  const endMs = Date.now() - 10 * DAY_MS;
+  const request = (minutes: number): WindowReadRequest => ({
+    ownerAssetId: fixture.assetId,
+    readAssetId: fixture.assetId,
+    node: {
+      kind: "window",
+      fn: "delta",
+      ref: { kind: "ref", pointKey: fixture.pointKey, position: 0 },
+      window: { kind: "rolling", minutes },
+      position: 0,
+    },
+    endMs,
+  });
+  await new CalcWindowsService(rec.pool, createDb(rec.pool)).resolveReads([request(60), request(1440)]);
+  const probes = rec.statements.filter((s) => /FROM telemetry\.point_values v/.test(s.text));
+  assert(probes.length === 1, `delta probes: expected one statement, saw ${probes.length}`);
+  const shape = await planShape(client, probes[0] as Recorded);
+  assert(shape.chunks <= 4, `delta probes: ${shape.chunks} chunks in the plan of ${fixture.total}`);
 }
