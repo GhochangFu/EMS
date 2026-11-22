@@ -70,7 +70,11 @@ export const MODBUS_UNIT_ID_DIRECT = 255;
 export const modbusRegisterSchema = z
   .object({
     /** The `bms.asset_points.source_data_key` this register feeds. */
-    sourceKey: mqttPayloadReadingKeySchema,
+    // `.describe()` after each refinement (ADR 0029 Amendment 1 fact F): the profiles API
+    // registers bodies that carry this schema, and the document must say what it cannot check.
+    sourceKey: mqttPayloadReadingKeySchema.describe(
+      "1 to 128 characters; not a prototype property name (__proto__, constructor, prototype)",
+    ),
     table: z.enum(MODBUS_TABLES),
     /** Zero-based protocol address, as on the wire. */
     address: z.number().int().min(0).max(MODBUS_ADDRESS_MAX),
@@ -101,7 +105,10 @@ export const modbusRegisterSchema = z
         message: "the register's words run past address 65535",
       });
     }
-  });
+  })
+  .describe(
+    "A coil or discrete input register has type bool; a register's words may not run past address 65535",
+  );
 
 export type ModbusRegister = z.infer<typeof modbusRegisterSchema>;
 
@@ -122,7 +129,8 @@ export const modbusRegistersSchema = z
       }
       seen.add(entry.sourceKey);
     });
-  });
+  })
+  .describe("No two registers of one device share a sourceKey");
 
 /**
  * A host name or IP literal: no scheme, no path, no port, no whitespace, at

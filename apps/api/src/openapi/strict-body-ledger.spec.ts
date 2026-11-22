@@ -68,6 +68,7 @@ import {
   createEdgeGatewayBodySchema,
   putEdgeGatewayRtusBodySchema,
   updateEdgeGatewayBodySchema,
+  copyDeviceProfileBodySchema, createDeviceProfileBodySchema, importStockDeviceProfileBodySchema, saveDeviceProfileVersionBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -354,6 +355,8 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   createEdgeGatewayBodySchema,
   updateEdgeGatewayBodySchema,
   putEdgeGatewayRtusBodySchema,
+  // `F1.2` (ADR 0141 decisions 12-14). `.strict()`: the server sets version, verified and createdBy.
+  createDeviceProfileBodySchema, saveDeviceProfileVersionBodySchema, copyDeviceProfileBodySchema, importStockDeviceProfileBodySchema,
   // `F3.32f` slice 3 (ADR 0086 decisions 4, 6, 7). `.strict()`: a library, a symbol patch and the
   // switch are closed authoring shapes with no `z.record` escape, so an unknown key is a typo.
   createMimicOrgSymbolLibraryBodySchema,
@@ -965,6 +968,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // 47 -> 48 (2026-11-17): `E1.6a` (ADR 0137) registered `advisoriesQuerySchema`: two optional
   // scope uuids that only narrow, `.strict()`, no body.
   // 48 -> 49 (2026-11-18): `E1.5a` (ADR 0138) `degradationQuerySchema`; see query-schemas.ts.
+  // 49 -> 50 (2026-11-22): `F1.2` (ADR 0141) `listDeviceProfilesQuerySchema`; see query-schemas.ts.
   //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
@@ -975,7 +979,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(49);
+  ).toBe(50);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

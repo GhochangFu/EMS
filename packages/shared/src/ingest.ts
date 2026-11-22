@@ -56,6 +56,11 @@ export * from "./ingest-modbus";
 // `F1.2` (ADR 0141 decisions 2, 4): the Modbus TCP wire codec. Zod-free and
 // Node-free, so this subpath still loads in the web bundle (plan M16).
 export * from "./ingest-adapters/modbus-codec";
+// `F1.2` (ADR 0141 decision 14, plan PR 5): the stock Modbus profiles, for the
+// API's stock list and import. Here because `apps/api` resolves only `.` and
+// `./ingest` (node10) and a new subpath is a package.json change. Empty until
+// plan PR 9; that PR re-measures the web bundle once the meter files land.
+export { STOCK_MODBUS_PROFILES } from "./device-profiles/modbus";
 
 /**
  * Compile-time drift guard: every ingest protocol must be expressible in
