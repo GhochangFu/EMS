@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const composePath = join(repoRoot, "docker-compose.yml");
+const modbusSimPath = join(repoRoot, "apps/sim/src/modbus-sim.js");
 
 /**
  * `F4.61` / ADR 0016 Amendment 8, Decisions 2 and 3 — the compose network
@@ -30,6 +31,14 @@ const composePath = join(repoRoot, "docker-compose.yml");
  * ruling is that every other service stays on `default` alone, so the key has
  * no legitimate use there), and a YAML merge key or `extends:` fails, because
  * either can bring a key in that no text match sees.
+ *
+ * `F1.2` plan PR 8 (ADR 0016 Amendment 10 (b), ruling P5) adds a third
+ * network, `modbus-sim`, `internal`, joined by `ingest` and the Modbus
+ * simulator alone, so the cloud host can poll the simulator while the
+ * simulator still reaches neither `postgres` nor any other service. The
+ * simulator's own service runs only under the `modbus` profile, publishes no
+ * port, carries no database URL, and its entry file is socket plumbing over
+ * the shared `serveModbusFrame` with one listener.
  *
  * Helpers `withoutComments` and `serviceBlock` are copied from
  * `tests/f3.3-object-storage-invariants.test.ts` (file-local there, not
@@ -151,11 +160,13 @@ describe("F4.61 — the ingest network topology (ADR 0016 Amendment 8, Decisions
     expect(entry).not.toMatch(/internal/);
   });
 
-  it("the ingest service joins exactly `ingest` and `edge-uplink`", () => {
+  it("the ingest service joins exactly `ingest`, `edge-uplink` and `modbus-sim`", () => {
     // T3 — ADR 0123 Q3b amends Decision 2: the public nginx container reaches
     // the uplink receiver over `edge-uplink`; the health listener binds to
     // loopback, so that second network cannot reach it. `default` stays out.
-    expect([...networksOf(serviceBlock(compose, "ingest"))].sort()).toEqual(["edge-uplink", "ingest"]);
+    // ADR 0016 Amendment 10 (b) adds `modbus-sim`, for the same reason the
+    // health listener stays unreachable on it.
+    expect([...networksOf(serviceBlock(compose, "ingest"))].sort()).toEqual(["edge-uplink", "ingest", "modbus-sim"]);
   });
 
   it("declares a top-level `edge-uplink` network", () => {
@@ -178,6 +189,29 @@ describe("F4.61 — the ingest network topology (ADR 0016 Amendment 8, Decisions
     expect([...networksOf(serviceBlock(compose, "web"))].sort()).toEqual(["default", "edge-uplink"]);
   });
 
+  it("declares a top-level `modbus-sim` network, `internal`", () => {
+    // T3e — Amendment 10 (b): neither member needs the internet through it;
+    // `ingest` keeps its egress on the `ingest` network.
+    const networks = topLevelSection(compose, "networks");
+    expect(networks).toMatch(/^ {2}modbus-sim:\s*\{\s*internal:\s*true\s*\}\s*$/m);
+  });
+
+  it("only `ingest` and `modbus-sim` join `modbus-sim`, and `postgres` never does", () => {
+    // T3f — Amendment 10 (b), ruling P5. A third member would share a network
+    // with the simulator; `postgres` would put the database one hop from it.
+    const members = serviceNames(compose).filter((name) =>
+      networksOf(serviceBlock(compose, name)).includes("modbus-sim"),
+    );
+    expect(members.sort()).toEqual(["ingest", "modbus-sim"]);
+    expect(networksOf(serviceBlock(compose, "postgres"))).not.toContain("modbus-sim");
+  });
+
+  it("the modbus-sim service joins `modbus-sim` and nothing else", () => {
+    // T3g — not `default` (every other service, `postgres` included, is
+    // there), not `ingest` (shared with `postgres`).
+    expect(networksOf(serviceBlock(compose, "modbus-sim"))).toEqual(["modbus-sim"]);
+  });
+
   it("the postgres service joins `default`, `ingest` and `ml`", () => {
     // T4 — naming any network drops the implicit `default`, so it must be
     // listed explicitly for postgres to still be reached by every other
@@ -187,14 +221,14 @@ describe("F4.61 — the ingest network topology (ADR 0016 Amendment 8, Decisions
     expect(networks).toEqual(["default", "ingest", "ml"]);
   });
 
-  it("no service other than ingest, postgres, web and ml declares `networks:`", () => {
+  it("no service other than ingest, postgres, web, ml and modbus-sim declares `networks:`", () => {
     // T5 — every other service stays on `default` alone, so the key has no use
     // there, and refusing the key itself holds in every YAML form: a map, an
     // alias or a quoted item would each slip past a parse of the list. `ml`
-    // joins its internal network alone (tests/e1.1-ml-compose.test.ts).
-    const others = serviceNames(compose).filter(
-      (name) => name !== "postgres" && name !== "ingest" && name !== "web" && name !== "ml",
-    );
+    // joins its internal network alone (tests/e1.1-ml-compose.test.ts);
+    // `modbus-sim` its own (T3g).
+    const declared = new Set(["postgres", "ingest", "web", "ml", "modbus-sim"]);
+    const others = serviceNames(compose).filter((name) => !declared.has(name));
     const declaring = others.filter((name) => /^ {4}networks:/m.test(serviceBlock(compose, name)));
     expect(declaring).toEqual([]);
   });
@@ -214,6 +248,7 @@ describe("F4.61 — the ingest network topology (ADR 0016 Amendment 8, Decisions
         "redis",
         "minio",
         "migrate",
+        "modbus-sim",
       ]),
     );
   });
@@ -233,9 +268,67 @@ describe("F4.61 — the ingest network topology (ADR 0016 Amendment 8, Decisions
     expect(serviceBlock(compose, "ingest")).not.toMatch(/^ {4}ports:/m);
   });
 
+  it("the ingest service's MODBUS_TCP_HOSTS defaults to empty (fail closed)", () => {
+    // T7b — ADR 0141 decision 22: unset or empty, the cloud host dials no
+    // Modbus endpoint. The compose line passes the operator's `.env` value
+    // through; it never names `modbus-sim` itself, so a stack without the
+    // `modbus` profile allows no Modbus host.
+    expect(serviceBlock(compose, "ingest")).toMatch(/^ {6}MODBUS_TCP_HOSTS: \$\{MODBUS_TCP_HOSTS:-\}\s*$/m);
+  });
+
   it("the compose file uses no YAML merge key and no `extends:`", () => {
     // T8 — either can bring `networks:` or `ports:` into a service where no
     // text match above would see it.
     expect(compose).not.toMatch(/^\s*<<\s*:|^ {4}extends:/m);
   });
 });
+
+describe("F1.2 — the Modbus simulator service (ADR 0016 Amendment 10 (b), ADR 0141 decision 20)", () => {
+  const compose = withoutComments(readFileSync(composePath, "utf8"));
+  const block = () => serviceBlock(compose, "modbus-sim");
+
+  it("runs only under the `modbus` compose profile", () => {
+    // M1 — `docker compose up` without `--profile modbus` creates no simulator.
+    expect(block()).toMatch(/^ {4}profiles:\s*\["modbus"\]\s*$/m);
+  });
+
+  it("publishes no port to the host", () => {
+    // M2 — the key itself is refused, as for `ingest` (T7).
+    expect(block()).not.toMatch(/^ {4}ports:/m);
+  });
+
+  it("carries no database URL and reads no env file", () => {
+    // M3 — the simulator is socket plumbing; an `env_file:` could bring a
+    // `DATABASE_URL` in that no text match here sees.
+    expect(block()).not.toMatch(/DATABASE_URL/);
+    expect(block()).not.toMatch(/^ {4}env_file:/m);
+  });
+
+  it("its command runs `src/modbus-sim.js`", () => {
+    // M4 — the sim image's own `CMD` is the database simulator (`src/index.js`).
+    expect(block()).toMatch(/^ {4}command:\s*\["node",\s*"src\/modbus-sim\.js"\]\s*$/m);
+  });
+
+  it("the entry file serves through the shared `serveModbusFrame`", () => {
+    // M5 — one server half for the simulator and the test server (plan C3).
+    const source = withoutJsComments(readFileSync(modbusSimPath, "utf8"));
+    expect(source).toMatch(/\{[^}]*\bserveModbusFrame\b[^}]*\}\s*=\s*require\("@bms\/shared\/ingest"\)/);
+    expect(source).toMatch(/\bserveModbusFrame\(/);
+  });
+
+  it("the entry file binds exactly one listener, a TCP one, and opens no database", () => {
+    // M6 — no metrics, health or HTTP port beside the Modbus one, and no
+    // database client (the service has no URL to give it).
+    const source = withoutJsComments(readFileSync(modbusSimPath, "utf8"));
+    expect(source.match(/\.listen\(/g) ?? []).toHaveLength(1);
+    expect(source.match(/\bcreateServer\(/g) ?? []).toHaveLength(1);
+    expect(source).toMatch(/from "node:net"/);
+    expect(source).not.toMatch(/["'](?:node:)?(?:http|https|http2|dgram|tls)["']|["'](?:pg|prom-client|dotenv)["']/);
+    expect(source).not.toMatch(/DATABASE_URL/);
+  });
+});
+
+/** Strip `//` line comments and `/* *\/` blocks from a JS file (no string in the entry file holds either). */
+function withoutJsComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'])\/\/.*$/gm, "$1");
+}
