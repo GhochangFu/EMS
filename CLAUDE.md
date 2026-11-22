@@ -42,7 +42,8 @@ raise it, not to work around it silently.
 
 A real-time enterprise monitoring platform (BMS/EMS) for electrical, HVAC,
 UPS/battery, water and environmental telemetry across sites. On screen the
-product is **IONSiTE NEXUS** (**ADR 0083**; TRINETRA stays the internal name in
+product is **Verve** (**ADR 0142**, which replaces the IONSiTE NEXUS name of
+ADR 0083; TRINETRA stays the internal name in
 code, contracts and docs), powered by Euphoria Infotech India Limited. Per
 **ADR 0013** this repository is the **Enterprise EMS product line for Ion
 Exchange (India) Ltd.**, forked from the Eskom SMOC engagement (earlier

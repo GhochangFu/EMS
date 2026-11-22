@@ -9,7 +9,7 @@ import { RETURN_PATH_KEY } from "../lib/return-path";
 import { AuthCallbackPage } from "./auth-callback-page";
 
 /**
- * `F3.33` U5 (ADR 0083) — the auth callback's waiting sentence names `IONSiTE NEXUS`.
+ * `F4.398` U4 (ADR 0142) — the auth callback's waiting sentence names `Verve`.
  *
  * Assertions live here; `auth-callback-page.test.tsx` is the Vitest entry point (ADR 0014).
  * `completeOidcLogin` is held on a promise that never settles, so the page stays on the waiting
@@ -27,7 +27,7 @@ export function readsTheWaitingSentence(): void {
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  expect(screen.getByText("Please wait while Keycloak returns you to IONSiTE NEXUS.")).toBeTruthy();
+  expect(screen.getByText("Please wait while Keycloak returns you to Verve.")).toBeTruthy();
 }
 
 /*

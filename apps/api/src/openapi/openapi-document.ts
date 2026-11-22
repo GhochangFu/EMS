@@ -61,7 +61,7 @@ const BODY_VERBS = new Set(["post", "put", "patch"]);
  */
 export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
   const config = new DocumentBuilder()
-    .setTitle("IONSiTE NEXUS Enterprise EMS API")
+    .setTitle("Verve Enterprise EMS API")
     .setDescription(LOWER_BOUND_NOTICE)
     .setVersion("v1")
     .addBearerAuth({ type: "http", scheme: "bearer", bearerFormat: "JWT" }, "jwt")
