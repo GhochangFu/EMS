@@ -1,13 +1,9 @@
-import { createHash } from "node:crypto";
-
 import {
   INGEST_PROTOCOLS,
   MQTT_BUILTIN_PAYLOAD_FORMAT_CODE,
-  MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION,
   mqttPayloadFormatDefinitionSchema,
   mqttPlaintextDecision,
   type IngestProtocol,
-  type MqttPayloadFormatDefinition,
 } from "@bms/shared/ingest";
 
 import type { IngestAdapterFactory, RtuBinding } from "../adapter/types.js";
@@ -18,6 +14,12 @@ import {
   type EdgeServedAccumulator,
 } from "./binding-targets.js";
 import type { PointIndex, PointTarget } from "./normaliser.js";
+import {
+  credentialFingerprint,
+  credentialMark,
+  decoderFingerprint,
+  type ResolvedPayloadFormat,
+} from "./plan-fingerprints.js";
 
 /**
  * Turning database rows into endpoint plans (ADR 0016 §3, §4).
@@ -437,9 +439,6 @@ function splitConfig(raw: unknown): {
   return { connection, device: asRecord(device) };
 }
 
-/** The payload format one MQTT binding decodes with; `undefined` is the built-in. */
-type ResolvedPayloadFormat = { code: string; definition: MqttPayloadFormatDefinition } | undefined;
-
 /**
  * Resolves the format an MQTT RTU's config names against the catalog join
  * (ADR 0116 decision 4, plan R4). The skip details are the code — a kebab-case
@@ -461,42 +460,6 @@ function resolvePayloadFormat(
     return { skip: "payload-format-invalid", code };
   }
   return { format: { code: head.payload_format_code, definition: parsed.data } };
-}
-
-/**
- * `F4.333`: one bound RTU's part of `credentialFingerprint` — the id, the key
- * version, the IV and whether a ciphertext is present (security review I1: no
- * CHECK ties the two columns together). Never the ciphertext itself.
- */
-function credentialMark(
-  rtuId: string,
-  row: Pick<BindingRow, "key_version" | "credentials_iv" | "credentials_ciphertext">,
-): string {
-  const iv = row.credentials_iv === null ? "-" : row.credentials_iv.toString("base64");
-  const present = row.credentials_ciphertext === null ? "0" : "1";
-  return [rtuId, String(row.key_version ?? "-"), iv, present].join("\u0000");
-}
-
-/** `F4.333` (ADR 0129 decision 4): `credentialFingerprint` from the bound RTUs' marks. */
-function credentialFingerprint(marks: readonly string[]): string {
-  return createHash("sha256").update([...marks].sort().join("\n")).digest("hex");
-}
-
-/** `decoderFingerprint` for one endpoint's bindings (plan R8). */
-function decoderFingerprint(protocol: IngestProtocol, bindings: readonly RtuBinding<unknown>[]): string {
-  const parts =
-    protocol === "mqtt"
-      ? bindings.map((binding) => {
-          const device = asRecord(binding.device);
-          const format = device.payloadFormat as ResolvedPayloadFormat;
-          return [
-            String(device.topic),
-            format?.code ?? MQTT_BUILTIN_PAYLOAD_FORMAT_CODE,
-            JSON.stringify(format?.definition ?? MQTT_BUILTIN_PAYLOAD_FORMAT_DEFINITION),
-          ].join("\u0000");
-        })
-      : [];
-  return createHash("sha256").update([...new Set(parts)].sort().join("\n")).digest("hex");
 }
 
 /**
