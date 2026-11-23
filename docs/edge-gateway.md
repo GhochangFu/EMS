@@ -120,6 +120,83 @@ misspelt key is refused by name. The shipped example is
 - Two endpoints that resolve to one adapter endpoint key (one broker) are
   refused: list their devices under one.
 
+### A Modbus TCP endpoint (ADR 0141, `F1.2`)
+
+**The edge is the field deployment for Modbus.** The box polls the meters on the
+site LAN, and only outbound HTTPS leaves the site. Polling Modbus from the cloud
+host is for a host on the same private network as the devices
+([`ingest-host.md`](./ingest-host.md), *Modbus TCP*). Modbus has no
+authentication and no encryption: never expose port 502 to the internet.
+
+```json
+{
+  "endpoints": [
+    {
+      "protocol": "modbus_tcp",
+      "config": { "host": "10.20.0.15", "port": 502, "timeoutMs": 1000, "pollIntervalMs": 10000 },
+      "devices": [
+        {
+          "deviceKey": "SITE-MFM-01",
+          "device": {
+            "unitId": 1,
+            "profile": { "code": "elmeasure-lg-plus-5310", "version": 1 },
+            "registers": [
+              { "sourceKey": "kw", "table": "holding", "address": 100, "type": "float32", "scale": 0.001 },
+              { "sourceKey": "pf", "table": "holding", "address": 116, "type": "float32" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `config` is `{ host, port = 502, timeoutMs = 1000, interRequestDelayMs = 0 }`
+  plus the optional `pollIntervalMs` (1,000–3,600,000 ms). The edge reads
+  `pollIntervalMs` itself and removes it before the adapter's schema; an
+  out-of-bounds value refuses the file by path. The edge has no database, so it
+  has no organization default: the file's value, else the adapter's 10 s.
+- `device` is `{ unitId, profile?, registers }`; `profile` is provenance only.
+  Register fields are in [`modbus-device-profiles.md`](./modbus-device-profiles.md).
+- **No `sourceKeys` is needed.** With none, the adapter reads every register
+  listed. (MQTT needs it, as above.) `MODBUS_TCP_HOSTS` does not apply on the
+  box.
+- Several units behind one gateway are several `devices` under one endpoint.
+
+**Export it from the product.** Do not write the registers by hand when the
+product already holds them. Bind each RTU to a device profile on the RTUs page,
+assign the RTUs to the edge gateway, then run, from the repository root:
+
+```bash
+tsx packages/db/src/edge-config-export-cli.ts --organization <code> --gateway <code> [--out <file>] [--force]
+```
+
+(`pnpm edge:export …` once the owner adds the script line
+`pnpm -C packages/db pkg set "scripts.edge:export=tsx src/edge-config-export-cli.ts"`;
+until then use the command above.) It reads `DATABASE_URL_FLEET`, else
+`DATABASE_URL`, in a read-only transaction. It writes the file to `--out`
+(mode `0600`; it refuses to overwrite unless `--force`) or to stdout, and what
+it left out to stderr:
+
+- **Mapped registers only** (ADR 0141 Amendment 1 (d)). A device carries the
+  registers whose `sourceKey` an active measured point of that RTU maps. The
+  rest are listed by `sourceKey` as `registers left out of <rtu>`. **A new
+  mapping needs a new export**, or the box never reads that register.
+- **The resolved `pollIntervalMs`** is written into each endpoint: the RTU's
+  own value, else the organization's default, and the shortest on a shared
+  `host:port`. If every RTU on an endpoint falls through to the adapter
+  default, no key is written.
+- **No `sourceKeys` key** is written.
+- Every RTU left out is listed with its reason (`not exported: <rtu>: …`): not
+  Modbus TCP, inactive, ingest off, no device ID, not bound to a profile, no
+  register mapped. Exit 1 when the arguments are wrong, the gateway is unknown
+  or nothing can be exported.
+
+The export is a snapshot. Editing a profile or the interval in the product does
+not reach a running box (a cloud-to-edge push is not built): export again and
+replace the file.
+
 ## The uplink
 
 `src/host/uplink-client.ts` is the supervisor's `writeSamples`: a resolve is

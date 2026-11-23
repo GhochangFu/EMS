@@ -599,3 +599,134 @@ The reload compares both fields. Nothing else in Amendment 10 changes.
 
 **What this amendment does not change.** Decisions 1–4 and 6–23 stand, and so
 do Amendment 1 and ADR 0016 Amendment 10 apart from the one sentence in (c).
+
+## Build record (F1.2, 2026-11-22/23)
+
+**Status:** a record, not a decision. Ten code PRs of the
+plan ([`docs/plans/f1.2-modbus-tcp-adapter-and-device-profiles.md`](../plans/f1.2-modbus-tcp-adapter-and-device-profiles.md))
+are merged; plan PR 10 (docs, this record) closes the documentation, and the
+bench read is not done. **`F1.2` stays 🔵** until one real bench
+device has been read through the product and the result is recorded (decision
+21). Built in a cloud session, one PR per plan unit, each merged on green CI
+under the owner's standing permission for this row's PRs.
+
+### The pull requests
+
+| PR | Plan PR | What |
+|---|---|---|
+| #1485 | 1 | Shared schemas (`ingest-modbus.ts`, `ingest-poll-interval.ts`), the zod-free codec with golden fixtures from the two modbus.org documents, the stock index scaffold, the read-only static test |
+| #1487 | 2 | Migration `0164`: `bms.device_profiles` and `bms.organizations.default_poll_interval_ms`; Drizzle; append-only by privilege (Amendment 2 (b)) |
+| #1488 | 3 | Host: interval resolution, `configFingerprint`, the two reload reasons, the P10 restart, the edge's `pollIntervalMs` |
+| #1490 | 4 | The adapter, the `node:net` transport, the read planner, `MODBUS_TCP_HOSTS`, the registry and wired-list entry, the in-process test server; Amendment 2 (a) added as a commit |
+| #1494 | 5 | Device profiles API and contracts, stock list and import |
+| #1495 | 6 | Device Profiles admin screen |
+| #1497 | 7 | `PUT /admin/rtus/:id/modbus`, `PUT /admin/organizations/:id/poll-interval`, both dialogs, the edge export CLI |
+| #1496 | 8 | The Modbus simulator, `encodeRegisterValue`, the `modbus-sim` network and compose profile |
+| #1493 | 9 | Stock profiles: Elmeasure LG+ 5310 and Selec MFM384-C-CE |
+| #1498 | 11 | Onboarding binds a profile (decision 23) |
+| this record | 10 | Docs: `docs/ingest-host.md`, `docs/edge-gateway.md`, `docs/modbus-device-profiles.md`, this record, the plan's error notes, the backlog row |
+
+### As built, against this record
+
+- **PR 9 shipped 2 of the 5 meters** (Q6, P3). Schneider PowerLogic PM5000,
+  Secure Elite 400 and L&T were ruled (P3) and not shipped. Ruling P3a drops a
+  model with no public register map, and PR 9's body states the reason per
+  meter: the PM5000 register list is not served by the vendor's download site;
+  the Elite 440 public manuals hold no map; the only reachable L&T map is for a
+  different model and its kilo/mega unit registers cannot be written as a fixed
+  scale. Decision 14 asked for 3 to 5; it is 2 until the owner supplies a PDF.
+  P3 also says the bench device must be one of the five: with two shipped,
+  check that first.
+- **The Device Profiles tab is shown only to roles that can edit profiles**
+  (a global `admin`, an `organization_admin` with a direct grant). A location
+  admin can read profiles through the API and the RTU dialog's picker, but has
+  no tab. **This needs an owner ruling**: widen the predicate for a read-only
+  page, or keep it.
+- **`EndpointPlan` carries `pollIntervalUsesDefault`** beside `pollIntervalMs`,
+  which Amendment 2 (c) records.
+- **The `edge:export` script line is owed to the owner** (a `package.json`
+  change, §9.4 style): `pnpm -C packages/db pkg set "scripts.edge:export=tsx src/edge-config-export-cli.ts"`.
+  Until then the CLI runs as `tsx packages/db/src/edge-config-export-cli.ts …`.
+- **`STOCK_MODBUS_PROFILES` is exported through `./ingest`**, not a
+  `./device-profiles` subpath (that is a `package.json` edit, the owner's call);
+  PR 5 measured the web bundle at +37 bytes empty and about 1.6 KB gzipped with
+  five 60-register profiles.
+- **`encodeRegisterValue`** (the inverse of the decoder) was added to the shared
+  codec in PR 8 for the simulator; the plan had no encoder.
+- **A stored flat `{ unitId }` Modbus config or draft is now refused** (strict
+  `modbusConfigSchema`, `invalid-connection-config`); the bind writes the nested
+  shape. The T4.0 counts on AWS decide whether a data fix is needed.
+- **The stored host is canonical** (PR 7 security review M1: lower case, IPv6 in
+  full form, no trailing dot). A running host replaces an IPv6 Modbus endpoint
+  once, at its next reload, after PR 7 deploys.
+- **An onboarding draft with a stale `profileId` can validate as ready and
+  then fail at commit**: `/validate` does not look profiles up (PR 11). The
+  chat and the workbook resolve the code first. `profileId` is not advertised
+  to the copilot agent. Another organization's profile is a 400 with the
+  "not found" text (the response cannot tell the two apart).
+- **Reactivating an RTU now runs the one-organization-per-endpoint check**
+  (PR 11), so a deactivated RTU cannot return onto an endpoint another
+  organization took meanwhile.
+- **File-size debt:** `apps/api/src/admin/onboarding/onboarding.service.ts` is at
+  998 of 1,000 lines. The next change there splits it first (`uploadExcel` is the
+  natural cut). `bindings.ts` is at 958.
+
+**Consequences added** (PR 7 and PR 11 asked for these here):
+
+- A host name and an IP address for one meter are **two endpoints**. Nothing
+  resolves names, so the one-organization check, the endpoint key and the
+  allow-list all compare the configured string. Closing it needs DNS.
+- The bind route's endpoint 409 is a **yes/no signal** that another
+  organization polls that `host:port`. Amendment 2 (a) requires the refusal; it
+  names no organization, but each probe rewrites the caller's own RTU and
+  leaves an audit row.
+- Per-block timeouts cost *blocks × `timeoutMs`* per poll for a dead unit behind
+  a live gateway; there is no per-unit skip after the first timeout.
+- An interval above 360 s reads as not live between polls (the freshness window
+  caps at 900 s, ADR 0075 Amendment 3); both interval forms warn.
+
+### The §4.6 layers
+
+Cloud session, from each PR's body (no Docker daemon there):
+
+| PR | Unit / static | Database | API | Ingest | Browser |
+|---|---|---|---|---|---|
+| #1485 | yes | N/A | N/A | N/A | N/A |
+| #1487 | yes | yes: migrated twice, `\d`, `pg_policies`, file hash, `pg_default_acl`, full suite | N/A | N/A | N/A |
+| #1488 | yes | yes: `bindings.integration`, full suite | N/A | owed locally (no poll adapter yet) | N/A |
+| #1490 | yes | yes: full suite | protocol answer, by spec | owed locally; T4.0 counts owed locally and on AWS | N/A |
+| #1494 | yes | integration suite | owed locally (`curl`) | N/A | N/A |
+| #1495 | yes (jsdom, static) | N/A | covered by #1494 | N/A | Playwright, assertions only; served asset hash owed locally |
+| #1497 | yes | yes: 133 files | `curl`: bind, 999, 403, organization route, 409 | the built host against the test server: `poll-interval-changed`, `device-config-changed`, no replace on a same-value save | Playwright 8 of 8 |
+| #1496 | yes | N/A | N/A | the simulator read with the real adapter | owed |
+| #1493 | yes | N/A | N/A | N/A | N/A |
+| #1498 | yes | yes: 130 files | `curl` against the built API | N/A | N/A |
+
+**Local Docker stack, main `f0113d7c`, 2026-11-23 (the caller's check):**
+
+- The served bundle `index-Bzctgiaf.js` carries the Device Profiles tab and the
+  `/admin/device-profiles` route.
+- A temp RTU bound to `modbus-sim` unit 1 (the Elmeasure profile) **through the
+  database**, because the local API is OIDC with direct grants off, so the API
+  bind was not re-run locally; the cloud session tested it with `curl` and
+  Playwright (#1497). It read `kw`, `pf` and `kva` every 10 s with 0 poll
+  failures.
+- Interval 10 s to 5 s: `endpoint replaced … reason: poll-interval-changed`,
+  then `pollIntervalMs: 5000` and a 5 s cadence, with no container restart.
+- Simulator stopped for 40 s: `state=disconnected`, 5 backoff restarts, the
+  reconnect about 3 s after the simulator started, samples resumed.
+- The temp rows were deleted.
+
+### Owed
+
+- **T4.0 counts on AWS** (`rtu_connection_configs` with `protocol = 'modbus_tcp'`
+  by `ingest_enabled`, and open onboarding drafts holding a `modbus_tcp` RTU).
+  Locally all three are 0.
+- **The bench-device read** (decision 21; plan §7): model, firmware, gateway,
+  unit id, date; one hour of polling; at least ten registers compared with the
+  device's display; the table recorded here; then a small PR flips that profile
+  file to `verified: true`. **The row stays 🔵 until it is recorded.**
+- The owner's ruling on the Device Profiles tab for location admins, and the
+  `edge:export` script line (above).
+- The separate `chore(agents):` and `docs/roadmap.md` sweep, and the backlog rows
+  listed under *Consequences* (plan §11).
