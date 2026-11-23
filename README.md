@@ -1,16 +1,16 @@
-# TRINETRA — Enterprise EMS for Ion Exchange (India) Ltd.
+# TRINETRA — Enterprise EMS
 
 A real-time enterprise monitoring platform (BMS/EMS) for electrical, HVAC,
 UPS/battery, water and environmental telemetry. Product brand **TRINETRA**,
-powered by Euphoria Infotech India Limited. This repository is the **Ion
-Exchange (India) Ltd. Enterprise EMS product line** (ADR 0013); it was forked
+powered by Euphoria Infotech India Limited. This repository is the
+**Enterprise EMS product line** (ADR 0013); it was forked
 from the Eskom SMOC engagement, whose demo data and UX reference mockups it
 still carries.
 
 Prototype and pilot-hardening history: the seven-screen prototype is complete;
 **Part 2 / Phase 1 pilot-ready hardening** is done; Phase 5 Sprint A–I are
 complete and **Sprint J/K/L/M/N — Location and Access** is open. Pending scope
-(including the Ion Exchange SOW delta) is tracked in
+(including the SOW delta) is tracked in
 [`docs/BACKLOG.md`](./docs/BACKLOG.md); protocol adapters, brokers, and the
 broader AI layer remain out of scope until explicitly promoted.
 
@@ -20,7 +20,7 @@ broader AI layer remain out of scope until explicitly promoted.
 |------|------------|
 | [`AGENTS.md`](./AGENTS.md) | **Active rulebook.** Read this before editing anything. |
 | [`ESKOM_SMOC.html`](./ESKOM_SMOC.html) | UX reference mockup. Single-file SPA prototype. Treat as read-only. |
-| [`docs/ux/ion-exchange-reference-alignment.md`](./docs/ux/ion-exchange-reference-alignment.md) | **Read before changing dashboard layout or the app shell.** The client's reference dashboards (SOW pp. 9–10) read against the running deployment — what the mockups do not cover, and which two layout decisions are ADR-gated. Board mapping lives in [`docs/BACKLOG.md`](./docs/BACKLOG.md) §7. |
+| [Reference dashboard alignment](./docs/ux/ion-exchange-reference-alignment.md) | **Read before changing dashboard layout or the app shell.** The client's reference dashboards (SOW pp. 9–10) read against the running deployment — what the mockups do not cover, and which two layout decisions are ADR-gated. Board mapping lives in [`docs/BACKLOG.md`](./docs/BACKLOG.md) §7. |
 | [`docs/AGENTS.production.md`](./docs/AGENTS.production.md) | North-star rulebook for the production target. Reference, not enforcement. |
 | [`docs/roadmap.md`](./docs/roadmap.md) | Prototype week-by-week plan + numbered post-prototype phases. |
 | [`docs/BACKLOG.md`](./docs/BACKLOG.md) | **Live pending-feature backlog** (F/E ids, waves, dependencies, status). |

@@ -86,7 +86,7 @@ describe("F4.330 — bms.organizations.ingest_enabled (migration 0128)", () => {
       "export async function ensureOrganizations(",
       /\n\}\n/,
     );
-    const demo = sliceFrom(read("packages/db/src/demo-ion-exchange.ts"), "const ORG_INSERT_SQL = `", /`;/);
+    const demo = sliceFrom(read("packages/db/src/demo-water.ts"), "const ORG_INSERT_SQL = `", /`;/);
     // Positive control: the slices are the organization inserts.
     expect(ensure).toContain("timezone");
     expect(demo).toContain("timezone");
