@@ -9,6 +9,22 @@ import {
   IONX_ROLE_BY_ASSET_CODE,
   IONX_SITE_TIMEZONE,
   IONX_WIDGET_CONFIG,
+  IONX_ADMIN_DISPLAY_NAME,
+  IONX_ADMIN_EMAIL,
+  IONX_GROUP_CODE,
+  IONX_GROUP_DESCRIPTION,
+  IONX_NAMES_BEFORE_RENAME,
+  IONX_ORG_NAME,
+  IONX_RENAME_ADMIN_SQL,
+  IONX_RENAME_ASSET_SITE_SQL,
+  IONX_RENAME_GROUP_SQL,
+  IONX_RENAME_ORG_SQL,
+  IONX_RENAME_RTU_SQL,
+  IONX_RENAME_SITE_SQL,
+  IONX_RTU_CODE,
+  IONX_RTU_DISPLAY_NAME,
+  IONX_SITE_NAME,
+  IONX_SITE_SLUG,
   ionxAssetCodeFor,
   runWaterDemo,
   ionxShortfalls,
@@ -167,4 +183,94 @@ export function assertTheIonxGroupIsAWaterDomainGroup(): void {
   expect(sql, "an existing row must gain the domain only while it has none").toContain(
     "ON CONFLICT (location_id, code) DO UPDATE SET domain = EXCLUDED.domain WHERE bms.asset_groups.domain IS NULL",
   );
+}
+
+/** The six renames of ADR 0142 Amendment 4 item 4, each with its table and the one column it changes. */
+const RENAMES: ReadonlyArray<readonly [sql: string, table: string, column: string]> = [
+  [IONX_RENAME_ORG_SQL, "bms.organizations", "name"],
+  [IONX_RENAME_SITE_SQL, "bms.locations", "name"],
+  [IONX_RENAME_RTU_SQL, "bms.rtus", "display_name"],
+  [IONX_RENAME_ASSET_SITE_SQL, "bms.assets", "site_name"],
+  [IONX_RENAME_GROUP_SQL, "bms.asset_groups", "description"],
+  [IONX_RENAME_ADMIN_SQL, "bms.users", "display_name"],
+];
+
+/**
+ * ADR 0142 Amendment 4 item 4 — every rename is an `UPDATE` of one column, and its `WHERE` ends by
+ * holding that column to the last parameter, the old default. So a name an operator edited matches
+ * nothing, and neither does a second run. The new name is the parameter before it.
+ */
+export function assertEachRenameIsGuardedByTheOldName(): void {
+  for (const [sql, table, column] of RENAMES) {
+    const flat = sql.split(/\s+/).filter(Boolean).join(" ");
+    const last = Math.max(...[...flat.matchAll(/\$(\d+)/g)].map((m) => Number(m[1])));
+    expect(flat.startsWith(`UPDATE ${table} SET ${column} = $${last - 1} WHERE `), table).toBe(true);
+    expect(flat.endsWith(` AND ${column} = $${last}`), table).toBe(true);
+    // One column and one statement: nothing else is set, and no row is added or removed.
+    expect(flat.split(" SET "), table).toHaveLength(2);
+    expect(flat.split(" WHERE ")[0], table).not.toContain(",");
+    expect(flat, table).not.toContain("INSERT");
+    expect(flat, table).not.toContain("DELETE");
+  }
+  // No new name is an old one; the old ones are the names being removed; no new one names the client.
+  const pairs: ReadonlyArray<readonly [now: string, before: string]> = [
+    [IONX_ORG_NAME, IONX_NAMES_BEFORE_RENAME.organization],
+    [IONX_SITE_NAME, IONX_NAMES_BEFORE_RENAME.site],
+    [IONX_RTU_DISPLAY_NAME, IONX_NAMES_BEFORE_RENAME.rtu],
+    [IONX_GROUP_DESCRIPTION, IONX_NAMES_BEFORE_RENAME.groupDescription],
+    [IONX_ADMIN_DISPLAY_NAME, IONX_NAMES_BEFORE_RENAME.admin],
+  ];
+  for (const [now, before] of pairs) {
+    expect(now).not.toBe(before);
+    expect(before).toContain("Ion Exchange");
+    expect(now.toLowerCase()).not.toContain("ion exchange");
+  }
+}
+
+/**
+ * ADR 0142 Amendment 4 item 4 — the command runs each rename once, bound to its own row's key, then
+ * the new name, then the old one. The fake pool's read-back is not a complete tenant, so the run
+ * ends on the post-condition, after the last rename.
+ */
+export async function assertTheCommandRenamesItsOwnRows(): Promise<void> {
+  const { pool, calls } = recordingSeedPool({ organization: "org-id", dashboard: "dashboard-id", other: "other-id" });
+  await expect(runWaterDemo(pool, pool)).rejects.toThrow("post-condition failed");
+  const bound = (sql: string) => calls.filter((c) => c.sql === sql).map((c) => c.values);
+  const before = IONX_NAMES_BEFORE_RENAME;
+  expect(bound(IONX_RENAME_ORG_SQL)).toEqual([[IONX_ORG_CODE, IONX_ORG_NAME, before.organization]]);
+  expect(bound(IONX_RENAME_SITE_SQL)).toEqual([["org-id", IONX_SITE_SLUG, IONX_SITE_NAME, before.site]]);
+  expect(bound(IONX_RENAME_RTU_SQL)).toEqual([["other-id", IONX_RTU_CODE, IONX_RTU_DISPLAY_NAME, before.rtu]]);
+  expect(bound(IONX_RENAME_ASSET_SITE_SQL)).toEqual([["org-id", "other-id", IONX_SITE_NAME, before.site]]);
+  expect(bound(IONX_RENAME_GROUP_SQL)).toEqual([
+    ["other-id", IONX_GROUP_CODE, IONX_GROUP_DESCRIPTION, before.groupDescription],
+  ]);
+  expect(bound(IONX_RENAME_ADMIN_SQL)).toEqual([[IONX_ADMIN_EMAIL, "org-id", IONX_ADMIN_DISPLAY_NAME, before.admin]]);
+  // Each rename follows the insert of its own row: a fresh host inserts the new name and renames nothing.
+  const at = (fragment: string) => calls.findIndex((c) => c.sql.includes(fragment));
+  expect(at("UPDATE bms.organizations")).toBeGreaterThan(at("INSERT INTO bms.organizations"));
+  expect(at("UPDATE bms.locations")).toBeGreaterThan(at("INSERT INTO bms.locations"));
+  expect(at("UPDATE bms.rtus")).toBeGreaterThan(at("INSERT INTO bms.rtus"));
+  expect(at("UPDATE bms.assets SET site_name")).toBeGreaterThan(at("INSERT INTO bms.assets"));
+  expect(at("UPDATE bms.users")).toBeGreaterThan(at("INSERT INTO bms.users"));
+}
+
+/**
+ * ADR 0142 Amendment 4 item 4 — the result counts what the renames changed. The fake pool is an
+ * older host: every insert finds its row (0 rows), each rename changes its row (the asset rename
+ * all five), and the read-back is complete. So `renamed` is 10, and `written` includes it — the
+ * command must not print "this run changed nothing" for a run that renamed rows.
+ */
+export async function assertTheResultCountsTheRenamedRows(): Promise<void> {
+  const { pool } = recordingSeedPool({ organization: "org-id", dashboard: "dashboard-id", other: "other-id" });
+  const recording = pool.query.bind(pool) as (sql: string, values?: unknown[]) => Promise<{ rows: object[] }>;
+  const renamedBy = new Map<string, number>(RENAMES.map(([sql]) => [sql, 1]));
+  renamedBy.set(IONX_RENAME_ASSET_SITE_SQL, IONX_ASSET_CODES.length);
+  const complete = { ...IONX_EXPECTED, ...COMPLETE_IDENTITY };
+  (pool as unknown as { query: unknown }).query = async (sql: string, values?: unknown[]) => {
+    const result = await recording(sql, values);
+    return { rows: result.rows.map((row) => ({ ...row, ...complete })), rowCount: renamedBy.get(sql) ?? 0 };
+  };
+  const result = await runWaterDemo(pool, pool);
+  expect(result.renamed).toBe(5 + IONX_ASSET_CODES.length);
+  expect(result.written).toBe(result.renamed);
 }

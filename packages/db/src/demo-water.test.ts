@@ -7,6 +7,9 @@ import {
   assertAnExtraGrantIsAShortfall,
   assertAnExtraWidgetIsNotAShortfall,
   assertEachCodeKeepsTheSimulatorWaterShape,
+  assertEachRenameIsGuardedByTheOldName,
+  assertTheCommandRenamesItsOwnRows,
+  assertTheResultCountsTheRenamedRows,
   assertFewerWidgetsThanTheFloorIsAShortfall,
   assertIonxAssetCodeForRefusesAnUnexpectedSuffix,
   assertNoIonxCodeCollidesWithTheEskomDemoPlant,
@@ -79,5 +82,19 @@ describe("F3.73 D12 — the IONX demo group carries the water domain", () => {
 
   it("the organization insert binds IONX_SITE_TIMEZONE (ADR 0099 A2)", async () => {
     await assertTheOrganizationInsertBindsTheSiteTimezone();
+  });
+});
+
+describe("F4.398 / ADR 0142 Amendment 4 — the command renames rows that hold the old display names", () => {
+  it("each rename changes one column, only while it still holds the old default", () => {
+    assertEachRenameIsGuardedByTheOldName();
+  });
+
+  it("the command runs each rename once, for its own rows, after their inserts", async () => {
+    await assertTheCommandRenamesItsOwnRows();
+  });
+
+  it("the result counts the renamed rows, and written includes them", async () => {
+    await assertTheResultCountsTheRenamedRows();
   });
 });

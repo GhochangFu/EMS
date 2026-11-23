@@ -105,26 +105,29 @@ not re-read it.)
 
 Until ADR 0142 Amendment 4 (2026-11-23) the command was `demo:ion-exchange`
 and its display names began "Ion Exchange". The codes, the slug and the login
-e-mail did not change. Every write is insert-if-absent, so a second run on a
-host built before the change **leaves the old names in place**: the
-organization name, the site name, each asset's `site_name`, the simulator
-RTU's display name, the asset group's description, and the login's display
-name. The Keycloak user keeps its old first and last name too, because
-`--import-realm` skips a realm that already exists (§2).
+e-mail did not change.
 
-The simulator selects assets by `site_name`. With the compose default
-`SIM_SITE_NAMES` (which now lists `Water Demo Plant`), the five assets of a
-host that still holds the old site name get **no flows**. On such a host do
-one of these:
+The simulator selects assets by `site_name`. The compose default
+`SIM_SITE_NAMES` now lists `Water Demo Plant`, so on a host that still holds
+the old site name the five assets get **no flows** until the rows are renamed.
 
-- rename the rows to the new names, then restart the simulator. The
-  simulator needs `bms.assets.site_name` of the five `WTR-…-02` assets. The
-  screens also show the organization name, the site name,
-  `bms.rtus.display_name`, the asset group's description and
-  `bms.users.display_name`; and the Keycloak user's first and last name
-  (now "Water Demo" and "Admin"); or
-- keep the old site name in that host's own `SIM_SITE_NAMES` override until
-  the rows are renamed.
+**Run the command again (§1), then restart the simulator (§3).** The command
+renames its own rows: the organization name, the site name, the `site_name`
+of every asset at the site (the five it made and any added there since), the
+simulator RTU's display name, the asset group's description and the login's
+display name. It prints how many rows it renamed.
+
+- It changes a name only while the row still holds the old default. A name
+  someone edited by hand is left as it is.
+- A second run renames nothing.
+- It does not touch Keycloak. `--import-realm` skips a realm that already
+  exists (§2), so change the Keycloak user's first name to "Water Demo" and
+  last name to "Admin" by hand in the admin console.
+
+Between the deploy and the command, the water mimic shows no fresh values.
+To avoid that gap, list **both** site names, the old and the new, in that
+host's own `SIM_SITE_NAMES` override until the command has run. With only the
+old name there, the flows stop again once the rows are renamed.
 
 ## What the demo must show
 

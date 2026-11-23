@@ -51,7 +51,10 @@ import {
  * (`ON CONFLICT DO NOTHING`, or a `WHERE` that matches nothing on a re-run),
  * so the sum of row counts is 0 on a second run. A membership role is written
  * only while it is NULL — an operator's change through the role picker is
- * never overwritten. The post-condition is a `SELECT` (a FORCE-RLS write can
+ * never overwritten. The one write that is not insert-if-absent is the rename
+ * of ADR 0142 Amendment 4 (`IONX_RENAME_*_SQL`): it replaces a display name
+ * only while the row still holds the old default, so it too writes 0 rows on a
+ * second run. The post-condition is a `SELECT` (a FORCE-RLS write can
  * drop rows without raising, so a row count proves nothing), and it throws
  * with the counts if anything is missing.
  *
@@ -91,6 +94,22 @@ export const IONX_ADMIN_DISPLAY_NAME = "Water Demo Admin";
 export const IONX_ADMIN_ROLE = "organization_admin";
 /** The realm's demo password convention (`phe-admin@bms.local`). Change it on a customer-facing host. */
 export const IONX_ADMIN_DEMO_PASSWORD = "admin123";
+
+export const IONX_RTU_DISPLAY_NAME = `${IONX_SITE_NAME} WATER Simulator`;
+export const IONX_GROUP_DESCRIPTION = "The water demo plant's water train, for the F3.32 mimic (ADR 0079 Amendment 1).";
+
+/**
+ * ADR 0142 Amendment 4 item 4 — the display names this command wrote before 2026-11-23, when it
+ * was `demo:ion-exchange`. They are kept only so the rename below can find rows that still hold
+ * them; nothing writes them any more.
+ */
+export const IONX_NAMES_BEFORE_RENAME = {
+  organization: "Ion Exchange Demo",
+  site: "Ion Exchange Demo Plant",
+  rtu: "Ion Exchange Demo Plant WATER Simulator",
+  groupDescription: "The Ion Exchange demo plant's water train, for the F3.32 mimic (ADR 0079 Amendment 1).",
+  admin: "Ion Exchange Demo Admin",
+} as const;
 
 /** `WTR-WTP-01` → `WTR-WTP-02`: the ESKOM code with the fleet-unique suffix (module docblock). */
 export function ionxAssetCodeFor(eskomAssetCode: string): string {
@@ -326,6 +345,44 @@ WHERE u.email = $1 AND u.organization_id = $2 AND u.role = $3
   )
 `;
 
+/**
+ * ADR 0142 Amendment 4 item 4 — the renames. Every insert above is insert-if-absent, so a host
+ * built before the names changed keeps the old ones; the simulator selects assets by `site_name`,
+ * so the old site name would also leave the five assets without flows. Each statement finds its
+ * row by the same key the insert uses and changes the name **only while it still holds the old
+ * default** (the last parameter): a name an operator edited is left alone, a fresh host matches
+ * nothing, and a second run writes 0 rows. The second-to-last parameter is the new name.
+ */
+export const IONX_RENAME_ORG_SQL = `
+UPDATE bms.organizations SET name = $2 WHERE code = $1 AND name = $3
+`;
+
+export const IONX_RENAME_SITE_SQL = `
+UPDATE bms.locations SET name = $3 WHERE organization_id = $1 AND slug = $2 AND name = $4
+`;
+
+export const IONX_RENAME_RTU_SQL = `
+UPDATE bms.rtus SET display_name = $3 WHERE location_id = $1 AND code = $2 AND display_name = $4
+`;
+
+/**
+ * By site, not by the five codes: an asset an operator added at the demo site copied the site's
+ * name too (template instantiation, the admin create), and the simulator selects it the same way.
+ */
+export const IONX_RENAME_ASSET_SITE_SQL = `
+UPDATE bms.assets SET site_name = $3
+WHERE organization_id = $1 AND location_id = $2 AND site_name = $4
+`;
+
+export const IONX_RENAME_GROUP_SQL = `
+UPDATE bms.asset_groups SET description = $3 WHERE location_id = $1 AND code = $2 AND description = $4
+`;
+
+/** Organization AND e-mail, as `USER_ORG_GRANT_SQL`: a same-named login homed elsewhere is not this one. */
+export const IONX_RENAME_ADMIN_SQL = `
+UPDATE bms.users SET display_name = $3 WHERE email = $1 AND organization_id = $2 AND display_name = $4
+`;
+
 async function count(pool: pg.Pool, sql: string, values: unknown[]): Promise<number> {
   const res = await pool.query(sql, values);
   return res.rowCount ?? 0;
@@ -342,8 +399,10 @@ async function oneId(pool: pg.Pool, sql: string, values: unknown[], what: string
 
 export type IonxDemoResult = {
   organizationId: string;
-  /** Rows written by this run — 0 on every run after the first. */
+  /** Rows written by this run — 0 on every run after the first. Includes `renamed`. */
   written: number;
+  /** Rows whose old display name this run replaced (ADR 0142 Amendment 4) — 0 on a host built with the new names. */
+  renamed: number;
   tenant: IonxTenantCounts;
   identity: IonxIdentityCounts;
 };
@@ -356,10 +415,13 @@ export type IonxDemoResult = {
  */
 export async function runWaterDemo(pool: pg.Pool, superuserPool: pg.Pool): Promise<IonxDemoResult> {
   let written = 0;
+  let renamed = 0;
+  const before = IONX_NAMES_BEFORE_RENAME;
 
   // Pre-tenant: `bms.organizations` carries no policy.
   written += await count(pool, ORG_INSERT_SQL, [IONX_ORG_CODE, IONX_ORG_NAME, IONX_ORG_CURRENCY, IONX_SITE_TIMEZONE]);
   const organizationId = await oneId(pool, ORG_ID_SQL, [IONX_ORG_CODE], `organization ${IONX_ORG_CODE}`);
+  renamed += await count(pool, IONX_RENAME_ORG_SQL, [IONX_ORG_CODE, IONX_ORG_NAME, before.organization]);
 
   const tenant = await withOrganization(pool, organizationId, async () => {
     written += await count(pool, LOCATION_INSERT_SQL, [
@@ -379,14 +441,16 @@ export async function runWaterDemo(pool: pg.Pool, superuserPool: pg.Pool): Promi
       [organizationId, IONX_SITE_SLUG],
       `site '${IONX_SITE_SLUG}' in ${IONX_ORG_CODE} (is the slug taken by another organization?)`,
     );
+    renamed += await count(pool, IONX_RENAME_SITE_SQL, [organizationId, IONX_SITE_SLUG, IONX_SITE_NAME, before.site]);
 
     written += await count(pool, RTU_INSERT_SQL, [
       organizationId,
       locationId,
       IONX_RTU_CODE,
-      `${IONX_SITE_NAME} WATER Simulator`,
+      IONX_RTU_DISPLAY_NAME,
     ]);
     const rtuId = await oneId(pool, RTU_ID_SQL, [locationId, IONX_RTU_CODE], `RTU ${IONX_RTU_CODE}`);
+    renamed += await count(pool, IONX_RENAME_RTU_SQL, [locationId, IONX_RTU_CODE, IONX_RTU_DISPLAY_NAME, before.rtu]);
 
     for (const c of IONX_WATER_CLASSES) {
       written += await count(pool, ASSET_INSERT_SQL, [
@@ -407,15 +471,23 @@ export async function runWaterDemo(pool: pg.Pool, superuserPool: pg.Pool): Promi
       written += await count(pool, DEMO_WATER_FLOW_POINTS_SQL, [organizationId, c.assetCode, c.measuredFlowKeys]);
       written += await count(pool, DEMO_WATER_PIN_SQL, [organizationId, c.assetCode, c.role, c.templateCode]);
     }
+    // The simulator selects by `site_name`: without this the assets of an older host get no flows.
+    renamed += await count(pool, IONX_RENAME_ASSET_SITE_SQL, [organizationId, locationId, IONX_SITE_NAME, before.site]);
 
     written += await count(pool, IONX_GROUP_UPSERT_SQL, [
       locationId,
       IONX_GROUP_CODE,
       IONX_GROUP_NAME,
-      "The water demo plant's water train, for the F3.32 mimic (ADR 0079 Amendment 1).",
+      IONX_GROUP_DESCRIPTION,
       organizationId,
     ]);
     const groupId = await oneId(pool, GROUP_ID_SQL, [locationId, IONX_GROUP_CODE], `group ${IONX_GROUP_CODE}`);
+    renamed += await count(pool, IONX_RENAME_GROUP_SQL, [
+      locationId,
+      IONX_GROUP_CODE,
+      IONX_GROUP_DESCRIPTION,
+      before.groupDescription,
+    ]);
     for (const [assetCode, roleCode] of Object.entries(IONX_ROLE_BY_ASSET_CODE)) {
       written += await count(pool, MEMBER_UPSERT_SQL, [groupId, organizationId, roleCode, assetCode]);
     }
@@ -463,6 +535,12 @@ export async function runWaterDemo(pool: pg.Pool, superuserPool: pg.Pool): Promi
     IONX_ADMIN_ROLE,
     organizationId,
   ]);
+  renamed += await count(superuserPool, IONX_RENAME_ADMIN_SQL, [
+    IONX_ADMIN_EMAIL,
+    organizationId,
+    IONX_ADMIN_DISPLAY_NAME,
+    before.admin,
+  ]);
   written += await count(superuserPool, USER_ORG_GRANT_SQL, [
     IONX_ADMIN_EMAIL,
     organizationId,
@@ -483,5 +561,5 @@ export async function runWaterDemo(pool: pg.Pool, superuserPool: pg.Pool): Promi
         "another organization owns is left alone by the insert-if-absent and shows up here.",
     );
   }
-  return { organizationId, written, tenant, identity };
+  return { organizationId, written: written + renamed, renamed, tenant, identity };
 }

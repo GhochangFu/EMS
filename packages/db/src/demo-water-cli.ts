@@ -37,6 +37,11 @@ async function main(): Promise<void> {
     // stdout, not console.log: §4.5 reserves that for Pino, and a CLI has no
     // Nest container to resolve one from (the `roles.ts` convention).
     process.stdout.write(`[demo:water] ${IONX_ORG_CODE} (${result.organizationId}): ${verdict}.\n`);
+    if (result.renamed > 0) {
+      process.stdout.write(
+        `[demo:water] ${result.renamed} row(s) still held a name from before ADR 0142 Amendment 4 and now hold the new one.\n`,
+      );
+    }
     process.stdout.write(
       `[demo:water] post-condition: ${JSON.stringify({ ...result.tenant, ...result.identity })}\n`,
     );
