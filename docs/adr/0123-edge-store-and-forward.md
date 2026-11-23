@@ -443,6 +443,7 @@ over-the-air updates.
 **Q14. Does this start before a field adapter exists?** Only the MQTT adapter
 is built; `F1.2`–`F1.6` wait on client answer A4. So v1 can be proved against
 a site-local MQTT source and a test double, not against Modbus or BACnet.
+`F1.2` no longer waits on A4: ADR 0141 (2026-11-22) built the Modbus TCP adapter, which runs at the edge unchanged.
 - A. Build now; any later adapter runs at the edge unchanged.
 - B. Wait for the first poll adapter.
 - **Recommend A.** The interface is frozen, the runtime is adapter-agnostic,
