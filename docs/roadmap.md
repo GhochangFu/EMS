@@ -251,7 +251,8 @@ Process (`AGENTS.md` §10).
 ### Phase 2 — Real ingestion (~4 weeks)
 - **Status:** paused after Sprint 0 — Path B selected for now
 - **Graduates:** Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA,
-  REST poller), EMQX broker, MQTT subscriber.
+  REST poller), EMQX broker, MQTT subscriber. Modbus TCP is built (ADR 0141,
+  F1.2, 🔵 until the bench read); the other protocols stay deferred.
 - **Goal:** replace the simulator with at least one real device per
   protocol.
 - **Highlights:** EMQX with TLS + ACL, `apps/ingest/mqtt` first, then
@@ -909,7 +910,7 @@ Process (`AGENTS.md` §10).
   the migration and then deleted. Operator notes: `docs/ingest-host.md`.
 - **Scope promoted:** the interface, the host, and MQTT — which ADR 0007 had
   already promoted and this only ports onto the interface. Individual protocol
-  adapters (F1.2 Modbus, F1.3 BACnet, F1.4 OPC-UA, F1.5 SNMP/REST, F1.6 DCS)
+  adapters (F1.2 Modbus — built, ADR 0141; F1.3 BACnet, F1.4 OPC-UA, F1.5 SNMP/REST, F1.6 DCS)
   each still need their own ADR under AGENTS.md §10 — unconditionally, not only
   where a protocol library has to be settled under §9.4.
 - **~~Owed~~ ✅ commit 3 — done 2026-08-06, and the premise it was owed on was
@@ -5123,7 +5124,7 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
 |---------|--------------|
 | Multi-tenancy, RLS | Phase 3 |
 | Keycloak / OIDC / MFA / SSO | Phase 1 |
-| Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT) | Phase 2 — MQTT promoted for one RTU (ADR 0007); the `IngestAdapter` **interface, its host and the MQTT adapter** are promoted (ADR 0016 §6 commit 2); each *further* protocol implementation still needs its own ADR |
+| Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT) | Phase 2 — MQTT promoted for one RTU (ADR 0007); the `IngestAdapter` **interface, its host and the MQTT adapter** are promoted (ADR 0016 §6 commit 2); each *further* protocol implementation still needs its own ADR; Modbus TCP is built (ADR 0141, F1.2, 🔵 until the bench read) |
 | EMQX broker | Phase 2 |
 | Redis cache and pub/sub | Phase 1 — pub/sub promoted (ADR 0002); **the BullMQ job queue and `worker` process promoted 2026-09-11 (ADR 0063, `F4.24`)**; caching still unpromoted |
 | MinIO / object storage | **Promoted 2026-09-15 (ADR 0066, `F3.3`)** — the S3 client, MinIO in compose and `bms.asset_images`. Still unpromoted: presigned URLs, multipart, thumbnails, the orphan sweep, KES/TLS in compose |
