@@ -101,6 +101,34 @@ sudo bms-ctl ml stop
 sudo bms-ctl ml start
 ```
 
+### Why an asset has no anomaly score
+
+The anomaly job scores an asset only when every one of its target points is
+ready ([ADR 0135 Amendment 5](../adr/0135-ml-serving-foundation.md) ruling 1). The
+`eligibility` command lists each target point and its verdict. It runs one read
+and writes nothing. Do not run it between HH:04 and HH:09, when the hourly cycle
+runs. `bms-ctl` has no exec subcommand, so use `docker exec` on the `ml`
+container, whose name `sudo bms-ctl status` prints:
+
+```bash
+sudo docker exec <ml container> python -m bms_ml eligibility --job anomaly
+```
+
+| Verdict | Meaning |
+|---|---|
+| `ready` | Scored next cycle |
+| `too_few_days` | Fewer than 28 days with data |
+| `low_coverage` | Data in under 80 % of the hours from its first hour to its newest |
+| `stale` | The newest hour is more than 3 h before the cycle's hour |
+| `no_data` | No hourly row at all |
+
+To see what a different target list would return, without changing the running
+service, set it for that one process only:
+
+```bash
+sudo docker exec -e ML_ANOMALY_TARGETS=water/flow_meter/treated_water_flow_klh <ml container> python -m bms_ml eligibility --job anomaly
+```
+
 ## Logins
 
 The seeded demo logins (`admin@bms.local`, `operator@bms.local`,

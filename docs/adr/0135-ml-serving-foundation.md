@@ -1301,6 +1301,52 @@ change to the demo host's 1 vCPU / 1 GiB limit.
 5. **Merge timing.** Build `E1.2e` now and merge it after the one-week read
    (about 2026-11-23)? *Recommended: yes.* **Ruled: yes.**
 
+**Build record — `E1.2e` (2026-11-27).** Plan [#1382](https://github.com/GhochangFu/EMS/pull/1382) (`a73363f2`); build
+[#1384](https://github.com/GhochangFu/EMS/pull/1384), squash `7eb0a8d4`, merged 2026-11-27 after the owner's one-week
+detector read and check A were recorded ([#1507](https://github.com/GhochangFu/EMS/pull/1507)). The one-week read gave
+3.95 % of asset-hours at or above 0.99 (about 4 × the design), from three cold rooms
+whose temperature level changed; the owner ruled "record and merge", and no threshold
+changed. Two departures, both made at the merge:
+
+- `main` was merged into the branch rather than a rebase. `main`'s #1445 had fixed the
+  same fixture clock bug as the branch's own commit, so the two fixture files take
+  `main`'s version plus the 59-asset widening.
+- `E1.5a` merged first, and its containment test holds `DEGRADATION_DRIFT_TARGETS`
+  equal to the scorer's two default lists ([ADR 0138](./0138-degradation-trends-and-time-to-limit.md)
+  R-j). The flow-meter target joins that list too (21 → 22), so a flow meter's point can
+  get a drift indicator under the same rules as every other target.
+
+**Ruling 5, CI amd64, one run at 59 anomaly assets** (`--cpus 1 --memory 1g`):
+
+| Child | Wall s | Peak MiB | Scored | Rows |
+|---|---|---|---|---|
+| forecast (`run-once`) | 17.1 | 549.8 | 21 | 1,008 |
+| anomaly (`run-anomaly`) | 75.3 | 159.5 | 59 (10 with a forest) | 69 |
+| **cycle** | **92.5** | | | |
+
+Within budget. Beside the 38-asset record (39.7 s, 159.1 MiB), memory is flat and the
+anomaly child's time is about 1.9 × — more than item 5's "a few seconds", still far
+under 300 s.
+
+**Check B, demo host, 2026-11-27** (the first cycles on `7eb0a8d4`, 08:05 and 09:05 UTC):
+
+- Anomaly `cycle_summary`: `eligible` 140 and `assets` 60 (+21); `asset_not_ready` 30,
+  the 21 flow meters as 18 `too_few_days` and 3 `no_data`; `scored` 30, `baseline_rows`
+  30, `isolation_forest_rows` 9, `rows_written` 39, `organizations` 2 — the same as the
+  07:05 run before the deploy (read from `ml.model_runs` and `ml.anomaly_scores`: the
+  deploy replaced the container and its log). `runs_failed` 0. `duration_seconds` 16.1
+  and 17.3.
+- One new `config_hash` from 08:06 UTC; the old one ran 508 times.
+- `eligibility --job anomaly`: 140 rows, 119 for the earlier targets and 21 for the flow
+  meters (17 at 20 days, so ready about 2026-12-05; 1 at 6 days, the site outage
+  accepted in check A; 3 with no data).
+- `docker stats` every 1–2 s from 09:03:30 to 09:10:30 UTC: peak 524.4 MiB in the
+  forecast child, 272.5 MiB in the anomaly child; the forecast cycle took 26.9 s. Under
+  900 MiB and 300 s.
+
+**Still owed:** check C (from about 2026-12-05), check D (about 2026-12-13, the
+owner), and the `chore(agents):` catch-up (§9.10, the owner's yes).
+
 ## Amendment 8 — `E1.9`: plain-English findings and an organization + site filter on the ML pages (2026-11-17)
 
 **Status: Accepted — 2026-11-17** (owner, in chat: "accept as
