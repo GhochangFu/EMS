@@ -145,9 +145,9 @@ export function theFixedStringsAreTheAdrsText(): void {
   expect(DEGRADATION_DISCLAIMER).toBe("A trend from the last 28 days, not a failure prediction.");
 }
 
-export function theDriftTargetsAreTwentyOneWithoutKwhTotal(): void {
-  expect(DEGRADATION_DRIFT_TARGETS).toHaveLength(21);
+export function theDriftTargetsAreTwentyTwoWithoutKwhTotal(): void {
+  expect(DEGRADATION_DRIFT_TARGETS).toHaveLength(22);
   expect(DEGRADATION_DRIFT_TARGETS.some((t) => (t.pointKey as string) === "kwh_total")).toBe(false);
   const keys = DEGRADATION_DRIFT_TARGETS.map((t) => `${t.domain}/${t.assetType}/${t.pointKey}`);
-  expect(new Set(keys).size).toBe(21);
+  expect(new Set(keys).size).toBe(22);
 }

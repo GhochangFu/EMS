@@ -56,6 +56,7 @@ export const DEGRADATION_DRIFT_TARGETS = [
   { domain: "environment", assetType: "rtu_health", pointKey: "battery_charge_pct" },
   { domain: "environment", assetType: "rtu_health", pointKey: "network_strength" },
   { domain: "environment", assetType: "rtu_health", pointKey: "controller_power_status" },
+  { domain: "water", assetType: "flow_meter", pointKey: "treated_water_flow_klh" },
 ] as const;
 
 const iso = z.string().datetime();

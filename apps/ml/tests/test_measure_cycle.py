@@ -179,7 +179,7 @@ def test_one_slow_run_of_three_fails_the_gate():
         (m.ChildResult(1, m.ANOMALY, 137, 5.0, 200 * m.MIB, None), "exited 137"),
         (anomaly(1, peak=None), "memory.peak could not be read"),
         (anomaly(1, runs_failed=1), "runs_failed is 1"),
-        (anomaly(1, scored=37), "scored 37 assets"),
+        (anomaly(1, scored=58), "scored 58 assets"),
         (anomaly(1, isolation_forest_rows=0), "0 forest rows"),
         (forecast(1, scored=17), "scored 17 series"),
         (m.ChildResult(1, m.FORECAST, 0, 5.0, 1, None), "no cycle_summary line"),
@@ -208,7 +208,7 @@ def test_the_table_carries_every_child_and_each_cycle_total():
 def test_the_measurement_shape_is_the_real_one():
     shapes = fixture.measure_shapes()
     sizes = sorted(len(shape.points) for shape in shapes)
-    assert sizes == [1] * 28 + [3] * 5 + [15] * 5
+    assert sizes == [1] * 49 + [3] * 5 + [15] * 5
     assert len(shapes) == m.EXPECTED_ANOMALY_ASSETS
     assert sum(1 for shape in shapes if len(shape.points) >= 2) == m.EXPECTED_FOREST_ROWS
     assert all(
@@ -216,7 +216,15 @@ def test_the_measurement_shape_is_the_real_one():
     )
     assert len({shape.code for shape in shapes}) == len(shapes)
     assert fixture.MEASURE_HOURS == 2184
-    assert len(fixture.MEASURE_TARGETS.split(",")) == 15 + 3 + 1
+    assert len(fixture.MEASURE_TARGETS.split(",")) == 15 + 3 + 1 + 1
+
+
+def test_the_measurement_shape_holds_amendment_7s_counts_by_value():
+    # ADR 0135 Amendment 7 item 5: 38 -> 59 assets, the forest count unchanged.
+    assert (m.EXPECTED_ANOMALY_ASSETS, m.EXPECTED_FOREST_ROWS) == (59, 10)
+    flow = [shape for shape in fixture.measure_shapes() if shape.code.startswith("MLFX-MF")]
+    assert len(flow) == 21
+    assert all(shape.points == ("ml_fixture_flow",) and shape.organization == "A" for shape in flow)
 
 
 def test_the_measurement_classes_are_apart_from_every_suites_targets():

@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { THRESHOLDS } from "../packages/db/src/ml-data-readiness.js";
-import { ANOMALY_DETECTORS, ANOMALY_MODEL_NAME } from "../packages/shared/src/contracts/ml-anomalies.js";
+import {
+  ANOMALY_DETECTORS,
+  ANOMALY_MODEL_NAME,
+  ANOMALY_UNUSUAL_SCORE,
+} from "../packages/shared/src/contracts/ml-anomalies.js";
 import { FORECAST_MAX_HORIZON_HOURS } from "../packages/shared/src/contracts/ml-forecasts.js";
 
 /**
@@ -157,5 +161,21 @@ describe("E1.2b anomaly model name and detectors: one source", () => {
     expect([...ANOMALY_DETECTORS]).toEqual(python);
     const declared = [...anomalyPy.matchAll(/^DETECTOR_[A-Z_]+\s*=/gm)].length;
     expect(declared, "a new DETECTOR_* in anomaly_baseline.py must join ANOMALY_DETECTORS").toBe(ANOMALY_DETECTORS.length);
+  });
+});
+
+/**
+ * E1.2e (ADR 0135 Amendment 7 item 4): the zero-flow tests assert against the
+ * read-time "unusual" line. The scorer's source never knows it (E1.2 plan R18)
+ * and a pytest file cannot import a TypeScript constant, so the test file
+ * restates it and this case holds the two equal.
+ */
+const zeroFlowPy = readFileSync(join(repoRoot, "apps/ml/tests/test_anomaly_zero_flow.py"), "utf8");
+
+describe("E1.2e the unusual line in the zero-flow tests: one source", () => {
+  it("test_anomaly_zero_flow.py's ANOMALY_UNUSUAL_SCORE equals the contract's", () => {
+    const line = pythonConstant(zeroFlowPy, "ANOMALY_UNUSUAL_SCORE");
+    expect(line, "ANOMALY_UNUSUAL_SCORE is missing from test_anomaly_zero_flow.py or is not a plain number").toBeDefined();
+    expect(line).toBe(ANOMALY_UNUSUAL_SCORE);
   });
 });

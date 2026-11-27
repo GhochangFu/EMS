@@ -87,6 +87,7 @@ ANOMALY_EXPECTED = (
     "environment/rtu_health/network_strength",
     "environment/rtu_health/controller_power_status",
     "facility/cold_room/cold_room_temp_c",
+    "water/flow_meter/treated_water_flow_klh",  # ADR 0135 Amendment 7 item 1
 )
 
 
@@ -94,7 +95,7 @@ def test_default_anomaly_targets_by_value_and_no_counter():
     from bms_ml.targets import DEFAULT_ANOMALY_TARGETS
 
     assert tuple(str(t) for t in DEFAULT_ANOMALY_TARGETS) == ANOMALY_EXPECTED
-    assert len(DEFAULT_ANOMALY_TARGETS) == 21
+    assert len(DEFAULT_ANOMALY_TARGETS) == 22
     assert Target("electrical", "energy_meter", "kwh_total") not in DEFAULT_ANOMALY_TARGETS
 
 
@@ -112,3 +113,34 @@ def test_parse_targets_names_the_given_variable_and_never_the_value():
         assert "SECRET_LOOKING" not in str(err.value)
     with pytest.raises(TargetError, match="ML_FORECAST_TARGETS"):
         parse_targets("bad", variable="ML_FORECAST_TARGETS", default=DEFAULT_TARGETS)
+
+
+# ADR 0135 Amendment 5 ruling 1 and Amendment 7 item 2: a counter that only climbs has no
+# normal level, so it is a target in neither job.
+COUNTER_KEYS = ("kwh_total", "outlet_flow_totalizer_kl")
+
+
+def is_counter_key(point_key: str) -> bool:
+    return point_key in COUNTER_KEYS or "totalizer" in point_key or "_total" in point_key
+
+
+def test_the_counter_rule_finds_a_counter_positive_and_negative_control():
+    for key in (*COUNTER_KEYS, "kvah_total", "energy_total_kwh", "fuel_totalizer_l"):
+        assert is_counter_key(key), key
+    for key in ("kw", "treated_water_flow_klh", "cold_room_temp_c"):
+        assert not is_counter_key(key), key
+
+
+def test_no_counter_or_totalizer_is_a_default_target_in_either_job():
+    from bms_ml.targets import DEFAULT_ANOMALY_TARGETS
+
+    for targets in (DEFAULT_TARGETS, DEFAULT_ANOMALY_TARGETS):
+        assert [str(t) for t in targets if is_counter_key(t.point_key)] == []
+
+
+def test_the_flow_meter_class_has_one_anomaly_target_and_no_forecast_target():
+    from bms_ml.targets import DEFAULT_ANOMALY_TARGETS
+
+    flow = [t for t in DEFAULT_ANOMALY_TARGETS if (t.domain, t.asset_type) == ("water", "flow_meter")]
+    assert [t.point_key for t in flow] == ["treated_water_flow_klh"]  # one point: baseline only
+    assert not [t for t in DEFAULT_TARGETS if t.domain == "water"]  # flow forecasts are E1.4f

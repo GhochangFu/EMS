@@ -41,7 +41,8 @@ T4.4 can time a cycle at 8 and at 21 series with a full 2,016-hour context.
 E1.2 plan T1.10 (ruling 5's measurement, `measure_cycle.py`) adds two options:
 `--anomaly-shape` plants the anomaly job at the real shape, in organization A
 only, on three more synthetic classes of their own (so no other suite's targets
-see them): 5 assets x 15 points, 5 x 3 and 28 x 1, each point 91 days
+see them): 5 assets x 15 points, 5 x 3 and 28 x 1 and, since E1.2e
+(Amendment 7 item 5), 21 x 1 standing for the flow meters, each point 91 days
 (MEASURE_HOURS). `--ahead-days D` moves `as_of` to this hour + D days (default
 AHEAD_DAYS = 70, unchanged for the suites); 91 days of history stay ahead of
 now only when D > 91, hence MEASURE_AHEAD_DAYS.
@@ -122,6 +123,8 @@ MEASURE_CLASSES = (
     ),
     ("ml_fixture_rtu3", "ML_FIXTURE_RTU3", "MLFX-MR", 5, tuple(f"ml_fixture_h{i}" for i in range(3))),
     ("ml_fixture_single91", "ML_FIXTURE_SINGLE91", "MLFX-MS", 28, ("ml_fixture_s",)),
+    # E1.2e (ADR 0135 Amendment 7 item 5): 21 one-point assets standing for the flow meters.
+    ("ml_fixture_flow91", "ML_FIXTURE_FLOW91", "MLFX-MF", 21, ("ml_fixture_flow",)),
 )
 MEASURE_TARGETS = ",".join(
     f"{DOMAIN}/{asset_type}/{point}" for asset_type, _, _, _, points in MEASURE_CLASSES for point in points
@@ -236,7 +239,7 @@ def anomaly_value(shape: AnomalyShape, point_key: str, h: int) -> float:
 
 
 def measure_shapes() -> tuple[AnomalyShape, ...]:
-    """The anomaly job's real shape for T1.10: 38 assets in organization A, none stale."""
+    """The anomaly job's real shape for T1.10: 59 assets in organization A, none stale."""
     return tuple(
         AnomalyShape(f"{prefix}{i:02d}", "A", asset_type, points, True, None, 10.0 + i)
         for asset_type, _, prefix, count, points in MEASURE_CLASSES
