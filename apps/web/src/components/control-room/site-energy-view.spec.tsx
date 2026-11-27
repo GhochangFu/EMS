@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import type { ReactNode } from "react";
 import { expect, vi } from "vitest";
 
 import type { EnergyOrganizationViews, EnergyView } from "@bms/shared";
@@ -89,6 +90,8 @@ const VIEW_WITH_AREA: EnergyView = {
   floorArea: { locationId: SITE, floorAreaM2: 200 },
 };
 
+let billSpy: ReturnType<typeof vi.spyOn> | null = null;
+
 function stubEnergy(orgAnswer: EnergyOrganizationViews | Error, viewAnswer: EnergyView = VIEW) {
   const viewSpy = vi.spyOn(energyApi, "fetchEnergyView").mockResolvedValue(viewAnswer);
   const orgSpy = vi.spyOn(energyApi, "fetchEnergyOrganizationViews");
@@ -98,7 +101,7 @@ function stubEnergy(orgAnswer: EnergyOrganizationViews | Error, viewAnswer: Ener
     orgSpy.mockResolvedValue(orgAnswer);
   }
   // `F4.365` U10: the monthly bill card's read; no mapping renders nothing, so the sections are unchanged.
-  vi.spyOn(billApi, "fetchEnergyBill").mockResolvedValue({
+  billSpy = vi.spyOn(billApi, "fetchEnergyBill").mockResolvedValue({
     locationId: SITE,
     month: "2026-11",
     timeZone: "Asia/Kolkata",
@@ -116,12 +119,22 @@ function stubEnergy(orgAnswer: EnergyOrganizationViews | Error, viewAnswer: Ener
   return { viewSpy, orgSpy };
 }
 
-function renderView(rankBy: SiteRankingSort = "kwh", onRankBy: (next: SiteRankingSort) => void = () => undefined): void {
+function renderView(
+  rankBy: SiteRankingSort = "kwh",
+  onRankBy: (next: SiteRankingSort) => void = () => undefined,
+  billSlot?: ReactNode,
+): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <SiteEnergyView locationId={SITE} value={{ range: "7d", compare: "previous" }} rankBy={rankBy} onRankBy={onRankBy} />
+        <SiteEnergyView
+          locationId={SITE}
+          value={{ range: "7d", compare: "previous" }}
+          rankBy={rankBy}
+          onRankBy={onRankBy}
+          billSlot={billSlot}
+        />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -201,4 +214,24 @@ export async function aFlatSiteShowsNoOwnAssetsHint(): Promise<void> {
   expect(await screen.findByTitle("0.30 kWh/m²")).toBeInTheDocument();
   await waitFor(() => expect(screen.queryByText("Loading the abnormal list…")).toBeNull());
   expect(screen.queryByText("This site's own assets ÷ its floor area")).toBeNull();
+}
+
+/**
+ * `F4.240` part b (ADR 0140 decision 3f, plan Task 2.5) — with a `billSlot`, the slot is drawn and
+ * `MonthlyBillCard` is not: no bill read at the view's location. Without it, the card reads (the
+ * control; every case above runs without the slot).
+ */
+export async function aBillSlotReplacesTheBillCard(): Promise<void> {
+  stubEnergy(orgViews(1));
+  renderView("kwh", () => undefined, <div data-testid="bill-slot" />);
+  expect(await screen.findByTestId("bill-slot")).toBeInTheDocument();
+  await screen.findByText("Consumption heatmap · kWh by day and hour");
+  expect(billSpy).not.toHaveBeenCalled();
+  cleanup();
+  vi.restoreAllMocks();
+
+  stubEnergy(orgViews(1));
+  renderView();
+  await waitFor(() => expect(billSpy).toHaveBeenCalledWith(SITE, undefined));
+  expect(screen.queryByTestId("bill-slot")).toBeNull();
 }

@@ -9,6 +9,8 @@ import {
 } from "./automation-rules-seed";
 import { findSeedLocation } from "./eskom-locations-seed";
 import { getOrganizationId } from "./hierarchy-seed";
+import type { PheRtuSite, PheSplitSite } from "./phe-pilot-seed";
+import { gateExemptsSkip, type PheSkippedSite } from "./phe-site-split";
 import { type HierarchyExpectations, hierarchyExpectations } from "./verify-hierarchy-expected";
 import { ORGANIZATION_LAYOUT_SEED_SLUG } from "./organization-layout-seed";
 import { withOrganization } from "./seed-tenant";
@@ -62,9 +64,10 @@ const MIGRATION_0029_ASSET_DOMAINS = 5;
  * DELETE for these tables) and the seed re-creates each one before this runs.
  *
  * What a presence count cannot see, a zero count states: the decommissioned
- * fixture location stays inactive, none of the twelve legacy per-RTU PHE
- * slugs survives `cleanupLegacyPheRtuLocations`, and no `TS` point is
- * catalogued. Three things no count here sees, and what still guards each:
+ * fixture location stays inactive, every PHEWB location on an RTU site's slug
+ * is that RTU's site (ADR 0139 decision 8; a failure names each row and the
+ * fix), and no `TS` point is catalogued. Three things no count here sees, and
+ * what still guards each:
  *
  * - **Over-pinning.** An asset other than a catalog incomer pinned to the
  *   incomer template is not counted. `pue-demo-seed.spec.ts` holds the pin's
@@ -87,12 +90,15 @@ const MIGRATION_0029_ASSET_DOMAINS = 5;
  * one), the four water counts and the RSMOC-WC control-room view (each already
  * reads only seeded rows), and the zero counts for orphan and mismatched
  * assets. The uncovered-electrical-asset count exempts the ladder seed's
- * collision skips — see {@link EskomCheckOptions}.
+ * collision skips — see {@link EskomCheckOptions} — and the PHE split presence
+ * counts exempt the sites `seedPheCatalog` skipped on another organization's
+ * slug or on a code holder, but never one a PHEWB slug holder blocks (owner
+ * ruling Q2) — see {@link PhewbCheckOptions}.
  */
 export async function verifyHierarchySeed(
   pool: pg.Pool,
   organizationIds?: { eskomOrgId: string; phewbOrgId: string },
-  options?: EskomCheckOptions,
+  options?: VerifyHierarchyOptions,
 ): Promise<void> {
   const eskomOrgId = organizationIds?.eskomOrgId ?? (await getOrganizationId(pool, "ESKOM"));
   const phewbOrgId = organizationIds?.phewbOrgId ?? (await getOrganizationId(pool, "PHEWB"));
@@ -104,7 +110,9 @@ export async function verifyHierarchySeed(
     checks.push(...(await readEskomChecks(pool, eskomOrgId, { ...options, expected })));
   });
   await withOrganization(pool, phewbOrgId, async () => {
-    checks.push(...(await readPhewbChecks(pool, expected)));
+    checks.push(
+      ...(await readPhewbChecks(pool, expected, { pheSkippedSites: options?.pheSkippedSites, log: options?.log })),
+    );
   });
 
   const errors = failingChecks(checks);
@@ -140,6 +148,8 @@ export type HierarchyCheck = {
   readonly actual: number;
   readonly wanted: number;
   readonly kind: "exact" | "atLeast";
+  /** Appended to the failure line only: the rows behind the count and the fix. */
+  readonly detail?: string;
 };
 
 /** A count column as a number; a missing row is `NaN`, which fails every check. */
@@ -162,12 +172,13 @@ export function failingChecks(checks: readonly HierarchyCheck[]): string[] {
   const failures: string[] = [];
   for (const check of checks) {
     const got = Number.isNaN(check.actual) ? "no row" : String(check.actual);
+    const detail = check.detail === undefined ? "" : `; ${check.detail}`;
     if (check.kind === "atLeast") {
       if (!(check.actual >= check.wanted)) {
-        failures.push(`${check.label}: expected at least ${check.wanted}, got ${got}`);
+        failures.push(`${check.label}: expected at least ${check.wanted}, got ${got}${detail}`);
       }
     } else if (check.actual !== check.wanted) {
-      failures.push(`${check.label}: expected ${check.wanted}, got ${got}`);
+      failures.push(`${check.label}: expected ${check.wanted}, got ${got}${detail}`);
     }
   }
   return failures;
@@ -249,6 +260,22 @@ export type EskomCheckOptions = {
   /** The seed's rows; derived here when the caller has none. */
   readonly expected?: HierarchyExpectations;
 };
+
+/** What `seed.ts` hands the PHEWB pass (owner ruling Q2, plan D9). */
+export type PhewbCheckOptions = {
+  /**
+   * The sites `seedPheCatalog` skipped in this seed run. The split presence
+   * checks exempt exactly those {@link gateExemptsSkip} allows, by edge RTU,
+   * and log each one. Empty by default, so the `verify:hierarchy` CLI, which
+   * runs no seed, fails closed on every missing split site.
+   */
+  readonly pheSkippedSites?: readonly PheSkippedSite[];
+  /** Where each exemption line goes; `console.error` by default. */
+  readonly log?: (line: string) => void;
+};
+
+/** {@link verifyHierarchySeed}'s options: the ESKOM pass's and the PHEWB pass's. */
+export type VerifyHierarchyOptions = EskomCheckOptions & Pick<PhewbCheckOptions, "pheSkippedSites">;
 
 /**
  * Pass 2 — the ESKOM checks. The caller holds ESKOM's tenant context
@@ -624,6 +651,136 @@ export async function readEskomChecks(
   return checks;
 }
 
+/** ADR 0139 decision 8 — the label of the RTU-site shape check, exported for the suites. */
+export const PHE_RTU_SLUG_SHAPE_LABEL = "PHEWB RTU-slug locations not shaped as a site";
+
+/**
+ * ADR 0139 decision 8 — the PHEWB locations on an RTU site's slug that are
+ * not that RTU's site: a child of its station (by the station's slug, as
+ * `seedPheCatalog` finds it) whose `meta.phe` carries the RTU's
+ * `stationCode` and `edgeRtuId`. Params: `[slugs, stationSlugs,
+ * stationCodes, edgeRtuIds]`, one element per {@link PheRtuSite}. A NULL
+ * anywhere in the triple or a missing parent counts the row (the COALESCE).
+ */
+export const PHE_RTU_SLUG_SHAPE_SQL = `
+  SELECT l.id, l.slug, l.name
+    FROM bms.locations l
+    INNER JOIN bms.organizations o ON o.id = l.organization_id
+    INNER JOIN unnest($1::varchar[], $2::varchar[], $3::varchar[], $4::int[])
+      AS s(slug, station_slug, station_code, edge_rtu_id) ON s.slug = l.slug
+    LEFT JOIN bms.locations p ON p.id = l.parent_id
+   WHERE o.code = 'PHEWB'
+     AND NOT COALESCE(
+       p.organization_id = l.organization_id
+       AND p.slug = s.station_slug
+       AND l.meta->'phe'->>'stationCode' = s.station_code
+       AND l.meta->'phe'->>'edgeRtuId' = s.edge_rtu_id::text,
+       false)
+   ORDER BY l.slug, l.id
+`;
+
+/**
+ * The shape check, as a zero count whose failure names each offending row
+ * and the fix (owner ruling Q2, plan 12.1). The split path skips a site
+ * whose slug such a row holds and never adopts it (ADR 0139 decision 3,
+ * `decidePheSite`), so the boot stops here with a line an operator can act on. It replaces the zero count of the retired legacy cleanup: a legacy
+ * one-RTU-per-location row restored from an old backup lands here.
+ */
+async function readPheRtuSlugShapeCheck(pool: pg.Pool, sites: readonly PheRtuSite[]): Promise<HierarchyCheck> {
+  const res = await pool.query<{ id: string; slug: string; name: string }>(PHE_RTU_SLUG_SHAPE_SQL, [
+    sites.map((site) => site.slug),
+    sites.map((site) => site.stationSlug),
+    sites.map((site) => site.stationCode),
+    sites.map((site) => site.edgeRtuId),
+  ]);
+  const rows = res.rows.map((r) => `${r.slug} (id ${r.id}, name ${JSON.stringify(r.name)})`);
+  const check: HierarchyCheck = { label: PHE_RTU_SLUG_SHAPE_LABEL, actual: res.rows.length, wanted: 0, kind: "exact" };
+  if (rows.length === 0) {
+    return check;
+  }
+  return {
+    ...check,
+    detail:
+      `each holds an RTU site's slug and is not that site (ADR 0139 decision 8): ${rows.join(", ")}; ` +
+      "fix: rename its slug",
+  };
+}
+
+/** ADR 0139 decision 10 — the labels of the split presence checks, exported for the suites. */
+export const PHE_SPLIT_SITES_LABEL = "PHEWB split-station sites present";
+export const PHE_SPLIT_RTUS_LABEL = "PHEWB split-station RTUs at their site";
+export const PHE_SPLIT_ASSETS_LABEL = "PHEWB split-station assets at their site";
+
+/**
+ * ADR 0139 decision 10 (plan D9) — the split sites present (a PHEWB child of
+ * its station, found by slug, carrying the triple: the shape check's rule),
+ * each split RTU at its site and each split asset at its site. Params:
+ * `[slugs, stationSlugs, stationCodes, edgeRtuIds, assetEdgeRtuIds,
+ * assetCodes]`.
+ */
+export const PHE_SPLIT_PRESENCE_SQL = `
+  WITH site AS (
+    SELECT s.edge_rtu_id, l.id
+      FROM unnest($1::varchar[], $2::varchar[], $3::varchar[], $4::int[])
+        AS s(slug, station_slug, station_code, edge_rtu_id)
+      INNER JOIN bms.locations l ON l.slug = s.slug
+      INNER JOIN bms.organizations o ON o.id = l.organization_id
+      INNER JOIN bms.locations p ON p.id = l.parent_id
+     WHERE o.code = 'PHEWB'
+       AND p.organization_id = l.organization_id
+       AND p.slug = s.station_slug
+       AND l.meta->'phe'->>'stationCode' = s.station_code
+       AND l.meta->'phe'->>'edgeRtuId' = s.edge_rtu_id::text
+  )
+  SELECT
+    (SELECT COUNT(*)::text FROM site) AS sites,
+    (SELECT COUNT(*)::text FROM site
+      INNER JOIN bms.rtus r ON r.external_rtu_id = site.edge_rtu_id AND r.location_id = site.id) AS rtus,
+    (SELECT COUNT(*)::text FROM site
+      INNER JOIN unnest($5::int[], $6::varchar[]) AS x(edge_rtu_id, asset_code) ON x.edge_rtu_id = site.edge_rtu_id
+      INNER JOIN bms.assets a ON a.code = x.asset_code AND a.location_id = site.id) AS assets
+`;
+
+/** The three split presence checks, over the split sites the gate does not exempt. */
+async function readPheSplitChecks(
+  pool: pg.Pool,
+  splitSites: readonly PheSplitSite[],
+  options: PhewbCheckOptions,
+): Promise<HierarchyCheck[]> {
+  const log = options.log ?? ((line: string) => console.error(line));
+  const exempt = new Map(
+    (options.pheSkippedSites ?? []).filter(gateExemptsSkip).map((skip) => [skip.site.edgeRtuId, skip]),
+  );
+  const counted = splitSites.filter((site) => {
+    const skip = exempt.get(site.edgeRtuId);
+    if (skip) {
+      log(
+        `verifyHierarchySeed: exempted ${site.slug} from the split-station checks: seedPheCatalog skipped it ` +
+          `because location ${skip.holderId} (${skip.holderSlug}) holds its ${skip.reason === "code-holder" ? "code" : "slug"}`,
+      );
+    }
+    return !skip;
+  });
+  const res = await pool.query<{ sites: string; rtus: string; assets: string }>(PHE_SPLIT_PRESENCE_SQL, [
+    counted.map((site) => site.slug),
+    counted.map((site) => site.stationSlug),
+    counted.map((site) => site.stationCode),
+    counted.map((site) => site.edgeRtuId),
+    counted.flatMap((site) => site.assetCodes.map(() => site.edgeRtuId)),
+    counted.flatMap((site) => site.assetCodes),
+  ]);
+  const row = res.rows[0];
+  return [
+    exactCheck(PHE_SPLIT_SITES_LABEL, row?.sites, counted.length),
+    exactCheck(PHE_SPLIT_RTUS_LABEL, row?.rtus, counted.length),
+    exactCheck(
+      PHE_SPLIT_ASSETS_LABEL,
+      row?.assets,
+      counted.reduce((sum, site) => sum + site.assetCodes.length, 0),
+    ),
+  ];
+}
+
 /**
  * Pass 3 — the PHEWB checks. The caller holds PHEWB's tenant context; this
  * function opens no transaction.
@@ -631,6 +788,7 @@ export async function readEskomChecks(
 export async function readPhewbChecks(
   pool: pg.Pool,
   expected: HierarchyExpectations = hierarchyExpectations(),
+  options: PhewbCheckOptions = {},
 ): Promise<HierarchyCheck[]> {
   const checks: HierarchyCheck[] = [];
   const expect = (label: string, actual: string | undefined, wanted: number): void => {
@@ -640,9 +798,14 @@ export async function readPhewbChecks(
   // Every count an admin write can move reads the rows seedPheCatalog writes
   // for phe-catalog.json (phePilotExpectedRows), counted present.
   const phe = expected.phe;
+  // ADR 0139 owner ruling Q2: a split site the seed skipped and the gate exempts gets no copy and
+  // no view (it is not the site), so it leaves the view count as it leaves the presence checks.
+  const exemptSlugs = new Set(
+    (options.pheSkippedSites ?? []).filter(gateExemptsSkip).map((skip) => skip.site.slug),
+  );
+  const siteLayoutSlugs = expected.siteLayoutPheSlugs.filter((slug) => !exemptSlugs.has(slug));
   const res = await pool.query<{
     phe_locs: string;
-    phe_legacy_locs: string;
     phe_rtus: string;
     phe_assets: string;
     phe_points: string;
@@ -659,30 +822,20 @@ export async function readPhewbChecks(
         INNER JOIN bms.organizations o ON o.id = l.organization_id
         WHERE o.code = 'PHEWB'
           AND l.code = ANY($1::varchar[])) AS phe_locs,
-      -- The one-RTU-per-location rows cleanupLegacyPheRtuLocations deletes,
-      -- by the same twelve slugs (owner ruling 13), never a pattern an admin
-      -- slug can match. The old exact location count was what caught a
-      -- cleanup that ran without a tenant context and deleted nothing; this
-      -- zero count keeps that, now that the location count reads only the
-      -- catalog codes.
-      (SELECT COUNT(*)::text FROM bms.locations l
-        INNER JOIN bms.organizations o ON o.id = l.organization_id
-        WHERE o.code = 'PHEWB'
-          AND l.slug = ANY($2::varchar[])) AS phe_legacy_locs,
       (SELECT COUNT(*)::text FROM bms.rtus r
         INNER JOIN bms.locations l ON l.id = r.location_id
         INNER JOIN bms.organizations o ON o.id = l.organization_id
         WHERE o.code = 'PHEWB'
-          AND r.external_rtu_id = ANY($3::int[])) AS phe_rtus,
+          AND r.external_rtu_id = ANY($2::int[])) AS phe_rtus,
       -- Moved here from Pass 1: assets/asset_points are policied since 0047,
       -- and every PHE row is PHEWB's, so this pass sees exactly them.
       (SELECT COUNT(*)::text FROM bms.assets
-        WHERE code = ANY($4::varchar[])) AS phe_assets,
+        WHERE code = ANY($3::varchar[])) AS phe_assets,
       (SELECT COUNT(*)::text FROM bms.asset_points ap
         INNER JOIN bms.assets a ON a.id = ap.asset_id
         WHERE (a.code, ap.point_key) IN (
           SELECT x.asset_code, x.point_key
-          FROM unnest($5::varchar[], $6::varchar[]) AS x(asset_code, point_key)
+          FROM unnest($4::varchar[], $5::varchar[]) AS x(asset_code, point_key)
         )) AS phe_points,
       -- The TS pairs the seed deletes rather than catalogues: zero, so a
       -- seed that catalogued them again fails here and not only in a total.
@@ -690,7 +843,7 @@ export async function readPhewbChecks(
         INNER JOIN bms.assets a ON a.id = ap.asset_id
         WHERE (a.code, ap.point_key) IN (
           SELECT x.asset_code, x.point_key
-          FROM unnest($7::varchar[], $8::varchar[]) AS x(asset_code, point_key)
+          FROM unnest($6::varchar[], $7::varchar[]) AS x(asset_code, point_key)
         )) AS phe_ts_points,
       -- Whole-fleet invariants, PHEWB's half (see the ESKOM pass).
       (SELECT COUNT(*)::text FROM bms.assets WHERE location_id IS NULL) AS orphan_assets,
@@ -704,7 +857,7 @@ export async function readPhewbChecks(
       -- membership and no role. That was invisible on a developer machine —
       -- which has been re-seeded many times and therefore holds the rows
       -- already — and invisible in CI, which seeds once and asserted none of
-      -- this. Both read only the catalog electrical codes ($9).
+      -- this. Both read only the catalog electrical codes ($8).
       --
       -- NO BACKTICK MAY APPEAR IN THIS COMMENT. The whole SELECT is a
       -- JavaScript template literal, so a backtick here closes it and the
@@ -714,31 +867,30 @@ export async function readPhewbChecks(
         INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
         INNER JOIN bms.assets a ON a.id = agm.asset_id
         WHERE ag.code = 'electrical'
-          AND a.code = ANY($9::varchar[])) AS phe_elec_members,
+          AND a.code = ANY($8::varchar[])) AS phe_elec_members,
       (SELECT COUNT(*)::text FROM bms.asset_group_members agm
         INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
         INNER JOIN bms.assets a ON a.id = agm.asset_id
         WHERE ag.code = 'electrical'
-          AND a.code = ANY($9::varchar[])
+          AND a.code = ANY($8::varchar[])
           AND agm.role IS NOT NULL) AS phe_elec_roled,
       -- F3.73 plan D12: a view row, of any kind, on each catalog station
       -- (the F3.67 shape; the seed does not own the row once written).
       (SELECT COUNT(*)::text FROM bms.site_control_room_views v
         INNER JOIN bms.locations l ON l.id = v.location_id
-        WHERE l.slug = ANY($10::varchar[])) AS phe_site_layout_views,
+        WHERE l.slug = ANY($9::varchar[])) AS phe_site_layout_views,
       -- F4.319, ADR 0113 decision 6: every catalog asset is a member of its
       -- station's pump-station group, carrying a role (meter, pump,
-      -- dosing-pump or rtu-controller). Read off the frozen catalog ($4).
+      -- dosing-pump or rtu-controller). Read off the frozen catalog ($3).
       (SELECT COUNT(*)::text FROM bms.asset_group_members agm
         INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
         INNER JOIN bms.assets a ON a.id = agm.asset_id
         WHERE ag.code = 'pump-station'
           AND ag.location_id = a.location_id
-          AND a.code = ANY($4::varchar[])
+          AND a.code = ANY($3::varchar[])
           AND agm.role IS NOT NULL) AS phe_pump_station_roled
   `, [
     phe.locationCodes,
-    phe.legacyLocationSlugs,
     phe.externalRtuIds,
     phe.assetCodes,
     phe.points.map((point) => point.assetCode),
@@ -746,11 +898,12 @@ export async function readPhewbChecks(
     phe.tsPoints.map((point) => point.assetCode),
     phe.tsPoints.map((point) => point.pointKey),
     phe.electricalAssetCodes,
-    expected.siteLayoutPheSlugs,
+    siteLayoutSlugs,
   ]);
   const row = res.rows[0];
   expect("PHEWB catalog locations present", row?.phe_locs, phe.locationCodes.length);
-  expect("PHEWB legacy per-RTU locations", row?.phe_legacy_locs, 0);
+  checks.push(await readPheRtuSlugShapeCheck(pool, phe.rtuSites));
+  checks.push(...(await readPheSplitChecks(pool, phe.splitSites, options)));
   expect("PHEWB catalog RTUs present", row?.phe_rtus, phe.externalRtuIds.length);
   expect("PHE catalog assets present", row?.phe_assets, phe.assetCodes.length);
   // 252 today, not 264: the catalog's 12 `TS` sensors are the MQTT envelope's
@@ -773,7 +926,7 @@ export async function readPhewbChecks(
   // since `F4.319` they take `rtu-controller`, and the pump-station count
   // below reads them (an administrator's role still passes: any non-NULL).
   expect("PHE catalog electrical members carrying a role", row?.phe_elec_roled, phe.electricalAssetCodes.length);
-  expect("PHEWB catalog station site-layout view rows", row?.phe_site_layout_views, expected.siteLayoutPheSlugs.length);
+  expect("PHEWB catalog station site-layout view rows", row?.phe_site_layout_views, siteLayoutSlugs.length);
   // `F4.319` — 48 today = 6 stations × 8 assets, each in its station's `pump-station` group with a
   // role. An administrator may change or clear a role, but the seed refills a NULL on every boot
   // (the `COALESCE` membership upsert), so after a seed a NULL here is the seed's own fault.

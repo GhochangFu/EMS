@@ -24,6 +24,7 @@ import * as energyCentre from "./energy-centre";
 import { ENERGY_DATA_WINDOW_DAYS, resolveLocationEnergy } from "./energy-features";
 import { readEstateEnergy } from "./estate-energy";
 import { emptyKpiPrior, priorInstant, readKpiPrior, type KpiPrior } from "./kpi-prior";
+import { discoverLatestPairs, planLatestPoints } from "./latest-points";
 
 type LocationDashboardAssetRow = LocationDashboardDto["assets"]["items"][number];
 type LocationDashboardTelemetrySample = LocationDashboardAssetRow["telemetry"][number];
@@ -51,11 +52,19 @@ export class DashboardService {
     private readonly health: Pick<AssetHealthService, "scoresByLocation">,
   ) {}
 
-  /** Returns location KPI cards for the current access scope. */
+  /**
+   * Returns location KPI cards for the current access scope.
+   *
+   * `F4.240` (ADR 0139 decision 12, plan D10): `parentIdByLocation` is the caller's own scope's
+   * parent map (`parentIdByLocation` in `./location-parent`), which already nulls a parent the
+   * caller cannot read. A location missing from it — or no map at all — reads `null`, so a
+   * caller that passes none leaks no parent id (fail closed).
+   */
   async locationKpis(opts?: {
     locationIds?: string[] | null;
     assetIds?: string[] | null;
     partial?: boolean;
+    parentIdByLocation?: ReadonlyMap<string, string | null>;
   }): Promise<{ items: LocationKpiSummary[] }> {
     const rows = await this.pool.query<{
       id: string;
@@ -202,6 +211,7 @@ export class DashboardService {
         openAlarms: Number(row.open_alarms),
         criticalAlarms: Number(row.critical_alarms),
         scopeLabel: opts?.partial ? "partial" : "full",
+        parentId: opts?.parentIdByLocation?.get(row.id) ?? null,
       })),
     };
   }
@@ -213,6 +223,8 @@ export class DashboardService {
       locationIds?: string[] | null;
       assetIds?: string[] | null;
       partial?: boolean;
+      /** `F4.240`: passed through to `locationKpis`, which the `locationIds` narrowing below does not touch. */
+      parentIdByLocation?: ReadonlyMap<string, string | null>;
       page?: number;
       pageSize?: number;
       rtuId?: string;
@@ -263,6 +275,27 @@ export class DashboardService {
       [locationId, opts?.assetIds ?? null],
     );
 
+    // `F4.390` — the page's asset ids first (same predicate, order and page as before), so the
+    // newest-sample read is keyed by them: discovery from `point_values_1d`, then one
+    // day-literal-bounded arm per day (`./latest-points`). The old `DISTINCT ON` read every
+    // asset's whole history (100,759 ms for 4 assets on the demo host).
+    const pageAssets = await this.pool.query<{ id: string }>(
+      `
+      SELECT a.id
+      FROM bms.assets a
+      -- ADR 0018: LEFT JOIN, so a gateway-less asset stays on its page (see scoped_assets below).
+      LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+      WHERE a.location_id = $1
+        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
+        AND ($5::uuid IS NULL OR a.rtu_id = $5::uuid)
+      ORDER BY r.display_name NULLS LAST, a.code
+      LIMIT $3 OFFSET $4
+      `,
+      [locationId, opts?.assetIds ?? null, pageSize, offset, opts?.rtuId ?? null],
+    );
+    const pageAssetIds = pageAssets.rows.map((row) => row.id);
+    const latest = planLatestPoints(await discoverLatestPairs(this.pool, pageAssetIds), 2);
+
     const assetsPage = await this.pool.query<{
       id: string;
       code: string;
@@ -292,25 +325,12 @@ export class DashboardService {
         -- dashboard while its work orders were still counted below — the same
         -- silent-invisibility defect this ADR exists to remove.
         LEFT JOIN bms.rtus r ON r.id = a.rtu_id
-        WHERE a.location_id = $1
-          AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
-          AND ($5::uuid IS NULL OR a.rtu_id = $5::uuid)
-        ORDER BY r.display_name NULLS LAST, a.code
-        LIMIT $3 OFFSET $4
+        -- F4.390: the page was chosen by the statement above.
+        WHERE a.id = ANY($1::uuid[])
       ),
       -- F4.350 (ADR 0075 Amendment 3): each asset's window, from its own RTU.
       ${assetWindowsCteSql("SELECT id FROM scoped_assets")},
-      latest_points AS (
-        SELECT DISTINCT ON (pv.asset_id, pv.point_key)
-          pv.asset_id,
-          pv.point_key,
-          pv.value,
-          pv.unit,
-          pv.time
-        FROM telemetry.point_values pv
-        INNER JOIN scoped_assets sa ON sa.id = pv.asset_id
-        ORDER BY pv.asset_id, pv.point_key, pv.time DESC
-      ),
+      ${latest.cteSql},
       telemetry AS (
         SELECT
           asset_id,
@@ -425,7 +445,7 @@ export class DashboardService {
       LEFT JOIN work_order_rollup ON work_order_rollup.asset_id = sa.id
       ORDER BY sa.rtu_display_name NULLS LAST, sa.code
       `,
-      [locationId, opts?.assetIds ?? null, pageSize, offset, opts?.rtuId ?? null],
+      [pageAssetIds, ...latest.params],
     );
     const workOrders = await this.pool.query<{ count: string }>(
       `

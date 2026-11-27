@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect } from "react";
 import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -96,6 +96,76 @@ vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
 }));
 
 /*
+ * `E1.9e` (ADR 0135 Amendment 8 decision 13) — the findings card is a stand-in that prints the
+ * props the page passes (its reads and its compact body are gated by `ml-findings-card.spec.tsx`).
+ */
+vi.mock("../../components/ml/ml-findings-card", () => ({
+  MlFindingsCard: ({
+    kinds,
+    scope,
+    compact,
+    paragraph,
+  }: {
+    kinds: readonly string[];
+    scope: Record<string, string | undefined>;
+    compact?: boolean;
+    paragraph?: boolean;
+  }) => (
+    <div
+      data-testid="ml-findings-panel"
+      data-kinds={kinds.join(",")}
+      data-scope={JSON.stringify(scope)}
+      data-compact={String(compact ?? false)}
+      data-paragraph={String(paragraph ?? "(default)")}
+    />
+  ),
+}));
+
+/*
+ * `E1.8c` (ADR 0050 Amendment 5) — the *Bad actors* card is a stand-in that prints the props the
+ * page passes (its read, tabs and states are gated by `health-bad-actors-card.spec.tsx`).
+ */
+const badActorsMounts = vi.hoisted(() => ({ count: 0 }));
+
+vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
+  HealthBadActorsCard: ({
+    organizationId,
+    locationId,
+    showCount,
+  }: {
+    organizationId?: string;
+    locationId?: string;
+    showCount?: boolean;
+  }) => {
+    // Counts mounts, so P8 can tell a fresh card (keyed by organization, back on its default
+    // tab) from one reused across organizations (code review, E1.8c).
+    useEffect(() => {
+      badActorsMounts.count += 1;
+    }, []);
+    return (
+      <div
+        data-testid="bad-actors-panel"
+        data-organization-id={organizationId}
+        data-location-id={locationId}
+        data-show-count={String(showCount ?? "(absent)")}
+      />
+    );
+  },
+}));
+
+/* `E1.5b` (ADR 0138) — a stand-in that prints its scope and counts mounts; the card is gated by its own spec. */
+const degradationMounts = vi.hoisted(() => ({ count: 0 }));
+
+vi.mock("../../components/degradation/degradation-trend-card", () => ({
+  DegradationTrendCard: ({ organizationId, locationId }: { organizationId?: string; locationId?: string }) => {
+    useEffect(() => {
+      degradationMounts.count += 1;
+    }, []);
+    return <div data-testid="degradation-panel" data-organization-id={organizationId} data-location-id={locationId} />;
+  },
+}));
+
+/*
  * `F3.79` — the site map is a stand-in too: it prints the organization id it is handed and
  * counts its mounts, so a case can tell a fresh map (keyed by organization) from a reused one.
  * Its own read is gated by `organization-site-map.spec.tsx`.
@@ -105,22 +175,40 @@ const siteMapMounts = vi.hoisted(() => ({ count: 0 }));
 vi.mock("../../components/control-room/organization-site-map", () => ({
   // `F2.10` — the real map also takes `nodes` (its parent filter); the stand-in ignores it.
   // `F4.260` — it also prints `syncedAt`, the site read's `dataUpdatedAt` it re-reads on.
+  // `F4.240` — it prints the page-owned filter `rootId` (absent when `null`).
   OrganizationSiteMap: ({
     organizationId,
     syncedAt,
+    rootId,
   }: {
     organizationId: string;
     nodes: readonly unknown[];
     syncedAt: number;
+    rootId: string | null;
   }) => {
     useEffect(() => {
       siteMapMounts.count += 1;
     }, []);
-    return <div data-testid="site-map-panel" data-organization-id={organizationId} data-synced-at={syncedAt} />;
+    return (
+      <div
+        data-testid="site-map-panel"
+        data-organization-id={organizationId}
+        data-synced-at={syncedAt}
+        data-root-id={rootId ?? undefined}
+      />
+    );
   },
 }));
 
-const PANELS = ["site-map-panel", "health-panel", "trend-panel", "dashboards-panel"] as const;
+const PANELS = [
+  "site-map-panel",
+  "ml-findings-panel",
+  "health-panel",
+  "bad-actors-panel",
+  "degradation-panel",
+  "trend-panel",
+  "dashboards-panel",
+] as const;
 
 const ORG_ESKOM = { id: "org-eskom", code: "ESKOM", name: "Eskom" };
 const ORG_PHE = { id: "org-phe", code: "PHEWB", name: "PHE West Bengal" };
@@ -223,6 +311,8 @@ export async function siteCardsLinkToTheSiteLevel(): Promise<void> {
   const grid = await siteGrid();
   const hrefs = Array.from(grid.querySelectorAll("a")).map((a) => a.getAttribute("href"));
   expect(hrefs).toEqual(["/control-room/site/a1", "/control-room/site/a2"]);
+  // F4.390: the query's abort signal reaches the fetcher (a `() => fetchLocationKpis()` would forward none).
+  expect(locationsApi.fetchLocationKpis).toHaveBeenCalledWith(expect.any(AbortSignal));
 }
 
 /** G2 — an organization with one readable site skips to the site. */
@@ -527,6 +617,85 @@ export async function theCostChartSitsBetweenTheAlarmsAndAssetHealth(): Promise<
     charts.compareDocumentPosition(health) & Node.DOCUMENT_POSITION_FOLLOWING,
     "the Asset health panel must follow the cost chart",
   ).toBeTruthy();
+  // E1.9g (ADR 0135 Amendment 10 Q5): the findings card sits between the cost chart and Asset health.
+  expect(charts.nextElementSibling, "the findings card directly after the cost chart").toBe(
+    screen.getByTestId("ml-findings-panel"),
+  );
+}
+
+/**
+ * P11 — `E1.9e` (ADR 0135 Amendment 8 decision 13): one compact findings card, both kinds, scoped
+ * to the organization and to no site. `E1.9g` (ADR 0135 Amendment 10 Q5): it sits directly above
+ * Asset health, after the alarms rail, and before the load trend.
+ */
+export async function theFindingsCardSitsDirectlyAboveAssetHealth(): Promise<void> {
+  stubReads(TWO_ORGS);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  const cards = screen.getAllByTestId("ml-findings-panel");
+  expect(cards).toHaveLength(1);
+  const card = cards[0];
+  expect(card.dataset.kinds).toBe("anomalies,forecasts");
+  expect(card.dataset.compact).toBe("true");
+  expect(JSON.parse(card.dataset.scope ?? "null")).toEqual({ organizationId: ORG_A.id });
+  const health = screen.getByTestId("health-panel");
+  const trend = screen.getByTestId("trend-panel");
+  const rail = screen.getByTestId("alarms-rail");
+  expect(card.nextElementSibling, "Asset health directly after the findings card").toBe(health);
+  expect(
+    rail.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING,
+    "the findings card must follow the alarms rail",
+  ).toBeTruthy();
+  expect(
+    card.compareDocumentPosition(trend) & Node.DOCUMENT_POSITION_FOLLOWING,
+    "the load trend must follow the findings card",
+  ).toBeTruthy();
+}
+
+/**
+ * P12 — `E1.8c` (ADR 0050 Amendment 5, plan T3.2): one *Bad actors* card for the organization,
+ * directly after Asset health, with no `showCount` (the organization's count line is under its
+ * donut). Since `E1.9g` (Amendment 10 Q5) the load trend, not the findings card, follows it.
+ */
+export async function theBadActorsCardSitsDirectlyAfterAssetHealth(): Promise<void> {
+  stubReads(TWO_ORGS);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  const cards = screen.getAllByTestId("bad-actors-panel");
+  expect(cards).toHaveLength(1);
+  const card = cards[0];
+  expect(card.dataset.organizationId).toBe(ORG_A.id);
+  expect(card.hasAttribute("data-location-id")).toBe(false);
+  expect(card.dataset.showCount).toBe("(absent)");
+  const health = screen.getByTestId("health-panel");
+  expect(health.nextElementSibling, "directly after Asset health").toBe(card);
+  expect(card.nextElementSibling, "E1.5b's card follows it").toBe(screen.getByTestId("degradation-panel"));
+}
+
+/** P13 — `E1.5b` (ADR 0138, plan T2.4): one card, directly after Bad actors, a fresh mount per organization. */
+export async function theDegradationCardFollowsBadActors(): Promise<void> {
+  stubReads(TWO_FULL_ORGS);
+  degradationMounts.count = 0;
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (organizationId: string) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <ControlRoomOrganizationPage user={USER} organizationId={organizationId} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
+  const view = render(tree(ORG_A.id));
+  await siteGrid();
+  const cards = screen.getAllByTestId("degradation-panel");
+  expect(cards.map((c) => [c.dataset.organizationId, c.hasAttribute("data-location-id")])).toEqual([[ORG_A.id, false]]);
+  expect(screen.getByTestId("bad-actors-panel").nextElementSibling, "directly after Bad actors").toBe(cards[0]);
+  expect(cards[0]?.nextElementSibling, "the load trend follows it").toBe(screen.getByTestId("trend-panel"));
+  view.rerender(tree(ORG_B.id));
+  await waitFor(() => expect(screen.getByTestId("degradation-panel").dataset.organizationId).toBe(ORG_B.id));
+  expect(degradationMounts.count, "org B must get a fresh card, not org A's").toBe(2);
 }
 
 /** Two organizations, each with two sites, so neither skips to a site. */
@@ -543,6 +712,7 @@ const TWO_FULL_ORGS: LocationKpiSummary[] = [
 export async function anotherOrganizationMountsANewSiteMap(): Promise<void> {
   stubReads(TWO_FULL_ORGS);
   siteMapMounts.count = 0;
+  badActorsMounts.count = 0;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const tree = (organizationId: string) => (
     <QueryClientProvider client={queryClient}>
@@ -563,6 +733,7 @@ export async function anotherOrganizationMountsANewSiteMap(): Promise<void> {
     expect(screen.getByTestId("site-map-panel").dataset.organizationId).toBe(ORG_B.id),
   );
   expect(siteMapMounts.count, "org B must get a new map, not org A's").toBe(2);
+  expect(badActorsMounts.count, "org B must get a fresh Bad actors card, not org A's").toBe(2);
   // Org B's strip has loaded (no loading line left); org A's must not linger beside it.
   await waitFor(() => expect(screen.queryByTestId("organization-kpi-strip-loading")).toBeNull());
   expect(screen.getAllByTestId("organization-kpi-strip")).toHaveLength(1);
@@ -594,8 +765,9 @@ export async function theKpiStripReplacesTheLiveStatusStrip(): Promise<void> {
   expect(screen.queryByTestId("live-status-strip")).toBeNull();
 }
 
+/** The site cards' links, by the card's own `data-live` attribute: a header's Open link (`F4.240` part b) is no card. */
 function cardHrefs(group: HTMLElement): (string | null)[] {
-  return Array.from(group.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+  return Array.from(group.querySelectorAll("a[data-live]")).map((a) => a.getAttribute("href"));
 }
 
 /**
@@ -708,3 +880,118 @@ export async function theLoadCardAndKwTileFollowTheSites(anyShown: boolean): Pro
     loadCard: screen.queryByTestId("trend-panel") !== null,
   }).toEqual({ totalLoad: anyShown, loadCard: anyShown });
 }
+
+/**
+ * `F4.240` (ADR 0139 decisions 13–16, plan D11–D12) — PHE after the split: six asset-less stations
+ * over twelve RTU sites; only `s1-1` is live. ORG_A (two flat sites) is the organization a move
+ * goes to.
+ */
+function phewbSplit(): LocationKpiSummary[] {
+  const items: LocationKpiSummary[] = [...ONE_ORG];
+  for (let n = 1; n <= 6; n += 1) {
+    items.push({ ...site({ id: `s${n}`, name: `Station ${n}`, organization: ORG_PHE, assetCount: 0 }), parentId: null });
+    for (const suffix of ["I", "II"]) {
+      const id = `s${n}-${suffix}`;
+      const live = n === 1 && suffix === "I";
+      items.push({
+        ...site({ id, name: `Station ${n} ${suffix}`, organization: ORG_PHE, assetCount: 4, freshAssetCount: live ? 4 : 0 }),
+        parentId: `s${n}`,
+      });
+    }
+  }
+  return items;
+}
+
+async function groupedGrid(): Promise<HTMLElement> {
+  const grid = await screen.findByTestId("control-room-sites");
+  await within(grid).findByText("Station 1 I");
+  return grid;
+}
+
+/** GP1 — the subtitle counts sites once: `12 sites`, not 18; no card for a station. */
+export async function theSubtitleCountsTwelveSites(): Promise<void> {
+  stubReads(phewbSplit());
+  renderAt(ORG_PHE.id);
+
+  const grid = await groupedGrid();
+  expect(screen.getByText("PHEWB · 12 sites · 0 alarms")).toBeInTheDocument();
+  expect(cardHrefs(grid)).toHaveLength(12);
+  expect(cardHrefs(grid)).not.toContain("/control-room/site/s1");
+}
+
+/**
+ * GP2 — a header click sets the map's filter to that parent and scrolls the map into view; a
+ * second click on the pressed header clears it (review fix: the map's own control may have no
+ * option for a parent the stored scope does not yet hold, so the header must be able to undo it).
+ */
+export async function aHeaderClickFiltersTheMap(): Promise<void> {
+  stubReads(phewbSplit());
+  const scroll = vi.fn();
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = scroll;
+  try {
+    renderAt(ORG_PHE.id);
+    await groupedGrid();
+    expect(screen.getByTestId("site-map-panel").hasAttribute("data-root-id"), "control: no filter yet").toBe(false);
+
+    const header = within(screen.getByTestId("site-group-s3")).getByRole("button");
+    fireEvent.click(header);
+    expect(screen.getByTestId("site-map-panel").dataset.rootId).toBe("s3");
+    expect(header.getAttribute("aria-pressed")).toBe("true");
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+
+    fireEvent.click(header);
+    expect(screen.getByTestId("site-map-panel").hasAttribute("data-root-id"), "a second click clears it").toBe(false);
+    expect(header.getAttribute("aria-pressed")).toBe("false");
+    expect(scroll, "clearing the filter does not scroll").toHaveBeenCalledTimes(1);
+  } finally {
+    Element.prototype.scrollIntoView = original;
+  }
+}
+
+/**
+ * GP3 — the headings count the organization's live and not-live **sites** (D11): 1 and 11. The
+ * group with one live site of two sits under Live, whole, and its not-live card keeps its badge.
+ */
+export async function theHeadingsCountSitesAndALiveGroupMovesWhole(): Promise<void> {
+  stubReads(phewbSplit());
+  renderAt(ORG_PHE.id);
+
+  await groupedGrid();
+  const live = screen.getByTestId("control-room-sites-live");
+  const notLive = screen.getByTestId("control-room-sites-not-live");
+  expect(within(live).getByRole("heading", { level: 2 }).textContent).toBe("Live sites (1)");
+  expect(within(notLive).getByRole("heading", { level: 2 }).textContent).toBe("Not live (11)");
+  const group = within(live).getByTestId("site-group-s1");
+  expect(cardHrefs(group)).toEqual(["/control-room/site/s1-I", "/control-room/site/s1-II"]);
+  const dark = group.querySelector('a[href="/control-room/site/s1-II"]') as HTMLElement;
+  expect(within(dark).getByTestId("site-live-badge").textContent).toBe("Not live");
+  expect(within(notLive).queryByTestId("site-group-s1")).toBeNull();
+  expect(within(notLive).getAllByRole("button")).toHaveLength(5);
+}
+
+/** GP4 — a move to another organization clears the map's filter (the overview is keyed by organization). */
+export async function aMoveToAnotherOrganizationClearsTheFilter(): Promise<void> {
+  stubReads(phewbSplit());
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (organizationId: string) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<ControlRoomOrganizationPage user={USER} organizationId={organizationId} />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
+  const view = render(tree(ORG_PHE.id));
+  await groupedGrid();
+  fireEvent.click(within(screen.getByTestId("site-group-s2")).getByRole("button"));
+  expect(screen.getByTestId("site-map-panel").dataset.rootId, "control: the filter was set").toBe("s2");
+
+  view.rerender(tree(ORG_A.id));
+  await siteGrid();
+  expect(screen.getByTestId("site-map-panel").dataset.organizationId).toBe(ORG_A.id);
+  expect(screen.getByTestId("site-map-panel").hasAttribute("data-root-id")).toBe(false);
+}
+

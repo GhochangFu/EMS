@@ -54,6 +54,8 @@ provide.
 | `ANTHROPIC_API_KEY` | **Secret** | unset | The `anthropic` provider's key (`@anthropic-ai/sdk`). |
 | `ANTHROPIC_MODEL` | No | `claude-sonnet-5-5` | The `anthropic` provider's model for the platform default. |
 | `LLM_VISION_MODEL` | No | empty — none | The platform default's model for a copilot turn that carries an image (`F4.267`, ADR 0090 Amendment 3 C2), on the same provider and key as `LLM_PROVIDER`. Used only for an image turn; empty sends image turns to the main model and is never a missing variable. An organization's own row names its own vision model. Passed to `api` and `api-replica` in compose. |
+| `ML_FINDINGS_LLM_PROVIDER` | No | empty — the findings paragraph uses `LLM_PROVIDER` | `openai`, `openrouter` or `anthropic`: a separate model for the AI-written paragraph on the ML findings cards only (`E1.9`, ADR 0135 Amendment 8 decision 4). Uses that provider's existing key variable (`OPENROUTER_API_KEY` etc.); there is no new secret. An organization's own LLM setting always wins. Set with no `ML_FINDINGS_LLM_MODEL`, or with no key, means no paragraph (facts only) and one boot warning naming the variable — **never** a fallback to the copilot's model. The copilot and the onboarding agent never read it. Passed to `api` and `api-replica` in compose. |
+| `ML_FINDINGS_LLM_MODEL` | No | empty | The model id for `ML_FINDINGS_LLM_PROVIDER`, for example a small open model on OpenRouter; at most 200 characters (longer means no paragraph). Set without `ML_FINDINGS_LLM_PROVIDER` means no paragraph and a boot warning. |
 
 ## Worker (apps/api/src/worker.ts)
 

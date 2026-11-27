@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
 
+import { STOCK_MODBUS_PROFILES } from "@bms/shared";
+
 import { CalcBackfillRunStore } from "../calc-backfill/calc-backfill-run-store";
 import { CalcModule } from "../calc/calc.module";
 import { ControlRoomModule } from "../control-room/control-room.module";
@@ -58,6 +60,11 @@ import { MqttPayloadFormatsAdminController } from "./mqtt-payload-formats/mqtt-p
 import { MqttPayloadFormatsAdminService } from "./mqtt-payload-formats/mqtt-payload-formats.service";
 import { EdgeGatewaysAdminController } from "./edge-gateways/edge-gateways.controller";
 import { EdgeGatewaysAdminService } from "./edge-gateways/edge-gateways.service";
+import { DeviceProfilesAdminController } from "./device-profiles/device-profiles.controller";
+import {
+  DeviceProfilesAdminService,
+  STOCK_DEVICE_PROFILES_TOKEN,
+} from "./device-profiles/device-profiles.service";
 import { AssetRolesAdminController } from "./vocabularies/asset-roles/asset-roles.controller";
 import { AssetRolesAdminService } from "./vocabularies/asset-roles/asset-roles.service";
 import { AssetDomainsAdminController } from "./vocabularies/asset-domains.controller";
@@ -88,6 +95,7 @@ import { OrganizationsAdminController } from "./organizations/organizations.cont
 import { OrganizationsAdminService } from "./organizations/organizations.service";
 import { RtusAdminController } from "./rtus/rtus.controller";
 import { RtusCredentialsService } from "./rtus/rtus-credentials.service";
+import { RtusModbusService } from "./rtus/rtus-modbus.service";
 import { RtusAdminService } from "./rtus/rtus.service";
 import { ManualReadingsController } from "./telemetry-entry/manual-readings.controller";
 import { TelemetryProposalCheckService } from "./telemetry-entry/telemetry-proposal-check.service";
@@ -142,6 +150,8 @@ import { WorkOrderSlaPoliciesAdminService } from "./work-order-sla-policies/work
     MqttPayloadFormatsAdminController,
     // E7.2 / ADR 0123 decision 12 — the edge gateways, global admin only (not in the copilot catalog).
     EdgeGatewaysAdminController,
+    // F1.2 / ADR 0141 decisions 12-14 — an organization's Modbus device profiles.
+    DeviceProfilesAdminController,
     // E4.1a / ADR 0070 decision 2 — the calc parameter store and its vocabulary read.
     CalcParametersAdminController,
     AssetRolesAdminController,
@@ -194,6 +204,7 @@ import { WorkOrderSlaPoliciesAdminService } from "./work-order-sla-policies/work
     LocationsAdminService,
     RtusAdminService,
     RtusCredentialsService,
+    RtusModbusService,
     AssetGroupsAdminService,
     AssetsAdminService,
     AssetPointsAdminService,
@@ -209,6 +220,10 @@ import { WorkOrderSlaPoliciesAdminService } from "./work-order-sla-policies/work
     PointKeyStatesAdminService,
     MqttPayloadFormatsAdminService,
     EdgeGatewaysAdminService,
+    // F1.2 / ADR 0141 decision 14 — the stock list behind a token, the asset-template
+    // catalog's reason: the integration suite hands the service a fixture list.
+    DeviceProfilesAdminService,
+    { provide: STOCK_DEVICE_PROFILES_TOKEN, useValue: STOCK_MODBUS_PROFILES },
     CalcParametersAdminService,
     AssetRolesAdminService,
     LocationTypesVocabularyAdminService,

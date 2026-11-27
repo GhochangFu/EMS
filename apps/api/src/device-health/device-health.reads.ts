@@ -62,6 +62,9 @@ export interface RtuHealthRow extends RtuHealthFacts {
   readonly organizationId: string;
   readonly code: string;
   readonly displayName: string;
+  /** `F3.89`: the RTU's site (`bms.rtus.location_id`, NOT NULL) and its name, for the host alarm's text. */
+  readonly locationId: string;
+  readonly locationName: string;
   readonly edgeServed: boolean;
   readonly windowSeconds: number;
   readonly clockSkewSeconds: number | null;
@@ -75,6 +78,8 @@ export async function readRtuHealthRows(db: BmsDb, scope: RtuScope): Promise<Rtu
     organization_id: string;
     code: string;
     display_name: string;
+    location_id: string;
+    location_name: string;
     edge_served: boolean;
     host_key: string | null;
     last_seen_ms: number | null;
@@ -86,6 +91,7 @@ export async function readRtuHealthRows(db: BmsDb, scope: RtuScope): Promise<Rtu
     WITH ${scopeCte(scope)},
     ${sql.raw(rtuWindowsCteSql("SELECT id FROM scope"))}
     SELECT r.id AS rtu_id, r.organization_id, r.code, r.display_name,
+           r.location_id, l.name AS location_name,
            (r.edge_gateway_id IS NOT NULL) AS edge_served,
            h.host_key,
            ${ms("h.last_seen_at")} AS last_seen_ms,
@@ -95,6 +101,7 @@ export async function readRtuHealthRows(db: BmsDb, scope: RtuScope): Promise<Rtu
            COALESCE(w.window_seconds, ${FRESHNESS_FLOOR_SECONDS})::int AS window_seconds
       FROM scope s
       JOIN bms.rtus r ON r.id = s.id
+      JOIN bms.locations l ON l.id = r.location_id
       LEFT JOIN bms.rtu_health h ON h.rtu_id = r.id
       LEFT JOIN rtu_windows w ON w.rtu_id = r.id
      ORDER BY r.display_name, r.id
@@ -104,6 +111,8 @@ export async function readRtuHealthRows(db: BmsDb, scope: RtuScope): Promise<Rtu
     organizationId: row.organization_id,
     code: row.code,
     displayName: row.display_name,
+    locationId: row.location_id,
+    locationName: row.location_name,
     edgeServed: row.edge_served,
     hostKey: row.host_key,
     lastSeenMs: row.last_seen_ms,

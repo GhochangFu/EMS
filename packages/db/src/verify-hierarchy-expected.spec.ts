@@ -3,7 +3,8 @@ import { expect } from "vitest";
 import { eskomSeedAssetCatalog } from "./eskom-assets-seed";
 import { eskomCanonicalLocationRows, eskomLocationCode, seedMapLocationRows } from "./eskom-locations-seed";
 import { mapLocationRowsForInsert } from "./map-locations-seed";
-import { loadPheCatalog, stationSlug } from "./phe-pilot-seed";
+import { loadPheCatalog, pheRtuSites, stationSlug } from "./phe-pilot-seed";
+import { PHE_SPLIT_STATION_CODES } from "./phe-split-stations";
 import { hierarchyExpectations } from "./verify-hierarchy-expected";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
@@ -113,32 +114,81 @@ export function assertThirtySixPheElectricalAssets(): void {
   expect(distinct(electricalAssetCodes)).toBe(36);
 }
 
-/** The pattern `cleanupLegacyPheRtuLocations` matched before owner ruling 13. */
-const OLD_LEGACY_SLUG_PATTERN = /^phe-.+-(i|ii)$/;
-
 /**
- * Twelve legacy per-RTU PHE slugs, one per edge RTU, each one the old pattern
- * matched, and none a station's slug (owner ruling 13, OQ1).
+ * ADR 0139 decision 8 and plan D3/D9 — twelve RTU sites, one per edge RTU:
+ * distinct slugs and codes, none a station's slug, each carrying its
+ * station's slug and code and its own `EdgeRTUId`. The boot gate's shape
+ * check reads this list, so a site that took a station's slug would make the
+ * gate judge a live station.
  *
- * Mutations: deriving from the station name gives six station slugs, which
- * the disjointness check rejects; dropping the station filter changes
- * nothing here (the display names never equal a station name), so the length
- * and the pattern are the claims that hold the derivation.
+ * Mutations: deriving the slug from the station name gives six slugs, which
+ * the length, the distinctness and the disjointness checks reject; taking the
+ * first word as the suffix collides `PHE-CBLTPT1-LOTAPATA` twice.
  */
-export function assertTwelveLegacyPheSlugs(): void {
-  const { legacyLocationSlugs } = hierarchyExpectations().phe;
-  expect(legacyLocationSlugs, "one legacy slug per edge RTU").toHaveLength(12);
-  expect(distinct(legacyLocationSlugs), "the legacy slugs must be distinct").toBe(12);
-  expect(
-    legacyLocationSlugs.filter((slug) => !OLD_LEGACY_SLUG_PATTERN.test(slug)),
-    "every legacy slug is one the old pattern matched",
-  ).toEqual([]);
-  const stationSlugs = new Set(loadPheCatalog().rows.map((row) => stationSlug(row.StationName)));
+export function assertTwelvePheRtuSites(): void {
+  const { rtuSites } = hierarchyExpectations().phe;
+  const catalog = loadPheCatalog();
+  expect(rtuSites, "one RTU site per edge RTU").toHaveLength(12);
+  expect(distinct(rtuSites.map((site) => site.slug)), "the site slugs must be distinct").toBe(12);
+  expect(distinct(rtuSites.map((site) => site.code)), "the site codes must be distinct").toBe(12);
+  expect(distinct(rtuSites.map((site) => site.edgeRtuId)), "one site per edge RTU id").toBe(12);
+  const stationSlugs = new Set(catalog.rows.map((row) => stationSlug(row.StationName)));
   expect(stationSlugs.size, "the catalog carries six stations").toBe(6);
   expect(
-    legacyLocationSlugs.filter((slug) => stationSlugs.has(slug)),
-    "no legacy slug may be a station's slug, or the cleanup deletes a live station",
+    rtuSites.filter((site) => stationSlugs.has(site.slug)),
+    "no site slug may be a station's slug",
   ).toEqual([]);
+  for (const site of rtuSites) {
+    const head = catalog.rows.find((row) => row.EdgeRTUId === site.edgeRtuId);
+    expect(head, `edge RTU ${site.edgeRtuId} is in the catalog`).toBeDefined();
+    expect(site.name).toBe(head?.RTUDisplayName);
+    expect(site.slug).toBe(stationSlug(head?.RTUDisplayName ?? ""));
+    expect(site.stationSlug, `${site.slug} carries its station's slug`).toBe(stationSlug(head?.StationName ?? ""));
+    expect(site.stationCode, `${site.slug} carries its station's code`).toBe(head?.StationCode);
+    expect(site.latitude).toBe(Number(head?.Latitude));
+    expect(site.longitude).toBe(Number(head?.Longitude));
+  }
+  const lotapata = rtuSites.filter((site) => site.stationCode === "CBLTPT1");
+  expect(lotapata.map((site) => [site.slug, site.code])).toEqual([
+    ["phe-lotapata-i", "PHE-CBLTPT1-I"],
+    ["phe-lotapata-ii", "PHE-CBLTPT1-II"],
+  ]);
+}
+
+/**
+ * Plan D3 — a site identity the seed cannot write is refused, not guessed: a
+ * display name whose last word is not `[A-Z0-9]+` once upper-cased, two RTUs
+ * whose names give one slug or one code, and a site slug that is a station's
+ * slug (the boot gate's shape check would count the live station).
+ *
+ * Mutations: dropping any one throw returns the bad entries. The slug throw
+ * is held by two rows of one display name at different station codes, whose
+ * codes differ; the code throw by `Lota-pata I`, whose slug differs.
+ */
+export function assertABadRtuSiteIdentityIsRefused(): void {
+  const catalog = loadPheCatalog();
+  const head = catalog.rows[0];
+  if (!head) throw new Error("the PHE catalog has no rows");
+  const withNames = (...names: string[]) => ({
+    ...catalog,
+    rows: names.map((name, index) => ({ ...head, EdgeRTUId: 9000 + index, RTUDisplayName: name })),
+  });
+  expect(() => pheRtuSites(withNames("Lotapata I-A"))).toThrow(/Lotapata I-A/);
+  expect(() => pheRtuSites(withNames("Lotapata I", "Lotapata  I"))).toThrow(/duplicate site slug/);
+  expect(() => pheRtuSites(withNames("Lotapata I", "Lota-pata I"))).toThrow(/duplicate site code/);
+  const twoStations = withNames("Lotapata I", "Lotapata I");
+  const [first, second] = twoStations.rows;
+  if (!first || !second) throw new Error("withNames gave fewer than two rows");
+  expect(() =>
+    pheRtuSites({ ...twoStations, rows: [first, { ...second, StationCode: `${head.StationCode}X` }] }),
+  ).toThrow(/duplicate site slug/);
+  expect(() => pheRtuSites(withNames(head.StationName))).toThrow(
+    new RegExp(`${stationSlug(head.StationName)}, which is a station's slug`),
+  );
+  expect(pheRtuSites(withNames("Lotapata I", "Lotapata II")).map((site) => site.code)).toEqual([
+    `PHE-${head.StationCode}-I`,
+    `PHE-${head.StationCode}-II`,
+  ]);
 }
 
 /**
@@ -171,11 +221,14 @@ export function assertCombinedAndEskomOnlyRowsAgree(): void {
  */
 export function assertAnEmptyDerivedListIsRefused(): void {
   const empty = { ...loadPheCatalog(), rows: [] };
-  expect(() => hierarchyExpectations(empty)).toThrow(/phe\.locationCodes/);
-  expect(() => hierarchyExpectations(empty)).toThrow(/phe\.legacyLocationSlugs/);
+  // The split list is passed as `[]`, not left to its default: this case is about empty derived
+  // lists, and a committed list (release B) would otherwise throw first, naming a code the empty
+  // catalog does not hold.
+  expect(() => hierarchyExpectations(empty, [])).toThrow(/phe\.locationCodes/);
+  expect(() => hierarchyExpectations(empty, [])).toThrow(/phe\.rtuSites/);
   let message = "";
   try {
-    hierarchyExpectations(empty);
+    hierarchyExpectations(empty, []);
   } catch (err: unknown) {
     message = err instanceof Error ? err.message : String(err);
   }
@@ -193,13 +246,36 @@ export function assertOneEskomSiteLayoutLocation(): void {
   expect(siteLayoutEskomLocations.map((identity) => identity.key)).not.toContain(controlRoomViewLocation.key);
 }
 
-/** `F3.73` plan D12 — each of the six PHE catalog stations carries one, by its station slug. */
+/**
+ * `F3.73` plan D12 — each of the six PHE catalog stations carries one, by its station slug. The
+ * list is passed as `[]`: the split sites a committed list adds are L6's case below.
+ */
 export function assertSixPheSiteLayoutSlugs(): void {
-  const { siteLayoutPheSlugs } = hierarchyExpectations();
+  const { siteLayoutPheSlugs } = hierarchyExpectations(loadPheCatalog(), []);
   const catalog = loadPheCatalog();
   expect(distinct(siteLayoutPheSlugs)).toBe(6);
   expect([...siteLayoutPheSlugs].sort()).toEqual(
     [...new Set(catalog.rows.map((row) => stationSlug(row.StationName)))].sort(),
+  );
+}
+
+/**
+ * `F4.388` L6 (ADR 0139 decision 6, plan D9) — a split station keeps its slug on the list (its
+ * view row becomes `generated`, decision 7) and each of its sites adds one: six for an empty list,
+ * eight with Lotapata on it. The default is the committed list.
+ */
+export function assertSiteLayoutPheSlugsGainTheSplitSites(): void {
+  const catalog = loadPheCatalog();
+  const stations = [...new Set(catalog.rows.map((row) => stationSlug(row.StationName)))];
+  const none = hierarchyExpectations(catalog, []).siteLayoutPheSlugs;
+  expect(none).toHaveLength(6);
+  expect([...none].sort()).toEqual([...stations].sort());
+  const lotapata = hierarchyExpectations(catalog, ["CBLTPT1"]).siteLayoutPheSlugs;
+  expect(lotapata).toHaveLength(8);
+  expect(distinct(lotapata)).toBe(8);
+  expect([...lotapata].sort()).toEqual([...stations, "phe-lotapata-i", "phe-lotapata-ii"].sort());
+  expect([...hierarchyExpectations().siteLayoutPheSlugs].sort(), "the default is the committed list").toEqual(
+    [...hierarchyExpectations(catalog, PHE_SPLIT_STATION_CODES).siteLayoutPheSlugs].sort(),
   );
 }
 

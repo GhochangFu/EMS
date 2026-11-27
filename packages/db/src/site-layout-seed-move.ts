@@ -3,8 +3,10 @@ import type pg from "pg";
 import { PUMP_STATION_STANDARD_SITE_TEMPLATE, SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 import type { PheCatalogFile } from "./phe-pilot-seed";
+import { PHE_SPLIT_STATION_CODES } from "./phe-split-stations";
 import {
   ensureSiteTemplate,
+  pheSiteLayoutSites,
   pheSiteLayoutStations,
   type PlannedCopyTab,
   planSiteCopy,
@@ -18,7 +20,8 @@ import {
   siteLayoutSlug,
   writeSiteLayoutTabs,
 } from "./site-layout-seed";
-import { activePointsByAsset } from "./site-layout-seed-reads";
+import { activePointsByAsset, SITE_LAYOUT_CANDIDATE_SQL } from "./site-layout-seed-reads";
+import { copyStationWidgetSettings } from "./site-layout-seed-station-settings";
 import { SITE_LAYOUT_COPY_DESCRIPTION, upgradeSeededSiteLayoutCopies } from "./site-layout-seed-upgrade";
 import { canonicalJson } from "./site-layout-stock-history";
 
@@ -124,21 +127,6 @@ export function plannedCopyFingerprint(tabs: readonly PlannedCopyTab[]): string 
   );
 }
 
-/**
- * The candidate copy at a location: its view row points at it. Params: `[locationId,
- * organizationId, slug]`. `FOR UPDATE OF d` locks the dashboard row for the rest of the seed's
- * transaction: a builder save updates that row first (`DashboardsService.putWidgets`), so an
- * admin edit made while the seed compares and rewrites the copy waits, and is never deleted.
- */
-const CANDIDATE_SQL = `
-  SELECT d.id, d.name, d.description, d.stock_version, d.template_id, t.code AS template_code
-    FROM bms.site_control_room_views v
-    JOIN bms.dashboards d ON d.id = v.dashboard_id
-    JOIN bms.dashboard_templates t ON t.id = d.template_id
-   WHERE v.location_id = $1 AND v.kind = 'dashboard'
-     AND d.organization_id = $2 AND d.location_id = $1 AND d.slug = $3
-     FOR UPDATE OF d
-`;
 const LOCATION_SQL = `SELECT slug, name FROM bms.locations WHERE id = $1 AND organization_id = $2`;
 const STORED_TABS_SQL = `
   SELECT tab_key, label, sort_order, asset_group_id FROM bms.dashboard_tabs
@@ -276,7 +264,7 @@ export async function moveUntouchedPheCopies(
         stock_version: number | null;
         template_id: string;
         template_code: string;
-      }>(CANDIDATE_SQL, [locationId, organizationId, siteLayoutSlug(location.slug)])
+      }>(SITE_LAYOUT_CANDIDATE_SQL, [locationId, organizationId, siteLayoutSlug(location.slug)])
     ).rows[0];
     if (!copy) {
       stay(locationId, "no_copy");
@@ -336,22 +324,57 @@ export async function moveUntouchedPheCopies(
 }
 
 /**
+ * `F4.388` (ADR 0139 decision 7, plan D7) — a split station's view when it has none: `generated`,
+ * no dashboard (`0082`'s checks allow it). `DO NOTHING`: a station that had a view keeps it, as the
+ * move's unlink (`unlinkSplitStationView`) or an administrator left it.
+ * Params: `[locationIds, organizationId]`.
+ */
+const SPLIT_STATION_VIEW_INSERT_SQL = `
+  INSERT INTO bms.site_control_room_views (location_id, organization_id, kind, dashboard_id)
+  SELECT x.id, $2, 'generated', NULL FROM unnest($1::uuid[]) AS x(id)
+  ON CONFLICT (location_id) DO NOTHING
+`;
+
+/**
  * PHEWB: the templates, then a copy at each catalog station (`F4.319`, ADR 0113 decision 8, plan
  * D7). `smoc-standard` is still imported and its upgrade chain still runs, so a copy at an older
  * stock shape reaches the current one first; then each untouched `smoc-standard` copy moves to
  * `pump-station-standard`, and a station with no copy yet gets one made from
  * `pump-station-standard` directly.
+ *
+ * `F4.388` (ADR 0139 decisions 6 and 7, plan D7): a station on `splitStationCodes` is left out of
+ * the upgrade, move and copy steps and its sites take its place ({@link pheSiteLayoutSites}); the
+ * station gets a `generated` view row when it has none, so a cold start ends where the move's
+ * unlink leaves a station that had a copy. The committed list by default (plan D2).
+ *
+ * `F4.388` (ADR 0139 Amendment 1, plan D3/D4): after the copies are made, in the same bracket and
+ * transaction, each split site's `pump-station-standard` copy takes its station's `mimic` and
+ * `trend_strip` settings one time ({@link copyStationWidgetSettings}): a copy made this run, or one
+ * stamped below 3, then stamped 3. The outcome returned is still `seedSiteLayouts`'s.
  */
 export async function seedPhewbSiteLayouts(
   pool: Pick<pg.Pool, "query">,
   phewbOrgId: string,
   pheCatalog: PheCatalogFile,
   log?: (line: string) => void,
+  splitStationCodes: readonly string[] = PHE_SPLIT_STATION_CODES,
 ): Promise<SiteLayoutSeedOutcome> {
   const say = log ?? ((line: string) => console.error(line));
+  const locationIds = await resolvePhewbSiteLayoutLocations(
+    pool,
+    phewbOrgId,
+    pheSiteLayoutSites(pheCatalog, splitStationCodes),
+  );
+  const splitStationIds = await resolvePhewbSiteLayoutLocations(
+    pool,
+    phewbOrgId,
+    pheSiteLayoutStations(pheCatalog).filter((entry) => splitStationCodes.includes(entry.stationCode)),
+  );
+  if (splitStationIds.length > 0) {
+    await pool.query(SPLIT_STATION_VIEW_INSERT_SQL, [splitStationIds, phewbOrgId]);
+  }
   const smoc = await ensureSiteTemplate(pool, phewbOrgId);
   const station = await ensureSiteTemplate(pool, phewbOrgId, PUMP_STATION_STANDARD_SITE_TEMPLATE);
-  const locationIds = await resolvePhewbSiteLayoutLocations(pool, phewbOrgId, pheSiteLayoutStations(pheCatalog));
   // The smoc chain runs whenever smoc-standard is published, as before F4.319, so the copies that
   // stay on it keep their upgrades even while pump-station-standard is an unpublished draft.
   if (smoc !== null) {
@@ -371,11 +394,19 @@ export async function seedPhewbSiteLayouts(
       log: say,
     });
   }
-  return seedSiteLayouts(pool, phewbOrgId, {
+  const outcome = await seedSiteLayouts(pool, phewbOrgId, {
     template: station,
     locationIds,
     choiceByGroupCode: SITE_LAYOUT_PHEWB_PUMP_STATION_CHOICE,
     description: PUMP_STATION_COPY_DESCRIPTION,
     ...(log ? { log } : {}),
   });
+  await copyStationWidgetSettings(pool, phewbOrgId, {
+    catalog: pheCatalog,
+    splitStationCodes,
+    madeDashboardIds: new Set(outcome.made.map((copy) => copy.dashboardId)),
+    choiceByGroupCode: SITE_LAYOUT_PHEWB_PUMP_STATION_CHOICE,
+    log: say,
+  });
+  return outcome;
 }

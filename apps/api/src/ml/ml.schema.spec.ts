@@ -1,7 +1,13 @@
 import { ANOMALY_MAX_SPAN_DAYS, PAST_FORECAST_MAX_SPAN_DAYS } from "@bms/shared";
 import { expect } from "vitest";
 
-import { anomaliesQuerySchema, assetAnomaliesQuerySchema, pastForecastQuerySchema } from "./ml.schema";
+import {
+  anomaliesQuerySchema,
+  assetAnomaliesQuerySchema,
+  forecastListQuerySchema,
+  mlFindingsSummaryQuerySchema,
+  pastForecastQuerySchema,
+} from "./ml.schema";
 
 /**
  * `E1.4e` / ADR 0135 Amendment 4 — `pastForecastQuerySchema`, the past forecast's
@@ -87,5 +93,39 @@ export function theListQueryTakesAnOptionalSinceOnly(): void {
   expect(anomaliesQuerySchema.parse({ since: FROM })).toEqual({ since: FROM });
   for (const bad of [{ since: "last-week" }, { since: "2026-11-15T00:00:00" }, { since: "2026-01-01T00:00:00+99:99" }, { since: FROM, limit: "10" }, { from: FROM }]) {
     expect(anomaliesQuerySchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+  }
+}
+
+const ORG = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA";
+const LOC = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const GROUP = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const ASSET_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
+/** `E1.9a` (ADR 0135 Amendment 8 decision 8): the two list routes take `organizationId` and `locationId` only. */
+export function theListQueriesTakeOrganizationAndLocationOnly(): void {
+  expect(forecastListQuerySchema.parse({})).toEqual({});
+  expect(forecastListQuerySchema.parse({ organizationId: ORG, locationId: LOC })).toEqual({
+    organizationId: ORG.toLowerCase(),
+    locationId: LOC,
+  });
+  expect(anomaliesQuerySchema.parse({ since: FROM, organizationId: ORG, locationId: LOC })).toEqual({
+    since: FROM,
+    organizationId: ORG.toLowerCase(),
+    locationId: LOC,
+  });
+  for (const schema of [forecastListQuerySchema, anomaliesQuerySchema]) {
+    for (const bad of [{ assetGroupId: GROUP }, { assetId: ASSET_ID }, { organizationId: "not-a-uuid" }, { locationId: "1" }, { site: LOC }]) {
+      expect(schema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+    }
+  }
+}
+
+/** `E1.9a` (R-c): the summary routes take the four scope keys and nothing else. */
+export function theSummaryQueryTakesTheFourScopeKeys(): void {
+  const all = { organizationId: ORG, locationId: LOC, assetGroupId: GROUP, assetId: ASSET_ID };
+  expect(mlFindingsSummaryQuerySchema.parse(all)).toEqual({ ...all, organizationId: ORG.toLowerCase() });
+  expect(mlFindingsSummaryQuerySchema.parse({})).toEqual({});
+  for (const bad of [{ ...all, kind: "forecasts" }, { since: FROM }, { assetId: "x" }]) {
+    expect(mlFindingsSummaryQuerySchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
   }
 }

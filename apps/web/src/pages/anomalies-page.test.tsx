@@ -3,6 +3,15 @@ import { cleanup } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, describe, it, vi } from "vitest";
 
 import {
+  aFailedSummaryLeavesTheTableWorking,
+  aSingleOrganizationIsLockedAndNotSent,
+  aUrlLocationIsSentOnFirstLoad,
+  anAssetGroupInTheUrlIsSentToNeither,
+  anOrganizationIsInTheUrlAndBothReads,
+  onlyOrganizationAndLocationPickers,
+  pendingOptionsWithAScopeReadLoading,
+  theCardsSitAboveTheTable,
+  theRowLinkIsTheSharedFindingLink,
   aFailedReadShowsTheError,
   aPendingReadIsLoadingNotEmpty,
   aTruncatedListSaysSo,
@@ -48,4 +57,13 @@ describe("E1.2c — the Anomalies page", () => {
   it("says loading, not empty, while the read is pending", () => aPendingReadIsLoadingNotEmpty());
   it("reads the list again every 15 minutes", () => theListIsReadEveryFifteenMinutes());
   it("shows one fixed sentence when the read fails", () => aFailedReadShowsTheError());
+  it("E1.9b: draws only the Organization and Location pickers", () => onlyOrganizationAndLocationPickers());
+  it("E1.9b: an organization choice is in the URL and both reads", () => anOrganizationIsInTheUrlAndBothReads());
+  it("E1.9b: a URL location is sent on the first read", () => aUrlLocationIsSentOnFirstLoad());
+  it("E1.9b: an asset group in the URL is sent to neither read", () => anAssetGroupInTheUrlIsSentToNeither());
+  it("E1.9b: a single organization is locked and not sent", () => aSingleOrganizationIsLockedAndNotSent());
+  it("E1.9b: pending options with a scope read loading, not empty", () => pendingOptionsWithAScopeReadLoading());
+  it("E1.9b: the findings cards sit above the table", () => theCardsSitAboveTheTable());
+  it("E1.9b: a failed summary read leaves the table working", () => aFailedSummaryLeavesTheTableWorking());
+  it("E1.9b R-g: each row link is the shared finding link", () => theRowLinkIsTheSharedFindingLink());
 });

@@ -189,6 +189,11 @@ export function blankDashboardWidgetRow(widgetType: WidgetType): DashboardWidget
     config.railRows = "8";
     config.railShowSummary = true;
   }
+  if (widgetType === "ml_findings") {
+    // `E1.9f` (plan R-u) — the renderer's defaults, written so a fresh widget saves both keys.
+    config.mlFindingsShow = "both";
+    config.mlFindingsParagraph = true;
+  }
   return {
     widgetType,
     title: "",
@@ -351,6 +356,11 @@ export function configRowFromDto(widget: DashboardWidgetSpec): WidgetConfigRow {
         row.stripTabKey = widget.config.tabKey;
       }
       Object.assign(row, readTrendStripSelection(widget.config)); // `F4.306` — the stored selection
+      break;
+    case "ml_findings":
+      // `E1.9f` (plan R-u) — both keys are optional in the schema; absent reads as the renderer's default.
+      row.mlFindingsShow = widget.config.show ?? "both";
+      row.mlFindingsParagraph = widget.config.paragraph ?? true;
       break;
     case "state_legend":
     case "asset_class_strip":
@@ -849,6 +859,13 @@ export function buildPutWidgetsPayload(
         case "anomaly":
           // `E1.2d` (plan R16) — its one point is a `points` row and names the asset; the config holds nothing.
           return { ...identity, widgetType: "anomaly", config: {} };
+        case "ml_findings":
+          // `E1.9f` (plan R-u) — binds nothing; the builder always writes both renderer keys.
+          return {
+            ...identity,
+            widgetType: "ml_findings",
+            config: { show: row.config.mlFindingsShow ?? "both", paragraph: row.config.mlFindingsParagraph ?? true },
+          };
         default: {
           const unreachable: never = row.widgetType;
           throw new Error(`Unhandled widget type ${JSON.stringify(unreachable)}`);

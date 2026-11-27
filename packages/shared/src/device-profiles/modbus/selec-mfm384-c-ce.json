@@ -1,0 +1,165 @@
+{
+  "code": "selec-mfm384-c-ce",
+  "version": 1,
+  "vendor": "Selec",
+  "model": "MFM384-C-CE",
+  "source": {
+    "document": "OP INST MFM384-C-CE",
+    "revision": "OP805-V03",
+    "pages": "2-4"
+  },
+  "verified": false,
+  "registers": [
+    {
+      "sourceKey": "voltage_vrn",
+      "table": "input",
+      "address": 0,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "V"
+    },
+    {
+      "sourceKey": "voltage_vyn",
+      "table": "input",
+      "address": 2,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "V"
+    },
+    {
+      "sourceKey": "voltage_vbn",
+      "table": "input",
+      "address": 4,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "V"
+    },
+    {
+      "sourceKey": "voltage_vry",
+      "table": "input",
+      "address": 8,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "V"
+    },
+    {
+      "sourceKey": "voltage_vyb",
+      "table": "input",
+      "address": 10,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "V"
+    },
+    {
+      "sourceKey": "voltage_vbr",
+      "table": "input",
+      "address": 12,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "V"
+    },
+    {
+      "sourceKey": "current_ir",
+      "table": "input",
+      "address": 16,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "A"
+    },
+    {
+      "sourceKey": "current_iy",
+      "table": "input",
+      "address": 18,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "A"
+    },
+    {
+      "sourceKey": "current_ib",
+      "table": "input",
+      "address": 20,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "A"
+    },
+    {
+      "sourceKey": "current_a",
+      "table": "input",
+      "address": 22,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "A"
+    },
+    {
+      "sourceKey": "kw",
+      "table": "input",
+      "address": 42,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "kW"
+    },
+    {
+      "sourceKey": "kva",
+      "table": "input",
+      "address": 44,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "kVA"
+    },
+    {
+      "sourceKey": "kvar",
+      "table": "input",
+      "address": 46,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "kVAr"
+    },
+    {
+      "sourceKey": "pf",
+      "table": "input",
+      "address": 54,
+      "type": "float32",
+      "wordOrder": "big"
+    },
+    {
+      "sourceKey": "frequency_hz",
+      "table": "input",
+      "address": 56,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "Hz"
+    },
+    {
+      "sourceKey": "kvah_total",
+      "table": "input",
+      "address": 60,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "kVAh"
+    },
+    {
+      "sourceKey": "kwh_total",
+      "table": "input",
+      "address": 96,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "kWh"
+    },
+    {
+      "sourceKey": "kvarh_total",
+      "table": "input",
+      "address": 112,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "kVArh"
+    },
+    {
+      "sourceKey": "current_in",
+      "table": "input",
+      "address": 122,
+      "type": "float32",
+      "wordOrder": "big",
+      "unit": "A"
+    }
+  ]
+}

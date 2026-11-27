@@ -1,13 +1,7 @@
 import type { RegisterDelta } from "@bms/shared";
 import type { Pool } from "pg";
 
-/**
- * `F4.365` (ADR 0134 decision 4, plan D9) — the first and last raw register
- * sample of a point inside `[from, to)`, for any number of requests in one
- * statement. The shape of `CalcWindowsService.readDeltas`: two `LIMIT 1`
- * laterals over `telemetry.point_values`, so the read is two index probes per
- * request whatever the month's sample count.
- */
+/** One raw register sample: its time and value. */
 export interface Sample {
   timeMs: number;
   value: number;
@@ -20,11 +14,34 @@ export interface RegisterRequest {
   to: Date;
 }
 
+/**
+ * `F4.365` (ADR 0134 decision 4, plan D9) — the first and last raw register
+ * sample of a point inside `[from, to)`, for any number of requests in one
+ * statement. The shape of `CalcWindowsService.readDeltas`: two `LIMIT 1`
+ * laterals over `telemetry.point_values`, so the read is two index probes per
+ * request whatever the month's sample count.
+ *
+ * **Each probe also carries the batch's envelope** (`F4.393`, plan D5):
+ * `v.time >= $6 AND v.time < $7`, the earliest `from` and the latest `to`. The
+ * per-request bound names a column of the `unnest` row, so the planner cannot
+ * use it before it runs and plans every chunk of the hypertable, twice; a bound
+ * parameter compared to `time` directly is planned away. Every request's range
+ * lies inside the envelope, so each row either passes both bounds or was
+ * excluded by its own: the answers are identical, and only the chunks planned
+ * change. Left uncast on purpose, as in `CalcWindowsService.readDeltas`.
+ */
 export async function readRegisterProbes(
   pool: Pick<Pool, "query">,
   requests: readonly RegisterRequest[],
 ): Promise<{ first: Sample | null; last: Sample | null }[]> {
   if (requests.length === 0) return [];
+  // The envelope's ends, by a loop: `Math.min(...xs)` throws a RangeError past the argument limit.
+  let lowest = Number.POSITIVE_INFINITY;
+  let highest = Number.NEGATIVE_INFINITY;
+  for (const r of requests) {
+    lowest = Math.min(lowest, r.from.getTime());
+    highest = Math.max(highest, r.to.getTime());
+  }
   const { rows } = await pool.query<{
     idx: number;
     first_time: Date | null;
@@ -40,6 +57,7 @@ export async function readRegisterProbes(
            FROM telemetry.point_values v
           WHERE v.asset_id = p.asset_id AND v.point_key = p.point_key
             AND v.time >= p.from_t AND v.time < p.to_t
+            AND v.time >= $6 AND v.time < $7
           ORDER BY v.time ASC
           LIMIT 1
        ) f ON true
@@ -48,6 +66,7 @@ export async function readRegisterProbes(
            FROM telemetry.point_values v
           WHERE v.asset_id = p.asset_id AND v.point_key = p.point_key
             AND v.time >= p.from_t AND v.time < p.to_t
+            AND v.time >= $6 AND v.time < $7
           ORDER BY v.time DESC
           LIMIT 1
        ) l ON true`,
@@ -57,6 +76,8 @@ export async function readRegisterProbes(
       requests.map((r) => r.pointKey),
       requests.map((r) => r.from.toISOString()),
       requests.map((r) => r.to.toISOString()),
+      new Date(lowest).toISOString(),
+      new Date(highest).toISOString(),
     ],
   );
   const out: { first: Sample | null; last: Sample | null }[] = requests.map(() => ({ first: null, last: null }));

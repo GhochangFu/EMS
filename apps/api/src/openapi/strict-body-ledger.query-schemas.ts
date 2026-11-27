@@ -15,6 +15,7 @@ import {
   tariffCategoriesQuerySchema,
   tariffLineVersionsQuerySchema,
   deleteTariffVersionQuerySchema,
+  listDeviceProfilesQuerySchema,
 } from "@bms/shared";
 import { locationEnergyBillQuerySchema } from "../tariffs/tariffs.schema";
 import {
@@ -49,7 +50,17 @@ import {
 import {
   listReportFilesQuerySchema,
 } from "../reports/report-files.schema";
-import { anomaliesQuerySchema, assetAnomaliesQuerySchema, pastForecastQuerySchema } from "../ml/ml.schema";
+import {
+  anomaliesQuerySchema,
+  assetAnomaliesQuerySchema,
+  forecastListQuerySchema,
+  mlFindingsSummaryQuerySchema,
+  pastForecastQuerySchema,
+} from "../ml/ml.schema";
+import { findingsParagraphQuerySchema } from "../ml-findings/findings-paragraph.schema";
+import { advisoriesQuerySchema } from "../advisories/advisories.schema";
+import { degradationQuerySchema } from "../degradation/degradation.schema";
+import { healthBadActorsQuerySchema } from "../asset-health/health-inputs.schema";
 import {
   assetHealthQuerySchema,
   healthSummaryQuerySchema,
@@ -211,4 +222,27 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `anomaliesQuerySchema` (`GET /ml/anomalies?since=`, one optional instant) — `.strict()`, no body.
   assetAnomaliesQuerySchema,
   anomaliesQuerySchema,
+  // 43 -> 45 (2026-11-17): `E1.9a` (ADR 0135 Amendment 8) registered `forecastListQuerySchema`
+  // (`GET /ml/forecasts?organizationId=&locationId=`) and `mlFindingsSummaryQuerySchema` (the two
+  // summaries' four scope uuids, registered twice) — `.strict()`, no body, no ledger entry.
+  forecastListQuerySchema,
+  mlFindingsSummaryQuerySchema,
+  // 45 -> 46 (2026-11-17): `E1.9c` (ADR 0135 Amendment 8 decision 10) registered
+  // `findingsParagraphQuerySchema` (`GET /ml/findings/paragraph?kind=&…`): a required kind enum and
+  // the summaries' four scope uuids — `.strict()`, no body, no ledger entry.
+  findingsParagraphQuerySchema,
+  // 46 -> 47 (2026-11-17): `E1.8a` (ADR 0050 Amendment 5) registered `healthBadActorsQuerySchema`
+  // (`GET /asset-health/bad-actors?organizationId=&locationId=`): the summary's two optional
+  // lower-cased scope uuids that only narrow — `.strict()`, no body, no ledger entry.
+  healthBadActorsQuerySchema,
+  // 47 -> 48 (2026-11-17): `E1.6a` (ADR 0137) registered `advisoriesQuerySchema`
+  // (`GET /advisories?organizationId=&locationId=`): two optional scope uuids, `.strict()`, no body.
+  advisoriesQuerySchema,
+  // 48 -> 49 (2026-11-18): `E1.5a` (ADR 0138) registered `degradationQuerySchema`
+  // (`GET /degradation?organizationId=&locationId=`): the advisories' two optional scope uuids that
+  // only narrow — `.strict()`, no body, no ledger entry. The asset route takes no query.
+  degradationQuerySchema,
+  // 49 -> 50 (2026-11-22): `F1.2` (ADR 0141 decision 13) registered `listDeviceProfilesQuerySchema`
+  // (`GET /admin/device-profiles?organizationId=`): one required uuid, `.strict()`, no body.
+  listDeviceProfilesQuerySchema,
 };

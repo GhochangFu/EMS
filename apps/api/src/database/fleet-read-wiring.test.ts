@@ -1,20 +1,28 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAdvisoriesServiceSlots,
+  assertDegradationServiceSlots,
   assertAlarmNotifyServiceFleetSlot,
   assertAssetFilterScopeServiceFleetSlot,
   assertFilterOptionsServiceFleetSlot,
   assertAlarmRaiserTenantSlot,
   assertAlarmRootCauseServiceTenantSlot,
+  assertHealthInputsServiceFleetSlot,
+  assertHealthInputsServiceTenantSlot,
   assertAssetImagesServiceFleetSlot,
   assertAssetImagesServiceTenantSlot,
   assertAssetImagesWriteServiceFleetSlot,
   assertAssetImagesWriteServiceTenantSlot,
   assertConformedServiceSlots,
+  assertDeviceProfilesServiceSlots,
   assertMaintenanceWindowsServiceFleetSlot,
   assertMaintenanceWindowsServiceTenantSlot,
   assertMlAnomaliesServiceFleetSlot,
   assertMlAnomaliesServiceTenantSlot,
+  assertMlFindingsServiceFleetSlot,
+  assertMlFindingsServiceTenantSlot,
+  assertFindingsParagraphServiceTenantSlot,
   assertMlForecastsServiceFleetSlot,
   assertMlForecastsServiceTenantSlot,
   assertCopilotPurgeServiceFleetSlot,
@@ -159,7 +167,39 @@ describe("E7.1b — services inject the right pool token in the right constructo
     assertMlAnomaliesServiceFleetSlot();
   });
 
+  it("E1.9a MlFindingsService injects the tenant pool in slot 0", () => {
+    assertMlFindingsServiceTenantSlot();
+  });
+
+  it("E1.9a MlFindingsService injects the fleet pool in slot 1", () => {
+    assertMlFindingsServiceFleetSlot();
+  });
+
+  it("E1.9c FindingsParagraphService injects the tenant pool in slot 0 and no fleet token", () => {
+    assertFindingsParagraphServiceTenantSlot();
+  });
+
   it("E2.3 AlarmRootCauseService injects the tenant pool in slot 1 and no fleet token", () => {
     assertAlarmRootCauseServiceTenantSlot();
+  });
+
+  it("E1.8a HealthInputsService injects the tenant pool in slot 0", () => {
+    assertHealthInputsServiceTenantSlot();
+  });
+
+  it("E1.8a HealthInputsService injects the fleet pool in slot 1", () => {
+    assertHealthInputsServiceFleetSlot();
+  });
+
+  it("E1.6a AdvisoriesService injects the tenant pool in slot 0, the fleet pool in slot 1 and the fleet pg pool in slot 2", () => {
+    assertAdvisoriesServiceSlots();
+  });
+
+  it("E1.5a DegradationService injects the tenant pool in slot 0, the fleet pool in slot 1 and the fleet pg pool in slot 2", () => {
+    assertDegradationServiceSlots();
+  });
+
+  it("F1.2 DeviceProfilesAdminService injects the tenant pool in slot 0 and the fleet pool in slot 1", () => {
+    assertDeviceProfilesServiceSlots();
   });
 });

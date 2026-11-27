@@ -9,8 +9,11 @@ import {
   assertEmptyScopeReportsZeroCoverageAndNoInstant,
   assertEveryAssetInScopeIsScoredEvenWithNoCounterRows,
   assertExpectedBucketsFollowsTheLadderAtEveryRung,
+  assertHealthForAssetsAnswersParsedBlockOrUndefined,
   assertMalformedHealthYieldsNullBandNotThrow,
   assertRuleTalliesUseMaxNotSum,
+  assertScoresInScopeIsTheSummaryPerAsset,
+  assertScoresInScopeOnAnEmptyScopeReadsNoCounter,
   assertUnruledCatalogPointAppearsInUnscoredTags,
 } from "./asset-health.service.spec";
 
@@ -58,5 +61,17 @@ describe("asset-health.service", () => {
 
   it("F4.364 — scoresByLocation on an empty input answers an empty map and touches nothing", async () => {
     await assertScoresByLocationOnAnEmptyInputTouchesNothing();
+  });
+
+  it("E1.8a — scoresInScope gives one entry per in-scope asset, in id order, agreeing with summary", async () => {
+    await assertScoresInScopeIsTheSummaryPerAsset();
+  });
+
+  it("E1.8a — scoresInScope on an empty scope answers [] without a counter read", async () => {
+    await assertScoresInScopeOnAnEmptyScopeReadsNoCounter();
+  });
+
+  it("E1.5a — healthForAssets answers a parsed block, or undefined for a template without health", async () => {
+    await assertHealthForAssetsAnswersParsedBlockOrUndefined();
   });
 });

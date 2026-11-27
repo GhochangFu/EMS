@@ -10,7 +10,6 @@ import {
   ensureOrganizations,
   enforceHierarchyNotNull,
   getOrganizationId,
-  cleanupLegacyPheRtuLocations,
 } from "./hierarchy-seed";
 import { seedAccessControlFixtures, seedDecommissionedLocation } from "./access-fixtures-seed";
 import { seedAssetDomains } from "./asset-domains-seed";
@@ -19,7 +18,9 @@ import { seedPointKeyCatalog } from "./point-keys-seed";
 import { seedPointKeyHeadlineRanks } from "./point-key-headline-ranks-seed";
 import { seedPointKeyTrendDefaults } from "./point-key-trend-defaults-seed";
 import { seedPointKeyStates } from "./point-key-states-seed";
-import { loadPheCatalog, phePilotExpectedRows, seedPheCatalog } from "./phe-pilot-seed";
+import { loadPheCatalog, seedPheCatalog } from "./phe-pilot-seed";
+import { pheSiteMapLocationRows } from "./phe-map-seed";
+import type { PheSkippedSite } from "./phe-site-split";
 import { createDb } from "./client";
 import { backfillAssetLocations, seedAssetGroups } from "./asset-groups-seed";
 import {
@@ -124,17 +125,17 @@ async function main(): Promise<void> {
     connectionString: resolveSeedSuperuserUrl(databaseUrl, process.env),
   });
   const identityDb = createDb(superuserPool);
-  // The PHE catalog is read once here, for the map rows and the legacy slugs.
+  // The PHE catalog is read once here, for the map rows.
   const pheCatalog = loadPheCatalog();
   // The same list `hierarchyExpectations` derives the boot gate's ESKOM
   // location codes and asset catalog from.
   const mapLocationRows = seedMapLocationRows(pheCatalog);
-  // Owner ruling 13: the legacy PHE cleanup deletes these twelve slugs and no
-  // other row, whatever slug an administrator gives a PHEWB location.
-  const legacyPheLocationSlugs = phePilotExpectedRows(pheCatalog).legacyLocationSlugs;
   // Written by `seedEskomLadderRules` in the second ESKOM bracket, read by the
   // verifier after every bracket has closed.
   let ladderCollisionSkips: LadderCollisionSkip[] = [];
+  // ADR 0139 decision 3 / owner ruling Q2: the PHE sites seedPheCatalog
+  // skipped on a holder, read by the verifier after every bracket has closed.
+  let pheSkippedSites: readonly PheSkippedSite[] = [];
   // The row seedEskomLocations resolved for RSMOC-WC, for the scoped demo
   // users' grants after the groups exist (owner ruling 17); null when none.
   let westernCapeId: string | null = null;
@@ -241,8 +242,14 @@ async function main(): Promise<void> {
 
     // ── PHEWB ─────────────────────────────────────────────────────────────
     await withOrganization(pool, phewbOrgId, async () => {
-      await seedPheCatalog(db, pool);
-      await cleanupLegacyPheRtuLocations(pool, legacyPheLocationSlugs);
+      // The split list and the catalog are the committed ones (plan D2); the
+      // site-holder read runs on the superuser pool, as seedEskomLocations' does.
+      const pheOutcome = await seedPheCatalog(db, pool, { holderReader: superuserPool });
+      pheSkippedSites = pheOutcome.skippedSites;
+      // ADR 0139 decision 9 (plan D8): a map row for each site the catalog seed resolved, here
+      // and not with the pre-tenant map rows, so a skipped site's slug never gets a row that
+      // would pin another organization's holder. None while the split list is empty.
+      await seedMapLocations(db, pheSiteMapLocationRows(pheOutcome.sites, pheCatalog));
       // `F3.41` — PHEWB's derivation pass, AFTER the catalog that creates the
       // locations and assets it derives from. All three calls moved, not two:
       // dropping `assignEskomAssetRtus` from this pass is probably harmless and
@@ -408,8 +415,9 @@ async function main(): Promise<void> {
     await enforceHierarchyNotNull(pool);
     const { verifyHierarchySeed } = await import("./verify-hierarchy-seed.js");
     // The ladder seed's collision skips, so the verifier exempts exactly those
-    // assets from its uncovered-asset check and logs each one.
-    await verifyHierarchySeed(pool, { eskomOrgId, phewbOrgId }, { ladderCollisionSkips });
+    // assets from its uncovered-asset check and logs each one; and the PHE
+    // sites the catalog seed skipped, which it exempts by owner ruling Q2.
+    await verifyHierarchySeed(pool, { eskomOrgId, phewbOrgId }, { ladderCollisionSkips, pheSkippedSites });
   } finally {
     await pool.end();
     await superuserPool.end();

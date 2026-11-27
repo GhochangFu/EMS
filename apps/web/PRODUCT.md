@@ -20,7 +20,7 @@ wall screen.
 
 ## Product Purpose
 
-IONSiTE NEXUS (internal name TRINETRA) is a real-time enterprise monitoring
+Verve (internal name TRINETRA) is a real-time enterprise monitoring
 platform (BMS/EMS) for electrical, HVAC, UPS/battery, water and environmental
 telemetry across many sites. The pipeline is device or MQTT RTU → Postgres +
 TimescaleDB → NestJS API → Socket.IO → React UI. Success: an operator sees an
@@ -28,7 +28,7 @@ abnormal state within seconds, knows where it is, and can act on it.
 
 ## Positioning
 
-The Enterprise EMS product line for Ion Exchange (India) Ltd. (ADR 0013), forked
+The Enterprise EMS product line (ADR 0013), forked
 from the Eskom SMOC engagement. One Control Room section (ADR 0087) gives every
 organization the same site view: a tabbed site layout copied from the "SMOC
 standard" template, bound to the site through asset-group roles and point keys,
@@ -62,8 +62,12 @@ with the generated view as the fail-safe.
 
 ## Brand Commitments
 
-- On-screen name: **IONSiTE NEXUS**, "powered by Euphoria Infotech India Limited"
-  (ADR 0083). Internal identifiers keep their Eskom-era names.
+- On-screen name: **Verve**, "powered by Euphoria Infotech India Limited"
+  (ADR 0142, which replaces the IONSiTE NEXUS name of ADR 0083). The tagline is
+  "The pulse of every site". The logo is the pulse V with the letters "erve";
+  the approved assets are in `docs/brand/verve/` and their colours are fixed
+  brand colours, not colour roles. Internal identifiers keep their Eskom-era
+  names, and the keys `nexus` and `nexus-soft` are kept.
 - Theme switch (light / dark) and surface switch (neumorphic / flat) are user
   choices (ADR 0085).
 

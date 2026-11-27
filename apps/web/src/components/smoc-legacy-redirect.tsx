@@ -20,7 +20,7 @@ import { findSmocSite, smocTabPath, type SmocTabKey } from "../lib/smoc-pages";
 export function SmocLegacyRedirect({ tab }: { tab: SmocTabKey }) {
   const { data, isError } = useQuery({
     queryKey: ["dashboard", "locations"],
-    queryFn: fetchLocationKpis,
+    queryFn: ({ signal }) => fetchLocationKpis(signal),
   });
 
   if (data === undefined) {

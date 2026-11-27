@@ -121,6 +121,11 @@ export function runTemplateWidgetTypeDerivationTests(): void {
     !(TEMPLATE_WIDGET_TYPES as readonly string[]).includes("anomaly"),
     "the template picker must not offer the anomaly widget: it is builder palette only (plan R15)",
   );
+  // `E1.9f` — `ml_findings` binds nothing, so the second clause drops it (ADR 0135 Amendment 8).
+  assert(
+    !(TEMPLATE_WIDGET_TYPES as readonly string[]).includes("ml_findings"),
+    "the template picker must not offer the ml_findings widget: it is builder palette only",
+  );
   assert(
     !(TEMPLATE_WIDGET_TYPES as readonly string[]).includes("forecast"),
     "the template picker must not offer the forecast widget: it is builder palette only (plan R12)",

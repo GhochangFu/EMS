@@ -5,6 +5,7 @@ import { backoffDelayMs, DEFAULT_BACKOFF, type BackoffPolicy } from "@bms/shared
 import type { EndpointPlan } from "./bindings.js";
 import type { BufferedSegment, DiskBufferHandle } from "./disk-buffer.js";
 import { receivedTogether, type ReceivedSample } from "./received-sample.js";
+import { pollSleepMs } from "./poll-interval.js";
 import { createSampleQueue, DEFAULT_QUEUE_CAPACITY, type SampleQueue } from "./sample-queue.js";
 
 /**
@@ -513,7 +514,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
   }
 
   /** Poll mode: the host drives, and never overlaps two reads. */
-  async function runPollLoop(adapter: IngestAdapter, signal: AbortSignal): Promise<void> {
+  async function runPollLoop(adapter: IngestAdapter, signal: AbortSignal, onReadSucceeded: () => void): Promise<void> {
     if (adapter.mode !== "poll") {
       return;
     }
@@ -523,17 +524,33 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
       }
       try {
         const samples = await adapter.poll();
+        onReadSucceeded();
         consecutivePollFailures = 0;
         state = "connected";
         detail = undefined;
         accept(samples, current?.controller ?? stopController);
       } catch (error) {
+        // A read rejected because the endpoint is stopping (stop or replace
+        // aborts, then disconnects) is not a failure: no count, no warn, and no
+        // P10 throw into an `endpoint failed` error (F1.2 code review 2).
+        if (stopped || signal.aborted) {
+          return;
+        }
         consecutivePollFailures += 1;
         logger.warn("poll failed", {
           endpointKey: plan.endpointKey,
           consecutiveFailures: consecutivePollFailures,
           reason: error instanceof Error ? error.message : "unknown",
         });
+        // ADR 0016 Amendment 10 (c), ruling P10: a poll adapter that says its
+        // transport is gone can never recover by polling again, so the loop
+        // throws and the §5 backoff disconnects, waits and reconnects it — the
+        // path a push adapter takes in `watchPushHealth`. A merely slow or
+        // failing device (`connected`, `degraded`) keeps the rule below.
+        const health = adapter.health();
+        if (health.state === "disconnected") {
+          throw new Error(health.detail ?? "transport disconnected");
+        }
         if (consecutivePollFailures >= timings.pollFailuresBeforeDegraded) {
           // §5 sets the threshold for `degraded`, not for a restart. A polled
           // device that is merely unreachable recovers on its own, and tearing
@@ -545,7 +562,11 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
       }
       // "next tick is scheduled only after `poll()` settles" — overlap is
       // forbidden (§5), which is why this awaits rather than using setInterval.
-      await scheduler.sleep(adapter.defaultPollIntervalMs, signal);
+      //
+      // F1.2 (ADR 0016 Amendment 10 (a)): the interval the plan resolved —
+      // endpoint, then organization, then this adapter's default (P9 on a
+      // shared endpoint). The host owns the timer; the adapter owns none.
+      await scheduler.sleep(pollSleepMs(plan, adapter.defaultPollIntervalMs), signal);
     }
   }
 
@@ -574,13 +595,18 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 
         state = "connected";
         detail = undefined;
-        // A successful connect resets the backoff: an endpoint that reconnects
-        // cleanly after an hour should retry in one second next time, not sixty.
-        attempt = 0;
+        // A successful connect resets a push endpoint's backoff: one that
+        // reconnects cleanly after an hour should retry in one second next time,
+        // not sixty. A poll endpoint resets on its first good read instead
+        // (`runPollLoop` below).
+        if (adapter.mode === "push") {
+          attempt = 0;
+        }
         logger.info("endpoint connected", {
           endpointKey: plan.endpointKey,
           protocol: plan.protocol,
           devices: plan.bindings.length,
+          ...(adapter.mode === "poll" ? { pollIntervalMs: pollSleepMs(plan, adapter.defaultPollIntervalMs) } : {}),
         });
 
         if (adapter.mode === "push") {
@@ -589,7 +615,14 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
           });
           await watchPushHealth(adapter, controller.signal);
         } else {
-          await runPollLoop(adapter, controller.signal);
+          // F1.2 security review M1: a poll endpoint's backoff resets on its
+          // first good read, not on connect. A gateway that accepts and then
+          // drops the socket (one at its connection limit) would otherwise be
+          // re-dialled every second for ever under the P10 restart, instead of
+          // backing off toward the §5 cap.
+          await runPollLoop(adapter, controller.signal, () => {
+            attempt = 0;
+          });
         }
       } catch (error) {
         state = "disconnected";

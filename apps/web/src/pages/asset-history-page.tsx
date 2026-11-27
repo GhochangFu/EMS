@@ -6,12 +6,14 @@ import { encodePointRef } from "@bms/shared";
 
 import { fetchAssetPoints, fetchAssets } from "../api/assets";
 import { downloadAssetHistoryExport } from "../api/view-exports";
+import { AssetAdvisoriesSection } from "../components/advisories/asset-advisories-section";
 import { BucketTable } from "../components/asset-history/bucket-table";
 import { ACCESS_SENTENCE, isForbidden, retryUnlessForbidden, siteZoneOf } from "../components/asset-history/history-format";
 import { PointList } from "../components/asset-history/point-list";
 import { RangePicker } from "../components/asset-history/range-picker";
 import { RawRecordsTable } from "../components/asset-history/raw-records-table";
 import { TrendChart, type TrendSeries } from "../components/asset-history/trend-chart";
+import { AssetDegradationSection } from "../components/degradation/asset-degradation-section";
 import { MaintenanceBadge } from "../components/maintenance/maintenance-badge";
 import { PageHeader } from "../components/page-header";
 import { CopyLinkButton } from "../components/view-actions/copy-link-button";
@@ -218,6 +220,12 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
                 zone={siteZone.zone}
               />
             ) : null}
+
+            {/* `E1.6b` (ADR 0137, plan R-l): the asset's advisories; nothing when none or the read fails. */}
+            <AssetAdvisoriesSection assetId={assetId} />
+
+            {/* `E1.5b` (ADR 0138, plan R-p): the asset's degradation; nothing when none or the read fails. */}
+            <AssetDegradationSection assetId={assetId} />
           </>
         )}
       </div>

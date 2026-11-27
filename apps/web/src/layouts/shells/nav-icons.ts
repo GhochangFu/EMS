@@ -27,6 +27,8 @@ export const NAV_ICONS = {
   Forecasts: "target",
   // `E1.2c` (plan §17 Q4, owner 2026-11-16): a notice, not an alarm.
   Anomalies: "circle-alert",
+  // `E1.6b` (ADR 0137 plan R-n): a suggestion, not an alarm.
+  Advisories: "lightbulb",
   Maintenance: "wrench",
   "Schedule Centre": "clock",
   "Rule Engine": "cpu",

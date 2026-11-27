@@ -41,6 +41,7 @@ import {
   editShowsNoEnergySelect,
   editSaveSendsNoEnergyKey,
   theEnergySettingsActionFollowsTheRole,
+  thePollIntervalActionFollowsTheRole,
   saveInvalidatesTheLocationCards,
 } from "./organizations-page.spec";
 
@@ -204,5 +205,9 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("F4.375 EF5 Energy settings shows for an organization admin and not a location admin", async () => {
     await theEnergySettingsActionFollowsTheRole();
+  });
+
+  it("PI1 the Poll interval action shows to the global and organization admins only (F1.2, P12a)", async () => {
+    await thePollIntervalActionFollowsTheRole();
   });
 });

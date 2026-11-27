@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -7,12 +7,12 @@ import * as loginApi from "../api/login";
 import * as oidcApi from "../api/oidc";
 import { RETURN_PATH_KEY } from "../lib/return-path";
 import { useAuthStore } from "../stores/auth-store";
-import { LoginPage } from "./login-page";
+import { LOGIN_DESCRIPTION, LoginPage } from "./login-page";
 
 /**
- * `F3.33` U4 (ADR 0083; plan OQ1–OQ4) — the login page reads `IONSiTE NEXUS`: the text wordmark
- * replaces the logo image, the hero headline is the client's descriptor plus the old tail, and the
- * card, the role pill and the footer carry the new name.
+ * `F4.398` U4 (ADR 0142 decisions 1 and 4; plan OQ1, OQ2) — the login page reads `Verve`: the
+ * hero shows the logo, the hero headline is the tagline as plain text, and the card, the role
+ * pill and the footer carry the new name.
  *
  * Assertions live here; `login-page.test.tsx` is the Vitest entry point (ADR 0014). The page's one
  * request on mount is `F4.341`'s `GET /public/appearance`, whose failure it swallows; `fetch` is
@@ -40,7 +40,7 @@ function normalised(el: Element): string {
   return (el.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
-const WORDMARK = { name: "IONSiTE NEXUS" } as const;
+const WORDMARK = { name: "Verve" } as const;
 
 /** L1 — the wordmark is a named image. */
 export function showsTheWordmark(): void {
@@ -48,43 +48,32 @@ export function showsTheWordmark(): void {
   expect(screen.getByRole("img", WORDMARK)).toBeTruthy();
 }
 
-/** L2 — the hero headline is the descriptor plus the old tail. */
+/** L2 — the hero headline is the tagline, whole, as plain text (no accent span). */
 export function readsTheHeroHeadline(): void {
   renderLogin();
-  expect(normalised(screen.getByRole("heading", { level: 1 }))).toBe(
-    "Integrated Building, Energy, Water & Utility Management · Smart insight, always on.",
-  );
-}
-
-/** L2b — the accent span holds "Building, Energy, Water & Utility" (`accent-on-chrome` since `F4.310`: it sits on the hero chrome). */
-export function accentsTheDescriptorCore(): void {
-  renderLogin();
-  const accent = screen.getByRole("heading", { level: 1 }).querySelector("span.text-accent-on-chrome");
-  expect(accent?.textContent).toBe("Building, Energy, Water & Utility");
+  const headline = screen.getByRole("heading", { level: 1 });
+  expect(normalised(headline)).toBe("The pulse of every site");
+  expect(headline.children).toHaveLength(0);
 }
 
 /** L3 — the card heading. */
 export function readsTheCardHeading(): void {
   renderLogin();
-  expect(screen.getByRole("heading", { level: 2, name: "Sign in to IONSiTE NEXUS" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 2, name: "Sign in to Verve" })).toBeTruthy();
 }
 
-/** L4 — the card sentence follows the descriptor. */
+/** L4 — the card sentence is the short one (plan OQ1). */
 export function readsTheCardSentence(): void {
   renderLogin();
-  expect(
-    screen.getByText(
-      "Enterprise SSO and local pilot access for the Integrated Building, Energy, Water & Utility Management Platform.",
-    ),
-  ).toBeTruthy();
+  expect(screen.getByText("Enterprise SSO and local pilot access.")).toBeTruthy();
 }
 
 /** L5 — the three role pills, in order. */
 export function readsTheRolePills(): void {
   renderLogin();
-  const first = screen.getByText("NEXUS Admin");
+  const first = screen.getByText("Verve Admin");
   expect([...first.parentElement!.children].map((c) => c.textContent)).toEqual([
-    "NEXUS Admin",
+    "Verve Admin",
     "IBMS Operator",
     "Energy Manager",
   ]);
@@ -93,7 +82,7 @@ export function readsTheRolePills(): void {
 /** L6 — the footer version line. */
 export function readsTheFooterVersion(): void {
   renderLogin();
-  expect(screen.getByText(/IONSiTE NEXUS v0\.1/)).toBeTruthy();
+  expect(screen.getByText(/Verve v0\.1/)).toBeTruthy();
 }
 
 /** L7 — no `<img>` element; L1's lookup is the positive control. */
@@ -103,11 +92,12 @@ export function drawsNoImgElement(): void {
   expect(document.querySelector("img")).toBeNull();
 }
 
-/** L8 — no text reads TRINETRA; L1's lookup is the positive control. */
-export function readsNoTrinetra(): void {
+/** L8 — no text reads TRINETRA or the IONSiTE NEXUS name; L1's lookup is the positive control. */
+export function readsNoOldName(): void {
   renderLogin();
   expect(screen.getByRole("img", WORDMARK)).toBeTruthy();
   expect(screen.queryByText(/trinetra/i)).toBeNull();
+  expect(screen.queryByText(/\bion\s?site|nexus/i)).toBeNull();
 }
 
 /*
@@ -181,7 +171,7 @@ export function showsTheBannerInOidcMode(): void {
 /** L11 — with no stored path no banner shows; the card heading is the positive control. */
 export function showsNoBannerWithoutAReturnPath(): void {
   renderLoginRoutes();
-  expect(screen.getByRole("heading", { level: 2, name: "Sign in to IONSiTE NEXUS" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 2, name: "Sign in to Verve" })).toBeTruthy();
   expect(screen.queryByText(SESSION_ENDED)).toBeNull();
 }
 
@@ -189,7 +179,7 @@ export function showsNoBannerWithoutAReturnPath(): void {
 export function showsNoBannerForARefusedPath(): void {
   window.sessionStorage.setItem(RETURN_PATH_KEY, "//evil.example");
   renderLoginRoutes();
-  expect(screen.getByRole("heading", { level: 2, name: "Sign in to IONSiTE NEXUS" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 2, name: "Sign in to Verve" })).toBeTruthy();
   expect(screen.queryByText(SESSION_ENDED)).toBeNull();
 }
 
@@ -221,7 +211,7 @@ export function showsTheDeactivatedSentenceInOidcMode(): void {
 /** L17 (`F4.203`) — no reason (a plain 401) shows nothing; the card heading is the positive control. */
 export function aPlain401ShowsNothing(): void {
   renderLoginRoutes();
-  expect(screen.getByRole("heading", { level: 2, name: "Sign in to IONSiTE NEXUS" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 2, name: "Sign in to Verve" })).toBeTruthy();
   expect(screen.queryByText(DEACTIVATED)).toBeNull();
 }
 
@@ -322,4 +312,62 @@ export async function paintsThePortalAppearance(): Promise<void> {
   expect(JSON.parse(localStorage.getItem("bms.portal-appearance") ?? "null")).toEqual({ designSystem: "swiss-grid", colourProfile: "forest" });
   expect(localStorage.getItem("bms.design")).toBeNull();
   expect(localStorage.getItem("bms.profile")).toBeNull();
+}
+
+/**
+ * LH1 (ADR 0142 Amendment 3 item 2) — the login page names no client: the description is the new
+ * sentence and nothing on the page reads "Ion Exchange". The lookup of the sentence is the
+ * positive control.
+ */
+export function namesNoClient(): void {
+  renderLogin();
+  expect(LOGIN_DESCRIPTION).toBe(
+    "One operator console for power, HVAC, water, utilities, alarms and work orders, across every site you run.",
+  );
+  expect(screen.getByText(LOGIN_DESCRIPTION)).toBeTruthy();
+  expect(document.body.textContent ?? "").not.toMatch(/ion\s*exchange/i);
+}
+
+/**
+ * LH2 (Amendment 3 item 3) — the panel says what the product does: five domains, three feature
+ * tiles, and none of the three fixed numbers the page used to show.
+ */
+export function listsDomainsAndFeaturesNotNumbers(): void {
+  renderLogin();
+  const domains = within(screen.getByRole("list", { name: "What Verve monitors" })).getAllByRole("listitem");
+  expect(domains.map(normalised)).toEqual(["Power", "HVAC", "UPS", "Water", "Environment"]);
+  const features = within(screen.getByRole("list", { name: "What Verve does" })).getAllByRole("listitem");
+  expect(features.map(normalised)).toEqual([
+    "Real-time telemetryEach reading, as it arrives",
+    "Alarms that reach peopleRouted, tracked, closed",
+    "Energy insightUse, cost and trends",
+  ]);
+  const text = document.body.textContent ?? "";
+  expect(text).not.toContain("99.98%");
+  expect(text).not.toMatch(/Uptime/i);
+  expect(screen.queryByText("10")).toBeNull();
+}
+
+/**
+ * LH3 (Amendment 3 items 1, 4 and 5) — the hero is centred over the site network, the network is
+ * decoration behind it, and the tiles that sit over the network are opaque (`bg-chrome`, no
+ * opacity suffix), so nothing shows through their text.
+ */
+export function centresTheHeroOverTheNetwork(): void {
+  renderLogin();
+  const headline = screen.getByRole("heading", { level: 1 });
+  const hero = headline.closest("section");
+  const heroClasses = hero?.getAttribute("class")?.split(" ") ?? [];
+  expect(heroClasses).toContain("items-center");
+  expect(heroClasses).toContain("text-center");
+  const network = hero?.querySelector("[data-part='site-network']");
+  expect(network?.getAttribute("aria-hidden")).toBe("true");
+  expect(network?.contains(headline)).toBe(false);
+  expect(hero?.firstElementChild).toBe(network);
+  for (const tile of within(screen.getByRole("list", { name: "What Verve does" })).getAllByRole("listitem")) {
+    expect(tile.getAttribute("class")?.split(" ")).toContain("bg-chrome");
+  }
+  for (const chip of within(screen.getByRole("list", { name: "What Verve monitors" })).getAllByRole("listitem")) {
+    expect(chip.getAttribute("class")?.split(" ")).toContain("bg-chrome");
+  }
 }

@@ -18,6 +18,10 @@ import {
   aTabOnAnUntabbedDashboardRedirects,
   aTabSegmentSelectsThatTab,
   cleanupView,
+  embeddedDrawsNoTabStrip,
+  embeddedMakesNoMarkersRead,
+  embeddedTryAgainInvalidatesTheResolveRead,
+  embeddedWithAnUnknownKeyNeverRedirects,
   linkOpensTheViewer,
   noEditLink,
   pendingReadRendersNoCanvas,
@@ -215,5 +219,27 @@ describe("F4.375 — the site view hands energyShown to the canvas (ADR 0133 Ame
 
   it("hands energyShown true", async () => {
     await theViewHandsEnergyShownToTheCanvas(true);
+  });
+});
+
+describe("F4.240 part b SiteDashboardView embedded in a station half (ADR 0140 decision 3e, plan D9)", () => {
+  afterEach(() => {
+    cleanupView();
+  });
+
+  it("E1 draws no Dashboard tabs nav and hands the canvas the given key", async () => {
+    await embeddedDrawsNoTabStrip();
+  });
+
+  it("E2 with a key the dashboard lacks shows a status line and never redirects", async () => {
+    await embeddedWithAnUnknownKeyNeverRedirects();
+  });
+
+  it("E3 makes no markers read", async () => {
+    await embeddedMakesNoMarkersRead();
+  });
+
+  it("E4 Try again still invalidates the resolve prefix", async () => {
+    await embeddedTryAgainInvalidatesTheResolveRead();
   });
 });

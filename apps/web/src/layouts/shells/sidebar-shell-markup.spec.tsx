@@ -17,7 +17,10 @@ import { AppShell } from "../app-shell";
  * top navigation bar and the module sidebar render byte for byte as they did before the shells
  * were split (the fixture was captured from `app-shell.tsx` at `F4.341` PR 4, before the move). The
  * footer is left out because its clock ticks. `F4.347` changed one class by hand: the subtitle
- * shows from `xl` (was `sm`), so the header controls fit at 768 to 1279 px.
+ * shows from `xl` (was `sm`), so the header controls fit at 768 to 1279 px. `F4.398` regenerated
+ * the fixture: the wordmark is the Verve logo `svg` and the subtitle is the tagline, twice; the
+ * logo's `useId` gradient id is replaced by `verve-pulse-ID`, so a later `useId` caller above the
+ * header does not move the snapshot.
  */
 const GLOBAL: AccessibleScope = { kind: "global", locations: [], assetGroups: [], assetIds: [] };
 
@@ -37,7 +40,10 @@ function chromeMarkup(role: UserRole, path: string): string {
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  return ["header", "nav", "aside"].map((tag) => container.querySelector(tag)?.outerHTML ?? `<!-- no ${tag} -->`).join("\n");
+  return ["header", "nav", "aside"]
+    .map((tag) => container.querySelector(tag)?.outerHTML ?? `<!-- no ${tag} -->`)
+    .join("\n")
+    .replace(/verve-pulse-[\w-]+/g, "verve-pulse-ID");
 }
 
 export function captureForFixture(): string {

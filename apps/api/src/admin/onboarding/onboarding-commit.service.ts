@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
@@ -45,6 +46,13 @@ import { translateAssetCodeCollision } from "../asset-templates/asset-templates-
 import { AssetTemplateInstantiationService } from "../asset-templates/asset-templates-instantiate.service";
 import { AssetTemplatesStockService } from "../asset-templates/asset-templates-stock.service";
 import { plaintextRtusOf } from "./onboarding-commit-plaintext";
+import {
+  assertDraftModbusEndpoints,
+  committedIngestEnabled,
+  draftModbusRtus,
+  modbusCommitConnection,
+  type ModbusCommitConnection,
+} from "./onboarding-commit-modbus";
 import { draftRtuMqttTopic, metaTimezone, topicHolderMessage, unitOf } from "./onboarding-commit-values";
 import { translateCommitUniqueConflict } from "./onboarding-commit-conflict";
 import {
@@ -130,6 +138,8 @@ export const PROPOSED_DRAFT_CHANGED =
 
 @Injectable()
 export class OnboardingCommitService {
+  private readonly logger = new Logger(OnboardingCommitService.name);
+
   constructor(
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
@@ -539,10 +549,11 @@ export class OnboardingCommitService {
       // resolving per asset. The connection-config disjunct
       // (`resolveTelemetrySource`'s second `||` arm) is reachable here — the
       // config row lands a few lines down, in this same iteration and `tx` —
-      // but never decisive today: `protocolToSourceType` above and the
-      // `ingestEnabled` clause on the insert below force `ingestEnabled =
-      // false` for every non-`mqtt` protocol, so the predicate's first arm
-      // already decides every case. See the helper's docblock
+      // and, since F1.2 plan PR 11, decisive: a Modbus TCP RTU bound to a
+      // profile may be committed with ingest on, and its source type is
+      // `catalog`, so its connection row is what hands its assets to the
+      // ingest host. Every other non-`mqtt` RTU is still committed with ingest
+      // off (`committedIngestEnabled`). See the helper's docblock
       // (`../telemetry-source.ts`) for why the read still happens unconditionally.
       const telemetrySourceByRtuId = new Map<string, TelemetrySource>();
       // F4.339 (ADR 0117 decision 8, plan R8): a topic another RTU of this organization holds is named
@@ -562,9 +573,22 @@ export class OnboardingCommitService {
           throw new BadRequestException(topicHolderMessage(draftCode, holder.code, holder.active));
         }
       }
+      // F1.2 plan PR 11 (ADR 0141 decision 23, Amendment 2 (a)): every Modbus RTU of the draft,
+      // its endpoint locked and checked against other organizations before any RTU is inserted.
+      const modbusRtus = new Map(draftModbusRtus(draft).map((entry) => [entry.index, entry]));
+      await assertDraftModbusEndpoints(tx, this.fleetDb, session.organizationId, [...modbusRtus.values()]);
+      // The audit row's profile references: code and version per bound RTU, never a register.
+      const modbusProfiles: { rtuCode: string; profile: { code: string; version: number }; registerCount: number; ingestEnabled: boolean }[] = [];
       for (let i = 0; i < (draft.rtus ?? []).length; i++) {
         const rtuDraft = draft.rtus![i];
-        const config = rtuDraft.config ?? {};
+        // F1.2 plan PR 11: a Modbus RTU stores the parsed config (canonical host), or — when the
+        // draft names a profile — the RTUs page bind's config with the profile's registers.
+        const modbusEntry = modbusRtus.get(i);
+        const modbus: ModbusCommitConnection | null = modbusEntry
+          ? await modbusCommitConnection(tx, session.organizationId, modbusEntry, this.logger)
+          : null;
+        const config = modbus ? modbus.config : (rtuDraft.config ?? {});
+        const ingestEnabled = committedIngestEnabled(rtuDraft.protocol, rtuDraft.ingestEnabled, modbus?.profile != null);
         // F4.228: an empty topic is stored as NULL, never '' — rtus_mqtt_topic_idx
         // has no `<> ''` arm. Applied to the result of the `??` chain, not to an
         // arm: `""` is not nullish, so the validator's length and wildcard checks
@@ -588,8 +612,8 @@ export class OnboardingCommitService {
             mqttTopic,
             stationCode: rtuDraft.stationCode ?? null,
             stationName: rtuDraft.stationName ?? null,
-            ingestEnabled:
-              rtuDraft.protocol === "mqtt" ? (rtuDraft.ingestEnabled ?? false) : false,
+            // MQTT keeps the draft's switch; a Modbus RTU with a profile too (decision 23).
+            ingestEnabled,
             active: true,
             meta: rtuDraft.meta ?? null,
           })
@@ -623,6 +647,9 @@ export class OnboardingCommitService {
         });
 
         telemetrySourceByRtuId.set(rtuRow.id, await resolveTelemetrySource(tx, rtuRow));
+        if (modbus?.profile) {
+          modbusProfiles.push({ rtuCode: rtuRow.code, profile: modbus.profile, registerCount: modbus.registerCount, ingestEnabled });
+        }
       }
 
       // F3.22 (ADR 0091 decision 4): each draft template, created and published
@@ -749,7 +776,13 @@ export class OnboardingCommitService {
           entityId: sessionId,
           organizationId: session.organizationId,
           // F4.326 / ADR 0114 decision 6: each plain-MQTT RTU, by code (ruling 7).
-          payload: { ...result, newPointKeys, plaintextRtus: plaintextRtusOf(draft) },
+          // F1.2 plan PR 11: each profile bound at commit, by code and version (never the registers).
+          payload: {
+            ...result,
+            newPointKeys,
+            plaintextRtus: plaintextRtusOf(draft),
+            ...(modbusProfiles.length > 0 ? { modbusProfiles } : {}),
+          },
         },
         tx,
       );

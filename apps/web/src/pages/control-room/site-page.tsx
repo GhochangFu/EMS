@@ -5,6 +5,7 @@ import { Link, Navigate, useLocation, useParams } from "react-router-dom";
 import { fetchResolvedSiteControlRoomView } from "../../api/control-room";
 import { fetchDashboard } from "../../api/dashboards";
 import { fetchLocationKpis } from "../../api/locations";
+import { HealthBadActorsCard } from "../../components/asset-health/health-bad-actors-card";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
 import { GeneratedSiteView } from "../../components/control-room/generated-site-view";
 import { ReplaceSiteLayoutWizard } from "../../components/control-room/replace-site-layout-wizard";
@@ -12,15 +13,20 @@ import { SiteLayoutWizard } from "../../components/control-room/site-layout-wiza
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
 import { SiteAssetsView } from "../../components/control-room/site-assets-view";
 import { SiteDashboardView } from "../../components/control-room/site-dashboard-view";
+import { StationEnergyView } from "../../components/control-room/station-energy-view";
+import { StationView } from "../../components/control-room/station-view";
 import { SiteTrendsView } from "../../components/control-room/site-trends-view";
 import { SmocSiteView } from "../../components/control-room/smoc-site-view";
 import { WallFrame } from "../../components/control-room/wall-frame";
+import { DegradationTrendCard } from "../../components/degradation/degradation-trend-card";
+import { MlFindingsCard } from "../../components/ml/ml-findings-card";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
 import { isMasterDataAdmin } from "../../lib/admin-access";
 import { controlRoomCrumbs } from "../../lib/control-room-levels";
 import { FOCUS_OUTLINE_CLASS } from "../../lib/focus-classes";
+import { anyEnergyShown, stationGroupOf } from "../../lib/location-kpi-groups";
 import { siteViewNoticeText, siteViewNoticeTone } from "../../lib/site-view-notice";
 import {
   DEFAULT_SMOC_TAB,
@@ -44,6 +50,16 @@ type ControlRoomSitePageProps = {
    */
   locationId?: string;
 };
+
+/** `E1.9e` — the site body's card shows both kinds. */
+const SITE_FINDINGS_KINDS = ["anomalies", "forecasts"] as const;
+
+/**
+ * `F4.390` — the site list is read here for the name, the organization, `energyShown` and the
+ * crumbs, never for a live figure; admin edits already invalidate the key. So one read a minute,
+ * not every 8 s. The other pages on this key draw live card figures from it and keep 8 s.
+ */
+const SITE_SUMMARY_REFETCH_MS = 60_000;
 
 const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong hover:underline";
 
@@ -107,6 +123,35 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * `/trends` (`SITE_TRENDS_TAB`), the `assets` shape: exempt from the D5 redirect, rendered as
  * `SiteTrendsView` for every view kind once the resolve read has answered, never a wall page,
  * and the **Wall** link omits the segment there.
+ *
+ * `F4.390` — the page re-reads the site list once a minute (`SITE_SUMMARY_REFETCH_MS`), and the
+ * read carries the query's abort signal.
+ *
+ * `E1.9e` (ADR 0135 Amendment 8 decision 13) — the Site view body carries the compact findings
+ * card (`MlFindingsCard`, both kinds, scoped to the site and its organization) between the body
+ * and the site's dashboards. The wall, the assets tab, the trends tab and a pending read draw none.
+ *
+ * `E1.8c` (ADR 0050 Amendment 5, owner ruling Q2 (a)) — after that card and before the dashboards:
+ * the *Bad actors — advisory* card (`HealthBadActorsCard`), scoped to the site and its organization
+ * and with the site's count line inside it (`showCount`; the site page has no donut). Same places
+ * as the findings card: never the wall, the assets tab, the trends tab or a pending read.
+ *
+ * `E1.5b` (ADR 0138 decision 5, plan T2.4) — directly after that card: the *Trending toward a
+ * limit — advisory* card (`DegradationTrendCard`), scoped to the site and its organization. The
+ * same places: never the wall, the assets tab, the trends tab or a pending read.
+ *
+ * `F4.240` part b (ADR 0140 decisions 1–4, plan D1, D6, D7) — at a **station** (`stationGroupOf`:
+ * a location in the list that holds no asset and heads sites) the body is `StationView`: the
+ * totals, the site cards, the station's alarms, the advisory cards and its dashboards, or at
+ * `/assets` a list of the sites. The strip reads **Station view** and **Assets & RTUs** (PR 1). No
+ * notice, layout wizard, wall or Wall link at a station, and the resolve read still decides access
+ * exactly as for a site (decision 6). The list poll stays at 60 s (owner ruling Q2 (a)), though the
+ * station draws live figures from it. PR 2 (decision 3e, plan D8, D12): a station is exempt from
+ * the D5 redirect; its view section hands the raw segment to `StationSiteHalves`, which redirects a
+ * segment no site's dashboard holds once every site read has settled. `/trends` is the station's
+ * own **Trends & Energy** entry (`StationEnergyView`; "Trends" when no site shows energy). The
+ * Station view widens to `max-w-[1800px]` (`/assets` and `/trends` keep 1200 px), and the ribbon
+ * and the pending line say "station view".
  */
 export function ControlRoomSitePage({ user, locationId: locationIdProp }: ControlRoomSitePageProps) {
   const params = useParams();
@@ -119,8 +164,8 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
   const scope = useAuthStore((state) => state.scope);
   const locationQ = useQuery({
     queryKey: ["dashboard", "locations"],
-    queryFn: fetchLocationKpis,
-    refetchInterval: 8000,
+    queryFn: ({ signal }) => fetchLocationKpis(signal),
+    refetchInterval: SITE_SUMMARY_REFETCH_MS,
   });
   const siteView = useQuery({
     queryKey: ["control-room", "site-view", locationId],
@@ -133,15 +178,17 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
 
   const items = locationQ.data?.items;
   const site = items?.find((item) => item.id === locationId);
+  const stationGroup = items === undefined ? null : stationGroupOf(items, locationId);
+  const atStation = stationGroup !== null;
 
   const showsSmocTabs = siteView.data?.kind === "builtin" && site !== undefined && isSmocSite(site);
   const dashboardSlug = siteView.data?.kind === "dashboard" ? siteView.data.dashboardSlug : null;
-  const showsDashboard = dashboardSlug !== null;
+  const showsDashboard = dashboardSlug !== null && !atStation;
 
   // `F3.77` (plan D8, OQ3) — the wall shows a site's `dashboard` view only, never the assets tab.
   const wall = parseWallParams(location.search);
   const sitePath = `/control-room/site/${encodeURIComponent(locationId)}`;
-  const wallSite = wall.on && dashboardSlug !== null && !onAssetsTab && !onTrendsTab ? site : undefined;
+  const wallSite = wall.on && showsDashboard && !onAssetsTab && !onTrendsTab ? site : undefined;
   // The rotation's tab order. The same key and read as `SiteDashboardView`'s (and the viewer's),
   // so the wall shares that cache entry and adds no request.
   const wallDashboardQ = useQuery({
@@ -155,6 +202,7 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
     siteView.data !== undefined &&
     tabParam !== undefined &&
     !onAssetsTab &&
+    !atStation &&
     !onTrendsTab &&
     !showsDashboard &&
     (!showsSmocTabs || tab === null)
@@ -189,9 +237,12 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
   return (
     <AppShell
       user={user}
-      kpiRibbon={<span className="text-ink">Control Room · site view</span>}
+      kpiRibbon={<span className="text-ink">{atStation ? "Control Room · station view" : "Control Room · site view"}</span>}
     >
-      <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
+      {/* `F4.240` part b (plan D12) — the Station view widens for its two halves; `/assets` and `/trends` do not. */}
+      <div
+        className={`mx-auto ${atStation && !onAssetsTab && !onTrendsTab ? "max-w-[1800px]" : "max-w-[1200px]"} space-y-4 pb-8`}
+      >
         {items !== undefined ? (
           site !== undefined && !(siteView.data === undefined && siteView.isError) ? (
             <>
@@ -215,12 +266,22 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                 locationId={site.id}
                 onAssetsTab={onAssetsTab}
                 onTrendsTab={onTrendsTab}
-                energyShown={site.energyShown}
+                energyShown={stationGroup !== null ? anyEnergyShown(stationGroup.sites) : site.energyShown}
+                station={atStation}
               />
               {siteView.data === undefined ? (
                 <p role="status" className="text-sm text-ink-muted">
-                  Loading the site view…
+                  {atStation ? "Loading the station view…" : "Loading the site view…"}
                 </p>
+              ) : stationGroup !== null && onTrendsTab ? (
+                <StationEnergyView stationId={site.id} sites={stationGroup.sites} />
+              ) : stationGroup !== null ? (
+                <StationView
+                  station={site}
+                  group={stationGroup}
+                  section={onAssetsTab ? "assets" : "view"}
+                  tab={onAssetsTab ? undefined : tabParam}
+                />
               ) : onAssetsTab ? (
                 <SiteAssetsView locationId={site.id} siteName={site.name} energyShown={site.energyShown} />
               ) : onTrendsTab ? (
@@ -236,6 +297,16 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                     tabParam={tabParam}
                     role={user.role}
                   />
+                  {/* `E1.9e` (ADR 0135 Amendment 8 decision 13) — the body only; the wall returned above. */}
+                  <MlFindingsCard
+                    kinds={SITE_FINDINGS_KINDS}
+                    scope={{ organizationId: site.organization.id, locationId: site.id }}
+                    compact
+                  />
+                  {/* `E1.8c` (Q2 (a)) — the body only, with the site's count line inside the card. */}
+                  <HealthBadActorsCard organizationId={site.organization.id} locationId={site.id} showCount />
+                  {/* `E1.5b` (ADR 0138 decision 5) — the body only; never on the wall. */}
+                  <DegradationTrendCard organizationId={site.organization.id} locationId={site.id} />
                   <ScopedDashboardsList locationId={site.id} organizationId={site.organization.id} />
                 </>
               )}
@@ -262,21 +333,25 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
  * the bare path and every SMOC tab segment; "Assets & RTUs" only at `/assets`;
  * "Trends & Energy" (`F4.302`, ADR 0108 Amendment 4 item 1) only at `/trends`. `F4.364` (ADR
  * 0133 Amendment 1): when the site's energy is not shown, that entry is named "Trends" (same path).
+ * `F4.240` part b (plan D7): at a station the first entry reads "Station view"; PR 2 gives it the
+ * third entry too, named by whether any of its sites shows energy.
  */
 function SiteSectionStrip({
   locationId,
   onAssetsTab,
   onTrendsTab,
   energyShown,
+  station,
 }: {
   locationId: string;
   onAssetsTab: boolean;
   onTrendsTab: boolean;
   energyShown: boolean;
+  station: boolean;
 }) {
   const entries = [
     {
-      label: "Site view",
+      label: station ? "Station view" : "Site view",
       to: `/control-room/site/${encodeURIComponent(locationId)}`,
       active: !onAssetsTab && !onTrendsTab,
     },

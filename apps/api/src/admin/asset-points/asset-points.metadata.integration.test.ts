@@ -121,11 +121,13 @@ describe.skipIf(!connectionString)("F2.7 — asset-point metadata and RTU wiring
 
     // Two locations of the one organization: the asset's own, and the one whose
     // RTU must be refused. `ORDER BY created_at, code` resolves the oldest rows
-    // — seeded ones, which no suite deletes (`F4.53`).
+    // — seeded ones, which no suite deletes (`F4.53`). Only locations that hold
+    // an active RTU: a split PHE station (ADR 0139) holds none, its sites do.
     const locs = await ownerPool.query<{ id: string }>(
-      `SELECT id FROM bms.locations
-         WHERE organization_id = $1 AND active = true
-         ORDER BY created_at, code LIMIT 2`,
+      `SELECT l.id FROM bms.locations l
+         WHERE l.organization_id = $1 AND l.active = true
+           AND EXISTS (SELECT 1 FROM bms.rtus r WHERE r.location_id = l.id AND r.active = true)
+         ORDER BY l.created_at, l.code LIMIT 2`,
       [organizationId],
     );
     if (locs.rows.length < 2) {

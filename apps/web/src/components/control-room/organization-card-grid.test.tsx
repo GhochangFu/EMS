@@ -5,6 +5,7 @@ import {
   theCardShowsLiveAndNotLiveChips,
   cleanupGrid,
   eachOrganizationCardLinksToItsLevel,
+  theCardCountsSitesOnce,
   theCardReadsSitesAndAlarms,
 } from "./organization-card-grid.spec";
 
@@ -28,5 +29,9 @@ describe("F3.72 U1 OrganizationCardGrid", () => {
 
   it("O3 shows each organization's live and not-live chips and its live share (F4.261)", () => {
     theCardShowsLiveAndNotLiveChips();
+  });
+
+  it("O4 counts sites once: an asset-less parent is not a site (F4.240)", () => {
+    theCardCountsSitesOnce();
   });
 });

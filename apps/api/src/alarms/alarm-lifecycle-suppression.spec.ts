@@ -215,6 +215,8 @@ function silentRtu(): DeviceHealthSnapshot {
     organizationId: ORG_A,
     code: "RTU-1",
     displayName: "Pump house 1",
+    locationId: "loc-1",
+    locationName: "Site 1",
     edgeServed: false,
     hostKey: "ingest-1",
     lastSeenMs: NOW.getTime() - 3_600_000,

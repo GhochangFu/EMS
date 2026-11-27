@@ -208,6 +208,8 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       LLM_VISION_MODEL: ${LLM_VISION_MODEL:-}
+      ML_FINDINGS_LLM_PROVIDER: ${ML_FINDINGS_LLM_PROVIDER:-}
+      ML_FINDINGS_LLM_MODEL: ${ML_FINDINGS_LLM_MODEL:-}
       COPILOT_USER_DAILY_TURNS: ${COPILOT_USER_DAILY_TURNS:-}
       COPILOT_ORG_DAILY_TURNS: ${COPILOT_ORG_DAILY_TURNS:-}
       # `F4.17` / ADR 0125 decisions 5, 7 and 8. Shadow first: counted and
@@ -304,7 +306,7 @@ services:
       DATABASE_URL: postgres://bms_owner:${BMS_OWNER_PASSWORD:?}@postgres:5432/bms
       SIM_RATE_HZ: 0.2
       SIM_ASSET_COUNT: all
-      SIM_SITE_NAMES: RSMOC Western Cape,CSMOC Gauteng,RSMOC KwaZulu-Natal,Ion Exchange Demo Plant
+      SIM_SITE_NAMES: RSMOC Western Cape,CSMOC Gauteng,RSMOC KwaZulu-Natal,Water Demo Plant
       SIM_METRICS_PORT: 9101
     mem_limit: 256m
     depends_on:

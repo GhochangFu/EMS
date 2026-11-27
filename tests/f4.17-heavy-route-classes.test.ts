@@ -148,6 +148,10 @@ const NAMED_HEAVY: ReadonlyArray<readonly [string, string]> = [
   ["admin/onboarding/onboarding.controller.ts", '@Get("template.xlsx")'],
   ["admin/asset-templates/asset-templates.controller.ts", '@Post("stock/:code/import")'],
   ["admin/dashboard-templates/dashboard-templates.controller.ts", '@Post("stock/:code/import")'],
+  // Added by E1.6a's security review (L1): one call recomputes up to 200 meters.
+  ["advisories/advisories.controller.ts", '@Get("advisories")'],
+  // E1.5a (ADR 0138, plan R-q): one call recomputes up to 200 assets over 28 days.
+  ["degradation/degradation.controller.ts", '@Get("degradation")'],
 ];
 
 describe("F4.17 — heavy-class routes (ADR 0125 decision 5)", () => {

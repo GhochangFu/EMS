@@ -710,6 +710,98 @@ export async function theWallRendersTheStripWidget(): Promise<void> {
   expect(screen.getAllByRole("navigation", { name: "Trend range" })).toHaveLength(1);
 }
 
+/**
+ * `F4.240` part b (ADR 0140 decision 3e, plan D9, Task 2.2) — the view embedded in a station half:
+ * at the station's route, handed the station's chosen key, with `embedded`.
+ */
+const STATION_PATH = "/control-room/site/station-1";
+
+function renderEmbedded(tabKey: string | undefined, queryClient?: QueryClient): QueryClient {
+  const client = queryClient ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[tabKey === undefined ? STATION_PATH : `${STATION_PATH}/${tabKey}`]}>
+        <PathnameProbe />
+        <Routes>
+          <Route
+            path="/control-room/site/:locationId/:tab?"
+            element={
+              <SiteDashboardView
+                slug={SLUG}
+                organizationId={ORG_PHE.id}
+                locationId={LOCATION_ID}
+                tab={tabKey}
+                energyShown
+                embedded
+              />
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return client;
+}
+
+/**
+ * E1 — embedded, the view draws no "Dashboard tabs" nav (the station's chooser is the only one),
+ * and the canvas gets the given key. Mutation: keep the nav when embedded => red.
+ */
+export async function embeddedDrawsNoTabStrip(): Promise<void> {
+  stubRead(TABBED);
+  renderEmbedded("sld");
+
+  const canvas = await screen.findByTestId("dashboard-live-canvas");
+  expect(canvas.getAttribute("data-tab-key")).toBe("sld");
+  expect(screen.queryByRole("navigation", { name: "Dashboard tabs" })).toBeNull();
+}
+
+/**
+ * E2 — embedded with a key the dashboard lacks renders a status line, no canvas, and no redirect:
+ * a redirect inside a half would move the whole station page to one site. The control is T5
+ * (`anUnknownTabRedirectsToTheBarePath`), the same input without the prop. Mutation: keep the
+ * `Navigate` when embedded => the pathname moves => red.
+ */
+export async function embeddedWithAnUnknownKeyNeverRedirects(): Promise<void> {
+  const read = stubRead(TABBED, TABBED);
+  renderEmbedded("x");
+
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  expect((await screen.findByRole("status")).textContent).toBe("This dashboard has no such tab.");
+  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  expect(pathname()).toBe(`${STATION_PATH}/x`);
+  expect(screen.queryByTestId("dashboard-live-canvas")).toBeNull();
+}
+
+/**
+ * E3 — embedded makes no markers read: neither the site-widgets read nor the vocabulary. The
+ * control is M4 (`aTabSwitchMakesNoSecondMarkersRead`), which reads with "overview".
+ */
+export async function embeddedMakesNoMarkersRead(): Promise<void> {
+  stubRead(MARKED);
+  const markersRead = stubMarkerReads(MARKERS_ANSWER);
+  renderEmbedded("hvac");
+
+  await screen.findByTestId("dashboard-live-canvas");
+  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  expect(markersRead).not.toHaveBeenCalled();
+  expect(vocabulariesApi.fetchVocabularies).not.toHaveBeenCalled();
+}
+
+/** E4 — embedded, `Try again` still invalidates the resolve prefix. */
+export async function embeddedTryAgainInvalidatesTheResolveRead(): Promise<void> {
+  stubRead("reject", "pending");
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData([...RESOLVE_KEY], RESOLVED);
+  renderEmbedded("sld", queryClient);
+
+  const button = await screen.findByRole("button", { name: "Try again" });
+  expect(queryClient.getQueryState([...RESOLVE_KEY])?.isInvalidated).toBe(false);
+  fireEvent.click(button);
+
+  await waitFor(() => expect(queryClient.getQueryState([...RESOLVE_KEY])?.isInvalidated).toBe(true));
+}
+
 /** Unmounts, restores the spies and fails the case if any read reached the network. */
 export function cleanupView(): void {
   cleanup();

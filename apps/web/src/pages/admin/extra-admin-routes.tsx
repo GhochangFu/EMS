@@ -1,5 +1,6 @@
 import { Route } from "react-router-dom";
 
+import { DeviceProfilesRoute } from "./device-profiles-route";
 import { LocationTariffRoute } from "./location-tariff-route";
 import { MaintenanceWindowsRoute } from "./maintenance-windows-page";
 import { ServiceAccountsRoute } from "./service-accounts-route";
@@ -19,6 +20,8 @@ import { WorkOrderSettingsRoutes } from "./work-order-settings-routes";
  * - `F4.365` U8 (ADR 0134 decision 3; plan Q10): `/admin/locations/:locationId/tariff` (`AdminRoute`
  *   in `location-tariff-page.tsx`), opened by the Locations screen's "Tariff" row action.
  * - `F4.365` U9 (ADR 0134 decision 8): `/admin/tariffs` (`AdminRoute` in `tariffs-page.tsx`).
+ * - `F1.2` (ADR 0141 decision 13, plan T6.1): `/admin/device-profiles` (`AdminRoute` in
+ *   `device-profiles-route.tsx`).
  */
 export const EXTRA_ADMIN_ROUTES = (
   <>
@@ -27,5 +30,6 @@ export const EXTRA_ADMIN_ROUTES = (
     <Route path="/admin/maintenance-windows" element={<MaintenanceWindowsRoute />} />
     <Route path="/admin/locations/:locationId/tariff" element={<LocationTariffRoute />} />
     <Route path="/admin/tariffs" element={<TariffsRoute />} />
+    <Route path="/admin/device-profiles" element={<DeviceProfilesRoute />} />
   </>
 );

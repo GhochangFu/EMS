@@ -10,6 +10,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   assertASecondTickRaisesNothingNew,
+  assertAnOpenHostAlarmKeepsItsText,
   assertAStaleHostRaisesOnePerOrganizationAndHoldsTheRtus,
   assertOnlyTheOfflineRtuRaises,
   assertThePruneKeepsThirtyDays,
@@ -57,8 +58,8 @@ describe.skipIf(!connectionString)("F3.16 — the device-health sweep", () => {
       process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
       "F3.16",
     );
-    const { rows: first } = await observer.query<{ id: string; organization_id: string }>(
-      "SELECT id, organization_id FROM bms.locations ORDER BY created_at, code LIMIT 1",
+    const { rows: first } = await observer.query<{ id: string; organization_id: string; name: string }>(
+      "SELECT id, organization_id, name FROM bms.locations ORDER BY created_at, code LIMIT 1",
     );
     const locA = first[0];
     const { rows: second } = await observer.query<{ id: string; organization_id: string }>(
@@ -131,6 +132,8 @@ describe.skipIf(!connectionString)("F3.16 — the device-health sweep", () => {
       hostKey,
       orgA: locA.organization_id,
       orgB: locB.organization_id,
+      locAName: locA.name,
+      onlineCode: `f316sw-${stamp}-online`,
       rtus,
       raised,
     };
@@ -160,8 +163,12 @@ describe.skipIf(!connectionString)("F3.16 — the device-health sweep", () => {
     await assertASecondTickRaisesNothingNew(f);
   });
 
-  it("S3 a stale host raises one critical host alarm per organization and no RTU alarm", async () => {
+  it("S3 a host gap under 120 s raises nothing; past it, one critical host alarm per organization naming its RTUs", async () => {
     await assertAStaleHostRaisesOnePerOrganizationAndHoldsTheRtus(f);
+  });
+
+  it("S3b an open host alarm keeps its text on a later tick", async () => {
+    await assertAnOpenHostAlarmKeepsItsText(f);
   });
 
   it("S4 the prune deletes buckets older than 30 days on both tables", async () => {

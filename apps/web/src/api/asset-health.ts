@@ -1,4 +1,10 @@
-import { assetHealthResponseSchema, healthSummaryResponseSchema } from "@bms/shared/contracts";
+import {
+  assetHealthInputsResponseSchema,
+  assetHealthResponseSchema,
+  healthBadActorsResponseSchema,
+  healthSummaryResponseSchema,
+} from "@bms/shared/contracts";
+import type { AssetHealthInputsResponse, HealthBadActorsResponse } from "@bms/shared/contracts";
 import type { AssetHealthResponse, HealthSummaryResponse } from "@bms/shared";
 
 import { withAuth } from "./http";
@@ -33,18 +39,50 @@ export type HealthSummaryFilter = {
   organizationId?: string;
 };
 
-/** `GET /api/v1/asset-health/summary`, optionally narrowed by `locationId` and/or `organizationId`. */
-export async function fetchHealthSummary(
-  filter: HealthSummaryFilter = {},
-): Promise<HealthSummaryResponse> {
+/** The `?locationId=` / `?organizationId=` query, each only when set; `""` when neither is. */
+function scopeQuery(filter: HealthSummaryFilter): string {
   const search = new URLSearchParams();
   if (filter.locationId) search.set("locationId", filter.locationId);
   if (filter.organizationId) search.set("organizationId", filter.organizationId);
   const encoded = search.toString();
-  const query = encoded ? `?${encoded}` : "";
-  const res = await fetch(`${base}/api/v1/asset-health/summary${query}`, withAuth());
+  return encoded ? `?${encoded}` : "";
+}
+
+/** `GET /api/v1/asset-health/summary`, optionally narrowed by `locationId` and/or `organizationId`. */
+export async function fetchHealthSummary(
+  filter: HealthSummaryFilter = {},
+): Promise<HealthSummaryResponse> {
+  const res = await fetch(`${base}/api/v1/asset-health/summary${scopeQuery(filter)}`, withAuth());
   if (!res.ok) {
     throw new Error(`asset-health/summary ${res.status}`);
   }
   return checkResponse(healthSummaryResponseSchema, await res.json(), "asset-health/summary");
+}
+
+/**
+ * `E1.8b` (ADR 0050 Amendment 5) — `GET /api/v1/asset-health/assets/:assetId/inputs`: the SOW
+ * §4.3 five inputs of one asset, with its anomaly hours and penalty and its open corrective work
+ * orders. It carries no rule score: the card takes that from `fetchAssetHealth` (plan R-b).
+ */
+export async function fetchAssetHealthInputs(assetId: string): Promise<AssetHealthInputsResponse> {
+  const res = await fetch(
+    `${base}/api/v1/asset-health/assets/${encodeURIComponent(assetId)}/inputs`,
+    withAuth(),
+  );
+  if (!res.ok) {
+    throw new Error(`asset-health/assets/:assetId/inputs ${res.status}`);
+  }
+  return checkResponse(assetHealthInputsResponseSchema, await res.json(), "asset-health/assets/:assetId/inputs");
+}
+
+/**
+ * `E1.8b` — `GET /api/v1/asset-health/bad-actors`, narrowed the way the summary is, so its
+ * `scoredAssetCount` is the donut's own count. Advisory: nothing here feeds the rule score.
+ */
+export async function fetchHealthBadActors(filter: HealthSummaryFilter = {}): Promise<HealthBadActorsResponse> {
+  const res = await fetch(`${base}/api/v1/asset-health/bad-actors${scopeQuery(filter)}`, withAuth());
+  if (!res.ok) {
+    throw new Error(`asset-health/bad-actors ${res.status}`);
+  }
+  return checkResponse(healthBadActorsResponseSchema, await res.json(), "asset-health/bad-actors");
 }

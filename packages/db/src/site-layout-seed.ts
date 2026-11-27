@@ -20,8 +20,13 @@ import {
   type MapLocationSeedRow,
   type SeedLocationIdentity,
 } from "./eskom-locations-seed";
-import { type PheCatalogFile, stationSlug } from "./phe-pilot-seed";
-import { activePointsByAsset, membersByRole } from "./site-layout-seed-reads";
+import { type PheCatalogFile, pheSplitSites, stationSlug } from "./phe-pilot-seed";
+import {
+  activePointsByAsset,
+  membersByRole,
+  SITE_LAYOUT_SLUG_PREFIX,
+  siteLayoutSlug,
+} from "./site-layout-seed-reads";
 import {
   SITE_LAYOUT_COPY_DESCRIPTION,
   upgradeSeededSiteLayoutCopies,
@@ -74,8 +79,12 @@ import {
  * water-domain group at CSMOC Gauteng).
  */
 
-/** The copy's slug is this prefix and the location's slug. */
-export const SITE_LAYOUT_SLUG_PREFIX = "site-layout-";
+/**
+ * The copy's slug is this prefix and the location's slug. Defined in `site-layout-seed-reads.ts`,
+ * which imports no seed module, so `phe-site-split.ts` names the station's copy (ADR 0139
+ * decision 7) without an import cycle through `phe-pilot-seed.ts`.
+ */
+export { SITE_LAYOUT_SLUG_PREFIX, siteLayoutSlug } from "./site-layout-seed-reads";
 
 /** `bms.dashboards.slug` is `varchar(64)`. */
 const DASHBOARD_SLUG_MAX = 64;
@@ -106,11 +115,6 @@ export const SITE_LAYOUT_PHEWB_CHOICE: Readonly<Record<string, string>> = { sld:
  */
 export const SITE_LAYOUT_PHEWB_PUMP_STATION_CHOICE: Readonly<Record<string, string>> = { electrical: "electrical" };
 
-/** The copy's slug at a location with slug `locationSlug`. */
-export function siteLayoutSlug(locationSlug: string): string {
-  return `${SITE_LAYOUT_SLUG_PREFIX}${locationSlug}`;
-}
-
 /** One PHE catalog station, as the ownership predicate matches it. */
 export type PheSiteLayoutStation = { readonly slug: string; readonly stationCode: string };
 
@@ -137,6 +141,27 @@ export function pheSiteLayoutStations(catalog: PheCatalogFile): PheSiteLayoutSta
     }
   }
   return [...byCode.values()];
+}
+
+/**
+ * `F4.388` (ADR 0139 decision 6, plan D7) — the PHEWB locations that get a site-layout copy: each
+ * unsplit station, and in place of a split station its sites, each by the same (slug, station
+ * code) pair (a site's `meta.phe.stationCode` is its station's). The split station itself is not
+ * here: it holds no asset once split, and `seedPhewbSiteLayouts` gives it a `generated` view.
+ * Pure; throws on a code that is not a catalog station's.
+ */
+export function pheSiteLayoutSites(
+  catalog: PheCatalogFile,
+  splitStationCodes: readonly string[],
+): PheSiteLayoutStation[] {
+  const sites = pheSplitSites(catalog, splitStationCodes);
+  return pheSiteLayoutStations(catalog).flatMap((station) =>
+    splitStationCodes.includes(station.stationCode)
+      ? sites
+          .filter((site) => site.stationCode === station.stationCode)
+          .map((site) => ({ slug: site.slug, stationCode: site.stationCode }))
+      : [station],
+  );
 }
 
 /** The ids `findSeedLocation` resolves for `identities`; an unresolved identity adds none. */

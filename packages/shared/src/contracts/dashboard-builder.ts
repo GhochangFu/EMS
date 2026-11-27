@@ -11,6 +11,7 @@ import {
   stateLegendConfigSchema,
 } from "./site-widgets";
 import { anomalyWidgetConfigSchema } from "./anomaly-widget";
+import { mlFindingsWidgetConfigSchema } from "./ml-findings-widget";
 import { forecastWidgetConfigSchema } from "./forecast-widget";
 import { seriesRoleSchema, trendStripWidgetConfigSchema } from "./trend-strip-widget";
 
@@ -83,25 +84,26 @@ export * from "./dashboard-binding-messages";
  */
 
 /**
- * The fifteen widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5;
+ * The sixteen widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5;
  * `"mimic"` by ADR 0079 decision 1; five site widgets by `F3.73`, ADR 0087 decision 11;
  * `"breaker_table"` by `F3.74`, ADR 0088 decision 10; `"trend_strip"` by `F4.305`, ADR 0108
  * Amendment 3; `"forecast"` by `E1.4c`, ADR 0135 Amendment 3 C1; `"anomaly"` by `E1.2d`, ADR 0135
- * Amendment 5 ruling 4(c)).
+ * Amendment 5 ruling 4(c); `"ml_findings"` by `E1.9f`, ADR 0135 Amendment 8 decision 13).
  *
  * No comment may sit inside the `z.enum` array: the repo gates parse it with a split on commas,
  * and a comment line would swallow the value after it.
  *
- * **Eight migrations declare this list, and only the last is current.** `0050` froze the
+ * **Nine migrations declare this list, and only the last is current.** `0050` froze the
  * original four in `dashboard_widgets_widget_type_check`; `F3.35` Stage B's `0055` dropped and
  * re-added that constraint with `table`; `F3.32`'s `0086` does the same with `mimic`; `F3.73`'s
  * `0096` adds the five site widgets; `F3.74`'s `0099` adds `breaker_table`; `F4.305`'s `0118` adds `trend_strip`;
- * `E1.4c`'s `0159` adds `forecast`; `E1.2d`'s `0161` adds `anomaly`. A committed migration
+ * `E1.4c`'s `0159` adds `forecast`; `E1.2d`'s `0161` adds `anomaly`; `E1.9f`'s `0163` adds
+ * `ml_findings`. A committed migration
  * is frozen by the pre-commit hook, so `0050` still reads four, `0055` five, `0086` six and
  * `0096` eleven, and always will.
  *
- * `tests/f3.73-site-widget-types.test.ts` and `tests/e1.2d-anomaly-widget-type.test.ts`
- * compare this enum against `0161`'s list;
+ * `tests/f3.73-site-widget-types.test.ts` and `tests/e1.9f-ml-findings-widget-type.test.ts`
+ * compare this enum against `0163`'s list;
  * `tests/f3.32-mimic-widget.test.ts` pins `0086` to its six,
  * `tests/f3.35-table-widget-schema.test.ts` pins `0055` to its five and
  * `tests/f3.1a-dashboard-schema.test.ts` pins `0050` to its four. All are correct at once: the
@@ -123,6 +125,7 @@ export const widgetTypeSchema = z.enum([
   "trend_strip",
   "forecast",
   "anomaly",
+  "ml_findings",
 ]);
 
 /**
@@ -475,6 +478,7 @@ export const dashboardWidgetSpecSchema = z.discriminatedUnion("widgetType", [
   z.object({ widgetType: z.literal("trend_strip"), config: trendStripWidgetConfigSchema }),
   z.object({ widgetType: z.literal("forecast"), config: forecastWidgetConfigSchema }),
   z.object({ widgetType: z.literal("anomaly"), config: anomalyWidgetConfigSchema }),
+  z.object({ widgetType: z.literal("ml_findings"), config: mlFindingsWidgetConfigSchema }),
 ]);
 
 /**
@@ -551,6 +555,8 @@ export const WIDGET_POINT_CARDINALITY: Record<
   forecast: { min: 1, max: 1 },
   // `E1.2d` (ADR 0135 Amendment 5 ruling 4(c)) — the one point that names the scored asset.
   anomaly: { min: 1, max: 1 },
+  // `E1.9f` (ADR 0135 Amendment 8 decision 13) — its scope is its dashboard's own. `{0, 0}`.
+  ml_findings: { min: 0, max: 0 },
 };
 
 /**
@@ -598,6 +604,7 @@ export const WIDGET_SOURCE_CARDINALITY: Record<
   trend_strip: { min: 0, max: 0 },
   forecast: { min: 0, max: 0 },
   anomaly: { min: 0, max: 0 },
+  ml_findings: { min: 0, max: 0 },
 };
 
 /**
@@ -630,6 +637,9 @@ export const widgetTypeBindsNothing = (type: z.infer<typeof widgetTypeSchema>): 
  * no template surface holds one. A forecast names one asset's point, which a template has not.
  * **`anomaly` is refused by name for the same reason** (`E1.2d`, plan R15; ADR 0135 Amendment 5
  * ruling 4(c), "builder palette only").
+ * **`ml_findings` is builder palette only too** (`E1.9f`, ADR 0135 Amendment 8 decision 13). It
+ * needs no name here: it binds nothing, so the second clause already refuses it. The dashboard-
+ * template walk refuses it by name, because the binds-nothing site widgets are allowed there.
  */
 export const isTemplateAuthorableWidgetType = (
   type: z.infer<typeof widgetTypeSchema>,
@@ -869,6 +879,8 @@ export const WIDGET_SOURCE_SHAPES: Record<
   forecast: [],
   // `E1.2d` — nor does the anomaly widget; it binds one point.
   anomaly: [],
+  // `E1.9f` — nor does the ml_findings widget; it binds nothing.
+  ml_findings: [],
 };
 
 /**

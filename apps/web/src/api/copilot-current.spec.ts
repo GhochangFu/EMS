@@ -109,6 +109,8 @@ const RTU_ROW = {
   tls: true,
   payloadFormat: null,
   credentialsSet: null,
+  modbus: null,
+  organizationDefaultPollIntervalMs: null,
 };
 
 /** A location edit card's Now values: the listed row, as `updateLocationBodySchema`'s fields. */

@@ -90,6 +90,12 @@ const ENRICHMENT: NonNullable<AlarmDetailsResponse["enrichment"]> = {
 
 async function renderPanel(payload: AlarmDetailsResponse, readOnly = false): Promise<void> {
   vi.spyOn(alarmsApi, "fetchAlarmDetails").mockResolvedValue(payload);
+  // E2.3: the panel's advisory section reads its suggestions; unstubbed, that read reaches :4000.
+  vi.spyOn(alarmsApi, "fetchRootCauseSuggestions").mockResolvedValue({
+    computedAt: "2026-11-17T10:00:00.000Z",
+    candidates: [],
+    context: [],
+  });
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([]);
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue({
     alarmSeverities: [

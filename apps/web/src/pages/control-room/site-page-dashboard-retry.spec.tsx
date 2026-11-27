@@ -18,6 +18,17 @@ import { ORG_A, site, USER } from "./organizations-page.spec";
 import { ControlRoomSitePage } from "./site-page";
 import * as copilotApi from "../../api/copilot";
 
+/** `E1.9e` — the findings card on the site body has its own suite (`site-page-ml-findings.spec.tsx`). */
+vi.mock("../../components/ml/ml-findings-card", () => ({
+  MlFindingsCard: () => null,
+}));
+
+/** `E1.8c` — the Bad actors card on the site body has its own suite (`site-page-bad-actors.spec.tsx`). */
+vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
+  HealthBadActorsCard: () => null,
+}));
+vi.mock("../../components/degradation/degradation-trend-card", () => ({ DegradationTrendCard: () => null }));
+
 /**
  * `F3.69` U3 — the key binding between `SiteDashboardView`'s `Try again` and
  * the site page's own resolve read. `SITE_VIEW_RESOLVE_PREFIX`

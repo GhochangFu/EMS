@@ -1,6 +1,8 @@
 import { SectionCard } from "../section-card";
+import { StatusPill } from "../status-pill";
 
-import { useHealthSummary } from "../../hooks/use-asset-health";
+import { useHealthBadActors, useHealthSummary } from "../../hooks/use-asset-health";
+import { anomalyCountLine } from "../../lib/asset-health-view";
 import { HealthSummaryDonut } from "./health-summary-donut";
 
 type HealthSummarySectionProps = {
@@ -30,6 +32,14 @@ type HealthSummarySectionProps = {
  */
 export function HealthSummarySection({ locationId, organizationId }: HealthSummarySectionProps) {
   const query = useHealthSummary({ locationId, organizationId });
+  // `E1.8b` (ADR 0050 Amendment 5, plan §4.8): the advisory count under the donut. Not read for a
+  // scope with no scored asset; the donut never waits for it, and a pending, failed, `anomaly: null`
+  // or zero answer draws nothing (R-i).
+  const hasScored = (query.data?.scoredAssetCount ?? 0) > 0;
+  const badActorsQ = useHealthBadActors({ locationId, organizationId }, hasScored);
+  // A disabled query still returns its cached data, so the line is gated on the current summary
+  // too: a refetch that leaves no scored asset drops the line (code review, E1.8b).
+  const countLine = hasScored ? anomalyCountLine(badActorsQ.data) : null;
 
   return (
     <SectionCard
@@ -46,7 +56,18 @@ export function HealthSummarySection({ locationId, organizationId }: HealthSumma
           No assets in your access scope for this view.
         </div>
       ) : (
-        <HealthSummaryDonut summary={query.data} />
+        <>
+          <HealthSummaryDonut summary={query.data} />
+          {countLine !== null ? (
+            <div
+              data-testid="health-count-line"
+              className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted"
+            >
+              <span className="tabular-nums">{countLine}</span>
+              <StatusPill label="Advisory" tone="info" />
+            </div>
+          ) : null}
+        </>
       )}
     </SectionCard>
   );

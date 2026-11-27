@@ -42,6 +42,7 @@ import { rowForChartKind } from "../../lib/cost-by-day-form";
 import { ChartSeriesPicker } from "./chart-series-picker";
 import { CostByDayFields } from "./cost-by-day-fields";
 import { MetricSourcePicker } from "./metric-source-picker";
+import { MlFindingsInspectorFields } from "./ml-findings-inspector-fields";
 import { PointPicker } from "./point-picker";
 import { TableColumnPicker } from "./table-column-picker";
 import { TrendStripSelectionSummary } from "./trend-strip-selection-summary";
@@ -278,6 +279,7 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
           {FORECAST_INSPECTOR_NOTE}
         </p>
       ) : null}
+      {row.widgetType === "ml_findings" ? <MlFindingsInspectorFields config={row.config} onChange={updateConfig} /> : null}
       {row.widgetType === "anomaly" ? (
         <p className="text-xs text-ink-muted" data-testid="anomaly-inspector-note">
           {ANOMALY_INSPECTOR_NOTE}

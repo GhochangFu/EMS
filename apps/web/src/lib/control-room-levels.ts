@@ -83,6 +83,13 @@ export function organizationEntryTarget(
  * `/control-room`. So a one-site organization among several gives
  * `Control Room / <site>`. The last crumb carries no `to`: it names the current
  * page. `ControlRoomBreadcrumb` renders nothing for a one-crumb list.
+ *
+ * `F4.240` (ADR 0139 decision 17) — between the organization and the site, the site's parents
+ * (`PHEWB / Lotapata / Lotapata I`). Only a parent in `items` is named (the API nulls an
+ * unreadable `parentId`), so a site with a `null` parent keeps today's trail. `F4.240` part b
+ * (ADR 0140 decision 2, plan D4): a reader of the parent gets a link to its page
+ * (`/control-room/site/<parent id>`); a parent the caller cannot read is not in `items`, so it has
+ * no crumb at all.
  */
 export function controlRoomCrumbs(
   items: readonly LocationKpiSummary[],
@@ -110,10 +117,39 @@ export function controlRoomCrumbs(
   }
 
   if (site && (organizationsLevelShown || organizationLevelShown)) {
+    // `F4.240` (ADR 0139 decision 17; ADR 0140 decision 2) — the site's readable parents, root
+    // first, each linked to its page.
+    for (const parent of readableParents(items, site)) {
+      crumbs.push({ label: parent.name, to: `/control-room/site/${encodeURIComponent(parent.id)}` });
+    }
     crumbs.push({ label: site.name, to: `/control-room/site/${site.id}` });
   }
 
   const last = crumbs[crumbs.length - 1];
   crumbs[crumbs.length - 1] = { label: last.label };
   return crumbs;
+}
+
+/**
+ * `F4.240` — walks `parentId` up through `items`, root first. It stops at a parent not in the
+ * list, and the visited set stops a cycle the data should never hold.
+ */
+function readableParents(
+  items: readonly LocationKpiSummary[],
+  site: LocationKpiSummary,
+): LocationKpiSummary[] {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const visited = new Set<string>([site.id]);
+  const parents: LocationKpiSummary[] = [];
+  let parentId = site.parentId;
+  while (parentId !== null && !visited.has(parentId)) {
+    const parent = byId.get(parentId);
+    if (parent === undefined) {
+      break;
+    }
+    visited.add(parentId);
+    parents.unshift(parent);
+    parentId = parent.parentId;
+  }
+  return parents;
 }

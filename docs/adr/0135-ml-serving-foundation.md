@@ -1319,6 +1319,9 @@ Q1–Q4 are ruled as recommended (Q5 was ruled earlier the same day; see
 - Q5 is ruled **(a) and (b) both in**: the control-room card *and* a
   dashboard widget (decision 13). The owner wrote "if possible, add the
   dashboard widget also"; the drafter reads "also" as a yes to (a) as well;
+- after acceptance, a separate model may write the findings paragraph
+  (`ML_FINDINGS_LLM_PROVIDER`, `ML_FINDINGS_LLM_MODEL`, e.g. a small model on
+  OpenRouter), decision 4;
 - every asset the summary names (in a fact line or the AI paragraph) is a
   **link to that asset's forecast and anomaly view**; assets that are only
   counted are not listed or linked (decision 14).
@@ -1479,6 +1482,36 @@ the AI paragraph (decision 5), not a choice the model makes.
    organization's data may go to its LLM provider". A multi-organization view
    makes one call per organization, never one call with two organizations'
    facts (ADR 0099 decision 10).
+   - **A separate model for the findings paragraph** *(owner, 2026-11-17,
+     after acceptance: "yes, add the OpenRouter setting as recommended")*.
+     Two new, optional server variables: `ML_FINDINGS_LLM_PROVIDER`
+     (`openai | openrouter | anthropic`) and `ML_FINDINGS_LLM_MODEL` (for
+     example a small open-source model on OpenRouter). The key is that
+     provider's **existing** variable (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`,
+     `ANTHROPIC_API_KEY`); there is no new secret. A new method,
+     `LlmResolver.resolveForFindings(organizationId)`, keeps `LlmResolver` the
+     only reader of these variables, and decides in this order:
+     1. The organization has its own `organization_llm_settings` row → that
+        row decides, exactly as `resolveForOrganization` does today (its own
+        key and model, or no paragraph). The findings variables never apply
+        to it, so its data never goes to the platform key (ADR 0090
+        Amendment 1 A4).
+     2. No row, and `ML_FINDINGS_LLM_PROVIDER` is set → that provider with
+        `ML_FINDINGS_LLM_MODEL` and that provider's key. If the model or the
+        key is missing → **no paragraph** (facts only) and one boot warning
+        naming the missing variable. It never falls back to the copilot's
+        model, so a cheap choice never turns into a dearer one by accident.
+     3. No row, and the findings variables are empty → the platform default
+        (`LLM_PROVIDER`), as `resolveForOrganization` does.
+     The copilot and the onboarding agent are unchanged. The two variables go
+     into `.env.example` and the `api` service of both compose files
+     (`docker-compose.yml`, `deploy/aws/docker-compose.yml`), in `E1.9c`.
+     The organization copilot switch (Q2) is still the consent: with the
+     switch on, the pseudonymised facts may go to whichever provider this
+     order picks. **Data note:** OpenRouter forwards a request to the model's
+     host; only placeholder text leaves the server, and the operator should
+     turn off prompt logging and training in the OpenRouter account. A small
+     model fails the guard more often; each failure shows the facts only.
 
 5. **The guard — what makes a paragraph shown** *(owner ruling 1;
    details recommended)*. A pure function `checkFindingsParagraph(text,
@@ -1863,3 +1896,200 @@ scope kind (organization, location, asset group), saved, and drawn after a
 hard reload; a widget with `paragraph: false` makes no paragraph request; and
 with `LLM_PROVIDER` unset (or the switch off), every surface shows facts and
 no banner.
+
+**Build record — `E1.9` closed (2026-11-17).** `E1.9a`–`f` merged in #1387
+(`dd9c1dba`), #1390 (`25d16244`), #1392 (`a9188808`), #1395 (`0570fcf3`),
+#1399 (`8da114d5`) and #1400 (`93ccc30a`); planned in #1380. Owner rulings
+during the build: the plan's Q1–Q4 "yes, as recommended" (a card for every
+organization with any ML row; 4,000 output tokens per call; an `attempts`
+column summed by the cap; the widget off the wall), and the separate findings
+model of decision 4. Calls made in the build, recorded so a reader does not
+take them for drift:
+- **Migration 0162 was widened in place before it was ever pushed**
+  (`model varchar(200)`, the longest model an organization may save), by
+  rebuilding the unpushed worktree branch; the pre-commit hook that refuses
+  edits to a committed migration was sidestepped this once on the session's
+  instruction. The file never reached `main` or a database in its first form.
+- **The paragraph card carries its own `assets`** (decision 14 kept: links
+  come from a server-built facts list, never from model text). The summary and
+  paragraph reads may see different ML cycles, so `[A1]` resolves against the
+  facts the paragraph was written from.
+- **What leaves the host is narrower than decision 6:** a unit is sent only if
+  it is on an allow-list (`apps/api/src/ml-findings/findings-units.ts`), and
+  each pseudonymised line must match its fact id's sentence shape; otherwise
+  the card is not sendable (facts only).
+- **The guard is wider than decision 5:** it also refuses non-ASCII digits,
+  fractions, Roman numerals, exponents, ordinals, more number words,
+  separated signs, schemes, bare domains, `//`, look-alike and control
+  characters (reasons `unknown_character`, `control_character`); a fact word
+  is exempt from the domain/markup checks only as a whole word apart from
+  `/`, `@` and a glued colon.
+- **Fail closed, beyond decision 5:** a lost row write backs off its key for
+  30 min and counts toward the cap in process; a cached `ok` paragraph is not
+  served when the switch is off or the organization is inactive; an
+  OpenAI-compatible reply cut at the limit is a provider error; a findings
+  model set without a provider, or longer than 200 characters, is no
+  paragraph. **Residual risk, accepted:** single-flight and the 4-in-flight
+  limit are per process, so the cap can overshoot by at most 4 calls per
+  process, and by replicas × cap only if writes fail persistently.
+- **Web:** the paragraph poll falls back to 15 min after an error; the
+  paragraph response is parsed strictly and a malformed one draws nothing; the
+  anomaly link carries no `fn=avg` (the web's own link omits the default);
+  the table rows now use the shared link builders.
+- **Widget:** a wall tab left with only `ml_findings` tiles shows a neutral
+  line, not "no widgets yet". The copilot can propose an `ml_findings` widget
+  (config only, never findings text), as it already can `forecast` and
+  `anomaly`; the owner was told.
+- **Not yet proven live:** that the provider accepts a request with no tools
+  (plan R-d) and the 15 s limit — the first paragraph call on the demo host
+  proves them. **Owed:** the demo-host checks for `E1.9c`–`f` (plan §19;
+  `E1.9a`/`b` passed, #1391) and the `chore(agents):` catch-up (plan §20;
+  owner said yes).
+
+## Amendment 9 — pointer: anomaly history beside the asset health score (2026-11-17)
+
+**Status: Accepted — 2026-11-17** (owner, in chat: "accept as recommended"),
+with [ADR 0050 Amendment 5](./0050-asset-health-score.md) (`E1.8`). This is a pointer, so a reader of Amendment 5 here finds the
+exception. The decision itself lives in ADR 0050 Amendment 5.
+
+It adds a **third** exception to Amendment 5 ruling 4, after
+Amendment 6 (the alarm-panel context line) and Amendment 8 (the findings):
+an asset's health read may show an **advisory figure** equal to its rule-based
+health score minus a capped anomaly penalty, and a **"Bad actors — advisory"**
+list ranked by unusual hours. Until the owner's one-week detector read (about
+2026-11-23) only hours **both** detectors mark count, and the penalty is
+capped at 0.05. `E1.3`'s score, bands, donut and the `assets.health.score`
+metric do not change. A score still raises no alarm, sends no notification,
+opens no work order, and appears in no report, export or copilot answer. No
+threshold or detector constant changes, and `apps/ml` does not change.
+
+## Amendment 10 — `E1.9g`: the AI summary set apart from the computed facts (2026-11-17)
+
+**Status: Accepted — 2026-11-17** (owner, in chat: "Accept"; proposed the
+same day in #1416). Drafted by an agent for backlog row `E1.9g` from the
+owner's review of the live `E1.9` cards on the AWS demo host (2026-11-17, in
+chat). The owner chose the layout ("Option A") from three mockups in chat,
+ruled Q1–Q4 as recommended, and added ruling Q5 below before accepting, so
+**every *(recommended)* line in this amendment is now a ruling**. Plan:
+[`e1.9g-ai-summary-layout.md`](../plans/e1.9g-ai-summary-layout.md)
+(approved 2026-11-17).
+
+### Context
+
+The owner, on the live `/forecasts`, `/anomalies` and control-room cards:
+the AI advisory "is not formatted … all the things are coming in a single
+paragraph … not understandable at a glance", and "the AI advisory and the
+normal summary generated by the system are not distinguishable … that AI
+advisory part is not highlighted".
+
+Measured on the demo host (WBLDC anomalies, 2026-11-17): the paragraph is
+712 characters on screen, of which the five asset labels
+(`assetLabelOf`: code + " · " + RTU name, e.g. `PORK_VAP_Pack_Chiller ·
+Siliguri Pork Plant Cold-Chain Gateway`) take more than half. The AI block
+differs from the fact lines only by a 2 px left border and the 2xs label
+"AI-written · advisory"; both use the same size, colour and link style, and
+the facts repeat the same assets.
+
+Amendment 8 fixed the label word for word (ruling 1, decision 5) and the
+paragraph's shape (decision 5: plain text, one paragraph, at most 600
+characters, no markdown, no line break). This amendment changes how that
+text is **shown**, how the model is asked to **write** it, and the label.
+It does not change what may leave the host, the guard's checks, the cache
+key's parts, the cap, the timeout or the fail-closed rule.
+
+### Decisions (each *(recommended)* until the owner rules)
+
+1. **An AI summary box, visibly apart** *(recommended)*. On every surface
+   that shows the paragraph (`/forecasts`, `/anomalies`, the control-room
+   organization and site cards, the `ml_findings` widget), the paragraph
+   sits in its own tinted box with an AI mark, above the facts. The box
+   uses an info or neutral-accent tint, never a band, alarm or severity
+   colour (Amendment 8's no-alarm-colour rule stands). Its label is
+   **"AI summary · advisory"** (Q1). Under the text, one muted line:
+   **"Written by AI from the facts below. Check them before you act."** On
+   the compact control-room card, where the facts are not below, the line
+   reads "Written by AI from the computed facts."
+2. **A headline and key points** *(recommended)*. The first sentence of the
+   text is shown as a one-line headline; each later sentence is one bullet
+   (at most four shown). The split is done on screen, at a sentence end
+   (`.`, `!` or `?` followed by a space and an upper-case letter or `[`),
+   never inside a number (`-41.25`) or a placeholder. Text that yields one
+   sentence is shown as the headline alone. The stored text stays one
+   paragraph, so the guard's `line_break`, `markdown` and 600-character
+   checks are unchanged.
+3. **The prompt asks for that shape** *(recommended, Q2)*. Prompt version 2:
+   "Start with one short sentence that states the overall count. Then write
+   two to four short sentences, one point each, strongest signal first."
+   The other rules stay word for word. `FINDINGS_PROMPT_VERSION` becomes 2,
+   so every cached row misses once and is written again (the canonical
+   text, and so the hash, carries the version). At the demo host's volume
+   this is a few dozen calls, about $0.01 on `openai/gpt-6-luna`, within
+   the 200-a-day cap.
+4. **Short asset chips** *(recommended, Q3)*. An asset reference shows as a
+   chip with the **asset code** only; the full label (code · RTU or site)
+   is its `title`, and the link target is unchanged. This applies in the
+   AI box and in the fact lines alike, so the two read the same way. The
+   card's `assets` entry gains an additive `code` field (ADR 0030: an
+   added field, older readers ignore it); the web never parses `label`.
+5. **Computed facts below, shortened** *(recommended, Q4)*. Under the AI box,
+   a plain heading **"Computed facts"**, the first two fact lines, and a
+   "Show N more" control that opens the rest in place (state not kept
+   across reloads). With no AI box (switch off, `none`, `pending`, any
+   failure) every fact line shows, as today, and the heading is omitted —
+   facts-only cards look as they do now.
+6. **Unchanged**: the facts route and its sentences; the paragraph route,
+   its states and polling; pseudonymisation and what leaves the host; the
+   guard; the cache table and its key; the cap, the in-flight limit and the
+   15 s timeout; no paragraph on the wall; the `ml_findings` widget's
+   `paragraph` switch. No migration, grant, dependency or `apps/ml` change.
+
+### Open questions for the owner (each has a recommended answer)
+
+- **Q1 — label.** (a) "AI summary · advisory" *(recommended: names what it is,
+  keeps "advisory")*; (b) keep "AI-written · advisory".
+- **Q2 — where the structure comes from.** (a) prompt version 2 plus the
+  on-screen split *(recommended: shorter, cleaner points; one cache refill)*;
+  (b) the on-screen split only, prompt unchanged (no refill, but today's
+  long sentences make long bullets).
+- **Q3 — asset chips.** (a) code-only chips in the AI box **and** the facts,
+  with an additive `code` field *(recommended)*; (b) in the AI box only;
+  (c) keep full labels.
+- **Q4 — facts under the AI box.** (a) first two lines plus "Show N more"
+  *(recommended)*; (b) all lines always.
+
+### Owner rulings (2026-11-17, in chat)
+
+- **Q1** (a): the label is **"AI summary · advisory"**.
+- **Q2** (a): prompt version 2 plus the on-screen split.
+- **Q3** (a): code-only chips in the AI box and the facts; an additive `code`
+  field on the card's asset entries.
+- **Q4** (a): under the AI box, the first two fact lines and "Show N more".
+- **Q5 — the organization page order** *(owner, added before acceptance)*. On
+  the control-room organization page the *Findings — advisory* card moves
+  **directly above *Asset health***: … daily energy cost → *Findings —
+  advisory* → *Asset health* → *Bad actors — advisory* → load trend …
+  This replaces Amendment 8 decision 13's "after *Asset health*" for the
+  organization page. *Bad actors* stays directly after *Asset health*
+  ([ADR 0050](./0050-asset-health-score.md) Amendment 5). The site page
+  already shows *Findings* above *Bad actors* and has no *Asset health*
+  section; it does not change.
+- Plan rulings OQ-1 (a) (a hidden "weak" sentence takes the last shown
+  point slot) and OQ-2 (a) (the first two fact lines, in order) are recorded
+  in the plan.
+
+### Consequences
+
+- Operators read one highlighted summary, then the checkable facts; the AI
+  text can no longer be mistaken for the computed facts.
+- Q2 (a) writes every cached paragraph once more after the deploy; the
+  first view of each card shows facts only for a few seconds, as today
+  when the cache is cold.
+- The jsdom specs that pin the label text and the single `<p>` change in
+  the same PR; Amendment 8's guard and pseudonymise specs do not.
+
+**Build record — `E1.9g` (2026-11-17).** Built in two PRs: #1419 (`f7e05867`: the required asset `code`, `finishCard` filling it, prompt version 2 with the ten version-1 lines and a SHA-256 of the whole prompt pinned in a spec) and #1421 (`571e4f0a`: the web box, chips, *Computed facts*, the compact box and the organization-page order); planned in #1417. Calls made in the build, recorded so a reader does not take them for drift:
+- **OQ-1 (a), read for its purpose.** When no shown sentence holds "weak" and a hidden one does, the **first** hidden "weak" sentence takes the last point slot. With exactly one "weak" sentence this is the ruling's words; with two hidden ones a literal "the only sentence" reading would show no "weak" at all. A spec case pins it; recorded in #1421's body for the owner.
+- **Focus after "Show N more".** The button is removed on click (plan R-h), so focus moves to the first line it showed (`tabIndex=-1`) rather than falling to the page.
+- **The chip uses the surface vocabulary** (`surface-pressed-sm`), not `border-line` + `bg-surface`: the first CI run of #1421 failed the `F3.71` surface ratchet (ADR 0085) on that spelling, and one push fixed it.
+- **Not changed, raised for the owner:** a screen reader names a chip by its code only, and an unsafe-link chip's `title` cannot be reached by keyboard (Q3's code-only chips). A visually hidden full label would change the text the specs pin.
+- **Owed:** the demo-host checks of plan §13 after each deploy (PR 1: new version-2 rows, the stop rule, no names in stored rows, the daily cap; PR 2: the box, chips, folding, the organization-page order, the wall), and the `chore(agents):` catch-up of plan §14 (owner approval first).

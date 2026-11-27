@@ -7,6 +7,19 @@ import type pg from "pg";
 import type { BmsDb } from "./client";
 import { getOrganizationId } from "./hierarchy-seed";
 import { ENABLED_SET_VERSION, resolveIngestEnabled } from "./ingest-enabled-set";
+import {
+  copyStationTariffsToSite,
+  ensurePheSites,
+  movePheRtusToSites,
+  type PheResolvedSite,
+  type PheSkippedSite,
+  type PheSplitStation,
+  pheOffSiteLine,
+  pheRtuTarget,
+  readRtusAwayFromStation,
+  unlinkSplitStationView,
+} from "./phe-site-split";
+import { PHE_SPLIT_STATION_CODES } from "./phe-split-stations";
 import { assets, locations } from "./schema/bms-schema";
 
 export type PheCatalogRow = {
@@ -93,8 +106,8 @@ export function deviceDomain(deviceCode: string, modelCode: string): string {
 
 /**
  * The `bms.locations.slug` a PHE station takes. Exported so `phe-map-seed.ts`
- * uses this one copy, and so {@link phePilotExpectedRows} can derive the
- * legacy per-RTU slugs from the RTU display names with the same function.
+ * uses this one copy, and so {@link pheRtuSites} derives an RTU site's slug
+ * from the RTU display name with the same function.
  */
 export function stationSlug(stationName: string): string {
   return `phe-${stationName
@@ -118,6 +131,138 @@ export function pheRtuCode(rtuCode: string): string {
   return `RTU-${rtuCode}`;
 }
 
+/**
+ * ADR 0139 decision 3 (plan D3) — the identity of the site an edge RTU gets
+ * when its station splits. The seed adopts a location as this site only by
+ * the triple (`slug`, `meta.phe.stationCode`, `meta.phe.edgeRtuId`) with
+ * `parent_id` = the station, which is also the shape the boot gate checks.
+ */
+export type PheRtuSite = {
+  /** The RTU's display name, for example `Lotapata I`. */
+  readonly name: string;
+  /** {@link stationSlug} of the display name, for example `phe-lotapata-i`. */
+  readonly slug: string;
+  /** `PHE-<StationCode>-<SUFFIX>`, for example `PHE-CBLTPT1-I`. */
+  readonly code: string;
+  /** The station's catalog `StationCode`, as `meta.phe.stationCode` carries it. */
+  readonly stationCode: string;
+  /** The station's `bms.locations.slug`: the site's parent. */
+  readonly stationSlug: string;
+  /** The catalog `EdgeRTUId`, as `meta.phe.edgeRtuId` carries it. */
+  readonly edgeRtuId: number;
+  /** The RTU's first catalog row's coordinates. */
+  readonly latitude: number;
+  readonly longitude: number;
+};
+
+/**
+ * One {@link PheRtuSite} per edge RTU of `catalog`, in catalog order. Pure.
+ *
+ * The code's suffix is the display name's last word, upper-cased (`I`, `II`):
+ * the station name cannot be cut off instead, because `Bhutnirghat I` belongs
+ * to the station `BhutnirGhat`. Throws, rather than guess, on a suffix that is
+ * not `[A-Z0-9]+` and on two RTUs that give one slug or one code, because
+ * either would make the seed adopt one site for two RTUs; and on a site slug
+ * that is some station's slug, because the boot gate's shape check would then
+ * count the live station itself.
+ */
+export function pheRtuSites(catalog: PheCatalogFile): PheRtuSite[] {
+  const sites: PheRtuSite[] = [];
+  const seen = new Set<number>();
+  const stationSlugs = new Set(catalog.rows.map((row) => stationSlug(row.StationName)));
+  const slugs = new Map<string, number>();
+  const codes = new Map<string, number>();
+  for (const row of catalog.rows) {
+    if (seen.has(row.EdgeRTUId)) {
+      continue;
+    }
+    seen.add(row.EdgeRTUId);
+    const suffix = (row.RTUDisplayName.trim().split(/\s+/).pop() ?? "").toUpperCase();
+    if (!/^[A-Z0-9]+$/.test(suffix)) {
+      throw new Error(
+        `pheRtuSites: edge RTU ${row.EdgeRTUId} "${row.RTUDisplayName}" gives the site-code suffix ` +
+          `${JSON.stringify(suffix)}, which is not [A-Z0-9]+`,
+      );
+    }
+    const site: PheRtuSite = {
+      name: row.RTUDisplayName,
+      slug: stationSlug(row.RTUDisplayName),
+      code: `${pheLocationCode(row.StationCode)}-${suffix}`,
+      stationCode: row.StationCode,
+      stationSlug: stationSlug(row.StationName),
+      edgeRtuId: row.EdgeRTUId,
+      latitude: Number(row.Latitude),
+      longitude: Number(row.Longitude),
+    };
+    if (stationSlugs.has(site.slug)) {
+      throw new Error(
+        `pheRtuSites: edge RTU ${row.EdgeRTUId} "${row.RTUDisplayName}" gives the site slug ${site.slug}, ` +
+          "which is a station's slug",
+      );
+    }
+    for (const [kind, key, held] of [
+      ["slug", site.slug, slugs],
+      ["code", site.code, codes],
+    ] as const) {
+      const other = held.get(key);
+      if (other !== undefined) {
+        throw new Error(
+          `pheRtuSites: edge RTUs ${other} and ${row.EdgeRTUId} give the duplicate site ${kind} ${key}`,
+        );
+      }
+      held.set(key, row.EdgeRTUId);
+    }
+    sites.push(site);
+  }
+  return sites;
+}
+
+/** ADR 0139 decision 10 — a site of a split station, with the catalog assets of its RTU. */
+export type PheSplitSite = PheRtuSite & {
+  /** The `bms.assets.code` of each device on the site's RTU. */
+  readonly assetCodes: readonly string[];
+};
+
+/**
+ * Refuses a split list the seed cannot apply, before anything reads it: a code
+ * that is not a catalog `StationCode` (a typo would split nothing and pass
+ * every gate) and a code listed twice. Pure.
+ */
+export function assertPheSplitStationCodes(catalog: PheCatalogFile, splitStationCodes: readonly string[]): void {
+  const stationCodes = new Set(catalog.rows.map((row) => row.StationCode));
+  const unknown = splitStationCodes.filter((code) => !stationCodes.has(code));
+  if (unknown.length > 0) {
+    throw new Error(
+      `PHE split list: ${unknown.map((code) => JSON.stringify(code)).join(", ")} is not a catalog StationCode ` +
+        `(the catalog has ${[...stationCodes].join(", ")})`,
+    );
+  }
+  const repeated = splitStationCodes.filter((code, index) => splitStationCodes.indexOf(code) !== index);
+  if (repeated.length > 0) {
+    throw new Error(`PHE split list: ${[...new Set(repeated)].join(", ")} is listed more than once`);
+  }
+}
+
+/**
+ * The sites of the listed stations, in catalog order, each with its RTU's
+ * asset codes (plan D9). Pure; throws through
+ * {@link assertPheSplitStationCodes}.
+ */
+export function pheSplitSites(catalog: PheCatalogFile, splitStationCodes: readonly string[]): PheSplitSite[] {
+  assertPheSplitStationCodes(catalog, splitStationCodes);
+  const listed = new Set(splitStationCodes);
+  return pheRtuSites(catalog)
+    .filter((site) => listed.has(site.stationCode))
+    .map((site) => ({
+      ...site,
+      assetCodes: [
+        ...new Set(
+          catalog.rows.filter((row) => row.EdgeRTUId === site.edgeRtuId).map((row) => assetCode(row.DeviceCode)),
+        ),
+      ],
+    }));
+}
+
 /** One `(asset code, point key)` pair. */
 export type PheAssetPoint = { readonly assetCode: string; readonly pointKey: string };
 
@@ -136,14 +281,19 @@ export type PhePilotExpectedRows = {
   /** The devices whose domain is `electrical`. */
   readonly electricalAssetCodes: readonly string[];
   /**
-   * The slugs of the legacy one-RTU-per-location rows an earlier seed wrote:
-   * {@link stationSlug} of each edge RTU's display name (`<Station> I`,
-   * `<Station> II`), less any station slug, without duplicates. No generator
-   * of those rows survives in the repository, so this list is the only record
-   * of them; `cleanupLegacyPheRtuLocations` deletes exactly these slugs and
-   * the boot gate counts them, which must be zero (owner ruling 13, OQ1).
+   * ADR 0139 decision 8 — one {@link PheRtuSite} per edge RTU, whether or
+   * not its station is split. The boot gate's shape check reads it: a PHEWB
+   * location on one of these slugs must be that RTU's site, so a legacy
+   * one-RTU-per-location row restored from an old backup stops the boot
+   * rather than being adopted.
    */
-  readonly legacyLocationSlugs: readonly string[];
+  readonly rtuSites: readonly PheRtuSite[];
+  /**
+   * ADR 0139 decision 10 (plan D9) — the sites of the listed stations, which
+   * the boot gate counts present, with each RTU and asset at its site. Not in
+   * `hierarchyExpectations`' throw-on-empty set: release A's list is empty.
+   */
+  readonly splitSites: readonly PheSplitSite[];
 };
 
 /**
@@ -153,18 +303,18 @@ export type PhePilotExpectedRows = {
  * Pure; `verify-hierarchy-expected.ts` hands it to the boot gate, which counts
  * these rows present rather than counting every PHEWB row.
  */
-export function phePilotExpectedRows(catalog: PheCatalogFile): PhePilotExpectedRows {
+export function phePilotExpectedRows(
+  catalog: PheCatalogFile,
+  splitStationCodes: readonly string[] = PHE_SPLIT_STATION_CODES,
+): PhePilotExpectedRows {
+  const splitSites = pheSplitSites(catalog, splitStationCodes);
   const locationCodes = new Set<string>();
   const externalRtuIds = new Set<number>();
   const domains = new Map<string, string>();
   const points = new Map<string, PheAssetPoint>();
   const tsPoints = new Map<string, PheAssetPoint>();
-  const stationSlugs = new Set<string>();
-  const rtuSlugs = new Set<string>();
   for (const row of catalog.rows) {
     locationCodes.add(pheLocationCode(row.StationCode));
-    stationSlugs.add(stationSlug(row.StationName));
-    rtuSlugs.add(stationSlug(row.RTUDisplayName));
     externalRtuIds.add(row.EdgeRTUId);
     const code = assetCode(row.DeviceCode);
     // The seed takes a device's domain from its first catalog row.
@@ -182,7 +332,8 @@ export function phePilotExpectedRows(catalog: PheCatalogFile): PhePilotExpectedR
     points: [...points.values()],
     tsPoints: [...tsPoints.values()],
     electricalAssetCodes: [...domains].filter(([, domain]) => domain === "electrical").map(([code]) => code),
-    legacyLocationSlugs: [...rtuSlugs].filter((slug) => !stationSlugs.has(slug)),
+    rtuSites: pheRtuSites(catalog),
+    splitSites,
   };
 }
 
@@ -266,12 +417,60 @@ export async function updatePheStationLocation(
   await db.update(locations).set(updateValues).where(eq(locations.id, locationId));
 }
 
-export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
-  const catalog = loadPheCatalog();
+/**
+ * What a test may hand {@link seedPheCatalog} (plan D2). Production passes only
+ * `holderReader` (`seed.ts`), so the committed {@link PHE_SPLIT_STATION_CODES}
+ * and the committed catalog are what a deployed seed reads;
+ * `tests/f4.388-split-list-is-source.test.ts` holds that.
+ */
+export type PheSeedOptions = {
+  /** The catalog to seed; `phe-catalog.json` by default. */
+  readonly catalog?: PheCatalogFile;
+  /** ADR 0139 decision 1 — the stations to split; the committed list by default. */
+  readonly splitStationCodes?: readonly string[];
+  /**
+   * The superuser pool the site-holder read runs on (ADR 0080 ruling 16), so
+   * another organization's row is seen. Required when the list is not empty.
+   */
+  readonly holderReader?: pg.Pool;
+  /** Where the split path's lines go; `console.error` by default. */
+  readonly log?: (line: string) => void;
+};
+
+/** What {@link seedPheCatalog} did on the split path this run. */
+export type PheSeedOutcome = {
+  /** The sites it created or adopted. */
+  readonly sites: readonly PheResolvedSite[];
+  /** The sites it skipped; `seed.ts` hands them to the boot gate (owner ruling Q2). */
+  readonly skippedSites: readonly PheSkippedSite[];
+  /** The edge RTUs the one-statement move moved this run (plan D4). */
+  readonly movedExternalRtuIds: readonly number[];
+  /** The assets that move carried with those RTUs. */
+  readonly movedAssets: number;
+};
+
+export async function seedPheCatalog(db: BmsDb, pool: pg.Pool, options: PheSeedOptions = {}): Promise<PheSeedOutcome> {
+  const catalog = options.catalog ?? loadPheCatalog();
+  const splitStationCodes = options.splitStationCodes ?? PHE_SPLIT_STATION_CODES;
+  const log = options.log ?? ((line: string) => console.error(line));
+  // Before any write: an unknown code throws, and so does a list with no reader.
+  const splitSites = pheSplitSites(catalog, splitStationCodes);
+  const holderReader = options.holderReader;
+  if (splitStationCodes.length > 0 && holderReader === undefined) {
+    throw new Error(
+      "seedPheCatalog: a non-empty split list needs a holderReader (the superuser pool), " +
+        "so another organization's holder of a site slug is seen and skipped",
+    );
+  }
+  const listed = new Set(splitStationCodes);
   const phewbOrgId = await getOrganizationId(pool, "PHEWB");
   const stationIds = [...new Set(catalog.rows.map((r) => r.StationId))];
 
   const stationLocationIds = new Map<number, string>();
+  /** The split stations by `StationCode`, for the site writes. */
+  const splitStations = new Map<string, PheSplitStation>();
+  /** Every station by `StationCode`: its location and catalog name (plan D5). */
+  const stationsByCode = new Map<string, { locationId: string; name: string }>();
 
   for (const stationId of stationIds) {
     const stationRows = catalog.rows.filter((r) => r.StationId === stationId);
@@ -295,7 +494,8 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       code: locationCode,
       slug,
       name: head.StationName,
-      type: "pump_station" as const,
+      // ADR 0139 decision 2 (Q4): a split station is a parent, `campus`.
+      type: listed.has(head.StationCode) ? "campus" : "pump_station",
       province: "West Bengal",
       capital: null,
       latitude: Number(head.Latitude),
@@ -331,7 +531,59 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       continue;
     }
     stationLocationIds.set(stationId, locationId);
+    stationsByCode.set(head.StationCode, { locationId, name: head.StationName });
+    if (listed.has(head.StationCode)) {
+      splitStations.set(head.StationCode, {
+        locationId,
+        stationCode: head.StationCode,
+        phe: locationValues.meta.phe,
+        province: locationValues.province,
+        timezone: locationValues.timezone,
+      });
+    }
   }
+
+  // ── ADR 0139 decisions 3, 4 and 4a: the sites, the move, the tariff copy ──
+  // Between the station loop and the RTU loop, in PHEWB's one seed
+  // transaction, so the RTU upsert below already writes each RTU's site.
+  const split =
+    holderReader === undefined || splitSites.length === 0
+      ? { sites: [] as PheResolvedSite[], skippedSites: [] as PheSkippedSite[] }
+      : await ensurePheSites(pool, holderReader, { phewbOrgId, stations: splitStations, sites: splitSites, log });
+  const moved = await movePheRtusToSites(pool, split.sites, phewbOrgId);
+  if (moved.moves.length > 0) {
+    log(`phe site split: moved ${moved.moves.length} RTU(s) with ${moved.assets} asset(s) to their sites`);
+  }
+  const movedSiteIds = new Set(moved.moves.map((move) => move.locationId));
+  /** Decision 7 (plan D7): unlinked in this transaction, once per station whose RTU moved this run. */
+  const unlinkAsked = new Set<string>();
+  for (const site of split.sites) {
+    const stationId = splitStations.get(site.stationCode)?.locationId;
+    if (stationId !== undefined && movedSiteIds.has(site.locationId)) {
+      await copyStationTariffsToSite(pool, { stationId, site, log });
+      if (!unlinkAsked.has(stationId)) {
+        unlinkAsked.add(stationId);
+        await unlinkSplitStationView(pool, {
+          stationId,
+          stationSlug: site.stationSlug,
+          organizationId: phewbOrgId,
+          log,
+        });
+      }
+    }
+  }
+  const resolvedByRtu = new Map(split.sites.map((site) => [site.edgeRtuId, site]));
+  // Never back (decision 4, owner ruling A): an RTU already at a PHEWB
+  // location other than its station stays there, whether or not its station
+  // is listed and whether or not that row is still shaped as its site.
+  const awayFromStation = await readRtusAwayFromStation(
+    pool,
+    pheRtuSites(catalog).flatMap((site) => {
+      const station = stationsByCode.get(site.stationCode);
+      return station ? [{ ...site, stationLocationId: station.locationId }] : [];
+    }),
+    phewbOrgId,
+  );
 
   const rtuIds = [...new Set(catalog.rows.map((r) => r.EdgeRTUId))];
   const rtuIdByExternal = new Map<number, string>();
@@ -345,10 +597,22 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       continue;
     }
 
-    const locationId = stationLocationIds.get(head.StationId);
-    if (!locationId) {
+    const stationLocationId = stationLocationIds.get(head.StationId);
+    if (!stationLocationId) {
       continue;
     }
+    // Plan D5 (ruling A): the RTU's site, else where it sits off its station
+    // (never back), else the station.
+    const resolvedSite = resolvedByRtu.get(edgeRtuId);
+    const target = pheRtuTarget({
+      site: resolvedSite && { locationId: resolvedSite.locationId, name: resolvedSite.locationName },
+      current: awayFromStation.get(edgeRtuId),
+      station: { locationId: stationLocationId, name: head.StationName },
+    });
+    if (target.offSite) {
+      log(pheOffSiteLine(edgeRtuId, target.offSite));
+    }
+    const locationId = target.locationId;
 
     // What the database already thinks, read before the upsert overwrites it.
     // `ingest_enabled` stopped being the seed's to assert on every run at
@@ -491,7 +755,8 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
         organizationId: phewbOrgId,
         code,
         name: deviceHead.DeviceDisplayName || deviceHead.DeviceName,
-        siteName: head.StationName,
+        // ADR 0139 decision 11 (Q8): the site's name at a site, else the catalog station name.
+        siteName: target.siteName,
         locationId,
         rtuId: rtuUuidForAsset,
         domain: deviceDomain(deviceHead.DeviceCode, deviceHead.ModelDeviceCode),
@@ -610,6 +875,12 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
   }
 
   reportIngestEnabledReasons(reasons);
+  return {
+    sites: split.sites,
+    skippedSites: split.skippedSites,
+    movedExternalRtuIds: moved.moves.map((move) => move.externalRtuId),
+    movedAssets: moved.assets,
+  };
 }
 
 /**

@@ -27,9 +27,9 @@ const require_ = createRequire(import.meta.url);
 const { seedEskomLadderRules } = require_(
   "../packages/db/dist/automation-rules-seed.js",
 ) as typeof AutomationRulesSeed;
-const { readEskomChecks, readGlobalChecks, readPhewbChecks, UNCOVERED_ELECTRICAL_LABEL } = require_(
-  "../packages/db/dist/verify-hierarchy-seed.js",
-) as typeof VerifyHierarchySeed;
+const {
+  failingChecks, PHE_RTU_SLUG_SHAPE_LABEL, readEskomChecks, readGlobalChecks, readPhewbChecks, UNCOVERED_ELECTRICAL_LABEL,
+} = require_("../packages/db/dist/verify-hierarchy-seed.js") as typeof VerifyHierarchySeed;
 const { hierarchyExpectations } = require_(
   "../packages/db/dist/verify-hierarchy-expected.js",
 ) as typeof VerifyHierarchyExpected;
@@ -87,6 +87,7 @@ type SeedPool = ReturnType<typeof createSeedPool>;
 type SeedDb = ReturnType<typeof createDb>;
 type HierarchyCheck = VerifyHierarchySeed.HierarchyCheck;
 type LadderCollisionSkip = AutomationRulesSeed.LadderCollisionSkip;
+type PheRtuSite = VerifyHierarchyExpected.HierarchyExpectations["phe"]["rtuSites"][number];
 
 /** Lowercase hex from `randomUUID`; the fixture codes carry it. */
 const runId = randomUUID().slice(0, 8);
@@ -347,7 +348,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
   type Pass = "global" | "eskom" | "phewb";
 
   /** One check before and after a fixture, read in one rolled-back transaction. */
-  type Around = { before: HierarchyCheck; after: number };
+  type Around = { before: HierarchyCheck; after: number; afterCheck: HierarchyCheck };
 
   /**
    * Reads `label` from `pass`, runs `fixture`, reads it again — all inside one
@@ -395,7 +396,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
         probeBefore + 1,
       );
       const after = await read();
-      return { before, after: after.actual };
+      return { before, after: after.actual, afterCheck: after };
     } finally {
       await pool.query("ROLLBACK");
     }
@@ -659,23 +660,89 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
     expect(after, "an admin PHEWB location must not move the location check").toBe(before.actual);
   }, 60_000);
 
-  it("P2: a legacy per-RTU PHEWB location moves its zero check (+1)", async () => {
-    // One of the twelve slugs the cleanup deletes (owner ruling 13); a slug
-    // that merely ends -ii is an admin's and is no longer counted.
-    const legacySlug = hierarchyExpectations().phe.legacyLocationSlugs[0];
-    assert(legacySlug !== undefined, "the PHE catalog must derive a legacy slug");
-    const { before, after } = await around("phewb", "PHEWB legacy per-RTU locations", async (pool) => {
-      await insertOne(
-        pool,
-        `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
-         VALUES ($1, $2, $3, 'F4.169 fixture legacy location', 'pump_station', 0, 0)
-         RETURNING id`,
-        [phewbOrgId, `F4169-${RUN_ID}-LEG`, legacySlug],
-        "legacy PHEWB location",
-      );
-    }, PROBE.phewbLocations);
+  /** ADR 0139 decision 8 — an RTU site, its station and another station; a slug its real site holds is freed in the case's transaction. */
+  async function rtuSiteHost(pool: SeedPool): Promise<{ site: PheRtuSite; stationId: string; otherStationId: string }> {
+    const { rtuSites } = hierarchyExpectations().phe;
+    const { rows } = await pool.query<{ id: string; slug: string }>(
+      `SELECT l.id, l.slug FROM bms.locations l JOIN bms.organizations o ON o.id = l.organization_id
+        WHERE o.code = 'PHEWB' AND l.slug = ANY($1::varchar[])`,
+      [[...rtuSites.flatMap((site) => [site.slug, site.stationSlug])]],
+    );
+    const idOf = (slug: string) => rows.find((row) => row.slug === slug)?.id;
+    const site = rtuSites.find((candidate) => idOf(candidate.stationSlug) !== undefined);
+    if (site && idOf(site.slug)) await pool.query(`UPDATE bms.locations SET slug = $1 WHERE id = $2`, [`${site.slug}-f4169-${runId}`, idOf(site.slug)]);
+    const other = rtuSites.find((candidate) => candidate.stationSlug !== site?.stationSlug)?.stationSlug ?? "";
+    const [stationId, otherStationId] = [idOf(site?.stationSlug ?? ""), idOf(other)];
+    assert(site !== undefined && stationId !== undefined && otherStationId !== undefined, "no free PHE RTU site");
+    return { site: site as PheRtuSite, stationId: stationId as string, otherStationId: otherStationId as string };
+  }
+
+  /** A PHEWB location on `slug`, under `parentId`, with `meta`. */
+  function insertRtuSlugLocation(pool: SeedPool, slug: string, parentId: string | null, meta: object): Promise<string> {
+    return insertOne(
+      pool,
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude, parent_id, meta)
+       VALUES ($1, $2, $3, 'F4.169 fixture RTU-slug location', 'pump_station', 0, 0, $4, $5::jsonb)
+       RETURNING id`,
+      [phewbOrgId, `F4169-${RUN_ID}-RTUSITE`, slug, parentId, JSON.stringify(meta)],
+      "RTU-slug PHEWB location",
+    );
+  }
+
+  const phe = (site: PheRtuSite, change: Partial<Pick<PheRtuSite, "stationCode" | "edgeRtuId">> = {}) => ({
+    phe: { stationCode: site.stationCode, edgeRtuId: site.edgeRtuId, ...change },
+  });
+  // Each row names the mutation of PHE_RTU_SLUG_SHAPE_SQL it kills (each read 0, not +1).
+  const SHAPE_MOVERS: { title: string; parent: "none" | "station" | "other station"; meta: (site: PheRtuSite) => object }[] = [
+    // A legacy row restored from an old backup. Mutation: no COALESCE (a NULL is not counted).
+    { title: "a legacy row (no parent, no meta)", parent: "none", meta: () => ({}) },
+    // Mutation: deleting `p.organization_id = l.organization_id AND p.slug = s.station_slug`.
+    { title: "the matching meta with no parent", parent: "none", meta: (site) => phe(site) },
+    // Mutation: deleting `p.slug = s.station_slug`.
+    { title: "matching meta under another station", parent: "other station", meta: (site) => phe(site) },
+    // Mutation: deleting the `edgeRtuId` comparison.
+    { title: "the right station, a wrong edgeRtuId", parent: "station", meta: (site) => phe(site, { edgeRtuId: site.edgeRtuId + 1000 }) },
+    // Mutation: deleting the `stationCode` comparison.
+    { title: "the right station, a wrong stationCode", parent: "station", meta: (site) => phe(site, { stationCode: `${site.stationCode}X` }) },
+  ];
+
+  it.each(SHAPE_MOVERS)("P2: $title on an RTU site's slug moves the shape check (+1) and names the row and the fix", async ({ parent, meta }) => {
+    let slug = "";
+    let fixtureId = "";
+    const { before, after, afterCheck } = await around(
+      "phewb",
+      PHE_RTU_SLUG_SHAPE_LABEL,
+      async (pool) => {
+        const { site, stationId, otherStationId } = await rtuSiteHost(pool);
+        const parentId = { none: null, station: stationId, "other station": otherStationId }[parent];
+        slug = site.slug;
+        fixtureId = await insertRtuSlugLocation(pool, slug, parentId, meta(site));
+      },
+      PROBE.phewbLocations,
+    );
     assertSeeded(before);
-    expect(after, "a surviving legacy per-RTU location must fail the check").toBe(before.actual + 1);
+    expect(after, "a row on an RTU site's slug that is not that site must fail the check").toBe(before.actual + 1);
+    // Owner ruling Q2 (plan 12.1): the boot stops with a line that names the row and the fix.
+    const [failure] = failingChecks([afterCheck]);
+    expect(failure, "the failing check must name the slug").toContain(slug);
+    expect(failure, "the failing check must name the row's id").toContain(fixtureId);
+    expect(failure, "the failing check must name the fix").toMatch(/fix: rename its slug$/);
+  }, 60_000);
+
+  it("P2 positive twin: the RTU's site, a child of its station with the matching triple, leaves the shape check at 0", async () => {
+    const { before, after, afterCheck } = await around(
+      "phewb",
+      PHE_RTU_SLUG_SHAPE_LABEL,
+      async (pool) => {
+        const { site, stationId } = await rtuSiteHost(pool);
+        await insertRtuSlugLocation(pool, site.slug, stationId, phe(site));
+      },
+      PROBE.phewbLocations,
+    );
+    assertSeeded(before);
+    // Mutation: a check that counts every RTU-slug row reads 1 here.
+    expect(after, "the RTU's own site must not fail the check").toBe(0);
+    expect(failingChecks([afterCheck])).toEqual([]);
   }, 60_000);
 
   it("V6: an admin PHEWB RTU leaves the PHEWB RTU check unmoved", async () => {

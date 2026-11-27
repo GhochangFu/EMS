@@ -20,3 +20,7 @@ export * from "./device-health-schema";
 export * from "./service-account-schema";
 // `E1.4a` (ADR 0135 Amendment 3 R-a): the read-only mirror of the hand-written `ml` schema.
 export * from "./ml-schema";
+// `E1.9c` (ADR 0135 Amendment 8 decision 7): the AI-written findings paragraph cache, in `bms`.
+export * from "./ml-findings-schema";
+// `F1.2` (ADR 0141 decisions 12, 13): an organization's Modbus device profiles.
+export * from "./device-profiles-schema";

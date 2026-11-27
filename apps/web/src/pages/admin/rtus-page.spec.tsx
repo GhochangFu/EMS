@@ -65,6 +65,8 @@ function rtu(overrides: Partial<AdminRtuDto>): AdminRtuDto {
     tls: true,
     payloadFormat: null,
     credentialsSet: null,
+    modbus: null,
+    organizationDefaultPollIntervalMs: null,
     ...overrides,
   };
 }
@@ -308,4 +310,65 @@ export async function aReleasedTopicIsNamedOnTheRow(): Promise<void> {
   expect(within(await rowOf("F4339-T1")).getByText("Topic released on deactivate: f4339/t1")).toBeTruthy();
   expect(within(await rowOf("F4339-T2")).getByText("Topic f4339/t2 is held by another RTU; this RTU has no topic")).toBeTruthy();
   expect(within(await rowOf(ROUTED.code)).queryByText(/^Topic /)).toBeNull();
+}
+
+/**
+ * RM1 (`F1.2`, ADR 0141 decision 15, plan T7.4) — **Modbus settings** is a row action on an RTU
+ * with no connection row and on a Modbus one, never on an MQTT one (the API's 409), and it opens
+ * that RTU's dialog; a bound RTU names its profile version in a pill.
+ */
+export async function theModbusActionFollowsTheConnection(): Promise<void> {
+  const mqtt = rtu({ code: "RM1-MQTT", tls: true, credentialsSet: false });
+  const bare = rtu({ id: "44444444-4444-4444-8444-444444444441", code: "RM1-BARE", sourceType: "catalog", tls: null, credentialsSet: null });
+  const modbus = rtu({
+    id: "44444444-4444-4444-8444-444444444442",
+    code: "RM1-MB",
+    displayName: "Spec meter",
+    sourceType: "catalog",
+    tls: null,
+    credentialsSet: false,
+    modbus: {
+      host: "10.0.0.5",
+      port: 502,
+      unitId: 1,
+      timeoutMs: null,
+      interRequestDelayMs: null,
+      pollIntervalMs: null,
+      profile: { code: "selec-mfm384", version: 2 },
+      registerCount: 4,
+    },
+  });
+  // Review H1: a live MQTT RTU with no connection row (source type `mqtt`, `tls` null) is MQTT to the host.
+  const liveMqtt = rtu({ id: "44444444-4444-4444-8444-444444444443", code: "RM1-LIVE", sourceType: "mqtt", tls: null, credentialsSet: null });
+  renderPage([mqtt, bare, modbus, liveMqtt]);
+  vi.spyOn(rtusApi, "fetchAdminRtuSummary").mockReturnValue(new Promise(() => undefined));
+  expect(within(await rowOf("RM1-MQTT")).queryByRole("button", { name: "Modbus settings" })).toBeNull();
+  expect(within(await rowOf("RM1-LIVE")).queryByRole("button", { name: "Modbus settings" })).toBeNull();
+  expect(within(await rowOf("RM1-BARE")).getByRole("button", { name: "Modbus settings" })).toBeInTheDocument();
+  const row = await rowOf("RM1-MB");
+  expect(within(row).getByText("Modbus: selec-mfm384 v2")).toBeInTheDocument();
+  await userEvent.click(within(row).getByRole("button", { name: "Modbus settings" }));
+  screen.getByRole("dialog", { name: "Modbus settings — Spec meter" });
+  expect((screen.getByLabelText("Host") as HTMLInputElement).value).toBe("10.0.0.5");
+}
+
+/**
+ * RM2 (`F1.2` PR 7 review L3) — a role outside master data (here `operator`) sees no **Modbus
+ * settings** action, even on an RTU it would otherwise show on; the API would refuse it.
+ */
+export async function theModbusActionNeedsAMasterDataRole(): Promise<void> {
+  const bare = rtu({ id: "44444444-4444-4444-8444-444444444451", code: "RM2-BARE", sourceType: "catalog", tls: null, credentialsSet: null });
+  stubAll([bare]);
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/admin/rtus"]}>
+        <RtusAdminPage user={{ ...admin, role: "operator" } as AuthUser} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const row = await rowOf("RM2-BARE");
+  expect(within(row).getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  expect(within(row).queryByRole("button", { name: "Modbus settings" })).toBeNull();
 }

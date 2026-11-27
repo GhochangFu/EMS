@@ -2,6 +2,7 @@ import {
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_RTUS,
   ONBOARDING_DRAFT_STRING_MAX,
+  protocolCatalogEntry,
 } from "@bms/shared";
 import { BadRequestException } from "@nestjs/common";
 import * as XLSX from "xlsx";
@@ -79,7 +80,8 @@ export function assertTemplateRoundTripsUnchanged(): void {
   // the generated workbook is never refused by the type check.
   assert(parsed.location.type === "pump_station", `location.type, got ${JSON.stringify(parsed.location.type)}`);
 
-  assert(parsed.rtus.length === 2, `the template carries two RTUs, got ${parsed.rtus.length}`);
+  // F1.2 PR 11 review L5: two MQTT RTUs and a Modbus TCP example.
+  assert(parsed.rtus.length === 3, `the template carries three RTUs, got ${parsed.rtus.length}`);
   // `F4.103`'s headroom claim, gated instead of asserted in prose: the two count
   // caps are set *above* the sheet this system itself produces, so lowering
   // either below the template turns the generated workbook into a refusal. The
@@ -112,20 +114,20 @@ export function assertTemplateRoundTripsUnchanged(): void {
     `the template's two display names are distinct, so nothing is adjusted, got ${JSON.stringify(parsed.displayNameFixes)}`,
   );
 
-  // The width the 64-column bound is measured against. Since `F4.304` the
-  // widest of the three sections is `LOCATION_HEADERS` (name, code, slug, type,
-  // latitude, longitude, province, parent_code, floor_area, floor_area_unit) —
-  // ten columns, so `MAX_HEADER_COLUMNS` leaves roughly 6× headroom over the
-  // sheet this system itself produces. The literal is used rather than the
-  // constant on purpose: `LOCATION_HEADERS` is module-private and widening a
-  // module's surface for a test is worse than restating ten.
+  // The width the 64-column bound is measured against. Since `F1.2` plan PR 11
+  // the widest of the three sections is `RTU_HEADERS` (the nine before it, then
+  // unit_id and profile_code) — eleven columns, one more than
+  // `LOCATION_HEADERS`'s ten, so `MAX_HEADER_COLUMNS` leaves roughly 6× headroom
+  // over the sheet this system itself produces. The literal is used rather than
+  // the constant on purpose: `RTU_HEADERS` is module-private and widening a
+  // module's surface for a test is worse than restating eleven.
   const book = XLSX.read(buffer, { type: "buffer" });
   const ref = book.Sheets[book.SheetNames[0]]["!ref"];
   assert(ref !== undefined, "the generated template declares a used range");
   const range = XLSX.utils.decode_range(String(ref));
   assert(
-    range.e.c - range.s.c + 1 === 10,
-    `the template is ten columns wide (LOCATION_HEADERS.length), got ${range.e.c - range.s.c + 1} from '${String(ref)}'`,
+    range.e.c - range.s.c + 1 === 11,
+    `the template is eleven columns wide (RTU_HEADERS.length), got ${range.e.c - range.s.c + 1} from '${String(ref)}'`,
   );
 }
 
@@ -255,20 +257,20 @@ export function templateRows(): (string | number)[][] {
   });
 }
 
-/** Rows 0–10 of the template: everything down to and including the `ASSETS` header row. */
-export const ROWS_ABOVE_THE_FIRST_ASSET = 11;
+/** Rows 0–11 of the template: everything down to and including the `ASSETS` header row (F1.2 PR 11: three RTU rows). */
+export const ROWS_ABOVE_THE_FIRST_ASSET = 12;
 
 /** Rows 0–5 of the template: everything down to and including the `RTUS` header row. */
 export const ROWS_ABOVE_THE_FIRST_RTU = 6;
 
 /**
- * Row 8 of the template: the blank row that closes the `RTUS` section. Rows 8
+ * Row 9 of the template (F1.2 PR 11: three RTU rows): the blank row that closes the `RTUS` section. Rows 9
  * to {@link ROWS_ABOVE_THE_FIRST_ASSET} are therefore the blank row, the
  * `ASSETS` marker and its header row — taken from the generated template rather
  * than restated, so a change to either marker cannot leave this file describing
  * a workbook the service no longer produces.
  */
-const ROWS_CLOSING_THE_RTU_SECTION = 8;
+const ROWS_CLOSING_THE_RTU_SECTION = 9;
 
 /** An ordinary workbook — no hand-set `!ref`, so SheetJS declares what the cells occupy. */
 export function buildWorkbookBuffer(rows: (string | number)[][]): Buffer {
@@ -564,7 +566,7 @@ export function assertOverCapSectionIsRefused(): void {
     LOCATION_TYPE_CODES,
   );
   assert(
-    template.rtus.length === 2 && template.assets.length === 3,
+    template.rtus.length === 3 && template.assets.length === 3,
     `the generated template survives both caps, got ${template.rtus.length} RTUs and ${template.assets.length} assets`,
   );
 }
@@ -882,6 +884,13 @@ export function assertUnknownRtuProtocolIsRefused(): void {
     parsed.rtus[1].ingestEnabled === false,
     "a non-mqtt RTU arrives with ingest disabled, as it did before the guard",
   );
+  // F1.2 (PR 4 code review 3): the imported Modbus config passes the draft
+  // schema the commit validates with, so a workbook with a Modbus row commits.
+  const modbusDraft = protocolCatalogEntry("modbus_tcp").draftConfigSchema.safeParse(parsed.rtus[1].config);
+  assert(
+    modbusDraft.success,
+    `an imported Modbus row passes modbusDraftConfigSchema, got ${JSON.stringify(parsed.rtus[1].config)}`,
+  );
 
   // A blank cell is not an unknown protocol — it is the `mqtt` default, and the
   // guard must not turn the sheet's own optional column into a refusal.
@@ -976,7 +985,7 @@ export function assertUnknownRtuProtocolIsRefused(): void {
     LOCATION_TYPE_CODES,
   );
   assert(
-    template.rtus.every((rtu) => rtu.protocol === "mqtt"),
+    JSON.stringify(template.rtus.map((rtu) => rtu.protocol)) === JSON.stringify(["mqtt", "mqtt", "modbus_tcp"]),
     `the template's own protocol column survives the guard, got ${JSON.stringify(template.rtus.map((rtu) => rtu.protocol))}`,
   );
 }

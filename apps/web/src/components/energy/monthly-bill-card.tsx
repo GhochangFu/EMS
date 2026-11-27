@@ -166,22 +166,47 @@ function BillBody({ bill, data }: { bill: NonNullable<EnergyBill["bill"]>; data:
 }
 
 /**
- * `F4.365` U10 (ADR 0134 decisions 6, 7, 9 and Amendment 1) — the site's monthly bill: one
- * month's units priced through the location's mapped slab tariff. Renders nothing while loading
- * and when the location has no mapping (`no_mapping`), so a site without a tariff is unchanged.
+ * The bill read's key and options, for `MonthlyBillCard` and for any host that reads the same
+ * bill beside it (`StationBills`' total, `F4.240` part b), so both observe one cache entry and the
+ * host adds no request. `month` is `""` for the current month in the location's own zone.
  */
-export function MonthlyBillCard({ locationId }: { locationId: string }) {
-  const [month, setMonth] = useState("");
-  // The location-zone current month, learned from the default read (see `monthOptions`).
-  const [currentMonth, setCurrentMonth] = useState<string | null>(null);
-  const q = useQuery({
-    queryKey: ["energy", "bill", locationId, month],
+export function billQueryOptions(locationId: string, month: string) {
+  return {
+    queryKey: ["energy", "bill", locationId, month] as const,
     queryFn: () => fetchEnergyBill(locationId, month === "" ? undefined : month),
     refetchInterval: 5 * 60_000,
     // The previous month's bill stays on screen while the next loads, so the selector the reader
     // just used does not vanish under them.
     placeholderData: keepPreviousData,
-  });
+  };
+}
+
+type MonthlyBillCardProps = {
+  locationId: string;
+  /** `F4.240` part b (plan D10) — the card's title; "Monthly bill" when omitted. */
+  title?: string;
+  /**
+   * `F4.240` part b (plan D10) — a month chosen by the host (`""` for the current one). Given, the
+   * card reads that month and draws no selector of its own; omitted, the card owns its month.
+   */
+  month?: string;
+};
+
+/**
+ * `F4.365` U10 (ADR 0134 decisions 6, 7, 9 and Amendment 1) — the site's monthly bill: one
+ * month's units priced through the location's mapped slab tariff. Renders nothing while loading
+ * and when the location has no mapping (`no_mapping`), so a site without a tariff is unchanged.
+ *
+ * `F4.240` part b (ADR 0140 decision 3f, plan D10): an optional `title`, and a controlled `month`
+ * that hides the card's own selector (the station's bills share one).
+ */
+export function MonthlyBillCard({ locationId, title = "Monthly bill", month: controlledMonth }: MonthlyBillCardProps) {
+  const [ownMonth, setMonth] = useState("");
+  const controlled = controlledMonth !== undefined;
+  const month = controlledMonth ?? ownMonth;
+  // The location-zone current month, learned from the default read (see `monthOptions`).
+  const [currentMonth, setCurrentMonth] = useState<string | null>(null);
+  const q = useQuery(billQueryOptions(locationId, month));
 
   const data = q.data;
   const fresh = data !== undefined && !q.isPlaceholderData;
@@ -190,28 +215,30 @@ export function MonthlyBillCard({ locationId }: { locationId: string }) {
     if (month === "" && fresh) setCurrentMonth(data.month);
   }, [month, data, fresh]);
 
-  const selector = (current: string) => (
-    <label className="text-2xs text-ink-muted">
-      <span className="sr-only">Billing month</span>
-      <select
-        aria-label="Billing month"
-        className="surface-field px-2 py-1.5 text-sm"
-        value={month}
-        onChange={(e) => setMonth(e.target.value)}
-      >
-        {monthOptions(current).map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+  // Controlled, the host draws the one selector (`StationBills`).
+  const selector = (current: string) =>
+    controlled ? undefined : (
+      <label className="text-2xs text-ink-muted">
+        <span className="sr-only">Billing month</span>
+        <select
+          aria-label="Billing month"
+          className="surface-field px-2 py-1.5 text-sm"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+        >
+          {monthOptions(current).map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
 
   if (q.isError) {
     // The selector stays once the current month is known, so a month that failed is not a dead end.
     return (
-      <SectionCard title="Monthly bill" actions={currentMonth !== null ? selector(currentMonth) : undefined}>
+      <SectionCard title={title} actions={currentMonth !== null ? selector(currentMonth) : undefined}>
         <p className="text-sm text-ink-muted">{BILL_ERROR_TEXT}</p>
       </SectionCard>
     );
@@ -224,7 +251,7 @@ export function MonthlyBillCard({ locationId }: { locationId: string }) {
 
   return (
     <SectionCard
-      title="Monthly bill"
+      title={title}
       subtitle={data.tariff ? <TariffLine tariff={data.tariff} /> : undefined}
       actions={selector(currentMonth ?? data.month)}
     >

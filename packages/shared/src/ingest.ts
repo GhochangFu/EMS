@@ -47,6 +47,22 @@ export * from "./ingest-edge-config";
 // the same list migration `0149`'s CHECKs hold, and the host-stale bound its
 // missed-beat rule shares with the API. A leaf module with no zod.
 export { DROP_REASONS, type DropReason, INGEST_HOST_STALE_SECONDS } from "./device-health";
+// `F1.2` (ADR 0141 decision 10): the one poll interval bound, for the host,
+// the API bodies and the web forms. A leaf module with zod only.
+export * from "./ingest-poll-interval";
+// `F1.2` (ADR 0141 decisions 5, 6, 7, 12): the Modbus register, connection,
+// device, draft and profile schemas.
+export * from "./ingest-modbus";
+// `F1.2` (ADR 0141 decisions 2, 4): the Modbus TCP wire codec. Zod-free and
+// Node-free, so this subpath still loads in the web bundle (plan M16).
+export * from "./ingest-adapters/modbus-codec";
+// `F1.2` (ADR 0141 decision 14, plan PR 5): the stock Modbus profiles, for the
+// API's stock list and import. Here because `apps/api` resolves only `.` and
+// `./ingest` (node10) and a new subpath is a package.json change. Empty until
+// plan PR 9; that PR re-measures the web bundle once the meter files land.
+export { STOCK_MODBUS_PROFILES } from "./device-profiles/modbus";
+// `F1.2` (ADR 0141 decision 22): the MODBUS_TCP_HOSTS allow-list parser and predicate. Node-free.
+export * from "./ingest-adapters/modbus-tcp-hosts";
 
 /**
  * Compile-time drift guard: every ingest protocol must be expressible in

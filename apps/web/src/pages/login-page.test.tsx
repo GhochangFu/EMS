@@ -9,9 +9,11 @@ import {
   anOidcSignInAttemptClearsTheReason,
   aPlain401ShowsNothing,
   aSignInConsumesTheReason,
+  centresTheHeroOverTheNetwork,
+  listsDomainsAndFeaturesNotNumbers,
+  namesNoClient,
   showsTheDeactivatedSentence,
   showsTheDeactivatedSentenceInOidcMode,
-  accentsTheDescriptorCore,
   drawsNoImgElement,
   navigatesToTheReturnPath,
   navigatesToTheRootWithoutAReturnPath,
@@ -19,7 +21,7 @@ import {
   showsNoBannerWithoutAReturnPath,
   showsTheBannerInOidcMode,
   showsTheSessionEndedBanner,
-  readsNoTrinetra,
+  readsNoOldName,
   readsTheCardHeading,
   readsTheCardSentence,
   readsTheFooterVersion,
@@ -40,17 +42,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("F3.33 the login page reads IONSiTE NEXUS", () => {
+describe("F4.398 the login page reads Verve", () => {
   it("L1 shows the wordmark as a named image", () => {
     showsTheWordmark();
   });
 
-  it("L2 reads the hero headline", () => {
+  it("L2 reads the tagline as the whole hero headline", () => {
     readsTheHeroHeadline();
-  });
-
-  it("L2b accents Building, Energy, Water & Utility in the headline", () => {
-    accentsTheDescriptorCore();
   });
 
   it("L3 reads the card heading", () => {
@@ -73,8 +71,20 @@ describe("F3.33 the login page reads IONSiTE NEXUS", () => {
     drawsNoImgElement();
   });
 
-  it("L8 reads no TRINETRA", () => {
-    readsNoTrinetra();
+  it("L8 reads no TRINETRA and no IONSiTE NEXUS", () => {
+    readsNoOldName();
+  });
+
+  it("LH1 names no client", () => {
+    namesNoClient();
+  });
+
+  it("LH2 lists domains and features, not fixed numbers", () => {
+    listsDomainsAndFeaturesNotNumbers();
+  });
+
+  it("LH3 centres the hero over the site network, with opaque tiles and chips", () => {
+    centresTheHeroOverTheNetwork();
   });
 });
 

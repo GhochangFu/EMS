@@ -94,6 +94,11 @@ export function livePercent(live: number, notLive: number): number {
 /**
  * Aggregates section-level KPIs for an accordion header. `F4.364` (plan ruling Q4): `totalKw` sums
  * the numbers over the locations that show energy, and is `null` when none of them has one.
+ *
+ * `F4.240` (ADR 0139 decision 16, plan D11) — `locationCount` and `freshLocationCount` count
+ * **sites** (`siteLocations`), so a parent that holds no asset is not counted beside its children.
+ * A flat list is all sites, so it counts as before. `totalKw` and `openAlarms` read every item: an
+ * asset-less parent adds no kW and no alarm, and a parent that holds assets is a site.
  */
 export function orgSectionSummary(locations: LocationKpiSummary[]): {
   locationCount: number;
@@ -101,15 +106,134 @@ export function orgSectionSummary(locations: LocationKpiSummary[]): {
   openAlarms: number;
   freshLocationCount: number;
 } {
+  const sites = siteLocations(locations);
   return {
-    locationCount: locations.length,
+    locationCount: sites.length,
     totalKw: sectionKw(locations),
     openAlarms: locations.reduce((sum, location) => sum + location.openAlarms, 0),
-    freshLocationCount: locations.filter(hasLiveTelemetry).length,
+    freshLocationCount: sites.filter(hasLiveTelemetry).length,
   };
 }
 
-function sectionKw(locations: readonly LocationKpiSummary[]): number | null {
+/**
+ * `F4.240` (ADR 0139 decisions 13 and 16, plan D11) — the items that are **sites**: an item that
+ * holds an asset, or that no other item names as its `parentId` (a leaf: the map's `PIN_RULE`
+ * read on the KPI items). An asset-less parent is not a site: it draws no card and is not counted.
+ * Keeps the input order.
+ */
+export function siteLocations(items: readonly LocationKpiSummary[]): LocationKpiSummary[] {
+  const parentIds = new Set(items.flatMap((item) => (item.parentId === null ? [] : [item.parentId])));
+  return items.filter((item) => item.assetCount > 0 || !parentIds.has(item.id));
+}
+
+/** `F4.240` — one parent header and the site cards under it. */
+export type SiteCardGroup = {
+  parent: LocationKpiSummary;
+  /** The parent's own card first when it is a site, then its child sites in the input order. */
+  sites: LocationKpiSummary[];
+};
+
+/** `F4.240` — the groups, in their parents' input order, and the sites no header files. */
+export type GroupedSites = {
+  groups: SiteCardGroup[];
+  loose: LocationKpiSummary[];
+};
+
+/**
+ * `F4.240` (ADR 0139 decision 13, plan D11) — files each site under its nearest readable parent
+ * (its `parentId`, when that parent is in `items`; the API nulls an unreadable one). A parent
+ * with no site under it draws no header. A parent that is itself a site heads its own group, its
+ * card first, and is not filed again under its own parent (a tree deeper than two levels is not
+ * nested: section 1 of the plan). Every other site is loose and renders as today, so a list with
+ * no tree is all loose, in the input order. No code names a level or an organization.
+ */
+export function groupSitesByParent(items: readonly LocationKpiSummary[]): GroupedSites {
+  const readable = new Set(items.map((item) => item.id));
+  const sites = siteLocations(items);
+  const childrenByParent = new Map<string, LocationKpiSummary[]>();
+  for (const site of sites) {
+    if (site.parentId !== null && readable.has(site.parentId)) {
+      const children = childrenByParent.get(site.parentId) ?? [];
+      children.push(site);
+      childrenByParent.set(site.parentId, children);
+    }
+  }
+  const siteIds = new Set(sites.map((site) => site.id));
+  const groups: SiteCardGroup[] = [];
+  for (const item of items) {
+    const children = (childrenByParent.get(item.id) ?? []).filter((child) => !childrenByParent.has(child.id));
+    if (childrenByParent.has(item.id)) {
+      const own = siteIds.has(item.id) ? [item] : [];
+      if (own.length + children.length > 0) {
+        groups.push({ parent: item, sites: [...own, ...children] });
+      }
+    }
+  }
+  const grouped = new Set(groups.flatMap((group) => group.sites.map((site) => site.id)));
+  return { groups, loose: sites.filter((site) => !grouped.has(site.id)) };
+}
+
+/**
+ * `F4.240` (ADR 0139 decision 15) — Live and Not live hold groups: a group is live when at least
+ * one of its sites is live, and moves whole; each card keeps its own badge. Loose sites split by
+ * their own state, as `splitByLiveTelemetry` does. Both keep the input order.
+ */
+export function splitGroupsByLive(grouped: GroupedSites): { live: GroupedSites; notLive: GroupedSites } {
+  const liveGroup = (group: SiteCardGroup) => group.sites.some(hasLiveTelemetry);
+  const loose = splitByLiveTelemetry(grouped.loose);
+  return {
+    live: { groups: grouped.groups.filter(liveGroup), loose: loose.live },
+    notLive: { groups: grouped.groups.filter((group) => !liveGroup(group)), loose: loose.notLive },
+  };
+}
+
+/** `F4.240` (ADR 0139 decision 14, plan D12) — a header's roll-up over its group's sites. */
+export function siteGroupRollup(group: SiteCardGroup): {
+  liveSites: number;
+  sites: number;
+  assets: number;
+  alarms: number;
+} {
+  return {
+    liveSites: group.sites.filter(hasLiveTelemetry).length,
+    sites: group.sites.length,
+    assets: group.sites.reduce((sum, site) => sum + site.assetCount, 0),
+    alarms: group.sites.reduce((sum, site) => sum + site.openAlarms, 0),
+  };
+}
+
+/**
+ * `F4.240` part b (ADR 0140 decision 2, plan D2) — the roll-up as the header reads it:
+ * `{live} of {total} sites live · {assets} assets · {alarms} alarms`. The organization page's
+ * group header and the station page's totals draw this one sentence.
+ */
+export function siteGroupRollupText(group: SiteCardGroup): string {
+  const rollup = siteGroupRollup(group);
+  return `${rollup.liveSites} of ${rollup.sites} sites live · ${rollup.assets} assets · ${rollup.alarms} alarms`;
+}
+
+/**
+ * `F4.240` part b (ADR 0140 decision 1, plan D1) — the station a location id names: the
+ * `groupSitesByParent` group whose parent is `locationId`, when that parent holds no asset; else
+ * `null` (a site, a parent that holds assets, an id not in the items, or an asset-less parent with
+ * no direct site, such as a grandparent over parents: plan D1 keeps today's page for it). The rule
+ * reads only the KPI items, whatever the location's view row says. No code names a level, a type
+ * or an organization (ADR 0098 decision 7).
+ */
+export function stationGroupOf(items: readonly LocationKpiSummary[], locationId: string): SiteCardGroup | null {
+  const location = items.find((item) => item.id === locationId);
+  if (location === undefined || location.assetCount !== 0) {
+    return null;
+  }
+  return groupSitesByParent(items).groups.find((group) => group.parent.id === locationId) ?? null;
+}
+
+/**
+ * `F4.364` (plan ruling Q4) — the kW over the locations that show energy; `null` when none of them
+ * has a number. Exported for `F4.240` part b (ADR 0140 decision 2, plan D2): the station's totals
+ * add it to the roll-up sentence.
+ */
+export function sectionKw(locations: readonly LocationKpiSummary[]): number | null {
   const values = locations.flatMap((location) =>
     location.energyShown && location.totalKw !== null ? [location.totalKw] : [],
   );

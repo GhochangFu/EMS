@@ -333,6 +333,10 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       LLM_VISION_MODEL: ${LLM_VISION_MODEL:-}
+      # `E1.9c` / ADR 0135 Amendment 8 decision 4 — the findings paragraph's own
+      # model (optional; empty = LLM_PROVIDER above). See .env.example.
+      ML_FINDINGS_LLM_PROVIDER: ${ML_FINDINGS_LLM_PROVIDER:-}
+      ML_FINDINGS_LLM_MODEL: ${ML_FINDINGS_LLM_MODEL:-}
       # `F3.85` / ADR 0099 decision 11 — the copilot's daily turn limits (per user,
       # per organization). Empty = the default (150, 1500); see .env.example.
       COPILOT_USER_DAILY_TURNS: ${COPILOT_USER_DAILY_TURNS:-}
@@ -474,6 +478,9 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       LLM_VISION_MODEL: ${LLM_VISION_MODEL:-}
+      # `E1.9c` — identical to `api` above: a replica serves the findings paragraph route too.
+      ML_FINDINGS_LLM_PROVIDER: ${ML_FINDINGS_LLM_PROVIDER:-}
+      ML_FINDINGS_LLM_MODEL: ${ML_FINDINGS_LLM_MODEL:-}
       # `F3.85` — identical to `api` above: the counters are shared, so the limits must be too.
       COPILOT_USER_DAILY_TURNS: ${COPILOT_USER_DAILY_TURNS:-}
       COPILOT_ORG_DAILY_TURNS: ${COPILOT_ORG_DAILY_TURNS:-}
@@ -638,7 +645,7 @@ services:
       DATABASE_URL: postgres://bms_owner:bms_owner_dev@postgres:5432/bms
       SIM_RATE_HZ: 0.2
       SIM_ASSET_COUNT: all
-      SIM_SITE_NAMES: RSMOC Western Cape,CSMOC Gauteng,RSMOC KwaZulu-Natal,Ion Exchange Demo Plant
+      SIM_SITE_NAMES: RSMOC Western Cape,CSMOC Gauteng,RSMOC KwaZulu-Natal,Water Demo Plant
       SIM_METRICS_PORT: 9101
     ports:
       - "9101:9101"
@@ -714,6 +721,12 @@ services:
       # without TLS. Empty = none (the default). Set the SAME value on api, worker
       # and ingest — `tests/adr-0114-plaintext-hosts-invariants.test.ts` holds this.
       MQTT_PLAINTEXT_HOSTS: ${MQTT_PLAINTEXT_HOSTS:-}
+      # ADR 0141 decision 22 (`F1.2`): the Modbus hosts the cloud host may poll.
+      # Empty (the default) = none, fail closed. To poll the in-stack simulator
+      # set `MODBUS_TCP_HOSTS=modbus-sim` in `.env` and run with
+      # `--profile modbus` (docs/local-setup.md). Not defaulted to `modbus-sim`
+      # here: the allow-list stays empty unless the operator writes it.
+      MODBUS_TCP_HOSTS: ${MODBUS_TCP_HOSTS:-}
     # No `command:` — ADR 0016 §6 commit 4 pointed `pnpm start` at
     # `dist/main.js`, so the image's own `CMD` is the host. The override that
     # carried the 2026-08-06 cutover is gone with the entry point it replaced,
@@ -752,14 +765,43 @@ services:
     # also joins `edge-uplink`, shared with the nginx container `web` alone, so
     # the uplink receiver can be routed. The health listener binds to loopback
     # (`startHealthServer`), so that second network cannot reach it.
+    #
+    # `F1.2` plan PR 8 amends it again (ADR 0016 Amendment 10 (b), ruling P5):
+    # `ingest` also joins `modbus-sim`, shared with the Modbus simulator alone,
+    # so the host can poll it. The same loopback bind keeps the health listener
+    # off it; the simulator reaches neither `postgres` nor `web`.
     networks:
       - ingest
       - edge-uplink
+      - modbus-sim
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+
+  # `F1.2` (ADR 0141 decision 20, plan PR 8): a Modbus TCP demo device serving
+  # the stock device profiles, one unit id each, with slowly varying values
+  # (`apps/sim/src/modbus-sim.js`; unit ids in docs/local-setup.md). The sim
+  # image, with the Modbus entry file as its command.
+  #
+  # ADR 0016 Amendment 10 (b): only under `--profile modbus`; on the
+  # `modbus-sim` network alone, shared with `ingest` and nothing else, so it
+  # reaches no database; no `ports:` (bind an RTU to host `modbus-sim`, port
+  # 502, from the ingest host); no `DATABASE_URL` and no `env_file:`.
+  # `tests/f4.61-ingest-network-isolation.test.ts` holds each of these.
+  modbus-sim:
+    profiles: ["modbus"]
+    build:
+      context: .
+      dockerfile: apps/sim/Dockerfile
+    command: ["node", "src/modbus-sim.js"]
+    environment:
+      MODBUS_SIM_HOST: 0.0.0.0
+      MODBUS_SIM_PORT: 502
+      MODBUS_SIM_STEP_MS: 1000
+    networks:
+      - modbus-sim
 
   prometheus:
     profiles: ["observability"]
@@ -904,7 +946,11 @@ volumes:
 # ADR 0135 (E1.1, plan R14): `ml` is internal. The batch scorer joins it and
 # nothing else, and only postgres shares it, so "a running scorer makes no
 # outbound call" is topology, not a promise. `tests/e1.1-ml-compose.test.ts`.
+#
+# ADR 0016 Amendment 10 (b) (`F1.2`, ruling P5): `modbus-sim` is internal and
+# joined by `ingest` and the `modbus-sim` service only; `postgres` never.
 networks:
   ingest: {}
   edge-uplink: {}
   ml: { internal: true }
+  modbus-sim: { internal: true }

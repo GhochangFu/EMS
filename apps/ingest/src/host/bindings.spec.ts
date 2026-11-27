@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { IngestProtocol, MqttDevice } from "@bms/shared/ingest";
+import { parseModbusTcpHosts, type IngestProtocol, type MqttDevice } from "@bms/shared/ingest";
 
 import type { IngestAdapterFactory } from "../adapter/types.js";
 import { mqttAdapterFactory } from "../adapters/mqtt.js";
@@ -71,6 +71,8 @@ export function makeOptions(overrides: Partial<PlanOptions> = {}): PlanOptions {
       credentialSource: "env",
     }),
     credentialKeyConfigured: true,
+    // ADR 0141 decision 22: the fixtures' Modbus gateway is listed; absent would dial none.
+    modbusTcpHosts: parseModbusTcpHosts("10.0.0.5"),
     ...overrides,
   };
 }
@@ -106,6 +108,8 @@ export function row(overrides: Partial<BindingRow> = {}): BindingRow {
     // On by default, so every existing claim reads an organization that ingests.
     organization_code: "PHEWB",
     organization_ingest_enabled: true,
+    // F1.2 (ADR 0141 decision 10): the organization sets no poll interval.
+    organization_default_poll_interval_ms: null,
     // ADR 0116 decision 4: no format named, so the join is null.
     payload_format_code: null,
     payload_format_definition: null,

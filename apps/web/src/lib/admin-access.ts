@@ -38,6 +38,17 @@ export function canEditOrganizationEnergySettings(role: UserRole): boolean {
   return role === "admin" || role === "organization_admin";
 }
 
+/**
+ * `F1.2` (ADR 0141 decision 10, Amendment 1 (c), ruling P12a) — whether the role sees an
+ * organization's **Poll interval** action: the global admin (any organization) and an organization
+ * admin (the API then allows only an organization they hold a direct grant on,
+ * `isOrganizationLevelAdmin`). Its own predicate, so the energy-settings rule can change without
+ * moving this one.
+ */
+export function canEditOrganizationPollInterval(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
 /** Whether the role may create or edit the global/org point key catalog. */
 export function canWritePointKeys(role: UserRole): boolean {
   // `F3.39` / ADR 0051: `organization_admin` was dropped from this list. The
@@ -282,6 +293,18 @@ export function canManagePayloadFormats(role: UserRole): boolean {
 }
 
 /**
+ * `F1.2` (ADR 0141 decisions 13–14, plan T6.1) — the Device Profiles page. Mirrors the profiles
+ * API's write gate, `isOrganizationLevelAdmin`: the global `admin` for any organization, an
+ * `organization_admin` for one it holds directly. A `location_admin` may READ its organization's
+ * profiles (the bind flow, plan PR 7) but writes none, so the page — whose job is to create, edit,
+ * copy and import — fails closed for it and the tab is hidden. Its own predicate, the
+ * `canManageNotificationChannels` rule.
+ */
+export function canManageDeviceProfiles(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
+/**
  * `E7.2` (ADR 0123 decision 12, plan T6.3) — the Edge Gateways page. Every route behind it, the
  * read included, is the global `admin`'s (`EdgeGatewaysAdminService`); its own predicate, the
  * `canManageLocationTypes` rule, so the page's fail-closed check never moves with another.
@@ -498,6 +521,10 @@ export const masterDataTabs = [
   { label: "Checklist Templates", path: "/admin/work-order-settings/checklist-templates", workOrderSettingsAdmin: true, area: "reference" },
   // `F4.334` (ADR 0116 decision 5): the MQTT payload format catalog — every write is the global `admin`'s.
   { label: "Payload Formats", path: "/admin/payload-formats", globalAdminOnly: true, area: "reference" },
+  // `F1.2` (ADR 0141 decision 13, plan T6.1): the organization's Modbus device profiles.
+  // `deviceProfilesAdmin`: every write is an organization-level administrator's, and the page
+  // fails closed for the other roles, so the tab is hidden from them (`canManageDeviceProfiles`).
+  { label: "Device Profiles", path: "/admin/device-profiles", deviceProfilesAdmin: true, area: "reference" },
   // `E4.1a` (ADR 0070 decision 2). Ungated, like Asset Groups above: the API
   // gates a write by the row's scope, so a `location_admin` writes location
   // and asset scope for its own location and is refused the rest by the
@@ -580,6 +607,7 @@ export const masterDataTabs = [
   serviceAccountsAdmin?: true;
   trendPointsAdmin?: true;
   workOrderSettingsAdmin?: true;
+  deviceProfilesAdmin?: true;
 }[];
 
 export type MasterDataTab = (typeof masterDataTabs)[number];
@@ -615,6 +643,9 @@ export function visibleMasterDataTabs(role: UserRole): MasterDataTab[] {
     }
     if ("workOrderSettingsAdmin" in tab && tab.workOrderSettingsAdmin) {
       return canManageWorkOrderSettings(role);
+    }
+    if ("deviceProfilesAdmin" in tab && tab.deviceProfilesAdmin) {
+      return canManageDeviceProfiles(role);
     }
     return true;
   });

@@ -28,6 +28,7 @@ const ORG: AdminOrganizationDto = {
   // Not the defaults, so a prefill cannot pass by accident.
   energyFeatures: "off",
   cardPrimaryMetric: "health",
+  defaultPollIntervalMs: null,
   meta: null,
   createdAt: new Date(0).toISOString(),
 };

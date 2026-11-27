@@ -16,6 +16,7 @@ import {
   phePilotExpectedRows,
   type PhePilotExpectedRows,
 } from "./phe-pilot-seed";
+import { PHE_SPLIT_STATION_CODES } from "./phe-split-stations";
 import { PUE_DEMO_INCOMER_ROLE } from "./pue-demo-seed";
 import { eskomSiteLayoutIdentities, pheSiteLayoutStations } from "./site-layout-seed";
 
@@ -70,7 +71,10 @@ export type HierarchyExpectations = {
   readonly phe: PhePilotExpectedRows;
   /** `F3.73` — the ESKOM identities whose row carries a seeded site-layout view (CSMOC Gauteng). */
   readonly siteLayoutEskomLocations: readonly SeedLocationIdentity[];
-  /** `F3.73` — the PHE catalog station slugs whose row carries a seeded site-layout view. */
+  /**
+   * `F3.73` — the PHE catalog station slugs whose row carries a seeded site-layout view; since
+   * `F4.388` (ADR 0139 decision 6) also each split site's slug.
+   */
   readonly siteLayoutPheSlugs: readonly string[];
   /**
    * `F4.317` ruling Q3 — the organizations whose `bms.organization_control_room_views` layout the
@@ -88,11 +92,17 @@ export type HierarchyExpectations = {
  * **Throws on an empty list.** A presence count's wanted number is its list's
  * length, so an empty list wants 0 and the count passes whatever the database
  * holds — a derivation that broke would turn its check off without a word.
- * The legacy PHE slugs are in the set too: an empty list would also make the
- * legacy cleanup delete nothing. The `TS` pairs are not, because a catalog
- * with no `TS` sensor is a legitimate vendor export (see `seedPheCatalog`).
+ * The PHE RTU sites are in the set too: an empty list would turn the boot
+ * gate's site-shape check off (ADR 0139 decision 8). The `TS` pairs are not,
+ * because a catalog with no `TS` sensor is a legitimate vendor export (see
+ * `seedPheCatalog`). Nor are the split sites: `splitStationCodes` is
+ * `PHE_SPLIT_STATION_CODES`, which release A committed empty (ADR 0139 decision
+ * 1) and releases B and C fill; a code that is not a catalog station's throws.
  */
-export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalog()): HierarchyExpectations {
+export function hierarchyExpectations(
+  pheCatalog: PheCatalogFile = loadPheCatalog(),
+  splitStationCodes: readonly string[] = PHE_SPLIT_STATION_CODES,
+): HierarchyExpectations {
   const mapLocationRows = seedMapLocationRows(pheCatalog);
   const eskomCatalog = eskomSeedAssetCatalog(mapLocationRows);
   const viewRow = eskomCanonicalLocationRows(mapLocationRows).find(
@@ -104,6 +114,7 @@ export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalo
         "which seedSiteControlRoomViews seeds the control room view on",
     );
   }
+  const phe = phePilotExpectedRows(pheCatalog, splitStationCodes);
   const expected: HierarchyExpectations = {
     organizationCodes: SEED_ORGANIZATION_CODES,
     eskomLocationCodes: [
@@ -117,9 +128,14 @@ export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalo
       .filter((asset) => demoRoleForAsset(asset.code, asset.domain) === PUE_DEMO_INCOMER_ROLE)
       .map((asset) => asset.code),
     eskomItCodes: eskomCatalog.filter((asset) => asset.domain === "it").map((asset) => asset.code),
-    phe: phePilotExpectedRows(pheCatalog),
+    phe,
     siteLayoutEskomLocations: eskomSiteLayoutIdentities(mapLocationRows),
-    siteLayoutPheSlugs: pheSiteLayoutStations(pheCatalog).map((station) => station.slug),
+    // ADR 0139 decision 6 (plan D9): each station keeps a view row (a split one's is `generated`,
+    // decision 7) and each split site gains one.
+    siteLayoutPheSlugs: [
+      ...pheSiteLayoutStations(pheCatalog).map((station) => station.slug),
+      ...phe.splitSites.map((site) => site.slug),
+    ],
     organizationLayoutOrganizationCodes: SEED_ORGANIZATION_CODES,
     eskomSmocRoledCodes: eskomCatalog
       .filter((asset) => SMOC_SEED_ROLES.includes(demoRoleForAsset(asset.code, asset.domain) ?? ""))
@@ -135,7 +151,7 @@ export function hierarchyExpectations(pheCatalog: PheCatalogFile = loadPheCatalo
     ["phe.assetCodes", expected.phe.assetCodes],
     ["phe.points", expected.phe.points],
     ["phe.electricalAssetCodes", expected.phe.electricalAssetCodes],
-    ["phe.legacyLocationSlugs", expected.phe.legacyLocationSlugs],
+    ["phe.rtuSites", expected.phe.rtuSites],
     ["siteLayoutEskomLocations", expected.siteLayoutEskomLocations],
     ["siteLayoutPheSlugs", expected.siteLayoutPheSlugs],
     ["organizationLayoutOrganizationCodes", expected.organizationLayoutOrganizationCodes],

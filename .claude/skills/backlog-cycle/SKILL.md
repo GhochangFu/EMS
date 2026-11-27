@@ -12,6 +12,9 @@ against the single managed backlog,
 
 The human owns two gates: **step 2 (ADR/scope)** and **step 7 (merge
 approval)**. Never flip a status or promote scope on your own authority.
+Step 7 has a standing approval since 2026-11-19: a PR this session opened
+may be merged once its CI is green, on the conditions in `CLAUDE.md`
+(*Merging*). Step 2 has none.
 
 ## Modes
 

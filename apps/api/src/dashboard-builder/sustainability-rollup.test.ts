@@ -9,6 +9,8 @@ import {
   capRowsAtTheCapIsNotTruncated,
   capRowsFlagsThe201stRow,
   derivedWithoutIntervalUsesTheConstant,
+  envelopeIsTheWidestBound,
+  envelopeRefusesABoundThatIsNotAPositiveInteger,
   everyMoneyCodeIsADeclaredPointKey,
   measuredBoundIsTheConstant,
   oneCurrencyIsTheCurrency,
@@ -78,5 +80,13 @@ describe("E4.2 U4 — the sustainability roll-up's pure half", () => {
 
   it("does not flag a dataset of exactly MAX_DATASET_ROWS", () => {
     capRowsAtTheCapIsNotTruncated();
+  });
+
+  it("F4.393 takes the widest bound as the envelope literal", () => {
+    envelopeIsTheWidestBound();
+  });
+
+  it("F4.393 refuses an empty list and any bound that is not a positive integer", () => {
+    envelopeRefusesABoundThatIsNotAPositiveInteger();
   });
 });

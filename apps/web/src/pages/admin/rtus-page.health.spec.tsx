@@ -57,6 +57,8 @@ function rtu(id: string, code: string, sourceType = "mqtt"): AdminRtuDto {
     tls: sourceType === "mqtt" ? true : null,
     payloadFormat: null,
     credentialsSet: null,
+    modbus: null,
+    organizationDefaultPollIntervalMs: null,
   } as AdminRtuDto;
 }
 

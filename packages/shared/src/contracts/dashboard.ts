@@ -62,6 +62,13 @@ export const locationKpiSummarySchema = z.object({
   openAlarms: z.number(),
   criticalAlarms: z.number(),
   scopeLabel: z.enum(["full", "partial"]),
+  /**
+   * `F4.240` (ADR 0139 decision 12): the location's parent. `null` for a root **and** for a
+   * parent the caller cannot read, so the id of a node outside the caller's scope never
+   * reaches the wire (the `/auth/me` rule, ADR 0098 drafter choice 8). The API takes it from
+   * the caller's own scope; it is never re-decided here.
+   */
+  parentId: z.string().nullable(),
 });
 
 const dashboardAssetRowSchema = z.object({

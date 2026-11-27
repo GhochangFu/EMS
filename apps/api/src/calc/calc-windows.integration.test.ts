@@ -30,6 +30,7 @@ import {
   assertSumIsNotTheSampleSum,
   assertSumIsTheTimeIntegral,
   assertTheWatermarksAreReadLive,
+  assertTwoDeltasOfDifferentWindowsEachReadTheirOwn,
   assertThisMonthIncludesTheTailBehindThe1dWatermark,
   cleanup,
   seedWindowsFixture,
@@ -74,6 +75,11 @@ describe.skipIf(!connectionString)("E4.1b — calc window resolver", () => {
   it("W1 — guard (a): delta({kwh}, today) across 18:30 UTC at an Asia/Kolkata site is 70", async () => {
     if (!pool) throw new Error("pool required");
     await assertDeltaTodayAcrossIstMidnight(pool, fixture);
+  });
+
+  it("W1c — F4.393: two deltas of different windows in one call each read their own window (70 and 899)", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertTwoDeltasOfDifferentWindowsEachReadTheirOwn(pool, fixture);
   });
 
   it("W1b — hours(today) at 02:00 IST is 2", async () => {

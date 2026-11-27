@@ -20,6 +20,9 @@ export type SweepFixtures = {
   hostKey: string;
   orgA: string;
   orgB: string;
+  /** Org A's location name and the Online RTU's code (its display name): the host alarm's text. */
+  locAName: string;
+  onlineCode: string;
   rtus: {
     /** Org A, silent 10 min: Offline. */
     offline: string;
@@ -87,8 +90,10 @@ export async function assertASecondTickRaisesNothingNew(f: SweepFixtures): Promi
 }
 
 /**
- * S3 (decisions 6, 15): the host 31 s without a beat raises one critical `ingest_host` alarm in each
- * organization it serves — and org B's RTU, silenced in the same instant, raises no `rtu_comms`.
+ * S3 (decisions 6, 15, ADR 0127 Amendment 2): a host 60 s without a beat — a deploy restart — raises
+ * nothing; at 150 s, past the 120 s hold, one critical `ingest_host` alarm in each organization it
+ * serves, each naming the host and only its own active RTUs. Org B's RTU, silenced in the same
+ * instant, raises no `rtu_comms` in either tick, and being Offline at the beat it is not listed.
  */
 export async function assertAStaleHostRaisesOnePerOrganizationAndHoldsTheRtus(f: SweepFixtures): Promise<void> {
   await f.observer.query(
@@ -96,22 +101,60 @@ export async function assertAStaleHostRaisesOnePerOrganizationAndHoldsTheRtus(f:
     [f.rtus.orgB],
   );
   await f.observer.query(
-    "UPDATE bms.ingest_hosts SET last_beat_at = now() - interval '31 seconds' WHERE host_key = $1",
+    "UPDATE bms.ingest_hosts SET last_beat_at = now() - interval '60 seconds' WHERE host_key = $1",
+    [f.hostKey],
+  );
+  const held = await f.run();
+  f.raised.push(...held.raisedAlarmIds);
+  const duringHold = await openDeviceAlarms(f);
+  assert(
+    held.hostAlarms === 0 && !duringHold.some((alarm) => alarm.source === "ingest_host" || alarm.rtu_id === f.rtus.orgB),
+    `expected nothing raised 60 s into a host gap, got ${JSON.stringify(duringHold)}`,
+  );
+
+  await f.observer.query(
+    "UPDATE bms.ingest_hosts SET last_beat_at = now() - interval '150 seconds' WHERE host_key = $1",
     [f.hostKey],
   );
   const summary = await f.run();
   f.raised.push(...summary.raisedAlarmIds);
   const open = await openDeviceAlarms(f);
   const host = open.filter((alarm) => alarm.source === "ingest_host");
+  const ofA = host.filter((alarm) => alarm.organization_id === f.orgA);
+  const ofB = host.filter((alarm) => alarm.organization_id === f.orgB);
   assert(
-    host.filter((alarm) => alarm.organization_id === f.orgA).length === 1 &&
-      host.filter((alarm) => alarm.organization_id === f.orgB).length === 1 &&
-      host.every((alarm) => alarm.severity === "critical" && alarm.message === "Ingest host not reporting"),
-    `expected one critical "Ingest host not reporting" in each organization, got ${JSON.stringify(host)}`,
+    ofA.length === 1 && ofB.length === 1 && host.every((alarm) => alarm.severity === "critical"),
+    `expected one critical host alarm in each organization, got ${JSON.stringify(host)}`,
+  );
+  const prefix = `Ingest host not reporting: ${f.hostKey} — `;
+  // The site name comes from bms.locations.name through readRtuHealthRows' join (plan unit 1).
+  const cut = (name: string) => (name.length > 64 ? `${name.slice(0, 63)}…` : name);
+  const expectedA = `${prefix}1 RTU at 1 site stopped: ${cut(f.locAName)}; RTUs: ${cut(f.onlineCode)}`;
+  assert(ofA[0]!.message === expectedA, `expected org A's text ${expectedA}, got ${ofA[0]!.message}`);
+  assert(
+    ofB[0]!.message === `${prefix}no active RTUs`,
+    `expected org B's text to list no RTU (its one RTU was Offline at the beat), got ${ofB[0]!.message}`,
   );
   assert(
     !open.some((alarm) => alarm.rtu_id === f.rtus.orgB),
     `expected no rtu_comms for org B's RTU while the host is stale, got ${JSON.stringify(open)}`,
+  );
+}
+
+/**
+ * S3b (Amendment 2): the text is fixed while the alarm is open — a later tick after org B's RTU is
+ * heard again (its listed state changes) keeps the same alarm and the same text.
+ */
+export async function assertAnOpenHostAlarmKeepsItsText(f: SweepFixtures): Promise<void> {
+  const before = (await openDeviceAlarms(f)).filter((alarm) => alarm.source === "ingest_host");
+  await f.observer.query("UPDATE bms.rtu_health SET last_seen_at = now() WHERE rtu_id = $1", [f.rtus.orgB]);
+  const summary = await f.run();
+  f.raised.push(...summary.raisedAlarmIds);
+  const after = (await openDeviceAlarms(f)).filter((alarm) => alarm.source === "ingest_host");
+  const key = (rows: OpenAlarm[]) => JSON.stringify(rows.map((a) => [a.id, a.message]).sort());
+  assert(
+    summary.hostAlarms === 0 && key(after) === key(before),
+    `expected the open host alarms unchanged, before=${key(before)} after=${key(after)}`,
   );
 }
 

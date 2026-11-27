@@ -32,6 +32,7 @@ import {
   type RuleBasedTurnDeps,
   type TurnVocabulary,
 } from "./onboarding-chat-rule-based";
+import type { DeviceProfileLookup } from "./onboarding-device-profiles";
 // F3.21 (ADR 0090): the model no longer returns a draft patch, so the
 // prompt-budget guards live where the draft and the arguments now pass — the
 // agent loop's system prompt and the tool registry.
@@ -281,8 +282,10 @@ export class OnboardingChatService {
     orgName: string,
     turn: TurnVocabulary,
     organizationId: string,
+    deviceProfiles?: DeviceProfileLookup,
   ): Promise<ChatTurnResult> {
-    return handleRuleBasedTurn(this.ruleBasedDeps(organizationId, turn), message, draft, phase, orgName, turn);
+    const deps = { ...this.ruleBasedDeps(organizationId, turn), deviceProfiles };
+    return handleRuleBasedTurn(deps, message, draft, phase, orgName, turn);
   }
 
   /**
@@ -305,6 +308,8 @@ export class OnboardingChatService {
       readonly history: readonly OnboardingChatMessage[];
       /** `F4.111` (ADR 0104 decision 5): required, so the caller states the exemption or the count. */
       readonly pointKeyQuota: PointKeyQuota;
+      /** F1.2 plan PR 11: the guided `profile: <code>` turn's lookup (`RuleBasedTurnDeps.deviceProfiles`). */
+      readonly deviceProfiles?: DeviceProfileLookup;
     },
   ): Promise<ChatTurnResult> {
     // F4.162 (plan D9): the active types, read once per turn. Every branch and
@@ -347,7 +352,7 @@ export class OnboardingChatService {
 
     const resolved = await this.llmResolver.resolveForOrganization(organizationId);
     if (resolved.kind === "guided") {
-      const guided = await this.guidedTurn(message, draft, phase, orgName, turn, organizationId);
+      const guided = await this.guidedTurn(message, draft, phase, orgName, turn, organizationId, context.deviceProfiles);
       // Plan ruling 13: an organization that chose a provider but did not
       // finish the setting is told why the guided mode answered. `off` and a
       // platform without a provider get no notice — that is the chosen mode.

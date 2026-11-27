@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aBillSlotReplacesTheBillCard,
   aFailedOrganizationReadIsAFixedSentence,
   aFlatSiteShowsNoOwnAssetsHint,
   aFlatSiteShowsNoSiteRanking,
@@ -55,5 +56,9 @@ describe("F4.302 the site's Energy sub-tab", () => {
 
   it("F4.303: the site ranking takes the section's rankBy and hands a click back", async () => {
     await theSiteRankingTakesTheSectionsRankBy();
+  });
+
+  it("F4.240: a billSlot replaces the bill card; without it the card reads", async () => {
+    await aBillSlotReplacesTheBillCard();
   });
 });

@@ -10,6 +10,32 @@ import type { GroupMember } from "@bms/shared";
  * read the copy rule's inputs two ways; its own file, because the seed imports the upgrade.
  */
 
+/** The copy's slug is this prefix and the location's slug (re-exported by `site-layout-seed.ts`). */
+export const SITE_LAYOUT_SLUG_PREFIX = "site-layout-";
+
+/** The copy's slug at a location with slug `locationSlug`. */
+export function siteLayoutSlug(locationSlug: string): string {
+  return `${SITE_LAYOUT_SLUG_PREFIX}${locationSlug}`;
+}
+
+/**
+ * The candidate copy at a location: its view row points at it. Params: `[locationId,
+ * organizationId, slug]`. `FOR UPDATE OF d` locks the dashboard row for the rest of the seed's
+ * transaction: a builder save updates that row first (`DashboardsService.putWidgets`), so an
+ * admin edit made while the seed compares and rewrites the copy waits, and is never deleted.
+ * Read by the `F4.319` move (`site-layout-seed-move.ts`) and, since `F4.388` (ADR 0139
+ * Amendment 1), by the station-settings step (`site-layout-seed-station-settings.ts`).
+ */
+export const SITE_LAYOUT_CANDIDATE_SQL = `
+  SELECT d.id, d.name, d.description, d.stock_version, d.template_id, t.code AS template_code
+    FROM bms.site_control_room_views v
+    JOIN bms.dashboards d ON d.id = v.dashboard_id
+    JOIN bms.dashboard_templates t ON t.id = d.template_id
+   WHERE v.location_id = $1 AND v.kind = 'dashboard'
+     AND d.organization_id = $2 AND d.location_id = $1 AND d.slug = $3
+     FOR UPDATE OF d
+`;
+
 /** `ORDER BY a.code`: `planTemplateWidget`'s tie-break reads the code (ADR 0049 Amendment 2). */
 const MEMBERS_SQL = `
   SELECT agm.role, a.id AS asset_id, a.code

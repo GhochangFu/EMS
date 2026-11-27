@@ -5,7 +5,10 @@ import {
   assertAMissingHostRowRaisesTheHostAlarm,
   assertAnEdgeServedRtuRaisesNothing,
   assertANotMonitoredRtuRaisesNothing,
+  assertAFailedHostRaiseLogsNoNames,
   assertAnOfflineRtuInsideTheRaiseDelayRaisesNothing,
+  assertARestartAcrossTwoTicksRaisesNothing,
+  assertARestartShorterThanTheHoldRaisesNothing,
   assertAnOfflineRtuRaisesOneCommsAlarm,
   assertAnRtuInsideItsWindowRaisesNothing,
   assertAStaleHostRaisesOneHostAlarmPerOrganizationAndNoRtuAlarm,
@@ -42,6 +45,15 @@ describe("F3.16 — the device-health sweep", () => {
   });
   it("raises one ingest_host alarm per organization and no RTU alarm while the host is stale", async () => {
     await assertAStaleHostRaisesOneHostAlarmPerOrganizationAndNoRtuAlarm();
+  });
+  it("raises nothing for a host restart shorter than the 120 s hold (ADR 0127 Amendment 2)", async () => {
+    await assertARestartShorterThanTheHoldRaisesNothing();
+  });
+  it("raises nothing across a restart that comes back on the next tick", async () => {
+    await assertARestartAcrossTwoTicksRaisesNothing();
+  });
+  it("logs no site or RTU name when a host raise fails (§9.6)", async () => {
+    await assertAFailedHostRaiseLogsNoNames();
   });
   it("raises the host alarm when the serving host has no row", async () => {
     await assertAMissingHostRowRaisesTheHostAlarm();

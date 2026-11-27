@@ -121,8 +121,17 @@ type Planned = {
  * `delta` probes are two `LIMIT 1` laterals and never a range scan** — ADR
  * 0070 decision 5: first and last inside `[start, end)` on
  * `point_values_point_asset_time_idx`, so `delta({kwh}, this_year)` costs
- * what `delta({kwh}, 24h)` does. `tests/adr-0070-calc-v3-invariants.test.ts`
- * part (e) scans this file for exactly two `FROM telemetry.point_values`
+ * what `delta({kwh}, 24h)` does. **Each probe also carries the batch's
+ * envelope** (`F4.393`, plan D5): `v.time >= $6 AND v.time < $7`, the earliest
+ * start and the latest end of the batch's deltas. The per-row bound names a
+ * column of the `unnest` row, which the planner can use only per loop at run
+ * time, after planning every chunk of the hypertable (twice); a bound parameter
+ * compared to `time` directly is planned away. Every row's range lies inside
+ * the envelope, so the answers are identical. The line is deliberately
+ * uncast: a `::timestamptz` would push each `FROM telemetry.point_values`
+ * past the 200 characters part (e) allows before its `LIMIT 1`.
+ * `tests/adr-0070-calc-v3-invariants.test.ts` part (e) scans this file for
+ * exactly two `FROM telemetry.point_values`
  * each followed by a `LIMIT 1`, and every other `FROM telemetry.` here names
  * one of the four views.
  *
@@ -418,6 +427,13 @@ export class CalcWindowsService {
     if (targets.length === 0) {
       return out;
     }
+    // The envelope's ends, by a loop: `Math.min(...xs)` throws a RangeError past the argument limit.
+    let lowest = Number.POSITIVE_INFINITY;
+    let highest = Number.NEGATIVE_INFINITY;
+    for (const t of targets) {
+      lowest = Math.min(lowest, t.startMs);
+      highest = Math.max(highest, t.request.endMs);
+    }
     const pointKeyOf = (item: Planned): string => (item.request.node.kind === "window" ? item.request.node.ref.pointKey : "");
     const { rows } = await this.pool.query<{
       idx: number;
@@ -434,6 +450,7 @@ export class CalcWindowsService {
              FROM telemetry.point_values v
             WHERE v.asset_id = p.asset_id AND v.point_key = p.point_key
               AND v.time >= p.from_t AND v.time < p.to_t
+              AND v.time >= $6 AND v.time < $7
             ORDER BY v.time ASC
             LIMIT 1
          ) f ON true
@@ -442,6 +459,7 @@ export class CalcWindowsService {
              FROM telemetry.point_values v
             WHERE v.asset_id = p.asset_id AND v.point_key = p.point_key
               AND v.time >= p.from_t AND v.time < p.to_t
+              AND v.time >= $6 AND v.time < $7
             ORDER BY v.time DESC
             LIMIT 1
          ) l ON true`,
@@ -451,6 +469,8 @@ export class CalcWindowsService {
         targets.map(pointKeyOf),
         targets.map((t) => new Date(t.startMs).toISOString()),
         targets.map((t) => new Date(t.request.endMs).toISOString()),
+        new Date(lowest).toISOString(),
+        new Date(highest).toISOString(),
       ],
     );
     for (const row of rows) {

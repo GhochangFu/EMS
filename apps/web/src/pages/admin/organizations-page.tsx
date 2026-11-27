@@ -18,6 +18,7 @@ import { OrganizationAppearanceDialog } from "../../components/appearance/appear
 import { COLOUR_PROFILE_LABELS } from "../../components/appearance/labels";
 import { CopilotOrgSwitch } from "../../components/admin/copilot-org-switch";
 import { OrganizationEnergySettingsDialog } from "../../components/admin/organization-energy-settings-dialog";
+import { OrganizationPollIntervalDialog } from "../../components/admin/organization-poll-interval-dialog";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
@@ -26,6 +27,7 @@ import {
   canAccessOnboarding,
   canChooseColourProfile,
   canEditOrganizationEnergySettings,
+  canEditOrganizationPollInterval,
   canManageAiAssistant,
   canWriteOrganizations,
   isGlobalAdmin,
@@ -73,6 +75,9 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   // `F4.310` (ADR 0110 decision 8): the organization whose colour-profile chooser is open.
   const canChooseProfile = canChooseColourProfile(user.role);
   const canEditEnergy = canEditOrganizationEnergySettings(user.role);
+  /** `F1.2` (ADR 0141 Amendment 1 (c), ruling P12a): the organization default poll interval. */
+  const canEditPollInterval = canEditOrganizationPollInterval(user.role);
+  const [pollIntervalFor, setPollIntervalFor] = useState<AdminOrganizationDto | null>(null);
   const [profileFor, setProfileFor] = useState<AdminOrganizationDto | null>(null);
   // `F3.86` PR 7 (ruling Q4): below the global administrator the dock mounts only when its home
   // status is available (`copilot-dock.tsx` `AvailableDock`, the same query key), so the button
@@ -305,6 +310,15 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                               {item.ingestEnabled ? "Stop ingest" : "Resume ingest"}
                             </button>
                           ) : null}
+                          {canEditPollInterval ? (
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-accent-strong"
+                              onClick={() => setPollIntervalFor(item)}
+                            >
+                              Poll interval
+                            </button>
+                          ) : null}
                           {canChooseProfile ? (
                             <button
                               type="button"
@@ -354,6 +368,10 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
         </SectionCard>
 
       {profileFor ? <OrganizationAppearanceDialog organization={profileFor} onClose={() => setProfileFor(null)} /> : null}
+
+      {pollIntervalFor ? (
+        <OrganizationPollIntervalDialog organization={pollIntervalFor} onClose={() => setPollIntervalFor(null)} />
+      ) : null}
 
       {energyFor ? (
         <OrganizationEnergySettingsDialog organization={energyFor} onClose={() => setEnergyFor(null)} />

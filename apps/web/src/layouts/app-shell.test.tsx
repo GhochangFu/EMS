@@ -33,7 +33,7 @@ import {
   placesTheEntryDirectlyAfterAlarmCentre,
   placesTheSwitchAfterTheUserBlock,
   placesTheSwitchBeforeLogout,
-  readsNoTrinetraInTheShell,
+  readsNoOldNameInTheShell,
   readsTheFullItemList,
   showsDsForDashboardsWhenCollapsed,
   selectsTheAreaOfADrillDown,
@@ -41,7 +41,7 @@ import {
   selectsTheHubWithATrailingSlash,
   showsTheHubAndSixAreasToAnOrganizationAdmin,
   showsOneEntryToALocationScope,
-  showsTheDescriptorInTheHeader,
+  showsTheTaglineInTheHeader,
   showsTheNameInTheFooter,
   showsTheWordmarkInTheHeader,
   showsTheFullLabelWhenExpanded,
@@ -222,7 +222,7 @@ describe("F3.65c the theme switch in the header", () => {
   });
 });
 
-describe("F3.33 the IONSiTE NEXUS wordmark in the shell", () => {
+describe("F4.398 the Verve logo and tagline in the shell", () => {
   it("B1 shows the wordmark in the header as a named image", () => {
     showsTheWordmarkInTheHeader();
   });
@@ -231,16 +231,16 @@ describe("F3.33 the IONSiTE NEXUS wordmark in the shell", () => {
     drawsNoImgElementInTheHeader();
   });
 
-  it("B3 shows the descriptor in the header", () => {
-    showsTheDescriptorInTheHeader();
+  it("B3 shows the tagline in the header", () => {
+    showsTheTaglineInTheHeader();
   });
 
-  it("B4 shows IONSiTE NEXUS in the footer", () => {
+  it("B4 shows Verve in the footer", () => {
     showsTheNameInTheFooter();
   });
 
-  it("B5 reads no TRINETRA in the shell", () => {
-    readsNoTrinetraInTheShell();
+  it("B5 reads no TRINETRA and no IONSiTE NEXUS in the shell", () => {
+    readsNoOldNameInTheShell();
   });
 });
 

@@ -1,17 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 
 import { assetLabelOf } from "@bms/shared";
+import { forecastFindingHref } from "@bms/shared/contracts";
 import type { ForecastListRow } from "@bms/shared";
 
 import { fetchForecastList } from "../api/ml";
 import { formatShortInZone, retryUnlessForbidden } from "../components/asset-history/history-format";
+import { MlFindingsCard } from "../components/ml/ml-findings-card";
 import { PageHeader } from "../components/page-header";
+import { ScopeFilterBar } from "../components/scope-filter-bar";
 import { SectionCard } from "../components/section-card";
 import { StatusPill } from "../components/status-pill";
+import { useScopeFilter } from "../hooks/use-scope-filter";
 import { AppShell } from "../layouts/app-shell";
-import { assetHistoryPath } from "../lib/asset-history-range";
 import { FORECAST_REFETCH_MS, modelLabel } from "../lib/forecast-series";
+import { ML_PAGE_FILTER_KEYS, pickScope } from "../lib/ml-findings";
 import type { AuthUser } from "../stores/auth-store";
 
 /** C8 (replaces R-e's copy): the page promises nothing to a point type the scorer does not target. */
@@ -41,13 +46,21 @@ type ForecastsPageProps = {
  * two zones. The asset is named by `assetLabelOf` (ADR 0111). Each row opens that asset's history
  * with the point charted, where the band and the caption draw. Read again every 15 minutes, the
  * forecast's own pace; a failed read is one fixed sentence (the `F4.204` rule).
+ *
+ * `E1.9b` (ADR 0135 Amendment 8 decisions 1 and 8): under the header, the Organization and Location
+ * pickers (`useScopeFilter`, the URL state of `/alarms`), then the "Findings — advisory" cards, then
+ * the table. Both reads send only those two keys, and wait for `scope.ready`.
  */
 export function ForecastsPage({ user }: ForecastsPageProps) {
+  const scope = useScopeFilter();
+  const shown = useMemo(() => pickScope(scope.filter, ML_PAGE_FILTER_KEYS), [scope.filter]);
   const listQ = useQuery({
-    queryKey: ["ml-forecasts"],
-    queryFn: fetchForecastList,
+    queryKey: ["ml-forecasts", shown.organizationId ?? null, shown.locationId ?? null],
+    // A thunk: React Query's context must never reach the filter.
+    queryFn: () => fetchForecastList(shown),
     refetchInterval: FORECAST_REFETCH_MS,
     retry: retryUnlessForbidden,
+    enabled: scope.ready,
   });
   const items = listQ.data?.items ?? [];
 
@@ -59,6 +72,15 @@ export function ForecastsPage({ user }: ForecastsPageProps) {
           title="Forecasts"
           subtitle="Advisory. The next 48 h from the latest model run."
         />
+
+        <ScopeFilterBar
+          filter={scope.filter}
+          options={scope.options}
+          unavailable={scope.unavailable}
+          onChange={scope.setScope}
+          pickers={ML_PAGE_FILTER_KEYS}
+        />
+        <MlFindingsCard kinds={["forecasts"]} scope={shown} enabled={scope.ready} />
 
         {listQ.isPending ? (
           // `isPending`, not `isLoading`: opened offline the read is pending but paused, and a waiting
@@ -99,7 +121,7 @@ export function ForecastsPage({ user }: ForecastsPageProps) {
                     <td className="px-3 py-1.5">
                       <Link
                         className="font-mono text-xs font-semibold text-accent-strong hover:underline"
-                        to={`${assetHistoryPath(row.assetId)}?${new URLSearchParams({ points: row.pointKey }).toString()}`}
+                        to={forecastFindingHref(row.assetId, [row.pointKey])}
                       >
                         {row.pointKey}
                       </Link>

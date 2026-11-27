@@ -207,3 +207,66 @@ export async function assertTheAdapterReadsNoEnv(capture: OpenAiCapture): Promis
   assert(capture.constructed[0]?.apiKey === "ctor-key", "the constructor's key wins over OPENAI_API_KEY");
   assert(capture.requests[0]?.body.model === "gpt-4o-mini", "the constructor's model wins over OPENAI_MODEL");
 }
+
+/** `E1.9c` (ADR 0135 Amendment 8, plan R-d): an empty tool list sends no `tools` and no `tool_choice`, on both hosts. */
+export async function assertAnEmptyToolListSendsNoToolsAndNoToolChoice(capture: OpenAiCapture): Promise<void> {
+  for (const name of ["openai", "openrouter"] as const) {
+    reset(capture, finalReply);
+    await provider(name).complete({ messages: [{ role: "user", content: "hi" }], tools: [], signal: new AbortController().signal });
+    const body = capture.requests[0]?.body ?? {};
+    assert(!("tools" in body), `${name}: an empty tool list sends no tools field`);
+    assert(!("tool_choice" in body), `${name}: an empty tool list sends no tool_choice`);
+    assert(Array.isArray(body.messages) && typeof body.model === "string", `${name}: the rest is as before`);
+  }
+}
+
+/**
+ * Owner ruling Q2 (b) (`E1.9c`): a reply cut at the call's own limit
+ * (`finish_reason: "length"`) is a provider error, so the findings row is
+ * `failed` and retried later. Without a limit the reply is returned as before.
+ */
+export async function assertALengthCutIsAnErrorOnlyWithALimit(capture: OpenAiCapture): Promise<void> {
+  const cut = { choices: [{ message: { content: "half a para" }, finish_reason: "length" }] };
+  reset(capture, cut);
+  let thrown: unknown = null;
+  try {
+    await provider("openrouter").complete({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+      signal: new AbortController().signal,
+      maxOutputTokens: 4_000,
+    });
+  } catch (err) {
+    thrown = err;
+  }
+  assert(thrown instanceof LlmProviderError, "with a limit, a length cut is a provider error");
+  reset(capture, cut);
+  const reply = await provider("openrouter").complete({ messages: [{ role: "user", content: "hi" }], tools: [], signal: new AbortController().signal });
+  assert(reply.kind === "final" && reply.text === "half a para", "without a limit, the reply is as before");
+}
+
+/**
+ * Owner ruling Q2 (b) (`E1.9c`): absent, no output limit is sent (as before);
+ * present, OpenAI gets `max_completion_tokens` and OpenRouter `max_tokens`.
+ */
+export async function assertMaxOutputTokensIsSentOnlyWhenGiven(capture: OpenAiCapture): Promise<void> {
+  for (const name of ["openai", "openrouter"] as const) {
+    reset(capture, finalReply);
+    await provider(name).complete({ messages: [{ role: "user", content: "hi" }], tools: [TOOL], signal: new AbortController().signal });
+    const absent = capture.requests[0]?.body ?? {};
+    assert(!("max_tokens" in absent) && !("max_completion_tokens" in absent), `${name}: absent, no limit is sent`);
+    reset(capture, finalReply);
+    await provider(name).complete({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+      signal: new AbortController().signal,
+      maxOutputTokens: 4_000,
+    });
+    const present = capture.requests[0]?.body ?? {};
+    if (name === "openai") {
+      assert(present.max_completion_tokens === 4_000 && !("max_tokens" in present), "openai: max_completion_tokens is 4,000");
+    } else {
+      assert(present.max_tokens === 4_000 && !("max_completion_tokens" in present), "openrouter: max_tokens is 4,000");
+    }
+  }
+}

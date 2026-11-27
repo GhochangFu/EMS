@@ -115,6 +115,11 @@ describe.skipIf(!ownerUrl)("F2.10 — a re-seed leaves a seeded location under a
    * Inserts a root T in `organizationId`, moves `stationId` under it, then
    * deactivates the station and — when `parentInactive` — T, bottom-up as
    * decision 5 requires. Returns T's id.
+   *
+   * A PHE station on the committed split list (ADR 0139) has its RTU sites as
+   * children, so they are deactivated first: `location_has_active_children`
+   * refuses a parent with an active child. ESKOM's first canonical row and an
+   * unsplit station have none, and the extra UPDATE then touches no row.
    */
   async function moveAndDeactivate(
     pool: SeedPool,
@@ -131,6 +136,7 @@ describe.skipIf(!ownerUrl)("F2.10 — a re-seed leaves a seeded location under a
     const parentId = inserted.rows[0]?.id ?? "";
     if (parentId === "") throw new Error("the township insert returned no id");
     await pool.query(`UPDATE bms.locations SET parent_id = $1 WHERE id = $2`, [parentId, stationId]);
+    await pool.query(`UPDATE bms.locations SET active = false WHERE parent_id = $1`, [stationId]);
     await pool.query(`UPDATE bms.locations SET active = false WHERE id = $1`, [stationId]);
     if (parentInactive) {
       await pool.query(`UPDATE bms.locations SET active = false WHERE id = $1`, [parentId]);

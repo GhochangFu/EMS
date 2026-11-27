@@ -3,11 +3,13 @@ import { Link } from "react-router-dom";
 
 import type { AssetRow } from "../../api/assets";
 import { fetchDashboards } from "../../api/dashboards";
-import { useAssetHealth } from "../../hooks/use-asset-health";
+import { useAssetHealth, useAssetHealthInputs } from "../../hooks/use-asset-health";
 import { useActiveMaintenance } from "../../hooks/use-active-maintenance";
 import { useAssetKpis } from "../../hooks/use-asset-kpis";
+import { useAssetDegradation } from "../../hooks/use-degradation";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { activeLabel, NONE, noDashboardsSentence } from "../../lib/asset-browser";
+import { healthCrossingOf } from "../../lib/degradation";
 import { AssetHealthCard } from "../asset-health/asset-health-card";
 import { MaintenanceBadge } from "../maintenance/maintenance-badge";
 import { StatusPill } from "../status-pill";
@@ -19,13 +21,15 @@ import { AssetKpisCard } from "./asset-kpis-card";
  * decision 3, ruling 5): a right-docked `<aside>` on the same route, the
  * `asset-images-panel.tsx` shape.
  *
- * Four reads and one filter, nothing written:
+ * Five reads and one filter, nothing written:
  *
  * - the row's own columns, from the `AssetRow` the list already holds —
  *   **no second asset fetch**;
  * - health through `useAssetHealth`, rendered by `AssetHealthCard`, which
  *   already prints ADR 0050's three absences as distinct sentences rather
  *   than a zero;
+ * - the SOW §4.3 five inputs through `useAssetHealthInputs` (`E1.8b`), handed
+ *   to the same card and dropped quietly when the read fails;
  * - the template's KPIs through `useAssetKpis` (`F2.33`, ADR 0097), computed
  *   at read time and rendered by `AssetKpisCard` under the health card;
  * - the asset's `F3.2` default dashboards through `GET /dashboards?assetId=`
@@ -45,7 +49,14 @@ export type AssetDetailPanelProps = {
 
 export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPanelProps): JSX.Element {
   const healthQ = useAssetHealth(asset.id);
+  // `E1.8b` (ADR 0050 Amendment 5): read beside the score, never before it. A pending or failed
+  // read leaves `data` undefined and the card exactly as it was — no error text (plan T2.5).
+  const inputsQ = useAssetHealthInputs(asset.id);
   const kpisQ = useAssetKpis(asset.id);
+  // `E1.5b` (ADR 0138, plan T2.3): one trend line, only for a health `crossing` (Q3 (a)); a pending
+  // or failed read leaves the card exactly as it was (R-p).
+  const degradationAsset = useAssetDegradation(asset.id)?.assets[0];
+  const trendSummary = degradationAsset ? healthCrossingOf(degradationAsset)?.summary : undefined;
   // `F4.359` U16 (plan Q7): the badge while a maintenance window covers this asset.
   const inMaintenance = useActiveMaintenance({ assetId: asset.id }).coveredAssetIds.has(asset.id);
   const dashboardsQ = useQuery({
@@ -101,7 +112,9 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
             Health could not be read. {apiErrorMessage(healthQ.error as Error)}
           </p>
         ) : null}
-        {healthQ.data ? <AssetHealthCard title="Health" data={healthQ.data} /> : null}
+        {healthQ.data ? (
+          <AssetHealthCard title="Health" data={healthQ.data} inputs={inputsQ.data} trendSummary={trendSummary} />
+        ) : null}
 
         {kpisQ.isLoading ? <p className="text-xs text-ink-muted">Loading KPIs…</p> : null}
         {kpisQ.isError ? (

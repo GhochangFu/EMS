@@ -4,6 +4,7 @@ import {
   loadTrendMalformedOrganizationIdIsABadRequest,
   loadTrendNarrowsByOrganizationId,
   loadTrendWithoutOrganizationIdReadsTheReadableSet,
+  locationRoutesPassTheScopesOwnParentMap,
 } from "./dashboard.controller.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -18,5 +19,11 @@ describe("dashboard.controller load-trend", () => {
 
   it("answers a malformed organizationId with 400 before access control", async () => {
     await loadTrendMalformedOrganizationIdIsABadRequest();
+  });
+});
+
+describe("dashboard.controller location routes (F4.240, ADR 0139 decision 12)", () => {
+  it("the service receives the scope's own parent map on both routes", async () => {
+    await locationRoutesPassTheScopesOwnParentMap();
   });
 });

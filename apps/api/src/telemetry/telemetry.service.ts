@@ -141,10 +141,11 @@ export class TelemetryService {
 
     const { n, unit } = this.parseWindow(window);
 
-    const intervalExpr =
-      unit === "m"
-        ? sql.raw(`${n} * interval '1 minute'`)
-        : sql.raw(`${n} * interval '1 hour'`);
+    // `F4.393` (plan D2): ONE interval literal, so the planner removes the old chunks before it
+    // runs. `n` is `parseWindow`'s integer (1–168, regex-checked) before any SQL text exists. A
+    // multiplied interval (`n * interval '1 minute'`, the same value) is pruned only at executor
+    // startup, after every chunk was planned — measured 17 ms against 0.3 ms warm at 134 chunks.
+    const intervalExpr = sql.raw(`interval '${n} ${unit === "m" ? "minutes" : "hours"}'`);
 
     const rows = await this.db
       .select({
@@ -420,8 +421,9 @@ export class TelemetryService {
    * exists, `nextBefore` is the `limit`-th row's time; otherwise `null`.
    *
    * **The upper bound is a bound parameter (`before`, else `now`), not SQL
-   * `now()`** — `now()` is only STABLE, so the planner cannot exclude chunks
-   * at Bind (the note at {@link latestPointValues}).
+   * `now()`** — `now()` is only STABLE, so a bound computed from it (anything
+   * but `now()` minus ONE interval literal, `F4.393` plan D1) cannot exclude
+   * chunks while planning (the note at {@link latestPointValues}).
    *
    * **`TENANT_POOL`, like `pointAggregate`.** `telemetry.point_values` has no
    * Row Level Security; the controller's `canReadAsset` has placed the asset
@@ -482,9 +484,11 @@ export class TelemetryService {
    * **The lower bound is a bound `timestamptz` computed here, not
    * `now() - $n`.** node-pg sends an unnamed statement, which Postgres plans at
    * Bind with the value known, so the old chunks are excluded while planning.
-   * `now()` is only STABLE, so `now() - …` plans every chunk first (350 ms for
-   * the SMOC set; ADR 0074 Amendment 1 item 6 records the same trap). Measured:
-   * 2–12 ms planning.
+   * `now()` is only STABLE, so `now()` minus a computed interval (a parameter,
+   * a product, `make_interval`) plans every chunk first (350 ms for the SMOC
+   * set; ADR 0074 Amendment 1 item 6 records the same trap); `now()` minus ONE
+   * interval literal is the exception (`F4.393` plan D1, `recentForPoint`).
+   * Measured: 2–12 ms planning.
    *
    * **Duplicate ids and keys are dropped before the query**, because the cross
    * join would answer a repeated pair twice.

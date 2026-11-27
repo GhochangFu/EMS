@@ -26,6 +26,7 @@ import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema, parseActiveFilter } from "../admin.schema";
 import { RtusCredentialsService } from "./rtus-credentials.service";
+import { RtusModbusService } from "./rtus-modbus.service";
 import { RtusAdminService } from "./rtus.service";
 
 @Controller("admin/rtus")
@@ -34,6 +35,7 @@ export class RtusAdminController {
   constructor(
     private readonly service: RtusAdminService,
     private readonly credentials: RtusCredentialsService,
+    private readonly modbus: RtusModbusService,
   ) {}
 
   @Get()
@@ -127,6 +129,16 @@ export class RtusAdminController {
       }
       throw err;
     }
+  }
+
+  /**
+   * `F1.2` (ADR 0141 decisions 10 and 15, plan T7.2) — binds the RTU to a device profile of its
+   * organization and sets its Modbus TCP connection; the registers are copied from the profile.
+   * The service parses the body (`setRtuModbusBodySchema`, `.strict()`), so a bad one is a 400.
+   */
+  @Put(":id/modbus")
+  async setModbus(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    return this.modbus.bind(user, idParamSchema.parse(id), body);
   }
 
   @Post(":id/deactivate")

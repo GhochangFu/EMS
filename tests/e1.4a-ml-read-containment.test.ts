@@ -106,7 +106,9 @@ describe("E1.4a ml read containment (ADR 0135 Amendment 3 S1–S4)", () => {
     expect(bodies.length, "the controller declares its five routes").toBe(5);
     for (const body of bodies) {
       const handler = body.slice(0, body.search(/\n  @|\n}/) + 1 || body.length);
-      expect(/canReadAsset\(|readableAssetIds\(/.test(handler), handler.slice(0, 300)).toBe(true);
+      // `E1.9a` (ADR 0135 Amendment 8 R-b): the two lists narrow with `AssetFilterScopeService.narrow`,
+      // which starts from `readableAssetIds` (the last case below holds that).
+      expect(/canReadAsset\(|assetFilterScope\.narrow\(/.test(handler), handler.slice(0, 300)).toBe(true);
     }
   });
 
@@ -138,12 +140,26 @@ describe("E1.4a ml read containment (ADR 0135 Amendment 3 S1–S4)", () => {
     expect(service, "the service call after canReadAsset(").toBeGreaterThan(guard);
   });
 
-  it("the list handler hands readableAssetIds to the service", () => {
+  it("the list handler parses its query, then narrows the caller's readable assets, then calls the service", () => {
+    // `E1.9a` (ADR 0135 Amendment 8 decision 8, R-b): `narrow` ANDs the filter onto `readableAssetIds`.
     const handler = methodBody(codeOnly(read(CONTROLLER_REL)), "list");
-    const scope = handler.indexOf("readableAssetIds(");
+    const query = handler.indexOf("forecastListQuerySchema.safeParse(");
+    const scope = handler.indexOf("this.assetFilterScope.narrow(user,");
     const service = handler.indexOf("this.forecasts.list(");
-    expect(scope).toBeGreaterThanOrEqual(0);
-    expect(service).toBeGreaterThan(scope);
+    expect(query).toBeGreaterThanOrEqual(0);
+    expect(scope, "narrow after the query parse").toBeGreaterThan(query);
+    expect(service, "the service after narrow").toBeGreaterThan(scope);
+    expect(handler).toMatch(/const assetIds = await this\.assetFilterScope\.narrow\(user, parsed\.data\);[\s\S]*this\.forecasts\.list\(assetIds,/);
+    expect(handler, "the handler never reads readableAssetIds itself").not.toMatch(/readableAssetIds\(/);
+  });
+
+  it("E1.9a: narrow starts from readableAssetIds and returns it untouched for an empty filter", () => {
+    const source = codeOnly(read("apps/api/src/filter-options/asset-filter-scope.service.ts"));
+    const body = methodBody(source, "narrow");
+    expect(body).toMatch(/^async narrow\(user: JwtPayload, filter: AssetScopeFilter\): Promise<string\[\] \| null> \{\s*const readable = await this\.accessControl\.readableAssetIds\(user\);/);
+    expect(body).toMatch(/const readable = await this\.accessControl\.readableAssetIds\(user\);\s*if \(isEmpty\(filter\)\) return readable;/);
+    // Every later answer is `[]` or the read ANDed onto `readable`.
+    expect(body).toContain("inArray(assets.id, readable)");
   });
 
   it("the service reaches each pool only as withReadScope's own argument (S4)", () => {

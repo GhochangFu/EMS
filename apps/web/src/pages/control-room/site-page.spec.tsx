@@ -31,6 +31,17 @@ import * as copilotApi from "../../api/copilot";
  */
 const mounts = vi.hoisted(() => ({ generated: [] as string[] }));
 
+/** `E1.9e` — the findings card on the site body has its own suite (`site-page-ml-findings.spec.tsx`). */
+vi.mock("../../components/ml/ml-findings-card", () => ({
+  MlFindingsCard: () => null,
+}));
+
+/** `E1.8c` — the Bad actors card on the site body has its own suite (`site-page-bad-actors.spec.tsx`). */
+vi.mock("../../components/asset-health/health-bad-actors-card", () => ({
+  HealthBadActorsCard: () => null,
+}));
+vi.mock("../../components/degradation/degradation-trend-card", () => ({ DegradationTrendCard: () => null }));
+
 vi.mock("../../components/control-room/generated-site-view", () => ({
   GeneratedSiteView: ({ locationId }: { locationId: string }) => {
     const { pathname } = useLocation();

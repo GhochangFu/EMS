@@ -1,20 +1,26 @@
 import "reflect-metadata";
 import { expect } from "vitest";
 
+import { AdvisoriesService } from "../advisories/advisories.service";
 import { AlarmNotifyService } from "../alarms/alarm-notify.service";
 import { AlarmRaiser } from "../alarms/alarm-raise.service";
 import { AlarmRootCauseService } from "../alarms/alarm-root-cause.service";
 import { AlarmsService } from "../alarms/alarms.service";
+import { DeviceProfilesAdminService } from "../admin/device-profiles/device-profiles.service";
 import { LocationsAdminService } from "../admin/locations/locations.service";
 import { TelemetryImportService } from "../admin/telemetry-import/telemetry-import.service";
+import { HealthInputsService } from "../asset-health/health-inputs.service";
 import { AssetImagesService } from "../assets/asset-images.service";
 import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { CopilotPurgeService } from "../copilot/copilot-purge.service";
 import { DashboardService } from "../dashboard/dashboard.service";
+import { DegradationService } from "../degradation/degradation.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { MaintenanceWindowsService } from "../maintenance-windows/maintenance-windows.service";
 import { MlAnomaliesService } from "../ml/ml-anomalies.service";
+import { MlFindingsService } from "../ml/ml-findings.service";
+import { FindingsParagraphService } from "../ml-findings/findings-paragraph.service";
 import { MlForecastsService } from "../ml/ml-forecasts.service";
 import { QUEUE_CLIENT } from "../queue/queue.tokens";
 import { WorkerHostService } from "../queue/worker-host.service";
@@ -347,6 +353,31 @@ export function assertMlAnomaliesServiceFleetSlot(): void {
 }
 
 /**
+ * `E1.9a` — `MlFindingsService(tenantDb, fleetDb)` (ADR 0135 Amendment 8 decision 10): both
+ * summaries pass slot 0 and slot 1 to `withReadScope` in that order, as the forecast and anomaly
+ * services do. A swap would run a single-organization caller's findings reads on the BYPASSRLS
+ * pool. Two claims, one function each.
+ */
+export function assertMlFindingsServiceTenantSlot(): void {
+  expect(injectedToken(MlFindingsService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertMlFindingsServiceFleetSlot(): void {
+  expect(injectedToken(MlFindingsService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `E1.9c` — `FindingsParagraphService(tenantDb, findings, llm, availability)` (ADR 0135
+ * Amendment 8 decision 7): every cache read and write runs in `withTenant` of the card's
+ * organization on slot 0, and the service holds **no fleet token at all**. A fleet pool in
+ * slot 0 would let a write land outside the card's organization with row security bypassed.
+ */
+export function assertFindingsParagraphServiceTenantSlot(): void {
+  expect(injectedToken(FindingsParagraphService, 0)).toBe(TENANT_DRIZZLE);
+  for (const slot of [1, 2, 3]) expect(injectedToken(FindingsParagraphService, slot)).toBeUndefined();
+}
+
+/**
  * `E2.3` — `AlarmRootCauseService(details, tenantDb)` (ADR 0136; plan Q2 as ruled): the
  * evidence reads run under `withTenant` on slot 1, and the service holds **no fleet token at
  * all** — its only fleet read is `AlarmDetailsService.get`, the gate. A fleet pool in slot 1
@@ -356,4 +387,54 @@ export function assertMlAnomaliesServiceFleetSlot(): void {
 export function assertAlarmRootCauseServiceTenantSlot(): void {
   expect(injectedToken(AlarmRootCauseService, 1)).toBe(TENANT_DRIZZLE);
   expect(injectedToken(AlarmRootCauseService, 0)).toBeUndefined();
+}
+
+/**
+ * `E1.8a` — `HealthInputsService(tenantDb, fleetDb, health)` (ADR 0050 Amendment 5, plan T1.3):
+ * every fact read passes slot 0 and slot 1 to `withReadScope` in that order. A swap would run a
+ * single-organization caller's anomaly and ticket reads on the BYPASSRLS pool, and the
+ * integration pair constructs the service with explicit pools, so only this catches it.
+ */
+export function assertHealthInputsServiceTenantSlot(): void {
+  expect(injectedToken(HealthInputsService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertHealthInputsServiceFleetSlot(): void {
+  expect(injectedToken(HealthInputsService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `E1.6a` — `AdvisoriesService(tenantDb, fleetDb, fleetPool, …)` (ADR 0137 decision 6, plan Q3):
+ * the candidate read runs through `withReadScope(tenantDb, fleetDb, …)` on slots 0 and 1, and
+ * the reused energy, register, pair and tariff reads run on the fleet pool in slot 2 with the
+ * candidate ids only. Swapping slots 0 and 1 sends every single-organization read to `onEmpty`.
+ */
+export function assertAdvisoriesServiceSlots(): void {
+  expect(injectedToken(AdvisoriesService, 0)).toBe(TENANT_DRIZZLE);
+  expect(injectedToken(AdvisoriesService, 1)).toBe(FLEET_DRIZZLE);
+  expect(injectedToken(AdvisoriesService, 2)).toBe(FLEET_POOL);
+}
+
+/**
+ * `E1.5a` — `DegradationService(tenantDb, fleetDb, fleetPool, …)` (ADR 0138, plan T1.8, R-o):
+ * the candidate, rule and schedule reads run through `withReadScope(tenantDb, fleetDb, …)` on
+ * slots 0 and 1, and the counter and hourly-mean reads run on the fleet pool in slot 2 with the
+ * considered ids only. Swapping slots 0 and 1 sends every single-organization read to `onEmpty`.
+ */
+export function assertDegradationServiceSlots(): void {
+  expect(injectedToken(DegradationService, 0)).toBe(TENANT_DRIZZLE);
+  expect(injectedToken(DegradationService, 1)).toBe(FLEET_DRIZZLE);
+  expect(injectedToken(DegradationService, 2)).toBe(FLEET_POOL);
+}
+
+/**
+ * `F1.2` — `DeviceProfilesAdminService(tenantDb, fleetDb, …)` (ADR 0141 decision 13, plan T5.2):
+ * every profile read and write runs under `withTenant` on slot 0; slot 1 maps a `:id` to its
+ * organization before the tenant transaction opens. A swap would write on the BYPASSRLS pool,
+ * which holds no INSERT on `bms.device_profiles` (migration `0164`), and the integration pair
+ * constructs the service with explicit pools, so only this catches it.
+ */
+export function assertDeviceProfilesServiceSlots(): void {
+  expect(injectedToken(DeviceProfilesAdminService, 0)).toBe(TENANT_DRIZZLE);
+  expect(injectedToken(DeviceProfilesAdminService, 1)).toBe(FLEET_DRIZZLE);
 }

@@ -23,6 +23,7 @@ import {
   isCredentialCopyToolName,
 } from "./onboarding-credential-copy-tool";
 import { dispatchMappingTool, isMappingToolName, MAPPING_TOOL_DESCRIPTIONS, MAPPING_TOOL_SCHEMAS } from "./onboarding-mapping-tools";
+import { configIssueMessage } from "./onboarding-config-issues";
 import { cutToBound, draftCountProblem, pointKeyQuotaProblem, type PointKeyQuota } from "./onboarding-draft-caps";
 import type { LlmToolCall, LlmToolDefinition } from "../../llm/llm-port";
 import { defineToolRegistry, runToolCall, type ToolGuard } from "../../llm/tool-registry";
@@ -37,7 +38,6 @@ import { dispatchTemplateTool, isTemplateToolName, TEMPLATE_TOOL_DESCRIPTIONS, T
 import { draftTemplateCode, isStockEntry, templateRefPointKeys, unresolvedPointKey, type ValidateTemplateContext } from "./onboarding-template-refs";
 import {
   fail,
-  issuesOf,
   MAX_MODEL_REPLIES,
   MAX_SUGGESTED_REPLY_CHARS,
   removeAt,
@@ -175,7 +175,14 @@ function withoutNullKeys(config: Record<string, unknown>): Record<string, unknow
 /** The refusal of `config` under `protocol`'s draft schema, or `null` when it passes. */
 function configProblem(protocol: OnboardingProtocol, config: Record<string, unknown> | undefined): string | null {
   const parsed = protocolCatalogEntry(protocol).draftConfigSchema.safeParse(config ?? {});
-  return parsed.success ? null : `${INVALID_CONFIG_PREFIX}${protocol}: ${issuesOf(parsed.error)}`;
+  if (parsed.success) {
+    return null;
+  }
+  // PR 11 security review L2: an unknown key is fixed text, never the key's name.
+  const issues = parsed.error.issues
+    .slice(0, 10)
+    .map((issue) => cutToBound(`${issue.path.join(".") || "(arguments)"}: ${configIssueMessage(issue)}`, 200));
+  return `${INVALID_CONFIG_PREFIX}${protocol}: ${issues.join("; ")}`;
 }
 
 function rtuActionTail(protocol: OnboardingProtocol): string {

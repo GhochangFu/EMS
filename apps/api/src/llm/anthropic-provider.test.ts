@@ -28,6 +28,7 @@ import {
   assertAStringUserContentIsSentAsAString,
   assertConsecutiveToolResultsAreOneUserMessage,
   assertImageAndPdfPartsAreNativeBlocks,
+  assertMaxOutputTokensReplacesTheDefaultOnlyWhenGiven,
   assertMaxTokensIsAProviderError,
   assertNoSystemMessageSendsNoSystemField,
   assertNoToolSendsNoMark,
@@ -91,8 +92,12 @@ describe("Anthropic provider (F3.21, ADR 0090 Amendment 1 A1)", () => {
     await assertNoSystemMessageSendsNoSystemField(capture);
   });
 
-  it("sends an empty tool list and no cache mark when there is no tool (ADR 0099 Amendment 7 C1)", async () => {
+  it("sends no tools, no tool_choice and no cache mark when there is no tool (ADR 0099 Amendment 7 C1, E1.9c R-d)", async () => {
     await assertNoToolSendsNoMark(capture);
+  });
+
+  it("sends the call's maxOutputTokens as max_tokens, and 16,000 without one (owner ruling Q2 (b))", async () => {
+    await assertMaxOutputTokensReplacesTheDefaultOnlyWhenGiven(capture);
   });
 
   it("sends system blocks that concatenate to the old \\n\\n-joined system text (ADR 0099 Amendment 7 C1)", async () => {

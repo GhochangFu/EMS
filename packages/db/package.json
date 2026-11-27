@@ -19,7 +19,7 @@
     "refresh-aggregates": "tsx src/refresh-aggregates.ts",
     "verify:hierarchy": "tsx src/verify-hierarchy-cli.ts",
     "roles": "tsx src/roles.ts",
-    "demo:ion-exchange": "tsx src/demo-ion-exchange-cli.ts",
+    "demo:water": "tsx src/demo-water-cli.ts",
     "ml:readiness": "tsx src/ml-data-readiness-cli.ts"
   },
   "dependencies": {

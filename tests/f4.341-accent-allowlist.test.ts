@@ -61,9 +61,15 @@ const ACCENT_FILL = /(?<![\w/-])(?:[a-z-]+:)*(?:bg-accent(?:-strong)?|from-accen
 
 /** Today's opaque accent fills per file: every one a primary button or a selection. Exact. */
 const ACCENT_FILL_FILES: Record<string, number> = {
+  // `F1.2` (ADR 0141 decision 13): the profile editor's Save, the page's New profile and Create copy.
+  "apps/web/src/components/admin/device-profile-editor.tsx": 1,
   "apps/web/src/components/admin/location-move-dialog.tsx": 1,
   // `F4.375` (ADR 0133 Amendment 2 ruling 3): the Energy settings dialog's primary Save button.
   "apps/web/src/components/admin/organization-energy-settings-dialog.tsx": 1,
+  // `F1.2` (ADR 0141 decision 10, plan T7.4): the Poll interval dialog's primary Save button.
+  "apps/web/src/components/admin/organization-poll-interval-dialog.tsx": 1,
+  // `F1.2` (ADR 0141 decision 15, plan T7.4): the Modbus settings dialog's primary Save button.
+  "apps/web/src/components/admin/rtu-modbus-dialog.tsx": 1,
   "apps/web/src/components/appearance/appearance-panel.tsx": 2,
   "apps/web/src/components/asset-history/range-picker.tsx": 1,
   "apps/web/src/components/asset-templates/alarms-tab.tsx": 1,
@@ -106,6 +112,7 @@ const ACCENT_FILL_FILES: Record<string, number> = {
   "apps/web/src/pages/admin/dashboard-template-detail-page.tsx": 3,
   "apps/web/src/pages/admin/dashboard-template-stock-view-page.tsx": 1,
   "apps/web/src/pages/admin/dashboard-templates-page.tsx": 1,
+  "apps/web/src/pages/admin/device-profiles-page.tsx": 2,
   "apps/web/src/pages/admin/edge-gateways-page.tsx": 1,
   "apps/web/src/pages/admin/escalation-profiles-page.tsx": 2,
   "apps/web/src/pages/admin/location-tariff-page.tsx": 1,

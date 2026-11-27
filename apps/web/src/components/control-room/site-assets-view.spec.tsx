@@ -85,6 +85,7 @@ const LOCATION: LocationDashboardDto = locationDashboardDtoSchema.parse({
   openAlarms: 0,
   criticalAlarms: 0,
   scopeLabel: "full",
+  parentId: null,
   rtus: [],
   assets: {
     items: [
@@ -226,8 +227,9 @@ export async function theTotalLoadTileFollowsEnergyShown(): Promise<void> {
 }
 
 /**
- * L8 (`F4.364`, AWS check 2026-11-15) — while the read is pending (first load, or a new page, page
- * size or RTU tab) the tile follows the site page's `energyShown`: none on a no-energy site (it
+ * L8 (`F4.364`, AWS check 2026-11-15) — while the read is pending (the first load only, since
+ * `F4.390`: after the first answer a new page, size or RTU keeps the rows and never returns the
+ * tiles to loading) the tile follows the site page's `energyShown`: none on a no-energy site (it
  * flashed on BCPL BARBARUAH), and kept, loading, on an energy site so the row does not reflow.
  */
 export async function aPendingReadFollowsTheSitesEnergyShown(): Promise<void> {
@@ -241,4 +243,114 @@ export async function aPendingReadFollowsTheSitesEnergyShown(): Promise<void> {
   renderView(true);
   expect(await screen.findByText("Assets fresh")).toBeInTheDocument();
   expect(screen.getByText("Total load")).toBeInTheDocument();
+}
+
+const OTHER_LOCATION_ID = "88888888-8888-4888-8888-888888888888";
+const RTU_BETA_ID = "44444444-4444-4444-8444-444444444444";
+
+function rtuRow(id: string, code: string, displayName: string) {
+  return {
+    id,
+    code,
+    displayName,
+    sourceType: "mqtt" as const,
+    domain: null,
+    ingestEnabled: true,
+    assetCount: 1,
+    freshAssetCount: 0,
+  };
+}
+
+/** Two RTUs and two pages, so the RTU buttons exist and **Next** is enabled before any press. */
+const TWO_RTUS: LocationDashboardDto = locationDashboardDtoSchema.parse({
+  ...LOCATION,
+  rtus: [rtuRow("rtu-alpha", "RTU-A", "RTU Alpha"), rtuRow(RTU_BETA_ID, "RTU-B", "RTU Beta")],
+  assets: { ...LOCATION.assets, totalPages: 2, total: 12 },
+});
+
+/** The view rendered through a handle that can change `locationId`, as the router does on a site switch. */
+function renderSwitchable(): { rerenderAt: (locationId: string) => void } {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (locationId: string) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <SiteAssetsView locationId={locationId} siteName={SITE_NAME} energyShown />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  const { rerender } = render(tree(LOCATION_ID));
+  return { rerenderAt: (locationId) => rerender(tree(locationId)) };
+}
+
+function tableWrapper(): HTMLElement {
+  const wrapper = screen.getByText("CRAC 1").closest("[aria-busy]");
+  expect(wrapper, "the table wrapper has no aria-busy attribute").not.toBeNull();
+  return wrapper as HTMLElement;
+}
+
+/**
+ * L9 (`F4.390`, plan Q3) — switching RTU keeps the rows on screen while the new read is pending:
+ * the first row's name stays, the table wrapper is `aria-busy` (and dimmed), and **Next** is off.
+ * Controls before the press: `aria-busy="false"`, Next enabled.
+ */
+export async function anRtuSwitchKeepsTheRowsWhilePending(): Promise<void> {
+  vi.spyOn(locationsApi, "fetchLocationDashboard").mockImplementation((_id, opts) =>
+    opts?.rtuId ? new Promise(() => undefined) : Promise.resolve(TWO_RTUS),
+  );
+  vi.spyOn(assetImagesApi, "fetchAssetImages").mockResolvedValue([]);
+  renderView();
+
+  expect(await screen.findByText("CRAC 1")).toBeInTheDocument();
+  expect(tableWrapper()).toHaveAttribute("aria-busy", "false");
+  expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+
+  await userEvent.click(screen.getByRole("button", { name: "RTU Beta" }));
+
+  expect(screen.getByText("CRAC 1"), "the first rows went away on the RTU switch").toBeInTheDocument();
+  expect(tableWrapper()).toHaveAttribute("aria-busy", "true");
+  expect(tableWrapper().className).toContain("opacity-60");
+  expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+}
+
+/**
+ * L10 (`F4.390`) — the kept rows never cross sites: the router keeps this view mounted on a site
+ * switch, so a bare previous-data option would show the first site's rows under the next site.
+ */
+export async function aSiteSwitchDoesNotKeepTheFirstSitesRows(): Promise<void> {
+  vi.spyOn(locationsApi, "fetchLocationDashboard").mockImplementation((id) =>
+    id === LOCATION_ID ? Promise.resolve(TWO_RTUS) : new Promise(() => undefined),
+  );
+  vi.spyOn(assetImagesApi, "fetchAssetImages").mockResolvedValue([]);
+  const view = renderSwitchable();
+
+  expect(await screen.findByText("CRAC 1"), "control: the first site's rows were there").toBeInTheDocument();
+
+  view.rerenderAt(OTHER_LOCATION_ID);
+
+  await waitFor(() => {
+    expect(screen.queryByText("CRAC 1")).toBeNull();
+  });
+}
+
+/** L11 (`F4.390`) — leaving the page while a read is pending aborts that read's request. */
+export async function unmountingAbortsAPendingRead(): Promise<void> {
+  let started = false;
+  let signal: AbortSignal | undefined;
+  vi.spyOn(locationsApi, "fetchLocationDashboard").mockImplementation((_id, _opts, querySignal) => {
+    started = true;
+    signal = querySignal;
+    return new Promise(() => undefined);
+  });
+  vi.spyOn(assetImagesApi, "fetchAssetImages").mockResolvedValue([]);
+  renderView();
+
+  await waitFor(() => {
+    expect(started, "the read never started").toBe(true);
+  });
+  expect(signal, "the read was handed no abort signal").toBeInstanceOf(AbortSignal);
+  expect(signal?.aborted, "control: the signal starts unaborted").toBe(false);
+
+  cleanup();
+
+  expect(signal?.aborted, "leaving the page did not abort the read").toBe(true);
 }

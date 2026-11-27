@@ -13,6 +13,7 @@ import { cardPrimaryMetricSchema, energyFeaturesSchema } from "./energy-features
 import { locationTypeCodeSchema } from "./location-types";
 import { assetRoleCodeSchema } from "./operations";
 import { pointMetadataFieldsSchema, pointMetadataShape } from "./point-metadata";
+import { rtuModbusDtoSchema } from "./rtu-modbus";
 import { pointSourceKindSchema } from "./telemetry-entry";
 
 export const masterDataActiveFilterSchema = z.enum(["true", "false", "all"]);
@@ -39,6 +40,11 @@ export const adminOrganizationDtoSchema = z.object({
   energyFeatures: energyFeaturesSchema,
   /** F4.364 (ADR 0133 decision 3): the location card's first figure, as stored (`auto` included). */
   cardPrimaryMetric: cardPrimaryMetricSchema,
+  /**
+   * F1.2 (ADR 0141 decision 10): the organization's default poll interval for every poll protocol,
+   * between an endpoint's own value and the adapter default; `null` = the adapter default.
+   */
+  defaultPollIntervalMs: z.number().int().nullable(),
   meta: z.record(z.unknown()).nullable(),
   createdAt: z.string(),
 });
@@ -128,6 +134,16 @@ export const adminRtuDtoSchema = z.object({
    * stored credential; `null` when there is no connection row. Never the value.
    */
   credentialsSet: z.boolean().nullable(),
+  /**
+   * `F1.2` (ADR 0141 decisions 6, 15, plan T7.1) — the RTU's Modbus connection and the profile its
+   * registers were copied from; `null` when there is no connection row or it is not `modbus_tcp`.
+   */
+  modbus: rtuModbusDtoSchema.nullable(),
+  /**
+   * `F1.2` (ADR 0141 decision 10) — the owning organization's default poll interval, so the bind
+   * dialog can say what an empty interval inherits; `null` = the adapter default.
+   */
+  organizationDefaultPollIntervalMs: z.number().int().nullable(),
 });
 
 /**

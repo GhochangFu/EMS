@@ -35,6 +35,7 @@ const LOCATION = locationKpiSummarySchema.parse({
   openAlarms: 0,
   criticalAlarms: 0,
   scopeLabel: "full",
+  parentId: null,
 });
 
 function cardLink(): HTMLElement {

@@ -288,7 +288,9 @@ None. No npm or Python package, no new app or module (the route sits in
   confirm the `ml` container's `docker stats` is unchanged.
 - **Follow-ups owed after the build** (separate `chore(agents):` PR,
   §9.10/§10.1): AGENTS.md §3 *Layout* (the new route and contract) and §4.8
-  (the contract). Queued in `docs/BACKLOG.md` §5 at closure. **Not a §6
+  (the contract). *Corrected at closure:* also §2 (the *ML scoring* and
+  *Alarm philosophy surfaces* rows), §5 and the status block — see the build
+  record below. Queued in `docs/BACKLOG.md` §5 at closure. **Not a §6
   promotion**: no LLM reaches operators or viewers.
 
 ## Open questions for the owner (all ruled 2026-11-17)
@@ -345,3 +347,41 @@ Each had a recommended answer. The owner accepted every recommendation except
 **Drafter call inside Q6, flagged for the owner:** R5 (class cause) has no
 fill button, so ADR 0059 Q1 still stands for class text. Say so if the
 button should reach R5 too.
+
+## Build record — `E2.3` closed (2026-11-17)
+
+| PR | Scope | Squash |
+|---|---|---|
+| [#1379](https://github.com/GhochangFu/EMS/pull/1379) | This ADR (accepted), the ADR 0135 Amendment 6 pointer, the plan | `81aa50b` |
+| [#1383](https://github.com/GhochangFu/EMS/pull/1383) | API: contract, pure ranking, reads, service, route, tests | `3e56fb1` |
+| [#1385](https://github.com/GhochangFu/EMS/pull/1385) | Web: the *Possible causes — advisory* section and the Q6 fill | `17c70e1` |
+
+CI on #1383 ran the integration suite for the first time (23,707 passed, 2
+skipped repo-wide) and the Playwright e2e suite; both green, as on #1385.
+
+**Calls made in the build, recorded so a reader does not take them for drift**
+(each also in the plan's §20):
+- **Related alarms are scoped to the caller** (PR 1 security review, High).
+  Decision 5 spoke only of the subject alarm; a `rule` alarm on an asset
+  outside the caller's `readableAssetIds` is never R3/R3b evidence, the same
+  rule `/details` applies. No new ruling was needed: it narrows.
+- **A maintenance window cancelled before it started is never R1** (it has
+  `ended_at < starts_at`, so it was never in effect).
+- **R2/R3 rows are capped per class**, and re-raises of the subject's own rule
+  are excluded in SQL, so neither can push out a real related alarm.
+- **R2 is an `rtu_comms` alarm only** (plan Q1): a "drop" in device health is
+  a refused sample, not an RTU going off-line.
+- **Evidence reads run in `withTenant` on `bms_tenant`**, with every
+  hand-written `organization_id` predicate kept (plan Q2), rather than on the
+  fleet pool decision 5 named. Row security is the backstop.
+- **No index** (plan Q3). The related-alarm read scans `bms.alarms`; the
+  stop rule is a demo-host p95 over 150 ms.
+- **The form's write button is *Submit*, on the wizard's last step** (plan
+  Q5); decision 6's "Save" means it. The button fills the field wherever the
+  wizard stands.
+- **The section's two links open in a new tab**, so an unsubmitted fill is
+  not lost; the replace question takes focus (PR 2 code review).
+
+**Not checked by this session** (no access to the AWS demo host): the route's
+p95, the three `EXPLAIN` plans on real data, the alarm count, and the browser
+claims. They are listed as owed on the `E2.3` row in `docs/BACKLOG.md`.

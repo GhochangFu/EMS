@@ -339,6 +339,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // `E1.2d` — the anomaly arm, decided as its neighbours (the template walk refuses it by name).
   "createDashboardTemplateBodySchema/content/widgets[]&right|14": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "createDashboardTemplateBodySchema/content/widgets[]&right|14/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  // `E1.9f` — the ml_findings arm, decided as its neighbours (the template walk refuses it by name).
+  "createDashboardTemplateBodySchema/content/widgets[]&right|15": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|15/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   importStockTemplateBodySchema: STRICT(CALLER_ERROR),
   // `F3.73` ruling Q3a — the body became a union of two strict arms: `|0` the asset-group arm
   // (unchanged), `|1` the site arm `{ locationId, tabGroups? }`. Strict on both, so a body naming
@@ -387,6 +390,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // `E1.2d` — the anomaly arm, decided as its neighbours (the template walk refuses it by name).
   "updateDashboardTemplateBodySchema/content/widgets[]&right|14": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "updateDashboardTemplateBodySchema/content/widgets[]&right|14/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  // `E1.9f` — the ml_findings arm, decided as its neighbours (the template walk refuses it by name).
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|15": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|15/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   // `F3.10` (ADR 0057 decision 7, plan D15). One producer — the
   // `/admin/escalation-profiles` page — so Amendment 3's "how many producers
   // share this object?" has one answer, and the nested nodes carry their own
@@ -522,6 +528,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // `E1.2d` — the anomaly arm: `.strict()` like its neighbours, its config `{}` strict.
   "putDashboardWidgetsBodySchema/widgets[]|14": STRICT(DASHBOARD_WIDGET_ARM),
   "putDashboardWidgetsBodySchema/widgets[]|14/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
+  // `E1.9f` — the ml_findings arm: binds nothing, `.strict()` like its neighbours, its config strict.
+  "putDashboardWidgetsBodySchema/widgets[]|15": STRICT(DASHBOARD_WIDGET_ARM),
+  "putDashboardWidgetsBodySchema/widgets[]|15/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
   // `F3.67` U4 (ADR 0076 decision 5, plan D4). `kind` and `builtinKey` are
   // vocabularies with no `z.record` escape hatch, and `dashboardId` is a
   // single id — an unknown key here has nowhere legitimate to land, and
@@ -546,6 +555,23 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   createEdgeGatewayBodySchema: STRICT(CALLER_ERROR),
   updateEdgeGatewayBodySchema: STRICT(CALLER_ERROR),
   putEdgeGatewayRtusBodySchema: STRICT(CALLER_ERROR),
+  // `F1.2` (ADR 0141 decisions 12-14, plan C12): every field named, no `z.record` escape. The keys a
+  // client would try — `version`, `verified`, `createdBy`, `stockCode` — are the server's (plan P2);
+  // dropped at 201 they would read as a verified profile that is not. `source` is the manual's
+  // three fields, and a register is ADR 0141 decision 7's closed shape (`modbusRegisterSchema`).
+  createDeviceProfileBodySchema: STRICT(CALLER_ERROR),
+  "createDeviceProfileBodySchema/source": STRICT(CALLER_ERROR),
+  "createDeviceProfileBodySchema/registers[]": STRICT(CALLER_ERROR),
+  saveDeviceProfileVersionBodySchema: STRICT(CALLER_ERROR),
+  "saveDeviceProfileVersionBodySchema/source": STRICT(CALLER_ERROR),
+  "saveDeviceProfileVersionBodySchema/registers[]": STRICT(CALLER_ERROR),
+  copyDeviceProfileBodySchema: STRICT(CALLER_ERROR),
+  importStockDeviceProfileBodySchema: STRICT(CALLER_ERROR),
+  // `F1.2` (ADR 0141 decision 15): the registers come from the profile row, so a `registers` or
+  // `device` key must be a 400, never a list silently dropped and answered 200.
+  setRtuModbusBodySchema: STRICT(CALLER_ERROR),
+  // `F1.2` (ADR 0141 decision 10): one key; a stray key (an organization id) is a caller error.
+  setOrganizationPollIntervalBodySchema: STRICT(CALLER_ERROR),
   // `F4.359` (ADR 0131, plan D1): the window's organization is its targets'; an `organizationId`, a
   // `createdBy` or a second id on a target arm has nowhere to land and must be a 400, never dropped.
   createMaintenanceWindowBodySchema: STRICT(CALLER_ERROR),

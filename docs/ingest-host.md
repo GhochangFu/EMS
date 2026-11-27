@@ -56,6 +56,7 @@ still the only working credential path (ADR 0016 Amendment 3).
 | `INGEST_STALE_AFTER_MS` | `300000` | Silence longer than this marks one RTU `stale` on the health endpoint (`F1.7`). Five minutes because the fleet was measured, not guessed: the nine live PHE RTUs publish every ~60 s (probe, 2026-08-22, 600 s window), so this is five missed cycles — a single dropped message can never raise it. Widen it for a protocol that polls far more slowly than MQTT pushes. The database-side device health (`F3.16`) and its two variables are in [`ingest-device-health.md`](./ingest-device-health.md). |
 | `MQTT_HOST` / `MQTT_PORT` / `MQTT_USERNAME` / `MQTT_PASSWORD` | pilot-era | MQTT **only**, resolved by the host through `src/rtu-config.js`. No new adapter gets an environment fallback. |
 | `MQTT_TLS_REJECT_UNAUTHORIZED` | on | Only the exact string `false` disables TLS verification, as in the ADR 0007 pilot. Not applied to a plain-MQTT endpoint, which has no TLS to verify. |
+| `MODBUS_TCP_HOSTS` | empty | ADR 0141 decision 22 (`F1.2`). The Modbus hosts the **cloud** host may dial. Empty or unset means it dials none (fail closed). The edge ignores it. Entry formats and the skip reason are in *Modbus TCP* below. |
 | `MQTT_PLAINTEXT_HOSTS` | empty | ADR 0114 (`F4.326`). Comma-separated broker host names an MQTT RTU may reach **without TLS**. Plain needs both the literal `tls: false` in the RTU's stored config and its resolved host (stored, or the `MQTT_HOST` fallback) on this list — see *Plain MQTT* below. Trimmed, lower-cased, exact match; no wildcard, port, IPv6 or range. A bad entry refuses start-up with `MQTT_PLAINTEXT_HOSTS entry <n> is not a host name` — the position, never the text. Set the same value on `api` and `worker`. |
 | `CREDENTIAL_ENCRYPTION_KEY` | — | ADR 0012. Without it, encrypted per-RTU credentials are simply not read. |
 | `INGEST_BUFFER_DIR` | `/var/lib/bms-ingest` | Where a batch the database refused lands (`F1.10`, ADR 0016 Amendment 4 ruling 4). Blank or unset takes the default; compose mounts a named volume at that path. **Must be absolute** — a relative value would resolve against the container working directory, putting the buffer on the writable layer with the volume unused, which nothing downstream can detect. A directory that cannot be created, that fails a write-and-unlink probe, or whose listing fails refuses host start-up with the path in the error — there is no "no buffer" mode. |
@@ -305,9 +306,11 @@ re-plans, and reconciles the running endpoints with the plan
 | In the plan, not running | build and start a supervisor | `endpoint started` |
 | Running, device set changed | `stop()` the old supervisor, **then** build and start a new one | `endpoint replaced` with `added`/`removed` device keys |
 | Running, same device set, decoder fingerprint changed (ADR 0116 decision 6) | the same replace | `endpoint replaced` with `reason=payload-format-changed` |
-| Running, same device set and decoder, credential fingerprint changed (ADR 0129 decision 4) | the same replace | `endpoint replaced` with `reason=credentials-changed` |
+| Running, same device set and decoder, config fingerprint changed (poll endpoints; ADR 0016 Amendment 10 (a)) | the same replace | `endpoint replaced` with `reason=device-config-changed` |
+| Running, same device set, decoder and config, credential fingerprint changed (ADR 0129 decision 4) | the same replace | `endpoint replaced` with `reason=credentials-changed` |
+| Running, all of the above unchanged, resolved poll interval changed (ADR 0016 Amendment 10 (a)) | the same replace | `endpoint replaced` with `reason=poll-interval-changed` |
 | Running, not in the plan (no enabled RTU left) | `stop()` it — the broker connection closes and the endpoint leaves the roster | `endpoint stopped` |
-| Running, same device set, decoder and credential fingerprint | swap the point index only | none |
+| Running, nothing above changed | swap the point index only | none |
 
 - **Stops and replaces run before starts**, and a replace waits for the old
   `stop()` before it dials — up to about 15 s (the adapter's 5 s disconnect
@@ -349,8 +352,33 @@ re-plans, and reconciles the running endpoints with the plan
   a reload tick). An
   edge-served RTU's credential lives in the gateway's own file and is not
   covered.
-- **Still restart-only:** a change of connection config on an endpoint whose
-  device set is unchanged is a point-index swap, not a replace (ADR 0115
+- **A poll endpoint's interval and device config reach it without a restart**
+  (ADR 0016 Amendment 10 (a), `F1.2`). The host sleeps, between two reads,
+  the endpoint's `config.pollIntervalMs`, else the organization's
+  `default_poll_interval_ms`, else the adapter's `defaultPollIntervalMs`.
+  Both stored values are bounded 1,000–3,600,000 ms by `pollIntervalMsSchema`
+  (`@bms/shared/ingest`); one outside the bound is replaced by the next level
+  down and logged once per RTU per process as `warn` `rtu poll interval out
+  of bounds level=<endpoint|organization>` — never the value. RTUs behind one
+  gateway share one endpoint and one loop, and the **shortest** interval any of
+  them resolves to wins (ruling P9). `pollIntervalMs` is removed from the
+  connection slice before the adapter's schema sees it. Each poll plan also
+  carries a `configFingerprint` (sha256 over the canonical connection slice and
+  each device slice — no secret): new registers, a new unit id, or a new
+  timeout on the endpoint's connection (the first bound RTU's, as for every
+  shared endpoint) replace the endpoint with `reason=device-config-changed`; a new resolved
+  interval with `reason=poll-interval-changed`. Saving the same values replaces
+  nothing. The `endpoint connected` line of a poll endpoint carries
+  `pollIntervalMs`, the interval it sleeps. MQTT is push and unaffected.
+- **A poll adapter that lost its connection is restarted** (ADR 0016
+  Amendment 10 (c), ruling P10). After a rejected `poll()` the host reads the
+  adapter's health: `disconnected` ends the poll loop, and the §5 backoff
+  disconnects, waits and reconnects it (`endpoint failed`, then `endpoint
+  restarting`). A device that merely fails to answer (`connected` or
+  `degraded`) is polled again, and marked `degraded` after three failures, as
+  before. Every poll protocol inherits the rule.
+- **Still restart-only:** a change of MQTT connection config on an endpoint
+  whose device set is unchanged is a point-index swap, not a replace (ADR 0115
   decision 6, plan R5). A committed RTU's host, port and TLS have no write
   route (ADR 0129 context 3), and changing them moves the endpoint key anyway.
   An environment-variable credential (the pilot fallback) changes
@@ -1021,3 +1049,150 @@ organization admin (who can write `config.tls` through the onboarding commit).
   after one `INGEST_STALE_AFTER_MS` window, and that adapter's design has to
   reckon with it: either publish a periodic keep-alive sample per bound point,
   or `dark` on that protocol needs a different signal than last-sample-time.
+
+## Modbus TCP (ADR 0141, `F1.2`)
+
+The first poll adapter. One file, `src/adapters/modbus-tcp.ts`, runs under
+`main.ts` and `edge-main.ts` unchanged. **A field site is polled by the edge
+([`edge-gateway.md`](./edge-gateway.md)); polling from the cloud host is for a
+host that shares a private network with the devices** (on-prem, a lab, the
+local compose stack). Modbus TCP has no authentication and no encryption, so a
+meter must never be exposed to the internet for the cloud host to reach. How to
+write the register map is in [`modbus-device-profiles.md`](./modbus-device-profiles.md).
+
+### The adapter
+
+- **Read only.** It sends function codes 01 (coils), 02 (discrete inputs),
+  03 (holding registers) and 04 (input registers), and nothing else.
+  `tests/f1.2-modbus-read-only.test.ts` refuses the write codes in the adapter
+  and codec source. No protocol library: the MBAP framing and the four
+  requests are in `packages/shared/src/ingest-adapters/modbus-codec.ts`, the
+  socket in `src/adapters/modbus-transport.ts` (`node:net`).
+- **One endpoint per `host:port`** (`modbus_tcp://<host>:<port>`). Every RTU
+  behind one gateway shares one socket and one poll loop; each RTU is one
+  binding, one Modbus **unit id**. Requests on one socket are sequential, and a
+  reply is matched by transaction id and unit id (a reply that matches none is
+  dropped). The host is stored lower-cased, an IPv6 literal in full form, with
+  no trailing dot (`canonicalModbusHost`).
+- **Unit id** is 0–247, or 255 for a device addressed directly over TCP
+  (Modbus Messaging on TCP/IP Implementation Guide V1.0b §4.4.1.2). 248–254
+  are refused (`modbusUnitIdSchema`, `packages/shared/src/ingest-modbus.ts`).
+- **Connection settings:** `host`, `port` (default 502), `timeoutMs` (one
+  request's deadline, default 1,000, 100–30,000) and `interRequestDelayMs`
+  (default 0, 0–5,000; for a slow serial gateway). The stored shape is
+  `config = { host, port, timeoutMs?, interRequestDelayMs?, pollIntervalMs?,
+  device: { unitId, profile, registers } }`. `registers` is the full list,
+  copied from a profile at bind time; the host never reads a profile.
+- **Coalescing** (`src/adapters/modbus-read-plan.ts`). Registers of one table
+  with contiguous or overlapping addresses are read in one request, at most
+  125 words (function codes 03 and 04) or 2,000 bits (01 and 02). **A gap is
+  never bridged**, because many devices answer an exception for an unmapped
+  address inside a range. A register that would cross the limit moves whole to
+  the next block. Only registers whose `sourceKey` is mapped to an active point
+  are read (the binding's `sourceKeys`); when the list is empty (the edge) every
+  register is read.
+- **A failure is per block.** A Modbus exception, a timeout or a malformed reply
+  gives every sample of that block `{ value: 0, good: false }`, and the poll
+  goes on with the next block. The `0` is a placeholder, never a reading. An
+  out-of-range 64-bit integer (past `Number.MAX_SAFE_INTEGER`) and a non-finite
+  float are `{ value: 0, good: false }` too. Under the default `discard_bad`
+  quality policy the normaliser drops and counts them (`badQuality`); a point
+  set to `accept_bad` would store the `0` (see the profile guide). The log line
+  for a failed block holds a fixed reason (`exception-<code>`, `timeout`,
+  `malformed-reply`), never bytes, host or value.
+- **A lost socket rejects `poll()`** and `health()` reads `disconnected`. The
+  host then restarts the adapter through the §5 backoff (ADR 0016 Amendment 10
+  (c); see *Reloads*), and the backoff resets on the first good read, not on
+  connect. No sample carries `at`: the host stamps receive time (ADR 0061).
+  No credential is read.
+
+### The poll interval
+
+For every poll endpoint the host sleeps, between two reads (`host/poll-interval.ts`):
+
+```
+interval := config.pollIntervalMs                     -- the endpoint (the RTU's Modbus settings)
+         ?? organizations.default_poll_interval_ms   -- the organization
+         ?? adapter.defaultPollIntervalMs            -- 10,000 ms for Modbus
+```
+
+Both stored values are bounded 1,000–3,600,000 ms by `pollIntervalMsSchema`
+(`packages/shared/src/ingest-poll-interval.ts`). A stored value outside the
+bounds is replaced by the next level down and logged once per RTU per process
+(`rtu poll interval out of bounds`, naming the level, never the value). RTUs
+behind one gateway share one loop, and **the shortest interval any of them
+resolves to wins**; an RTU with no setting counts as the adapter default, so it
+is never read more slowly than 10 s. The sleep starts after `poll()` settles,
+so the real cadence is the interval plus the time one poll takes. MQTT is push
+and ignores the setting.
+
+### Reload
+
+A new interval or new registers reach a running endpoint at the next reload
+(`INGEST_RELOAD_MS`), with no restart (the table in *Reloads*):
+
+- `endpoint replaced … reason=poll-interval-changed` when the resolved interval
+  moved;
+- `endpoint replaced … reason=device-config-changed` when the connection slice
+  or any device slice (registers, unit id, timeout, the mapped `sourceKeys`)
+  changed. The device set and the decoder fingerprint are checked first, then
+  this, then credentials, then the interval.
+
+Saving the same values replaces nothing.
+
+### `MODBUS_TCP_HOSTS` (cloud host only)
+
+`host/config.ts` reads it with `parseModbusTcpHosts`
+(`packages/shared/src/ingest-adapters/modbus-tcp-hosts.ts`). **Unset or empty
+means the cloud host dials no Modbus endpoint.** Comma-separated; each entry is
+trimmed and lower-cased; empty entries are ignored; no port, no wildcard. An
+entry is one of:
+
+- a host name (exact match, DNS labels, at most 253 characters; an all-numeric
+  last label and a `0x…` label are refused, so `999.1.1.1` and `0x7f000001` are
+  not read as names);
+- an IPv4 literal (no leading zeros);
+- an IPv6 literal (no brackets, no zone id; any spelling matches its full form);
+- an IPv4 CIDR block `a.b.c.d/n`, `n` from 0 to 32.
+
+A bad entry stops the host at start with a message naming the entry's
+1-based **position**, never its text. The match is on the RTU's configured
+`host` string. A name is never resolved, so a name never matches a CIDR block.
+Compose passes the variable through empty; set `MODBUS_TCP_HOSTS=modbus-sim` in
+`.env` for the local simulator ([`local-setup.md`](./local-setup.md)).
+
+### Skip reasons
+
+An RTU the planner does not serve is on the health body with a reason, logged
+once per RTU per process, and never dialled:
+
+| Reason | Meaning |
+|---|---|
+| `modbus-host-not-allowed` | its `host` is not on `MODBUS_TCP_HOSTS` (an edge-served RTU is not checked) |
+| `endpoint-organization-conflict` | another organization's RTU is already planned on the same `host:port`; the first RTU by id keeps it (ADR 0141 Amendment 2 (a)); detail is the endpoint key |
+| `endpoint-config-conflict` | a second RTU on the endpoint differs in `host`, `port`, `tls`, `timeoutMs` or `interRequestDelayMs`; the first RTU's settings are the endpoint's; detail is the endpoint key |
+| `invalid-connection-config` / `invalid-device-config` | the stored slice does not parse (for example an older flat `{ unitId }` config); detail is the failing paths, never values |
+
+### Known limits
+
+- **A dead unit behind a live gateway costs time.** Every block of that unit
+  times out in turn, so one poll takes about *blocks × `timeoutMs`* for it (the
+  default is 1,000 ms), and the other units on the same socket wait behind it.
+  The cadence stretches by the same amount. There is no per-unit skip after the
+  first timeout. Lower `timeoutMs` on the RTU, or unbind the dead unit.
+- **An interval above 360 s reads as not live between polls.** The freshness
+  window is `clamp(2.5 × interval, 25 s, 900 s)`
+  (`apps/api/src/telemetry/telemetry-cadence.ts`), so a device polled every
+  360 s or slower is shown as not live for part of each interval. Both interval
+  forms warn above 360 s. The bound stays one hour.
+- **A host name and an IP address for one meter are two endpoints.** Nothing
+  resolves names (neither the API nor the host), so `meter.site.lan` and
+  `10.1.2.3` get two sockets, two loops and no conflict check between them.
+  Use one spelling per device.
+- **The endpoint 409 is a yes/no signal.** The bind route refuses a `host:port`
+  that an active, cloud-served RTU of another organization already uses
+  (ADR 0141 Amendment 2 (a)). It names neither organization, but it tells the
+  caller that another organization polls that address.
+- **Several RTUs on one gateway:** the connection settings are the first bound
+  RTU's, and the shortest interval wins (above).
+

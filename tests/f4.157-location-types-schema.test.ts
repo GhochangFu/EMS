@@ -221,12 +221,18 @@ describe("F4.157 — bms.location_types schema (migration 0085)", () => {
     const pilotSeed = read("packages/db/src/phe-pilot-seed.ts");
 
     const mapMatches = mapSeed.match(/kind: "pump_station" as const/g) ?? [];
-    const pilotMatches = pilotSeed.match(/type: "pump_station" as const/g) ?? [];
+    // `F4.388` (ADR 0139 decision 2): a station on the split list is written as `campus` over
+    // its RTU sites, every other station as `pump_station`, in one `type:` expression. Both
+    // codes are still spelled once there, so reverting the seed to another code fails here.
+    const pilotTypeLines = pilotSeed.split("\n").filter((line) => /^\s*type: /.test(line));
+    const pilotPumpStation = pilotTypeLines.filter((line) => line.includes('"pump_station"'));
+    const pilotCampus = pilotTypeLines.filter((line) => line.includes('"campus"'));
 
     expect(mapMatches.length, "phe-map-seed.ts must write kind: \"pump_station\" as const exactly once").toBe(1);
     expect(
-      pilotMatches.length,
-      "phe-pilot-seed.ts must write type: \"pump_station\" as const exactly once",
+      pilotPumpStation.length,
+      "phe-pilot-seed.ts must write type: …\"pump_station\" exactly once",
     ).toBe(1);
+    expect(pilotCampus, "the split station's campus type is the same expression").toEqual(pilotPumpStation);
   });
 });

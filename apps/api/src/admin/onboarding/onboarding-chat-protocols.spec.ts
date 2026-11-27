@@ -40,7 +40,7 @@ export async function assertTheProtocolQuestionAnswersTheCatalog(): Promise<void
   const service = protocolService();
   const result = await service.handleTurn("which protocols are available", {}, "location", "Org", "org-1", { sessionId: "s", history: [], pointKeyQuota: { createdByOrganization: 0 } });
   const reply = result.assistantMessage;
-  for (const text of ["Here are the protocols available in BMS:", "(`mqtt`, live ingest)", "Required: topic", "(`modbus_tcp`, config only)"]) {
+  for (const text of ["Here are the protocols available in BMS:", "(`mqtt`, live ingest)", "Required: topic", "(`modbus_tcp`, live ingest)", "(`snmp`, config only)"]) {
     assert(reply.includes(text), `the reply holds "${text}", got ${reply}`);
   }
   assert(Object.keys(result.draftPatch).length === 0, `an empty patch, got ${JSON.stringify(result.draftPatch)}`);

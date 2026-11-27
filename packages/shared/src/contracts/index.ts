@@ -107,6 +107,7 @@ export * from "./trend-strip";
 export * from "./trend-strip-widget";
 export * from "./forecast-widget";
 export * from "./anomaly-widget";
+export * from "./ml-findings-widget";
 export * from "./rtu-writes";
 export * from "./rule-writes";
 export * from "./notification-writes";
@@ -153,5 +154,17 @@ export * from "../tariffs/compute-bill";
 // `E1.4a` (ADR 0135 Amendment 3): the forecast read contracts and their types.
 export * from "./ml-forecasts";
 export * from "./ml-anomalies";
+export * from "./ml-findings";
+// `E1.8a` (ADR 0050 Amendment 5): the health inputs and bad-actors contracts, the penalty and the advisory figure.
+export * from "./asset-health-inputs";
 // `E2.3` (ADR 0136): the root-cause suggestions response and its types.
 export * from "./alarm-root-cause";
+// `E1.6a` (ADR 0137): the optimisation advisories response and its types.
+export * from "./advisories";
+// `E1.5a` (ADR 0138): the degradation-trends response and its types.
+export * from "./degradation";
+// `F1.2` (ADR 0141 decisions 12–14): the device profile bodies and responses and their types.
+export * from "./device-profiles";
+// `F1.2` (ADR 0141 decisions 10, 15): the RTU Modbus bind and the organization default poll interval.
+export * from "./rtu-modbus";
+export * from "./organization-poll-interval";

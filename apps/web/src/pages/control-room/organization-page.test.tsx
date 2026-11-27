@@ -2,6 +2,8 @@
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aHeaderClickFiltersTheMap,
+  aMoveToAnotherOrganizationClearsTheFilter,
   anotherOrganizationMountsANewSiteMap,
   aPendingKpiReadRendersNoPanels,
   anUnreadableOrganizationRendersNoPanels,
@@ -13,7 +15,9 @@ import {
   aPendingKpiReadShowsOnlyTheLoadingLine,
   anUnreadableOrganizationShowsTheEmptyCard,
   cleanupPage,
+  theHeadingsCountSitesAndALiveGroupMovesWhole,
   theMapIsSyncedToTheSiteRead,
+  theSubtitleCountsTwelveSites,
   everySiteLiveRendersNoNotLiveGroup,
   liveSitesComeFirstInTheirOwnGroup,
   theStripPercentsAddUpTo100,
@@ -30,6 +34,9 @@ import {
   theSiteMapReadsByTheOrganizationId,
   theSiteMapSitsAboveTheSiteCards,
   theCostChartSitsBetweenTheAlarmsAndAssetHealth,
+  theFindingsCardSitsDirectlyAboveAssetHealth,
+  theBadActorsCardSitsDirectlyAfterAssetHealth,
+  theDegradationCardFollowsBadActors,
   theLoadCardAndKwTileFollowTheSites,
 } from "./organization-page.spec";
 
@@ -134,6 +141,18 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
     await theCostChartSitsBetweenTheAlarmsAndAssetHealth();
   });
 
+  it("P11 draws one compact findings card for the organization directly above Asset health (E1.9e, E1.9g)", async () => {
+    await theFindingsCardSitsDirectlyAboveAssetHealth();
+  });
+
+  it("P12 draws one Bad actors card directly after Asset health, the load trend after it (E1.8c, E1.9g)", async () => {
+    await theBadActorsCardSitsDirectlyAfterAssetHealth();
+  });
+
+  it("P13 draws one Trending toward a limit card after Bad actors, fresh per organization (E1.5b)", async () => {
+    await theDegradationCardFollowsBadActors();
+  });
+
   it("L2 shows the live sites first, in their own group (F4.259)", async () => {
     await liveSitesComeFirstInTheirOwnGroup();
   });
@@ -166,5 +185,27 @@ describe("F4.375 — the organization page follows its sites' energy (ADR 0133 A
 
   it("one site shows energy: the load card and the kW tile stay", async () => {
     await theLoadCardAndKwTileFollowTheSites(true);
+  });
+});
+
+describe("F4.240 — site cards grouped under their parent (ADR 0139 decisions 13–16)", () => {
+  afterEach(() => {
+    cleanupPage();
+  });
+
+  it("GP1 reads '12 sites' in the subtitle and draws no card for a station", async () => {
+    await theSubtitleCountsTwelveSites();
+  });
+
+  it("GP2 sets the map's filter to the parent a header click names; a second click clears it", async () => {
+    await aHeaderClickFiltersTheMap();
+  });
+
+  it("GP3 counts sites in the headings; a group with one live site sits under Live, whole", async () => {
+    await theHeadingsCountSitesAndALiveGroupMovesWhole();
+  });
+
+  it("GP4 clears the map's filter on a move to another organization", async () => {
+    await aMoveToAnotherOrganizationClearsTheFilter();
   });
 });

@@ -51,6 +51,8 @@ import {
   topicHasWildcard,
 } from "./onboarding-chat-summaries";
 import { guidedWrite } from "./onboarding-guided-writes";
+import { INGEST_ON_REPLY, INGEST_ON_TURN, ingestOnTurn, PROFILE_TURN, profileTurn } from "./onboarding-chat-profile";
+import type { DeviceProfileLookup } from "./onboarding-device-profiles";
 import type { ValidateTemplateContext } from "./onboarding-template-refs";
 import type { CredentialCopyProposal, DiscoveryProposal, DiscoverySecretCopy } from "./onboarding-tool-outcome";
 import type { OnboardingDraftInput } from "./onboarding.schema";
@@ -109,6 +111,12 @@ export type RuleBasedTurnDeps = {
    */
   readonly tools: ToolContext;
   readonly catalogService: Pick<OnboardingCatalogService, "listPointKeys" | "formatPointKeysForChat">;
+  /**
+   * F1.2 plan PR 11 (ADR 0141 decision 23): resolves a `profile: <code>` turn's code to the
+   * organization's newest profile version. `OnboardingService.chat` always supplies it; a spec
+   * that never takes a profile turn may leave it out, and the turn then refuses.
+   */
+  readonly deviceProfiles?: DeviceProfileLookup;
   readonly finalizeTurn: (
     assistantMessage: string,
     draftPatch: OnboardingDraftInput,
@@ -284,6 +292,27 @@ export async function handleRuleBasedTurn(
     const prompt = stepPrompt(derived, draft, types, turn.placement);
     return deps.finalizeTurn(`I did not change the draft. ${error} ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
   };
+
+  // F1.2 plan PR 11 (ADR 0141 decision 23): `profile: <code> [for <RTU>]` names a device profile on
+  // a Modbus TCP RTU, and `ingest on [for <RTU>]` switches ingest on at commit for one naming a profile.
+  // First, so neither is read as a location name, a protocol or a step label.
+  const profileMatch = message.trim().match(PROFILE_TURN);
+  const ingestMatch = message.trim().match(INGEST_ON_TURN);
+  if (profileMatch || ingestMatch) {
+    const outcome = profileMatch
+      ? await profileTurn(profileMatch[1], profileMatch[2], draft, state, deps.tools, deps.deviceProfiles)
+      : await ingestOnTurn(ingestMatch?.[1], draft, state, deps.tools);
+    if (!outcome.ok) {
+      return refused(outcome.error);
+    }
+    const merged = state.working;
+    patch.rtus = merged.rtus;
+    const next = deps.validateService.inferPhase(merged, types.map((t) => t.code), turn.placement, turn.templates.pointKeys);
+    const prompt = stepPrompt(next, merged, types, turn.placement);
+    const replies = outcome.offerIngestOn ? [INGEST_ON_REPLY, ...prompt.replies] : prompt.replies;
+    const result = deps.finalizeTurn(`${outcome.text} ${prompt.text}`, patch, next, replies, message, draft, turn);
+    return { ...result, actionLines: [outcome.actionLine] };
+  }
 
   // Anchored and phase-gated: before the point-key step this switched the
   // draft to the existing keys from a step it had not reached.
@@ -567,7 +596,11 @@ export async function handleRuleBasedTurn(
     const result = deps.finalizeTurn(
       protocol === "mqtt"
         ? MQTT_RTU_ADDED_REPLY
-        : `Added ${protocol} RTU. Ingest adapter is not connected yet — config will be stored. Say **kw** to add the catalog key **kw**.`,
+        : protocolCatalogEntry(protocol).ingestWired
+          ? // F1.2 (plan T4.6, ruling P11; PR 11, decision 23): the draft may name a device
+            // profile now; without one the RTU is committed with ingest off.
+            `Added ${protocol} RTU. Say **profile: <code>** to name one of this organization's device profiles: its registers are copied at commit and ingest can be switched on. Without one it is committed with ingest off, and a profile can be bound on the RTUs page later. Say **kw** to add the catalog key **kw**.`
+          : `Added ${protocol} RTU. Ingest adapter is not connected yet — config will be stored. Say **kw** to add the catalog key **kw**.`,
       patch,
       "point_keys",
       addedRtuReplies(deps, state.working, turn),

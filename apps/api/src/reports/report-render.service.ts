@@ -91,7 +91,7 @@ export type TrendPointsSummary = { readonly points: number; readonly leftOut: nu
 /** The four fixed delivery sentences this service composes (R-11). None carries an address, a filename or the schedule name. */
 export const NO_CHANNEL_SENTENCE = "no channel configured";
 export const CHANNEL_UNAVAILABLE_SENTENCE = "channel unavailable";
-export const NO_HISTORY_URL_SENTENCE = "Open Reports & Analytics in IONSiTE NEXUS to download the files.";
+export const NO_HISTORY_URL_SENTENCE = "Open Reports & Analytics in Verve to download the files.";
 
 export function sendFailedSentence(recipients: number, attachments: number): string {
   return `email send failed (recipients=${recipients}, attachments=${attachments})`;

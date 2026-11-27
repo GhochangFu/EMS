@@ -7,6 +7,7 @@ import {
   theMapReReadsWithTheSiteRead,
   aFailedPollKeepsTheMap,
   aFailedReadShowsTheErrorState,
+  aRootIdFromThePageReadsTheSubtree,
   anOrganizationWithNoPinShowsTheEmptyState,
   aPendingReadShowsTheLoadingLine,
   cleanupSiteMap,
@@ -72,5 +73,9 @@ describe("F3.79 OrganizationSiteMap", () => {
 
   it("S11 mounts a cached map with one read (F4.260)", async () => {
     await aCachedMapMountsWithOneRead();
+  });
+
+  it("S12 reads the subtree of a rootId the page hands in (F4.240)", async () => {
+    await aRootIdFromThePageReadsTheSubtree();
   });
 });

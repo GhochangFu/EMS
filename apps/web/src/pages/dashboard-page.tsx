@@ -10,6 +10,7 @@ import {
   distinctOrganizations,
   filterByOrganization,
   groupByOrganization,
+  groupSitesByParent,
   type OrgFilter,
 } from "../lib/location-kpi-groups";
 import { AppShell } from "../layouts/app-shell";
@@ -17,10 +18,10 @@ import type { AuthUser } from "../stores/auth-store";
 import { KpiTile } from "../components/kpi-tile";
 import { WidgetIconGlyph } from "../components/widget-icon";
 import { LoadTrendChart } from "../components/load-trend-chart";
-import { LocationKpiCard } from "../components/location-kpi-card";
 import { OrganizationCardGrid } from "../components/control-room/organization-card-grid";
 import { ScopedDashboardsList } from "../components/control-room/scoped-dashboards-list";
 import { OrgLocationAccordion } from "../components/org-location-accordion";
+import { SiteCardGroups } from "../components/control-room/site-card-groups";
 import { HealthSummarySection } from "../components/asset-health/health-summary-section";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
@@ -54,7 +55,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
   } = useExecutiveDashboard();
   const locationQ = useQuery({
     queryKey: ["dashboard", "locations"],
-    queryFn: fetchLocationKpis,
+    queryFn: ({ signal }) => fetchLocationKpis(signal),
     refetchInterval: 8000,
   });
   const [orgFilter, setOrgFilter] = useState<OrgFilter>("all");
@@ -292,10 +293,13 @@ export function DashboardPage({ user }: DashboardPageProps) {
               ) : orgFilter === "all" ? (
                 <OrgLocationAccordion groups={groupedLocations} />
               ) : (
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {filteredLocations.map((location) => (
-                    <LocationKpiCard key={location.id} location={location} />
-                  ))}
+                // `F4.240` (ADR 0139, owner ruling Q1) — one organization's cards, grouped under
+                // their parent; the header is a heading (no parent-filtered map on this page).
+                <div className="space-y-3">
+                  <SiteCardGroups
+                    grouped={groupSitesByParent(filteredLocations)}
+                    gridClassName="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+                  />
                 </div>
               )}
             </>

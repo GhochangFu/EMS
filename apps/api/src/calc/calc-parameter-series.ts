@@ -20,17 +20,26 @@ export type ParameterSeriesRow = {
 export const ORGANIZATION_RANK = 1_000_000;
 
 /**
- * The value in force at `tMs` — the row whose `[fromMs, toMs)` holds `tMs`
- * with the lowest `rank`; `undefined` when no row holds it. `series` must be
- * sorted by `rank` ascending (the read returns it so), so the first row that
- * holds `tMs` is the one the point read would have served. No default: an
- * instant no row covers is absent, as in `resolveForAssets`.
+ * The row in force at `tMs` — the row whose `[fromMs, toMs)` holds `tMs` with
+ * the lowest `rank`; `undefined` when no row holds it. `series` must be sorted
+ * by `rank` ascending (the read returns it so), so the first row that holds
+ * `tMs` is the one the point read would have served. `E1.6a` (plan R-p) reads
+ * the row itself so an assumption can name its scope and date.
  */
-export function parameterValueAt(series: readonly ParameterSeriesRow[], tMs: number): number | undefined {
+export function parameterRowAt(series: readonly ParameterSeriesRow[], tMs: number): ParameterSeriesRow | undefined {
   for (const row of series) {
     if (row.fromMs <= tMs && (row.toMs === null || tMs < row.toMs)) {
-      return row.value;
+      return row;
     }
   }
   return undefined;
+}
+
+/**
+ * The value in force at `tMs` ({@link parameterRowAt}'s row's value);
+ * `undefined` when no row holds it. No default: an instant no row covers is
+ * absent, as in `resolveForAssets`.
+ */
+export function parameterValueAt(series: readonly ParameterSeriesRow[], tMs: number): number | undefined {
+  return parameterRowAt(series, tMs)?.value;
 }

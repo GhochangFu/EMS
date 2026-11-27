@@ -56,6 +56,8 @@ export const moduleGroups = [
       { label: "Forecasts", path: "/forecasts" },
       // `E1.2c` (ADR 0135 Amendment 5 ruling 4(a), plan §8): every signed-in user; advisory scores.
       { label: "Anomalies", path: "/anomalies" },
+      // `E1.6b` (ADR 0137, plan T2.4): every signed-in user; the API filters the advisories.
+      { label: "Advisories", path: "/advisories" },
     ],
   },
   {

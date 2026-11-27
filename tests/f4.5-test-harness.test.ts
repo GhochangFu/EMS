@@ -5,6 +5,7 @@ import {
   buildTemplate,
   copyDatabase,
   databaseScopedProvisioning,
+  dropDatabaseIfExists,
   dropRunDatabases,
 } from "./harness/template-database";
 import { dockerDecides, testInfraMode } from "./harness/test-infra-mode";
@@ -233,6 +234,24 @@ describe("database-name guards", () => {
   it("allows run-prefixed names on either server", () => {
     expect(assertDatabaseName("bms_tab12cd_w3", "external")).toBe("bms_tab12cd_w3");
     expect(assertDatabaseName("bms_tab12cd_template", "own-container")).toBe("bms_tab12cd_template");
+  });
+
+  // A suite that cannot share its worker's copy makes its own, `<worker database>_<suite>`
+  // (`F4.388`). The end-of-run drop on an external server must accept it, or a copy that
+  // outlived its suite stops that drop part way.
+  it("allows a per-suite copy of a worker database, under the same prefix rules", () => {
+    expect(assertDatabaseName("bms_tab12cd_w3_f4388", "external")).toBe("bms_tab12cd_w3_f4388");
+    expect(assertDatabaseName("bms_w3_f4388", "own-container")).toBe("bms_w3_f4388");
+    expect(() => assertDatabaseName("bms_w3_f4388", "external")).toThrow(/refusing/);
+    expect(() => assertDatabaseName("bms_tab12cd_template_f4388", "external")).toThrow(/refusing/);
+    expect(() => assertDatabaseName("bms_tab12cd_shared_f4388", "external")).toThrow(/refusing/);
+    expect(() => assertDatabaseName("bms_tab12cd_w3_", "external")).toThrow(/refusing/);
+    expect(() => assertDatabaseName("bms_tab12cd_w3_F4388", "external")).toThrow(/refusing/);
+  });
+
+  it("refuses to drop a per-suite copy outside the run's prefix", async () => {
+    await expect(dropDatabaseIfExists(NOWHERE, "bms_w3_f4388", "external")).rejects.toThrow(/refusing/);
+    await expect(dropDatabaseIfExists(NOWHERE, "bms", "own-container")).rejects.toThrow(/refusing/);
   });
 
   it("refuses a name that could carry SQL", async () => {

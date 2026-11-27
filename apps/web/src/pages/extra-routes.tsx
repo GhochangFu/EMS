@@ -1,5 +1,6 @@
 import { Route } from "react-router-dom";
 
+import { AdvisoriesRoute } from "./advisories-route";
 import { AnomaliesRoute } from "./anomalies-route";
 import { ForecastsRoute } from "./forecasts-route";
 
@@ -12,10 +13,12 @@ import { ForecastsRoute } from "./forecasts-route";
  *
  * - `E1.4b` (ADR 0135 Amendment 3 R-e): `/forecasts` (`forecasts-route.tsx`).
  * - `E1.2c` (ADR 0135 Amendment 5 ruling 4(a)): `/anomalies` (`anomalies-route.tsx`).
+ * - `E1.6b` (ADR 0137): `/advisories` (`advisories-route.tsx`).
  */
 export const EXTRA_ROUTES = (
   <>
     <Route path="/forecasts" element={<ForecastsRoute />} />
     <Route path="/anomalies" element={<AnomaliesRoute />} />
+    <Route path="/advisories" element={<AdvisoriesRoute />} />
   </>
 );

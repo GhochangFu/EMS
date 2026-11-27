@@ -30,7 +30,7 @@ import { EdgeGatewaysAdminService } from "./edge-gateways.service";
  * `bms_auth`, and the audit service holds the tenant and fleet pools.
  *
  * Fixtures: in the seeded organization admin's organization, six RTUs (two the
- * edge may serve, one with no `rtu_code`, one `modbus_tcp`, one whose asset the
+ * edge may serve, one with no `rtu_code`, one `snmp` (no adapter), one whose asset the
  * simulator feeds) and one RTU in another organization; two assets. Every code
  * carries the run's `e72gw-<stamp>`; cleanup is by the ids created, never a
  * prefix sweep (`tests/integration-fixture-isolation`).
@@ -154,7 +154,8 @@ describe.skipIf(!connectionString)("E7.2 — the edge gateway admin service", ()
     const ok1 = await rtu("ok1");
     const ok2 = await rtu("ok2");
     const noCode = await rtu("nocode", { rtuCode: false });
-    const modbus = await rtu("modbus", { sourceType: "catalog", protocol: "modbus_tcp" });
+    // F1.2 wired Modbus TCP, so SNMP stands for "a protocol with no adapter" now.
+    const noAdapter = await rtu("noadapter", { sourceType: "catalog", protocol: "snmp" });
     const simulatorFed = await rtu("simfed");
     const foreign = await rtu("foreign", { orgId: foreignOrganizationId, locId: foreignLocationId });
     const inactive = await rtu("inactive", { active: false });
@@ -192,7 +193,7 @@ describe.skipIf(!connectionString)("E7.2 — the edge gateway admin service", ()
       organizationId,
       locationId,
       foreignLocationId,
-      rtus: { ok1, ok2, noCode, modbus, simulatorFed, foreign, inactive, ingestOff },
+      rtus: { ok1, ok2, noCode, noAdapter, simulatorFed, foreign, inactive, ingestOff },
       switchedOff: { organizationId: offOrganizationId, rtuId: offRtu },
       ok1AssetId,
       gatewayIds,

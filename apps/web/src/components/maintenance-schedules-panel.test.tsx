@@ -3,7 +3,11 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aFailedDegradationReadLeavesThePanel,
+  aFailedRefetchHidesAnEarlierNote,
   aRefusedConvertShowsTheSentence,
+  aScheduleWithANoteShowsIt,
+  aScheduleWithNoNoteShowsNone,
   deactivateMountsTheToggleStepper,
   highAndMediumPillsDiffer,
   newScheduleMountsTheCreateStepper,
@@ -68,5 +72,29 @@ describe("F4.204 maintenance-schedule refusals read as a sentence, not the respo
 
   it("F4.316: the row's where part wraps instead of truncating", async () => {
     await theRowsWherePartWraps();
+  });
+});
+
+describe("E1.5b a trend note beside a maintenance schedule (ADR 0138 decision 4)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("a schedule whose id has a note shows it, with the Advisory pill, in that schedule's card", async () => {
+    await aScheduleWithANoteShowsIt();
+  });
+
+  it("a schedule with no note shows none, even beside one of the same asset that has one", async () => {
+    await aScheduleWithNoNoteShowsNone();
+  });
+
+  it("a failed degradation read leaves the panel as it is", async () => {
+    await aFailedDegradationReadLeavesThePanel();
+  });
+
+  it("a failed refetch hides an earlier note", async () => {
+    await aFailedRefetchHidesAnEarlierNote();
   });
 });

@@ -420,7 +420,8 @@ const HEADER_ARRAYS: Readonly<Record<string, string>> = {
 // F4.243 (ADR 0098 Amendment 2, B8): LOCATION gained `parent_code`, guarded by `refuseIfTooLong`.
 // F4.304 (ADR 0108 Amendment 5 item 6): LOCATION gained `floor_area` and `floor_area_unit`,
 // both bounded elsewhere (below).
-const HEADER_COUNTS: Readonly<Record<string, number>> = { LOCATION: 10, RTUS: 9, ASSETS: 5 };
+// F1.2 plan PR 11 (ADR 0141 decision 23): RTUS gained `unit_id` and `profile_code`, both bounded elsewhere (below).
+const HEADER_COUNTS: Readonly<Record<string, number>> = { LOCATION: 10, RTUS: 11, ASSETS: 5 };
 
 /**
  * The one guard call that covers two columns, and must keep covering both.
@@ -511,6 +512,10 @@ const BOUNDED_ELSEWHERE: Readonly<Record<string, Readonly<Record<string, string>
   RTUS: {
     topic: "topic.length > MAX_RTU_TOPIC_CHARS",
     protocol: "onboardingProtocolSchema.safeParse(",
+    // F1.2 plan PR 11: one to three digits, then `Number.parseInt` — no cell text survives.
+    unit_id: "UNIT_ID_CELL.test(unitIdCell)",
+    // F1.2 plan PR 11: the profile code class (at most 64); the upload resolves it to an id.
+    profile_code: "deviceProfileCodeSchema.safeParse(profileCode)",
   },
   ASSETS: {},
 };

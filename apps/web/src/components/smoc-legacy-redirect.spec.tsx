@@ -57,6 +57,7 @@ function site(opts: {
     openAlarms: 0,
     criticalAlarms: 0,
     scopeLabel: "full",
+    parentId: null,
   });
 }
 
@@ -147,6 +148,8 @@ export async function noReadReachesTheNetwork(): Promise<void> {
   renderRedirect(ADMIN_ITEMS);
   await screen.findByText(/landed on/);
   expect(locationsApi.fetchLocationKpis).toHaveBeenCalledTimes(1);
+  // F4.390: the query's abort signal reaches the fetcher (a `() => fetchLocationKpis()` would forward none).
+  expect(locationsApi.fetchLocationKpis).toHaveBeenCalledWith(expect.any(AbortSignal));
 }
 
 /** Unmounts, restores the spies, and fails the case if a read reached the network. */

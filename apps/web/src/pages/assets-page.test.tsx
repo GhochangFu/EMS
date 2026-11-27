@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aCoveredAssetsPanelShowsTheMaintenanceBadge,
+  aRejectedInputsReadLeavesTheCardAsToday,
   anUncoveredAssetsPanelShowsNoMaintenanceBadge,
   adminSeesTheOperatorAssetsLinkAndTheSitesArea,
   clickingARowOpensThePanelForThatRow,
@@ -16,7 +17,10 @@ import {
   panelLinksToTheAssetHistory,
   panelListsDashboardsWithSlugLinks,
   panelShowsTheHealthCard,
+  panelShowsTheHealthInputs,
   panelShowsTheKpisCard,
+  theHealthAndInputsReadsDoNotWaitForEachOther,
+  theTrendLineShowsOnlyForAHealthCrossing,
   viewerSeesAssetsUnderOperations,
 } from "./assets-page.spec";
 
@@ -53,6 +57,22 @@ describe("F3.31 assets browser page", () => {
 
   it("P5 — the panel shows the health card", async () => {
     await panelShowsTheHealthCard();
+  });
+
+  it("E1.8b — the panel shows the health card's five inputs", async () => {
+    await panelShowsTheHealthInputs();
+  });
+
+  it("E1.8b — a rejected inputs read leaves the card as it was, with no error text", async () => {
+    await aRejectedInputsReadLeavesTheCardAsToday();
+  });
+
+  it("E1.8b — the health and inputs reads do not wait for each other", async () => {
+    await theHealthAndInputsReadsDoNotWaitForEachOther();
+  });
+
+  it("E1.5b — the health card's trend line shows only for a health crossing", async () => {
+    await theTrendLineShowsOnlyForAHealthCrossing();
   });
 
   it("P6 — the domain select and the text filter narrow the table", async () => {

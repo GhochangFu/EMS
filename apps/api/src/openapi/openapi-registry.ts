@@ -75,6 +75,15 @@ import {
   createEdgeGatewayBodySchema,
   putEdgeGatewayRtusBodySchema,
   updateEdgeGatewayBodySchema,
+  // `F1.2` (ADR 0141 decisions 12-14): the device profile bodies and the list query.
+  copyDeviceProfileBodySchema,
+  createDeviceProfileBodySchema,
+  importStockDeviceProfileBodySchema,
+  listDeviceProfilesQuerySchema,
+  saveDeviceProfileVersionBodySchema,
+  // `F1.2` (ADR 0141 decisions 10, 15): the RTU Modbus bind and the organization default interval.
+  setOrganizationPollIntervalBodySchema,
+  setRtuModbusBodySchema,
   // `F4.365` (ADR 0134): the tariff reads and the location mapping bodies.
   createLocationTariffBodySchema,
   createTariffVersionBodySchema,
@@ -162,7 +171,17 @@ import { mimicLayoutPreviewQuerySchema } from "../mimic-layouts/mimic-layouts.sc
 import { listMaintenanceQuerySchema } from "../maintenance/maintenance.schema";
 import { maintenanceWindowListQuerySchema } from "../maintenance-windows/maintenance-windows.schema";
 import { listReportFilesQuerySchema } from "../reports/report-files.schema";
-import { anomaliesQuerySchema, assetAnomaliesQuerySchema, pastForecastQuerySchema } from "../ml/ml.schema";
+import {
+  anomaliesQuerySchema,
+  assetAnomaliesQuerySchema,
+  forecastListQuerySchema,
+  mlFindingsSummaryQuerySchema,
+  pastForecastQuerySchema,
+} from "../ml/ml.schema";
+import { findingsParagraphQuerySchema } from "../ml-findings/findings-paragraph.schema";
+import { advisoriesQuerySchema } from "../advisories/advisories.schema";
+import { degradationQuerySchema } from "../degradation/degradation.schema";
+import { healthBadActorsQuerySchema } from "../asset-health/health-inputs.schema";
 // `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`;
 // `F4.284`: the alarm, work-order and convert bodies too.
 import {
@@ -289,6 +308,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AssetsController_listKpis: assetKpisQuerySchema,
   AssetHealthController_forAsset: assetHealthQuerySchema,
   AssetHealthController_summary: healthSummaryQuerySchema,
+  // `E1.8a` (ADR 0050 Amendment 5, plan R-d): the summary's two scope keys, `.strict()`, no window.
+  // `HealthInputsController_forAsset` takes no query.
+  HealthInputsController_badActors: healthBadActorsQuerySchema,
   // `F2.10` (ADR 0098 decision 11, B4, B12) — the org map's optional subtree filter.
   MapController_sites: mapSitesQuerySchema,
   AssetsAdminController_create: createAssetBodySchema,
@@ -351,6 +373,12 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   EdgeGatewaysAdminController_create: createEdgeGatewayBodySchema,
   EdgeGatewaysAdminController_replaceRtus: putEdgeGatewayRtusBodySchema,
   EdgeGatewaysAdminController_update: updateEdgeGatewayBodySchema,
+  // `F1.2` (ADR 0141 decisions 12-14): `getById` and `listStock` carry no body and no query.
+  DeviceProfilesAdminController_list: listDeviceProfilesQuerySchema,
+  DeviceProfilesAdminController_create: createDeviceProfileBodySchema,
+  DeviceProfilesAdminController_saveVersion: saveDeviceProfileVersionBodySchema,
+  DeviceProfilesAdminController_copy: copyDeviceProfileBodySchema,
+  DeviceProfilesAdminController_importStock: importStockDeviceProfileBodySchema,
   LocationsAdminController_create: createLocationBodySchema,
   LocationsAdminController_update: updateLocationBodySchema,
   // `F4.162` (ADR 0077 Amendment 1, plan D1/D4) — the two `.strict()` bodies
@@ -421,6 +449,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   OrganizationsAdminController_setAppearance: setOrganizationAppearanceBodySchema,
   // `F4.375` (ADR 0133 Amendment 2 ruling 3): the energy settings' one write path, `.strict()`.
   OrganizationsAdminController_setEnergySettings: setOrganizationEnergySettingsBodySchema,
+  // `F1.2` (ADR 0141 decision 10, Amendment 1 (c), plan T7.3): the organization default interval.
+  OrganizationsAdminController_setPollInterval: setOrganizationPollIntervalBodySchema,
   PortalSettingsController_setAppearance: setPortalAppearanceBodySchema,
   MeController_setAppearance: setMyAppearanceBodySchema,
   // `F4.300` (ADR 0108 decision 3.7). `_forOrganization` and `SiteTrendPointsController_forSite`
@@ -478,6 +508,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   RtusAdminController_update: updateRtuBodySchema,
   // `F4.333` (ADR 0129 decision 2): the write-only credential replace.
   RtusAdminController_replaceCredentials: replaceRtuCredentialsBodySchema,
+  // `F1.2` (ADR 0141 decision 15, plan T7.2): the Modbus bind; the service parses it.
+  RtusAdminController_setModbus: setRtuModbusBodySchema,
   RulesController_archiveRule: ruleLifecycleBodySchema,
   RulesController_createDraft: ruleDraftBodySchema,
   // `F4.289`: `POST /rules/batch` (excluded from the copilot catalog until PR 2).
@@ -499,12 +531,24 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   LocationTariffsController_create: createLocationTariffBodySchema,
   LocationTariffsController_update: updateLocationTariffBodySchema,
   // `E1.4e` (ADR 0135 Amendment 4): the past forecast's `from`/`to` window, `.strict()`, no body.
-  // `MlController_pointForecast` and `_list` take no body and no query.
+  // `MlController_pointForecast` takes no body and no query.
   MlController_pastForecast: pastForecastQuerySchema,
   // `E1.2b` (ADR 0135 Amendment 5 A-e): the one-asset anomaly window (`from`/`to`, at most 31 days)
   // and the list's optional `since`, both `.strict()`, no body.
   MlController_assetAnomalies: assetAnomaliesQuerySchema,
   MlController_anomalies: anomaliesQuerySchema,
+  // `E1.9a` (ADR 0135 Amendment 8 decisions 8 and 10): the forecast list's `organizationId` and
+  // `locationId`, and the two findings summaries' four scope keys — each `.strict()`, no body.
+  MlController_list: forecastListQuerySchema,
+  MlFindingsController_forecastSummary: mlFindingsSummaryQuerySchema,
+  MlFindingsController_anomalySummary: mlFindingsSummaryQuerySchema,
+  // `E1.9c` (ADR 0135 Amendment 8 decision 10, plan R-c): the paragraph's required `kind` and the
+  // summaries' four scope keys, `.strict()`, no body.
+  FindingsParagraphController_get: findingsParagraphQuerySchema,
+  // `E1.6a` (ADR 0137): the advisories' `organizationId` and `locationId`, `.strict()`, no body.
+  AdvisoriesController_list: advisoriesQuerySchema,
+  // `E1.5a` (ADR 0138): the degradation list's `organizationId` and `locationId`, `.strict()`, no body.
+  DegradationController_list: degradationQuerySchema,
   // `F4.365` U6 (ADR 0134 Amendment 1): the organization version bodies; DELETE carries `?reason=`.
   AdminTariffVersionsController_create: createTariffVersionBodySchema,
   AdminTariffVersionsController_update: updateTariffVersionBodySchema,

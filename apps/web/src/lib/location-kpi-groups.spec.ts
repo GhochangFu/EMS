@@ -4,9 +4,16 @@ import type { LocationKpiSummary } from "@bms/shared";
 import {
   anyEnergyShown,
   groupByOrganization,
+  groupSitesByParent,
   hasLiveTelemetry,
   orgSectionSummary,
+  sectionKw,
+  siteGroupRollup,
+  siteGroupRollupText,
+  siteLocations,
   splitByLiveTelemetry,
+  splitGroupsByLive,
+  stationGroupOf,
 } from "./location-kpi-groups";
 
 function assert(condition: boolean, message: string): void {
@@ -22,6 +29,9 @@ function site(opts: {
   freshAssetCount?: number;
   totalKw?: number | null;
   energyShown?: boolean;
+  assetCount?: number;
+  openAlarms?: number;
+  parentId?: string | null;
 }): LocationKpiSummary {
   return locationKpiSummarySchema.parse({
     id: opts.id,
@@ -32,15 +42,16 @@ function site(opts: {
     province: null,
     organization: opts.organization,
     rtuCount: 0,
-    assetCount: 1,
+    assetCount: opts.assetCount ?? 1,
     freshAssetCount: opts.freshAssetCount ?? 1,
     totalKw: opts.totalKw === undefined ? 0 : opts.totalKw,
     energyShown: opts.energyShown ?? true,
     primaryMetric: opts.energyShown === false ? "health" : "kw",
     healthScore: null,
-    openAlarms: 0,
+    openAlarms: opts.openAlarms ?? 0,
     criticalAlarms: 0,
     scopeLabel: "full",
+    parentId: opts.parentId ?? null,
   });
 }
 
@@ -136,4 +147,234 @@ export function runK7(): void {
   assert(anyEnergyShown([hidden, shown]), "one shown location must answer true");
   assert(!anyEnergyShown([hidden]), "only hidden locations must answer false");
   assert(!anyEnergyShown([]), "no location must answer false");
+}
+
+// ---------------------------------------------------------------------------
+// `F4.240` (ADR 0139 decisions 13–16, plan D11) — site cards grouped under their parent.
+// ---------------------------------------------------------------------------
+
+const ids = (list: readonly LocationKpiSummary[]) => list.map((l) => l.id).join(",");
+
+/** An asset-less parent: no asset, so no fresh asset. */
+function parent(id: string, name: string, parentId: string | null = null): LocationKpiSummary {
+  return site({ id, name, organization: ORG_A, assetCount: 0, freshAssetCount: 0, totalKw: null, parentId });
+}
+
+/** Six asset-less stations over twelve RTU sites (PHEWB after release C); `s1-1` alone is live. */
+function phewbSplit(): LocationKpiSummary[] {
+  const items: LocationKpiSummary[] = [];
+  for (let station = 1; station <= 6; station += 1) {
+    items.push(parent(`s${station}`, `Station ${station}`));
+    for (const rtu of [1, 2]) {
+      items.push(
+        site({
+          id: `s${station}-${rtu}`,
+          name: `Station ${station} ${rtu === 1 ? "I" : "II"}`,
+          organization: ORG_A,
+          assetCount: 4,
+          freshAssetCount: station === 1 && rtu === 1 ? 4 : 0,
+          parentId: `s${station}`,
+        }),
+      );
+    }
+  }
+  return items;
+}
+
+/** `G1` — no item has a parent: no group, every item loose in the input order, the summary as today. */
+export function runG1(): void {
+  const items = [
+    site({ id: "a2", name: "A2", organization: ORG_A, freshAssetCount: 0 }),
+    site({ id: "a1", name: "A1", organization: ORG_A }),
+    site({ id: "a3", name: "A3", organization: ORG_A, assetCount: 0, freshAssetCount: 0 }),
+  ];
+  const grouped = groupSitesByParent(items);
+  assert(grouped.groups.length === 0, `no item has a parent, so no group — got ${grouped.groups.length}`);
+  assert(ids(grouped.loose) === "a2,a1,a3", `every item loose in input order — got ${ids(grouped.loose)}`);
+  const summary = orgSectionSummary(items);
+  assert(
+    summary.locationCount === 3 && summary.freshLocationCount === 1,
+    `a flat list counts every item — got ${JSON.stringify(summary)}`,
+  );
+}
+
+/**
+ * `G2` — six asset-less parents over twelve children: 12 sites, 6 groups, no loose card, no card
+ * for a parent; the summary counts 12 sites and one fresh site.
+ */
+export function runG2(): void {
+  const items = phewbSplit();
+  assert(siteLocations(items).length === 12, `12 sites, not 18 — got ${siteLocations(items).length}`);
+  const grouped = groupSitesByParent(items);
+  assert(grouped.groups.length === 6, `6 groups — got ${grouped.groups.length}`);
+  assert(grouped.loose.length === 0, `no loose card — got ${ids(grouped.loose)}`);
+  const cards = grouped.groups.flatMap((group) => group.sites);
+  assert(cards.length === 12, `12 cards — got ${cards.length}`);
+  assert(!cards.some((card) => /^s\d$/.test(card.id)), `no card for a parent — got ${ids(cards)}`);
+  assert(
+    ids(grouped.groups.map((group) => group.parent)) === "s1,s2,s3,s4,s5,s6",
+    "the groups keep the parents' input order",
+  );
+  assert(ids(grouped.groups[0].sites) === "s1-1,s1-2", `children in input order — got ${ids(grouped.groups[0].sites)}`);
+  const summary = orgSectionSummary(items);
+  assert(summary.locationCount === 12, `locationCount must count sites — got ${summary.locationCount}`);
+  assert(summary.freshLocationCount === 1, `freshLocationCount counts sites — got ${summary.freshLocationCount}`);
+}
+
+/** `G3` — a parent that holds an asset: its own card is first in its group, and it counts as a site. */
+export function runG3(): void {
+  const items = [
+    site({ id: "c1", name: "Child One", organization: ORG_A, parentId: "p" }),
+    site({ id: "p", name: "Parent", organization: ORG_A, assetCount: 2 }),
+    site({ id: "c2", name: "Child Two", organization: ORG_A, parentId: "p" }),
+  ];
+  assert(ids(siteLocations(items)) === "c1,p,c2", `a parent with an asset is a site — got ${ids(siteLocations(items))}`);
+  const grouped = groupSitesByParent(items);
+  assert(grouped.groups.length === 1 && grouped.loose.length === 0, "one group, no loose card");
+  assert(ids(grouped.groups[0].sites) === "p,c1,c2", `the parent's card first — got ${ids(grouped.groups[0].sites)}`);
+  assert(orgSectionSummary(items).locationCount === 3, "three sites");
+}
+
+/** `G4` — the roll-up sums live sites, sites, assets and alarms over the group. */
+export function runG4(): void {
+  const items = [
+    parent("p", "Parent"),
+    site({ id: "c1", name: "C1", organization: ORG_A, assetCount: 4, freshAssetCount: 3, openAlarms: 2, parentId: "p" }),
+    site({ id: "c2", name: "C2", organization: ORG_A, assetCount: 5, freshAssetCount: 0, openAlarms: 1, parentId: "p" }),
+    site({ id: "c3", name: "C3", organization: ORG_A, assetCount: 1, freshAssetCount: 1, openAlarms: 0, parentId: "p" }),
+    site({ id: "x", name: "Other", organization: ORG_A, assetCount: 9, openAlarms: 7 }),
+  ];
+  const [group] = groupSitesByParent(items).groups;
+  const rollup = siteGroupRollup(group);
+  assert(
+    JSON.stringify(rollup) === JSON.stringify({ liveSites: 2, sites: 3, assets: 10, alarms: 3 }),
+    `the roll-up must be 2 of 3 live, 10 assets, 3 alarms — got ${JSON.stringify(rollup)}`,
+  );
+}
+
+/** `G5` — a group with one live site of two is live: the whole group sits in Live. */
+export function runG5(): void {
+  const items = [
+    parent("p", "Parent"),
+    site({ id: "c1", name: "C1", organization: ORG_A, freshAssetCount: 0, parentId: "p" }),
+    site({ id: "c2", name: "C2", organization: ORG_A, freshAssetCount: 1, parentId: "p" }),
+    parent("q", "Quiet"),
+    site({ id: "d1", name: "D1", organization: ORG_A, freshAssetCount: 0, parentId: "q" }),
+    site({ id: "l1", name: "Loose live", organization: ORG_A, freshAssetCount: 1 }),
+    site({ id: "l2", name: "Loose dark", organization: ORG_A, freshAssetCount: 0 }),
+  ];
+  const { live, notLive } = splitGroupsByLive(groupSitesByParent(items));
+  assert(ids(live.groups.map((g) => g.parent)) === "p", "the group with one live site is live");
+  assert(ids(live.groups[0].sites) === "c1,c2", "the whole group moves, its not-live site too");
+  assert(ids(notLive.groups.map((g) => g.parent)) === "q", "the group with no live site is not live");
+  assert(ids(live.loose) === "l1" && ids(notLive.loose) === "l2", "loose cards split by their own state");
+}
+
+/** `G6` — a child whose `parentId` is `null` (an unreadable parent) is loose. */
+export function runG6(): void {
+  const items = [
+    site({ id: "c1", name: "C1", organization: ORG_A, parentId: null }),
+    site({ id: "c2", name: "C2", organization: ORG_A, parentId: null }),
+  ];
+  const grouped = groupSitesByParent(items);
+  assert(grouped.groups.length === 0 && ids(grouped.loose) === "c1,c2", "both children are loose");
+}
+
+/**
+ * `G7` — three levels: the nearest parent is the header; a parent with no card under it (the
+ * grandparent, whose only child is itself a parent) draws no header.
+ */
+export function runG7(): void {
+  const items = [
+    parent("g", "Grandparent"),
+    parent("p", "Parent", "g"),
+    site({ id: "c1", name: "C1", organization: ORG_A, parentId: "p" }),
+    site({ id: "c2", name: "C2", organization: ORG_A, parentId: "p" }),
+  ];
+  const grouped = groupSitesByParent(items);
+  assert(ids(grouped.groups.map((g) => g.parent)) === "p", `only the nearest parent heads a group — got ${ids(grouped.groups.map((g) => g.parent))}`);
+  assert(ids(grouped.groups[0].sites) === "c1,c2" && grouped.loose.length === 0, "the children sit under p");
+  assert(orgSectionSummary(items).locationCount === 2, "two sites");
+}
+
+// ---------------------------------------------------------------------------
+// `F4.240` part b (ADR 0140 decisions 1–2, plan D1–D2) — the station rule and the header's sentence.
+// ---------------------------------------------------------------------------
+
+/** `S1` — an asset-less parent over two sites: its group, the two sites in input order. */
+export function runS1(): void {
+  const items = [
+    parent("st", "Station"),
+    site({ id: "st-1", name: "Station I", organization: ORG_A, parentId: "st" }),
+    site({ id: "x", name: "Other", organization: ORG_A }),
+    site({ id: "st-2", name: "Station II", organization: ORG_A, parentId: "st" }),
+  ];
+  const group = stationGroupOf(items, "st");
+  if (group === null) {
+    throw new Error("an asset-less parent over two sites is a station");
+  }
+  assert(group.parent.id === "st", `the group's parent is the station — got ${group.parent.id}`);
+  assert(ids(group.sites) === "st-1,st-2", `the two sites in input order — got ${ids(group.sites)}`);
+}
+
+/** `S2` — a leaf is no station. */
+export function runS2(): void {
+  const items = [parent("st", "Station"), site({ id: "st-1", name: "Station I", organization: ORG_A, parentId: "st" })];
+  assert(stationGroupOf(items, "st-1") === null, "a leaf gives null");
+}
+
+/** `S3` — a parent that holds assets and has children is a site, not a station. */
+export function runS3(): void {
+  const items = [
+    site({ id: "p", name: "Parent", organization: ORG_A, assetCount: 2 }),
+    site({ id: "c1", name: "C1", organization: ORG_A, parentId: "p" }),
+    site({ id: "c2", name: "C2", organization: ORG_A, parentId: "p" }),
+  ];
+  assert(stationGroupOf(items, "p") === null, "a parent that holds assets gives null");
+}
+
+/** `S4` — an id not in the items gives `null`, whatever groups exist. */
+export function runS4(): void {
+  const items = [parent("st", "Station"), site({ id: "st-1", name: "Station I", organization: ORG_A, parentId: "st" })];
+  assert(stationGroupOf(items, "unknown") === null, "an id not in the items gives null");
+}
+
+/** `S5` — an asset-less grandparent over asset-less parents has no direct site: `null` (plan D1). */
+export function runS5(): void {
+  const items = [
+    parent("g", "Grandparent"),
+    parent("p", "Parent", "g"),
+    site({ id: "c1", name: "C1", organization: ORG_A, parentId: "p" }),
+    site({ id: "c2", name: "C2", organization: ORG_A, parentId: "p" }),
+  ];
+  assert(stationGroupOf(items, "g") === null, "the grandparent keeps today's page");
+  assert(stationGroupOf(items, "p")?.parent.id === "p", "the nearest parent is the station");
+}
+
+/** `S6` — the header's sentence, over the `site-card-groups.spec.tsx` fixture. */
+export function runS6(): void {
+  const items = [
+    site({ id: "loose", name: "Alpha Loose", organization: ORG_A }),
+    site({ id: "lotapata", name: "Lotapata", organization: ORG_A, assetCount: 0, openAlarms: 0 }),
+    site({ id: "lotapata-i", name: "Lotapata I", organization: ORG_A, assetCount: 4, freshAssetCount: 4, openAlarms: 2, parentId: "lotapata" }),
+    site({ id: "lotapata-ii", name: "Lotapata II", organization: ORG_A, assetCount: 4, freshAssetCount: 0, openAlarms: 1, parentId: "lotapata" }),
+  ];
+  const [group] = groupSitesByParent(items).groups;
+  const text = siteGroupRollupText(group);
+  assert(text === "1 of 2 sites live · 8 assets · 3 alarms", `the roll-up sentence — got ${text}`);
+}
+
+/** `S7` — `sectionKw` sums only the sites that show energy, and is `null` when none has a number. */
+export function runS7(): void {
+  const kw = sectionKw([
+    site({ id: "a1", name: "A1", organization: ORG_A, totalKw: 4 }),
+    site({ id: "a2", name: "A2", organization: ORG_A, totalKw: 9, energyShown: false }),
+    site({ id: "a3", name: "A3", organization: ORG_A, totalKw: 1.5 }),
+  ]);
+  assert(kw === 5.5, `only the shown sites' kW — got ${kw}`);
+  const none = sectionKw([
+    site({ id: "a1", name: "A1", organization: ORG_A, totalKw: null }),
+    site({ id: "a2", name: "A2", organization: ORG_A, totalKw: 9, energyShown: false }),
+  ]);
+  assert(none === null, `no shown number gives null — got ${none}`);
 }

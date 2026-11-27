@@ -12,6 +12,7 @@ import {
   isMoneyPointKey,
   rollup,
   rollupCurrency,
+  rollupEnvelopeSql,
 } from "./sustainability-rollup";
 
 /**
@@ -157,4 +158,30 @@ export function capRowsAtTheCapIsNotTruncated(): void {
     { length: MAX_DATASET_ROWS, truncated: false },
     "capRows at the cap",
   );
+}
+
+/** `F4.393` (plan D4): the roll-up's envelope is the widest bound, as one interval literal. */
+export function envelopeIsTheWidestBound(): void {
+  same(rollupEnvelopeSql([180, 10800, 900]), "interval '10800 seconds'", "envelope of 180, 10800, 900 (widest not last)");
+}
+
+/**
+ * `F4.393` (plan D4): a bound that is not a positive safe integer never reaches SQL text — the
+ * envelope throws first. An empty list has no widest bound.
+ */
+export function envelopeRefusesABoundThatIsNotAPositiveInteger(): void {
+  const refused: readonly (readonly number[])[] = [[], [900.5], [0], [-1], [Number.NaN], [Number.POSITIVE_INFINITY]];
+  for (const bounds of refused) {
+    // The message is checked so that a missing export (a `TypeError`) is not a pass.
+    let message = "";
+    try {
+      rollupEnvelopeSql(bounds);
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    assert(
+      message.includes("freshness bound"),
+      `rollupEnvelopeSql(${JSON.stringify(bounds)}) should refuse the bound, got ${JSON.stringify(message)}`,
+    );
+  }
 }

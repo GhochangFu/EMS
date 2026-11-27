@@ -21,6 +21,8 @@ const LLM_VARS = [
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_MODEL",
   "LLM_VISION_MODEL",
+  "ML_FINDINGS_LLM_PROVIDER",
+  "ML_FINDINGS_LLM_MODEL",
 ] as const;
 
 /** Sets the seven A2 variables and LLM_VISION_MODEL (unset unless given) and the credential key, then restores them. */
@@ -56,6 +58,8 @@ function resolver(row: Row | null): { r: LlmResolver; built: Built[]; decrypts: 
   const decrypts = { n: 0 };
   const r = new LlmResolver({} as never, crypto);
   r.readSetting = async () => row;
+  // `E1.9c`: the findings path reads `organizations.active`; the specs' organization is active unless a case says not.
+  r.isOrganizationActive = async () => true;
   const original = r.decryptKey.bind(r);
   r.decryptKey = (stored) => {
     decrypts.n += 1;
@@ -168,6 +172,7 @@ export async function assertNoRowUsesThePlatformDefault(): Promise<void> {
     const resolved = await r.resolveForOrganization("org-1");
     assert(resolved.kind === "ready" && resolved.source === "platform", "no row resolves to the platform");
     assert(JSON.stringify(built) === JSON.stringify([{ name: "openrouter", apiKey: "plat-key", model: "z-ai/glm-5.3-flash" }]), "with the platform key and model");
+    assert(resolved.kind === "ready" && resolved.model === "z-ai/glm-5.3-flash", "E1.9c R-e: the ready answer carries the platform model");
   });
 }
 
@@ -186,6 +191,7 @@ export async function assertACompleteRowBuildsThatProvider(): Promise<void> {
     const resolved = await r.resolveForOrganization("org-1");
     assert(resolved.kind === "ready" && resolved.source === "organization", "a complete row resolves to the organization");
     assert(JSON.stringify(built) === JSON.stringify([{ name: "anthropic", apiKey: "org-key", model: "claude-sonnet-5-5" }]), "with its own key and model");
+    assert(resolved.kind === "ready" && resolved.model === "claude-sonnet-5-5", "E1.9c R-e: the ready answer carries the row's model");
   });
 }
 
@@ -319,6 +325,7 @@ export async function assertAnImageTurnBuildsTheRowsVisionModel(): Promise<void>
       JSON.stringify(built) === JSON.stringify([{ name: "openrouter", apiKey: "org-key", model: "qwen/qwen3-vl" }]),
       `the vision model on the same key, got ${JSON.stringify(built)}`,
     );
+    assert(resolved.kind === "ready" && resolved.model === "qwen/qwen3-vl", "E1.9c R-e: the model is the one built");
   });
 }
 
@@ -420,5 +427,154 @@ export async function assertThePlatformSummaryNamesTheVisionModelNeverAKey(): Pr
   });
   await withEnv({ LLM_VISION_MODEL: "qwen/qwen3-vl" }, () => {
     assert(resolver(null).r.platformSummary().visionModel === null, "an off platform names no vision model");
+  });
+}
+
+/**
+ * `E1.9c` / ADR 0135 Amendment 8 decision 4 — `resolveForFindings`. The platform
+ * default is a dearer Anthropic model in every case, so a fallback to it shows.
+ */
+const PLATFORM_ANTHROPIC = { LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "plat-key", ANTHROPIC_MODEL: "claude-sonnet-5-5" } as const;
+const FINDINGS_OPENROUTER = {
+  ML_FINDINGS_LLM_PROVIDER: "openrouter",
+  ML_FINDINGS_LLM_MODEL: "small/open-model",
+  OPENROUTER_API_KEY: "or-key",
+} as const;
+
+/** Records `Logger.prototype.warn` for the duration of `fn`. */
+async function warningsOf(fn: () => Promise<void>): Promise<unknown[][]> {
+  const original = Logger.prototype.warn;
+  const warned: unknown[][] = [];
+  Logger.prototype.warn = function (...args: unknown[]) {
+    warned.push(args);
+  } as typeof Logger.prototype.warn;
+  try {
+    await fn();
+  } finally {
+    Logger.prototype.warn = original;
+  }
+  return warned;
+}
+
+export async function assertFindingsAnOwnRowIgnoresTheFindingsVariables(): Promise<void> {
+  await withEnv({ ...PLATFORM_ANTHROPIC, ...FINDINGS_OPENROUTER }, async () => {
+    const { r, built } = resolver(orgRow({ provider: "openai", model: "gpt-4o", apiKey: "org-key" }));
+    const resolved = await r.resolveForFindings("org-1");
+    assert(resolved.kind === "ready" && resolved.source === "organization" && resolved.model === "gpt-4o", "the row's own model");
+    assert(JSON.stringify(built) === JSON.stringify([{ name: "openai", apiKey: "org-key", model: "gpt-4o" }]), "with the row's own key");
+  });
+  await withEnv({ ...PLATFORM_ANTHROPIC, ...FINDINGS_OPENROUTER }, async () => {
+    const { r, built } = resolver(orgRow({ provider: "off", model: null }));
+    const resolved = await r.resolveForFindings("org-1");
+    assert(resolved.kind === "guided" && resolved.reason === "organization_off", "an off row is no paragraph, never the findings model");
+    assert(built.length === 0, "nothing is built");
+  });
+}
+
+export async function assertFindingsSetAndCompleteBuildsTheFindingsModel(): Promise<void> {
+  await withEnv({ ...PLATFORM_ANTHROPIC, ...FINDINGS_OPENROUTER }, async () => {
+    const { r, built } = resolver(null);
+    const resolved = await r.resolveForFindings("org-1");
+    assert(
+      resolved.kind === "ready" && resolved.source === "platform" && resolved.model === "small/open-model" && !resolved.vision,
+      `the findings model, got ${JSON.stringify(resolved)}`,
+    );
+    assert(
+      JSON.stringify(built) === JSON.stringify([{ name: "openrouter", apiKey: "or-key", model: "small/open-model" }]),
+      `with that provider's existing key, got ${JSON.stringify(built)}`,
+    );
+    // The copilot is unchanged: resolveForOrganization still takes the platform default.
+    built.length = 0;
+    const copilot = await r.resolveForOrganization("org-1");
+    assert(copilot.kind === "ready" && copilot.model === "claude-sonnet-5-5", "the copilot keeps the platform default");
+  });
+}
+
+export async function assertFindingsSetWithoutAModelIsNoParagraph(): Promise<void> {
+  await withEnv({ ...PLATFORM_ANTHROPIC, ...FINDINGS_OPENROUTER, ML_FINDINGS_LLM_MODEL: undefined }, async () => {
+    const { r, built } = resolver(null);
+    const resolved = await r.resolveForFindings("org-1");
+    assert(resolved.kind === "guided", "no model: no paragraph, never the platform's or a default model");
+    assert(built.length === 0, "nothing is built");
+    const warned = await warningsOf(async () => r.onModuleInit());
+    assert(warned.length === 1, `one boot warning, got ${warned.length}`);
+    assert((warned[0]?.[0] as { variable?: string }).variable === "ML_FINDINGS_LLM_MODEL", "the warning names ML_FINDINGS_LLM_MODEL");
+    assert(!JSON.stringify(warned).includes("or-key"), "the warning carries no value");
+  });
+}
+
+export async function assertFindingsSetWithoutAKeyIsNoParagraph(): Promise<void> {
+  await withEnv({ ...PLATFORM_ANTHROPIC, ...FINDINGS_OPENROUTER, OPENROUTER_API_KEY: undefined }, async () => {
+    const { r, built } = resolver(null);
+    const resolved = await r.resolveForFindings("org-1");
+    assert(resolved.kind === "guided", "no key: no paragraph, never the platform key");
+    assert(built.length === 0, "nothing is built");
+    const warned = await warningsOf(async () => r.onModuleInit());
+    assert(warned.length === 1, `one boot warning, got ${warned.length}`);
+    assert((warned[0]?.[0] as { variable?: string }).variable === "OPENROUTER_API_KEY", "the warning names the provider's key variable");
+    assert(!JSON.stringify(warned).includes("small/open-model"), "the warning carries no value");
+  });
+  await withEnv({ ...PLATFORM_ANTHROPIC, ML_FINDINGS_LLM_PROVIDER: "gemini", ML_FINDINGS_LLM_MODEL: "m" }, async () => {
+    const { r, built } = resolver(null);
+    assert((await r.resolveForFindings("org-1")).kind === "guided" && built.length === 0, "an unknown provider is no paragraph");
+  });
+}
+
+export async function assertFindingsEmptyUsesThePlatformDefault(): Promise<void> {
+  await withEnv({ ...PLATFORM_ANTHROPIC }, async () => {
+    const { r, built } = resolver(null);
+    const resolved = await r.resolveForFindings("org-1");
+    assert(resolved.kind === "ready" && resolved.source === "platform" && resolved.model === "claude-sonnet-5-5", "the platform default");
+    assert(JSON.stringify(built) === JSON.stringify([{ name: "anthropic", apiKey: "plat-key", model: "claude-sonnet-5-5" }]), "its key");
+    const warned = await warningsOf(async () => r.onModuleInit());
+    assert(warned.length === 0, "unset findings variables log nothing");
+  });
+  await withEnv({}, async () => {
+    const resolved = await resolver(null).r.resolveForFindings("org-1");
+    assert(resolved.kind === "guided" && resolved.reason === "platform_off", "nothing set: no paragraph");
+  });
+}
+
+/** `E1.9c` review: a findings model with no findings provider is incomplete — never the copilot's model. */
+export async function assertFindingsAModelWithoutAProviderIsNoParagraph(): Promise<void> {
+  await withEnv({ ...PLATFORM_ANTHROPIC, ML_FINDINGS_LLM_MODEL: "small/open-model" }, async () => {
+    const { r, built } = resolver(null);
+    const resolved = await r.resolveForFindings("org-1");
+    assert(resolved.kind === "guided", "a model alone is no paragraph, never the platform default");
+    assert(built.length === 0, "nothing is built");
+    const warned = await warningsOf(async () => r.onModuleInit());
+    assert(warned.length === 1, `one boot warning, got ${warned.length}`);
+    assert((warned[0]?.[0] as { variable?: string }).variable === "ML_FINDINGS_LLM_PROVIDER", "the warning names ML_FINDINGS_LLM_PROVIDER");
+  });
+}
+
+/** `E1.9c` review: the cache's model column is varchar(200), so a longer model is incomplete, wherever it comes from. */
+export async function assertFindingsAModelOver200IsNoParagraph(): Promise<void> {
+  const long = "m".repeat(201);
+  await withEnv({ ...PLATFORM_ANTHROPIC, ...FINDINGS_OPENROUTER, ML_FINDINGS_LLM_MODEL: long }, async () => {
+    const { r, built } = resolver(null);
+    assert((await r.resolveForFindings("org-1")).kind === "guided" && built.length === 0, "a 201-character findings model is no paragraph");
+    const warned = await warningsOf(async () => r.onModuleInit());
+    assert((warned[0]?.[0] as { variable?: string }).variable === "ML_FINDINGS_LLM_MODEL", "the warning names ML_FINDINGS_LLM_MODEL");
+    assert(!JSON.stringify(warned).includes(long), "the warning carries no value");
+  });
+  await withEnv({ ...PLATFORM_ANTHROPIC, ...FINDINGS_OPENROUTER, ML_FINDINGS_LLM_MODEL: "m".repeat(200) }, async () => {
+    assert((await resolver(null).r.resolveForFindings("org-1")).kind === "ready", "200 characters is still ready");
+  });
+  await withEnv({ ...PLATFORM_ANTHROPIC, ANTHROPIC_MODEL: long }, async () => {
+    const { r, built } = resolver(null);
+    assert((await r.resolveForFindings("org-1")).kind === "guided", "a platform model over 200 is no paragraph either");
+    assert(built.length === 0, "nothing is built");
+  });
+}
+
+/** `E1.9c` review: an inactive organization gets no paragraph, as `resolvePlatformScope` leaves it out. */
+export async function assertFindingsAnInactiveOrganizationIsNoParagraph(): Promise<void> {
+  await withEnv({ ...PLATFORM_ANTHROPIC, ...FINDINGS_OPENROUTER }, async () => {
+    const { r, built } = resolver(orgRow({ provider: "openai", model: "gpt-4o", apiKey: "org-key" }));
+    r.isOrganizationActive = async () => false;
+    const resolved = await r.resolveForFindings("org-1");
+    assert(resolved.kind === "guided" && resolved.reason === "organization_inactive", "an inactive organization is no paragraph");
+    assert(built.length === 0, "nothing is built");
   });
 }

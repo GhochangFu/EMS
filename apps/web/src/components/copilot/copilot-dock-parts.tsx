@@ -1,6 +1,7 @@
 import type { CopilotLimit } from "../../api/copilot";
 import { splitAttachmentRecords } from "../../lib/copilot-attachments";
 import { COPILOT_ALL_ORGANIZATIONS } from "../../stores/copilot-store";
+import { BotIcon } from "../bot-icon";
 
 /**
  * `F4.292` — the copilot dock's small parts and fixed sentences, moved out of
@@ -120,26 +121,8 @@ export function limitSentence(limit: CopilotLimit): string {
   return `${who} It resets at ${formatCopilotReset(limit.resetsAt)}.`;
 }
 
-/** The `ESKOM_SMOC.html` `#aiFab` bot mark, decorative: the button carries the label. */
-export function BotIcon({ size }: { size: number }) {
-  return (
-    <svg
-      aria-hidden="true"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 8V4H8" />
-      <rect width="16" height="12" x="4" y="8" rx="2" />
-      <path d="M2 14h2M20 14h2M15 13v2M9 13v2" />
-    </svg>
-  );
-}
+/** `E1.9g`: the bot mark moved to `../bot-icon` (the ML findings card draws it too); re-exported here. */
+export { BotIcon };
 
 /** The left side of the panel's header bar: the mark, the title and the scope line. */
 export function DockTitle({ scopeLabel }: { scopeLabel: string }) {

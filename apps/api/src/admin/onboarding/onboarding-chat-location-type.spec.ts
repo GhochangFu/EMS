@@ -286,15 +286,16 @@ export async function assertAgentPromptListsTheActiveCodes(): Promise<void> {
   }
 }
 
-/** `F3.33` (ADR 0083, OQ6) — the system prompt names `IONSiTE NEXUS`, not `TRINETRA`. */
-export async function assertAgentSystemPromptNamesIonsiteNexus(): Promise<void> {
+/** `F4.398` (ADR 0142, plan OQ4) — the system prompt names `Verve`, not `IONSiTE NEXUS` or `TRINETRA`. */
+export async function assertAgentSystemPromptNamesVerve(): Promise<void> {
   const { llm } = await agentTurn([{ kind: "final", text: "ok" }]);
   const system = systemPromptOf(llm);
   assert(
-    system.startsWith("You are an IONSiTE NEXUS BMS onboarding assistant for organization "),
+    system.startsWith("You are a Verve BMS onboarding assistant for organization "),
     `got ${JSON.stringify(system.slice(0, 90))}`,
   );
   assert(!/trinetra/i.test(system), "the system prompt still names the old product");
+  assert(!/\bion\s?site|nexus/i.test(system), "the system prompt still names IONSiTE NEXUS");
 }
 
 // ---------------------------------------------------------------------------

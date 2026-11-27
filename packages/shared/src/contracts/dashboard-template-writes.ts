@@ -85,6 +85,16 @@ export const TEMPLATE_FORECAST_MESSAGE =
 export const TEMPLATE_ANOMALY_MESSAGE =
   "a dashboard template holds no anomaly widget; an anomaly widget names one asset's point";
 
+/**
+ * `E1.9f` / ADR 0135 Amendment 8 decision 13 — the ml_findings widget is builder palette only. It
+ * binds nothing, and the binds-nothing site widgets ARE allowed in templates, so this contract
+ * refuses it **by name** in the content walk below (tabs included). The asset-template contract
+ * has no arm for it (it binds no point), and the web's `TEMPLATE_WIDGET_TYPES` drops it through
+ * `isTemplateAuthorableWidgetType`.
+ */
+export const TEMPLATE_ML_FINDINGS_MESSAGE =
+  "a dashboard template holds no ml_findings widget; its findings are one dashboard's own scope";
+
 /** The `F4.306` selection fields (and `F4.323`'s `styles`) a template's trend strip may not carry. */
 const TREND_STRIP_SELECTION_KEYS = ["segments", "points", "colors", "styles"] as const;
 
@@ -120,6 +130,13 @@ const templateContentWriteSchema = sectionTemplateContentSchema
           code: z.ZodIssueCode.custom,
           path: [...path.slice(0, -1), "widgetType"],
           message: TEMPLATE_ANOMALY_MESSAGE,
+        });
+      }
+      if (widget.widgetType === "ml_findings") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [...path.slice(0, -1), "widgetType"],
+          message: TEMPLATE_ML_FINDINGS_MESSAGE,
         });
       }
       if (widget.widgetType === "mimic" && widget.config.source === "layout") {
@@ -167,7 +184,8 @@ const templateContentWriteSchema = sectionTemplateContentSchema
       "one of content.tabs whose domain is not null. A trend_strip's config holds no " +
       "segments, points or colors (ADR 0108 Amendment 7): a selection is site-specific. " +
       "A forecast widget answers 400 (ADR 0135 Amendment 3 R-f): it names one asset's point. " +
-      "So does an anomaly widget (ADR 0135 Amendment 5 ruling 4(c)).",
+      "So does an anomaly widget (ADR 0135 Amendment 5 ruling 4(c)), and an ml_findings " +
+      "widget (ADR 0135 Amendment 8 decision 13).",
   );
 
 /**

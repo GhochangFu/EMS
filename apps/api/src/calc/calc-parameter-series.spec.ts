@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import { ORGANIZATION_RANK, parameterValueAt, type ParameterSeriesRow } from "./calc-parameter-series";
+import { ORGANIZATION_RANK, parameterRowAt, parameterValueAt, type ParameterSeriesRow } from "./calc-parameter-series";
 
 /**
  * `F4.311` task 5.4 — `parameterValueAt`, pure. The series below is the
@@ -37,4 +37,26 @@ export function aRowHasBegunAtItsOwnStart(): void {
 /** No row holds the instant → `undefined`, never a default. */
 export function anUncoveredInstantIsUndefined(): void {
   expect(parameterValueAt(SERIES, -1)).toBeUndefined();
+}
+
+/**
+ * `E1.6a` (plan R-p) — `parameterRowAt` returns the very row whose value
+ * `parameterValueAt` returns, at every instant of the grid, and `undefined`
+ * where it does.
+ */
+export function theRowAtIsTheRowWhoseValueIsServed(): void {
+  for (const tMs of [-1, 0, 50, 99, 100, 150, 199, 200, 10_000]) {
+    const row = parameterRowAt(SERIES, tMs);
+    const value = parameterValueAt(SERIES, tMs);
+    if (value === undefined) {
+      expect(row).toBeUndefined();
+    } else {
+      expect(row).toBeDefined();
+      expect(row?.value).toBe(value);
+      expect(SERIES).toContain(row);
+    }
+  }
+  expect(parameterRowAt(SERIES, 150)).toBe(SERIES[0]);
+  expect(parameterRowAt(SERIES, 50)).toBe(SERIES[1]);
+  expect(parameterRowAt(SERIES, 200)).toBe(SERIES[2]);
 }

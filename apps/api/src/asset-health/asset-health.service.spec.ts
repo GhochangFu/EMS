@@ -505,3 +505,82 @@ export async function assertScoresByLocationOnAnEmptyInputTouchesNothing(): Prom
   assert(empty.size === 0, `assetIds: [] must answer an empty map, got ${empty.size} key(s)`);
   assert(calls.length === 0, `an empty input must not touch the database, got ${calls.length} call(s)`);
 }
+
+/**
+ * `E1.8a` (ADR 0050 Amendment 5, plan T1.4) — `scoresInScope` is `summary`'s scope and scoring
+ * step, mapped per asset: one entry per active in-scope asset, in the id order `assetsInScope`
+ * returns, with the scored-tag count. Its non-null scores are `summary`'s `scoredAssetCount` for
+ * the same input, so the bad-actors card's M is the donut's M.
+ */
+export async function assertScoresInScopeIsTheSummaryPerAsset(): Promise<void> {
+  // summary's and scoresInScope's call order: assetsInScope (0), readCounters (1),
+  // healthForAssets (2), catalogPoints (3).
+  const responses = (): unknown[][] => [
+    [{ id: ASSET_A }, { id: ASSET_B }],
+    [
+      { assetId: ASSET_A, pointKey: "kw", inRangeCount: "80", sampleCount: "100", ruleCount: "1", skippedRuleCount: "0", computedAt: NOW },
+      { assetId: ASSET_A, pointKey: "pf", inRangeCount: "100", sampleCount: "100", ruleCount: "1", skippedRuleCount: "0", computedAt: NOW },
+    ],
+    [],
+    [{ assetId: ASSET_B, pointKey: "unruled_tag" }],
+  ];
+  const scoped = await new AssetHealthService(scriptedDb(responses()).db).scoresInScope(
+    [ASSET_A, ASSET_B],
+    undefined,
+    1_440,
+    NOW,
+  );
+  assert(
+    JSON.stringify(scoped) ===
+      JSON.stringify([
+        { assetId: ASSET_A, score: 0.9, band: null, scoredTagCount: 2 },
+        { assetId: ASSET_B, score: null, band: null, scoredTagCount: 0 },
+      ]),
+    `scoresInScope must give one entry per in-scope asset in id order, got ${JSON.stringify(scoped)}`,
+  );
+  const summary = await new AssetHealthService(scriptedDb(responses()).db).summary([ASSET_A, ASSET_B], undefined, 1_440, NOW);
+  const scored = scoped.filter((entry) => entry.score !== null).length;
+  assert(
+    summary.scoredAssetCount === scored,
+    `scoresInScope's scored count (${scored}) must equal summary's scoredAssetCount (${summary.scoredAssetCount})`,
+  );
+}
+
+/** `E1.8a` — an empty scope answers `[]` without a counter read: `[]` reads nothing; `null` reads only the scope. */
+export async function assertScoresInScopeOnAnEmptyScopeReadsNoCounter(): Promise<void> {
+  const none = scriptedDb([]);
+  const empty = await new AssetHealthService(none.db).scoresInScope([], undefined, 1_440, NOW);
+  assert(empty.length === 0 && none.calls.length === 0, `[] must answer [] and read nothing, got ${none.calls.length} call(s)`);
+  const admin = scriptedDb([[]]);
+  const resolved = await new AssetHealthService(admin.db).scoresInScope(null, undefined, 1_440, NOW);
+  assert(
+    resolved.length === 0 && admin.calls.length === 1,
+    `a scope resolving to no asset must make exactly the scope read, got ${admin.calls.length} call(s)`,
+  );
+}
+
+/**
+ * **E1.5a (ADR 0138) — `healthForAssets` is public.** It answers the parsed
+ * `health` block for an asset whose template has one, and `undefined` for an
+ * asset whose template has none.
+ */
+export async function assertHealthForAssetsAnswersParsedBlockOrUndefined(): Promise<void> {
+  const bands = [
+    { code: "fair", label: "Fair", minScore: 0.6 },
+    { code: "poor", label: "Poor", minScore: 0 },
+  ];
+  const { db } = scriptedDb([
+    [
+      { assetId: ASSET_A, content: { health: { bands } } },
+      { assetId: ASSET_B, content: { contentVersion: 1 } },
+    ],
+  ]);
+  const byAsset = await new AssetHealthService(db).healthForAssets([ASSET_A, ASSET_B]);
+
+  assert(
+    JSON.stringify(byAsset.get(ASSET_A)) === JSON.stringify({ bands }),
+    `a template with health must answer its parsed block, got ${JSON.stringify(byAsset.get(ASSET_A))}`,
+  );
+  assert(byAsset.has(ASSET_B), "an asset without health must still be keyed");
+  assert(byAsset.get(ASSET_B) === undefined, "a template without health must answer undefined");
+}

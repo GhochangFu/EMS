@@ -15,6 +15,7 @@ import {
   requireIntegrationDb,
   resolveIntegrationRoleUrl,
 } from "../apps/api/src/testing/integration-db-gate.js";
+import { PHE_SPLIT_STATION_CODES } from "../packages/db/src/phe-split-stations.js";
 
 // Loaded from `packages/db/dist` through `createRequire`, for the reason
 // `tests/f4.129-ladder-rule-code-bound.integration.test.ts` gives. After a
@@ -24,10 +25,10 @@ const require_ = createRequire(import.meta.url);
 const { seedMapLocationRows } = require_(
   "../packages/db/dist/eskom-locations-seed.js",
 ) as typeof EskomLocationsSeed;
-const { loadPheCatalog } = require_("../packages/db/dist/phe-pilot-seed.js") as typeof PhePilotSeed;
+const { loadPheCatalog, stationSlug } = require_("../packages/db/dist/phe-pilot-seed.js") as typeof PhePilotSeed;
 const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typeof SeedTenant;
 const {
-  pheSiteLayoutStations,
+  pheSiteLayoutSites,
   resolvePhewbSiteLayoutLocations,
   seedEskomSiteLayouts,
   SITE_LAYOUT_SLUG_PREFIX,
@@ -87,7 +88,17 @@ type SeedPool = ReturnType<typeof createSeedPool>;
 const runId = randomUUID().slice(0, 8);
 const RUN_ID = runId.toUpperCase();
 const mapRows = seedMapLocationRows(loadPheCatalog());
-const pheSlugs = pheSiteLayoutStations(loadPheCatalog()).map((station) => station.slug);
+// `F4.388` (ADR 0139 decision 6): the PHEWB locations holding a copy are each unsplit station and,
+// in place of a station on the committed split list, its two RTU sites.
+const pheSlugs = pheSiteLayoutSites(loadPheCatalog(), PHE_SPLIT_STATION_CODES).map((station) => station.slug);
+const COPIES = 1 + pheSlugs.length;
+const splitStationSlugs = [
+  ...new Set(
+    loadPheCatalog()
+      .rows.filter((row) => PHE_SPLIT_STATION_CODES.includes(row.StationCode))
+      .map((row) => stationSlug(row.StationName)),
+  ),
+];
 const CSMOC_SLUG = siteLayoutSlug("csmoc-gauteng");
 
 // 60 s a case: the rewinding cases re-seed CSMOC up to three times in one transaction, and a
@@ -171,13 +182,22 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
      AND t.target = 'site'
      AND ((l.id = $1 AND t.code = 'smoc-standard') OR (l.slug = ANY($2::varchar[]) AND t.code = 'pump-station-standard'))`;
 
-  it("made seven copies: CSMOC's from smoc-standard, the six stations' from pump-station-standard", async () => {
+  it("made one copy at CSMOC from smoc-standard and one at each PHE station or split site from pump-station-standard", async () => {
     const res = await probePool!.query<{ n: number }>(`SELECT count(*)::int AS n ${SEEDED_COPIES_SQL}`, [
       csmocId,
       pheSlugs,
     ]);
-    expect(pheSlugs).toHaveLength(6);
-    expect(res.rows[0]?.n).toBe(7);
+    // Each split station gives way to its two sites: six stations, plus one per split station.
+    expect(pheSlugs).toHaveLength(6 + PHE_SPLIT_STATION_CODES.length);
+    expect(res.rows[0]?.n).toBe(COPIES);
+    // A split station holds no asset and gets no copy of its own (ADR 0139 decision 7).
+    const atSplit = await probePool!.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM bms.dashboards d JOIN bms.locations l ON l.id = d.location_id
+        WHERE l.slug = ANY($1::varchar[]) AND d.slug = 'site-layout-' || l.slug`,
+      [splitStationSlugs],
+    );
+    expect(splitStationSlugs).toHaveLength(PHE_SPLIT_STATION_CODES.length);
+    expect(atSplit.rows[0]?.n).toBe(0);
   });
 
   it("points each copy's site view at it, kind dashboard", async () => {
@@ -187,7 +207,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
                       WHERE v.location_id = l.id AND v.kind = 'dashboard' AND v.dashboard_id = d.id)`,
       [csmocId, pheSlugs],
     );
-    expect(res.rows[0]?.n).toBe(7);
+    expect(res.rows[0]?.n).toBe(COPIES);
   });
 
   // The copy count only, not the view row's kind: `f3.67-site-control-room-views-seed` commits
@@ -201,7 +221,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
   });
 
   // `F4.319` (ADR 0113 decision 7, plan D4): the Overview binds the station's `pump-station` group.
-  it("gives each PHE station the tabs overview, electrical and env, exactly", async () => {
+  it("gives each PHE station or split site the tabs overview, electrical and env, exactly", async () => {
     for (const slug of pheSlugs) {
       expect(await tabsOf(probePool!, phewbOrgId, siteLayoutSlug(slug)), slug).toEqual([
         "overview:pump-station",
@@ -231,7 +251,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
         GROUP BY d.slug ORDER BY d.slug`,
       [csmocId, pheSlugs],
     );
-    expect(res.rows).toHaveLength(7);
+    expect(res.rows).toHaveLength(COPIES);
     expect(res.rows.filter((row) => row.unbound > 0).map((row) => row.slug)).toEqual([]);
     expect(res.rows.find((row) => row.slug === CSMOC_SLUG)?.bound).toBe(2);
   });

@@ -1128,6 +1128,27 @@
       "when": 1794855712030,
       "tag": "0161_anomaly_widget_type",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1794900917815,
+      "tag": "0162_ml_finding_paragraphs",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1794907046986,
+      "tag": "0163_ml_findings_widget_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1795349658445,
+      "tag": "0164_device_profiles_and_poll_interval",
+      "breakpoints": true
     }
   ]
 }

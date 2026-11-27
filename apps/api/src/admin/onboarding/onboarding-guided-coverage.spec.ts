@@ -23,7 +23,7 @@ const ACTIVE_TYPE = { code: "smoc_campus", label: "SMOC campus" } as never;
 const TURN = { types: [ACTIVE_TYPE], templates: { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["kw", true]]) }, pointKeyQuota: { createdByOrganization: 0 }, placement: { candidates: [] } };
 
 const PLACE = { name: "Berhampur", slug: "berhampur", code: "BERHAMPUR", type: "smoc_campus", latitude: 22.3, longitude: 87.3 };
-const MODBUS_RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "modbus_tcp", config: { host: "127.0.0.1", port: 502, unitId: 1, pollIntervalMs: 5000 }, credentialsSet: false, ingestEnabled: false };
+const MODBUS_RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "modbus_tcp", config: { host: "192.168.1.20", port: 502, pollIntervalMs: 10000, device: { unitId: 1 } }, credentialsSet: false, ingestEnabled: false };
 const MQTT_RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "mqtt", config: { host: "h", port: 8883, tls: true, topic: "" }, credentialsSet: true, ingestEnabled: true };
 const KW = { code: "kw", name: "Active Power", domain: "electrical", unit: "kW" };
 const ASSET = { rtuIndex: 0, code: "BERHAMPUR-ASSET-1", name: "Primary Device", siteName: "Berhampur", domain: "electrical" };

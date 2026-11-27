@@ -45,6 +45,8 @@ function rtuRow(silentSeconds: number, overrides: Partial<RtuHealthRow> = {}): R
     organizationId: ORG_A,
     code: "RTU-1",
     displayName: "Pump house 1",
+    locationId: "loc-1",
+    locationName: "Site 1",
     edgeServed: false,
     hostKey: HOST,
     lastSeenMs: NOW.getTime() - 5000 - silentSeconds * 1000,
