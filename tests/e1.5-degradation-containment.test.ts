@@ -212,7 +212,7 @@ describe("E1.5a degradation containment (ADR 0138)", () => {
 
   it("DEGRADATION_DRIFT_TARGETS is the scorer's two default target lists (R-j)", () => {
     const python = pythonTargets(read(TARGETS_PY_REL));
-    // Positive control: the parse reaches both lists (2 forecast + 21 anomaly entries, one shared class twice).
+    // Positive control: the parse reaches both lists (2 forecast + 22 anomaly entries, one shared class twice).
     expect(python.length).toBeGreaterThanOrEqual(23);
     const typescript = DEGRADATION_DRIFT_TARGETS.map((t) => `${t.domain}/${t.assetType}/${t.pointKey}`);
     expect(new Set(typescript).size).toBe(typescript.length);
